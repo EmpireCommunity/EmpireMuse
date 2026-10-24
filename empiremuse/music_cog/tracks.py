@@ -143,7 +143,7 @@ class TracksMixin:
                                 tracks = await self.bot.pool.deezer.get_tracks(
                                     url=query, requester=user.id, search=True, check_title=50
                                 )
-                            elif search_provider.startswith("spsearch"):
+                            elif search_provider.startswith("spsearch") and self.bot.pool.spotify:
                                 tracks = await self.bot.pool.spotify.get_tracks(
                                     self.bot, user.id, query, search=True, check_title=50
                                 )
