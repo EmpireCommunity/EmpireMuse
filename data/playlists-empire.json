@@ -1,0 +1,250 @@
+{
+  "playlists": [
+    {
+      "order": 1,
+      "name": "👥 EmpireHub Comunity",
+      "description": "Gerida pela comunidade, adicione suas musicas na playlist quando quiser.",
+      "genres": [
+        "Eclectic",
+        "Community",
+        "Various"
+      ],
+      "url": "https://music.youtube.com/playlist?list=PLVMXw562mISY"
+    },
+    {
+      "order": 2,
+      "name": "🎲 Domingo",
+      "description": "Brasa acesa, copo cheio e zero regras de gênero musical. Do funk à eletrônica, do rap ao pop alternativo: o som de fundo perfeito para reunir a galera o dia inteiro.",
+      "genres": [
+        "Eclectic",
+        "Hip-Hop",
+        "Brazilian Funk",
+        "Indie Pop",
+        "Electronic"
+      ],
+      "url": "https://open.spotify.com/playlist/04ivAI1IxwGmZnPr1R6KBA?si=303cb6790b0649d5"
+    },
+    {
+      "order": 3,
+      "name": "🔴 Red Line",
+      "description": "O melhor do rock nacional e internacional sem concessões. De System Of A Down e Linkin Park a Charlie Brown Jr., Legião Urbana e Arctic Monkeys.",
+      "genres": [
+        "Nu Metal",
+        "Hard Rock",
+        "Alternative Rock",
+        "Indie Rock",
+        "Brazilian Rock"
+      ],
+      "url": "https://open.spotify.com/playlist/7t0AQAwwGJ5ibIwlTE1Q5z?si=5e3384fe9d0c4bf6"
+    },
+    {
+      "order": 4,
+      "name": "🖤 Black Trip",
+      "description": "Graves lentos, viagens noturnas e texturas eletrônicas. De Hippie Sabotage e SEBASTIAN PAUL a Flume, The Neighbourhood e Labrinth.",
+      "genres": [
+        "Indie Electronic",
+        "Chill Trap",
+        "Trip-Hop",
+        "Alternative Pop"
+      ],
+      "url": "https://open.spotify.com/playlist/40WBS12tW2MAIaSc6oAVog?si=ff7a0a54789245ec"
+    },
+    {
+      "order": 5,
+      "name": "💙 Blue Whale",
+      "description": "Um mergulho lento em águas profundas: pianos tristes, violões acústicos e vozes que acolhem a melancolia. De Lana Del Rey e Birdy a Bon Iver e Daughter.",
+      "genres": [
+        "Indie Folk",
+        "Sad Pop",
+        "Dream Pop",
+        "Acoustic",
+        "Singer-Songwriter"
+      ],
+      "url": "https://open.spotify.com/playlist/7tVqhENjlrXTYGszO1jp9m?si=71503d6c84594454"
+    },
+    {
+      "order": 6,
+      "name": "🧡 Orange",
+      "description": "Uma fusão de instrumentais orgânicos com pianos e cordas, com a leveza de sintetizadores etéreos. Letras que são poesia pura, navegando entre o espanhol, francês e inglês para provar que o sentimento não tem idioma.",
+      "genres": [
+        "Dream Pop",
+        "Latin Alternative",
+        "Indie Pop",
+        "Art Pop",
+        "Indie Folk"
+      ],
+      "url": "https://open.spotify.com/playlist/7BQBfKBp8KmfPRdLb8THWB?si=4b2a50bd3b114474"
+    },
+    {
+      "order": 7,
+      "name": "👮‍♂️ Midnight",
+      "description": "O peso do hip-hop das ruas até altas horas. Dos clássicos de Biggie, Ice Cube e 50 Cent ao trap de Travis Scott, Kendrick Lamar e XXXTENTACION.",
+      "genres": [
+        "Hip-Hop",
+        "Trap",
+        "Boom Bap",
+        "Gangsta Rap",
+        "G-Funk"
+      ],
+      "url": "https://open.spotify.com/playlist/7IQpPumXzB5EAnoM3vaKfA?si=c4fa922763914b2c"
+    },
+    {
+      "order": 8,
+      "name": "🪆 The Birch Tape",
+      "description": "O lado obscuro da cena russa e do leste europeu: doomer wave, drift phonk e batidas industriais. De Molchat Doma e IC3PEAK a DVRST, plenka e Crystal Castles. 🇷🇺",
+      "genres": [
+        "Post-Punk",
+        "Doomer Wave",
+        "Drift Phonk",
+        "Witch House",
+        "Dark Wave"
+      ],
+      "url": "https://open.spotify.com/playlist/64S3tmnVztLoglEAOqrw7x?si=31d49c739b094ab5"
+    },
+    {
+      "order": 9,
+      "name": "🚔 ｊｄ ｍ ⛩️",
+      "description": "９０'ｓ ｊｄ ｍ",
+      "genres": [
+        "Drift Phonk",
+        "Phonk",
+        "Synthwave",
+        "Electronic"
+      ],
+      "url": "https://open.spotify.com/playlist/6sM2vKeSew81parkU1y34t?si=c07e864806fa4127"
+    },
+    {
+      "order": 10,
+      "name": "☕ Br-fi",
+      "description": "Clássicos brasileiros envoltos em fita analógica e texturas lo-fi. Põe os auscultadores e aproveita a calma.",
+      "genres": [
+        "Lo-Fi Hip-Hop",
+        "Chillhop",
+        "MPB",
+        "Brazilian Lo-Fi"
+      ],
+      "url": "https://music.youtube.com/playlist?list=PL9cKIDEzMJrIkZA0iFlRQcvOoBI8bMlsS&si=tCUwSRkQWyOeNvSi&drli=1"
+    },
+    {
+      "order": 11,
+      "name": "🍆 Bilolas",
+      "description": "O lado proibido do trap gay",
+      "genres": [
+        "Comedy Rap",
+        "Trap",
+        "Parody"
+      ],
+      "url": "https://music.youtube.com/playlist?list=PL9cKIDEzMJrIwFmKOrsOJ48fXbgB7X3IY&si=OO20opTcIVAmPZXQ&drli=1"
+    },
+    {
+      "order": 12,
+      "name": "🔥 MTG AS MELHORES 2024",
+      "description": "MTG 2024",
+      "genres": [
+        "Brazilian Funk",
+        "MTG",
+        "Phonk Funk"
+      ],
+      "url": "https://open.spotify.com/playlist/2CBeBhKyeYVNuGNVqhmikc?si=0d97717880bc4b72"
+    },
+    {
+      "order": 13,
+      "name": "💰 Funk G[old] 🎶",
+      "description": "Funk's 2010 2011 2012 2013 2014 2015 2016 2017 2018",
+      "genres": [
+        "Brazilian Funk",
+        "Funk Carioca",
+        "Nostalgia"
+      ],
+      "url": "https://open.spotify.com/playlist/1PaMA7huXpYxbLqvmI2GJy?si=fcf6fc45bae34178"
+    },
+    {
+      "order": 14,
+      "name": "🔞 Proibido",
+      "description": "Funk Proibido",
+      "genres": [
+        "Brazilian Funk",
+        "Funk Proibido"
+      ],
+      "url": "https://open.spotify.com/playlist/0bJY9so9JxTeBU2tO4z0t6?si=e13f7cdb851d4109"
+    },
+    {
+      "order": 15,
+      "name": "📻 90s Hip-Hop",
+      "description": "Os melhores hip-hop internacional anos 90",
+      "genres": [
+        "Golden Age Hip-Hop",
+        "Boom Bap",
+        "East Coast Hip-Hop",
+        "West Coast Hip-Hop"
+      ],
+      "url": "https://open.spotify.com/playlist/37i9dQZF1DX186v583rmzp?si=98be39a14c254831"
+    },
+    {
+      "order": 16,
+      "name": "📝 Lyrical Hip-Hop",
+      "description": "Os melhores hip-hops internacionais liricos",
+      "genres": [
+        "Conscious Hip-Hop",
+        "Lyrical Hip-Hop",
+        "Boom Bap"
+      ],
+      "url": "https://open.spotify.com/playlist/2NPQv2l8PxhpXAkAVYX5ad?si=f4e174b5fee54a33"
+    },
+    {
+      "order": 17,
+      "name": "⚡ Phonk 2026",
+      "description": "Melhores Phonks Agressivos 2026",
+      "genres": [
+        "Aggressive Phonk",
+        "Drift Phonk",
+        "Hardwave"
+      ],
+      "url": "https://open.spotify.com/playlist/0xF0eHm3eguBqBvgVyQ3UB?si=fe4f890bd4374587"
+    },
+    {
+      "order": 18,
+      "name": "🗿 Aura +999999999",
+      "description": "Winter arc is here - Melhores musicas para farmar aura",
+      "genres": [
+        "Phonk",
+        "Gym Hardstyle",
+        "Electronic"
+      ],
+      "url": "https://open.spotify.com/playlist/6KB7Soz4BonOhOW8PNVbWX?si=8ffe543fde374ed8"
+    },
+    {
+      "order": 19,
+      "name": "🌧️ Sad Songs to listen",
+      "description": "Musicas sad",
+      "genres": [
+        "Sad Pop",
+        "Indie Pop",
+        "Acoustic Ballad"
+      ],
+      "url": "https://open.spotify.com/playlist/0n8LSA3RCWuXD6M3GgARFU?si=9c0bc50ae47d4aa2"
+    },
+    {
+      "order": 20,
+      "name": "⛏️ Peaceful Minecraft Ambience",
+      "description": "Minecraft",
+      "genres": [
+        "Video Game Music",
+        "Ambient",
+        "Chillout"
+      ],
+      "url": "https://open.spotify.com/playlist/47q89D3erhbX2Aqs4REtcx?si=70404dd6aaba4257"
+    },
+    {
+      "order": 21,
+      "name": "🌑 Dark Ambiente Music",
+      "description": "Exploring serene ambiente soundscapes form dreamscapes",
+      "genres": [
+        "Dark Ambient",
+        "Drone",
+        "Atmospheric Soundscapes"
+      ],
+      "url": "https://open.spotify.com/playlist/7h1NoxhrNz9pdJtpOkm2ms?si=46c76bfb9464447e"
+    }
+  ]
+}
