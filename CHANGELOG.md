@@ -8,7 +8,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 ## [Unreleased]
 
 ### Adicionado
-- **Playlists do bot (dados para o recurso futuro)**: modelo vazio `data/playlists.example.json`, lista oficial `data/playlists-empire.json` e as variáveis `DEFAULT_PLAYLISTS_FILE` e `DEFAULT_PLAYLISTS_SYNC` (espelhamento do arquivo para o banco, desligado por padrão) no `.example.env` (ainda sem uso no código).
+- **Playlists do bot (dados para o recurso futuro)**: lista oficial `data/playlists/playlists-empire.json` e `data/playlists/README.md` (formato e regras de importação por `/playlists importar`; ainda sem uso no código).
 - **Configuração do CodeRabbit (`.coderabbit.yaml`)**:
   - Revisão em pt-BR, perfil `chill`, sem herdar da organização, com instruções por caminho e dizendo explicitamente que `AGENTS.md` e `.claude/rules/empiremuse/*` prevalecem sobre `.claude/rules/ecc/*` (sem meta de 80% de cobertura nem TDD obrigatório).
   - Ignora locks, `assets/`, estáticos vendorizados do painel e submódulos; ferramentas de lint e de segurança ativadas; checks de pré-merge para título (Conventional Commits), CHANGELOG e segredos.
