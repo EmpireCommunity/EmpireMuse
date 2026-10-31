@@ -1,7 +1,8 @@
 """Falha se uma chave de segredo em deploy/ ou nos *.example* tiver valor literal.
 
 Recusa também URL de webhook do Discord em qualquer chave.
-Aceita valor vazio, referência ``${NOME}``, ``${NOME:-}`` ou ``${NOME:?mensagem}`` (sem padrão literal), booleano e número (ex.: ``MONGO_TIMEOUT: "30"``).
+Aceita valor vazio, referência ``${NOME}``, ``${NOME:-}`` ou ``${NOME:?mensagem}`` (sem padrão literal).
+Booleano e número só valem nas chaves de ajuste listadas em ``NON_SECRET_SETTINGS``.
 """
 
 import json
@@ -11,8 +12,17 @@ from pathlib import Path
 
 SECRET_KEY = re.compile(r"(TOKEN|SECRET|PASS|KEY|MONGO|WEBHOOK|COOKIE|REFRESH|URI)", re.IGNORECASE)
 ASSIGNMENT = re.compile(r"^\s*(?:export\s+)?[\"']?([A-Za-z0-9_]+)[\"']?\s*[:=]\s*(.*?)\s*$")
-HARMLESS_VALUE = re.compile(
-    r"""^(["']?)(|\$\{[A-Za-z_][A-Za-z0-9_]*(?::-|:\?[^}]*)?\}|true|false|-?\d+)\1$""", re.IGNORECASE
+EMPTY_OR_REFERENCE = re.compile(r"""^(["']?)(|\$\{[A-Za-z_][A-Za-z0-9_]*(?::-|:\?[^}]*)?\})\1$""")
+BOOLEAN_OR_NUMBER = re.compile(r"""^(["']?)(true|false|-?\d+)\1$""", re.IGNORECASE)
+# Chaves que casam com SECRET_KEY pelo nome mas são ajustes, não segredos: só nelas booleano e número são aceitos.
+NON_SECRET_SETTINGS = frozenset(
+    {
+        "PLAYER_SESSIONS_MONGODB",
+        "WEBHOOKS_INTENT",
+        "MONGO_TIMEOUT",
+        "PLAYER_INFO_BACKUP_INTERVAL_MONGO",
+        "PANEL_INSECURE_COOKIES",
+    }
 )
 WEBHOOK_URL = re.compile(r"discord(?:app)?\.com/api/webhooks/\S", re.IGNORECASE)
 SKIPPED_SUFFIXES = {".md"}
@@ -26,11 +36,18 @@ def candidate_files(root: Path) -> list[Path]:
     return sorted({p for p in deploy + examples if p.suffix not in SKIPPED_SUFFIXES and p.name not in PUBLIC_EXAMPLES})
 
 
+def is_harmless(name: str, value: str) -> bool:
+    if EMPTY_OR_REFERENCE.match(value):
+        return True
+    return name in NON_SECRET_SETTINGS and bool(BOOLEAN_OR_NUMBER.match(value))
+
+
 def normalized(line: str) -> str:
-    """Tira o marcador de item de lista (``- ``) e as aspas que envolvem o item (``- "TOKEN=x"``)."""
+    """Tira o marcador de item de lista (``- ``) e, só nele, as aspas que envolvem o item (``- "TOKEN=x"``)."""
     text = line.strip()
-    if text.startswith("- "):
-        text = text[2:].strip()
+    if not text.startswith("- "):
+        return text
+    text = text[2:].strip()
     if len(text) > 1 and text[0] in "\"'" and text[-1] == text[0]:
         text = text[1:-1]
     return text
@@ -48,7 +65,7 @@ def offending_lines(path: Path) -> list[str]:
         if not match or not SECRET_KEY.search(match.group(1)):
             continue
         value = re.sub(r"\s+#.*$", "", match.group(2)).strip()
-        if not HARMLESS_VALUE.match(value):
+        if not is_harmless(match.group(1), value):
             found.append(f"{path}:{number}: {match.group(1)} tem valor literal")
     return found
 
@@ -61,7 +78,7 @@ def offending_egg_variables(path: Path) -> list[str]:
         default = variable.get("default_value")
         if not SECRET_KEY.search(name) or default is None:
             continue
-        if not HARMLESS_VALUE.match(str(default).strip()):
+        if not is_harmless(name, str(default).strip()):
             found.append(f"{path}: {name} tem valor literal")
     return found
 
