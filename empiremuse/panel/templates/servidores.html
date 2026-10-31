@@ -25,11 +25,12 @@
       <div class="cartao-acoes">
         {% if cartao.configurable %}
         <a class="botao-acao" role="button" href="/painel/servidores/{{ cartao.guild_id }}"
-           aria-label="Configurar {{ cartao.name }}">Configurar</a>
+           aria-label="Configurar {{ cartao.name }}"><img class="icone" src="{{ static_url('icons/mnauliady/web-ui/settings.png') }}" srcset="{{ static_url('icons/mnauliady/web-ui/settings@2x.png') }} 2x" alt="" width="20" height="20"> Configurar</a>
         {% end %}
         {% for convite in cartao.invites %}
         <a class="botao-acao secondary outline" role="button" href="{{ convite.url }}"
            rel="noopener noreferrer" aria-label="Adicionar {{ convite.bot_name }} a {{ cartao.name }}">
+          <img class="icone" src="{{ static_url('icons/mnauliady/web-ui/add.png') }}" srcset="{{ static_url('icons/mnauliady/web-ui/add@2x.png') }} 2x" alt="" width="20" height="20">
           <img class="bot-avatar" src="{{ convite.bot_avatar_url }}" alt="" width="20" height="20" loading="lazy">
           Adicionar {{ convite.bot_name }}
         </a>

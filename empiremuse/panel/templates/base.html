@@ -26,8 +26,8 @@
       {% block navegacao %}
       {% if usuario %}
       <nav class="menu-principal" aria-label="Principal">
-        <a href="/painel/servidores">Meus servidores</a>
-        <a href="/painel/conta">Minha conta</a>
+        <a href="/painel/servidores"><img class="icone" src="{{ static_url('icons/mnauliady/web-ui/home-alt.png') }}" srcset="{{ static_url('icons/mnauliady/web-ui/home-alt@2x.png') }} 2x" alt="" width="20" height="20"> Meus servidores</a>
+        <a href="/painel/conta"><img class="icone" src="{{ static_url('icons/mnauliady/web-ui/user.png') }}" srcset="{{ static_url('icons/mnauliady/web-ui/user@2x.png') }} 2x" alt="" width="20" height="20"> Minha conta</a>
       </nav>
       <div class="usuario">
         <img class="usuario-avatar" src="{{ avatar_url }}" alt="" width="32" height="32">
@@ -54,6 +54,9 @@
         <a href="https://github.com/zRitsu/MuseHeart-MusicBot" rel="noopener noreferrer">MuseHeart-MusicBot</a>
         de zRitsu.
         <a href="https://github.com/EmpireCommunity/EmpireMuse" rel="noopener noreferrer">Código-fonte</a>
+      </p>
+      <p class="rodape-creditos">
+        <a href="https://www.flaticon.com/free-icons/user-interface" title="user interface icons" rel="noopener noreferrer">User interface icons created by mnauliady - Flaticon</a>
       </p>
     </div>
   </footer>
