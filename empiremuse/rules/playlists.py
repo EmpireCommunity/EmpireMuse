@@ -42,7 +42,6 @@ from empiremuse.rules.limits import (
     PLAYLIST_GENRE_MAX,
     PLAYLIST_GENRE_MIN,
     PLAYLIST_GENRES_MAX,
-    PLAYLIST_ICON_MAX,
     PLAYLIST_NAME_MAX,
     PLAYLIST_NAME_MIN,
     PLAYLIST_ORDER_MAX,
@@ -55,7 +54,7 @@ from empiremuse.rules.limits import (
 from empiremuse.rules.emoji import check_emoji, split_leading_icon
 from empiremuse.rules.text import has_control_or_format
 from empiremuse.rules.urls import check_url
-from empiremuse.rules.usage import render_text
+from empiremuse.rules.usage import escape_markdown, render_text
 
 # Motivos de um item pulado na importação.
 INVALID = "invalid"
@@ -67,7 +66,6 @@ QUOTA_FULL = "quota_full"
 _TRACKING_PARAMS = frozenset({"si", "feature", "pp"})  # mais todo ``utm_*``
 _IMPORT_FILE = re.compile(r"[a-z0-9-]{1,64}\.json")
 _ELLIPSIS = "…"
-_DISPLAY_NAME_MAX = PLAYLIST_NAME_MAX + PLAYLIST_ICON_MAX + 1  # o nome inteiro mais o ícone e o espaço
 
 # Importar por URL (P5): só estes hosts, por https na porta 443. Qualquer outro nome, IP literal, ponto final ou ``%`` fica de fora.
 IMPORT_URL_HOSTS = frozenset(
@@ -637,11 +635,17 @@ def select_description(description: str) -> str:
     return description[: PLAYLIST_SELECT_DESCRIPTION_MAX - 1].rstrip() + _ELLIPSIS
 
 
+def _report_label(playlist: Playlist) -> str:
+    """O nome para o relatório: o ícone (já validado, só escapado: o ``render_text`` tiraria o ZWJ) e o nome de terceiros escapado."""
+    name = render_text(playlist.name, PLAYLIST_NAME_MAX)
+    return f"{escape_markdown(playlist.icon)} {name}" if playlist.icon else name
+
+
 def format_report(report: ImportReport, limit: int = PLAYLIST_REPORT_MAX) -> str:
     """Relatório da importação em pt-BR, com os nomes de terceiros escapados e no máximo ``limit`` caracteres (o resto vira ``+N``)."""
     text = f"**Importação concluída:** {len(report.added)} adicionada(s), {len(report.skipped)} ignorada(s)."
     if report.added:
-        text += "\n**Adicionadas:** " + ", ".join(render_text(display_name(p), _DISPLAY_NAME_MAX) for p in report.added)
+        text += "\n**Adicionadas:** " + ", ".join(_report_label(p) for p in report.added)
     skipped = [
         f"• {render_text(s.name, PLAYLIST_NAME_MAX)}: {_REASON_TEXT.get(s.reason, s.reason)}" for s in report.skipped
     ]

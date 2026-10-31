@@ -264,6 +264,9 @@ def test_report_escapes_third_party_names_and_never_passes_2000_characters():
     text = format_report(plan_import([item("Rock", 1, url=f"{BASE}h")], [hostile]))
     assert "@everyone" not in text and "<@&5>" not in text and "](http" not in text
 
+    police = item("Midnight", url=f"{BASE}m", icon="👮\u200d♂️")
+    assert "👮\u200d♂️ Midnight" in format_report(plan_import([], [police]))  # o ZWJ do ícone sobrevive ao relatório
+
     many = plan_import([item("Rock", 1)], [item(f"Rock {n}", url=f"{BASE}rock") for n in range(300)])
     long_text = format_report(many)
     assert len(long_text) <= 2000 and long_text.rstrip().split("\n")[-1].startswith("+")
