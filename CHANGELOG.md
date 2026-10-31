@@ -7,9 +7,23 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.1.4] - 2026-10-31
+
+Ícone de playlist em emoji, ícones e emojis da aplicação da Flaticon (mnauliady), MongoDB em arquivo próprio com o bot sem container opcional, índice do `deploy/` e CI que valida o `deploy/`.
+
+**Ao atualizar:**
+- O `update` do Docker troca só a imagem do bot. A imagem do `updater-proxy` não muda nesta versão (`proxy.py` e o `Dockerfile` ficam como na 2.1.3), então, em quem já tem a 2.1.3 instalada, a linha do proxy no compose fica como está. Numa instalação nova, as duas linhas `image:` do compose usam a 2.1.4. Não há variável nova.
+- **Ícones das playlists (migração na subida):** o bot migra, uma vez e sem perguntar, as playlists já gravadas de todos os servidores: o emoji do INÍCIO do nome (seguido de espaço) vai para o `icon` e sai do nome, só se o item ainda não tem ícone e o nome continua válido e sem repetir outro. Emoji no meio ou no fim do nome fica. A migração é idempotente (rodar de novo não muda nada), grava por servidor com a trava e a versão do documento, e o log traz só contagens (itens e servidores), nunca nomes.
+- **Emojis da aplicação:** o `sync_app_emojis` nunca apaga nem sobrescreve, e reaproveita pelo nome o emoji que a aplicação do bot já tem; o `SHA256SUMS` só confere o arquivo antes de enviar um emoji novo. Por isso um bot que já criou os emojis continua com as imagens antigas depois de atualizar. Para ver os novos ícones, apague os emojis desejados em cada aplicação (Discord Developer Portal, em Emojis) e reinicie o bot: ele os recria a partir dos arquivos. Bots que nunca sincronizaram já nascem com os novos.
+- **Quem usava o perfil `mongo`** (`deploy/docker-compose.yml`, que saiu do arquivo):
+  1. `docker compose -f deploy/docker-compose.yml --profile mongo down` (sem `-v`: os dados ficam).
+  2. `docker volume ls` deve mostrar `empiremuse_empiremuse-mongo`.
+  3. Atualize o repositório.
+  4. `docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.deps.yml --env-file .env up -d`.
+  5. Confira que o bot conecta e que os servidores mantêm a configuração.
+
 ### Adicionado
 - **Ícone de playlist: um emoji**: cada playlist pode ter um `icon` com UM emoji Unicode (validação estrita: um grafema, até 16 pontos de código, aceita ZWJ e VS16; sem emoji personalizado nem texto; inválido é descartado, nunca barra o item). Vale no arquivo do bot, na importação (arquivo, anexo, texto colado e link), no `/fav_manager` (um emoji no início do nome vira o ícone) e no painel (campo `icone`). No menu do `/play` o ícone é o emoji da opção (sem ele, o da plataforma), nas listas ele vem antes do nome e `/playlists exportar` grava o `icon`. Na lista oficial `playlists-empire.json` o emoji do início de cada nome foi para o `icon`.
-  **Ao atualizar:** na subida o bot migra, uma vez e sem perguntar, as playlists já gravadas de todos os servidores: o emoji do INÍCIO do nome (seguido de espaço) vai para o `icon` e sai do nome, só se o item ainda não tem ícone e o nome continua válido e sem repetir outro. Emoji no meio ou no fim do nome fica. A migração é idempotente (rodar de novo não muda nada), grava por servidor com a trava e a versão do documento, e o log traz só contagens (itens e servidores), nunca nomes.
 - **Ícones no painel web**: o menu principal, as categorias de configuração do servidor, as seções de "Minha conta" e os botões "Configurar" e "Adicionar" dos servidores ganham os ícones coloridos de mnauliady (Flaticon, kits web-ui e media-player), servidos em 20 px e 40 px de `empiremuse/panel/static/icons/mnauliady/`. Atribuição obrigatória ("User interface icons created by mnauliady - Flaticon") no rodapé de todas as páginas do painel.
 - **MongoDB opcional em arquivo próprio e bot sem container**: novo `deploy/docker-compose.deps.yml` com só o MongoDB (sempre com autenticação, porta só em `127.0.0.1`, usuário root só na criação do banco), que sobe junto do bot em container (`-f deploy/docker-compose.yml -f deploy/docker-compose.deps.yml`) ou sozinho. Novos `deploy/local/run.sh` e `deploy/local/run.bat` rodam o bot sem container (não recomendado), com `uv` (que instala o Python 3.14), dependências por hash sem `sudo`, sem ler nem mostrar o `.env` e sem outro download; recusam rodar como root ou Administrador.
 - **Índice do `deploy/` e compose da Hostinger sem Traefik**: novo `deploy/README.md` diz qual arquivo usar em cada tipo de implantação (Docker, Traefik, VPS de arquivo único, Pterodactyl, Discloud e nós Lavalink externos) e se ele tem auto-update. O novo `deploy/docker-compose.hostinger-sem-traefik.yml` é o compose da Hostinger sem Traefik, com o painel só em `127.0.0.1:6000`, para quem expõe o painel por outro proxy com TLS. O `deploy/docker-compose.hostinger.yml` passa a refletir o limite de memória de 2048 MiB da produção.
@@ -17,14 +31,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 ### Alterado
 - **O campo `icon` deixou de ser `icons/<slug>.png`**: o formato antigo (imagem) foi descartado e o valor gravado em servidores que não for um emoji é ignorado ao ler (os dados no banco não são migrados). O ícone como capa da playlist, recortada em círculo, fica para uma versão futura.
 - **Emojis de aplicação com ícones da Flaticon (mnauliady)**: 21 dos 37 emojis de `assets/emojis/` (controles do player, setas, fila, busca, favorito, fixar, configurações, microfone do palco, volume, fones e outros) vieram do kit de ícones de mnauliady, em PNG 128x128 RGBA com os mesmos nomes de arquivo; `assets/SHA256SUMS` foi refeito. Os logotipos de plataformas e os emojis `bot`, `git`, `help`, `community_server` e `leftwards_arrow_with_hook` ficam como estavam. O `headset.gif` (animado) deu lugar ao `headset.png`. A atribuição consta no `CREDITS.md` e na seção de créditos do `README.md`.
-  **Ao atualizar:** o `sync_app_emojis` nunca apaga nem sobrescreve, e reaproveita pelo nome o emoji que a aplicação do bot já tem; o `SHA256SUMS` só confere o arquivo antes de enviar um emoji novo. Por isso um bot que já criou os emojis continua com as imagens antigas depois de atualizar. Para ver os novos ícones, apague os emojis desejados em cada aplicação (Discord Developer Portal, em Emojis) e reinicie o bot: ele os recria a partir dos arquivos. Bots que nunca sincronizaram já nascem com os novos.
 - **O perfil `mongo` saiu do `deploy/docker-compose.yml`**: o MongoDB agora vem do `deploy/docker-compose.deps.yml`, que reaproveita o volume `empiremuse_empiremuse-mongo`, então os dados ficam.
-  **Ao atualizar (quem usava o perfil `mongo`):**
-  1. `docker compose -f deploy/docker-compose.yml --profile mongo down` (sem `-v`: os dados ficam).
-  2. `docker volume ls` deve mostrar `empiremuse_empiremuse-mongo`.
-  3. Atualize o repositório.
-  4. `docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.deps.yml --env-file .env up -d`.
-  5. Confira que o bot conecta e que os servidores mantêm a configuração.
 - **CI valida o `deploy/`**: novo job `deploy-check` roda `docker compose config -q` em cada compose e no par base + Traefik, valida o egg do Pterodactyl, recusa valor literal em chave de segredo de `deploy/` e dos `*.example*`, recusa `docker.sock` fora dos dois compose da Hostinger e roda o `gitleaks` em `deploy/`.
 
 ### Documentação
@@ -671,7 +678,8 @@ O **EmpireMuse** é uma obra derivada e evolução contínua do projeto [MuseHea
 - **Ponto de partida do fork/bifurcação**: Commit upstream [`32f227e9`](https://github.com/zRitsu/MuseHeart-MusicBot/commit/32f227e96bca59d5e54f58f56f5fb7e804704b32) de 02/03/2026 (implementação do suporte ao protocolo DAVE com envio de `channelId` no payload de voz).
 - **Histórico anterior**: O histórico completo de commits, versões e contribuições anteriores a esse ponto de partida permanece preservado no repositório original do upstream.
 
-[Unreleased]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.1.3...HEAD
+[Unreleased]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.1.4...HEAD
+[2.1.4]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.1.3...v2.1.4
 [2.1.3]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.1.2...v2.1.3
 [2.1.2]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.1.1...v2.1.2
 [2.1.1]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.1.0...v2.1.1
