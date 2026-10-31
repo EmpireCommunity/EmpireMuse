@@ -37,7 +37,7 @@ class GuildPlaylistSelect(SelectInteraction):
                 label=fix_characters(p.name, 45),
                 value=f"> pin: {p.name}",
                 description=select_description(p.description) or FALLBACK_DESCRIPTION,
-                emoji=self._emoji(p.url),
+                emoji=p.icon or self._emoji(p.url),
             )
             for p in filter_by_genre(self.playlists, self.genre)
         ]

@@ -29,10 +29,12 @@ def _format_fav(bot, index, data):
 
 
 def _format_playlist(bot, item):
-    """Uma linha da lista do servidor: ordem, emoji da plataforma, nome (rótulo em code) e gêneros (texto externo em code)."""
+    """Uma linha da lista do servidor: ordem, emoji da plataforma, ícone e nome (rótulo em code) e gêneros (texto externo em code)."""
     e = get_source_emoji_cfg(bot, item.url)
     genres = f" · {md_code(', '.join(item.genres))}" if item.genres else ""
     label = md_link(item.name, item.url, limit=40)
+    if item.icon:
+        label = f"{item.icon} {label}"
     return f"` {item.order:02} ` {e} {label}{genres}" if e else f"` {item.order:02} ` {label}{genres}"
 
 

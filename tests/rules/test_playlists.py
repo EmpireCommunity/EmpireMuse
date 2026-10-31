@@ -103,20 +103,24 @@ def test_a_zero_width_joiner_is_allowed_only_inside_a_composed_emoji():
     assert isinstance(check_playlist({"name": "Rock‍", "url": f"{BASE}p"}), RuleError)
 
 
-def test_icons_are_dropped_unless_the_source_is_a_bot_file():
-    document = {"playlists": [{"name": "Rock", "url": f"{BASE}rock", "icon": "icons/rock.png"}]}
-    assert parse(document).items[0].icon is None  # anexo, colado e URL (A11)
-    assert parse(document, allow_icon=True).items[0].icon == "icons/rock.png"
-    traversal = {"playlists": [{"name": "Rock", "url": f"{BASE}rock", "icon": "../../etc/passwd"}]}
-    assert parse(traversal, allow_icon=True).items[0].icon is None
+def test_the_icon_is_one_emoji_from_any_source_and_anything_else_is_dropped_without_refusing_the_item():
+    def icon_of(value):
+        document = {"playlists": [{"name": "Rock", "url": f"{BASE}rock", "icon": value}]}
+        return parse(document).items[0].icon
+
+    assert icon_of("🎧") == "🎧"
+    assert icon_of("👮\u200d♂️") == "👮\u200d♂️"
+    for invalid in ("icons/rock.png", "../../etc/passwd", "<:rock:123456789>", "🎧🎶", "rock", "", None, 7):
+        assert icon_of(invalid) is None
 
 
-def test_adding_drops_any_icon_and_editing_keeps_the_stored_one():
-    added = add_item([], item("Rock", icon="icons/hack.png"))
-    assert added[0].icon is None
-    stored = [item("Rock", 1, icon="icons/rock.png")]
-    edited = edit_item(stored, "rock", item("Rock Clássico", 1, url=f"{BASE}novo", icon="icons/outro.png"))
-    assert [(p.name, p.icon) for p in edited] == [("Rock Clássico", "icons/rock.png")]
+def test_adding_and_editing_take_the_icon_of_the_item_and_none_clears_it():
+    assert add_item([], item("Rock", icon="🎧"))[0].icon == "🎧"
+    stored = [item("Rock", 1, icon="🎧")]
+    edited = edit_item(stored, "rock", item("Rock Clássico", 1, url=f"{BASE}novo", icon="🔥"))
+    assert [(p.name, p.icon) for p in edited] == [("Rock Clássico", "🔥")]
+    cleared = edit_item(stored, "rock", item("Rock", 1, icon=None))
+    assert cleared[0].icon is None
 
 
 # ---------------------------------------------------------------------- A3: formato antigo
@@ -203,18 +207,18 @@ def test_migration_of_a_missing_or_broken_document_is_empty(legacy):
 # ---------------------------------------------------------------------- A9: exportar → importar
 
 
-def test_export_then_import_into_an_empty_server_gives_the_same_list_without_icons():
+def test_export_then_import_into_an_empty_server_gives_the_same_list_with_icons():
     original = [
-        item("Rock", 1, genres=["Rock", "Anos 80"], icon="icons/rock.png"),
+        item("Rock", 1, genres=["Rock", "Anos 80"], icon="🎧"),
         item("Pop", 2, description=""),
         item("Jazz café", 3, url=f"{BASE}j?list=PL1"),
     ]
     exported = json.dumps(to_export(original), ensure_ascii=False)
-    assert "icon" not in exported
+    assert '"icon": "🎧"' in exported
 
     imported = plan_import([], parse(exported).items)
     assert imported.skipped == ()
-    assert imported.added == tuple(p._replace(icon=None) for p in original)
+    assert imported.added == tuple(original)
 
 
 # ---------------------------------------------------------------------- A7: nome de arquivo do bot

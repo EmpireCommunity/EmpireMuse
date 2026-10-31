@@ -128,6 +128,18 @@ class LinksWriteTest(LinksBase):
         assert self.act(browser, 100, "editar", alvo="L03", nome="L03", url=BASE_URL + "novo").code == 200
         assert len(self.names()) == MAX_PLAYLISTS
 
+    def test_the_icon_is_one_emoji_and_an_edit_without_the_field_keeps_it(self):
+        browser = self.logged_in()
+        assert self.add(browser, "Rock", BASE_URL + "rock", icone="🎧").code == 200
+        assert self.add(browser, "Pop", BASE_URL + "pop", icone="rock").code == 200  # inválido: salva sem ícone
+        icons = lambda: {p["name"]: p.get("icon") for p in self.world.database.servers[100]["playlists"]}  # noqa: E731
+        assert (icons()["Rock"], icons()["Pop"]) == ("🎧", None)
+
+        form = acao_form(self.body_of(browser, 100), "editar", "Rock")
+        old_page = [(key, value) for key, value in form.pairs() if key != "icone"]  # a página velha não manda o campo
+        saved = self.submit(browser, self.links_url(100), form, pairs=old_page)
+        assert saved.code == 200 and icons()["Rock"] == "🎧"
+
     def test_edit_cannot_rename_onto_another_playlist_and_remove_needs_an_existing_one(self):
         self.world.set_playlists(100, [doc("Rock", 1), doc("Pop", 2)])
         browser = self.logged_in()

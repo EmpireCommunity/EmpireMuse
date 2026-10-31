@@ -51,6 +51,7 @@ from empiremuse.rules.limits import (
     PLAYLIST_URL_MAX,
     PLAYLIST_URL_MIN,
 )
+from empiremuse.rules.emoji import check_emoji, split_leading_icon
 from empiremuse.rules.text import has_control_or_format
 from empiremuse.rules.urls import check_url
 from empiremuse.rules.usage import render_text
@@ -63,7 +64,6 @@ DUP_IN_FILE = "dup_in_file"
 QUOTA_FULL = "quota_full"
 
 _TRACKING_PARAMS = frozenset({"si", "feature", "pp"})  # mais todo ``utm_*``
-_ICON = re.compile(r"icons/[a-z0-9-]{1,29}\.png")
 _IMPORT_FILE = re.compile(r"[a-z0-9-]{1,64}\.json")
 _ELLIPSIS = "…"
 
@@ -215,8 +215,8 @@ def _is_int(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-def check_playlist(raw: Any, *, allow_icon: bool = False, default_order: int = 0) -> Playlist | RuleError:
-    """Um item (dicionário) validado e aparado. ``icon`` só vale com ``allow_icon`` e no formato ``icons/<slug>.png``; senão é descartado."""
+def check_playlist(raw: Any, *, default_order: int = 0) -> Playlist | RuleError:
+    """Um item (dicionário) validado e aparado. ``icon`` é UM emoji Unicode (``check_emoji``); qualquer outra coisa é descartada (``None``), nunca erro."""
     if not isinstance(raw, Mapping):
         return RuleError(ITEM_FORMAT)
     name = check_name(raw.get("name"))
@@ -234,9 +234,7 @@ def check_playlist(raw: Any, *, allow_icon: bool = False, default_order: int = 0
     order = raw.get("order", default_order)
     if not _is_int(order) or not (0 <= order <= PLAYLIST_ORDER_MAX):
         return RuleError(ORDER_INVALID, key=name, value=order)
-    icon = raw.get("icon")
-    icon = icon if allow_icon and isinstance(icon, str) and _ICON.fullmatch(icon) else None
-    return Playlist(order, name, description, genres, url, icon)
+    return Playlist(order, name, description, genres, url, check_emoji(raw.get("icon")))
 
 
 # ---------------------------------------------------------------------- lista
@@ -283,14 +281,14 @@ def add_item(
         return clash
     ordered = list(sorted_by_order(existing))
     position = item.order - 1 if 1 <= item.order <= len(ordered) else len(ordered)
-    ordered.insert(position, item._replace(icon=None))  # ícone só vem de arquivo do bot (P6), nunca de quem adiciona
+    ordered.insert(position, item)
     return renumber(ordered)
 
 
 def edit_item(existing: Sequence[Playlist], name: str, item: Playlist) -> tuple[Playlist, ...] | RuleError:
     """Troca a playlist ``name`` por ``item`` (pode renomear, sem colidir com outra) e a reposiciona por ``item.order``.
 
-    O ``icon`` gravado é preservado: editar pelo menu ou pelo painel nunca o apaga nem o troca.
+    O ``icon`` é o de ``item`` (``None`` apaga o ícone): quem edita sempre envia o campo.
     """
     ordered = list(sorted_by_order(existing))
     index = find_index(ordered, name)
@@ -298,10 +296,9 @@ def edit_item(existing: Sequence[Playlist], name: str, item: Playlist) -> tuple[
         return RuleError(PLAYLIST_NOT_FOUND, key=name)
     if clash := _clash(ordered, item, ignore=index):
         return clash
-    icon = ordered[index].icon
     del ordered[index]
     position = item.order - 1 if 1 <= item.order <= len(ordered) + 1 else index
-    ordered.insert(position, item._replace(icon=icon))
+    ordered.insert(position, item)
     return renumber(ordered)
 
 
@@ -452,11 +449,11 @@ def _decode(raw: str | bytes, max_bytes: int) -> tuple[Any, list[str]] | RuleErr
         return RuleError(FILE_FORMAT)
 
 
-def parse_file(raw: str | bytes, *, max_bytes: int, allow_icon: bool = False) -> ParsedFile | RuleError:
+def parse_file(raw: str | bytes, *, max_bytes: int) -> ParsedFile | RuleError:
     """Lê um arquivo de playlists, no formato novo ``{"playlists": [...]}`` ou no antigo ``{nome: {url, description}}``.
 
     Estrutura ruim, tamanho ou itens demais: erro e nada é gravado. Item ruim vai para ``invalid`` com o motivo; nome repetido
-    no formato antigo vira ``DUP_IN_FILE``; chaves desconhecidas são ignoradas.
+    no formato antigo vira ``DUP_IN_FILE``; chaves desconhecidas são ignoradas; ``icon`` inválido é descartado.
     """
     decoded = _decode(raw, max_bytes)
     if isinstance(decoded, RuleError):
@@ -484,7 +481,7 @@ def parse_file(raw: str | bytes, *, max_bytes: int, allow_icon: bool = False) ->
 
     items: list[Playlist] = []
     for position, (label, entry) in enumerate(entries, start=1):
-        checked = check_playlist(entry, allow_icon=allow_icon, default_order=0 if new_format else position)
+        checked = check_playlist(entry, default_order=0 if new_format else position)
         if isinstance(checked, RuleError):
             invalid.append(Skip(checked.key or label or f"#{position}", INVALID))
         else:
@@ -493,13 +490,8 @@ def parse_file(raw: str | bytes, *, max_bytes: int, allow_icon: bool = False) ->
 
 
 def to_export(playlists: Iterable[Playlist]) -> dict[str, Any]:
-    """O formato novo, na ordem de exibição e sem ``icon`` (exportar e importar no servidor vazio dá a mesma lista)."""
-    return {
-        "playlists": [
-            {"order": p.order, "name": p.name, "description": p.description, "genres": list(p.genres), "url": p.url}
-            for p in sorted_by_order(playlists)
-        ]
-    }
+    """O formato novo, na ordem de exibição e com ``icon`` quando houver (exportar e importar no servidor vazio dá a mesma lista)."""
+    return {"playlists": [to_doc(p) for p in sorted_by_order(playlists)]}
 
 
 # ---------------------------------------------------------------------- importação e migração
@@ -579,9 +571,36 @@ def to_doc(playlist: Playlist) -> dict[str, Any]:
 
 
 def from_doc(doc: Any) -> Playlist | None:
-    """O item gravado, relido com as mesmas regras (``icon`` do banco vale como está); ``None`` se o dado gravado estiver ruim."""
-    checked = check_playlist(doc, allow_icon=True)
+    """O item gravado, relido com as mesmas regras (``icon`` gravado que não seja um emoji vira ``None``); ``None`` se o dado gravado estiver ruim."""
+    checked = check_playlist(doc)
     return None if isinstance(checked, RuleError) else checked
+
+
+def move_leading_icons(stored: Sequence[Any]) -> tuple[list[Any], int]:
+    """A lista gravada com o emoji do INÍCIO do nome movido para ``icon`` (migração única, idempotente) e quantos itens mudaram.
+
+    Só mexe no item que ainda não tem um ``icon`` válido, cujo nome começa com UM emoji seguido de espaço e que continua com um nome
+    válido, sem repetir o de outro item, depois de aparado. O emoji do meio ou do fim do nome fica. O resto da lista passa intacto.
+    """
+    taken = {
+        entry["name"].casefold()
+        for entry in stored
+        if isinstance(entry, Mapping) and isinstance(entry.get("name"), str)
+    }
+    result: list[Any] = []
+    moved = 0
+    for entry in stored:
+        if isinstance(entry, Mapping) and isinstance(entry.get("name"), str) and check_emoji(entry.get("icon")) is None:
+            icon, rest = split_leading_icon(entry["name"])
+            name = check_name(rest) if icon else None
+            if icon and isinstance(name, str) and name.casefold() not in taken:
+                taken.discard(entry["name"].casefold())
+                taken.add(name.casefold())
+                result.append({**entry, "name": name, "icon": icon})
+                moved += 1
+                continue
+        result.append(entry)
+    return result, moved
 
 
 # ---------------------------------------------------------------------- exibição
@@ -604,6 +623,11 @@ def filter_by_genre(playlists: Iterable[Playlist], genre: str | None) -> tuple[P
     return tuple(p for p in playlists if any(g.casefold() == wanted for g in p.genres))
 
 
+def display_name(playlist: Playlist) -> str:
+    """O nome para listar, com o ícone antes dele quando houver."""
+    return f"{playlist.icon} {playlist.name}" if playlist.icon else playlist.name
+
+
 def select_description(description: str) -> str:
     """Descrição para o select do Discord: cortada em 100 com reticências."""
     if len(description) <= PLAYLIST_SELECT_DESCRIPTION_MAX:
@@ -615,7 +639,7 @@ def format_report(report: ImportReport, limit: int = PLAYLIST_REPORT_MAX) -> str
     """Relatório da importação em pt-BR, com os nomes de terceiros escapados e no máximo ``limit`` caracteres (o resto vira ``+N``)."""
     text = f"**Importação concluída:** {len(report.added)} adicionada(s), {len(report.skipped)} ignorada(s)."
     if report.added:
-        text += "\n**Adicionadas:** " + ", ".join(render_text(p.name, PLAYLIST_NAME_MAX) for p in report.added)
+        text += "\n**Adicionadas:** " + ", ".join(render_text(display_name(p), PLAYLIST_NAME_MAX) for p in report.added)
     skipped = [
         f"• {render_text(s.name, PLAYLIST_NAME_MAX)}: {_REASON_TEXT.get(s.reason, s.reason)}" for s in report.skipped
     ]

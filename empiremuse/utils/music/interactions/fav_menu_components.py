@@ -119,7 +119,7 @@ class FavMenuComponentsMixin:
                 disnake.SelectOption(
                     label=item.name,
                     value=item.name,
-                    emoji=music_source_emoji_url(item.url, self.bot)[0],
+                    emoji=item.icon or music_source_emoji_url(item.url, self.bot)[0],
                     description=select_description(item.description) or None,
                 )
                 for item in self.playlists[:MAX_SELECT_OPTIONS]

@@ -27,6 +27,7 @@ from empiremuse.rules.playlists import (
     edit_item,
     find_item,
     from_doc,
+    move_leading_icons,
     plan_import,
     remove_item,
     select_description,
@@ -51,15 +52,15 @@ def _items(doc: dict) -> tuple[Playlist, ...]:
 
 
 def _validated(item: Playlist) -> Playlist | RuleError:
-    """O item revalidado: nada chega ao banco sem passar pelas regras, venha de onde vier (``icon`` só de arquivo do bot)."""
-    checked = check_playlist(item._asdict(), allow_icon=False, default_order=item.order)
+    """O item revalidado: nada chega ao banco sem passar pelas regras, venha de onde vier (``icon`` inválido vira ``None``)."""
+    checked = check_playlist(item._asdict(), default_order=item.order)
     return checked if isinstance(checked, RuleError) else checked._replace(order=item.order)
 
 
 def select_options(
     bot, playlists: tuple[Playlist, ...], limit: int = MAX_SERVER_PLAYLISTS
 ) -> list[disnake.SelectOption]:
-    """As primeiras ``limit`` playlists por ordem como opções de select (o Discord aceita 25): nome, descrição cortada e o emoji da plataforma.
+    """As primeiras ``limit`` playlists por ordem como opções de select (o Discord aceita 25): nome, descrição cortada e o emoji (o ícone da playlist; sem ele, o da plataforma).
 
     O ``value`` é o nome; quem trata a escolha o resolve de novo no store, nunca confia no valor recebido.
     """
@@ -70,7 +71,7 @@ def select_options(
             label=p.name,
             value=p.name,
             description=select_description(p.description) or None,
-            emoji=music_source_emoji_url(p.url, bot)[0],
+            emoji=p.icon or music_source_emoji_url(p.url, bot)[0],
         )
         for p in playlists[:limit]
     ]
@@ -118,7 +119,7 @@ class ServerPlaylists:
         return find_item(await self.list(gid), name)
 
     async def export_bytes(self, gid: int) -> bytes:
-        """O formato novo (sem ``icon``): ``ensure_ascii=False``, indentação 2."""
+        """O formato novo (com ``icon`` quando houver): ``ensure_ascii=False``, indentação 2."""
         return json.dumps(to_export(await self.list(gid)), ensure_ascii=False, indent=2).encode("utf-8")
 
     # ------------------------------------------------------------------ escrita
@@ -198,6 +199,39 @@ class ServerPlaylists:
         await self._write(gid, change, expected_rev)
         planned = report["value"]
         return ImportReport(planned.added, (*parsed.invalid, *planned.skipped))
+
+    # ------------------------------------------------------------------ migração de boot
+
+    async def migrate_icons(self) -> tuple[int, int]:
+        """Uma vez por subida: move o emoji do início do nome para o ``icon`` nas playlists já gravadas (``move_leading_icons``).
+
+        Idempotente (rodar de novo não muda nada). Cada servidor é gravado sob a trava e com ``rev`` +1; um servidor que falha fica
+        para a próxima subida. O log só leva contagens, nunca nomes. Devolve ``(servidores, itens)`` alterados.
+        """
+        servers = items = failed = 0
+        for gid in await self.store.stored_ids():
+            count = 0
+
+            def apply(doc: dict) -> bool:
+                nonlocal count
+                moved, count = move_leading_icons(doc.get("playlists") or [])
+                if count:
+                    doc["playlists"] = moved
+                return bool(count)
+
+            try:
+                await self.store.mutate_stored(gid, apply)
+            except Exception:  # noqa: BLE001 - o servidor fica para a próxima subida; o motivo já foi logado pelo store
+                failed += 1
+                continue
+            if count:
+                servers += 1
+                items += count
+        if servers or failed:
+            logger.info(
+                "Ícones das playlists migrados: %d itens em %d servidores (%d falharam)", items, servers, failed
+            )
+        return servers, items
 
     # ------------------------------------------------------------------ embed ocioso
 

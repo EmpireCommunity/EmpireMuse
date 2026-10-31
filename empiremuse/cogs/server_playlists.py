@@ -216,18 +216,15 @@ class ServerPlaylistsCog(commands.Cog):
                     "**Não consegui baixar o anexo. Tente enviar o arquivo de novo.**", allowed_mentions=NO_MENTIONS
                 )
                 return
-            allow_icon = False
         elif link is not None:
             data = await fetch_import(link)
-            allow_icon = False  # ícone só vem de arquivo do bot (P6)
         else:
             data = await asyncio.to_thread(read_import_file, IMPORT_DIR, file)
-            allow_icon = True  # só arquivo do bot pode trazer ícone (P6)
         if isinstance(data, RuleError):
             await inter.edit_original_message(error_message(data), allowed_mentions=NO_MENTIONS)
             return
 
-        await self.run_import(inter, parse_file(data, max_bytes=PLAYLIST_FILE_MAX_BYTES, allow_icon=allow_icon))
+        await self.run_import(inter, parse_file(data, max_bytes=PLAYLIST_FILE_MAX_BYTES))
 
     @playlists.sub_command(
         name="exportar",

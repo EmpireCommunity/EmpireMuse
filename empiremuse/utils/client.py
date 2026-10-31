@@ -984,6 +984,15 @@ class BotPool:
         except (aiohttp.ClientError, OSError, KeyError, ValueError) as e:
             logger.error("Spotify: falha ao obter o token de acesso na partida (%s).", type(e).__name__, exc_info=True)
 
+    async def migrate_playlist_icons(self):
+        """Migração de boot das playlists já gravadas: o emoji do início do nome vira ``icon`` (idempotente; falha só vai ao log)."""
+        try:
+            await self.servers.playlists.migrate_icons()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Falha ao migrar os ícones das playlists")
+
     async def setup_pool_extras(self):
         try:
             from dev.pool_dev import PoolDev
@@ -1422,6 +1431,7 @@ class BotPool:
         message = ""
 
         self.loop.create_task(self.setup_pool_extras())
+        self.loop.create_task(self.migrate_playlist_icons())
         # Em tarefa de fundo (nunca atrasa a subida) e guardada no pool para o shutdown cancelar como as outras.
         self.version_check_task = self.loop.create_task(check_new_version())
 

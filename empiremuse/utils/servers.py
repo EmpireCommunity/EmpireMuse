@@ -307,6 +307,25 @@ class ServerStore:
 
         return deepcopy(await self._transact(key, plan))
 
+    async def stored_ids(self) -> list[str]:
+        """Os ids dos documentos únicos que existem no banco (para as migrações de boot)."""
+        documents = self._database.iter_data(db_name=DBModel.servers, collection=SERVERS_DB)
+        return [str(doc["_id"]) async for doc in documents if doc.get("_id") is not None]
+
+    async def mutate_stored(self, gid: str, change: Callable[[dict], bool]) -> None:
+        """Como ``mutate_doc``, para um documento que já está no banco: sem exigir o servidor carregado nem migrar seções.
+
+        Mesma trava por servidor, ``rev`` +1 e compare-and-set; grava só se ``change`` (que altera a cópia) disser que mudou.
+        """
+
+        async def plan(doc: Optional[dict]) -> Optional[dict]:
+            if doc is None:
+                return None
+            new = deepcopy(doc)
+            return new if change(new) else None
+
+        await self._transact(gid, plan)
+
     async def settings(self, gid: int) -> dict:
         return (await self.get(gid))[SECTION_SETTINGS]
 

@@ -14,7 +14,7 @@ Um objeto com a chave `playlists`, que é uma lista de playlists. Chaves em ingl
 Exemplo vazio (mantido aqui no README, e não em `.json`, para não aparecer na lista de arquivos importáveis):
 
 ```json
-{"playlists": [{"order": 1, "name": "", "description": "", "genres": [], "url": ""}]}
+{"playlists": [{"order": 1, "name": "", "description": "", "genres": [], "url": "", "icon": "🎧"}]}
 ```
 
 O formato antigo `{"nome": {"url": "...", "description": "..."}}` também é aceito.
@@ -26,7 +26,7 @@ O formato antigo `{"nome": {"url": "...", "description": "..."}}` também é ace
 | `description` | texto | Descrição curta: vazia ou de 3 a 250 caracteres. |
 | `genres` | lista de textos | Até 8 gêneros musicais, de 2 a 32 caracteres, sem repetir. |
 | `url` | texto | Link público da playlist (10 a 250 caracteres). Parâmetros de rastreio como `si` e `utm_*` são removidos ao gravar. |
-| `icon` | texto | Reservado para o ícone da playlist; por enquanto não tem efeito. |
+| `icon` | texto | Opcional. Ícone da playlist: UM emoji Unicode (até 16 pontos de código; vale sequência com ZWJ ou VS16, como `👮‍♂️` e `⛏️`; não vale emoji personalizado `<:nome:id>`, texto nem mais de um emoji). Aparece como o emoji da opção no menu do `/play` (sem ele, vale o da plataforma) e antes do nome nas listas. Valor inválido é descartado (a playlist entra sem ícone), nunca barra o item. |
 
 ## Como a importação funciona
 
