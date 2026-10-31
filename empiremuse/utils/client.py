@@ -200,6 +200,7 @@ class BotPool:
     join_notices: Optional[TTLCache] = None
     logs_task: Optional[asyncio.Task] = None
     version_check_task: Optional[asyncio.Task] = None
+    playlist_icons_task: Optional[asyncio.Task] = None
     helper_watch_tasks: tuple[asyncio.Task, ...] | set[asyncio.Task] = ()
     command_sync_config = commands.CommandSyncFlags(
         allow_command_deletion=True,
@@ -680,6 +681,8 @@ class BotPool:
             self.update_watch_task.cancel()
         if self.version_check_task:
             self.version_check_task.cancel()
+        if self.playlist_icons_task:
+            self.playlist_icons_task.cancel()
         for task in list(self.helper_watch_tasks):
             task.cancel()
         if self.request_panel:
@@ -983,6 +986,15 @@ class BotPool:
             logger.error("Spotify: não foi possível obter o token de acesso na partida: %s", e.text)
         except (aiohttp.ClientError, OSError, KeyError, ValueError) as e:
             logger.error("Spotify: falha ao obter o token de acesso na partida (%s).", type(e).__name__, exc_info=True)
+
+    async def migrate_playlist_icons(self):
+        """Migração de boot das playlists já gravadas: o emoji do início do nome vira ``icon`` (idempotente; falha só vai ao log)."""
+        try:
+            await self.servers.playlists.migrate_icons()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Falha ao migrar os ícones das playlists")
 
     async def setup_pool_extras(self):
         try:
@@ -1422,6 +1434,7 @@ class BotPool:
         message = ""
 
         self.loop.create_task(self.setup_pool_extras())
+        self.playlist_icons_task = self.loop.create_task(self.migrate_playlist_icons())
         # Em tarefa de fundo (nunca atrasa a subida) e guardada no pool para o shutdown cancelar como as outras.
         self.version_check_task = self.loop.create_task(check_new_version())
 

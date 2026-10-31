@@ -24,7 +24,7 @@ from empiremuse.utils.music.errors import GenericError
 pytestmark = pytest.mark.critical
 
 GID, OWNER_ID = 111, 1
-FILE = {"playlists": [{"name": "Rock", "url": "https://exemplo.com/rock", "icon": "icons/rock.png"}]}
+FILE = {"playlists": [{"name": "Rock", "url": "https://exemplo.com/rock", "icon": "🎧"}]}
 
 
 def member(*, user_id=50, administrator=False, manage_guild=False):
@@ -159,13 +159,13 @@ async def test_a_bad_attachment_is_refused_before_it_is_downloaded(world, filena
 
 
 @pytest.mark.asyncio
-async def test_an_attachment_import_uses_the_interaction_guild_and_drops_any_icon(world):  # A11
+async def test_an_attachment_import_uses_the_interaction_guild_and_keeps_the_emoji_icon(world):  # A11
     inter = make_inter(MANAGER)
 
     await ServerPlaylistsCog.import_.callback(world.cog, inter, file=None, attachment=attachment(), link=None)
 
     (gid, parsed), _ = world.playlists.import_file.await_args
-    assert gid == GID and [p.name for p in parsed.items] == ["Rock"] and parsed.items[0].icon is None
+    assert gid == GID and [p.name for p in parsed.items] == ["Rock"] and parsed.items[0].icon == "🎧"
     assert_private_and_without_mentions(inter)
 
 
@@ -208,13 +208,13 @@ async def test_a_file_name_that_is_not_a_listed_regular_file_is_refused(world, b
 
 
 @pytest.mark.asyncio
-async def test_a_bot_file_is_imported_and_only_there_the_icon_survives(world, bot_files):
+async def test_a_bot_file_is_imported_with_its_emoji_icon(world, bot_files):
     inter = make_inter(ADMIN)
 
     await ServerPlaylistsCog.import_.callback(world.cog, inter, file="rock-80.json", attachment=None, link=None)
 
     (gid, parsed), _ = world.playlists.import_file.await_args
-    assert gid == GID and parsed.items[0].icon == "icons/rock.png"
+    assert gid == GID and parsed.items[0].icon == "🎧"
 
 
 # ---------------------------------------------------------------------- texto colado e exportar
@@ -359,7 +359,7 @@ async def test_a_bad_link_is_refused_before_deferring_and_without_any_fetch(worl
 
 
 @pytest.mark.asyncio
-async def test_a_good_link_is_fetched_imported_without_icons_and_answered_with_the_report(world, monkeypatch):
+async def test_a_good_link_is_fetched_imported_with_its_emoji_icon_and_answered_with_the_report(world, monkeypatch):
     fetched = AsyncMock(return_value=json.dumps(FILE).encode())
     monkeypatch.setattr(cog_module, "fetch_import", fetched)
     inter = make_inter(MANAGER)
@@ -368,7 +368,7 @@ async def test_a_good_link_is_fetched_imported_without_icons_and_answered_with_t
 
     fetched.assert_awaited_once_with(LINK)
     (gid, parsed), _ = world.playlists.import_file.await_args
-    assert gid == GID and parsed.items[0].name == "Rock" and parsed.items[0].icon is None  # ícone só de arquivo do bot
+    assert gid == GID and parsed.items[0].name == "Rock" and parsed.items[0].icon == "🎧"
     assert_private_and_without_mentions(inter)
     assert "segredo-9f3a" not in sent_text(inter)
 

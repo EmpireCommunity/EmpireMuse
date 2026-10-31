@@ -11,11 +11,13 @@ import pytest
 
 from empiremuse.rules.errors import RuleError
 from empiremuse.rules.limits import MAX_SERVER_PLAYLISTS, PLAYLIST_FILE_MAX_BYTES, PLAYLIST_PASTE_MAX
+from empiremuse.rules.servers import new_doc
 from empiremuse.rules.playlists import Playlist, check_attachment, check_paste, parse_file
 from empiremuse.utils.db import DBModel
+from empiremuse.utils.server_playlists import select_options
 from empiremuse.utils.server_playlists_files import list_import_files, read_import_file
 from empiremuse.utils.servers import ServerConfigConflict, ServerConfigUnavailable, ServerStore, UnknownGuild
-from tests.persistence.test_servers_store import GID, MAIN_ID, RESERVE_ID, Banco, make_bot
+from tests.persistence.test_servers_store import GID, MAIN_ID, RESERVE_ID, SERVERS, Banco, make_bot
 
 pytestmark = pytest.mark.critical
 
@@ -30,6 +32,16 @@ def run(coro):
 
 def item(name, order=0, url=None, description="uma descrição", genres=()):
     return Playlist(order, name, description, tuple(genres), url or f"{BASE}{name.lower().replace(' ', '-')}", None)
+
+
+def test_the_select_option_emoji_is_the_icon_or_else_the_platform_one(monkeypatch):
+    monkeypatch.setattr("empiremuse.utils.others.music_source_emoji_url", lambda url, bot: ("🔊",))
+    with_icon = Playlist(1, "Rock", "uma descrição", (), f"{BASE}rock", "🎧")
+    without = Playlist(2, "Pop", "uma descrição", (), f"{BASE}pop", None)
+
+    options = select_options(None, (with_icon, without))
+
+    assert [option.emoji.name for option in options] == ["🎧", "🔊"]
 
 
 def legacy_doc(links):
@@ -211,15 +223,55 @@ def test_duplicates_quota_and_unknown_names_are_rule_errors_not_exceptions(world
     assert len(world.banco.saves) == saves
 
 
-def test_the_icon_comes_only_from_a_bot_file_never_from_whoever_adds_or_edits(world):
+def test_the_icon_is_stored_when_it_is_an_emoji_and_dropped_when_it_is_not(world):
     run(world.playlists.add(GID, item("Rock")._replace(icon="icons/hack.png")))
     assert run(world.playlists.find(GID, "rock")).icon is None
 
-    doc = world.banco.servers_doc()
-    doc["playlists"][0]["icon"] = "icons/rock.png"  # ícone gravado a partir de arquivo do bot (P6)
+    run(world.playlists.edit(GID, "Rock", item("Rock Novo", 1, url=f"{BASE}novo")._replace(icon="🎧")))
+    assert run(world.playlists.find(GID, "rock novo")).icon == "🎧"
+
+    world.banco.servers_doc()["playlists"][0]["icon"] = "icons/rock.png"  # formato antigo já gravado
     world.store._docs.clear()
-    run(world.playlists.edit(GID, "Rock", item("Rock Novo", 1, url=f"{BASE}novo")._replace(icon="icons/outro.png")))
-    assert run(world.playlists.find(GID, "rock novo")).icon == "icons/rock.png"
+    assert run(world.playlists.find(GID, "rock novo")).icon is None
+
+
+def test_the_first_read_migration_already_moves_the_leading_emoji(world):
+    world.banco.put(DBModel.guilds, str(MAIN_ID), GID, legacy_doc({"🔴 Red Line": link(f"{BASE}red")}))
+
+    playlist = run(world.playlists.list(GID))[0]
+
+    assert (playlist.name, playlist.icon) == ("Red Line", "🔴")
+
+
+def test_the_boot_migration_moves_only_the_leading_emoji_and_runs_once(world, caplog):
+    stored = {**new_doc(), "_id": str(GID)}
+    stored["migrated"] = {section: True for section in stored["migrated"]}
+    stored["rev"] = 4
+    stored["playlists"] = [
+        {**item("🔴 Red Line", 1)._asdict(), "genres": []},
+        {**item("Funk G[old] 🎶", 2)._asdict(), "genres": []},  # emoji no fim: fica no nome
+        {**item("🎲 Domingo", 3)._asdict(), "genres": [], "icon": "🎧"},  # já tem ícone: intocado
+        {**item("Rock ", 4)._asdict(), "genres": []},  # o nome é lido aparado
+        {**item("🔴 Rock", 5, url=f"{BASE}rock2")._asdict(), "genres": []},  # ficaria igual a "Rock": não muda
+    ]
+    world.banco.put(*SERVERS, GID, stored)
+
+    with caplog.at_level(logging.INFO):
+        assert run(world.playlists.migrate_icons()) == (1, 1)
+
+    saved = world.banco.servers_doc()["playlists"]
+    assert [(p["name"], p.get("icon")) for p in saved] == [
+        ("Red Line", "🔴"),
+        ("Funk G[old] 🎶", None),
+        ("🎲 Domingo", "🎧"),
+        ("Rock ", None),
+        ("🔴 Rock", None),
+    ]
+    assert world.banco.servers_doc()["rev"] == 5
+    assert "Red Line" not in caplog.text and "Funk" not in caplog.text  # o log leva só contagens
+
+    assert run(world.playlists.migrate_icons()) == (0, 0)  # segunda vez: nada muda
+    assert world.banco.servers_doc()["rev"] == 5 and len(world.banco.saves) == 1
 
 
 # ---------------------------------------------------------------------- A5: escritas simultâneas e versão velha

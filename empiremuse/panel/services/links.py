@@ -122,6 +122,7 @@ LIMITES = {
     "generos_max": limits.PLAYLIST_GENRES_MAX,
     "genero_max": limits.PLAYLIST_GENRE_MAX,
     "ordem_max": limits.PLAYLIST_ORDER_MAX,
+    "icone_max": limits.PLAYLIST_ICON_MAX,
     "ordem_digitos": len(str(limits.PLAYLIST_ORDER_MAX)),
 }
 
@@ -132,6 +133,7 @@ class PlaylistView(NamedTuple):
     url: str
     descricao: str
     generos: tuple[str, ...]
+    icone: str | None = None
 
 
 class RelatorioView(NamedTuple):
@@ -181,6 +183,7 @@ def _item_from(echo: dict[str, Any], default_order: int) -> Playlist | RuleError
         "description": echo["descricao"],
         "genres": split_genres(echo["generos"]),
         "url": echo["url"],
+        "icon": echo["icone"],  # emoji inválido vira sem ícone, nunca erro
     }
     return check_playlist(raw)
 
@@ -262,12 +265,13 @@ class LinksForm(SettingsForm):
             "url": "",
             "descricao": "",
             "generos": "",
+            "icone": "",
             "ordem": "",
             "dados": "",
         }
 
     def extras(self, ctx: FormContext, current: dict[str, Any]) -> dict[str, Any]:
-        items = tuple(PlaylistView(p.order, p.name, p.url, p.description, p.genres) for p in current["itens"])
+        items = tuple(PlaylistView(p.order, p.name, p.url, p.description, p.genres, p.icon) for p in current["itens"])
         return {
             "itens": items,
             "total": len(items),
@@ -290,6 +294,8 @@ class LinksForm(SettingsForm):
             "url": (first(args, "url") or "").strip(),
             "descricao": (first(args, "descricao") or "").strip(),
             "generos": (first(args, "generos") or "").strip(),
+            "icone": (first(args, "icone") or "").strip(),
+            "icone_enviado": "icone" in args,  # sem o campo (página velha), editar mantém o ícone gravado
             "ordem": (first(args, "ordem") or "").strip(),
             "dados": first(args, "dados") or "",
         }
@@ -318,6 +324,8 @@ class LinksForm(SettingsForm):
         item = _item_from(echo, default_order=existing.order)
         if isinstance(item, RuleError):
             return _rule_error(item, echo)
+        if not echo.get("icone_enviado", True):
+            item = item._replace(icon=existing.icon)
         result = edit_item(items, existing.name, item)
         if isinstance(result, RuleError):
             return _rule_error(result, echo)

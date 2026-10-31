@@ -9,6 +9,7 @@ from typing import Union, TYPE_CHECKING
 import disnake
 
 from empiremuse.rules.errors import RuleError
+from empiremuse.rules.playlists import display_name
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.music.checks import check_pool_bots
@@ -292,7 +293,7 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, disnake.ui.View):
             await inter.send(playlists_ui.error_text(removed), ephemeral=True)
             await self._redraw()
             return
-        self.log = f"Playlist {md_link(removed.name, removed.url)} foi removida da lista do servidor!"
+        self.log = f"Playlist {md_link(display_name(removed), removed.url)} foi removida da lista do servidor!"
         await self._redraw()
 
     async def import_callback(self, inter: disnake.MessageInteraction):

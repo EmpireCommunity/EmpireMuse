@@ -31,7 +31,8 @@ from empiremuse.rules.errors import (
     URL_TOO_LONG,
     RuleError,
 )
-from empiremuse.rules.playlists import Playlist, format_report, may_manage, parse_file, to_export
+from empiremuse.rules.emoji import split_leading_icon
+from empiremuse.rules.playlists import Playlist, display_name, format_report, may_manage, parse_file, to_export
 from empiremuse.utils.music.converters import md_link
 from empiremuse.utils.music.errors import GenericError
 
@@ -110,11 +111,11 @@ class PlaylistModal(disnake.ui.Modal):
             timeout=180,
             components=[
                 disnake.ui.TextInput(
-                    label="Nome:",
+                    label="Nome (um emoji no início vira o ícone):",
                     custom_id="pl_name",
                     min_length=limits.PLAYLIST_NAME_MIN,
-                    max_length=limits.PLAYLIST_NAME_MAX,
-                    value=current.name if current else None,
+                    max_length=limits.PLAYLIST_NAME_MAX + limits.PLAYLIST_ICON_MAX + 1,
+                    value=display_name(current) if current else None,
                 ),
                 disnake.ui.TextInput(
                     label="Descrição (opcional):",
@@ -157,9 +158,11 @@ class PlaylistModal(disnake.ui.Modal):
         if order is None:
             await inter.send(_TEXTS[ORDER_INVALID], ephemeral=True)
             return
+        icon, name = split_leading_icon(values["pl_name"])
         item = Playlist(
             order=order,
-            name=values["pl_name"].strip(),
+            name=name,
+            icon=icon,
             description=values["pl_description"].strip(),
             genres=split_genres(values["pl_genres"]),
             url=values["pl_url"].strip(),
@@ -178,7 +181,9 @@ class PlaylistModal(disnake.ui.Modal):
         if isinstance(saved, RuleError):
             await inter.edit_original_message(error_text(saved))
             return
-        await self.view.finish_write(inter, f"Playlist {md_link(saved.name, saved.url)} salva na lista do servidor.")
+        await self.view.finish_write(
+            inter, f"Playlist {md_link(display_name(saved), saved.url)} salva na lista do servidor."
+        )
 
 
 class PlaylistImportModal(disnake.ui.Modal):

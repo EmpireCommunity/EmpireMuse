@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Optional
 from cachetools import TTLCache
 
 from empiremuse.rules.limits import MAX_DJ_ROLES
-from empiremuse.rules.playlists import plan_migration, to_doc
+from empiremuse.rules.playlists import move_leading_icons, plan_migration, to_doc
 from empiremuse.rules.servers import (
     SECTION_PLAYLISTS,
     SECTION_REQUEST,
@@ -245,7 +245,7 @@ class ServerStore:
             )
         if SECTION_PLAYLISTS in pending:
             plan = plan_migration(((legacy or {}).get("player_controller") or {}).get("fav_links"))
-            new["playlists"] = [to_doc(p) for p in plan.items]
+            new["playlists"], _ = move_leading_icons([to_doc(p) for p in plan.items])  # o emoji do início já vira ícone
             new["migrated"][SECTION_PLAYLISTS] = True
             logger.info(
                 "Servidor [%s] migrado: %d playlists copiadas, %d repetidas e %d inválidas puladas",
@@ -306,6 +306,25 @@ class ServerStore:
             return new if changed else None
 
         return deepcopy(await self._transact(key, plan))
+
+    async def stored_ids(self) -> list[str]:
+        """Os ids dos documentos únicos que existem no banco (para as migrações de boot)."""
+        documents = self._database.iter_data(db_name=DBModel.servers, collection=SERVERS_DB)
+        return [str(doc["_id"]) async for doc in documents if doc.get("_id") is not None]
+
+    async def mutate_stored(self, gid: str, change: Callable[[dict], bool]) -> None:
+        """Como ``mutate_doc``, para um documento que já está no banco: sem exigir o servidor carregado nem migrar seções.
+
+        Mesma trava por servidor, ``rev`` +1 e compare-and-set; grava só se ``change`` (que altera a cópia) disser que mudou.
+        """
+
+        async def plan(doc: Optional[dict]) -> Optional[dict]:
+            if doc is None:
+                return None
+            new = deepcopy(doc)
+            return new if change(new) else None
+
+        await self._transact(gid, plan)
 
     async def settings(self, gid: int) -> dict:
         return (await self.get(gid))[SECTION_SETTINGS]

@@ -48,6 +48,11 @@ class Banco:
             raise OSError("leitura falhou")
         return deepcopy(self.docs.get((db_name, collection, str(id_))))
 
+    async def iter_data(self, *, db_name, collection):
+        for (name, coll, _), doc in list(self.docs.items()):
+            if (name, coll) == (db_name, collection):
+                yield deepcopy(doc)
+
     async def save_doc_cas(self, id_, doc, *, expected_rev, db_name, collection):
         await asyncio.sleep(0)
         if self.write_error:
