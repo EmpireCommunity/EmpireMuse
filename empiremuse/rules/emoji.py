@@ -8,7 +8,7 @@ Vale um único grafema de emoji, em uma destas formas (nada além disso, nem esp
 * bandeira de um país ou região que existe, e as três de subdivisão (Inglaterra, Escócia e País de Gales);
 * keycap (``0-9``, ``#`` ou ``*`` + ``U+FE0F`` + ``U+20E3``).
 
-As tabelas (Unicode 16.0) estão em ``emoji_data``; este módulo não depende da versão do ``unicodedata`` do Python.
+As tabelas (Unicode 17.0) estão em ``emoji_data``; este módulo não depende da versão do ``unicodedata`` do Python.
 """
 
 from __future__ import annotations
@@ -54,6 +54,7 @@ _VS16 = "️"
 _ZWJ = "‍"
 _SKIN = "[\U0001f3fb-\U0001f3ff]"
 _REGIONAL = "[\U0001f1e6-\U0001f1ff]"
+_HAIR = "[\U0001f9b0-\U0001f9b3]"  # componentes de cabelo: só valem depois de um ZWJ (👨‍🦰)
 
 
 def _element(allowed: frozenset[int] | None = None) -> str:
@@ -65,7 +66,7 @@ def _element(allowed: frozenset[int] | None = None) -> str:
 
 _KEYCAP = re.compile(f"[0-9#*]{_VS16}⃣")
 _FLAG = re.compile(f"{_REGIONAL}{{2}}")
-_EMOJI = re.compile(f"{_element()}|{_element(_LEAD)}(?:{_ZWJ}{_element(_TAIL)})+")
+_EMOJI = re.compile(f"{_element()}|{_element(_LEAD)}(?:{_ZWJ}(?:{_element(_TAIL)}|{_HAIR}))+")
 
 
 def _is_flag(value: str) -> bool:

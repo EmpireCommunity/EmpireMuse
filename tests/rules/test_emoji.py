@@ -23,6 +23,8 @@ ACCEPTED = [
     "🏴󠁧󠁢󠁥󠁮󠁧󠁿",  # bandeira de subdivisão (tags)
     "1️⃣",  # keycap
     "🫩",  # Unicode 16
+    "👨\u200d🦰",  # componente de cabelo depois do ZWJ
+    "👩🏽\u200d🦱",
     "☝🏽",  # texto por padrão + tom de pele
     " 🎧 ",  # aparado
 ]
@@ -48,6 +50,7 @@ REJECTED = [
     "☀",
     "🇿🇿",  # bandeira que não existe
     "🎧\u200d🎧\u200d🎧",  # ZWJ entre bases que nunca se juntam
+    "🦰",  # componente de cabelo sozinho
     "🏻",  # tom de pele sozinho
     "🎧‍",  # ZWJ pendurado
     "‍🎧",

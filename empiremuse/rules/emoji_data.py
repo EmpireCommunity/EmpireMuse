@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Tabelas de emoji do Unicode 16.0 (``emoji-data`` e ``emoji-zwj-sequences``), só dados, usadas por ``rules/emoji.py``.
+"""Tabelas de emoji do Unicode 17.0 (``emoji-data`` e ``emoji-zwj-sequences``), só dados, usadas por ``rules/emoji.py``.
 
 Geradas a partir do pacote PyPI ``emoji`` 2.16.0 (``EMOJI_DATA``) por um script descartável; NÃO edite à mão. Para atualizar, gere de
 novo com a versão nova do Unicode e confira ``tests/rules/test_emoji.py``. Cada faixa é ``HEX`` ou ``HEX-HEX`` (pontos de código).
