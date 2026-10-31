@@ -29,6 +29,13 @@ services:
     env_file:
       - path: ../.env.mongo
         required: true
+    # Endurecimento possível com esta imagem: sem escalada de privilégio (o gosu da imagem usa chamadas de sistema, não binário
+    # setuid) e limites de memória e processos. O cap_drop ALL NÃO serve aqui: a criação do banco precisa do chown e do gosu.
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1024m
+    memswap_limit: 1024m
+    pids_limit: 1024
     # Só no próprio host. Nunca "27017:27017" nem 0.0.0.0/::.
     ports:
       - "127.0.0.1:${MONGO_LOCAL_PORT:-27017}:27017"

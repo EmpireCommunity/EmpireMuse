@@ -38,20 +38,29 @@ if not exist "requirements-lock.txt" (
 
 rem Pasta de execução local: com .runtime presente o bot grava ali os dados e lê o .runtime\.env. Criá-la MUDA onde o bot lê e grava;
 rem por isso, se já houver .env, config.json ou local_database na raiz, ela não é criada e o bot segue na raiz.
+rem Com EMPIREMUSE_HOME definido, ele tem precedencia sobre .runtime: o .env e o de la e nada e criado aqui.
 set "ENVFILE=.runtime\.env"
 set "USARAIZ="
-if not exist ".runtime\" if exist ".env" set "USARAIZ=1"
-if not exist ".runtime\" if exist "config.json" set "USARAIZ=1"
-if not exist ".runtime\" if exist "local_database\" set "USARAIZ=1"
+set "USARHOME="
+if defined EMPIREMUSE_HOME set "USARHOME=1"
+if defined USARHOME set "ENVFILE=%EMPIREMUSE_HOME%\.env"
+if not defined USARHOME if not exist ".runtime\" if exist ".env" set "USARAIZ=1"
+if not defined USARHOME if not exist ".runtime\" if exist "config.json" set "USARAIZ=1"
+if not defined USARHOME if not exist ".runtime\" if exist "local_database\" set "USARAIZ=1"
 if defined USARAIZ (
     echo aviso: achei .env, config.json ou local_database na raiz: NÃO criei a pasta .runtime, que mudaria onde o bot lê e grava. O bot segue usando a raiz. Para migrar, crie .runtime e mova esses itens para lá. 1>&2
     set "ENVFILE=.env"
 ) else (
-    if not exist ".runtime\" mkdir ".runtime"
+    if not defined USARHOME if not exist ".runtime\" (
+        mkdir ".runtime"
+        if errorlevel 1 (
+            echo erro: não consegui criar a pasta .runtime. Confira as permissões desta pasta. 1>&2
+            exit /b 1
+        )
+    )
 )
-if not exist "%ENVFILE%" (
-    echo aviso: %ENVFILE% não existe. Crie-o a partir do .example.env. Sem ele o bot não terá token. 1>&2
-)
+rem Uma linha so, e a mensagem sem o caminho: um EMPIREMUSE_HOME com parenteses, como Program Files (x86), fecharia um bloco no meio.
+if not exist "%ENVFILE%" echo aviso: não achei o .env da pasta de execução, em .runtime, na raiz ou em EMPIREMUSE_HOME. Crie-o a partir do .example.env. Sem ele o bot não terá token. 1>&2
 
 uv python install 3.14
 if errorlevel 1 exit /b 1

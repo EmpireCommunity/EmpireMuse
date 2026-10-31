@@ -37,13 +37,16 @@ fi
 
 # Pasta de execução local: com .runtime/ presente o bot grava ali os dados e lê o .runtime/.env (docs/development.md). Criá-la
 # MUDA onde o bot lê e grava; por isso, se já houver .env, config.json ou local_database na raiz, ela não é criada e o bot segue na raiz.
+# Com EMPIREMUSE_HOME definido, ele tem precedência sobre .runtime (empiremuse/paths.py): o .env é o de lá e nada é criado aqui.
 env_file=.runtime/.env
-if [ ! -d .runtime ]; then
+if [ -n "${EMPIREMUSE_HOME:-}" ]; then
+    env_file=$EMPIREMUSE_HOME/.env
+elif [ ! -d .runtime ]; then
     if [ -e .env ] || [ -e config.json ] || [ -d local_database ]; then
         aviso "achei .env, config.json ou local_database na raiz: NÃO criei a pasta .runtime (ela mudaria onde o bot lê e grava). O bot segue usando a raiz. Para migrar, crie .runtime e mova esses itens para lá."
         env_file=.env
     else
-        mkdir -p .runtime
+        mkdir -p .runtime || erro "não consegui criar a pasta .runtime. Confira as permissões desta pasta."
     fi
 fi
 
