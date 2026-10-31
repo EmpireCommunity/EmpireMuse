@@ -1,6 +1,7 @@
 """Falha se uma chave de segredo em deploy/ ou nos *.example* tiver valor literal.
 
-Aceita valor vazio, referência ``${NOME}``/``${NOME:-}`` (sem padrão literal), booleano e número (ex.: ``MONGO_TIMEOUT: "30"``).
+Recusa também URL de webhook do Discord em qualquer chave.
+Aceita valor vazio, referência ``${NOME}``, ``${NOME:-}`` ou ``${NOME:?mensagem}`` (sem padrão literal), booleano e número (ex.: ``MONGO_TIMEOUT: "30"``).
 """
 
 import json
@@ -10,7 +11,10 @@ from pathlib import Path
 
 SECRET_KEY = re.compile(r"(TOKEN|SECRET|PASS|KEY|MONGO|WEBHOOK|COOKIE|REFRESH|URI)", re.IGNORECASE)
 ASSIGNMENT = re.compile(r"^\s*(?:export\s+)?[\"']?([A-Za-z0-9_]+)[\"']?\s*[:=]\s*(.*?)\s*$")
-HARMLESS_VALUE = re.compile(r"""^(["']?)(|\$\{[A-Za-z_][A-Za-z0-9_]*(?::-)?\}|true|false|-?\d+)\1$""", re.IGNORECASE)
+HARMLESS_VALUE = re.compile(
+    r"""^(["']?)(|\$\{[A-Za-z_][A-Za-z0-9_]*(?::-|:\?[^}]*)?\}|true|false|-?\d+)\1$""", re.IGNORECASE
+)
+WEBHOOK_URL = re.compile(r"discord(?:app)?\.com/api/webhooks/\S", re.IGNORECASE)
 SKIPPED_SUFFIXES = {".md"}
 # Exemplo de nós Lavalink públicos de terceiros: as senhas já são públicas por desenho.
 PUBLIC_EXAMPLES = {"lavalink.ini.example"}
@@ -35,6 +39,9 @@ def normalized(line: str) -> str:
 def offending_lines(path: Path) -> list[str]:
     found = []
     for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if WEBHOOK_URL.search(line):
+            found.append(f"{path}:{number}: URL de webhook do Discord literal")
+            continue
         if line.lstrip().startswith("#"):
             continue
         match = ASSIGNMENT.match(normalized(line))
