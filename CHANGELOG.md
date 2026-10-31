@@ -7,6 +7,15 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Adicionado
+- **Índice do `deploy/` e compose da Hostinger sem Traefik**: novo `deploy/README.md` diz qual arquivo usar em cada tipo de implantação (Docker, Traefik, VPS de arquivo único, Pterodactyl, Discloud e nós Lavalink externos) e se ele tem auto-update. O novo `deploy/docker-compose.hostinger-sem-traefik.yml` é o compose da Hostinger sem Traefik, com o painel só em `127.0.0.1:6000`, para quem expõe o painel por outro proxy com TLS. O `deploy/docker-compose.hostinger.yml` passa a refletir o limite de memória de 2048 MiB da produção.
+
+### Alterado
+- **CI valida o `deploy/`**: novo job `deploy-check` roda `docker compose config -q` em cada compose e no par base + Traefik, valida o egg do Pterodactyl, recusa valor literal em chave de segredo de `deploy/` e dos `*.example*`, recusa `docker.sock` fora dos dois compose da Hostinger e roda o `gitleaks` em `deploy/`.
+
+### Documentação
+- Os guias `docker.md`, `auto-update.md`, `release.md` e `pterodactyl.md` apontam para o índice `deploy/README.md` e para o compose sem Traefik.
+
 ## [2.1.3] - 2026-10-31
 
 Playlists e configuração únicas por servidor, bot principal e reservas, canal de pedidos único, perfil da aplicação no Discord e registro de uso com banimento de servidores (só o dono).
