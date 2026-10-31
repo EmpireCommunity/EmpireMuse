@@ -145,4 +145,5 @@ Agradecimentos especiais aos projetos de código aberto que tornam o EmpireMuse 
 - [DisnakeDev](https://github.com/DisnakeDev) pelo framework `disnake` (e [Rapptz](https://github.com/Rapptz) pelo `discord.py` original);
 - [Lavalink-Devs](https://github.com/lavalink-devs) pelo servidor de áudio Lavalink e Lavaplayer;
 - [Pythonista Guild](https://github.com/PythonistaGuild) pela biblioteca WaveLink;
-- À comunidade e equipe do servidor **EmpireHUB** pelo apoio contínuo.
+- À comunidade e equipe do servidor **EmpireHUB** pelo apoio contínuo;
+- Ícones de 21 dos emojis do bot (`assets/emojis/`, lista no [CREDITS.md](CREDITS.md)): <a href="https://www.flaticon.com/free-icons/user-interface" title="user interface icons">User interface icons created by mnauliady - Flaticon</a>.
