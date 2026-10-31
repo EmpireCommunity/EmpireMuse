@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Optional
 from cachetools import TTLCache
 
 from empiremuse.rules.limits import MAX_DJ_ROLES
-from empiremuse.rules.playlists import plan_migration, to_doc
+from empiremuse.rules.playlists import move_leading_icons, plan_migration, to_doc
 from empiremuse.rules.servers import (
     SECTION_PLAYLISTS,
     SECTION_REQUEST,
@@ -245,7 +245,7 @@ class ServerStore:
             )
         if SECTION_PLAYLISTS in pending:
             plan = plan_migration(((legacy or {}).get("player_controller") or {}).get("fav_links"))
-            new["playlists"] = [to_doc(p) for p in plan.items]
+            new["playlists"], _ = move_leading_icons([to_doc(p) for p in plan.items])  # o emoji do início já vira ícone
             new["migrated"][SECTION_PLAYLISTS] = True
             logger.info(
                 "Servidor [%s] migrado: %d playlists copiadas, %d repetidas e %d inválidas puladas",

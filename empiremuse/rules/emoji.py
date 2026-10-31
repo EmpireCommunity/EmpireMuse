@@ -3,7 +3,7 @@
 
 Vale um único grafema de emoji, em uma destas formas (nada além disso, nem espaço, nem texto, nem emoji personalizado ``<:x:id>``):
 
-* emoji com apresentação de emoji (``🎧``), ou de texto com VS16 (``U+FE0F``): ``⛏️``, ``🌧️``; tom de pele opcional: ``👍🏽``;
+* emoji com apresentação de emoji (``🎧``), ou de texto com VS16 (``U+FE0F``): ``⛏️``, ``🌧️``; tom de pele só nas bases que o aceitam: ``👍🏽``;
 * sequência ZWJ (``U+200D``) só entre as bases que aparecem em sequências reconhecidas: ``👮‍♂️``, ``❤️‍🔥``, ``🏳️‍🌈``;
 * bandeira de um país ou região que existe, e as três de subdivisão (Inglaterra, Escócia e País de Gales);
 * keycap (``0-9``, ``#`` ou ``*`` + ``U+FE0F`` + ``U+20E3``).
@@ -17,6 +17,7 @@ import re
 
 from empiremuse.rules.emoji_data import (
     FLAGS,
+    MODIFIER_BASE,
     PRESENTATION,
     TAG_FLAGS,
     TEXT_DEFAULT,
@@ -35,7 +36,9 @@ def _expand(table: str) -> frozenset[int]:
 
 
 def _char_class(points: frozenset[int]) -> str:
-    """A classe de caracteres de ``re`` com as faixas contíguas de ``points``."""
+    """A classe de caracteres de ``re`` com as faixas contíguas de ``points`` (``(?!)``, que nunca casa, se não houver nenhum)."""
+    if not points:
+        return "(?!)"
     ranges: list[list[int]] = []
     for point in sorted(points):
         if ranges and point == ranges[-1][1] + 1:
@@ -47,6 +50,7 @@ def _char_class(points: frozenset[int]) -> str:
 
 _PRESENTATION = _expand(PRESENTATION)
 _TEXT_DEFAULT = _expand(TEXT_DEFAULT)
+_MODIFIER_BASE = _expand(MODIFIER_BASE)
 _LEAD = _expand(ZWJ_LEAD)
 _TAIL = _expand(ZWJ_TAIL)
 
@@ -58,10 +62,14 @@ _HAIR = "[\U0001f9b0-\U0001f9b3]"  # componentes de cabelo: só valem depois de 
 
 
 def _element(allowed: frozenset[int] | None = None) -> str:
-    """Um emoji simples: de apresentação de emoji (VS16 ou tom de pele opcional) ou de texto (VS16 ou tom de pele obrigatório)."""
+    """Um emoji simples: de apresentação de emoji (VS16 opcional) ou de texto (VS16 obrigatório); o tom de pele só vem depois
+    de uma base que o aceita (``Emoji_Modifier_Base``)."""
     presentation = _PRESENTATION if allowed is None else _PRESENTATION & allowed
     text = _TEXT_DEFAULT if allowed is None else _TEXT_DEFAULT & allowed
-    return f"(?:{_char_class(presentation)}(?:{_VS16}|{_SKIN})?|{_char_class(text)}(?:{_VS16}|{_SKIN}))"
+    return (
+        f"(?:{_char_class(presentation)}{_VS16}?|{_char_class(presentation & _MODIFIER_BASE)}{_SKIN}"
+        f"|{_char_class(text)}{_VS16}|{_char_class(text & _MODIFIER_BASE)}{_SKIN})"
+    )
 
 
 _KEYCAP = re.compile(f"[0-9#*]{_VS16}⃣")

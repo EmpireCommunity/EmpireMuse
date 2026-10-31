@@ -42,6 +42,7 @@ from empiremuse.rules.limits import (
     PLAYLIST_GENRE_MAX,
     PLAYLIST_GENRE_MIN,
     PLAYLIST_GENRES_MAX,
+    PLAYLIST_ICON_MAX,
     PLAYLIST_NAME_MAX,
     PLAYLIST_NAME_MIN,
     PLAYLIST_ORDER_MAX,
@@ -66,6 +67,7 @@ QUOTA_FULL = "quota_full"
 _TRACKING_PARAMS = frozenset({"si", "feature", "pp"})  # mais todo ``utm_*``
 _IMPORT_FILE = re.compile(r"[a-z0-9-]{1,64}\.json")
 _ELLIPSIS = "…"
+_DISPLAY_NAME_MAX = PLAYLIST_NAME_MAX + PLAYLIST_ICON_MAX + 1  # o nome inteiro mais o ícone e o espaço
 
 # Importar por URL (P5): só estes hosts, por https na porta 443. Qualquer outro nome, IP literal, ponto final ou ``%`` fica de fora.
 IMPORT_URL_HOSTS = frozenset(
@@ -583,10 +585,10 @@ def move_leading_icons(stored: Sequence[Any]) -> tuple[list[Any], int]:
     válido, sem repetir o de outro item, depois de aparado. O emoji do meio ou do fim do nome fica. O resto da lista passa intacto.
     """
     taken = {
-        entry["name"].casefold()
+        entry["name"].strip().casefold()
         for entry in stored
         if isinstance(entry, Mapping) and isinstance(entry.get("name"), str)
-    }
+    }  # como o ``from_doc`` lê: aparados
     result: list[Any] = []
     moved = 0
     for entry in stored:
@@ -594,7 +596,7 @@ def move_leading_icons(stored: Sequence[Any]) -> tuple[list[Any], int]:
             icon, rest = split_leading_icon(entry["name"])
             name = check_name(rest) if icon else None
             if icon and isinstance(name, str) and name.casefold() not in taken:
-                taken.discard(entry["name"].casefold())
+                taken.discard(entry["name"].strip().casefold())
                 taken.add(name.casefold())
                 result.append({**entry, "name": name, "icon": icon})
                 moved += 1
@@ -639,7 +641,7 @@ def format_report(report: ImportReport, limit: int = PLAYLIST_REPORT_MAX) -> str
     """Relatório da importação em pt-BR, com os nomes de terceiros escapados e no máximo ``limit`` caracteres (o resto vira ``+N``)."""
     text = f"**Importação concluída:** {len(report.added)} adicionada(s), {len(report.skipped)} ignorada(s)."
     if report.added:
-        text += "\n**Adicionadas:** " + ", ".join(render_text(display_name(p), PLAYLIST_NAME_MAX) for p in report.added)
+        text += "\n**Adicionadas:** " + ", ".join(render_text(display_name(p), _DISPLAY_NAME_MAX) for p in report.added)
     skipped = [
         f"• {render_text(s.name, PLAYLIST_NAME_MAX)}: {_REASON_TEXT.get(s.reason, s.reason)}" for s in report.skipped
     ]

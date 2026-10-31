@@ -51,6 +51,7 @@ REJECTED = [
     "🇿🇿",  # bandeira que não existe
     "🎧\u200d🎧\u200d🎧",  # ZWJ entre bases que nunca se juntam
     "🦰",  # componente de cabelo sozinho
+    "🎧🏽",  # tom de pele numa base que não o aceita
     "🏻",  # tom de pele sozinho
     "🎧‍",  # ZWJ pendurado
     "‍🎧",

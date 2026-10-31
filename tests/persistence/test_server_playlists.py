@@ -235,6 +235,14 @@ def test_the_icon_is_stored_when_it_is_an_emoji_and_dropped_when_it_is_not(world
     assert run(world.playlists.find(GID, "rock novo")).icon is None
 
 
+def test_the_first_read_migration_already_moves_the_leading_emoji(world):
+    world.banco.put(DBModel.guilds, str(MAIN_ID), GID, legacy_doc({"🔴 Red Line": link(f"{BASE}red")}))
+
+    playlist = run(world.playlists.list(GID))[0]
+
+    assert (playlist.name, playlist.icon) == ("Red Line", "🔴")
+
+
 def test_the_boot_migration_moves_only_the_leading_emoji_and_runs_once(world, caplog):
     stored = {**new_doc(), "_id": str(GID)}
     stored["migrated"] = {section: True for section in stored["migrated"]}
@@ -243,6 +251,8 @@ def test_the_boot_migration_moves_only_the_leading_emoji_and_runs_once(world, ca
         {**item("🔴 Red Line", 1)._asdict(), "genres": []},
         {**item("Funk G[old] 🎶", 2)._asdict(), "genres": []},  # emoji no fim: fica no nome
         {**item("🎲 Domingo", 3)._asdict(), "genres": [], "icon": "🎧"},  # já tem ícone: intocado
+        {**item("Rock ", 4)._asdict(), "genres": []},  # o nome é lido aparado
+        {**item("🔴 Rock", 5, url=f"{BASE}rock2")._asdict(), "genres": []},  # ficaria igual a "Rock": não muda
     ]
     world.banco.put(*SERVERS, GID, stored)
 
@@ -254,6 +264,8 @@ def test_the_boot_migration_moves_only_the_leading_emoji_and_runs_once(world, ca
         ("Red Line", "🔴"),
         ("Funk G[old] 🎶", None),
         ("🎲 Domingo", "🎧"),
+        ("Rock ", None),
+        ("🔴 Rock", None),
     ]
     assert world.banco.servers_doc()["rev"] == 5
     assert "Red Line" not in caplog.text and "Funk" not in caplog.text  # o log leva só contagens

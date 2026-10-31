@@ -909,6 +909,7 @@ async def test_the_pool_shutdown_closes_the_request_panel_before_closing_the_bot
         logs_task=None,
         update_watch_task=None,
         version_check_task=None,
+        playlist_icons_task=None,
         helper_watch_tasks=set(),
         request_panel=SimpleNamespace(close=lambda: order.append("panel")),
         get_all_bots=lambda: [closing_bot],
