@@ -112,7 +112,8 @@ main:focus {
 .topo-conteudo {
   align-items: center;
   display: flex;
-  gap: 1rem;
+  flex-wrap: wrap; /* no celular o menu desce para a segunda linha em vez de quebrar os rótulos */
+  gap: 0.5rem 1rem;
   justify-content: space-between;
   padding-block: 0.75rem;
 }
@@ -150,6 +151,7 @@ main:focus {
   align-items: center;
   display: flex;
   gap: 0.75rem;
+  margin-inline-start: auto; /* quando o cabeçalho quebra linha, fica alinhado à direita como o menu */
 }
 
 .usuario-avatar {
@@ -287,9 +289,13 @@ main:focus {
 }
 
 .menu-principal a {
+  align-items: center;
   color: var(--nb-texto-suave);
+  display: inline-flex;
+  gap: 0.375rem;
   padding: 0.25rem 0.5rem;
   text-decoration: none;
+  white-space: nowrap;
 }
 
 .menu-principal a:hover {
@@ -432,18 +438,9 @@ main:focus {
   border: 1px solid var(--nb-borda);
   border-radius: var(--pico-border-radius);
   color: var(--nb-texto-suave);
-  cursor: not-allowed;
   display: flex;
-  gap: 0.5rem;
-  justify-content: space-between;
+  gap: 0.625rem;
   padding: 0.75rem 1rem;
-}
-
-.categoria-selo {
-  border: 1px solid var(--nb-borda);
-  border-radius: 999px;
-  font-size: 0.75rem;
-  padding: 0.125rem 0.5rem;
 }
 
 @media (max-width: 480px) {
@@ -454,6 +451,7 @@ main:focus {
 
 /* Etapa 4a — formulários de configuração */
 .nav-categorias {
+  display: block; /* o <nav> do Pico é flex e encolhia a grade de categorias a uma coluna */
   margin: 1rem 0 1.5rem;
 }
 
@@ -804,4 +802,45 @@ main:focus {
 
 .bloco-config + .bloco-config {
   margin-top: 1.5rem;
+}
+
+/* Ícones de mnauliady (Flaticon): PNG colorido em 20 px (e 40 px para 2x); sempre decorativo, o texto ao lado nomeia a ação */
+.icone {
+  flex-shrink: 0;
+  height: 1.25rem;
+  width: 1.25rem;
+}
+
+.categoria-link:hover .icone,
+.categoria-link[aria-current="page"] .icone,
+.menu-principal a:hover .icone,
+.secao-link:hover .icone {
+  filter: drop-shadow(0 0.0625rem 0.25rem rgb(139 92 246 / 55%));
+}
+
+/* A lista de seções da conta é o <nav ul> flex do Pico: com os ícones ela precisa quebrar linha em telas estreitas (a grade de categorias não é flex e não muda) */
+.nav-categorias ul {
+  flex-wrap: wrap;
+  row-gap: 0.25rem;
+}
+
+.nav-categorias .secao-link {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.375rem;
+}
+
+.rodape-creditos {
+  font-size: 0.8125rem;
+  margin-top: 0.5rem;
+}
+
+/* Ícone (emoji) da playlist do servidor, antes do nome */
+.item-link-icone {
+  font-size: 1.125em;
+  line-height: 1;
+}
+
+.campo-icone {
+  max-width: 8rem;
 }

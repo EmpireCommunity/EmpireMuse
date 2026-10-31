@@ -12,11 +12,11 @@
   </p>
   <nav class="nav-categorias" aria-label="Seções da conta">
     <ul role="list">
-      <li><a href="#conta-prefixo">Prefixo</a></li>
-      <li><a href="#conta-favoritos">Favoritos</a></li>
-      <li><a href="#conta-integracoes">Integrações</a></li>
-      <li><a href="#conta-lastfm">Last.fm</a></li>
-      {% if rpc.disponivel %}<li><a href="#conta-rpc">App de RPC</a></li>{% end %}
+      <li><a class="secao-link" href="#conta-prefixo"><img class="icone" src="{{ static_url('icons/mnauliady/web-ui/comment-square.png') }}" srcset="{{ static_url('icons/mnauliady/web-ui/comment-square@2x.png') }} 2x" alt="" width="20" height="20"> Prefixo</a></li>
+      <li><a class="secao-link" href="#conta-favoritos"><img class="icone" src="{{ static_url('icons/mnauliady/web-ui/like.png') }}" srcset="{{ static_url('icons/mnauliady/web-ui/like@2x.png') }} 2x" alt="" width="20" height="20"> Favoritos</a></li>
+      <li><a class="secao-link" href="#conta-integracoes"><img class="icone" src="{{ static_url('icons/mnauliady/web-ui/link.png') }}" srcset="{{ static_url('icons/mnauliady/web-ui/link@2x.png') }} 2x" alt="" width="20" height="20"> Integrações</a></li>
+      <li><a class="secao-link" href="#conta-lastfm"><img class="icone" src="{{ static_url('icons/mnauliady/web-ui/history.png') }}" srcset="{{ static_url('icons/mnauliady/web-ui/history@2x.png') }} 2x" alt="" width="20" height="20"> Last.fm</a></li>
+      {% if rpc.disponivel %}<li><a class="secao-link" href="#conta-rpc"><img class="icone" src="{{ static_url('icons/mnauliady/media-player/sound-wave.png') }}" srcset="{{ static_url('icons/mnauliady/media-player/sound-wave@2x.png') }} 2x" alt="" width="20" height="20"> App de RPC</a></li>{% end %}
     </ul>
   </nav>
   {% set estado = prefixo %}
