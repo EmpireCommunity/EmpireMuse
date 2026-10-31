@@ -1,6 +1,9 @@
 # Compose de produção SEM Traefik, para o gerenciador de containers de uma VPS (arquivo único, sem env_file).
 # O painel fica em 127.0.0.1:6000, só no próprio host. Para expor na internet use OUTRO proxy com TLS na frente (Nginx, Caddy,
 # Cloudflare Tunnel...) apontando para 127.0.0.1:6000; NUNCA troque por "6000:6000" (publicaria o painel sem TLS em todas as interfaces).
+# PANEL_TRUST_PROXY fica "false" de propósito: não dá para saber se o seu proxy sobrescreve os cabeçalhos de IP. Efeito: atrás de um proxy,
+# o limite de tentativas de login vê o IP do proxy (todos os visitantes dividem o mesmo limite). Só mude para "true" se o proxy SOBRESCREVER
+# X-Forwarded-For e X-Real-IP e remover o CF-Connecting-IP vindo do cliente; senão qualquer um forja o próprio IP (docs/guides/painel-web.md, 4.3).
 # Ao usar: copie para o diretório do projeto como docker-compose.yml, preencha o .env a partir de deploy/env.example.hostinger
 # (renomeado para .env) e troque PANEL_BASE_URL e RPC_PUBLIC_URL pelo seu endereço público (o do proxy).
 # Toda a configuração fica inline aqui e o .env só interpola os segredos em ${...} (cada valor com até 256 caracteres).
