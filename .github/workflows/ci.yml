@@ -181,3 +181,91 @@ jobs:
       - name: Cobertura das áreas críticas (≥ 90%)
         if: steps.detect-changes.outputs.code == 'true'
         run: coverage report --fail-under=90 --skip-covered --include="empiremuse/panel/*,empiremuse/web_app.py,empiremuse/rpc_protocol.py,empiremuse/rules/*,empiremuse/config_loader.py,empiremuse/utils/db.py,empiremuse/serialization/*,empiremuse/utils/music/legacy_notice.py,empiremuse/utils/music/session_store.py,empiremuse/updater/*,empiremuse/logs/*,empiremuse/health.py,empiremuse/version.py"
+
+  deploy-check:
+    name: Deploy (compose, segredos e gitleaks)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validar os composes (docker compose config -q)
+        env:
+          EMPIREMUSE_DOMAIN: example.invalid
+          DOCKER_GID: "999"
+          PANEL_BASE_URL: https://painel.exemplo.invalid
+          RPC_PUBLIC_URL: wss://painel.exemplo.invalid/ws
+        run: |
+          # Valores falsos só para as variáveis obrigatórias; os arquivos .env ficam vazios.
+          : > .env
+          [ -f deploy/docker-compose.deps.yml ] && : > .env.mongo
+          for file in deploy/docker-compose*.yml; do
+            case "$file" in
+              *.traefik.yml|*.deps.yml) continue ;; # só valem combinados com o base (pares abaixo)
+            esac
+            echo "::group::$file"
+            docker compose -f "$file" config -q
+            echo "::endgroup::"
+          done
+          docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.traefik.yml config -q
+          if [ -f deploy/docker-compose.deps.yml ]; then
+            docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.deps.yml config -q
+          fi
+
+      - name: Validar o egg do Pterodactyl (JSON)
+        run: python3 -m json.tool deploy/pterodactyl/egg-empiremuse.json > /dev/null
+
+      - name: Validar scripts de deploy (sh -n e shellcheck)
+        run: |
+          scripts=$(find deploy -name '*.sh' -type f)
+          [ -z "$scripts" ] && { echo "Nenhum script em deploy/."; exit 0; }
+          for script in $scripts; do
+            sh -n "$script"
+            shellcheck "$script"
+          done
+
+      - name: Chaves de segredo sem valor literal em deploy/ e nos *.example*
+        run: python3 -I .github/scripts/check_deploy_secrets.py
+
+      - name: Verificador de segredos recusa literais (mapa, lista, .env e webhook) e aceita as formas válidas
+        run: |
+          script="$PWD/.github/scripts/check_deploy_secrets.py"
+          for line in '      TOKEN: abc' '      - TOKEN=abc' '      - "MONGO=abc"' 'TOKEN=abc' '      MONGO: ${MONGO:-abc}' '      BOT_ADD_REMOVE_LOG: https://discord.com/api/webhooks/1/abc' '      - LOG=https://discordapp.com/api/webhooks/1/abc' '      PIN_PASSWORD: "123456"'; do
+            workdir=$(mktemp -d)
+            mkdir "$workdir/deploy"
+            printf '%s\n' "$line" > "$workdir/deploy/fixture.example"
+            if (cd "$workdir" && python3 -I "$script" 2> /dev/null); then
+              echo "O verificador deixou passar: $line" >&2
+              exit 1
+            fi
+          done
+          for line in '      LAVALINK_SERVER_PASSWORD: ${LAVALINK_SERVER_PASSWORD:?defina}' '      - TOKEN=' '      MONGO_TIMEOUT: "30"' '      "TOKEN": "${TOKEN}"'; do
+            workdir=$(mktemp -d)
+            mkdir "$workdir/deploy"
+            printf '%s\n' "$line" > "$workdir/deploy/fixture.example"
+            (cd "$workdir" && python3 -I "$script") || { echo "O verificador recusou uma forma válida: $line" >&2; exit 1; }
+          done
+
+      - name: docker.sock só nos compose da Hostinger
+        run: |
+          # Todo arquivo de deploy/ (qualquer pasta ou extensão), fora comentários; só estes dois nomes exatos podem citar o socket.
+          hits=$(grep -rlE '^[^#]*docker\.sock' deploy/ | grep -vxE 'deploy/docker-compose\.hostinger(-sem-traefik)?\.yml' || true)
+          if [ -n "$hits" ]; then
+            echo "docker.sock fora dos dois compose da Hostinger:" >&2
+            echo "$hits" >&2
+            exit 1
+          fi
+
+      - name: Varredura de segredos (gitleaks) em deploy/
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/$archive" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/$archive"
+          echo "$GITLEAKS_SHA256  $RUNNER_TEMP/$archive" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" dir deploy/ --no-banner --redact

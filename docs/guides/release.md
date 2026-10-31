@@ -187,7 +187,7 @@ Use o mesmo digest para fixar a imagem como `or4cu1o/empiremuse:X.Y.Z@sha256:<di
 
 ### 5.4 Digest para o Compose do Auto-update
 
-O [`deploy/docker-compose.hostinger.yml`](../../deploy/docker-compose.hostinger.yml) traz dois marcadores de zeros (`@sha256:000…`): a imagem do `bot` e a do `updater-proxy`. Troque os dois pelo conteúdo do `image-digest.txt` da GitHub Release da mesma versão (o comando de download está na seção 5.3); o passo a passo completo está em [`auto-update.md`](auto-update.md), seção 2.1. O `image-digest.txt` só é confiável em releases imutáveis (seção 4.4). O `update` só troca a linha do bot; a imagem do `updater-proxy` só muda quando o dono troca o digest dela à mão (por exemplo, sempre que o `CHANGELOG.md` citar o proxy).
+O [`deploy/docker-compose.hostinger.yml`](../../deploy/docker-compose.hostinger.yml) (e o [`deploy/docker-compose.hostinger-sem-traefik.yml`](../../deploy/docker-compose.hostinger-sem-traefik.yml), com as mesmas duas linhas; índice em [`deploy/README.md`](../../deploy/README.md)) traz dois marcadores de zeros (`@sha256:000…`): a imagem do `bot` e a do `updater-proxy`. Troque os dois pelo conteúdo do `image-digest.txt` da GitHub Release da mesma versão (o comando de download está na seção 5.3); o passo a passo completo está em [`auto-update.md`](auto-update.md), seção 2.1. O `image-digest.txt` só é confiável em releases imutáveis (seção 4.4). O `update` só troca a linha do bot; a imagem do `updater-proxy` só muda quando o dono troca o digest dela à mão (por exemplo, sempre que o `CHANGELOG.md` citar o proxy).
 
 ---
 

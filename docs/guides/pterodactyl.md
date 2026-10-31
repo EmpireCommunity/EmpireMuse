@@ -12,7 +12,7 @@ Guia prático para instalação e execução do **EmpireMuse** no painel de cont
 
 ## 1. Importando o Egg no Painel
 
-O arquivo de definição do egg encontra-se em [`deploy/pterodactyl/egg-empiremuse.json`](../../deploy/pterodactyl/egg-empiremuse.json).
+O [índice do `deploy/`](../../deploy/README.md) lista os outros tipos de implantação. O arquivo de definição do egg encontra-se em [`deploy/pterodactyl/egg-empiremuse.json`](../../deploy/pterodactyl/egg-empiremuse.json).
 
 ### 1.1 Procedimento de Importação (Administrador)
 1. Acesse a área administrativa do Pterodactyl (**Admin Control Panel**);

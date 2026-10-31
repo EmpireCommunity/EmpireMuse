@@ -58,7 +58,7 @@ docker run -d \
 
 ## 3. Docker Compose
 
-Os arquivos de compose ficam em [`deploy/`](../../deploy/): o base [`deploy/docker-compose.yml`](../../deploy/docker-compose.yml), o override do Traefik (seção 3.5) e o de produção da VPS na Hostinger (seção 3.6). O base está pronto para uso, oferecendo orquestração declarativa, isolamento seguro e suporte opcional a banco de dados MongoDB em contêiner dedicado.
+O [índice do `deploy/`](../../deploy/README.md) diz qual arquivo usar em cada tipo de implantação. Os arquivos de compose ficam em [`deploy/`](../../deploy/): o base [`deploy/docker-compose.yml`](../../deploy/docker-compose.yml), o override do Traefik (seção 3.5) e o de produção da VPS na Hostinger (seção 3.6). O base está pronto para uso, oferecendo orquestração declarativa, isolamento seguro e suporte opcional a banco de dados MongoDB em contêiner dedicado.
 
 > [!WARNING]
 > A orquestração via Docker Compose foi validada estruturalmente com `docker compose config` e testes estáticos, mas **ainda não foi testada com o bot conectado (teste real pendente)** (validação com instância real agendada para a etapa D-16).
@@ -185,7 +185,9 @@ Para esse cenário de implantação em arquivo único atrás do Traefik, o repos
 - [`deploy/docker-compose.hostinger.yml`](../../deploy/docker-compose.hostinger.yml): copie para o diretório do projeto no gerenciador (ex.: `/docker/empiremuse`) como `docker-compose.yml`. A cada release, atualize a tag **e o digest** das duas linhas `image:` (bot e `updater-proxy`), com o digest do `image-digest.txt` da release (passo 2 do [`release.md`](release.md), seção 3, Passo 5): trocar só a tag mantém a imagem antiga. Ou use o `update` com o auto-update ([`auto-update.md`](auto-update.md)).
 - [`deploy/env.example.hostinger`](../../deploy/env.example.hostinger): renomeie para `.env` e preencha só os segredos.
 
-Ele segue a receita genérica mantida no repositório [**docker-compose-cookbook (`composes/empiremuse`)**](https://github.com/Or4cu1o/docker-compose-cookbook/tree/main/composes/empiremuse):
+- [`deploy/docker-compose.hostinger-sem-traefik.yml`](../../deploy/docker-compose.hostinger-sem-traefik.yml): o mesmo compose sem Traefik, para quem usa outro proxy com TLS. O painel fica só em `127.0.0.1:6000`; para expor, ponha o proxy na frente e nunca troque a porta por `"6000:6000"`. Preencha `PANEL_BASE_URL` e `RPC_PUBLIC_URL` com o endereço público do proxy. As duas linhas `image:` seguem a mesma regra do compose com Traefik.
+
+O compose com Traefik segue a receita genérica mantida no repositório [**docker-compose-cookbook (`composes/empiremuse`)**](https://github.com/Or4cu1o/docker-compose-cookbook/tree/main/composes/empiremuse):
 - O compose consolida todas as variáveis e padrões recomendados de forma *inline*, sem necessidade de overrides.
 - O `.env` gerencia apenas os segredos, domínio e tokens de bot.
 - **Múltiplos Bots (Um Token por Variável)**: Para operar múltiplos bots no mesmo pool sem estourar o limite de 256 caracteres de um único campo (evitando concatenar múltiplos tokens em uma única linha), declare variáveis independentes: `TOKEN=...`, `TOKEN_2=...`, `TOKEN_3=...` (até `TOKEN_5` ou mais). O EmpireMuse varre automaticamente todas as variáveis de ambiente em busca de tokens de bot do Discord válidos.
