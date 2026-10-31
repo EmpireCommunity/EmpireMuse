@@ -73,25 +73,27 @@ Para executar o bot com o servidor Lavalink local integrado e persistência em b
    docker compose -f deploy/docker-compose.yml --env-file .env up -d
    ```
 
-### 3.2 Executando com MongoDB Dedicado (Perfil `mongo`)
+### 3.2 Executando com MongoDB Dedicado (`deploy/docker-compose.deps.yml`)
 
-Para utilizar um contêiner oficial do MongoDB (`mongo:8.0.34`, fixado por digest imutável) como camada de persistência:
+O MongoDB opcional (`mongo:8.0.34`, fixado por digest imutável) tem o próprio arquivo, [`deploy/docker-compose.deps.yml`](../../deploy/docker-compose.deps.yml). Ele sobe sempre com autenticação e publica a porta só em `127.0.0.1`.
 
-1. Crie o arquivo `.env.mongo` na raiz do projeto (**nunca versione este arquivo**; ele já está incluído no `.gitignore`):
+1. Crie o arquivo `.env.mongo` na raiz do projeto (**nunca versione este arquivo**; ele já está incluído no `.gitignore`). Ele guarda só o usuário root, usado na criação do banco:
    ```env
    MONGO_INITDB_ROOT_USERNAME=empiremuse_admin
    MONGO_INITDB_ROOT_PASSWORD=sua_senha_segura_aqui
    ```
-2. No seu arquivo `.env`, configure a variável `MONGO` apontando para o serviço interno `mongo`:
+2. Suba o banco junto com o bot, sempre o par de arquivos (subir o `docker-compose.yml` sozinho no mesmo projeto trata o `mongo` como órfão, e `--remove-orphans` o derrubaria):
+   ```bash
+   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.deps.yml --env-file .env up -d
+   ```
+3. Crie um usuário próprio do bot, com a função `readWriteAnyDatabase`, e use esse usuário no `MONGO` do `.env` (o usuário root serve só para criar o banco). O host é o serviço `mongo`:
    ```env
-   MONGO='mongodb://empiremuse_admin:sua_senha_segura_aqui@mongo:27017/?authSource=admin'
+   MONGO='mongodb://usuario_do_bot:senha_do_bot@mongo:27017/?authSource=admin'
    ```
    > [!NOTE]
-   > O parâmetro `?authSource=admin` é necessário na URL de conexão porque o usuário root inicial do Mongo é criado no banco de autenticação `admin`.
-3. Inicie a stack ativando o perfil `mongo`:
-   ```bash
-   docker compose -f deploy/docker-compose.yml --env-file .env --profile mongo up -d
-   ```
+   > O parâmetro `?authSource=admin` é necessário na URL de conexão porque os usuários são criados no banco de autenticação `admin`.
+
+Os dados ficam no volume `empiremuse_empiremuse-mongo`, o mesmo do antigo perfil `mongo`. Nunca use `down -v` nele. Para rodar só o banco (por exemplo, para o bot sem container em [`deploy/local/`](../../deploy/local/)), suba `docker compose -f deploy/docker-compose.deps.yml up -d` e use o host `127.0.0.1` no `MONGO`.
 
 ### 3.3 Variáveis de Configuração do Compose
 
@@ -114,7 +116,7 @@ O arquivo `deploy/docker-compose.yml` aplica uma política rigorosa de seguranç
 - **Sistema de Arquivos Somente Leitura**: O contêiner do bot roda com `read_only: true`. Diretórios temporários de escrita utilizam `/tmp` montado em memória (`tmpfs`).
 - **Isolamento de Privilégios**: `security_opt: [no-new-privileges:true]` previne escalada de privilégios e `cap_drop: [ALL]` descarta todas as capacidades Linux (Linux Capabilities).
 - **Limites e Resiliência**: `mem_limit` e `memswap_limit` fixados em `1024m` (sem swap), `pids_limit: 256`, `stop_grace_period: 30s` e rotação de logs (`json-file` 10m x 3) para bot e mongo.
-- **Volumes Nomeados**: Os dados são isolados nos volumes `empiremuse-data` (para `/data` do bot) e `empiremuse-mongo` (para `/data/db` do MongoDB).
+- **Volumes Nomeados**: Os dados são isolados nos volumes `empiremuse-data` (para `/data` do bot) e `empiremuse-mongo` (para `/data/db` do MongoDB, no compose de deps).
 - **Identificação e Nomes Determinísticos**: O compose declara `name: empiremuse` e nomes de contêineres fixos (`container_name: empiremuse` para o bot e `container_name: empiremuse-mongo` para o MongoDB), padronizando a inspeção e comandos operacionais (`docker logs empiremuse`, `docker top empiremuse`) independentemente do diretório hospedeiro.
 
 ### 3.5 Produção atrás do Traefik e da Cloudflare

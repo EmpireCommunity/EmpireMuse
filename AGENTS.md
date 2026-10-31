@@ -62,7 +62,7 @@ Estrutura essencial do código (consulte [`docs/architecture.md`](docs/architect
 - `empiremuse/utils/branding.py`: Fonte única de identidade e URLs (nome, repositório, espelhos, upstream, `asset_url`).
 - `assets/`: Imagens em subpastas por função (`brand/`, `providers/`, `player/`, `skins/`, `ui/`, `docs/`, `emojis/`) e `SHA256SUMS` com caminhos relativos. O nome do arquivo é único entre as subpastas, e `asset_url(nome)` resolve o subcaminho. Os arquivos soltos na raiz são cópias de compatibilidade da 2.1.0 e saem numa versão futura.
 - `assets/brand/`: Arte e identidade visual de marca (logo vetorial, avatar, banner, avatares alternativos e favicon).
-- `deploy/`: Composes (`docker-compose.yml` base, override do Traefik e `docker-compose.hostinger.yml` + `env.example.hostinger` da produção na VPS), egg do Pterodactyl e exemplo do `lavalink.ini`.
+- `deploy/`: Todos os tipos de deploy, com o índice em `deploy/README.md` (qual arquivo usar em cada caso): composes (`docker-compose.yml` base, override do Traefik, `docker-compose.deps.yml` só com o MongoDB, `docker-compose.hostinger.yml` e `docker-compose.hostinger-sem-traefik.yml` + `env.example.hostinger` da VPS), `local/` (`run.sh` e `run.bat` para rodar sem container), egg do Pterodactyl e exemplo do `lavalink.ini`. O CI valida tudo isso no job `deploy-check`.
 - `data/`: Dados estáticos do projeto (`lavalink_servers.ini`, lista de servidores Lavalink).
 - `docs/`: Documentação técnica, guias de setup e Registros de Decisão de Arquitetura (ADRs).
 - `docs/guides/`: Guias técnicos oficiais do projeto (Lavalink local, YouTube OAuth, painel web e Spotify).

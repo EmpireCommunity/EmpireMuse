@@ -267,7 +267,7 @@ jobs:
       - name: Verificador de segredos recusa literais (mapa, lista, .env e webhook) e aceita as formas válidas
         run: |
           script="$PWD/.github/scripts/check_deploy_secrets.py"
-          for line in '      TOKEN: abc' '      - TOKEN=abc' '      - "MONGO=abc"' 'TOKEN=abc' '      MONGO: ${MONGO:-abc}' '      BOT_ADD_REMOVE_LOG: https://discord.com/api/webhooks/1/abc' '      - LOG=https://discordapp.com/api/webhooks/1/abc' '      PIN_PASSWORD: "123456"'; do
+          for line in '      TOKEN: abc' '      - TOKEN=abc' '      - "MONGO=abc"' 'TOKEN=abc' '      MONGO: ${MONGO:-abc}' '      BOT_ADD_REMOVE_LOG: https://discord.com/api/webhooks/1/abc' '      - LOG=https://discordapp.com/api/webhooks/1/abc' '      PIN_PASSWORD: "123456"' '      "TOKEN": "abc"'; do
             workdir=$(mktemp -d)
             mkdir "$workdir/deploy"
             printf '%s\n' "$line" > "$workdir/deploy/fixture.example"
