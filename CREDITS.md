@@ -18,13 +18,14 @@ MuseHeart-MusicBot upstream. Sem esse trabalho, o EmpireMuse não existiria.
 
 ## Ícones
 
-Os emojis de aplicação em `assets/emojis/` (controles do player, setas, busca, fila e afins) usam ícones da
-[Flaticon](https://www.flaticon.com/), licença gratuita com atribuição obrigatória:
+Só 21 dos emojis de aplicação em `assets/emojis/` usam ícones da [Flaticon](https://www.flaticon.com/), licença gratuita com
+atribuição obrigatória: `add_music`, `arrow_left`, `arrow_right`, `backward`, `config`, `gear`, `headset`, `loved`, `music_queue`,
+`pinned`, `play`, `play_source`, `playpause`, `plus`, `replay`, `search`, `skip`, `stagechannel`, `stop`, `tools` e `voice_event`.
 
 <a href="https://www.flaticon.com/free-icons/user-interface" title="user interface icons">User interface icons created by mnauliady - Flaticon</a>
 
-Os logotipos de plataformas (YouTube, Spotify, Deezer, SoundCloud, Twitch, Tidal e outras) continuam sendo marcas de seus donos
-e não fazem parte dessa licença.
+Os demais emojis (logotipos de plataformas como YouTube, Spotify, Deezer, SoundCloud, Twitch e Tidal, e os outros que não foram
+trocados) não vêm desse kit e não fazem parte dessa licença.
 
 ## Recursos espelhados
 
