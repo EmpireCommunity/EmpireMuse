@@ -1,0 +1,212 @@
+# Compose de produção SEM Traefik, para o gerenciador de containers de uma VPS (arquivo único, sem env_file).
+# O painel fica em 127.0.0.1:6000, só no próprio host. Para expor na internet use OUTRO proxy com TLS na frente (Nginx, Caddy,
+# Cloudflare Tunnel...) apontando para 127.0.0.1:6000; NUNCA troque por "6000:6000" (publicaria o painel sem TLS em todas as interfaces).
+# Ao usar: copie para o diretório do projeto como docker-compose.yml, preencha o .env a partir de deploy/env.example.hostinger
+# (renomeado para .env) e troque PANEL_BASE_URL e RPC_PUBLIC_URL pelo seu endereço público (o do proxy).
+# Toda a configuração fica inline aqui e o .env só interpola os segredos em ${...} (cada valor com até 256 caracteres).
+# Detalhes: docs/guides/docker.md. Versão com Traefik: deploy/docker-compose.hostinger.yml.
+# Auto-update (docs/guides/auto-update.md): o serviço updater-proxy abaixo deixa o comando /update trocar a imagem do bot.
+# As DUAS linhas de imagem (bot e updater-proxy) usam tag@sha256 com o digest do image-digest.txt da release
+# (docs/guides/release.md); o digest abaixo é um MARCADOR de zeros e precisa ser trocado na implantação. A linha do bot
+# tem de manter exatamente a forma "    image: or4cu1o/empiremuse:X.Y.Z@sha256:..." (4 espaços): é a que o auxiliar edita.
+# A versão da linha atual também pode ser de teste ("X.Y.Z-rc.N@sha256:..."): o /update leva a próxima estável; só estáveis são oferecidas.
+# Sem o auto-update, apague o serviço updater-proxy, o volume updater-sock e, no bot, UPDATE_PROXY_SOCKET e o volume.
+name: empiremuse
+
+services:
+  bot:
+    container_name: empiremuse
+    image: or4cu1o/empiremuse:2.1.3@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    pull_policy: missing
+    restart: unless-stopped
+    stop_grace_period: 30s
+    pids_limit: 256
+    # 5 bots + Lavalink local (heap de até 512 MB): 2 GB com folga.
+    mem_limit: 2048m
+    memswap_limit: 2048m
+    environment:
+      # Tokens dos bots: um por variável, valores só no .env.
+      TOKEN: ${TOKEN:-}
+      TOKEN_2: ${TOKEN_2:-}
+      TOKEN_3: ${TOKEN_3:-}
+      TOKEN_4: ${TOKEN_4:-}
+      TOKEN_5: ${TOKEN_5:-}
+
+      # Segredos e credenciais: valores só no .env.
+      OWNER_IDS: ${OWNER_IDS:-}
+      MONGO: ${MONGO:-}
+      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
+      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
+      LASTFM_KEY: ${LASTFM_KEY:-}
+      LASTFM_SECRET: ${LASTFM_SECRET:-}
+      PANEL_OAUTH_CLIENT_ID: ${PANEL_OAUTH_CLIENT_ID:-}
+      PANEL_OAUTH_CLIENT_SECRET: ${PANEL_OAUTH_CLIENT_SECRET:-}
+      PANEL_COOKIE_SECRET: ${PANEL_COOKIE_SECRET:-}
+      RPC_SERVER_SECRET: ${RPC_SERVER_SECRET:-}
+      YOUTUBE_OAUTH_REFRESH_TOKEN: ${YOUTUBE_OAUTH_REFRESH_TOKEN:-}
+      BOT_ADD_REMOVE_LOG: ${BOT_ADD_REMOVE_LOG:-}
+      ERROR_REPORT_WEBHOOK: ${ERROR_REPORT_WEBHOOK:-}
+      AUTO_ERROR_REPORT_WEBHOOK: ${AUTO_ERROR_REPORT_WEBHOOK:-}
+
+      # Configuração (sem segredos).
+      DEFAULT_PREFIX: "!"
+      # Socket do proxy de atualização (serviço updater-proxy); o bot nunca recebe o grupo do Docker.
+      UPDATE_PROXY_SOCKET: /run/empiremuse-updater/updater.sock
+      AUTO_DOWNLOAD_LAVALINK_SERVERLIST: "false"
+      PLAYER_SESSIONS_MONGODB: "true"
+      SENSITIVE_INFO_WARN: "false"
+      SPOTIFY_PLAYLIST_EXTRA_PAGE_LIMIT: "3"
+      BANS_INTENT: "false"
+      DM_MESSAGES_INTENT: "false"
+      DM_REACTIONS_INTENT: "false"
+      DM_TYPING_INTENT: "false"
+      GUILD_MESSAGES_INTENT: "true"
+      GUILD_REACTIONS_INTENT: "false"
+      GUILD_SCHEDULED_EVENTS_INTENT: "false"
+      GUILD_TYPING_INTENT: "false"
+      EMOJIS_AND_STICKERS_INTENT: "true"
+      INTEGRATIONS_INTENT: "true"
+      INVITES_INTENT: "true"
+      VOICE_STATES_INTENT: "true"
+      WEBHOOKS_INTENT: "false"
+      PRESENCES_INTENT: "false"
+      MESSAGE_CONTENT_INTENT: "true"
+      KILL_ON_429: "true"
+      ENABLE_COMMANDS_COOLDOWN: "true"
+      COMMAND_LOG: "false"
+      SUPPORT_SERVER: "https://discord.gg/KgtyNg9U6H"
+      APP_DESCRIPTION: "🎵 Bot de música da comunidade EmpireHub: YouTube, Spotify e Deezer.\n▶️ Comece com /play ou {prefix}play <nome ou link>. Ajuda: {prefix}help\n🤖 Somos {bots} bots: se eu estiver ocupado, uma reserva entra na sua call.\n⚙️ Painel: {panel_url}\n💬 Suporte: {support_url}"
+      APP_DESCRIPTION_RESERVE: "🎵 Reserva do {main}: entro na call quando o {main} está ocupado.\n▶️ Comandos de barra ficam no {main}; aqui use {prefix}play. Ajuda: {prefix}help\n⚙️ Painel: {panel_url}\n💬 Suporte: {support_url}"
+      APP_TAGS: "música,music,player,spotify,youtube"
+      AUTO_SYNC_COMMANDS: "true"
+      BOT_ADD_REMOVE_LOG_CHANNEL_ID: "01389041396324765827"
+      EMBED_COLOR: "8B5CF6"
+      SOURCE_REPO: "https://github.com/EmpireCommunity/EmpireMuse.git"
+      INTERACTION_COMMAND_ONLY: "false"
+      ENABLE_JISHAKU: "false"
+      PRESENCE_INTERVAL: "900"
+      INVITE_PERMISSIONS: "2533601240804560"
+      ENABLE_LOGGER: "false"
+      GIT_DIR: "./.git"
+      GUILD_DEAFEN_WARN: "true"
+      LAVALINK_SERVER_LIST: "https://raw.githubusercontent.com/EmpireCommunity/EmpireMuse/main/data/lavalink_servers.ini"
+      LAVALINK_RECONNECT_RETRIES: "30"
+      FORCE_USE_DEEZER_CLIENT: "false"
+      MAX_USER_FAVS: "10"
+      USER_FAV_MAX_NAME_LENGTH: "35"
+      USER_FAV_MAX_URL_LENGTH: "90"
+      IDLE_TIMEOUT: "180"
+      WAIT_FOR_MEMBERS_TIMEOUT: "180"
+      DEFAULT_SKIN: "default"
+      DEFAULT_STATIC_SKIN: "default"
+      IGNORE_SKINS: ""
+      IGNORE_STATIC_SKINS: ""
+      EXTRA_HINTS: ""
+      HINT_RATE: "4"
+      VOTE_SKIP_AMOUNT: "3"
+      PREFIXED_POOL_TIMEOUT: "4"
+      ENABLE_DISCORD_URLS_PLAYBACK: "true"
+      PLAYER_INFO_BACKUP_INTERVAL: "45"
+      MONGO_TIMEOUT: "30"
+      PLAYER_INFO_BACKUP_INTERVAL_MONGO: "300"
+      QUEUE_MAX_ENTRIES: "0"
+      ENABLE_DEFER_TYPING: "true"
+      VOICE_CHANNEL_LATENCY_RECONNECT: "200"
+      PLAYLIST_CACHE_SIZE: "500"
+      PLAYLIST_CACHE_TTL: "1800"
+      ENABLE_SONGREQUEST_MENTION: "true"
+      RUN_RPC_SERVER: "true"
+      ENABLE_RPC_COMMAND: "false"
+      RPC_SERVER: "ws://localhost:$$PORT/ws"
+      RPC_PUBLIC_URL: "wss://muse.empirecommunity.org/ws"
+      ENABLE_RPC_AUTH: "true"
+      RPC_ALLOWED_ORIGINS: ""
+      WEB_BIND_ADDRESS: "0.0.0.0"
+      PANEL_ENABLED: "true"
+      PANEL_BASE_URL: "https://muse.empirecommunity.org"
+      PANEL_SESSION_TTL_HOURS: "12"
+      PANEL_SESSION_IDLE_MINUTES: "60"
+      PANEL_TRUST_PROXY: "false"
+      PANEL_INSECURE_COOKIES: "false"
+      YOUTUBE_TRACK_COOLDOWN: "20"
+      RUN_LOCAL_LAVALINK: "true"
+      CONNECT_LOCAL_LAVALINK: "true"
+      PREFER_YOUTUBE_NATIVE_PLAYBACK: "true"
+      ONLY_USE_NATIVE_SEARCH_PROVIDERS: "true"
+      SEARCH_PROVIDERS: "ytsearch ytmsearch scsearch"
+      LAVALINK_ADDITIONAL_SLEEP: "0"
+      LAVALINK_INITIAL_RAM: "30"
+      LAVALINK_RAM_LIMIT: "512"
+      LAVALINK_CPU_CORES: "1"
+      LAVALINK_FILE_URL: ""
+      LAVALINK_FILE_SHA256: ""
+      LAVALINK_JAVA_PATH: "/opt/java/openjdk/bin/java"
+      LAVALINK_HOME: "/opt/lavalink"
+      LAVALINK_OFFLINE: "true"
+      LISTENING_PRESENCES: ""
+      WATCHING_PRESENCES: ""
+      PLAYING_PRESENCES: ""
+      CUSTOM_STATUS_PRESENCES: "🎵 /play ou !play | ajuda: !help||⚙️ Painel: muse.empirecommunity.org/painel||🎧 Tocando em {players_count} calls"
+      STREAMING_PRESENCES: ""
+    volumes:
+      - empiremuse-data:/data
+      - updater-sock:/run/empiremuse-updater
+    # Painel e RPC só em 127.0.0.1 (nunca "6000:6000"): para expor, um proxy TLS na frente.
+    ports:
+      - "127.0.0.1:6000:6000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Proxy de atualização: a única peça com acesso ao docker.sock (equivale a root no host, por isso fica minúsculo,
+  # sem rede, só leitura e sem capabilities). Só aceita 5 operações sobre um container auxiliar de nome fixo; o auxiliar
+  # troca UMA linha deste compose e faz o "compose up" do bot. Detalhes e ameaças: docs/adr/0004-auto-update-proxy.md.
+  updater-proxy:
+    container_name: empiremuse-updater-proxy
+    # Nome completo (docker.io/...): a linha nunca casa com a do bot, que é a que o auxiliar edita. O digest é
+    # obrigatório: o "Update project" do painel puxa e recria todos os serviços, e só com tag um token vazado do Hub
+    # viraria root pelo proxy. Troque o marcador pelo digest do image-digest.txt da mesma release.
+    image: docker.io/or4cu1o/empiremuse:2.1.3@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    pull_policy: missing
+    restart: unless-stopped
+    command: ["/usr/local/bin/python3", "-I", "-S", "/app/empiremuse/updater/proxy.py"]
+    user: "10002:10001"
+    # GID do dono do docker.sock no host (stat -c %g /var/run/docker.sock), definido no .env.
+    group_add:
+      - "${DOCKER_GID:?defina DOCKER_GID no .env (stat -c %g /var/run/docker.sock)}"
+    environment:
+      # Caminho DESTE projeto no host: o auxiliar monta a pasta nesse mesmo caminho para ler e editar o compose.
+      UPDATER_PROJECT_DIR: /docker/empiremuse
+      # Só o bot (uid 10001) fala com o proxy.
+      UPDATER_PEER_UID: "10001"
+    healthcheck:
+      disable: true
+    network_mode: none
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 64m
+    pids_limit: 32
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - updater-sock:/run/empiremuse-updater
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  empiremuse-data:
+  updater-sock:
