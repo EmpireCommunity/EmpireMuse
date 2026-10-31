@@ -251,9 +251,10 @@ jobs:
 
       - name: docker.sock só nos compose da Hostinger
         run: |
-          hits=$(grep -l 'docker\.sock' deploy/*.yml | grep -v '^deploy/docker-compose\.hostinger' || true)
+          # Todo arquivo de deploy/ (qualquer pasta ou extensão), fora comentários; só estes dois nomes exatos podem citar o socket.
+          hits=$(grep -rlE '^[^#]*docker\.sock' deploy/ | grep -vxE 'deploy/docker-compose\.hostinger(-sem-traefik)?\.yml' || true)
           if [ -n "$hits" ]; then
-            echo "docker.sock fora dos compose hostinger*:" >&2
+            echo "docker.sock fora dos dois compose da Hostinger:" >&2
             echo "$hits" >&2
             exit 1
           fi
