@@ -228,6 +228,19 @@ jobs:
       - name: Chaves de segredo sem valor literal em deploy/ e nos *.example*
         run: python3 -I .github/scripts/check_deploy_secrets.py
 
+      - name: Verificador de segredos recusa as três formas (mapa, lista e .env)
+        run: |
+          script="$PWD/.github/scripts/check_deploy_secrets.py"
+          for line in '      TOKEN: abc' '      - TOKEN=abc' '      - "MONGO=abc"' 'TOKEN=abc' '      MONGO: ${MONGO:-abc}'; do
+            workdir=$(mktemp -d)
+            mkdir "$workdir/deploy"
+            printf '%s\n' "$line" > "$workdir/deploy/fixture.example"
+            if (cd "$workdir" && python3 -I "$script" 2> /dev/null); then
+              echo "O verificador deixou passar: $line" >&2
+              exit 1
+            fi
+          done
+
       - name: docker.sock só nos compose da Hostinger
         run: |
           hits=$(grep -l 'docker\.sock' deploy/*.yml | grep -v '^deploy/docker-compose\.hostinger' || true)
