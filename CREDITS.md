@@ -29,3 +29,9 @@ organização EmpireCommunity, para não depender de contas de terceiros. A orig
 | Imagens em `assets/` | Upstream e serviços de terceiros | `assets/` | Substituição por arte própria planejada. |
 | Lista de servidores Lavalink | Gist do upstream; servidores públicos via `lavalink.darrennathanael.com` | `data/lavalink_servers.ini` | O crédito consta no cabeçalho do arquivo. |
 | Guias de uso | Wiki e gist do upstream | `docs/guides/` | Cada página traz a nota de adaptação com o link do upstream. |
+
+## Ícones de terceiros
+
+| Recurso | Autor / origem | Local no EmpireMuse | Licença / observações |
+| :--- | :--- | :--- | :--- |
+| Ícones do painel web (kits `web-ui-icons` e `media-player-icons`) | **mnauliady** (Flaticon) | `empiremuse/panel/static/icons/mnauliady/` (cópias de 20 px e 40 px; os originais de 512 px ficam no repositório EmpireAssets) | Flaticon, gratuita com atribuição obrigatória, exibida no rodapé do painel: <a href="https://www.flaticon.com/free-icons/user-interface" title="user interface icons">User interface icons created by mnauliady - Flaticon</a> |

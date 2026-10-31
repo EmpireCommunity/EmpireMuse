@@ -818,6 +818,12 @@ main:focus {
   filter: drop-shadow(0 0.0625rem 0.25rem rgb(139 92 246 / 55%));
 }
 
+/* A lista de seções da conta é o <nav ul> flex do Pico: com os ícones ela precisa quebrar linha em telas estreitas (a grade de categorias não é flex e não muda) */
+.nav-categorias ul {
+  flex-wrap: wrap;
+  row-gap: 0.25rem;
+}
+
 .nav-categorias .secao-link {
   align-items: center;
   display: inline-flex;
