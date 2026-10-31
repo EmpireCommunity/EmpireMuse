@@ -7,6 +7,14 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.1.3] - 2026-10-31
+
+Playlists e configuração únicas por servidor, bot principal e reservas, canal de pedidos único, perfil da aplicação no Discord e registro de uso com banimento de servidores (só o dono).
+
+**Ao atualizar:**
+- O `update` do Docker troca só a imagem do bot. A imagem do `updater-proxy` não muda nesta versão (`proxy.py` e o `Dockerfile` ficam como na 2.1.2), então, em quem já tem a 2.1.2 instalada, a linha do proxy no compose fica como está. Numa instalação nova, as duas linhas `image:` do compose usam a 2.1.3.
+- O bot do `TOKEN` passa a ser o principal, o único com comandos de barra; os demais viram reservas. Confira qual token está em `TOKEN` antes de atualizar.
+
 ### Adicionado
 - **`/playlists importar` por link**: nova origem `link` para importar um `.json` de playlists de `raw.githubusercontent.com`, `gist.githubusercontent.com`, `cdn.discordapp.com` ou `media.discordapp.net` (https, porta 443). O bot resolve o nome, só conecta em endereço público, não segue redirecionamento, lê no máximo 64 KiB e desiste em 10 s; o link nunca aparece na resposta nem no log.
 - **Uso do bot e banimento de servidores (só o dono)**: o bot registra onde (servidor e canais), como (comando, botão, canal de pedidos, painel web, faixa tocada) e quando foi usado, sem nada sobre quem usou, com retenção de `USAGE_RETENTION_DAYS` dias (30 por padrão). No comando `servers`, "Ver uso" mostra o resumo de 7 dias do servidor, "Banir" tira todos os bots do servidor e impede que o readicionem, e "Banidos" lista e desbane. A lista de banidos é única para todo o pool.
@@ -640,7 +648,8 @@ O **EmpireMuse** é uma obra derivada e evolução contínua do projeto [MuseHea
 - **Ponto de partida do fork/bifurcação**: Commit upstream [`32f227e9`](https://github.com/zRitsu/MuseHeart-MusicBot/commit/32f227e96bca59d5e54f58f56f5fb7e804704b32) de 02/03/2026 (implementação do suporte ao protocolo DAVE com envio de `channelId` no payload de voz).
 - **Histórico anterior**: O histórico completo de commits, versões e contribuições anteriores a esse ponto de partida permanece preservado no repositório original do upstream.
 
-[Unreleased]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.1.2...HEAD
+[Unreleased]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.1.3...HEAD
+[2.1.3]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.1.2...v2.1.3
 [2.1.2]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.1.1...v2.1.2
 [2.1.1]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.0.2...v2.1.0
