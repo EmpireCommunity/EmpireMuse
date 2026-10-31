@@ -16,6 +16,16 @@ intacto). Como obra derivada, o EmpireMuse também é distribuído sob a GPL-2.0
 Nosso agradecimento a **zRitsu** e a todas as pessoas que contribuíram com o
 MuseHeart-MusicBot upstream. Sem esse trabalho, o EmpireMuse não existiria.
 
+## Ícones
+
+Os emojis de aplicação em `assets/emojis/` (controles do player, setas, busca, fila e afins) usam ícones da
+[Flaticon](https://www.flaticon.com/), licença gratuita com atribuição obrigatória:
+
+<a href="https://www.flaticon.com/free-icons/user-interface" title="user interface icons">User interface icons created by mnauliady - Flaticon</a>
+
+Os logotipos de plataformas (YouTube, Spotify, Deezer, SoundCloud, Twitch, Tidal e outras) continuam sendo marcas de seus donos
+e não fazem parte dessa licença.
+
 ## Recursos espelhados
 
 Alguns recursos externos dos quais o projeto depende foram espelhados em repositórios da
