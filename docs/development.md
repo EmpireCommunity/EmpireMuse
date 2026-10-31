@@ -153,9 +153,9 @@ sh deploy/local/run.sh        # Linux e macOS
 deploy\local\run.bat         # Windows
 ```
 
-O script confere que não está rodando como root (no Windows, como Administrador) e que o `uv` existe, instala o Python 3.14 pelo `uv`, cria o `.venv`, instala as dependências do `requirements-lock.txt` com verificação de hash e inicia o bot pela raiz do repositório. Ele não instala o `uv`, não baixa mais nada, não pede privilégio elevado e nunca lê, mostra nem copia o `.runtime/.env`; só avisa se o arquivo não existir ou se grupo e outros puderem lê-lo (`chmod 600 .runtime/.env`). O Java e o Lavalink são baixados pelo próprio bot, com SHA-256 fixo (seção 5).
+O script confere que não está rodando como root (no Windows, como Administrador) e que o `uv` existe, instala o Python 3.14 pelo `uv`, cria o `.venv`, instala as dependências do `requirements-lock.txt` com verificação de hash e inicia o bot pela raiz do repositório. Ele não instala o `uv`, não baixa nada além do Python 3.14 (instalado pelo próprio `uv`), não pede privilégio elevado e nunca lê, mostra nem copia o `.runtime/.env`; só avisa se o arquivo não existir ou se grupo e outros puderem lê-lo (`chmod 600 .runtime/.env`). O Java e o Lavalink são baixados pelo próprio bot, com SHA-256 fixo (seção 5).
 
-Com banco MongoDB, suba só o banco com `docker compose -f deploy/docker-compose.deps.yml up -d` ([`docker.md`](guides/docker.md), seção 3.2) e use o host `127.0.0.1` no `MONGO`. Sem `MONGO`, o bot usa o banco local. O modo `update` fica no modo `git` se o código vier de um clone; fora de um clone, o bot só informa a versão nova.
+Com banco MongoDB, suba só o banco com `docker compose -f deploy/docker-compose.deps.yml up -d` ([`docker.md`](guides/docker.md), seção 3.2) e use o host `127.0.0.1` no `MONGO`. Sem `MONGO`, o bot usa o banco local. O `update` usa o modo `git` quando o código vem de um clone comum (a pasta `.git` é um diretório; numa git worktree ela é um arquivo e o modo cai em `manual`); fora disso, o bot só informa a versão nova.
 
 ## 5. Lavalink (servidor de áudio)
 

@@ -86,14 +86,16 @@ O MongoDB opcional (`mongo:8.0.34`, fixado por digest imutável) tem o próprio 
    ```bash
    docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.deps.yml --env-file .env up -d
    ```
+   Se você usa o Traefik (seção 3.5), inclua também o override: `-f deploy/docker-compose.yml -f deploy/docker-compose.traefik.yml -f deploy/docker-compose.deps.yml`. Sem ele, o bot perde os rótulos e a rede `proxy`.
 3. Crie um usuário próprio do bot, com a função `readWriteAnyDatabase`, e use esse usuário no `MONGO` do `.env` (o usuário root serve só para criar o banco). O host é o serviço `mongo`:
    ```env
    MONGO='mongodb://usuario_do_bot:senha_do_bot@mongo:27017/?authSource=admin'
    ```
    > [!NOTE]
-   > O parâmetro `?authSource=admin` é necessário na URL de conexão porque os usuários são criados no banco de autenticação `admin`.
+   > O parâmetro `?authSource=admin` é necessário na URL de conexão porque os usuários são criados no banco de autenticação `admin`. Se o usuário ou a senha tiver `@`, `:` ou `/`, codifique só esses trechos com percent-encoding (por exemplo, `@` vira `%40`).
+4. Depois de salvar o `MONGO` no `.env`, recrie o bot com o mesmo comando do passo 2 (editar o `.env` não altera o contêiner em execução).
 
-Os dados ficam no volume `empiremuse_empiremuse-mongo`, o mesmo do antigo perfil `mongo`. Nunca use `down -v` nele. Para rodar só o banco (por exemplo, para o bot sem container em [`deploy/local/`](../../deploy/local/)), suba `docker compose -f deploy/docker-compose.deps.yml up -d` e use o host `127.0.0.1` no `MONGO`.
+Os dados ficam no volume `empiremuse_empiremuse-mongo`, o mesmo do antigo perfil `mongo`. Nunca use `down -v` nele. Para rodar só o banco (por exemplo, para o bot sem container em [`deploy/local/`](../../deploy/local/)), suba `docker compose -f deploy/docker-compose.deps.yml --env-file .env up -d` (o `--env-file` faz valer o `MONGO_LOCAL_PORT` do `.env`) e use o host `127.0.0.1` no `MONGO`.
 
 ### 3.3 Variáveis de Configuração do Compose
 
