@@ -8,9 +8,17 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 ## [Unreleased]
 
 ### Adicionado
+- **MongoDB opcional em arquivo próprio e bot sem container**: novo `deploy/docker-compose.deps.yml` com só o MongoDB (sempre com autenticação, porta só em `127.0.0.1`, usuário root só na criação do banco), que sobe junto do bot em container (`-f deploy/docker-compose.yml -f deploy/docker-compose.deps.yml`) ou sozinho. Novos `deploy/local/run.sh` e `deploy/local/run.bat` rodam o bot sem container (não recomendado), com `uv` (que instala o Python 3.14), dependências por hash sem `sudo`, sem ler nem mostrar o `.env` e sem outro download; recusam rodar como root ou Administrador.
 - **Índice do `deploy/` e compose da Hostinger sem Traefik**: novo `deploy/README.md` diz qual arquivo usar em cada tipo de implantação (Docker, Traefik, VPS de arquivo único, Pterodactyl, Discloud e nós Lavalink externos) e se ele tem auto-update. O novo `deploy/docker-compose.hostinger-sem-traefik.yml` é o compose da Hostinger sem Traefik, com o painel só em `127.0.0.1:6000`, para quem expõe o painel por outro proxy com TLS. O `deploy/docker-compose.hostinger.yml` passa a refletir o limite de memória de 2048 MiB da produção.
 
 ### Alterado
+- **O perfil `mongo` saiu do `deploy/docker-compose.yml`**: o MongoDB agora vem do `deploy/docker-compose.deps.yml`, que reaproveita o volume `empiremuse_empiremuse-mongo`, então os dados ficam.
+  **Ao atualizar (quem usava o perfil `mongo`):**
+  1. `docker compose -f deploy/docker-compose.yml --profile mongo down` (sem `-v`: os dados ficam).
+  2. `docker volume ls` deve mostrar `empiremuse_empiremuse-mongo`.
+  3. Atualize o repositório.
+  4. `docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.deps.yml --env-file .env up -d`.
+  5. Confira que o bot conecta e que os servidores mantêm a configuração.
 - **CI valida o `deploy/`**: novo job `deploy-check` roda `docker compose config -q` em cada compose e no par base + Traefik, valida o egg do Pterodactyl, recusa valor literal em chave de segredo de `deploy/` e dos `*.example*`, recusa `docker.sock` fora dos dois compose da Hostinger e roda o `gitleaks` em `deploy/`.
 
 ### Documentação

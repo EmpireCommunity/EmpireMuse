@@ -201,19 +201,43 @@ jobs:
         run: |
           # Valores falsos só para as variáveis obrigatórias; os arquivos .env ficam vazios.
           : > .env
-          [ -f deploy/docker-compose.deps.yml ] && : > .env.mongo
+          : > .env.mongo
           for file in deploy/docker-compose*.yml; do
             case "$file" in
-              *.traefik.yml|*.deps.yml) continue ;; # só valem combinados com o base (pares abaixo)
+              *.traefik.yml) continue ;; # só vale combinado com o base (par abaixo)
             esac
             echo "::group::$file"
             docker compose -f "$file" config -q
             echo "::endgroup::"
           done
           docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.traefik.yml config -q
-          if [ -f deploy/docker-compose.deps.yml ]; then
-            docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.deps.yml config -q
-          fi
+          docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.deps.yml config -q
+
+      - name: Nenhuma porta publicada fora de 127.0.0.1
+        env:
+          EMPIREMUSE_DOMAIN: example.invalid
+          DOCKER_GID: "999"
+          PANEL_BASE_URL: https://painel.exemplo.invalid
+          RPC_PUBLIC_URL: wss://painel.exemplo.invalid/ws
+        run: |
+          : > .env
+          : > .env.mongo
+          check_ports() {
+            exposed=$(docker compose "$@" config --format json | jq -r '.services | to_entries[] | .key as $svc | (.value.ports // [])[] | select((.host_ip // "") != "127.0.0.1") | "\($svc): \(.published // "?")->\(.target)"')
+            if [ -n "$exposed" ]; then
+              echo "Porta fora de 127.0.0.1 em: $*" >&2
+              echo "$exposed" >&2
+              exit 1
+            fi
+          }
+          for file in deploy/docker-compose*.yml; do
+            case "$file" in
+              *.traefik.yml) continue ;;
+            esac
+            check_ports -f "$file"
+          done
+          check_ports -f deploy/docker-compose.yml -f deploy/docker-compose.traefik.yml
+          check_ports -f deploy/docker-compose.yml -f deploy/docker-compose.deps.yml
 
       - name: Validar o egg do Pterodactyl (JSON)
         run: python3 -m json.tool deploy/pterodactyl/egg-empiremuse.json > /dev/null
@@ -224,8 +248,18 @@ jobs:
           [ -z "$scripts" ] && { echo "Nenhum script em deploy/."; exit 0; }
           for script in $scripts; do
             sh -n "$script"
-            shellcheck "$script"
+            shellcheck -s sh "$script"
           done
+
+      - name: Scripts de deploy/local sem download, sudo, eval nem execução por pipe
+        run: |
+          files=$(find deploy/local -type f \( -name '*.sh' -o -name '*.bat' \) 2> /dev/null)
+          [ -z "$files" ] && { echo "Nenhum script em deploy/local."; exit 0; }
+          # Vale para a linha inteira, inclusive comentário e mensagem.
+          if grep -nEiw 'curl|wget|sudo|eval|iex|irm|Invoke-Expression|Invoke-WebRequest' $files || grep -nE '\|[[:space:]]*(ba)?sh([[:space:]]|$)' $files; then
+            echo "Termo proibido nos scripts de deploy/local (ver as linhas acima)." >&2
+            exit 1
+          fi
 
       - name: Chaves de segredo sem valor literal em deploy/ e nos *.example*
         run: python3 -I .github/scripts/check_deploy_secrets.py
@@ -233,7 +267,7 @@ jobs:
       - name: Verificador de segredos recusa literais (mapa, lista, .env e webhook) e aceita as formas válidas
         run: |
           script="$PWD/.github/scripts/check_deploy_secrets.py"
-          for line in '      TOKEN: abc' '      - TOKEN=abc' '      - "MONGO=abc"' 'TOKEN=abc' '      MONGO: ${MONGO:-abc}' '      BOT_ADD_REMOVE_LOG: https://discord.com/api/webhooks/1/abc' '      - LOG=https://discordapp.com/api/webhooks/1/abc' '      PIN_PASSWORD: "123456"'; do
+          for line in '      TOKEN: abc' '      - TOKEN=abc' '      - "MONGO=abc"' 'TOKEN=abc' '      MONGO: ${MONGO:-abc}' '      BOT_ADD_REMOVE_LOG: https://discord.com/api/webhooks/1/abc' '      - LOG=https://discordapp.com/api/webhooks/1/abc' '      PIN_PASSWORD: "123456"' '      "TOKEN": "abc"'; do
             workdir=$(mktemp -d)
             mkdir "$workdir/deploy"
             printf '%s\n' "$line" > "$workdir/deploy/fixture.example"
@@ -249,13 +283,17 @@ jobs:
             (cd "$workdir" && python3 -I "$script") || { echo "O verificador recusou uma forma válida: $line" >&2; exit 1; }
           done
 
-      - name: docker.sock só nos compose da Hostinger
+      - name: docker.sock e /run só nos compose da Hostinger
         run: |
-          # Todo arquivo de deploy/ (qualquer pasta ou extensão), fora comentários; só estes dois nomes exatos podem citar o socket.
-          hits=$(grep -rlE '^[^#]*docker\.sock' deploy/ | grep -vxE 'deploy/docker-compose\.hostinger(-sem-traefik)?\.yml' || true)
-          if [ -n "$hits" ]; then
-            echo "docker.sock fora dos dois compose da Hostinger:" >&2
-            echo "$hits" >&2
+          # Todo arquivo de deploy/ (qualquer pasta ou extensão). Comentário é '#' no início da linha ou depois de espaço;
+          # só os dois nomes exatos abaixo podem citar o socket ou montar /run e /var/run.
+          allowed='deploy/docker-compose\.hostinger(-sem-traefik)?\.yml'
+          code='^(?!\s*#)(?:(?!\s#).)*'
+          sock=$(grep -rlP "${code}docker\.sock" deploy/ | grep -vxE "$allowed" || true)
+          run_mount=$(grep -rlP "${code}(?:^|[\s\"':=\[,])/(?:var/)?run/?(?:[\"':\s\],]|$)" deploy/ | grep -vxE "$allowed" || true)
+          if [ -n "$sock$run_mount" ]; then
+            echo "docker.sock ou montagem de /run fora dos dois compose da Hostinger:" >&2
+            printf '%s\n' "$sock" "$run_mount" >&2
             exit 1
           fi
 

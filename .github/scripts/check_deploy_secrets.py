@@ -22,6 +22,7 @@ NON_SECRET_SETTINGS = frozenset(
         "MONGO_TIMEOUT",
         "PLAYER_INFO_BACKUP_INTERVAL_MONGO",
         "PANEL_INSECURE_COOKIES",
+        "MONGO_LOCAL_PORT",
     }
 )
 WEBHOOK_URL = re.compile(r"discord(?:app)?\.com/api/webhooks/\S", re.IGNORECASE)
@@ -76,6 +77,9 @@ def offending_egg_variables(path: Path) -> list[str]:
     for variable in json.loads(path.read_text(encoding="utf-8")).get("variables", []):
         name = variable.get("env_variable", "")
         default = variable.get("default_value")
+        if WEBHOOK_URL.search(str(default)):
+            found.append(f"{path}: {name} traz URL de webhook do Discord literal")
+            continue
         if not SECRET_KEY.search(name) or default is None:
             continue
         if not is_harmless(name, str(default).strip()):

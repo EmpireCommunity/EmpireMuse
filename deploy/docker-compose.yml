@@ -1,7 +1,9 @@
 # Compose base do EmpireMuse (Docker Compose com suporte a env_file e a vários arquivos -f).
 # Uso, a partir da raiz do repositório:
 #   docker compose -f deploy/docker-compose.yml --env-file .env up -d
-# O .env (e o .env.mongo do perfil mongo) ficam na raiz do repositório.
+# O .env (e o .env.mongo do compose de deps) ficam na raiz do repositório.
+# Com o MongoDB do compose de deps (mesmo projeto e mesma rede), suba SEMPRE o par:
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.deps.yml --env-file .env up -d
 name: empiremuse
 
 services:
@@ -34,23 +36,5 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  mongo:
-    container_name: empiremuse-mongo
-    profiles:
-      - mongo
-    image: mongo:8.0.34@sha256:4a4ab5d4834207389e0d7270fac988e21ffedccecba77991a552f755df229907
-    restart: unless-stopped
-    volumes:
-      - empiremuse-mongo:/data/db
-    env_file:
-      - path: ../.env.mongo
-        required: true
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-
 volumes:
   empiremuse-data:
-  empiremuse-mongo:

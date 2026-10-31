@@ -8,7 +8,7 @@ Como preparar o ambiente para desenvolver e testar o EmpireMuse. Para entender o
 | Item | Versão | Observação |
 |---|---|---|
 | Python | **3.14** | Runtime e **mínimo** do projeto (item 6): o código usa `except A, B:` (PEP 758) e não importa no 3.13. A CI também roda o 3.15 sem bloquear. `audioop-lts` (`requirements.txt`) cobre o módulo que saiu da biblioteca padrão. |
-| [uv](https://docs.astral.sh/uv/) | recente | Gerenciador de venv/pacotes recomendado. |
+| [uv](https://docs.astral.sh/uv/) | recente | Gerenciador de venv/pacotes recomendado. Instale-o como na seção 4.1. |
 | Git | qualquer | Só para clonar o repositório e os submódulos; nenhuma dependência Python é instalada via Git. |
 | Java | **17+** | **Só** se for rodar o Lavalink local. Sem Java 17+, o bot tenta baixar um JDK sozinho (`validate_java` e `run_lavalink` em `empiremuse/utils/music/local_lavalink.py`). |
 | Aplicação no Discord | — | Token do bot em <https://discord.com/developers/applications>, com as *Privileged Intents* ativadas (a falta delas é detectada e explicada na inicialização, `BotPool.start_bot` em `empiremuse/utils/client.py`). |
@@ -139,6 +139,23 @@ Na primeira execução:
 - com `RUN_RPC_SERVER=true`, a página de status responde em `http://localhost:<PORT>/`.
 
 Pare com `Ctrl+C`. O `jishaku` só é carregado com `ENABLE_JISHAKU=true` (`load_jishaku_if_enabled` em `empiremuse/utils/client.py`, desligado por padrão) e serve para depuração interativa por donos. Ao carregá-lo, o bot define `JISHAKU_MASK_SECRETS=true`, `JISHAKU_DM_ONLY=true` e `JISHAKU_OWNER_IDS` com os IDs de `OWNER_IDS` (o dono do aplicativo precisa estar na lista). Com `OWNER_IDS` vazio o jishaku não é carregado (aviso no log). O operador pode sobrescrever `JISHAKU_MASK_SECRETS` e `JISHAKU_DM_ONLY` pelo ambiente. Os tracebacks voltam por DM.
+
+### 4.1 Instalar o `uv`
+
+Instale o `uv` pelo gerenciador de pacotes do sistema, pelo `pipx` (`pipx install uv`) ou baixando o binário da [página de releases do uv](https://github.com/astral-sh/uv/releases) e conferindo o checksum publicado ao lado dele. Evite os instaladores que baixam e executam um script de uma vez só (por pipe): eles rodam código remoto sem você conferir.
+
+### 4.2 Rodar sem container (não recomendado)
+
+O modo recomendado é o Docker ([`deploy/README.md`](../deploy/README.md)). Para quem não pode ou não quer usar container, os scripts de [`deploy/local/`](../deploy/local/) fazem o mesmo caminho da seção 2 num só passo:
+
+```bash
+sh deploy/local/run.sh        # Linux e macOS
+deploy\local\run.bat         # Windows
+```
+
+O script confere que não está rodando como root (no Windows, como Administrador) e que o `uv` existe, instala o Python 3.14 pelo `uv`, cria o `.venv`, instala as dependências do `requirements-lock.txt` com verificação de hash e inicia o bot pela raiz do repositório. Ele não instala o `uv`, não baixa nada além do Python 3.14 (instalado pelo próprio `uv`), não pede privilégio elevado e nunca lê, mostra nem copia o `.runtime/.env`; só avisa se o arquivo não existir ou se grupo e outros puderem lê-lo (`chmod 600 .runtime/.env`). Se já existir `.env`, `config.json` ou `local_database/` na raiz, o script não cria `.runtime/` e segue usando a raiz, para não trocar os dados de uma instalação antiga. Um `.venv` com Python diferente de 3.14 faz o script parar pedindo para apagá-lo (ele nunca apaga sozinho). O Java e o Lavalink são baixados pelo próprio bot, com SHA-256 fixo (seção 5).
+
+Com banco MongoDB, suba só o banco com `docker compose -f deploy/docker-compose.deps.yml up -d` ([`docker.md`](guides/docker.md), seção 3.2) e use o host `127.0.0.1` no `MONGO`. Sem `MONGO`, o bot usa o banco local. O `update` usa o modo `git` quando o código vem de um clone comum (a pasta `.git` é um diretório; numa git worktree ela é um arquivo e o modo cai em `manual`); fora disso, o bot só informa a versão nova.
 
 ## 5. Lavalink (servidor de áudio)
 
