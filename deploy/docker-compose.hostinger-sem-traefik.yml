@@ -5,7 +5,7 @@
 # o limite de tentativas de login vê o IP do proxy (todos os visitantes dividem o mesmo limite). Só mude para "true" se o proxy SOBRESCREVER
 # X-Forwarded-For e X-Real-IP e remover o CF-Connecting-IP vindo do cliente; senão qualquer um forja o próprio IP (docs/guides/painel-web.md, 4.3).
 # Ao usar: copie para o diretório do projeto como docker-compose.yml, preencha o .env a partir de deploy/env.example.hostinger
-# (renomeado para .env) e troque PANEL_BASE_URL e RPC_PUBLIC_URL pelo seu endereço público (o do proxy).
+# (renomeado para .env) e defina nele PANEL_BASE_URL e RPC_PUBLIC_URL com o seu endereço público (o do proxy). Sem eles o compose não sobe.
 # Toda a configuração fica inline aqui e o .env só interpola os segredos em ${...} (cada valor com até 256 caracteres).
 # Detalhes: docs/guides/docker.md. Versão com Traefik: deploy/docker-compose.hostinger.yml.
 # Auto-update (docs/guides/auto-update.md): o serviço updater-proxy abaixo deixa o comando /update trocar a imagem do bot.
@@ -121,12 +121,12 @@ services:
       RUN_RPC_SERVER: "true"
       ENABLE_RPC_COMMAND: "false"
       RPC_SERVER: "ws://localhost:$$PORT/ws"
-      RPC_PUBLIC_URL: "wss://muse.empirecommunity.org/ws"
+      RPC_PUBLIC_URL: "${RPC_PUBLIC_URL:?defina RPC_PUBLIC_URL no .env com o endereço wss público do seu proxy}"
       ENABLE_RPC_AUTH: "true"
       RPC_ALLOWED_ORIGINS: ""
       WEB_BIND_ADDRESS: "0.0.0.0"
       PANEL_ENABLED: "true"
-      PANEL_BASE_URL: "https://muse.empirecommunity.org"
+      PANEL_BASE_URL: "${PANEL_BASE_URL:?defina PANEL_BASE_URL no .env com o endereço https público do seu proxy}"
       PANEL_SESSION_TTL_HOURS: "12"
       PANEL_SESSION_IDLE_MINUTES: "60"
       PANEL_TRUST_PROXY: "false"
