@@ -196,6 +196,8 @@ jobs:
         env:
           EMPIREMUSE_DOMAIN: example.invalid
           DOCKER_GID: "999"
+          PANEL_BASE_URL: https://painel.exemplo.invalid
+          RPC_PUBLIC_URL: wss://painel.exemplo.invalid/ws
         run: |
           # Valores falsos só para as variáveis obrigatórias; os arquivos .env ficam vazios.
           : > .env
