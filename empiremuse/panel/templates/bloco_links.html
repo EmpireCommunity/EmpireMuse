@@ -1,4 +1,4 @@
-{# Playlists do servidor (fragmento htmx). Variáveis: estado (acao, versao, valores, erros, mensagem, mensagem_tipo, acao_erro, alvo_erro), itens (ordem, nome, url, descricao, generos), total, maximo, pode_adicionar, relatorio (adicionadas, ignoradas[(nome, motivo)]) ou None, limites, exportar_url. Campos: acao, versao; alvo = nome da playlist alvo (editar/remover); nome, url, descricao, generos (separados por vírgula), ordem; dados (importar). #}
+{# Playlists do servidor (fragmento htmx). Variáveis: estado (acao, versao, valores, erros, mensagem, mensagem_tipo, acao_erro, alvo_erro), itens (ordem, nome, icone, url, descricao, generos), total, maximo, pode_adicionar, relatorio (adicionadas, ignoradas[(nome, motivo)]) ou None, limites, exportar_url. Campos: acao, versao; alvo = nome da playlist alvo (editar/remover); icone (opcional, um emoji Unicode; inválido = salvo sem ícone), nome, url, descricao, generos (separados por vírgula), ordem; dados (importar). #}
 {% set erros = estado.erros %}
 {% set valores = estado.valores %}
 <section id="bloco-links" class="bloco-config bloco-largo" aria-labelledby="titulo-lista-links">
@@ -32,7 +32,7 @@
     {% set editando = estado.acao_erro == "editar" and estado.alvo_erro == item.nome %}
     <li class="item-link">
       <div class="item-link-texto">
-        <strong class="item-link-nome"><span class="item-link-ordem" aria-label="ordem {{ item.ordem }}">{{ "%02d" % item.ordem }}</span> {{ item.nome }}</strong>
+        <strong class="item-link-nome"><span class="item-link-ordem" aria-label="ordem {{ item.ordem }}">{{ "%02d" % item.ordem }}</span> {% if item.icone %}<span class="item-link-icone" aria-hidden="true">{{ item.icone }}</span> {% end %}{{ item.nome }}</strong>
         {% if item.url.startswith(("http://", "https://")) %}
         <a class="item-link-url" href="{{ item.url }}" rel="noopener noreferrer" target="_blank">{{ item.url }}<span class="visually-hidden"> (abre em outra aba)</span></a>
         {% else %}
@@ -53,6 +53,9 @@
             <input type="hidden" name="versao" value="{{ estado.versao }}">
             <input type="hidden" name="acao" value="editar">
             <input type="hidden" name="alvo" value="{{ item.nome }}">
+            <label for="editar-icone-{{ indice }}">Ícone (opcional, um emoji)</label>
+            <input id="editar-icone-{{ indice }}" class="campo-icone" type="text" name="icone" value="{{ valores.get('icone') if editando else (item.icone or '') }}" maxlength="{{ limites['icone_max'] }}" autocomplete="off" aria-describedby="editar-ajuda-icone-{{ indice }}">
+            <small id="editar-ajuda-icone-{{ indice }}">Um emoji do teclado; texto ou emoji de servidor é ignorado e a playlist fica sem ícone. Vazio apaga o ícone.</small>
             <label for="editar-nome-{{ indice }}">Nome (de {{ limites["nome_min"] }} a {{ limites["nome_max"] }} caracteres)</label>
             <input id="editar-nome-{{ indice }}" type="text" name="nome" value="{{ valores.get('nome') if editando else item.nome }}" maxlength="{{ limites['nome_max'] }}" autocomplete="off" required{% if editando and erros.get("nome") %} aria-invalid="true" aria-describedby="editar-erro-nome-{{ indice }}"{% end %}>
             {% if editando and erros.get("nome") %}<small id="editar-erro-nome-{{ indice }}" class="erro-campo">{{ erros["nome"] }}</small>{% end %}
@@ -97,6 +100,9 @@
     {% module xsrf_form_html() %}
     <input type="hidden" name="versao" value="{{ estado.versao }}">
     <input type="hidden" name="acao" value="adicionar">
+    <label for="adicionar-icone">Ícone (opcional, um emoji)</label>
+    <input id="adicionar-icone" class="campo-icone" type="text" name="icone" value="{{ (valores.get('icone') or '') if adicionando else '' }}" maxlength="{{ limites['icone_max'] }}" autocomplete="off" placeholder="🎵" aria-describedby="adicionar-ajuda-icone">
+    <small id="adicionar-ajuda-icone">Um emoji do teclado; texto ou emoji de servidor é ignorado e a playlist fica sem ícone.</small>
     <label for="adicionar-nome">Nome (de {{ limites["nome_min"] }} a {{ limites["nome_max"] }} caracteres)</label>
     <input id="adicionar-nome" type="text" name="nome" value="{{ (valores.get('nome') or '') if adicionando else '' }}" maxlength="{{ limites['nome_max'] }}" autocomplete="off" required{% if adicionando and erros.get("nome") %} aria-invalid="true" aria-describedby="adicionar-erro-nome"{% end %}>
     {% if adicionando and erros.get("nome") %}<small id="adicionar-erro-nome" class="erro-campo">{{ erros["nome"] }}</small>{% end %}
