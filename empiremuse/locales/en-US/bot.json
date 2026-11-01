@@ -1,1 +1,8 @@
-{}
+{
+  "language.auto": "Automatic",
+  "language.changed": "Language changed to **{language}**.",
+  "language.invalid": "That language is not available.",
+  "language.cooldown": "Wait {seconds}s before changing the language again.",
+  "language.no_permission": "You need the **Manage Server** permission to change the language.",
+  "language.unavailable": "Could not change the language right now. Try again in a moment."
+}

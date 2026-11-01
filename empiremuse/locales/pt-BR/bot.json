@@ -1,1 +1,8 @@
-{}
+{
+  "language.auto": "Automático",
+  "language.changed": "Idioma alterado para **{language}**.",
+  "language.invalid": "Esse idioma não está disponível.",
+  "language.cooldown": "Aguarde {seconds}s para alterar o idioma de novo.",
+  "language.no_permission": "Você precisa da permissão **Gerenciar Servidor** para alterar o idioma.",
+  "language.unavailable": "Não foi possível alterar o idioma agora. Tente de novo em instantes."
+}

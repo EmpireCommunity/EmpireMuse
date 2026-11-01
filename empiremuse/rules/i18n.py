@@ -56,7 +56,7 @@ ALLOWED_DOMAINS = frozenset({"github.com", "last.fm", "www.last.fm"})
 
 DESC_PREFIX_FORMAT = "[{emoji} {name}] | "
 # Emoji da legenda de cada grupo de comandos (``cmd.<grupo>._label`` guarda só o nome, no idioma).
-GROUP_EMOJI: dict[str, str] = {"music": "🎶"}
+GROUP_EMOJI: dict[str, str] = {"music": "🎶", "settings": "🔧", "lastfm": "🎧", "playlists": "📚", "misc": "🔰"}
 
 _BIDI = frozenset("\u061c\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
 _INVISIBLE = frozenset("\u200b\u2060\ufeff\u00ad")

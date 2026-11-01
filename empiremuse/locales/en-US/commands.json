@@ -1,3 +1,10 @@
 {
-  "cmd.music._label": "Music"
+  "cmd.music._label": "Music",
+  "cmd.settings._label": "Settings",
+  "cmd.lastfm._label": "LastFM",
+  "cmd.playlists._label": "Server playlists",
+  "cmd.misc._label": "Misc",
+  "cmd.language.description": "Change the bot's language on this server.",
+  "cmd.language.opt.language.name": "language",
+  "cmd.language.opt.language.description": "Language to use (auto follows the Discord language of the server)."
 }

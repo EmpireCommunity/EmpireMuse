@@ -244,8 +244,12 @@ class TestGuildResolution:
 
 
 class TestCli:
+    @pytest.fixture(autouse=True)
+    def _empty_code(self, root):
+        (root / "empty-code").mkdir()  # sem chaves usadas: o resultado só depende dos catálogos temporários
+
     def test_a_valid_tree_exits_zero(self, root, capsys):
-        assert check.main(["--root", str(root)]) == 0
+        assert check.main(["--root", str(root), "--code", str(root / "empty-code")]) == 0
         assert "en-US: cobertura 100.0%" in capsys.readouterr().out
 
     def test_a_dropped_entry_and_a_fatal_fail_without_echoing_catalog_text(self, root, capsys):
@@ -253,7 +257,7 @@ class TestCli:
         write(root, "de", {"cmd.music._label": "Musik"}, None)
         (root / "de" / "bot.json").write_bytes(b"\xff")
 
-        assert check.main(["--root", str(root)]) == 1
+        assert check.main(["--root", str(root), "--code", str(root / "empty-code")]) == 1
         err = capsys.readouterr().err
         assert "pt-BR: bot.player.paused descartada" in err and "de: arquivo bot recusado" in err
         assert "Pausado" not in err
@@ -261,7 +265,7 @@ class TestCli:
     def test_a_required_locale_below_100_percent_fails(self, root, capsys):
         write(root, "pt-BR", PT_COMMANDS, {"player.paused": "Pausado por {user}."})
 
-        assert check.main(["--root", str(root)]) == 1
+        assert check.main(["--root", str(root), "--code", str(root / "empty-code")]) == 1
         assert "pt-BR: cobertura abaixo de 100%" in capsys.readouterr().err
 
     def test_a_key_used_in_code_but_missing_from_en_us_is_reported(self, tmp_path):

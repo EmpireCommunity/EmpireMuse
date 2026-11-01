@@ -48,6 +48,12 @@ def missing_keys(used: Iterable[str], reference: dict[str, str]) -> list[str]:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m empiremuse.i18n.check", description=__doc__)
     parser.add_argument("--root", type=Path, default=None, help="pasta com os locales (padrão: empiremuse/locales)")
+    parser.add_argument(
+        "--code",
+        type=Path,
+        default=PACKAGE_DIR,
+        help="pasta do código varrida atrás de chaves usadas (padrão: o pacote)",
+    )
     args = parser.parse_args(argv)
 
     loaded = loader.load_catalogs(args.root)
@@ -66,7 +72,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             problems.append(f"{name}: cobertura abaixo de 100%")
     reference = loaded.get(rules.REFERENCE_LOCALE)
     if reference is not None:
-        for key in missing_keys(used_keys(), reference.entries):
+        for key in missing_keys(used_keys(args.code), reference.entries):
             problems.append(f"chave usada no código e ausente no {rules.REFERENCE_LOCALE}: {key}")
     for problem in problems:
         sys.stderr.write(f"ERRO {problem}\n")
