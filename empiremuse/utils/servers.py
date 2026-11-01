@@ -50,6 +50,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 SERVERS_DB = "global"
+_ABSENT = object()  # campo que o documento ainda não tem (ex.: ``language`` antes da migração)
 CACHE_SIZE = 2000
 CACHE_TTL = 300
 CONTROLLER_KEYS = (
@@ -346,6 +347,7 @@ class ServerStore:
 
             def apply(doc: dict) -> bool:
                 nonlocal wrote
+                wrote = False
                 settings = doc.get(SECTION_SETTINGS)
                 if not isinstance(settings, dict) or "language" in settings:
                     return False
@@ -404,7 +406,7 @@ class ServerStore:
         async def plan(doc: Optional[dict]) -> Optional[dict]:
             new, changed = await self._prepare(key, doc)
             fields = change(new[SECTION_SETTINGS], self._allowed(int(key), new[SECTION_SETTINGS]))
-            if any(new[SECTION_SETTINGS][name] != value for name, value in fields.items()):
+            if any(new[SECTION_SETTINGS].get(name, _ABSENT) != value for name, value in fields.items()):
                 new[SECTION_SETTINGS].update(fields)
                 changed = True
             return new if changed else None

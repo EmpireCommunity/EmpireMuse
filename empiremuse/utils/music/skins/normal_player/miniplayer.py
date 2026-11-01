@@ -42,21 +42,32 @@ class MiniPlayer:
             embed.set_thumbnail(url=player.current.thumb)
 
         if not player.current.autoplay:
-            embed.description += f"-# **Pedido por:** <@{player.current.requester}>\n"
+            embed.description += player.tr("player.requested_by", requester=str(player.current.requester))
         else:
             try:
-                embed.description += f"-# **Adicionado via:** {md_bracketed(md_link('Recomendação', player.current.info['extra']['related']['uri']))}\n"
+                embed.description += player.tr(
+                    "player.added_via",
+                    md_bracketed=str(
+                        md_bracketed(md_link("Recomendação", player.current.info["extra"]["related"]["uri"]))
+                    ),
+                )
             except Exception:
-                embed.description += "-# **Adicionado via:** `[Recomendação]`\n"
+                embed.description += player.tr("player.added_via_recommendation")
 
-        embed.set_author(name="Tocando Agora:", icon_url=music_source_image(player.current.info["sourceName"]))
+        embed.set_author(
+            name=player.tr("player.now_playing"), icon_url=music_source_image(player.current.info["sourceName"])
+        )
 
         if player.command_log:
-            embed.description += f"-# {player.command_log_emoji} ⠂**Última Interação:** {player.command_log}"
+            embed.description += player.tr(
+                "player.last_interaction_6",
+                command_log_emoji=str(player.command_log_emoji),
+                command_log=str(player.command_log),
+            )
 
         if player.current_hint:
             embed_hint = disnake.Embed(colour=embed_color)
-            embed_hint.set_footer(text=f"💡 Dica: {player.current_hint}")
+            embed_hint.set_footer(text=player.tr("player.tip", current_hint=str(player.current_hint)))
             data["embeds"].append(embed_hint)
 
         data["embeds"].append(embed)

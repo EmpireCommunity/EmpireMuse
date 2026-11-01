@@ -63,7 +63,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"{name}: cobertura {data.coverage * 100:.1f}% ({len(data.entries)} chaves, {len(data.dropped)} descartes)\n"
         )
         problems.extend(f"{name}: arquivo {namespace} recusado ({reason})" for namespace, reason in data.fatal)
-        problems.extend(f"{name}: {namespace}.{key} descartada ({reason})" for namespace, key, reason in data.dropped)
+        problems.extend(
+            f"{name}: arquivo {namespace} ausente ou recusado"
+            for namespace in data.missing
+            if namespace in loader.REQUIRED_FILES and name in rules.REQUIRED_LOCALES
+        )
+        problems.extend(
+            f"{name}: {namespace}.{rules.loggable_key(key)} descartada ({reason})"
+            for namespace, key, reason in data.dropped
+        )
     for name in rules.REQUIRED_LOCALES:
         data = loaded.get(name)
         if data is None:

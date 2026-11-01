@@ -50,7 +50,7 @@ async def _pc_embed_resolve(self, req):
     try:
         await self.player_interaction_concurrency.acquire(interaction)
     except Exception:
-        raise GenericError("Há uma música sendo processada no momento...")
+        raise GenericError((await self.bot.pool.i18n.for_guild(interaction.guild))("player.a_song_is_being_processed"))
 
     bot: Optional[BotCore] = None
     player: Optional[LavalinkPlayer] = None
@@ -69,10 +69,7 @@ async def _pc_embed_resolve(self, req):
 
         if p.guild.me.voice and interaction.author.id in p.guild.me.voice.channel.voice_states:
             if p.locked:
-                raise GenericError(
-                    "**Não é possível executar essa ação com o processamento da música em andamento "
-                    "(por favor aguarde mais alguns segundos e tente novamente).**"
-                )
+                raise GenericError(player.tr("player.this_action_cannot_be_run"))
 
             player = p
             bot = b
@@ -81,10 +78,10 @@ async def _pc_embed_resolve(self, req):
             break
 
     if not channel:
-        raise GenericError("Não há bots disponíveis no momento.")
+        raise GenericError(player.tr("player.there_are_no_bots_available"))
 
     if not author.voice:
-        raise GenericError("Você deve entrar em um canal de voz pra usar esse botão....")
+        raise GenericError(player.tr("player.you_must_join_a_voice"))
 
     try:
         node = player.node
@@ -126,9 +123,7 @@ async def _pc_embed_playlist(self, req):
     vc_id = req.vc_id
 
     if retry_after := self.bot.pool.enqueue_playlist_embed_cooldown.get_bucket(interaction).update_rate_limit():
-        raise GenericError(
-            f"**Você terá que aguardar {(rta := int(retry_after))} segundo{'s'[: rta ^ 1]} pra adicionar uma playlist no player atual.**"
-        )
+        raise GenericError(player.tr("player.cooldown.playlist", count=int(retry_after)))
 
     if not player:
         player = await self.create_player(inter=interaction, bot=bot, guild=channel.guild, channel=channel, node=node)
@@ -138,7 +133,12 @@ async def _pc_embed_playlist(self, req):
     result = await self.check_player_queue(interaction.author, bot, interaction.guild_id, tracks=result)
     player.queue.extend(result.tracks)
     await interaction.send(
-        f"{interaction.author.mention}, a playlist {md_link(result.name, url)} foi adicionada com sucesso!{player.controller_link}",
+        player.tr(
+            "player.the_playlist_was_added_successfully",
+            mention=str(interaction.author.mention),
+            md_link=str(md_link(result.name, url)),
+            controller_link=str(player.controller_link),
+        ),
         ephemeral=True,
     )
 
@@ -195,7 +195,7 @@ async def _pc_embed_find_track(self, req):
         ):
             await self.check_stage_title(inter=interaction, bot=bot, player=player)
             await player.seek(0)
-            player.set_command_log("voltou para o início da música.", emoji="⏪")
+            player.set_command_log(player.tr("player.went_back_to_the_start"), emoji="⏪")
             await asyncio.sleep(3)
             await player.update_stage_topic()
             await asyncio.sleep(7)
@@ -243,9 +243,7 @@ async def _pc_embed_track(self, req):
     if not seek_status:
         if not track:
             if retry_after := self.bot.pool.enqueue_track_embed_cooldown.get_bucket(interaction).update_rate_limit():
-                raise GenericError(
-                    f"**Você terá que aguardar {(rta := int(retry_after))} segundo{'s'[: rta ^ 1]} para adicionar uma nova música na fila.**"
-                )
+                raise GenericError(player.tr("player.cooldown.song", count=int(retry_after)))
 
             if control == PlayerControls.embed_enqueue_track:
                 await self.check_player_queue(interaction.author, bot, interaction.guild_id)
@@ -265,13 +263,23 @@ async def _pc_embed_track(self, req):
                 t = track[0]
                 player.queue.append(t)
                 await interaction.send(
-                    f"{author.mention}, a música {md_link(t.title, t.uri)} foi adicionada na fila.{player.controller_link}",
+                    player.tr(
+                        "player.the_song_was_added_to",
+                        mention=str(author.mention),
+                        md_link=str(md_link(t.title, t.uri)),
+                        controller_link=str(player.controller_link),
+                    ),
                     ephemeral=True,
                 )
             else:
                 player.queue.extend(track.tracks)
                 await interaction.send(
-                    f"{author.mention}, a playlist {md_link(track.name, track.url)} foi adicionada na fila.{player.controller_link}",
+                    player.tr(
+                        "player.the_playlist_was_added_to",
+                        mention=str(author.mention),
+                        md_link=str(md_link(track.name, track.url)),
+                        controller_link=str(player.controller_link),
+                    ),
                     ephemeral=True,
                 )
             if not player.is_connected:
@@ -315,7 +323,7 @@ async def _pc_fav_embed_save(self, req):
 
     if retry_after := self.bot.pool.add_fav_embed_cooldown.get_bucket(interaction).update_rate_limit():
         await interaction.send(
-            f"**Você terá que aguardar {(rta := int(retry_after))} segundo{'s'[: rta ^ 1]} para adicionar um novo favorito.**",
+            (await self.bot.pool.i18n.for_guild(interaction.guild))("player.cooldown.favorite", count=int(retry_after)),
             ephemeral=True,
         )
         return True

@@ -166,74 +166,82 @@ def _np_buttons_default(self, req):
             disabled=not (self.queue or self.queue_autoplay),
         ),
         disnake.ui.Select(
-            placeholder="Mais opções:",
+            placeholder=self.tr("player.more_options.placeholder"),
             custom_id="musicplayer_dropdown_inter",
             min_values=0,
             max_values=1,
             required=False,
             options=[
                 disnake.SelectOption(
-                    label="Adicionar música",
+                    label=self.tr("player.add_song.label"),
                     emoji=app_emoji(self.bot, "add_music"),
                     value=PlayerControls.add_song,
-                    description="Adicionar uma música/playlist na fila.",
+                    description=self.tr("player.add_a_song_playlist_to.description"),
                 ),
                 disnake.SelectOption(
-                    label="Adicionar nos seus favoritos",
+                    label=self.tr("player.add_to_your_favorites.label"),
                     emoji=app_emoji(self.bot, "loved"),
                     value=PlayerControls.add_favorite,
-                    description="Adicionar a música atual nos seus favoritos.",
+                    description=self.tr("player.add_the_current_song_to.description"),
                 ),
                 disnake.SelectOption(
-                    label="Tocar do inicio",
+                    label=self.tr("player.play_from_the_start.label"),
                     emoji=app_emoji(self.bot, "fast_backward"),
                     value=PlayerControls.seek_to_start,
-                    description="Voltar o tempo da música atual para o inicio.",
+                    description=self.tr("player.go_back_to_the_start.description"),
                 ),
                 disnake.SelectOption(
-                    label=f"Volume: {self.volume}%",
+                    label=self.tr("player.volume.label", volume=str(self.volume)),
                     emoji=app_emoji(self.bot, "volume"),
                     value=PlayerControls.volume,
-                    description="Ajustar volume.",
+                    description=self.tr("player.adjust_the_volume.description"),
                 ),
                 disnake.SelectOption(
                     label="Misturar",
                     emoji=app_emoji(self.bot, "shuffle"),
                     value=PlayerControls.shuffle,
-                    description="Misturar as músicas da fila.",
+                    description=self.tr("player.shuffle_the_queue_songs.description"),
                 ),
                 disnake.SelectOption(
                     label="Readicionar",
                     emoji=app_emoji(self.bot, "playlist_add"),
                     value=PlayerControls.readd,
-                    description="Readicionar as músicas tocadas de volta na fila.",
+                    description=self.tr("player.add_the_played_songs_back.description"),
                 ),
                 disnake.SelectOption(
-                    label="Repetição",
+                    label=self.tr("player.repeat.label"),
                     emoji=app_emoji(self.bot, "repeat_all"),
                     value=PlayerControls.loop_mode,
-                    description="Ativar/Desativar repetição da música/fila.",
+                    description=self.tr("player.enable_disable_repeating_the_song.description"),
                 ),
                 disnake.SelectOption(
-                    label=("Desativar" if self.nightcore else "Ativar") + " o efeito nightcore",
+                    label=(
+                        self.tr("player.disable_the_nightcore_effect")
+                        if self.nightcore
+                        else self.tr("player.enable_the_nightcore_effect")
+                    ),
                     emoji=app_emoji(self.bot, "sound_spectrum"),
                     value=PlayerControls.nightcore,
-                    description="Efeito que aumenta velocidade e tom da música.",
+                    description=self.tr("player.effect_that_raises_the_speed.description"),
                 ),
                 disnake.SelectOption(
-                    label=("Desativar" if self.autoplay else "Ativar") + " a reprodução automática",
+                    label=(self.tr("player.disable_autoplay") if self.autoplay else self.tr("player.enable_autoplay")),
                     emoji=app_emoji(self.bot, "refresh"),
                     value=PlayerControls.autoplay,
-                    description="Sistema de reprodução de música automática quando a fila tiver vazia.",
+                    description=self.tr("player.automatic_song_playback_system_when.description"),
                 ),
                 disnake.SelectOption(
                     label="Last.fm scrobble",
                     emoji=app_emoji(self.bot, "lastfm"),
                     value=PlayerControls.lastfm_scrobble,
-                    description="Ativar/desativar o scrobble/registro de músicas na sua conta do last.fm.",
+                    description=self.tr("player.enable_disable_scrobbling_logging_of.description"),
                 ),
                 disnake.SelectOption(
-                    label=("Desativar" if self.restrict_mode else "Ativar") + " o modo restrito",
+                    label=(
+                        self.tr("player.disable_restricted_mode")
+                        if self.restrict_mode
+                        else self.tr("player.enable_restricted_mode")
+                    ),
                     emoji=app_emoji(self.bot, "lock"),
                     value=PlayerControls.restrict_mode,
                     description="Apenas DJ's/Staff's podem usar comandos restritos.",
@@ -251,7 +259,7 @@ def _np_buttons_extra(self, req):
         if queue := self.queue or self.queue_autoplay:
             data["components"].append(
                 disnake.ui.Select(
-                    placeholder="Próximas músicas:",
+                    placeholder=self.tr("player.next_songs.placeholder"),
                     custom_id="musicplayer_queue_dropdown",
                     min_values=0,
                     max_values=1,
@@ -276,27 +284,27 @@ def _np_buttons_extra(self, req):
                 label="Visualizar letras",
                 emoji=app_emoji(self.bot, "lyrics"),
                 value=PlayerControls.lyrics,
-                description="Obter letra da música atual.",
+                description=self.tr("player.get_the_lyrics_of_the.description"),
             )
         )
 
     if self.mini_queue_feature:
         data["components"][5].options.append(
             disnake.SelectOption(
-                label="Mini-fila do player",
+                label=self.tr("player.player_mini_queue.label"),
                 emoji=app_emoji(self.bot, "music_queue"),
                 value=PlayerControls.miniqueue,
-                description="Ativar/Desativar a mini-fila do player.",
+                description=self.tr("player.enable_disable_the_player_s.description"),
             )
         )
 
     if isinstance(self.last_channel, disnake.VoiceChannel):
         data["components"][5].options.append(
             disnake.SelectOption(
-                label="Status automático",
+                label=self.tr("player.automatic_status.label"),
                 emoji=app_emoji(self.bot, "speaker"),
                 value=PlayerControls.set_voice_status,
-                description="Configurar o status automático do canal de voz.",
+                description=self.tr("player.set_up_the_voice_channel.description"),
             )
         )
 
@@ -306,7 +314,7 @@ def _np_buttons_extra(self, req):
                 label="Song-Request Thread",
                 emoji=app_emoji(self.bot, "comment"),
                 value=PlayerControls.song_request_thread,
-                description="Criar uma thread/conversa temporária para pedir músicas usando apenas o nome/link.",
+                description=self.tr("player.create_a_temporary_thread_to.description"),
             )
         )
 
@@ -386,7 +394,7 @@ async def _np_message_edit(self, req):
                     if self.text_channel.owner_id == self.bot.user.id:
                         await self.text_channel.edit(archived=False)
                     else:
-                        await self.text_channel.send("Desarquivando o tópico.", delete_after=2)
+                        await self.text_channel.send(self.tr("player.unarchiving_the_thread"), delete_after=2)
 
                 await self.message.edit(allowed_mentions=self.allowed_mentions, **data)
                 await asyncio.sleep(0.5)

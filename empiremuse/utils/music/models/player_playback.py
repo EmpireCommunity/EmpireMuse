@@ -113,7 +113,7 @@ class PlayerPlaybackMixin:
         except Exception as e:
             req.error_code = log_unexpected_error(logger, e, "reprodução da música")
 
-            embed = disnake.Embed(description="**Ocorreu um erro ao reproduzir a música:**")
+            embed = disnake.Embed(description=self.tr("player.an_error_occurred_while_playing.description"))
 
             if self.current:
                 embed.description += f" {md_link(self.current.title, self.current.uri)}"
@@ -128,7 +128,7 @@ class PlayerPlaybackMixin:
 
             cog = self.bot.get_cog("ErrorHandler")
             if cog:
-                embed.add_field(name="Servidor:", value=f"{self.guild.name} [{self.guild.id}]")
+                embed.add_field(name=self.tr("player.server"), value=f"{self.guild.name} [{self.guild.id}]")
                 try:
                     await cog.send_webhook(
                         embed=embed,
@@ -207,8 +207,8 @@ class PlayerPlaybackMixin:
             disnake.SelectOption(
                 emoji=app_emoji(self.bot, "add_music"),
                 value=PlayerControls.add_song,
-                label="Adicionar música",
-                description=f"Tocar nova música/playlist.",
+                label=self.tr("player.add_song.label"),
+                description=self.tr("player.play_a_new_song_playlist.description"),
             ),
         ]
 
@@ -227,10 +227,10 @@ class PlayerPlaybackMixin:
                         description=f"Ouvir novamente: {play_txt[:31]}",
                     ),
                     disnake.SelectOption(
-                        label="Ativar a reprodução automática",
+                        label=self.tr("player.enable_autoplay.label"),
                         emoji=app_emoji(self.bot, "refresh"),
                         value=PlayerControls.autoplay,
-                        description=f"Tocar música relacionadas a: {play_txt[:19]}",
+                        description=self.tr("player.play_songs_related_to.description", v=str(play_txt[:19])),
                     ),
                 ]
             )
@@ -240,8 +240,8 @@ class PlayerPlaybackMixin:
                 disnake.SelectOption(
                     emoji=app_emoji(self.bot, "playlist_add"),
                     value=PlayerControls.readd,
-                    label="Tocar novamente",
-                    description=f"Tocar todas as músicas novamente ({played})",
+                    label=self.tr("player.play_again.label"),
+                    description=self.tr("player.play_all_the_songs_again.description", played=str(played)),
                 )
             )
 
@@ -250,13 +250,13 @@ class PlayerPlaybackMixin:
                 emoji=app_emoji(self.bot, "stop"),
                 value=PlayerControls.stop,
                 label="Finalizar",
-                description=f"Finalizar o player e me desconectar do canal.",
+                description=self.tr("player.finish_the_player_and_disconnect.description"),
             ),
         )
 
         components = [
             disnake.ui.Select(
-                placeholder="Executar uma ação:",
+                placeholder=self.tr("player.run_an_action.placeholder"),
                 options=controller_opts,
                 custom_id="musicplayer_dropdown_idle",
                 min_values=0,
@@ -270,29 +270,36 @@ class PlayerPlaybackMixin:
         if opts:
             components.append(
                 disnake.ui.Select(
-                    placeholder="Tocar música/playlist do servidor.", options=opts, custom_id="player_guild_pin"
+                    placeholder=self.tr("player.play_a_song_playlist_from.placeholder"),
+                    options=opts,
+                    custom_id="player_guild_pin",
                 )
             )
 
         embed = disnake.Embed(
-            description="**Não há músicas na fila... Adicione uma música ou use uma das opções abaixo.**",
+            description=self.tr("player.there_are_no_songs_in.description"),
             color=self.bot.get_color(self.guild.me),
         )
 
         embed.set_thumbnail(url=self.bot.user.display_avatar.replace(size=512, static_format="png").url)
 
         if not self.keep_connected:
-            embed.description += (
-                "\n\n**Nota:** `O Player será desligado automaticamente` "
-                f"<t:{int((disnake.utils.utcnow() + datetime.timedelta(seconds=self.bot.config['IDLE_TIMEOUT'])).timestamp())}:R> "
-                f"`caso nenhuma ação seja executada...`"
+            embed.description += self.tr(
+                "player.note_the_player_will_turn",
+                timestamp=str(
+                    int(
+                        (
+                            disnake.utils.utcnow() + datetime.timedelta(seconds=self.bot.config["IDLE_TIMEOUT"])
+                        ).timestamp()
+                    )
+                ),
             )
 
         kwargs = {"embed": embed, "content": None, "components": components, "allowed_mentions": self.allowed_mentions}
 
         try:
             if isinstance(self.text_channel.parent, disnake.ForumChannel) and self.static:
-                kwargs["content"] = "💤 Aguardando por novas músicas..."
+                kwargs["content"] = self.tr("player.waiting_for_new_songs")
         except Exception:
             pass
 
@@ -343,7 +350,7 @@ class PlayerPlaybackMixin:
 
         await asyncio.sleep(self.bot.config["IDLE_TIMEOUT"])
 
-        msg = "💤 **⠂O player foi desligado por inatividade...**"
+        msg = self.tr("player.the_player_was_turned_off")
 
         try:
             if self.static or self.has_thread:

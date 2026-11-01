@@ -511,3 +511,84 @@ class TestTranslator:
             t.locale = "en-US"
         with pytest.raises(AttributeError):
             t.other = 1
+
+
+class TestReviewFindings:
+    """Achados da revisão (I-4, I-5, I-6, I-7): cada um com o cenário que o reproduzia."""
+
+    def test_the_legend_is_measured_with_accepted_labels_only(self):
+        ref = {"cmd.music._label": "Music", "cmd.pause.description": "p" * 80}
+        data = {"cmd.music._label": "M" * 40, "cmd.music.zz._label": "x", "cmd.pause.description": "p" * 86}
+
+        report = rules.validate_catalog("es-ES", "commands", raw(data), ref)
+
+        assert "cmd.pause.description" in dict(report.dropped)
+
+    def test_a_dropped_label_falls_back_to_the_reference_label_for_the_size(self):
+        ref = {"cmd.music._label": "Music", "cmd.pause.description": "p" * 80}
+        data = {"cmd.music._label": "M​", "cmd.pause.description": "p" * 90}
+
+        report = rules.validate_catalog("es-ES", "commands", raw(data), ref)
+
+        assert dict(report.dropped)["cmd.music._label"] == rules.CHARS
+        assert dict(report.dropped)["cmd.pause.description"] == rules.SIZE
+
+    @pytest.mark.parametrize("key", ["cmd.music.zz._label", "cmd.unknown._label", "cmd._label"])
+    def test_a_label_key_outside_the_known_groups_is_dropped(self, key):
+        report = rules.validate_catalog("es-ES", "commands", raw({key: "x"}), {key: "x"})
+
+        assert report.dropped
+
+    def test_a_huge_value_is_refused_by_size_before_any_regex(self):
+        import time
+
+        started = time.perf_counter()
+        reason = rules.check_entry("player.x.msg", "a." * 100_000, REF | {"player.x.msg": "hello"})
+
+        assert reason == rules.SIZE and time.perf_counter() - started < 0.5
+
+    def test_the_bare_domain_regex_is_linear(self):
+        import time
+
+        started = time.perf_counter()
+        rules._link_tokens("a." * 400)
+
+        assert time.perf_counter() - started < 0.5
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "see https://github.com@evil.com now",
+            "see https://github.com:80@evil.com/x",
+            "see https://user:pw@evil.com",
+            "see http://evil.com\\@github.com",
+        ],
+    )
+    def test_userinfo_cannot_hide_the_real_host(self, text):
+        assert rules.check_entry("player.x.msg", text, None) == rules.LINKS
+
+    def test_the_allowed_host_still_passes(self):
+        assert rules.check_entry("player.x.msg", "see https://github.com/EmpireCommunity now", None) is None
+        assert rules.check_entry("player.x.msg", "see https://www.last.fm:443/x now", None) is None
+
+    def test_a_choice_value_equal_to_a_limit_suffix_stays_a_choice(self):
+        assert rules.kind_of("cmd.x.opt.mode.choice.title") == "choice"
+        assert rules.kind_of("cmd.x.opt.mode.choice.label") == "choice"
+        assert not rules.is_option_name("cmd.x.opt.mode.choice.name")
+        assert rules.is_option_name("cmd.x.opt.mode.name")
+
+    @pytest.mark.parametrize("char", ["⠀", "ㅤ", "ᅟ", "ﾠ", "⁡", "⁪", "￹", "\U000e0041", "᠎"])
+    def test_hidden_format_and_filler_characters_are_dropped(self, char):
+        assert rules.check_entry("player.x.msg", f"x{char}y", None) == rules.CHARS
+
+    def test_the_emoji_joiner_and_the_variation_selector_still_pass(self):
+        assert rules.check_entry("player.x.msg", "👮‍♂️ ok", None) is None
+
+    @pytest.mark.parametrize("text", [">>> Hi {x}", "### Hi {x}", "- Hi {x}"])
+    def test_the_line_start_marker_must_be_the_same_as_the_reference(self, text):
+        for ref in ("> Hi {x}", "# Hi {x}"):
+            assert rules.check_entry("player.x.msg", text, {"player.x.msg": ref}) == rules.MARKDOWN
+
+    def test_a_logged_key_is_never_the_raw_community_text(self):
+        assert rules.loggable_key("player.x.msg") == "player.x.msg"
+        assert "\n" not in rules.loggable_key("a.b\n::error::x") and len(rules.loggable_key("a." * 500)) <= 80

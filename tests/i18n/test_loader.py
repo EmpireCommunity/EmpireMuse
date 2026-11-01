@@ -286,3 +286,53 @@ class TestCli:
 
     def test_the_real_catalogs_and_code_pass_the_check(self):
         assert check.main([]) == 0
+
+
+class TestRequiredFiles:
+    """Revisão (I-7): arquivo obrigatório ausente, ilegível ou trocado por link derruba a subida; faltar o diretório do en-US não dá traceback."""
+
+    @pytest.mark.parametrize(
+        "locale, name", [("en-US", "bot"), ("en-US", "commands"), ("pt-BR", "bot"), ("pt-BR", "commands")]
+    )
+    def test_a_missing_required_file_fails_the_boot(self, root, locale, name):
+        (root / locale / f"{name}.json").unlink()
+
+        with pytest.raises(loader.I18nError):
+            I18n(root).load()
+
+    def test_a_required_file_replaced_by_a_symlink_or_fifo_fails_the_boot(self, root, tmp_path):
+        outside = tmp_path / "x.json"
+        outside.write_text("{}", encoding="utf-8")
+        (root / "pt-BR" / "bot.json").unlink()
+        os.symlink(outside, root / "pt-BR" / "bot.json")
+        with pytest.raises(loader.I18nError):
+            I18n(root).load()
+
+        (root / "pt-BR" / "bot.json").unlink()
+        os.mkfifo(root / "pt-BR" / "bot.json")
+        with pytest.raises(loader.I18nError):
+            I18n(root).load()
+
+    def test_the_panel_file_is_optional(self, root):
+        assert not (root / "en-US" / "panel.json").exists()
+
+        I18n(root).load()
+
+    def test_a_tree_without_the_en_us_directory_is_an_error_not_a_traceback(self, tmp_path):
+        base = tmp_path / "locales"
+        write(base, "pt-BR", PT_COMMANDS, PT_BOT)
+
+        loaded = loader.load_catalogs(base)
+
+        assert "en-US" not in loaded and loader.required_errors(loaded)
+        with pytest.raises(loader.I18nError):
+            I18n(base).load()
+
+    def test_the_log_and_the_cli_never_print_a_raw_community_key(self, root, capsys, caplog):
+        write(root, "de", {"cmd.music._label": "Musik", "a.b\n::error::x": "y"})
+
+        with caplog.at_level("WARNING"):
+            I18n(root).load()
+        check.main(["--root", str(root), "--code", str(root / "none")])
+
+        assert "::error::x" not in caplog.text and "::error::x" not in capsys.readouterr().err

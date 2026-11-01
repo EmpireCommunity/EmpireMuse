@@ -97,3 +97,11 @@ def test_a_new_document_is_automatic_and_one_built_from_the_old_format_is_pt_br(
 
     assert run(world.store.settings(GID))["language"] == "pt-BR"
     assert run(world.store.settings(OTHER))["language"] is None
+
+
+def test_a_patch_works_when_the_stored_settings_have_no_language_key(world):
+    world.banco.put(*SERVERS, GID, stored())  # documento antigo, já migrado em ``settings``, sem a chave
+
+    result = run(world.store.patch(GID, "settings", {"language": "en-US"}))
+
+    assert result["language"] == "en-US" and world.banco.servers_doc()["settings"]["language"] == "en-US"

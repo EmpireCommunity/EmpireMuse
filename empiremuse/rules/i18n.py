@@ -116,15 +116,17 @@ COMMAND_GROUPS: Mapping[str, str] = {
 }
 
 _BIDI = frozenset("\u061c\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
-_INVISIBLE = frozenset("\u200b\u2060\ufeff\u00ad")
+_INVISIBLE = frozenset("\u200b\u2060\ufeff\u00ad\u2800\u3164\u115f\u1160\uffa0\u180e")
+_LINE_BREAKS = frozenset("\u2028\u2029")
 _JOINERS = frozenset("\u200d\u200c")
 _MARK_PATTERNS = ("@everyone", "@here", "<@&", "<@", "<#", "</", "<id:")
-_BARE_DOMAIN = re.compile(r"[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}/")
-_HOST = re.compile(r"(?:://|www\.)([a-z0-9.-]+)")
+_BARE_DOMAIN = re.compile(r"[a-z0-9-]{1,63}(?:\.[a-z0-9-]{1,63}){0,8}\.[a-z]{2,24}/")
+_HOST = re.compile(r"(?:://|www\.)([^\s/\\?#<>]{0,255})")  # a barra invertida também encerra o host, como no navegador
 _ANGLE_TOKEN = re.compile(r"<[^<>]*>")
-_LINE_START = re.compile(r"^(-#|#{1,6}|>)", re.MULTILINE)
+_LINE_START = re.compile(r"^(-# |#{1,6} |>{1,3} ?|- )", re.MULTILINE)
 _FIELD_REMOVER = re.compile(r"\{[a-z_][a-z0-9_]*\}")
 _MAX_COMBINING_RUN = 4
+_LABEL_KEY = re.compile(r"cmd\.([a-z0-9_]+)\._label")
 _MARKDOWN_MARKERS = ("`", "*", "_", "~~", "||", "\\", "](")
 
 # Motivos de uma entrada descartada (estáveis: vão ao log e aos testes).
@@ -154,6 +156,15 @@ class CatalogReport(NamedTuple):
 # ---------------------------------------------------------------------- texto
 
 
+def loggable_key(key: str) -> str:
+    """A chave como pode ir ao log/CI: só se tiver o formato de chave; qualquer outra coisa (texto da comunidade) vira um marcador."""
+    return (
+        key
+        if len(key) <= MAX_KEY_LENGTH and KEY_PATTERN.fullmatch(key)
+        else f"<chave inválida de {len(key)} caracteres>"
+    )
+
+
 def utf16_length(text: str) -> int:
     """O tamanho que o Discord conta: unidades UTF-16 (o emoji fora do plano básico vale 2)."""
     return sum(2 if ord(char) > 0xFFFF else 1 for char in text)
@@ -164,12 +175,12 @@ def _normalized(text: str) -> str:
 
 
 def kind_of(key: str) -> str | None:
-    """O tipo da chave para os limites: o último segmento (``description``, ``label``...) ou ``choice`` em qualquer segmento."""
+    """O tipo da chave para os limites: ``choice`` (em qualquer segmento antes do último, que é o VALOR) ou o último segmento."""
     segments = key.split(".")
+    if "choice" in segments[:-1]:
+        return "choice"
     last = segments[-1].lstrip("_")
-    if last in LIMITS:
-        return last
-    return "choice" if "choice" in segments[:-1] else None
+    return last if last in LIMITS else None
 
 
 def plural_parts(key: str) -> tuple[str, str] | None:
@@ -191,7 +202,9 @@ def _bad_chars(value: str) -> bool:
         category = unicodedata.category(char)
         if category in ("Cs", "Co", "Cn") or (category == "Cc" and char != "\n"):
             return True
-        if char in (" ", " ") or char in _BIDI or char in _INVISIBLE:
+        if char in _LINE_BREAKS or char in _BIDI or char in _INVISIBLE:
+            return True
+        if category == "Cf" and char not in _JOINERS:
             return True
         if char in _JOINERS:
             following = value[index + 1] if index + 1 < len(value) else ""
@@ -312,8 +325,11 @@ def option_parts(key: str) -> tuple[str, str] | None:
 
 
 def is_option_name(key: str) -> bool:
+    """``cmd.<caminho>.opt.<base>.name``: o nome (traduzido) de uma opção. Uma choice cujo valor é ``name`` não conta."""
     parts = key.split(".")
-    return parts[0] == "cmd" and parts[-1] == "name" and "opt" in parts[2:-2]
+    return (
+        len(parts) >= 5 and parts[0] == "cmd" and parts[-1] == "name" and parts[-3] == "opt" and "choice" not in parts
+    )
 
 
 def option_name_ok(value: str) -> bool:
@@ -337,8 +353,9 @@ def _link_tokens(value: str) -> Counter:
         if marker in text:
             found[marker] += text.count(marker)
     hosts = _HOST.findall(text)
-    for host in hosts:
-        found["host:" + host.rstrip(".")] += 1
+    for authority in hosts:
+        host = authority.rsplit("@", 1)[-1].split(":")[0].rstrip(".")  # o host de verdade vem depois do userinfo
+        found["host:" + host] += 1
     for domain in _BARE_DOMAIN.findall(text):
         found["bare:" + domain] += 1
     if not hosts:
@@ -373,7 +390,7 @@ def _marks_ok(value: str, reference_value: str | None) -> bool:
 
 def _markdown_signature(value: str) -> tuple:
     plain = _FIELD_REMOVER.sub("", value)
-    starts = Counter("#" if m.startswith("#") else m for m in _LINE_START.findall(plain))
+    starts = Counter(marker.rstrip() for marker in _LINE_START.findall(plain))
     return (
         tuple(plain.count(marker) for marker in _MARKDOWN_MARKERS),
         tuple(sorted(starts.items())),
@@ -405,6 +422,8 @@ def check_entry(
     """O motivo de ``(key, value)`` ser descartada, ou ``None`` se passa. ``reference`` ``None`` = validando a própria referência."""
     if len(key) > MAX_KEY_LENGTH or not KEY_PATTERN.fullmatch(key):
         return KEY_INVALID
+    if key.endswith("._label") and (not (match := _LABEL_KEY.fullmatch(key)) or match.group(1) not in GROUP_EMOJI):
+        return KEY_INVALID
     ref_value: str | None = None
     if reference is not None:
         found = _reference_value(key, reference)
@@ -422,6 +441,8 @@ def check_entry(
         return None  # o conjunto de caracteres já exclui menção, link, markdown e placeholder
     if not value.strip():
         return EMPTY
+    if utf16_length(value) > _limit_for(key, ref_value):
+        return SIZE  # antes de qualquer regex: nenhuma delas vê mais do que o teto da chave
     if _bad_chars(value):
         return CHARS
     parsed = parse_template(value)
@@ -495,7 +516,8 @@ def _validate(namespace: str, raw: bytes, reference: Mapping[str, str] | None) -
         return CatalogReport({}, (), fatal)
     if reference is not None and len(data) > 2 * max(len(reference), 1):
         return CatalogReport({}, (), "chaves demais")
-    prefixes = _prefix_units({**_labels(reference or {}), **_labels(data)})
+    accepted = {key: value for key, value in _labels(data).items() if check_entry(key, value, reference) is None}
+    prefixes = _prefix_units({**_labels(reference or {}), **accepted})
     entries: dict[str, str] = {}
     dropped: list[tuple[str, str]] = []
     for key, value in data.items():
