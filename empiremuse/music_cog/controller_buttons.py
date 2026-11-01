@@ -8,6 +8,7 @@ import disnake
 from disnake.ext import commands
 
 import empiremuse.wavelink as wavelink
+from empiremuse.rules.i18n import fit
 from empiremuse.rules.errors import RuleError
 from empiremuse.rules.favorites import save_track
 from empiremuse.utils.client import BotCore
@@ -311,7 +312,7 @@ async def _pc_favorite_choices(self, req):
         await interaction.send(
             embed=disnake.Embed(
                 color=self.bot.get_color(interaction.guild.me),
-                description=player.tr("player.there_are_no_items_to.description"),
+                description=fit(player.tr("player.there_are_no_items_to.description"), 4096),
             ),
             ephemeral=True,
         )
@@ -500,10 +501,13 @@ async def _pc_lyrics(self, req):
 
     await interaction.edit_original_message(
         embed=disnake.Embed(
-            description=player.tr(
-                "player.song_lyrics.body",
-                md_link=str(md_link(player.current.title, player.current.uri, code=False)),
-                lyrics_string=str(lyrics_string),
+            description=fit(
+                player.tr(
+                    "player.song_lyrics.body",
+                    md_link=str(md_link(player.current.title, player.current.uri, code=False)),
+                    lyrics_string=str(lyrics_string),
+                ),
+                4096,
             ),
             color=self.bot.get_color(player.guild.me),
         )

@@ -10,6 +10,7 @@ from typing import Union, TYPE_CHECKING
 import disnake
 from rapidfuzz import fuzz
 
+from empiremuse.rules.i18n import fit
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.converters import md_link
 from empiremuse.utils.music.errors import (
@@ -113,7 +114,7 @@ class PlayerPlaybackMixin:
         except Exception as e:
             req.error_code = log_unexpected_error(logger, e, "reprodução da música")
 
-            embed = disnake.Embed(description=self.tr("player.an_error_occurred_while_playing.description"))
+            embed = disnake.Embed(description=fit(self.tr("player.an_error_occurred_while_playing.description"), 4096))
 
             if self.current:
                 embed.description += f" {md_link(self.current.title, self.current.uri)}"
@@ -207,8 +208,8 @@ class PlayerPlaybackMixin:
             disnake.SelectOption(
                 emoji=app_emoji(self.bot, "add_music"),
                 value=PlayerControls.add_song,
-                label=self.tr("player.add_song.label"),
-                description=self.tr("player.play_a_new_song_playlist.description"),
+                label=fit(self.tr("player.add_song.label"), 100),
+                description=fit(self.tr("player.play_a_new_song_playlist.description"), 100),
             ),
         ]
 
@@ -227,10 +228,10 @@ class PlayerPlaybackMixin:
                         description=f"Ouvir novamente: {play_txt[:31]}",
                     ),
                     disnake.SelectOption(
-                        label=self.tr("player.enable_autoplay.label"),
+                        label=fit(self.tr("player.enable_autoplay.label"), 100),
                         emoji=app_emoji(self.bot, "refresh"),
                         value=PlayerControls.autoplay,
-                        description=self.tr("player.play_songs_related_to.description", v=str(play_txt[:19])),
+                        description=fit(self.tr("player.play_songs_related_to.description", v=str(play_txt[:19])), 100),
                     ),
                 ]
             )
@@ -240,8 +241,8 @@ class PlayerPlaybackMixin:
                 disnake.SelectOption(
                     emoji=app_emoji(self.bot, "playlist_add"),
                     value=PlayerControls.readd,
-                    label=self.tr("player.play_again.label"),
-                    description=self.tr("player.play_all_the_songs_again.description", played=str(played)),
+                    label=fit(self.tr("player.play_again.label"), 100),
+                    description=fit(self.tr("player.play_all_the_songs_again.description", played=str(played)), 100),
                 )
             )
 
@@ -250,13 +251,13 @@ class PlayerPlaybackMixin:
                 emoji=app_emoji(self.bot, "stop"),
                 value=PlayerControls.stop,
                 label="Finalizar",
-                description=self.tr("player.finish_the_player_and_disconnect.description"),
+                description=fit(self.tr("player.finish_the_player_and_disconnect.description"), 100),
             ),
         )
 
         components = [
             disnake.ui.Select(
-                placeholder=self.tr("player.run_an_action.placeholder"),
+                placeholder=fit(self.tr("player.run_an_action.placeholder"), 150),
                 options=controller_opts,
                 custom_id="musicplayer_dropdown_idle",
                 min_values=0,
@@ -270,14 +271,14 @@ class PlayerPlaybackMixin:
         if opts:
             components.append(
                 disnake.ui.Select(
-                    placeholder=self.tr("player.play_a_song_playlist_from.placeholder"),
+                    placeholder=fit(self.tr("player.play_a_song_playlist_from.placeholder"), 150),
                     options=opts,
                     custom_id="player_guild_pin",
                 )
             )
 
         embed = disnake.Embed(
-            description=self.tr("player.there_are_no_songs_in.description"),
+            description=fit(self.tr("player.there_are_no_songs_in.description"), 4096),
             color=self.bot.get_color(self.guild.me),
         )
 

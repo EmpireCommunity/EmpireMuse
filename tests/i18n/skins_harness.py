@@ -110,7 +110,7 @@ def component_dict(component):
     return component.to_component_dict() if hasattr(component, "to_component_dict") else str(component)
 
 
-def render(tr):
+def render(tr, post=None):
     """``{skin: {variante: dados}}``; ``dados`` tem só texto e componentes (nada de objetos)."""
     out = {}
     with patch("disnake.utils.utcnow", lambda: NOW):
@@ -124,6 +124,8 @@ def render(tr):
                 except Exception as error:  # noqa: BLE001 - o erro também é parte do que se compara
                     out[skin][name] = f"ERRO {type(error).__name__}"
                     continue
+                if post is not None:
+                    data = post(data)
                 entry = {}
                 for key, value in data.items():
                     if key == "embeds":

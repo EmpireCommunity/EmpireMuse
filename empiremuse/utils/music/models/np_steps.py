@@ -10,6 +10,7 @@ from itertools import cycle
 
 import disnake
 
+from empiremuse.rules.i18n import fit
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.converters import fix_characters, time_format, get_button_style
 from empiremuse.utils.music.errors import (
@@ -166,81 +167,94 @@ def _np_buttons_default(self, req):
             disabled=not (self.queue or self.queue_autoplay),
         ),
         disnake.ui.Select(
-            placeholder=self.tr("player.more_options.placeholder"),
+            placeholder=fit(self.tr("player.more_options.placeholder"), 150),
             custom_id="musicplayer_dropdown_inter",
             min_values=0,
             max_values=1,
             required=False,
             options=[
                 disnake.SelectOption(
-                    label=self.tr("player.add_song.label"),
+                    label=fit(self.tr("player.add_song.label"), 100),
                     emoji=app_emoji(self.bot, "add_music"),
                     value=PlayerControls.add_song,
-                    description=self.tr("player.add_a_song_playlist_to.description"),
+                    description=fit(self.tr("player.add_a_song_playlist_to.description"), 100),
                 ),
                 disnake.SelectOption(
-                    label=self.tr("player.add_to_your_favorites.label"),
+                    label=fit(self.tr("player.add_to_your_favorites.label"), 100),
                     emoji=app_emoji(self.bot, "loved"),
                     value=PlayerControls.add_favorite,
-                    description=self.tr("player.add_the_current_song_to.description"),
+                    description=fit(self.tr("player.add_the_current_song_to.description"), 100),
                 ),
                 disnake.SelectOption(
-                    label=self.tr("player.play_from_the_start.label"),
+                    label=fit(self.tr("player.play_from_the_start.label"), 100),
                     emoji=app_emoji(self.bot, "fast_backward"),
                     value=PlayerControls.seek_to_start,
-                    description=self.tr("player.go_back_to_the_start.description"),
+                    description=fit(self.tr("player.go_back_to_the_start.description"), 100),
                 ),
                 disnake.SelectOption(
-                    label=self.tr("player.volume.label", volume=str(self.volume)),
+                    label=fit(self.tr("player.volume.label", volume=str(self.volume)), 100),
                     emoji=app_emoji(self.bot, "volume"),
                     value=PlayerControls.volume,
-                    description=self.tr("player.adjust_the_volume.description"),
+                    description=fit(self.tr("player.adjust_the_volume.description"), 100),
                 ),
                 disnake.SelectOption(
                     label="Misturar",
                     emoji=app_emoji(self.bot, "shuffle"),
                     value=PlayerControls.shuffle,
-                    description=self.tr("player.shuffle_the_queue_songs.description"),
+                    description=fit(self.tr("player.shuffle_the_queue_songs.description"), 100),
                 ),
                 disnake.SelectOption(
                     label="Readicionar",
                     emoji=app_emoji(self.bot, "playlist_add"),
                     value=PlayerControls.readd,
-                    description=self.tr("player.add_the_played_songs_back.description"),
+                    description=fit(self.tr("player.add_the_played_songs_back.description"), 100),
                 ),
                 disnake.SelectOption(
-                    label=self.tr("player.repeat.label"),
+                    label=fit(self.tr("player.repeat.label"), 100),
                     emoji=app_emoji(self.bot, "repeat_all"),
                     value=PlayerControls.loop_mode,
-                    description=self.tr("player.enable_disable_repeating_the_song.description"),
+                    description=fit(self.tr("player.enable_disable_repeating_the_song.description"), 100),
                 ),
                 disnake.SelectOption(
                     label=(
-                        self.tr("player.disable_the_nightcore_effect")
-                        if self.nightcore
-                        else self.tr("player.enable_the_nightcore_effect")
+                        fit(
+                            self.tr("player.disable_the_nightcore_effect.label")
+                            if self.nightcore
+                            else self.tr("player.enable_the_nightcore_effect.label"),
+                            100,
+                        )
                     ),
                     emoji=app_emoji(self.bot, "sound_spectrum"),
                     value=PlayerControls.nightcore,
-                    description=self.tr("player.effect_that_raises_the_speed.description"),
+                    description=fit(self.tr("player.effect_that_raises_the_speed.description"), 100),
                 ),
                 disnake.SelectOption(
-                    label=(self.tr("player.disable_autoplay") if self.autoplay else self.tr("player.enable_autoplay")),
+                    label=(
+                        fit(
+                            self.tr("player.disable_autoplay.label")
+                            if self.autoplay
+                            else self.tr("player.enable_autoplay.label"),
+                            100,
+                        )
+                    ),
                     emoji=app_emoji(self.bot, "refresh"),
                     value=PlayerControls.autoplay,
-                    description=self.tr("player.automatic_song_playback_system_when.description"),
+                    description=fit(self.tr("player.automatic_song_playback_system_when.description"), 100),
                 ),
                 disnake.SelectOption(
                     label="Last.fm scrobble",
                     emoji=app_emoji(self.bot, "lastfm"),
                     value=PlayerControls.lastfm_scrobble,
-                    description=self.tr("player.enable_disable_scrobbling_logging_of.description"),
+                    description=fit(self.tr("player.enable_disable_scrobbling_logging_of.description"), 100),
                 ),
                 disnake.SelectOption(
                     label=(
-                        self.tr("player.disable_restricted_mode")
-                        if self.restrict_mode
-                        else self.tr("player.enable_restricted_mode")
+                        fit(
+                            self.tr("player.disable_restricted_mode.label")
+                            if self.restrict_mode
+                            else self.tr("player.enable_restricted_mode.label"),
+                            100,
+                        )
                     ),
                     emoji=app_emoji(self.bot, "lock"),
                     value=PlayerControls.restrict_mode,
@@ -259,7 +273,7 @@ def _np_buttons_extra(self, req):
         if queue := self.queue or self.queue_autoplay:
             data["components"].append(
                 disnake.ui.Select(
-                    placeholder=self.tr("player.next_songs.placeholder"),
+                    placeholder=fit(self.tr("player.next_songs.placeholder"), 150),
                     custom_id="musicplayer_queue_dropdown",
                     min_values=0,
                     max_values=1,
@@ -284,27 +298,27 @@ def _np_buttons_extra(self, req):
                 label="Visualizar letras",
                 emoji=app_emoji(self.bot, "lyrics"),
                 value=PlayerControls.lyrics,
-                description=self.tr("player.get_the_lyrics_of_the.description"),
+                description=fit(self.tr("player.get_the_lyrics_of_the.description"), 100),
             )
         )
 
     if self.mini_queue_feature:
         data["components"][5].options.append(
             disnake.SelectOption(
-                label=self.tr("player.player_mini_queue.label"),
+                label=fit(self.tr("player.player_mini_queue.label"), 100),
                 emoji=app_emoji(self.bot, "music_queue"),
                 value=PlayerControls.miniqueue,
-                description=self.tr("player.enable_disable_the_player_s.description"),
+                description=fit(self.tr("player.enable_disable_the_player_s.description"), 100),
             )
         )
 
     if isinstance(self.last_channel, disnake.VoiceChannel):
         data["components"][5].options.append(
             disnake.SelectOption(
-                label=self.tr("player.automatic_status.label"),
+                label=fit(self.tr("player.automatic_status.label"), 100),
                 emoji=app_emoji(self.bot, "speaker"),
                 value=PlayerControls.set_voice_status,
-                description=self.tr("player.set_up_the_voice_channel.description"),
+                description=fit(self.tr("player.set_up_the_voice_channel.description"), 100),
             )
         )
 
@@ -314,7 +328,7 @@ def _np_buttons_extra(self, req):
                 label="Song-Request Thread",
                 emoji=app_emoji(self.bot, "comment"),
                 value=PlayerControls.song_request_thread,
-                description=self.tr("player.create_a_temporary_thread_to.description"),
+                description=fit(self.tr("player.create_a_temporary_thread_to.description"), 100),
             )
         )
 

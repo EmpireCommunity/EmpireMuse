@@ -592,3 +592,23 @@ class TestReviewFindings:
     def test_a_logged_key_is_never_the_raw_community_text(self):
         assert rules.loggable_key("player.x.msg") == "player.x.msg"
         assert "\n" not in rules.loggable_key("a.b\n::error::x") and len(rules.loggable_key("a." * 500)) <= 80
+
+
+class TestFullUrl:
+    REF = {"player.x.msg": "see https://github.com/EmpireCommunity/EmpireMuse now"}
+
+    def test_the_same_host_with_another_path_is_a_different_link(self):
+        for text in (
+            "veja https://github.com/attacker/malware agora",
+            "veja https://github.com/EmpireCommunity/Other agora",
+        ):
+            assert rules.check_entry("player.x.msg", text, self.REF) == rules.LINKS
+
+    def test_the_exact_url_passes_even_with_trailing_punctuation(self):
+        assert (
+            rules.check_entry("player.x.msg", "veja https://github.com/EmpireCommunity/EmpireMuse.", self.REF) is None
+        )
+        assert (
+            rules.check_entry("player.x.msg", "veja https://github.com/empirecommunity/empiremuse agora", self.REF)
+            is None
+        )

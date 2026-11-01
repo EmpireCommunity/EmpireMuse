@@ -3,6 +3,7 @@ from os.path import basename
 
 import disnake
 
+from empiremuse.rules.i18n import fit
 from empiremuse.utils.branding import asset_url
 from empiremuse.utils.music.converters import get_button_style, music_source_image, md_bracketed, md_link, md_code
 from empiremuse.utils.music.models import LavalinkPlayer
@@ -69,7 +70,7 @@ class MicroController:
         data["components"] = [
             disnake.ui.Button(
                 emoji=app_emoji(player.bot, "playpause"),
-                label="Retomar" if player.paused else player.tr("player.pause"),
+                label=fit("Retomar" if player.paused else player.tr("player.pause.label"), 80),
                 custom_id=PlayerControls.pause_resume,
                 style=get_button_style(player.paused),
             ),
@@ -83,13 +84,13 @@ class MicroController:
             disnake.ui.Button(emoji=app_emoji(player.bot, "skip"), label="Pular", custom_id=PlayerControls.skip),
             disnake.ui.Button(
                 emoji=app_emoji(player.bot, "music_queue"),
-                label=player.tr("player.queue.label"),
+                label=fit(player.tr("player.queue.label"), 80),
                 custom_id=PlayerControls.queue,
                 disabled=not (player.queue or player.queue_autoplay),
             ),
             disnake.ui.Button(
                 emoji=app_emoji(player.bot, "loved"),
-                label=player.tr("player.add_to_your_favorites.label"),
+                label=fit(player.tr("player.add_to_your_favorites.label"), 80),
                 custom_id=PlayerControls.add_favorite,
             ),
         ]

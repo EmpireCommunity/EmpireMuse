@@ -120,6 +120,7 @@ _INVISIBLE = frozenset("\u200b\u2060\ufeff\u00ad\u2800\u3164\u115f\u1160\uffa0\u
 _LINE_BREAKS = frozenset("\u2028\u2029")
 _JOINERS = frozenset("\u200d\u200c")
 _MARK_PATTERNS = ("@everyone", "@here", "<@&", "<@", "<#", "</", "<id:")
+_FULL_URL = re.compile(r"https?://[^\s<>)\]`\"']{1,512}")
 _BARE_DOMAIN = re.compile(r"[a-z0-9-]{1,63}(?:\.[a-z0-9-]{1,63}){0,8}\.[a-z]{2,24}/")
 _HOST = re.compile(r"(?:://|www\.)([^\s/\\?#<>]{0,255})")  # a barra invertida também encerra o host, como no navegador
 _ANGLE_TOKEN = re.compile(r"<[^<>]*>")
@@ -356,6 +357,8 @@ def _link_tokens(value: str) -> Counter:
     for authority in hosts:
         host = authority.rsplit("@", 1)[-1].split(":")[0].rstrip(".")  # o host de verdade vem depois do userinfo
         found["host:" + host] += 1
+    for url in _FULL_URL.findall(text):
+        found["url:" + url.rstrip(".,;:!?")] += 1  # a URL INTEIRA: o mesmo host com outro caminho é outro link
     for domain in _BARE_DOMAIN.findall(text):
         found["bare:" + domain] += 1
     if not hosts:
@@ -369,7 +372,8 @@ def _links_ok(value: str, reference_value: str | None) -> bool:
     tokens = _link_tokens(value)
     if reference_value is None:
         return all(
-            (token.startswith("host:") and token[5:] in ALLOWED_DOMAINS)
+            token.startswith("url:")
+            or (token.startswith("host:") and token[5:] in ALLOWED_DOMAINS)
             or (token.startswith("bare:") and token[5:-1] in ALLOWED_DOMAINS)
             for token in tokens
         )
