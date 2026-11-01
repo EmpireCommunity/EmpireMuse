@@ -226,7 +226,7 @@ class PlayerSession(commands.Cog):
 
         Pula (e esquece) a sessão de bot só-rádio; a de bot que tem uma rádio ligada neste servidor; e a que parece de rádio (``keep_connected``) num servidor
         onde este bot tem uma rádio, ligada ou não. Sem resposta do banco de rádios pula, mas não esquece: na próxima subida decide."""
-        hub = getattr(self.bot.pool, "radio", None)
+        hub = getattr(getattr(self.bot, "pool", None), "radio", None)
         if hub is None:
             return False, False
         try:

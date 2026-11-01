@@ -47,9 +47,12 @@ AREA_OVERRIDES: Mapping[str, str] = {"IR": "oriente_medio_africa"}
 # Palavras que o texto de estado do Radio Browser traz e que não ajudam a achar a subdivisão.
 NOISE_WORDS = ("brasil", "state", "estado", "province")
 
-_NOT_ALNUM = re.compile(r"[^a-z0-9]+")
+_NOT_ALNUM = re.compile(
+    r"[\W_]+"
+)  # letras e números de QUALQUER escrita (Москва, 北京): só o ASCII apagaria o nome inteiro
 _SPLIT = re.compile(r"[,\-/()|;]")
 _COUNTRY = re.compile(r"[A-Z]{2}")
+_LOCALE = re.compile(r"[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8}){0,3}")
 _AREA_ID = re.compile(r"r:([a-z_]{1,40})")
 _COUNTRY_ID = re.compile(r"c:([A-Z]{2})")
 _STATE_ID = re.compile(r"s:([A-Z]{2}):(@?[A-Za-z0-9_.]{1,32})")
@@ -57,7 +60,7 @@ _CITY_ID = re.compile(r"x:([0-9]{1,12})")
 
 
 def norm(text: object) -> str:
-    """NFKD sem diacríticos, ``casefold`` e tudo que não é letra ou número vira um espaço; vazio se não for texto."""
+    """NFKD sem diacríticos, ``casefold`` e tudo que não é letra ou número (de qualquer escrita) vira um espaço; vazio se não for texto."""
     if not isinstance(text, str):
         return ""
     decomposed = unicodedata.normalize("NFKD", text)
@@ -84,27 +87,39 @@ def _clean_piece(piece: str, country_name: str) -> str:
     return re.sub(r"\s+", " ", result).strip() or piece
 
 
+def _variants(piece: str, country_name: str) -> tuple[str, ...]:
+    """O pedaço como está e sem o nome do país/ruído: "Western Australia" é um estado inteiro, "Goiás Brazil" é Goiás."""
+    cleaned = _clean_piece(piece, country_name)
+    return (piece, cleaned) if cleaned != piece else (piece,)
+
+
 def resolve_state(index: StateIndex, cc: object, text: object) -> str | None:
     """O ``admin1`` do GeoNames a que o texto de estado do Radio Browser se refere, ou ``None``. Nunca levanta, nunca devolve o texto.
 
-    Ordem: (1) o texto inteiro é um apelido exato (nome GeoNames, nome ISO, sigla ou apelido manual); (2) qualquer pedaço separado por
-    ``, - / ( ) | ;``, do último para o primeiro; (3) o nome de uma cidade que só existe numa subdivisão do país.
+    Ordem: (1) o texto inteiro é um apelido exato (nome GeoNames, nome ISO, sigla ou apelido manual), com e sem o nome do país; (2) qualquer pedaço
+    separado por ``, - / ( ) | ;``, do último para o primeiro; (3) a última palavra de 2 ou 3 letras como sigla ("Sydney NSW", "Boston MA"); (4) o nome de
+    uma cidade que só existe numa subdivisão do país.
     """
     if not isinstance(cc, str) or not isinstance(text, str) or not text.strip() or len(text) > MAX_STATE_TEXT:
         return None
     aliases = index.aliases.get(cc, {})
     country_name = index.names.get(cc, "")
-    whole = _clean_piece(norm(text), country_name)
+    whole = norm(text)
     if not whole:
         return None
-    if (found := aliases.get(whole)) is not None:
-        return found
-    pieces = [_clean_piece(piece, country_name) for piece in (norm(p) for p in _SPLIT.split(text)) if piece]
-    for piece in reversed(pieces):
-        if (found := aliases.get(piece)) is not None:
+    for candidate in _variants(whole, country_name):
+        if (found := aliases.get(candidate)) is not None:
             return found
+    pieces = [piece for piece in (norm(p) for p in _SPLIT.split(text)) if piece]
+    for piece in reversed(pieces):
+        for candidate in _variants(piece, country_name):
+            if (found := aliases.get(candidate)) is not None:
+                return found
+    last = whole.rsplit(" ", 1)[-1]
+    if " " in whole and 2 <= len(last) <= 3 and (found := aliases.get(last)) is not None:
+        return found
     cities = index.cities.get(cc, {})
-    for piece in (whole, *reversed(pieces)):
+    for piece in (_clean_piece(whole, country_name), *reversed(pieces)):
         if (found := cities.get(piece)) is not None:
             return found
     return None
@@ -119,7 +134,7 @@ def guild_country(locale: object, available: Container[str]) -> str | None:
     Usa o território do locale (``pt-BR`` → BR) e, sem ele, os ``likely_subtags`` do CLDR pelo Babel (``fr`` → FR, ``ja`` → JP, ``uk`` → UA).
     ``es-419`` (419 não é país), idioma desconhecido (o Babel levanta ``UnknownLocaleError`` com ``no``) e país fora da árvore dão ``None``.
     """
-    if not isinstance(locale, str) or not locale or len(locale) > 35:
+    if not isinstance(locale, str) or _LOCALE.fullmatch(locale) is None:
         return None
     from babel import Locale, UnknownLocaleError
     from babel.core import get_global

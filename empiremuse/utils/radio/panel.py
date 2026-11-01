@@ -114,18 +114,13 @@ def _live_text(tr: Any, station: StationCard, view: LiveView) -> str:
     name = external_text(station.name, NAME_LIMIT)
     country = external_text(station.country, COUNTRY_LIMIT)
     lines = [f"**{name} – {country}**" if country else f"**{name}**"]
-    if view.title and not view.offline and not view.muted:
+    if (view.title or "").strip() and not view.offline and not view.muted:
         song, artist = split_stream_title(view.title)
-        if artist:
-            lines.append(
-                tr(
-                    "radio.panel.live.now",
-                    song=external_text(song, TITLE_LIMIT),
-                    artist=external_text(artist, TITLE_LIMIT),
-                )
-            )
-        else:
-            lines.append(tr("radio.panel.live.now_song", song=external_text(song, TITLE_LIMIT)))
+        song_text = external_text(song, TITLE_LIMIT)
+        if song_text and artist:
+            lines.append(tr("radio.panel.live.now", song=song_text, artist=external_text(artist, TITLE_LIMIT)))
+        elif song_text:
+            lines.append(tr("radio.panel.live.now_song", song=song_text))
     if view.muted:
         lines.append(f"-# {tr('radio.panel.live.muted')}")
     elif view.offline:

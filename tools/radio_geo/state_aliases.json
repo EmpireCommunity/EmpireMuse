@@ -1,1 +1,134 @@
-{}
+{
+  "AR": {
+    "CABA": "07",
+    "Ciudad Autonoma de Buenos Aires": "07",
+    "Ciudad de Buenos Aires": "07",
+    "Provincia de Buenos Aires": "01"
+  },
+  "AT": {
+    "Kärnten": "02",
+    "Niederösterreich": "03",
+    "Oberösterreich": "04",
+    "Steiermark": "06",
+    "Tirol": "07",
+    "Wien": "09"
+  },
+  "BE": {
+    "Brussel": "BRU",
+    "Bruxelles": "BRU",
+    "Vlaanderen": "VLG",
+    "Wallonie": "WAL"
+  },
+  "BG": {
+    "Sofia City": "42"
+  },
+  "CH": {
+    "Canton of Vaud": "VD",
+    "Genf": "GE",
+    "Kanton Bern": "BE",
+    "St. Gallen": "SG",
+    "Zürich": "ZH"
+  },
+  "CN": {
+    "Chekiang": "02",
+    "Honan": "09",
+    "Hopei": "10",
+    "Kiangsu": "04",
+    "Kwangtung": "30",
+    "Shantung": "25",
+    "Sinkiang": "13",
+    "Szechuan": "32"
+  },
+  "DE": {
+    "Baden-Württemberg": "01",
+    "Bayern": "02",
+    "Berlin": "16",
+    "Hessen": "05",
+    "NRW": "07",
+    "Niedersachsen": "06",
+    "Nordrhein-Westfalen": "07",
+    "Sachsen": "13",
+    "Sachsen-Anhalt": "14",
+    "Thüringen": "15"
+  },
+  "ES": {
+    "Andalucía": "51",
+    "Catalunya": "56",
+    "Cataluña": "56",
+    "Comunidad Valenciana": "60",
+    "Comunidad de Madrid": "29",
+    "Euskadi": "59",
+    "Islas Baleares": "07",
+    "Islas Canarias": "53",
+    "País Valencià": "60",
+    "País Vasco": "59",
+    "Región de Murcia": "31"
+  },
+  "FR": {
+    "Bretagne": "53",
+    "Corse": "94",
+    "Grand-Est": "44",
+    "Ile de France": "11",
+    "Normandie": "28",
+    "Nouvelle-Aquitaine": "75"
+  },
+  "GR": {
+    "Attiki": "ESYE31",
+    "Kriti": "ESYE43"
+  },
+  "ID": {
+    "DKI Jakarta": "04",
+    "Jawa Barat": "30",
+    "Jawa Tengah": "07",
+    "Jawa Timur": "08"
+  },
+  "IT": {
+    "Lombardia": "09",
+    "Marche": "10",
+    "Piemonte": "12",
+    "Puglia": "13",
+    "Sardegna": "14",
+    "Sicilia": "15",
+    "Toscana": "16"
+  },
+  "MX": {
+    "CDMX": "09",
+    "Ciudad de México": "09",
+    "Distrito Federal": "09",
+    "Estado de México": "15",
+    "Nuevo León": "19"
+  },
+  "NL": {
+    "Noord Brabant": "06",
+    "Noord holland": "07",
+    "Noord-Brabant": "06",
+    "Noord-Holland": "07",
+    "Zuid Holland": "11",
+    "Zuid-Holland": "11"
+  },
+  "PL": {
+    "Małopolska": "77",
+    "Slaskie": "83",
+    "dolnośląskie": "72",
+    "mazowieckie": "78",
+    "małopolskie": "77",
+    "pomorskie": "82",
+    "wielkopolskie": "86",
+    "śląskie": "83"
+  },
+  "RO": {
+    "Alba": "01",
+    "Bihor": "05",
+    "Bucuresti": "10",
+    "Cluj": "13",
+    "Harghita": "20",
+    "Mureș": "27"
+  },
+  "RU": {
+    "Moskow": "48",
+    "Tatarstan": "73",
+    "Москва": "48",
+    "Санкт-Петербург": "66",
+    "Татарстан": "73"
+  }
+}

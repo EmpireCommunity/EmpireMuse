@@ -428,11 +428,11 @@ class TestHappyEyeballs:
         started = asyncio.get_running_loop().time()
         with pytest.raises(StreamRefused) as refusal:
             await open_stream(
-                "http://radio.example:8000/live", resolve=three, public=lambda a: True, connect_timeout=0.4
+                "http://radio.example:8000/live", resolve=three, public=lambda a: True, connect_timeout=1.0
             )
 
         assert refusal.value.reason == "timeout" and len(calls) == 3
-        assert asyncio.get_running_loop().time() - started < 1.5  # 0,4 s no total, não 0,4 s por endereço
+        assert asyncio.get_running_loop().time() - started < 2.0  # 1 s no total, não 1 s por endereço
 
     @pytest.mark.asyncio
     async def test_a_failing_address_hands_over_to_the_next_at_once(self, monkeypatch):

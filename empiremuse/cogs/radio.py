@@ -110,6 +110,9 @@ class Radio(commands.Cog):
     def __init__(self, bot: BotCore) -> None:
         self.bot = bot
         self._boot_task: Any = None
+        self._volume_at: dict[
+            str, float
+        ] = {}  # quando o volume de cada rádio mudou pela última vez (no máximo 1 por segundo)
 
     @property
     def hub(self):
@@ -198,7 +201,9 @@ class Radio(commands.Cog):
         try:
             radio, runner = await self._panel_radio(interaction, tr)
             live = radio.kind == KIND_LIVE
-            if live != (action in LIVE_ACTIONS):
+            if (
+                action in LIVE_ACTIONS and not live
+            ):  # um painel antigo na tela não faz a personalizada andar de estação nem mexer em volume
                 raise GenericError(tr("radio.panel.not_here"))
             await self._run_action(interaction, tr, radio, runner, action)
         except GenericError as error:

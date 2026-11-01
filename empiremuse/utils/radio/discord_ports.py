@@ -256,6 +256,14 @@ class DiscordRadioPorts:
     async def _station_card(self, current: Radio) -> Any:
         return None  # só a rádio ao vivo tem estação (``LiveRadioPorts``)
 
+    @staticmethod
+    def _avatar_url(guild: disnake.Guild) -> str | None:
+        """A foto do bot para a miniatura de reserva; sem ela (cache incompleto) o painel sai sem miniatura em vez de falhar."""
+        try:
+            return guild.me.display_avatar.replace(size=256).url
+        except AttributeError:
+            return None
+
     async def _logo(self, current: Radio) -> Any:
         return None  # só a rádio ao vivo tem logo de estação (``LiveRadioPorts``)
 
@@ -279,7 +287,7 @@ class DiscordRadioPorts:
             view=self._panel_view(),
             station=await self._station_card(current),
             emojis=lambda name: app_emoji(bot, name),
-            avatar=guild.me.display_avatar.replace(size=256).url,
+            avatar=self._avatar_url(guild),
             logo=await self._logo(current),
         )
 

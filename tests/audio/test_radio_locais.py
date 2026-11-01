@@ -83,12 +83,21 @@ class TestSchema:
     def test_a_valid_document_loads(self):
         assert tree().countries == {"BR", "AR", "US", "DE", "PL", "TR", "JP"}
 
+    def test_the_top_order_does_not_depend_on_the_key_order_of_the_file(self):
+        doc = tiny()
+        doc["areas"] = dict(sorted(doc["areas"].items()))  # o gerador grava as chaves em ordem alfabética
+
+        top = tree(doc).children(None, "pt-BR")
+
+        assert [o.id for o in top] == [f"r:{a}" for a in AREAS]
+
     @pytest.mark.parametrize(
         "mutate",
         [
             lambda d: d.update(version=2),
             lambda d: d.pop("cities"),
-            lambda d: d.update(areas=dict(reversed(list(d["areas"].items())))),  # a ordem do topo é fixa
+            lambda d: d["areas"].pop("asia_pacifico"),  # falta uma região
+            lambda d: d["areas"].update(extra=["US"]),  # sobra uma
             lambda d: d["areas"]["asia_pacifico"].append("US"),  # país em duas regiões
             lambda d: d["areas"]["asia_pacifico"].append("XX"),  # região com país que não existe
             lambda d: d["countries"]["BR"]["states"].append("s:BR:99"),

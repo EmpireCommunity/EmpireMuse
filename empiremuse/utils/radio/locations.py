@@ -113,7 +113,9 @@ def _validate(data: object) -> Mapping[str, Any]:
     for key in ("areas", "countries", "states", "cities", "admin1", "index"):
         _need(isinstance(doc.get(key), dict), f"missing:{key}")
     areas, countries, states, cities = doc["areas"], doc["countries"], doc["states"], doc["cities"]
-    _need(list(areas) == list(AREAS), "areas")
+    _need(
+        set(areas) == set(AREAS), "areas"
+    )  # a ordem do topo é a de ``AREAS``, não a das chaves do JSON (que o gerador ordena)
     seen_countries: set[str] = set()
     for slug, members in areas.items():
         _need(isinstance(members, list) and 0 < len(members) <= MAX_OPTIONS, f"area:{slug}")

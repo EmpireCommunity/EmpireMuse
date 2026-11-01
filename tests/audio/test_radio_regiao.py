@@ -343,6 +343,7 @@ class TestLimits:
                 lon=-49.0,
                 admin1=("29",),
                 terms=("Goiás",),
+                exact="GO",
                 city=f"C{n}",
             )
             for n in range(5)

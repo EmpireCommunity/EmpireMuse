@@ -48,6 +48,9 @@ class TestNorm:
         assert norm("Goiás") == "goias"
         assert norm("Ｇoiás") == "goias"  # NFKD: o "G" largo vira "G"
 
+    def test_other_scripts_are_kept_not_erased(self):
+        assert norm("Москва") == "москва" and norm("Санкт-Петербург") == "санкт петербург" and norm("北京") == "北京"
+
     def test_what_is_not_text_is_empty(self):
         assert norm(None) == "" and norm(5) == "" and norm(b"x") == ""
 
@@ -61,6 +64,26 @@ class TestResolveState:
     def test_noise_words_and_the_country_name_are_removed(self):
         assert resolve_state(INDEX, "BR", "Goiás State") == "29"
         assert resolve_state(INDEX, "BR", "Goiás Brazil") == "29"
+
+    def test_a_state_whose_name_contains_the_country_is_still_that_state(self):
+        index = StateIndex(
+            aliases={"AU": {"western australia": "04", "wa": "04", "new south wales": "02", "nsw": "02"}},
+            cities={},
+            names={"AU": "australia"},
+        )
+
+        assert resolve_state(index, "AU", "Western Australia") == "04"
+        assert resolve_state(index, "AU", "Australia, Western Australia") == "04"
+
+    def test_a_trailing_abbreviation_is_the_state(self):
+        index = StateIndex(aliases={"AU": {"nsw": "02"}, "US": {"ny": "NY", "ca": "CA"}}, cities={}, names={})
+
+        assert resolve_state(index, "AU", "Sydney NSW") == "02"
+        assert (
+            resolve_state(index, "US", "New York NY") == "NY" and resolve_state(index, "US", "San Francisco CA") == "CA"
+        )
+        assert resolve_state(index, "US", "NY") == "NY"
+        assert resolve_state(index, "US", "Rádio Nova Era") is None  # a última palavra tem de ser uma sigla conhecida
 
     def test_a_piece_separated_by_punctuation_from_the_last_to_the_first(self):
         assert resolve_state(INDEX, "BR", "Fortaleza, Ceará") == "06"
@@ -167,5 +190,5 @@ class TestNumbersFromTheDirectory:
             assert search_term(bad) is None
 
     def test_distance_between_two_known_points(self):
-        assert 205 < distance_km(-16.68, -49.25, -15.78, -47.93) < 215  # Goiânia–Brasília
+        assert 168 < distance_km(-16.68, -49.25, -15.78, -47.93) < 178  # Goiânia–Brasília
         assert distance_km(1, 1, 1, 1) == pytest.approx(0)

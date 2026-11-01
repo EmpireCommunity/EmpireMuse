@@ -559,7 +559,7 @@ class TestStageInstance:
     @pytest.mark.asyncio
     async def test_without_the_stage_moderator_permissions_one_clear_notice_names_what_is_missing(self):
         w = stage_world(permissions={**STAGE_MODERATOR, "manage_channels": False, "move_members": False})
-        w.player.tr = lambda key, **kw: f"{key}|{kw.get('permissions', '')}"
+        w.bot.pool.i18n.for_guild = AsyncMock(return_value=lambda key, **kw: f"{key}|{kw.get('permissions', '')}")
 
         await w.ports.connect()
         await w.ports.connect()  # reconectou: o aviso não se repete
@@ -608,7 +608,7 @@ class TestStageInstance:
         w = build(stage=True)
         w.ports.end_stage = AsyncMock()
         await grant(w)
-        radio = await w.hub.store.create(w.ports.radio)
+        radio = await w.hub.store.get(w.ports.radio.id)  # o ``grant`` já gravou a rádio
         w.hub.manager.ports_factory = lambda r: w.ports
         await w.hub.manager.activate(radio, wait=True)
 

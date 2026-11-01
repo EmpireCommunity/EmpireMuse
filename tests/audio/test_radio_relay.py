@@ -584,7 +584,7 @@ class TestReviewFindings:
 
             got_head, _ = await fetch(r, token)
 
-            assert got_head.startswith(b"HTTP/1.0 502") and r._open._value == 4  # as 4 vagas voltaram
+            assert got_head.startswith(b"HTTP/1.0 502") and r._open._value == OPEN_CONCURRENCY  # as vagas voltaram
 
     @pytest.mark.asyncio
     async def test_a_playlist_that_arrives_in_two_segments_is_read_whole(self):
@@ -810,7 +810,8 @@ class TestFlowAndReach:
             relay() as r,
         ):
             token = r.register(station.url, codec="MP3", bitrate=128)
-            r._sessions[token].served = 2  # os dois consumidores do token já foram
+            r._sessions[token].served = 2
+            r._sessions[token].exhausted = True  # os dois consumidores já foram e o token esgotou a cota de reconexões
 
             head, _ = await fetch(r, token)
 
@@ -917,9 +918,10 @@ class TestReconnectPolicy:
             seventh, _ = await fetch_to_eof(r, token)
             clock.now += 700  # a janela inteira passou
             later, _ = await fetch_to_eof(r, token)
+            exhausted, limited = r._sessions[token].exhausted, r.limited(token)
 
         assert seventh.startswith(b"HTTP/1.0 409") and later.startswith(b"HTTP/1.0 409")
-        assert r._sessions[token].exhausted is True and r.limited(token) is True
+        assert exhausted is True and limited is True
 
     @pytest.mark.asyncio
     async def test_two_reconnections_less_than_one_second_apart_the_second_gets_409(self):
@@ -943,9 +945,10 @@ class TestReconnectPolicy:
             refusals = [(await fetch_to_eof(r, token))[0][:12] for _ in range(10)]  # todas a menos de 1 s: 409
             clock.now += 2
             heads = await self.sequential(r, token, clock, 5)  # as outras 5 da cota de 6
+            exhausted, accepted = r._sessions[token].exhausted, len(r._sessions[token].accepts)
 
         assert refusals == [b"HTTP/1.0 409"] * 10 and heads == [b"HTTP/1.0 200"] * 5
-        assert r._sessions[token].exhausted is False and len(r._sessions[token].accepts) == 6
+        assert exhausted is False and accepted == 6
 
     @pytest.mark.asyncio
     async def test_without_blowing_the_quota_the_window_frees_up_after_ten_minutes(self):
