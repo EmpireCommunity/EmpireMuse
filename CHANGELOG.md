@@ -20,6 +20,9 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 ### Segurança
 - **Filtro de IP nos links de reprodução**: todo link http(s) que chega ao Lavalink (`/play`, comando de prefixo, pedido digitado no canal de pedidos, painel, favoritos e playlists importadas) agora é resolvido antes e recusado se QUALQUER endereço não for público (privado, loopback, link-local, CGNAT, multicast, reservado, IPv4 dentro de IPv6). Também são recusados, pela sintaxe, links com `usuário@`, barra invertida, caracteres de controle e host numérico fora da forma canônica. O usuário vê uma mensagem genérica e o log guarda só o host. Faixas guardadas (fila salva, sessão retomada) com fonte `http` também passam pelo filtro antes de tocar.
 
+### Documentação
+- Novo guia `docs/guides/radio.md`: rádios personalizadas e ao vivo, premium do dono, limite por servidor, regras do chat, leitura do resumo periódico e (a preencher) o custo por rádio.
+
 ## [2.2.0] - 2026-11-01
 
 Idiomas: o bot passa a falar o idioma do servidor (`en-US` e `pt-BR`), com o comando `/language` e o campo Idioma no painel; comandos e player traduzidos, e mais 27 ícones da Flaticon no player.
