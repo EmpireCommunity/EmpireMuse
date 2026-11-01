@@ -28,9 +28,11 @@ import json
 import logging
 import os
 import re
+from collections import OrderedDict
 from typing import Any, Callable, Dict, Optional, Union
 from urllib.parse import quote
 
+from cachetools import TTLCache
 from rapidfuzz import fuzz
 
 from empiremuse.rules.title_match import title_matches
@@ -52,6 +54,11 @@ deezer_regex = re.compile(
 soundcloud_regex = re.compile(r"https://soundcloud\.com/([^/]+)/sets/([^/]+)")
 
 exclude_tags = ["remix", "edit", "extend", "compilation", "mashup", "mixed"]
+
+
+CHECKED_TRACKS_MAX = 2048
+CHECKED_TRACKS_TTL_S = 600
+TRUSTED_TRACKS_MAX = 256
 
 
 def take_trusted_local(kwargs: dict) -> bool:
@@ -123,6 +130,10 @@ class Node:
         self.shard_id = shard_id
 
         self.players = {}
+
+        # Faixas que podem tocar sem nova conferência de endereço: as que o relay local carregou (``trusted_local``) e as já conferidas.
+        self._trusted_encoded: OrderedDict[str, None] = OrderedDict()
+        self._checked_encoded: TTLCache = TTLCache(maxsize=CHECKED_TRACKS_MAX, ttl=CHECKED_TRACKS_TTL_S)
 
         self.session = session
         self._websocket = None
@@ -279,23 +290,52 @@ class Node:
 
         __log__.debug("NODE | %s connected:: %r", self.identifier, self)
 
-    async def _ensure_current_track_is_public(self, guild_id: int) -> None:
-        """Faixa guardada (fila salva, sessão retomada) com fonte ``http`` toca por ``encodedTrack`` SEM passar pelo ``loadtracks``: o endereço
-        dela é conferido aqui, no único ponto por onde toda troca de faixa passa. Recusada, levanta ``TrackNotFound`` (quem toca pula a faixa)
-        e o log leva só o host. A faixa ao vivo das rádios tem ``uri`` vazia e segue."""
-        player = self.players.get(int(guild_id))
-        info = getattr(getattr(player, "current", None), "info", None)
-        if not isinstance(info, dict) or str(info.get("sourceName", "")).lower() != "http":
+    @staticmethod
+    def _encoded_ids(result: Any) -> list[str]:
+        tracks = getattr(result, "tracks", result)
+        ids = [getattr(track, "id", None) for track in tracks] if isinstance(tracks, (list, tuple)) else []
+        return [encoded for encoded in ids if isinstance(encoded, str) and encoded]
+
+    def _trust_loaded(self, result: Any) -> None:
+        """As faixas que o código interno carregou com ``trusted_local`` (o relay das rádios) tocam sem nova conferência de endereço."""
+        for encoded in self._encoded_ids(result):
+            self._trusted_encoded[encoded] = None
+            self._trusted_encoded.move_to_end(encoded)
+        while len(self._trusted_encoded) > TRUSTED_TRACKS_MAX:
+            self._trusted_encoded.popitem(last=False)
+
+    def _remember_checked(self, result: Any) -> None:
+        """As faixas carregadas por aqui depois da barreira de endereço já foram conferidas: tocar uma delas não decodifica de novo. Só o que vem
+        de fora do carregamento (fila salva, sessão, id temporário) paga a ida ao nó."""
+        for encoded in self._encoded_ids(result):
+            self._checked_encoded[encoded] = True
+
+    async def _ensure_sent_track_is_public(self, encoded: str) -> None:
+        """Confere a faixa que será de fato ENVIADA ao Lavalink (``encodedTrack``), não a que o player acha que está tocando: os dois podem divergir
+        (id temporário, faixa resolvida por busca, fila ou sessão guardadas antes do filtro). O Lavalink a decodifica (``build_track``, uma ida
+        ao nó, com cache) e, se a fonte é ``http``, o endereço dela precisa ser público. Sem conseguir decodificar, FALHA FECHADO: o mesmo nó que
+        não decodifica também não tocaria. Recusada, levanta ``TrackNotFound`` (quem toca pula a faixa) e o log leva só o host."""
+        if encoded in self._trusted_encoded or encoded in self._checked_encoded:
             return
         try:
-            await ensure_public_url(info.get("uri"))
-        except UnsafeUrl as error:
-            log_refusal(error)
-            raise TrackNotFound("link recusado") from None
+            track = await self.build_track(encoded)
+        except Exception as error:  # noqa: BLE001 - só o tipo vai ao log
+            __log__.warning("Faixa não verificada, não será enviada (%s)", type(error).__name__)
+            raise TrackNotFound("faixa não verificada") from None
+        info = getattr(track, "info", None)
+        if not isinstance(info, dict):
+            raise TrackNotFound("faixa não verificada")
+        if str(info.get("sourceName", "")).lower() == "http":
+            try:
+                await ensure_public_url(info.get("uri"))
+            except UnsafeUrl as error:
+                log_refusal(error)
+                raise TrackNotFound("link recusado") from None
+        self._checked_encoded[encoded] = True
 
     async def update_player(self, guild_id: int, data: dict, replace: bool = False):
-        if data.get("encodedTrack"):
-            await self._ensure_current_track_is_public(guild_id)
+        if encoded := data.get("encodedTrack"):
+            await self._ensure_sent_track_is_public(encoded)
 
         if not self.session_id:
             try:
@@ -337,6 +377,29 @@ class Node:
     ) -> Union[list, TrackPlaylist, None]:
         """|coro|
 
+        Busca faixas. Última barreira (a de cima é a do cog, com mensagem ao usuário): nenhum link http(s) chega ao ``loadtracks`` sem resolver
+        só para endereço público. ``trusted_local`` é só do código que registra o próprio endereço local (relay das rádios), nunca de texto do
+        usuário: as faixas que ele carrega passam a tocar sem nova conferência.
+        """
+        trusted = take_trusted_local(kwargs)
+        if not trusted:
+            try:
+                await ensure_public_url(query)
+            except UnsafeUrl as error:
+                log_refusal(error)
+                raise TrackNotFound("link recusado") from None
+        result = await self._get_tracks(query, retry_on_failure=retry_on_failure, **kwargs)
+        if trusted:
+            self._trust_loaded(result)
+        else:
+            self._remember_checked(result)
+        return result
+
+    async def _get_tracks(
+        self, query: str, *, retry_on_failure: bool = False, **kwargs
+    ) -> Union[list, TrackPlaylist, None]:
+        """|coro|
+
         Search for and return a list of Tracks for the given query.
 
         Parameters
@@ -355,15 +418,6 @@ class Node:
             A list of or TrackPlaylist instance of :class:`wavelink.player.Track` objects.
             This could be None if no tracks were found.
         """
-        # Última barreira (a de cima é a do cog, com mensagem ao usuário): nenhum link http(s) chega ao ``loadtracks`` sem resolver só para
-        # endereço público. ``trusted_local`` é só do código que registra o próprio endereço local (relay das rádios), nunca de texto do usuário.
-        if not take_trusted_local(kwargs):
-            try:
-                await ensure_public_url(query)
-            except UnsafeUrl as error:
-                log_refusal(error)
-                raise TrackNotFound("link recusado") from None
-
         backoff = ExponentialBackoff(base=1)
 
         ytid = None

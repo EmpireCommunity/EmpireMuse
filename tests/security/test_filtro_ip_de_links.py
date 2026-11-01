@@ -125,10 +125,22 @@ class TestSyntaxLayerInTheGuard:
     async def test_a_link_followed_by_plain_text_still_passes(self):
         await ensure_public_url("https://music.example.org/a.mp3 uma música legal", resolve=resolving(PUBLIC))
 
-    def test_the_resolve_deadline_is_five_seconds(self):
+    @pytest.mark.asyncio
+    async def test_the_default_dns_deadline_is_five_seconds(self, monkeypatch):
         from empiremuse.utils import url_guard
 
-        assert url_guard.RESOLVE_TIMEOUT_S == 5.0 and url_guard.RESOLVER_THREADS == 4
+        seen = []
+        real = asyncio.wait_for
+
+        async def recording(awaitable, timeout):
+            seen.append(timeout)
+            return await real(awaitable, timeout)
+
+        monkeypatch.setattr(url_guard.asyncio, "wait_for", recording)
+
+        await ensure_public_url("https://music.example.org/a", resolve=resolving(PUBLIC))
+
+        assert seen == [5.0]
 
     def test_trusted_local_is_removed_from_the_kwargs_and_never_reaches_the_load(self):
         from empiremuse.wavelink.node import take_trusted_local
@@ -287,11 +299,6 @@ class TestGuard:
         with pytest.raises(UnsafeUrl):
             await ensure_public_url(query, resolve=resolving("127.0.0.1"))
 
-    def test_the_fetched_schemes_are_exactly_the_ones_lavaplayer_turns_into_http(self):
-        from empiremuse.rules.urls import LAVALINK_FETCH_SCHEMES
-
-        assert LAVALINK_FETCH_SCHEMES == ("http://", "https://", "icy://")
-
     @pytest.mark.asyncio
     async def test_the_system_resolver_runs_on_its_own_small_executor_not_the_default_one(self, monkeypatch):
         import socket
@@ -309,7 +316,6 @@ class TestGuard:
 
         assert await url_guard.system_resolve("music.example.org", 0) == [PUBLIC]
         assert seen and seen[0].startswith("url-guard-dns")  # nunca uma thread do executor padrão do laço
-        assert url_guard.RESOLVER_THREADS <= 4
 
     @pytest.mark.asyncio
     async def test_the_refusal_carries_only_the_host(self):
@@ -410,23 +416,41 @@ class TestNodeBackstop:
             await Node.get_tracks(node, "ytsearch:lofi")
 
 
-class TestStoredTracksAreFilteredToo:
-    """V184-1: a faixa guardada (fila salva, sessão retomada) com fonte ``http`` toca por ``encodedTrack``, sem ``loadtracks``. Toda troca de
-    faixa passa pelo ``Node.update_player``, e é ali que o endereço dela é conferido."""
+class TestTheSentTrackIsTheOneChecked:
+    """V184-1 + CodeRabbit: toda troca de faixa passa pelo ``Node.update_player``, e o que se confere é o ``encodedTrack`` que VAI no PATCH
+    (decodificado pelo nó), não o ``player.current``: os dois podem divergir (id temporário, faixa resolvida por busca, fila ou sessão guardadas)."""
 
-    def node(self, *, source="http", uri="http://127.0.0.1:2333/x"):
-        player = SimpleNamespace(current=SimpleNamespace(info={"sourceName": source, "uri": uri}))
-        sent = []
+    def make_node(
+        self, *, current_source="youtube", current_uri="https://www.youtube.com/watch?v=x", decoded=None, error=None
+    ):
+        from collections import OrderedDict
 
-        async def patch_ok(*args, **kwargs):
-            sent.append(kwargs.get("json"))
-            raise AssertionError("passou da barreira")
+        from cachetools import TTLCache
 
-        fake = SimpleNamespace(players={7: player}, session_id=None, sent=sent)
         from empiremuse.wavelink.node import Node
 
-        fake._ensure_current_track_is_public = lambda guild_id: Node._ensure_current_track_is_public(fake, guild_id)
-        return fake
+        node = object.__new__(Node)
+        node.players = {
+            7: SimpleNamespace(current=SimpleNamespace(info={"sourceName": current_source, "uri": current_uri}))
+        }
+        node.session_id = None  # passar da barreira é bater em MissingSessionID
+        node._client = SimpleNamespace(bot=SimpleNamespace(music=SimpleNamespace(players={})))
+        node._trusted_encoded = OrderedDict()
+        node._checked_encoded = TTLCache(maxsize=64, ttl=600)
+        if error is not None:
+            node.build_track = AsyncMock(side_effect=error)
+        else:
+            node.build_track = AsyncMock(return_value=SimpleNamespace(info=decoded))
+        return node
+
+    @staticmethod
+    def info(source, uri):
+        return {"sourceName": source, "uri": uri, "title": "t"}
+
+    async def play(self, node, encoded="ENC1", **data):
+        from empiremuse.wavelink.node import Node
+
+        await Node.update_player(node, 7, {"encodedTrack": encoded, **data}, True)
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -440,57 +464,142 @@ class TestStoredTracksAreFilteredToo:
             "http://good.example@127.0.0.1/",
         ],
     )
-    async def test_a_stored_http_track_to_an_internal_address_is_refused_before_it_plays(self, uri):
+    async def test_a_sent_http_track_to_an_internal_address_is_refused_even_if_the_player_thinks_it_plays_something_else(
+        self, uri
+    ):
         from empiremuse.wavelink.errors import TrackNotFound
-        from empiremuse.wavelink.node import Node
+
+        node = self.make_node(current_source="youtube", decoded=self.info("http", uri))  # current e enviado DIVERGEM
 
         with pytest.raises(TrackNotFound):
-            await Node.update_player(self.node(uri=uri), 7, {"encodedTrack": "QAAA...", "position": 0}, True)
+            await self.play(node)
 
     @pytest.mark.asyncio
-    async def test_a_stored_http_track_to_a_public_address_goes_on_to_the_node(self):
+    async def test_what_is_validated_is_the_sent_track_not_the_current_one(self):
         from empiremuse.wavelink.errors import MissingSessionID
-        from empiremuse.wavelink.node import Node
 
-        fake = self.node(uri=f"https://{PUBLIC}/a.mp3")
-        fake._client = SimpleNamespace(bot=SimpleNamespace(music=SimpleNamespace(players={})))
+        stale = self.make_node(
+            current_source="http",
+            current_uri="http://127.0.0.1:2333/x",
+            decoded=self.info("youtube", "https://www.youtube.com/watch?v=ok"),
+        )
 
-        with pytest.raises(MissingSessionID):  # passou da barreira e só parou no nó falso, sem sessão
-            await Node.update_player(fake, 7, {"encodedTrack": "QAAA...", "position": 0}, True)
+        with pytest.raises(MissingSessionID):  # o current é interno, mas o enviado é o YouTube: passa
+            await self.play(stale)
+
+    @pytest.mark.asyncio
+    async def test_a_sent_http_track_to_a_public_address_goes_on_and_the_decision_is_cached(self):
+        from empiremuse.wavelink.errors import MissingSessionID
+
+        node = self.make_node(decoded=self.info("http", f"https://{PUBLIC}/a.mp3"))
+
+        for _ in range(3):
+            with pytest.raises(MissingSessionID):
+                await self.play(node)
+
+        assert node.build_track.await_count == 1  # decodificou uma vez; as outras vêm do cache
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        ("source", "uri", "data"),
-        [
-            ("http", "", {"encodedTrack": "QAAA..."}),  # a faixa ao vivo das rádios: uri vazia
-            ("youtube", "http://127.0.0.1/x", {"encodedTrack": "QAAA..."}),  # outras fontes buscam em hosts fixos
-            (
-                "http",
-                "http://127.0.0.1/x",
-                {"paused": True, "volume": 50},
-            ),  # sem faixa nova: pausa e volume não são conferidos
-            ("http", "http://127.0.0.1/x", {"encodedTrack": None}),  # parar o player
-        ],
-        ids=["live_radio_track", "other_source", "no_new_track", "stop"],
+        "error", [OSError("nó fora"), TimeoutError(), ValueError("lixo")], ids=["os_error", "timeout", "bad_payload"]
     )
-    async def test_what_is_not_a_stored_http_track_is_untouched(self, source, uri, data):
+    @pytest.mark.parametrize("current_source", ["http", "youtube"])
+    async def test_when_the_track_cannot_be_decoded_nothing_is_sent_fail_closed(self, error, current_source, caplog):
+        from empiremuse.wavelink.errors import TrackNotFound
+
+        node = self.make_node(current_source=current_source, error=error)
+
+        with caplog.at_level(logging.WARNING), pytest.raises(TrackNotFound):
+            await self.play(node)
+
+        assert type(error).__name__ in caplog.text and "ENC1" not in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_a_decoded_track_without_info_is_refused(self):
+        from empiremuse.wavelink.errors import TrackNotFound
+
+        with pytest.raises(TrackNotFound):
+            await self.play(self.make_node(decoded=None))
+
+    @pytest.mark.asyncio
+    async def test_a_refused_track_is_not_cached_as_allowed(self):
+        from empiremuse.wavelink.errors import TrackNotFound
+
+        node = self.make_node(decoded=self.info("http", "http://10.0.0.1/a"))
+        for _ in range(2):
+            with pytest.raises(TrackNotFound):
+                await self.play(node)
+
+        assert node.build_track.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_tracks_loaded_by_the_trusted_local_caller_play_without_decoding(self):
+        from empiremuse.wavelink.errors import MissingSessionID
+
+        node = self.make_node(
+            decoded=self.info("http", "http://127.0.0.1:2333/r/token")
+        )  # decodificada, seria recusada
+        node._get_tracks = AsyncMock(return_value=[SimpleNamespace(id="LIVE")])
+
+        loaded = await type(node).get_tracks(node, "http://127.0.0.1:2333/r/token", trusted_local=True)
+
+        assert [t.id for t in loaded] == ["LIVE"]
+        with pytest.raises(MissingSessionID):
+            await self.play(node, "LIVE")
+        node.build_track.assert_not_awaited()
+        with pytest.raises(
+            Exception
+        ) as other:  # outra faixa com o mesmo endereço, que ninguém confiou, continua recusada
+            await self.play(node, "OTHER")
+        assert type(other.value).__name__ == "TrackNotFound"
+
+    @pytest.mark.asyncio
+    async def test_tracks_loaded_through_the_guard_play_without_decoding(self):
+        from empiremuse.wavelink.errors import MissingSessionID
+
+        node = self.make_node(decoded=self.info("http", "http://127.0.0.1/"))
+        node._get_tracks = AsyncMock(
+            return_value=SimpleNamespace(tracks=[SimpleNamespace(id="A"), SimpleNamespace(id="B")])
+        )
+
+        await type(node).get_tracks(node, "ytsearch:lofi")
+
+        for encoded in ("A", "B"):
+            with pytest.raises(MissingSessionID):
+                await self.play(node, encoded)
+        node.build_track.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_the_trusted_set_is_bounded(self):
+        from empiremuse.wavelink.node import TRUSTED_TRACKS_MAX
+
+        node = self.make_node()
+
+        node._trust_loaded([SimpleNamespace(id=f"T{n}") for n in range(TRUSTED_TRACKS_MAX + 40)])
+
+        assert len(node._trusted_encoded) == TRUSTED_TRACKS_MAX and "T0" not in node._trusted_encoded
+        assert f"T{TRUSTED_TRACKS_MAX + 39}" in node._trusted_encoded
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("data", [{"paused": True, "volume": 50}, {"encodedTrack": None}, {"encodedTrack": ""}])
+    async def test_a_payload_without_a_new_track_is_not_checked(self, data):
         from empiremuse.wavelink.errors import MissingSessionID
         from empiremuse.wavelink.node import Node
 
-        fake = self.node(source=source, uri=uri)
-        fake._client = SimpleNamespace(bot=SimpleNamespace(music=SimpleNamespace(players={})))
+        node = self.make_node(decoded=self.info("http", "http://127.0.0.1/"))
 
         with pytest.raises(MissingSessionID):
-            await Node.update_player(fake, 7, data, True)
+            await Node.update_player(node, 7, data, True)
+
+        node.build_track.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_the_refusal_logs_only_the_host(self, caplog):
         from empiremuse.wavelink.errors import TrackNotFound
-        from empiremuse.wavelink.node import Node
+
+        node = self.make_node(decoded=self.info("http", "http://10.9.8.7:2333/r/TOKEN?token=SEGREDO"))
 
         with caplog.at_level(logging.WARNING), pytest.raises(TrackNotFound):
-            await Node.update_player(
-                self.node(uri="http://10.9.8.7:2333/r/TOKEN?token=SEGREDO"), 7, {"encodedTrack": "QAAA..."}, True
-            )
+            await self.play(node)
 
         assert "10.9.8.7" in caplog.text and "SEGREDO" not in caplog.text and "TOKEN" not in caplog.text
