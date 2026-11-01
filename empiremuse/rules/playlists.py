@@ -259,6 +259,19 @@ def find_item(playlists: Sequence[Playlist], name: str) -> Playlist | None:
     return playlists[index] if index >= 0 else None
 
 
+def find_selected(playlists: Sequence[Playlist], value: str) -> Playlist | None:
+    """A playlist que um select escolheu: pelo nome exato (``casefold``) e, se nada casar, pelo nome sem o emoji do início.
+
+    O valor de uma opção fica gravado na mensagem do Discord. Uma mensagem montada antes da migração dos ícones traz o nome antigo
+    (``🔴 Red Line``), e hoje o item se chama ``Red Line`` com o emoji no ``icon``.
+    """
+    found = find_item(playlists, value)
+    if found is not None:
+        return found
+    icon, bare = split_leading_icon(value)
+    return find_item(playlists, bare) if icon else None
+
+
 def _clash(playlists: Sequence[Playlist], item: Playlist, *, ignore: int = -1) -> RuleError | None:
     url = normalize_url(item.url)
     for index, other in enumerate(playlists):

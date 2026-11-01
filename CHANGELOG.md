@@ -7,6 +7,9 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Corrigido
+- **Playlist do servidor escolhida no select de uma mensagem antiga dava "não foi encontrada"**: depois da migração dos ícones (2.1.4) o item `🔴 Red Line` passou a ser `Red Line` com o emoji no `icon`, mas a mensagem do canal de pedidos montada antes ainda guardava o nome antigo no valor da opção. A busca agora tenta o nome exato e, se nada casar, o nome sem o emoji do início. Além disso, ao subir, o painel do canal de pedidos dos servidores alterados pela migração é redesenhado (quando os bots ficam prontos) e passa a trazer o nome novo.
+
 ## [2.1.4] - 2026-10-31
 
 Ícone de playlist em emoji, ícones e emojis da aplicação da Flaticon (mnauliady), MongoDB em arquivo próprio com o bot sem container opcional, índice do `deploy/` e CI que valida o `deploy/`.

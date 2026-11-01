@@ -26,6 +26,7 @@ from empiremuse.rules.playlists import (
     check_playlist,
     edit_item,
     find_item,
+    find_selected,
     from_doc,
     move_leading_icons,
     plan_import,
@@ -115,8 +116,8 @@ class ServerPlaylists:
         return (await self.snapshot(gid))[1]
 
     async def find(self, gid: int, name: str) -> Playlist | None:
-        """A playlist pelo nome (``casefold``), ou ``None``."""
-        return find_item(await self.list(gid), name)
+        """A playlist escolhida num select pelo nome (``casefold``), ou ``None``; ver ``find_selected`` (valor de antes da migração)."""
+        return find_selected(await self.list(gid), name)
 
     async def export_bytes(self, gid: int) -> bytes:
         """O formato novo (com ``icon`` quando houver): ``ensure_ascii=False``, indentação 2."""
@@ -202,13 +203,15 @@ class ServerPlaylists:
 
     # ------------------------------------------------------------------ migração de boot
 
-    async def migrate_icons(self) -> tuple[int, int]:
+    async def migrate_icons(self) -> tuple[int, int, tuple[int, ...]]:
         """Uma vez por subida: move o emoji do início do nome para o ``icon`` nas playlists já gravadas (``move_leading_icons``).
 
         Idempotente (rodar de novo não muda nada). Cada servidor é gravado sob a trava e com ``rev`` +1; um servidor que falha fica
-        para a próxima subida. O log só leva contagens, nunca nomes. Devolve ``(servidores, itens)`` alterados.
+        para a próxima subida. O log só leva contagens, nunca nomes. Devolve ``(servidores, itens, ids dos servidores)`` alterados:
+        quem chama atualiza o embed ocioso deles (a gravação direta no store não passa pelo ``refresh_idle``).
         """
         servers = items = failed = 0
+        changed: list[int] = []
         for gid in await self.store.stored_ids():
             count = 0
 
@@ -227,11 +230,13 @@ class ServerPlaylists:
             if count:
                 servers += 1
                 items += count
+                if gid.isdecimal():  # o id do documento é texto; o painel e os bots usam o inteiro
+                    changed.append(int(gid))
         if servers or failed:
             logger.info(
                 "Ícones das playlists migrados: %d itens em %d servidores (%d falharam)", items, servers, failed
             )
-        return servers, items
+        return servers, items, tuple(changed)
 
     # ------------------------------------------------------------------ embed ocioso
 

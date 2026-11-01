@@ -96,6 +96,7 @@ node_logger = logging.getLogger("empiremuse.wavelink")
 commands_logger = logging.getLogger("empiremuse.commands")
 
 UPDATE_WATCH_INTERVAL = 5  # segundos entre as checagens de saúde do pool enquanto há uma atualização pendente
+PLAYLIST_REFRESH_READY_WAIT = 300  # s que a migração dos ícones espera os bots ficarem prontos para redesenhar o painel
 
 
 def _playlist_cache_file():
@@ -988,9 +989,21 @@ class BotPool:
             logger.error("Spotify: falha ao obter o token de acesso na partida (%s).", type(e).__name__, exc_info=True)
 
     async def migrate_playlist_icons(self):
-        """Migração de boot das playlists já gravadas: o emoji do início do nome vira ``icon`` (idempotente; falha só vai ao log)."""
+        """Migração de boot das playlists já gravadas: o emoji do início do nome vira ``icon`` (idempotente; falha só vai ao log).
+
+        Os servidores alterados têm o painel do canal de pedidos redesenhado quando os bots ficam prontos (a mensagem montada antes
+        da migração guarda o nome antigo no valor do select); antes disso não há bot do painel, e o redesenho seria perdido.
+        """
         try:
-            await self.servers.playlists.migrate_icons()
+            *_, changed = await self.servers.playlists.migrate_icons()
+            if changed:
+                ready = asyncio.gather(*(bot.wait_until_ready() for bot in self.get_all_bots()))
+                try:
+                    await asyncio.wait_for(ready, PLAYLIST_REFRESH_READY_WAIT)
+                except asyncio.TimeoutError:
+                    pass  # o que não ficou pronto é pulado pelo próprio painel
+                for gid in changed:
+                    self.servers.playlists.refresh_idle(gid)
         except asyncio.CancelledError:
             raise
         except Exception:
