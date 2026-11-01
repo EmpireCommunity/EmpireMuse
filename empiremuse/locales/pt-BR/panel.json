@@ -2,7 +2,7 @@
   "panel.language.title": "Idioma do servidor",
   "panel.language.label": "Idioma",
   "panel.language.auto": "Automático (o idioma configurado no Discord para este servidor)",
-  "panel.language.help": "O bot responde neste idioma neste servidor. Automático segue o idioma configurado no Discord; sem tradução completa, usa inglês.",
+  "panel.language.help": "Vale para os textos já traduzidos: descrições dos comandos de barra, o player e seus controles. O que ainda não foi traduzido continua em português. Automático segue o idioma configurado no Discord; sem tradução completa, usa inglês.",
   "panel.language.save": "Salvar",
   "panel.language.unknown": "Escolha um idioma da lista.",
   "panel.language.cooldown": "Aguarde {seconds} segundos entre trocas de idioma.",
