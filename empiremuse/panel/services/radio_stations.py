@@ -163,7 +163,7 @@ class StationsPage:
             extras={
                 "station_id": str(station.id) if station is not None else None,
                 "generos": tuple(
-                    (tr(f"panel.radio.genre_group.{group}"), tuple((g, tr(f"panel.radio.genre.{g}")) for g in ids))
+                    (tr(f"panel.radio.genre.group.{group}"), tuple((g, tr(f"panel.radio.genre.{g}")) for g in ids))
                     for group, ids in genres
                 ),
                 "playlists": playlists,
