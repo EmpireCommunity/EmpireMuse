@@ -12,6 +12,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ### Adicionado
 - **Quadros de áudio no resumo periódico**: a linha do nó mostra `quadros enviados`, `anulados` e `déficit` do último minuto (`frameStats` do Lavalink), e `—` quando o nó não os envia (sem players). Serve para medir picotes de áudio antes de mexer no buffer.
+- **Jukebox estrita (item 8, J1)**: o painel do canal de pedidos volta sozinho se alguém o apagar (também em apagamento em massa e na subida do bot, no máximo um painel novo a cada 5 s por servidor). Com o modo estrito ligado (`settings.request_channel_strict`, padrão desligado; o botão fica no painel web), toda mensagem escrita no canal some na hora: o nome digitado ainda vale como pedido, e menções e mensagens de sistema são só apagadas; bots e comandos não são tocados. O painel com 2 ou mais players ganha volume, barra de progresso (redesenhada a cada 15 s), o campo "Última ação", o botão **Fila** (25 músicas por página, resposta só sua) e um select de **gênero** das playlists do servidor (também só seu).
 
 ## [2.2.0] - 2026-11-01
 

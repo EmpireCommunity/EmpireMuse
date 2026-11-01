@@ -1412,6 +1412,9 @@ class BotPool:
 
                 bot.bot_ready = True
 
+                if self.request_panel:
+                    self.request_panel.schedule_boot_check(bot)  # painel apagado com o bot desligado volta na subida
+
                 await self.check_pool_ready()
 
                 # depois do ready: não atrasa a inicialização, e a função não levanta
