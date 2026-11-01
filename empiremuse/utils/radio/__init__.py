@@ -10,6 +10,7 @@ from cachetools import TTLCache
 
 from empiremuse.utils.radio.control import BotRoles, RadioControl
 from empiremuse.utils.radio.directory import Directory
+from empiremuse.utils.radio.favorites import RadioFavorites
 from empiremuse.utils.radio.health import HealthChecker, StationHealth
 from empiremuse.utils.radio.locations import LocationDataError, LocationTree
 from empiremuse.utils.radio.manager import RadioManager
@@ -45,6 +46,7 @@ class RadioHub:
         self.control = RadioControl(pool)  # "pausar todas" (dono)
         self.roles = BotRoles(pool)  # bots só-rádio (dono)
         self.store = RadioStore(pool, self.premium)
+        self.favorites = RadioFavorites(pool)  # estações favoritas do servidor (painel da rádio ao vivo)
         self.service = RadioService(pool)
         self.manager = RadioManager(self, self.service)  # quem faz as rádios rodarem neste processo
         self.locations = load_locations()  # Região → país → estado → cidade (R4); ``None`` = filtro desligado

@@ -14,23 +14,38 @@ import pytest
 
 from empiremuse.i18n import get_i18n
 from empiremuse.rules.radio import (
+    MENU_VALUES,
     PANEL_IDS,
+    PANEL_MENU_ID,
+    PANEL_MUTE_ID,
     PANEL_NEXT_ID,
     PANEL_PAUSE_ID,
-    PANEL_RESERVE_ID,
-    PANEL_STATIONS_ID,
+    PANEL_PREVIOUS_ID,
     PANEL_STOP_ID,
+    PANEL_VOLUME_DOWN_ID,
+    PANEL_VOLUME_UP_ID,
     check_radio,
+    menu_action,
     panel_action,
     radio_id,
 )
-from empiremuse.utils.radio.panel import LiveView, StationCard, custom_payload, live_payload, panel_payload
+from empiremuse.utils.radio.panel import (
+    LiveView,
+    StationCard,
+    custom_payload,
+    live_payload,
+    panel_payload,
+    split_stream_title,
+)
 from tests.cogs.test_radio_ao_vivo import MAIN, RESERVE, LivePorts, make_live
 
 pytestmark = pytest.mark.critical
 
-FAVICON = "https://cdn.example/logo.png"
-CARD = StationCard(name="Rádio Boa FM", detail="MP3 128k · Brasil", favicon=FAVICON)
+CARD = StationCard(name="Rádio Boa FM", country="Brasil", codec="MP3", bitrate=128)
+
+
+def png_logo() -> bytes:
+    return b"\x89PNG\r\n\x1a\n" + b"logo"
 
 
 def tr_pt():
@@ -47,58 +62,126 @@ def text(payload):
 
 
 class TestLivePanel:
-    def test_it_has_pause_stations_and_stop_and_never_next(self):
+    """O painel da rádio ao vivo, como o dono especificou: título, ``{estação} – {país}``, o que está no ar, 5 botões e o select "Mais opções"."""
+
+    def test_the_title_the_station_line_and_the_two_rows(self):
+        payload = live_payload(tr_pt(), station=CARD, view=LiveView(has_list=True))
+
+        embed = payload["embeds"][0]
+        assert embed.title == "Rádio ao Vivo 24/7" and "**Rádio Boa FM – Brasil**" in embed.description
+        assert ids(payload) == [
+            PANEL_PREVIOUS_ID,
+            PANEL_VOLUME_DOWN_ID,
+            PANEL_MUTE_ID,
+            PANEL_VOLUME_UP_ID,
+            PANEL_NEXT_ID,
+        ]
+        menu = payload["components"][1].children[0]
+        assert menu.custom_id == PANEL_MENU_ID and [o.value for o in menu.options] == list(MENU_VALUES)
+
+    def test_without_a_list_there_is_no_previous_or_next(self):
         payload = live_payload(tr_pt(), station=CARD, view=LiveView())
 
-        assert ids(payload) == [PANEL_PAUSE_ID, PANEL_STATIONS_ID, PANEL_STOP_ID]
-        assert PANEL_NEXT_ID not in ids(payload)
-        assert payload["components"][0].children[2].style is disnake.ButtonStyle.danger
+        assert ids(payload) == [PANEL_VOLUME_DOWN_ID, PANEL_MUTE_ID, PANEL_VOLUME_UP_ID]
 
-    def test_the_reserve_button_exists_only_when_there_is_a_reserve_and_leads_back_when_on_it(self):
-        with_reserve = live_payload(tr_pt(), station=CARD, view=LiveView(has_reserve=True))
-        on_reserve = live_payload(tr_pt(), station=CARD, view=LiveView(has_reserve=True, on_reserve=True))
+    def test_there_is_no_music_player_control_on_it(self):
+        payload = live_payload(tr_pt(), station=CARD, view=LiveView(has_list=True))
 
-        assert ids(with_reserve) == [PANEL_PAUSE_ID, PANEL_STATIONS_ID, PANEL_RESERVE_ID, PANEL_STOP_ID]
-        assert with_reserve["components"][0].children[2].label == "Reserva"
-        assert on_reserve["components"][0].children[2].label == "Principal"
+        everything = set(ids(payload)) | {payload["components"][1].children[0].custom_id}
+        assert (
+            everything <= set(PANEL_IDS) | {PANEL_MENU_ID}
+            and PANEL_PAUSE_ID not in everything
+            and PANEL_STOP_ID not in everything
+        )
+        assert len(payload["components"]) == 2  # nada de fila, busca, pedido, favoritos da Jukebox nem repetir
 
-    def test_it_shows_the_station_the_now_playing_title_and_the_status_in_the_jukebox_style(self):
-        payload = live_payload(tr_pt(), station=CARD, view=LiveView(title="Artista - Faixa"))
+    def test_without_the_country_only_the_station_name(self):
+        shown = live_payload(tr_pt(), station=StationCard(name="Rádio Boa FM"))["embeds"][0].description
 
-        shown = text(payload)
-        assert "Rádio Boa FM" in shown and "Tocando: Artista - Faixa" in shown and "MP3 128k · Brasil" in shown
-        assert "Ao vivo" in shown and "-# " in shown  # as linhas miúdas da Jukebox
-        assert payload["embeds"][0].footer.text and len(payload["embeds"][0].fields) == 1
+        assert "**Rádio Boa FM**" in shown and "–" not in shown
 
-    def test_waiting_offline_and_reserve_states(self):
-        assert "Aguardando o título" in text(live_payload(tr_pt(), station=CARD, view=LiveView()))
-        offline = text(live_payload(tr_pt(), station=CARD, view=LiveView(offline=True, title="x")))
-        assert "Fora do ar" in offline and "Tocando:" not in offline
-        assert "reserva" in text(live_payload(tr_pt(), station=CARD, view=LiveView(on_reserve=True))).lower()
+    def test_now_playing_is_song_dash_artist_from_the_stream_title(self):
+        shown = live_payload(tr_pt(), station=CARD, view=LiveView(title="Artista - Faixa"))["embeds"][0].description
 
-    def test_the_thumbnail_is_the_station_logo_or_else_the_bot_avatar(self):
-        avatar = "https://cdn.discordapp.com/avatar.png"
-        with_logo = live_payload(tr_pt(), station=CARD, avatar=avatar)
-        without = live_payload(tr_pt(), station=StationCard(name="X"), avatar=avatar)
-        neither = live_payload(tr_pt(), station=StationCard(name="X"))
+        assert "Tocando agora: Faixa – Artista" in shown
 
-        assert with_logo["embeds"][0].thumbnail.url == FAVICON
-        assert without["embeds"][0].thumbnail.url == avatar
-        assert neither["embeds"][0].thumbnail.url is None
+    def test_a_stream_title_without_a_separator_is_all_song(self):
+        shown = live_payload(tr_pt(), station=CARD, view=LiveView(title="Só uma faixa"))["embeds"][0].description
+
+        assert "Tocando agora: Só uma faixa" in shown and "–  " not in shown
+
+    def test_without_a_title_there_is_no_now_playing_line_and_never_the_word_unknown(self):
+        for view in (LiveView(), LiveView(title=""), LiveView(title="   ")):
+            shown = live_payload(tr_pt(), station=CARD, view=view)["embeds"][0].description.lower()
+
+            assert "tocando agora" not in shown and "unknown" not in shown and "desconhecid" not in shown
+
+    def test_muted_offline_and_reserve_states(self):
+        muted = live_payload(tr_pt(), station=CARD, view=LiveView(muted=True, title="Artista - Faixa"))
+        offline = live_payload(tr_pt(), station=CARD, view=LiveView(offline=True, title="x"))
+        reserve = live_payload(tr_pt(), station=CARD, view=LiveView(on_reserve=True))
+
+        mute_button = muted["components"][0].children[1]
+        assert mute_button.style is disnake.ButtonStyle.danger and mute_button.label == "Som"
+        assert "Silenciada" in muted["embeds"][0].description and "Tocando agora" not in muted["embeds"][0].description
+        assert (
+            "Fora do ar" in offline["embeds"][0].description and "Tocando agora" not in offline["embeds"][0].description
+        )
+        assert "reserva" in reserve["embeds"][0].description.lower()
+        assert live_payload(tr_pt(), station=CARD)["components"][0].children[1].label == "Mudo"
+
+    def test_the_thumbnail_is_the_station_logo_attached_or_the_generic_icon_or_the_avatar(self, monkeypatch):
+        from empiremuse.utils.radio import panel as panel_module
+
+        monkeypatch.setattr(panel_module, "generic_icon", lambda: b"generico")
+        with_logo = live_payload(tr_pt(), station=CARD, logo=png_logo())
+        generic = live_payload(tr_pt(), station=CARD)
+        monkeypatch.setattr(panel_module, "generic_icon", lambda: None)
+        avatar = live_payload(tr_pt(), station=CARD, avatar="https://cdn.discordapp.com/avatar.png")
+
+        assert (
+            with_logo["embeds"][0].thumbnail.url == "attachment://logo.png" and with_logo["file"].filename == "logo.png"
+        )
+        assert with_logo["file"].fp.read() == png_logo()
+        assert (
+            generic["embeds"][0].thumbnail.url == "attachment://logo.png" and generic["file"].fp.read() == b"generico"
+        )
+        assert avatar["embeds"][0].thumbnail.url == "https://cdn.discordapp.com/avatar.png" and "file" not in avatar
 
     def test_station_text_and_title_go_through_the_single_external_text_function(self):
-        hostile = StationCard(name="@everyone <@1> https://evil.example", detail="[x](https://evil.example)")
-        payload = live_payload(tr_pt(), station=hostile, view=LiveView(title="@here [clique](https://evil.example/x)"))
+        hostile = StationCard(name="@everyone <@1> https://evil.example", country="[x](https://evil.example)")
+        payload = live_payload(
+            tr_pt(), station=hostile, view=LiveView(title="@here [clique](https://evil.example/x) - Faixa")
+        )
 
         shown = text(payload)
         assert "@everyone" not in shown and "@here" not in shown and "<@" not in shown and "://" not in shown
-        assert len(text(live_payload(tr_pt(), station=CARD, view=LiveView(title="z" * 1000)))) < 600
+        long_title = text(live_payload(tr_pt(), station=CARD, view=LiveView(title="z" * 1000)))
+        assert len(long_title) < 700
 
     def test_the_buttons_carry_the_mnauliady_icons_and_fixed_ids(self):
-        row = live_payload(tr_pt(), station=CARD, view=LiveView(has_reserve=True))["components"][0]
+        row = live_payload(tr_pt(), station=CARD, view=LiveView(has_list=True))["components"][0]
 
         assert all(b.emoji is not None and b.label for b in row.children)
         assert all(not any(ch.isdigit() or ch == ":" for ch in b.custom_id) for b in row.children)
+
+
+class TestSplitStreamTitle:
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("Artista - Faixa", ("Faixa", "Artista")),
+            ("Artista - Faixa - Remix", ("Faixa - Remix", "Artista")),
+            ("Sem separador", ("Sem separador", None)),
+            (" - Faixa", (" - Faixa".strip(), None)),
+            ("Artista - ", ("Artista -", None)),
+            ("", ("", None)),
+            (None, ("", None)),
+            (5, ("", None)),
+        ],
+    )
+    def test_it_splits_artist_and_song_on_the_first_dash(self, raw, expected):
+        assert split_stream_title(raw) == expected
 
 
 class TestCustomPanel:
@@ -106,7 +189,7 @@ class TestCustomPanel:
         payload = custom_payload(tr_pt(), playlist_name="Rock")
 
         assert ids(payload) == [PANEL_PAUSE_ID, PANEL_NEXT_ID, PANEL_STOP_ID]
-        assert PANEL_STATIONS_ID not in ids(payload) and PANEL_RESERVE_ID not in ids(payload)
+        assert not {PANEL_PREVIOUS_ID, PANEL_MUTE_ID, PANEL_VOLUME_DOWN_ID, PANEL_VOLUME_UP_ID} & set(ids(payload))
 
     def test_it_names_the_playlist_and_says_it_follows_a_clock(self):
         shown = text(custom_payload(tr_pt(), playlist_name="Rock"))
@@ -123,49 +206,31 @@ class TestCustomPanel:
 
     def test_the_dispatcher_picks_the_panel_by_the_kind_of_the_radio(self):
         assert ids(panel_payload(tr_pt(), playlist_name="Rock")) == [PANEL_PAUSE_ID, PANEL_NEXT_ID, PANEL_STOP_ID]
-        live = panel_payload(tr_pt(), live=True, station=CARD, view=LiveView())
-        assert PANEL_STATIONS_ID in ids(live) and PANEL_NEXT_ID not in ids(live)
+        live = panel_payload(tr_pt(), live=True, station=CARD, view=LiveView(has_list=True))
+        assert PANEL_MUTE_ID in ids(live) and PANEL_PAUSE_ID not in ids(live)
 
 
 class TestActions:
-    def test_the_five_fixed_ids_map_and_forged_ones_do_not(self):
-        assert [panel_action(i) for i in PANEL_IDS] == ["pause", "next", "stop", "stations", "reserve"]
-        for forged in ("radio_panel_stations:1", "RADIO_PANEL_RESERVE", "radio_panel_reserve ", 5, None):
+    def test_the_fixed_ids_map_and_forged_ones_do_not(self):
+        assert [panel_action(i) for i in PANEL_IDS] == [
+            "pause",
+            "next",
+            "stop",
+            "previous",
+            "volume_down",
+            "mute",
+            "volume_up",
+        ]
+        for forged in ("radio_panel_mute:1", "RADIO_PANEL_MUTE", "radio_panel_mute ", "radio_panel_menu", 5, None):
             assert panel_action(forged) is None
 
+    def test_the_menu_values_are_the_five_options_and_nothing_else(self):
+        assert [menu_action(v) for v in MENU_VALUES] == list(MENU_VALUES)
+        for forged in ("Stations", "stations ", "../x", "", None, 5, ["stop"]):
+            assert menu_action(forged) is None
 
-class TestReserveButtonAndStationChange:
-    @pytest.mark.asyncio
-    async def test_the_reserve_button_switches_to_the_other_station(self):
-        runner, ports, _ = make_live()
-        await runner.start()
 
-        switched = await runner.switch_station()
-
-        assert switched is True and ports.active == RESERVE
-
-    @pytest.mark.asyncio
-    async def test_a_second_press_inside_the_cooldown_does_nothing(self):
-        runner, ports, _ = make_live()
-        await runner.start()
-        runner._last_skip = ports.now()
-
-        assert await runner.switch_station() is False and ports.active == MAIN
-
-    @pytest.mark.asyncio
-    async def test_without_a_healthy_other_station_or_when_not_playing_it_does_nothing(self):
-        runner, ports, _ = make_live(LivePorts(reserve=None))
-        await runner.start()
-        assert await runner.switch_station() is False and ports.active == MAIN
-
-        runner, ports, _ = make_live()
-        await runner.start()
-        ports.unavailable.add(RESERVE)
-        assert await runner.switch_station() is False and ports.active == MAIN
-
-        runner, ports, _ = make_live()
-        assert await runner.switch_station() is False  # ainda não está tocando
-
+class TestStationChange:
     @pytest.mark.asyncio
     async def test_a_new_main_station_resets_the_failure_cycle_the_outage_and_the_title(self):
         runner, _, _ = make_live()

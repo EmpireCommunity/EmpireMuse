@@ -922,16 +922,15 @@ class TestLivePanel:
             return key + "|" + "|".join(f"{k}={v}" for k, v in sorted(kw.items()))
 
         def text(view):
-            embed = panel_payload(tr, playlist_name="Boa FM", live=True, view=view)["embeds"][0]
-            return "\n".join(f"{field.name}\n{field.value}" for field in embed.fields)
+            return panel_payload(tr, playlist_name="Boa FM", live=True, view=view)["embeds"][0].description
 
-        assert "panel_now_title|title=Artista - Faixa" in text(LiveView(title="Artista - Faixa"))
-        assert "panel_live" in text(LiveView()) and "panel_reserve" not in text(LiveView())
-        assert "panel_reserve" in text(LiveView(on_reserve=True))
-        assert "panel_offline" in text(LiveView(offline=True)) and "panel_now_title" not in text(
+        assert "radio.panel.live.now|artist=Artista|song=Faixa" in text(LiveView(title="Artista - Faixa"))
+        assert "radio.panel.live.now" not in text(LiveView())  # sem título do fluxo não há "Tocando agora"
+        assert "panel_reserve" in text(LiveView(on_reserve=True)) and "panel_reserve" not in text(LiveView())
+        assert "panel_offline" in text(LiveView(offline=True)) and "radio.panel.live.now" not in text(
             LiveView(offline=True, title="x")
         )
-        assert len(text(LiveView(title="z" * 1000))) < 400  # o título tem teto
+        assert len(text(LiveView(title="z" * 1000))) < 500  # o título tem teto
 
     @pytest.mark.asyncio
     async def test_a_title_every_100_ms_edits_the_panel_at_most_once_per_15_seconds_with_the_latest(self):

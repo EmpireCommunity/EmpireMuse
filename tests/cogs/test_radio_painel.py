@@ -48,7 +48,15 @@ class TestPayload:
         assert "@everyone" not in text and "<@123>" not in text and "://" not in text
 
     def test_panel_actions_map_only_the_fixed_ids(self):
-        assert [panel_action(i) for i in PANEL_IDS] == ["pause", "next", "stop", "stations", "reserve"]
+        assert [panel_action(i) for i in PANEL_IDS] == [
+            "pause",
+            "next",
+            "stop",
+            "previous",
+            "volume_down",
+            "mute",
+            "volume_up",
+        ]
         for forged in (
             "radio_panel_pause:1:2",
             "radio_panel_stop ",
@@ -203,7 +211,9 @@ async def _record(calls):
     calls.append("panel")
 
 
-def click(custom_id, *, manage_guild=True, channel_id=CHANNEL, guild_id=GUILD):
+def click(custom_id, *, manage_guild=True, channel_id=CHANNEL, guild_id=GUILD, in_call=CHANNEL, bot=False):
+    """``in_call`` = o canal de voz em que quem clicou está (``None`` = em nenhum); por padrão ele está na call da rádio."""
+    voice = SimpleNamespace(channel=SimpleNamespace(id=in_call)) if in_call is not None else None
     return SimpleNamespace(
         data=SimpleNamespace(custom_id=custom_id),
         response=SimpleNamespace(defer=AsyncMock()),
@@ -211,7 +221,9 @@ def click(custom_id, *, manage_guild=True, channel_id=CHANNEL, guild_id=GUILD):
         guild=SimpleNamespace(id=guild_id, preferred_locale="pt-BR"),
         guild_id=guild_id,
         channel_id=channel_id,
-        author=SimpleNamespace(id=7, guild_permissions=SimpleNamespace(manage_guild=manage_guild)),
+        author=SimpleNamespace(
+            id=7, bot=bot, voice=voice, guild_permissions=SimpleNamespace(manage_guild=manage_guild)
+        ),
     )
 
 
@@ -266,16 +278,44 @@ class TestButtons:
         assert (await w.hub.premium.fresh(GUILD)).active == 0
 
     @pytest.mark.asyncio
-    async def test_without_manage_guild_nothing_happens(self):
+    async def test_only_members_in_the_radios_call_use_the_panel_whatever_their_permissions(self):
         w = build_world()
         runner = await running(w)
 
         for custom_id in PANEL_IDS:
-            press = click(custom_id, manage_guild=False)
-            await w.cog.radio_panel_click(press)
-            assert "Gerenciar Servidor" in said(press)
+            for press in (
+                click(custom_id, in_call=None),  # fora de qualquer call, mesmo com Gerenciar Servidor
+                click(custom_id, in_call=CHANNEL + 1),  # em outra call
+                click(custom_id, bot=True),  # um bot na call da rádio
+            ):
+                await w.cog.radio_panel_click(press)
+                assert "Só quem está na call" in said(press)
 
         assert runner.phase is Phase.PLAYING and w.hub.manager.is_running(radio_id(2, GUILD)) and w.ports.skips == 0
+
+    @pytest.mark.asyncio
+    async def test_a_member_in_the_call_does_not_need_manage_guild(self):
+        w = build_world()
+        runner = await running(w)
+        press = click(PANEL_PAUSE_ID, manage_guild=False)
+
+        await w.cog.radio_panel_click(press)
+
+        assert runner.phase is Phase.PAUSED_ADMIN and "pausada" in said(press)
+
+    @pytest.mark.asyncio
+    async def test_buttons_of_the_live_panel_do_nothing_on_a_custom_radio(self):
+        from empiremuse.rules.radio import PANEL_MUTE_ID, PANEL_PREVIOUS_ID, PANEL_VOLUME_DOWN_ID, PANEL_VOLUME_UP_ID
+
+        w = build_world()
+        runner = await running(w)
+
+        for custom_id in (PANEL_PREVIOUS_ID, PANEL_MUTE_ID, PANEL_VOLUME_DOWN_ID, PANEL_VOLUME_UP_ID):
+            press = click(custom_id)
+            await w.cog.radio_panel_click(press)
+            assert "outro tipo de rádio" in said(press)
+
+        assert runner.phase is Phase.PLAYING
 
     @pytest.mark.asyncio
     async def test_a_forged_custom_id_is_ignored_without_even_answering(self):

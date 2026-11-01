@@ -13,7 +13,7 @@ import logging
 import disnake
 from typing import TYPE_CHECKING, Any, Optional
 
-from empiremuse.rules.radio import Radio
+from empiremuse.rules.radio import VOLUME_DEFAULT, Radio
 from empiremuse.utils.radio.directory import DirectoryError
 from empiremuse.utils.radio.discord_ports import DiscordRadioPorts
 from empiremuse.utils.radio.live import StationFailure
@@ -35,7 +35,11 @@ class LiveRadioPorts(DiscordRadioPorts):
         self.active: str = self.primary
         self._token: Optional[str] = None
         self._names: dict[str, str] = {}
-        self._cards: dict[str, StationCard] = {}  # a estação de cada uuid já vista (nome, detalhe e favicon do painel)
+        self._cards: dict[str, StationCard] = {}  # a estação de cada uuid já vista (nome, país, codec e taxa do painel)
+        self.station_list: tuple[str, ...] = tuple(
+            radio.source.get("list") or ()
+        )  # de onde a estação foi escolhida (anterior e próxima)
+        self.volume: int = radio.source.get("volume", VOLUME_DEFAULT)
         self._status_task: Optional[asyncio.Task] = None
         self._view: LiveView = LiveView()  # o que o painel deve mostrar (o último pedido)
         self._shown: Optional[LiveView] = None  # o que o painel mostra de fato
@@ -60,9 +64,15 @@ class LiveRadioPorts(DiscordRadioPorts):
 
     @staticmethod
     def _card_of(station: Any) -> StationCard:
-        technical = f"{station.codec} {station.bitrate}k" if station.bitrate else station.codec
-        detail = " · ".join(part for part in (technical, station.country) if part)
-        return StationCard(name=station.name, detail=detail, favicon=getattr(station, "favicon", "") or "")
+        return StationCard(name=station.name, country=station.country, codec=station.codec, bitrate=station.bitrate)
+
+    async def _logo(self, current: Radio) -> bytes | None:
+        """O logo da estação ativa, já re-codificado pelo proxy (``None`` = o ícone genérico). Só um uuid que o diretório já viu: nunca busca por causa do painel."""
+        try:
+            return (await self.pool.radio.directory.logo_png(self.active)).png
+        except Exception as error:  # noqa: BLE001 - o painel é conveniência: só o tipo vai ao log (R-12)
+            logger.warning("Logo da estação não obtido (%s)", type(error).__name__)
+            return None
 
     async def _station_card(self, current: Radio) -> StationCard:
         """A estação ativa para o painel. Sem ela no cache (painel criado antes do primeiro play) pergunta ao diretório SEM registrar clique."""
@@ -134,6 +144,7 @@ class LiveRadioPorts(DiscordRadioPorts):
             )  # e o "autor" é o que está no ar: o título do fluxo quando ele chega, senão "Ao vivo"
             player.queue.clear()
             player.queue.append(track)
+            player.volume = self.volume  # o volume da rádio vale para cada fluxo novo (o player começa a faixa com ele)
             await player.process_next()
         except BaseException as error:
             station_fault = hub.relay.touched(token) and not isinstance(error, asyncio.CancelledError)
@@ -189,16 +200,34 @@ class LiveRadioPorts(DiscordRadioPorts):
         """A estação principal mudou (``RadioStore.set_station``): as portas passam a tocar a nova, sem título velho, e o painel é refeito já."""
         self.primary = radio.source["station"]
         self.reserve = radio.source.get("reserve")
+        self.station_list = tuple(radio.source.get("list") or ())
+        self.volume = radio.source.get("volume", VOLUME_DEFAULT)
         self.active = self.primary
         self._view, self._shown, self._last_edit = LiveView(), None, None
         await self._release()
         self.update_panel(self._view)
 
+    def refresh_panel(self) -> None:
+        """Refaz o painel na próxima janela (o select "Mais opções" volta ao título depois de uma escolha)."""
+        self._shown = None
+        self.update_panel(self._view)
+
+    async def set_volume(self, volume: int) -> None:
+        """O volume novo vale já no player e em cada fluxo seguinte; o painel não muda (o botão não mostra o número)."""
+        self.volume = volume
+        player = self._player()
+        if player is not None:
+            await player.set_volume(volume)
+
     # ------------------------------------------------------------------ painel da call (título, reserva no ar, fora do ar)
 
+    def has_list(self) -> bool:
+        """Há por onde andar? A lista tem 2 ou mais estações e a principal está nela."""
+        return len(self.station_list) >= 2 and self.primary in self.station_list
+
     def _merged(self, view: LiveView) -> LiveView:
-        """O que o runner sabe (título, reserva no ar, fora do ar) mais o que só estas portas sabem (há uma reserva configurada?)."""
-        return view._replace(has_reserve=self.reserve is not None)
+        """O que o runner sabe (título, reserva no ar, fora do ar, silenciada) mais o que só estas portas sabem (há uma lista de estações?)."""
+        return view._replace(has_list=self.has_list())
 
     def _panel_view(self) -> LiveView:
         """Um painel recém-criado já nasce com o estado de agora (e conta como mostrado)."""
@@ -236,7 +265,7 @@ class LiveRadioPorts(DiscordRadioPorts):
         except disnake.NotFound, disnake.Forbidden:
             return  # o painel sumiu: o varredor o recria e a próxima edição o encontra
         payload = await self._panel_payload(bot, guild, current)
-        await message.edit(allowed_mentions=disnake.AllowedMentions.none(), **payload)
+        await message.edit(allowed_mentions=disnake.AllowedMentions.none(), **self.edit_kwargs(payload))
 
     async def _release(self) -> None:
         token, self._token = self._token, None

@@ -16,7 +16,7 @@ import logging
 from collections.abc import Callable
 from typing import Optional
 
-from empiremuse.rules.radio import LIVE_CYCLE_ATTEMPTS, SKIP_COOLDOWN_S, backoff_s, live_backoff_s
+from empiremuse.rules.radio import LIVE_CYCLE_ATTEMPTS, backoff_s, live_backoff_s
 from empiremuse.utils.radio.panel import LiveView
 from empiremuse.utils.radio.runner import STABLE_AFTER_S, Phase, ProcessLimits, RadioPorts, RadioRunner
 from empiremuse.utils.radio.service import RadioState
@@ -67,7 +67,14 @@ class LiveRadioRunner(RadioRunner):
         state = self._state(phase)
         show = getattr(self.ports, "update_panel", None)
         if show is not None:  # o painel da call espelha título, reserva no ar e fora do ar (contrato §2 e §3)
-            show(LiveView(title=state.title, on_reserve=state.on_reserve, offline=state.offline))
+            show(
+                LiveView(
+                    title=state.title,
+                    on_reserve=state.on_reserve,
+                    offline=state.offline,
+                    muted=state.paused_by_admin,
+                )
+            )
 
     def set_title(self, title: Optional[str]) -> None:
         """O título que o relay leu do fluxo (já limpo e com o teto de 1 a cada 15 s). Só vale tocando."""
@@ -151,21 +158,6 @@ class LiveRadioRunner(RadioRunner):
         if self.phase is Phase.PLAYING:
             self.attempt = 0
             await self.on_disconnect()
-
-    async def switch_station(self) -> bool:
-        """Botão "Reserva": vai para a outra estação (principal ↔ reserva) se ela existe e está saudável. No máximo uma por ``SKIP_COOLDOWN_S``."""
-        now = self.ports.now()
-        if self._stopped or self.phase is not Phase.PLAYING:
-            return False
-        if self._last_skip is not None and now - self._last_skip < SKIP_COOLDOWN_S:
-            return False
-        self._last_skip = now
-        if not await self.ports.switch_source():  # type: ignore[attr-defined]
-            return False
-        self.failures = self.attempt = 0
-        self.title = None
-        await self.on_disconnect()
-        return True
 
     async def restore_primary(self) -> bool:
         """O health check reabilitou a estação principal: se a rádio está na reserva (ou em silêncio), volta para ela. Tocando, a volta é pelo

@@ -8,7 +8,7 @@ limpo ou um ``RuleError`` (``code`` estável, ``key`` = o campo); nada aqui mont
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Container, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, NamedTuple
 
@@ -113,6 +113,32 @@ def check_chat(raw: object, *, base: Mapping[str, int] | None = None) -> dict[st
     return chat
 
 
+LIST_MAX = 150  # estações da lista de onde a estação foi escolhida (a região ou os favoritos): anterior e próxima andam por ela
+VOLUME_MIN, VOLUME_MAX, VOLUME_DEFAULT, VOLUME_STEP = 10, 150, 100, 10
+
+
+def station_neighbor(stations: Sequence[str], current: object, step: int, skip: Container[str] = ()) -> str | None:
+    """A estação ``step`` casas (+1 próxima, -1 anterior) depois de ``current`` na lista, dando a volta e pulando as de ``skip`` (indisponíveis).
+
+    ``None`` quando não há por onde andar: lista com menos de 2 estações, ``current`` fora dela ou nenhuma outra disponível.
+    """
+    if len(stations) < 2 or current not in stations:
+        return None
+    start = stations.index(current)  # type: ignore[arg-type]
+    for offset in range(1, len(stations)):
+        candidate = stations[(start + step * offset) % len(stations)]
+        if candidate not in skip and candidate != current:
+            return candidate
+    return None
+
+
+def clamp_volume(value: object) -> int:
+    """O volume pedido limitado a 10..150 (o que não é número vira o padrão)."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return VOLUME_DEFAULT
+    return max(VOLUME_MIN, min(VOLUME_MAX, int(value)))
+
+
 def check_source(kind: str, raw: object) -> dict[str, Any] | RuleError:
     """A fonte: ``{playlist}`` na personalizada; ``{station, reserve}`` na ao vivo (a R3 usa; aqui só se confere o formato)."""
     if not isinstance(raw, Mapping):
@@ -126,11 +152,33 @@ def check_source(kind: str, raw: object) -> dict[str, Any] | RuleError:
             return RuleError(SOURCE_INVALID, "playlist")
         return {"playlist": name}
     station, reserve = raw.get("station"), raw.get("reserve")
-    if set(raw) - {"station", "reserve"} or not isinstance(station, str) or not _STATION_UUID.fullmatch(station):
+    if (
+        set(raw) - {"station", "reserve", "list", "volume"}
+        or not isinstance(station, str)
+        or not _STATION_UUID.fullmatch(station)
+    ):
         return RuleError(SOURCE_INVALID, "station")
     if reserve is not None and not (isinstance(reserve, str) and _STATION_UUID.fullmatch(reserve)):
         return RuleError(SOURCE_INVALID, "reserve")
-    return {"station": station, "reserve": reserve}
+    source: dict[str, Any] = {"station": station, "reserve": reserve}
+    stations = raw.get("list")
+    if stations is not None:
+        if (
+            not isinstance(stations, list)
+            or len(stations) > LIST_MAX
+            or len(set(stations)) != len(stations)
+            or not all(isinstance(u, str) and _STATION_UUID.fullmatch(u) for u in stations)
+        ):
+            return RuleError(SOURCE_INVALID, "list")
+        if len(stations) >= 2:  # uma lista de uma estação só não tem por onde andar: nem se guarda
+            source["list"] = list(stations)
+    volume = raw.get("volume")
+    if volume is not None:
+        if isinstance(volume, bool) or not isinstance(volume, int) or not VOLUME_MIN <= volume <= VOLUME_MAX:
+            return RuleError(SOURCE_INVALID, "volume")
+        if volume != VOLUME_DEFAULT:
+            source["volume"] = volume
+    return source
 
 
 def _identity(raw: Mapping[str, Any]) -> tuple[int, int] | None:
@@ -245,34 +293,45 @@ def pick_radio_bot(candidates: Iterable[BotCandidate]) -> int | None:
 PANEL_PAUSE_ID = "radio_panel_pause"
 PANEL_NEXT_ID = "radio_panel_next"
 PANEL_STOP_ID = "radio_panel_stop"
-PANEL_STATIONS_ID = "radio_panel_stations"  # só no painel da rádio AO VIVO: trocar de estação por região
-PANEL_RESERVE_ID = (
-    "radio_panel_reserve"  # só no painel da rádio AO VIVO: ir para a estação reserva (ou voltar para a principal)
-)
+PANEL_PREVIOUS_ID = "radio_panel_previous"  # painel AO VIVO: a estação anterior da lista de onde ela foi escolhida
+PANEL_VOLUME_DOWN_ID = "radio_panel_volume_down"
+PANEL_MUTE_ID = "radio_panel_mute"  # painel AO VIVO: silencia (para o fluxo); ao voltar entra no ponto AO VIVO, não no que ficou guardado
+PANEL_VOLUME_UP_ID = "radio_panel_volume_up"
+PANEL_MENU_ID = "radio_panel_menu"  # o select "Mais opções" do painel AO VIVO
 PANEL_IDS = (
     PANEL_PAUSE_ID,
     PANEL_NEXT_ID,
     PANEL_STOP_ID,
-    PANEL_STATIONS_ID,
-    PANEL_RESERVE_ID,
+    PANEL_PREVIOUS_ID,
+    PANEL_VOLUME_DOWN_ID,
+    PANEL_MUTE_ID,
+    PANEL_VOLUME_UP_ID,
 )  # fixos: NADA de rádio, bot ou servidor dentro do ``custom_id``
+MENU_VALUES = ("stations", "favorite", "volume", "info", "stop")  # o que o select "Mais opções" oferece
 SKIP_COOLDOWN_S = 5.0  # a "próxima" não vira rajada de comandos ao Lavalink
 PANEL_RECREATE_S = 5.0  # painel apagado volta na hora, mas quem apaga em laço não vira laço de envios
 
 
 def panel_action(custom_id: object) -> str | None:
-    """``pause``/``next``/``stop``/``stations``/``reserve`` de um ``custom_id`` do painel; qualquer outra coisa (inclusive um id adulterado) é ``None``."""
+    """A ação de um ``custom_id`` de BOTÃO do painel; qualquer outra coisa (inclusive um id adulterado) é ``None``."""
     return (
         {
             PANEL_PAUSE_ID: "pause",
             PANEL_NEXT_ID: "next",
             PANEL_STOP_ID: "stop",
-            PANEL_STATIONS_ID: "stations",
-            PANEL_RESERVE_ID: "reserve",
+            PANEL_PREVIOUS_ID: "previous",
+            PANEL_VOLUME_DOWN_ID: "volume_down",
+            PANEL_MUTE_ID: "mute",
+            PANEL_VOLUME_UP_ID: "volume_up",
         }.get(custom_id)
         if isinstance(custom_id, str)
         else None
     )
+
+
+def menu_action(value: object) -> str | None:
+    """A ação do select "Mais opções" (``stations``, ``favorite``, ``volume``, ``info`` ou ``stop``); qualquer outro valor é ``None``."""
+    return value if isinstance(value, str) and value in MENU_VALUES else None
 
 
 # ---------------------------------------------------------------------- teto por servidor (R-2)

@@ -191,6 +191,14 @@ class DiscordRadioPorts:
     async def _station_card(self, current: Radio) -> Any:
         return None  # só a rádio ao vivo tem estação (``LiveRadioPorts``)
 
+    async def _logo(self, current: Radio) -> Any:
+        return None  # só a rádio ao vivo tem logo de estação (``LiveRadioPorts``)
+
+    @staticmethod
+    def edit_kwargs(payload: dict[str, Any]) -> dict[str, Any]:
+        """Os argumentos de ``message.edit``: com um anexo novo (o logo), troca os anexos de antes em vez de empilhar."""
+        return {**payload, "attachments": []} if "file" in payload else dict(payload)
+
     async def _panel_payload(self, bot: BotCore, guild: disnake.Guild, current: Radio) -> dict[str, Any]:
         """O painel do tipo desta rádio (ao vivo ou personalizada) com o visual da Jukebox: ícones do bot, miniatura e cor."""
         from empiremuse.utils.music.app_emojis import emoji as app_emoji  # tarde: o módulo importa o cliente
@@ -207,13 +215,14 @@ class DiscordRadioPorts:
             station=await self._station_card(current),
             emojis=lambda name: app_emoji(bot, name),
             avatar=guild.me.display_avatar.replace(size=256).url,
+            logo=await self._logo(current),
         )
 
     async def _refresh_existing(self, message: Any, bot: BotCore, guild: disnake.Guild, current: Radio) -> None:
         """O painel que já existia (de antes de uma atualização do bot, ou do reinício) é redesenhado uma vez com o visual de agora."""
         try:
             payload = await self._panel_payload(bot, guild, current)
-            await message.edit(allowed_mentions=disnake.AllowedMentions.none(), **payload)
+            await message.edit(allowed_mentions=disnake.AllowedMentions.none(), **self.edit_kwargs(payload))
         except Exception as error:  # noqa: BLE001 - o painel é conveniência: só o tipo vai ao log (R-12)
             logger.warning("Painel da rádio não redesenhado (%s)", type(error).__name__)
 
