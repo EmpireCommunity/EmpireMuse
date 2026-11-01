@@ -40,6 +40,7 @@ class LivePorts(FakePorts):
         self.broken: set[str] = set()
         self.lavalink_down = False  # falha que NÃO é da estação
         self.live_plays: list[str] = []
+        self.views: list = []
         self.exhausted: list[str] = []
         self.unavailable: set[str] = set()
 
@@ -53,6 +54,9 @@ class LivePorts(FakePorts):
         if self.active in self.broken:
             raise StationFailure
         self.live_plays.append(self.active)
+
+    def update_panel(self, view):
+        self.views.append(view)
 
     async def cycle_exhausted(self):
         self.exhausted.append(self.active)
@@ -725,3 +729,218 @@ class TestLivePortsAndEvents:
 
         assert event_steps._he_live_radio(SimpleNamespace(), made) is False
         assert event_steps._he_live_radio(SimpleNamespace(radio_id="1:2"), made) is False
+
+
+class TestLiveLoadsOnlyOnTheLocalNode:
+    """Gate de contrato R-8: o endereço do relay e o token nunca saem do nó local (nada de ``ytsearch:``, Deezer, Spotify nem outro nó)."""
+
+    async def world_with_player(self, *, local=True):
+        from unittest.mock import AsyncMock
+
+        from empiremuse.utils.radio.live_ports import LiveRadioPorts
+        from tests.cogs.test_radio_portas import BOT_ID, build as build_ports
+
+        w = build_ports()
+        radio = check_radio(
+            {
+                "_id": radio_id(BOT_ID, GUILD),
+                "channel_id": str(CHANNEL),
+                "kind": "live",
+                "source": {"station": MAIN, "reserve": None},
+            }
+        )
+        ports = LiveRadioPorts(w.ports.pool, radio)
+        self.local = SimpleNamespace(
+            identifier="LOCAL", get_tracks=AsyncMock(return_value=[SimpleNamespace(title="live")])
+        )
+        self.remote = SimpleNamespace(
+            identifier="PUBLICO", get_tracks=AsyncMock(return_value=[SimpleNamespace(title="outro")])
+        )
+        w.bot.music.nodes = {"PUBLICO": self.remote, **({"LOCAL": self.local} if local else {})}
+        w.hub.directory = SimpleNamespace(fresh_for_play=AsyncMock(return_value=STATION))
+        return w, ports
+
+    @pytest.mark.asyncio
+    async def test_the_stream_is_loaded_by_the_exact_local_url_on_the_local_node_only(self):
+        import re
+
+        w, ports = await self.world_with_player()
+        try:
+            assert await ports.connect() is True
+            await ports.play_live()
+
+            self.local.get_tracks.assert_awaited_once()
+            query = self.local.get_tracks.await_args.args[0]
+            assert re.fullmatch(r"http://127\.0\.0\.1:\d+/r/[A-Za-z0-9_-]{22}", query)
+            assert "ytsearch" not in query and "source" not in self.local.get_tracks.await_args.kwargs
+            self.remote.get_tracks.assert_not_awaited()  # nenhum outro nó
+            w.music.get_tracks.assert_not_awaited()  # nem o get_tracks genérico (provedores de busca, Deezer, Spotify)
+            assert w.player.process_next.await_count == 1
+        finally:
+            await w.hub.relay.close()
+
+    @pytest.mark.asyncio
+    async def test_the_player_of_a_live_radio_is_created_on_the_local_node(self):
+        w, ports = await self.world_with_player()
+        try:
+            await ports.connect()
+
+            assert w.bot.music.get_player.call_args.kwargs["node_id"] == "LOCAL"
+        finally:
+            await w.hub.relay.close()
+
+    @pytest.mark.asyncio
+    async def test_without_a_local_node_nothing_is_opened_and_it_is_not_the_stations_fault(self):
+        w, ports = await self.world_with_player(local=False)
+
+        assert await ports.connect() is False  # o player nem nasce: sem nó local a conexão falha e o runner recua
+        with pytest.raises(RuntimeError) as failure:
+            await ports.play_live()
+
+        assert not isinstance(failure.value, StationFailure) and w.hub.relay._sessions == {}
+        self.remote.get_tracks.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_a_stream_that_the_lavalink_requested_and_could_not_open_is_the_stations_fault(self):
+        w, ports = await self.world_with_player()
+
+        async def fail_after_touching(query, **kwargs):
+            for session in w.hub.relay._sessions.values():
+                session.hits += 1  # o Lavalink chegou ao relay
+            raise OSError("fluxo sem áudio")
+
+        self.local.get_tracks.side_effect = fail_after_touching
+        try:
+            await ports.connect()
+            with pytest.raises(StationFailure):
+                await ports.play_live()
+            assert w.hub.relay._sessions == {}  # o token foi revogado
+        finally:
+            await w.hub.relay.close()
+
+    @pytest.mark.asyncio
+    async def test_a_lavalink_that_never_reached_the_relay_is_not_the_stations_fault(self):
+        w, ports = await self.world_with_player()
+        self.local.get_tracks.side_effect = OSError("lavalink fora")
+        try:
+            await ports.connect()
+            with pytest.raises(OSError):
+                await ports.play_live()
+        finally:
+            await w.hub.relay.close()
+
+
+class TestLivePanel:
+    """Contrato §2 e §3: o painel da call mostra título, "reserva no ar" e "fora do ar", sem passar de 1 edição a cada 15 s."""
+
+    def test_the_runner_hands_the_panel_title_reserve_and_outage(self):
+        import asyncio as aio
+
+        async def go():
+            ports = LivePorts()
+            ports.broken = {MAIN}
+            runner, _, _ = make_live(ports)
+            await runner.start()  # falha a principal 5 vezes e vai para a reserva
+            runner.set_title("Artista - Faixa")
+            return ports.views
+
+        views = aio.run(go())
+
+        assert views[-1].title == "Artista - Faixa" and views[-1].on_reserve is True and views[-1].offline is False
+        assert any(v.offline for v in views)  # durante as 5 tentativas da principal o painel mostrou "fora do ar"
+
+    @pytest.mark.asyncio
+    async def test_the_panel_text_shows_the_title_the_reserve_and_the_outage(self):
+        from empiremuse.utils.radio.panel import LiveView, panel_payload
+
+        def tr(key, **kw):
+            return key + "|" + "|".join(f"{k}={v}" for k, v in sorted(kw.items()))
+
+        def text(view):
+            return panel_payload(tr, playlist_name="Boa FM", live=True, view=view)["embeds"][0].description
+
+        assert "panel_now|title=Artista - Faixa" in text(LiveView(title="Artista - Faixa"))
+        assert "panel_live" in text(LiveView()) and "panel_reserve" not in text(LiveView())
+        assert "panel_reserve" in text(LiveView(on_reserve=True))
+        assert "panel_offline" in text(LiveView(offline=True)) and "panel_now" not in text(
+            LiveView(offline=True, title="x")
+        )
+        assert len(text(LiveView(title="z" * 1000))) < 400  # o título tem teto
+
+    @pytest.mark.asyncio
+    async def test_a_title_every_100_ms_edits_the_panel_at_most_once_per_15_seconds_with_the_latest(self):
+        from unittest.mock import AsyncMock
+
+        from empiremuse.utils.radio.live_ports import LiveRadioPorts
+        from empiremuse.utils.radio.panel import LiveView
+        from tests.cogs.test_radio_portas import BOT_ID, build as build_ports
+
+        w = build_ports()
+        radio = check_radio(
+            {
+                "_id": radio_id(BOT_ID, GUILD),
+                "channel_id": str(CHANNEL),
+                "kind": "live",
+                "source": {"station": MAIN, "reserve": None},
+            }
+        )
+        ports = LiveRadioPorts(w.ports.pool, radio)
+        edits: list = []
+        clock = {"t": 1000.0}
+        gate = asyncio.Event()
+
+        async def fake_edit(view):
+            edits.append(view)
+
+        async def fake_sleep(seconds):
+            await gate.wait()
+            clock["t"] += seconds
+
+        ports._edit_panel = fake_edit  # type: ignore[method-assign]
+        ports.now = lambda: clock["t"]  # type: ignore[method-assign]
+        ports.sleep = fake_sleep  # type: ignore[method-assign]
+        w.hub.store.get = AsyncMock(return_value=None)
+
+        for n in range(150):  # 15 s de títulos novos a cada 100 ms
+            ports.update_panel(LiveView(title=f"faixa {n}"))
+            await asyncio.sleep(0)
+            clock["t"] += 0.1
+        assert len(edits) == 1 and edits[0].title == "faixa 0"  # a primeira vai na hora; o resto espera a janela
+
+        gate.set()
+        for _ in range(10):
+            await asyncio.sleep(0)
+
+        assert len(edits) == 2 and edits[1].title == "faixa 149"  # uma edição só, com o título mais recente
+
+    @pytest.mark.asyncio
+    async def test_the_edit_uses_no_mentions_and_the_clean_text(self):
+        from unittest.mock import AsyncMock, MagicMock
+
+        from empiremuse.utils.radio.live_ports import LiveRadioPorts
+        from empiremuse.utils.radio.panel import LiveView
+        from tests.cogs.test_radio_portas import BOT_ID, build as build_ports
+
+        w = build_ports()
+        radio = check_radio(
+            {
+                "_id": radio_id(BOT_ID, GUILD),
+                "channel_id": str(CHANNEL),
+                "kind": "live",
+                "source": {"station": MAIN, "reserve": None},
+            }
+        )
+        ports = LiveRadioPorts(w.ports.pool, radio)
+        ports._names[MAIN] = "Boa FM"
+        message = MagicMock()
+        message.edit = AsyncMock()
+        w.channel.fetch_message = AsyncMock(return_value=message)
+        w.bot.get_color = lambda me: 0
+        created = await w.hub.store.create(radio)
+        await w.hub.store.set_panel_message(created.id, 123)
+
+        await ports._edit_panel(LiveView(title="Faixa", on_reserve=True))
+
+        kwargs = message.edit.await_args.kwargs
+        assert kwargs["allowed_mentions"].everyone is False and kwargs["allowed_mentions"].users is False
+        assert "embeds" in kwargs and "components" in kwargs

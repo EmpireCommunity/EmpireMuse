@@ -272,7 +272,9 @@ class Radio(commands.Cog):
                 self.hub,
                 guild_id=inter.guild_id,
                 channel_id=channel.id,
-                playlist=(found.name if found else playlist) if picked is None else None,
+                playlist=found.name
+                if found
+                else playlist,  # com estação também, o turn_on recusa (choose_one): nada é ignorado em silêncio
                 station=picked,
                 actor=actor,
                 candidates=candidates,

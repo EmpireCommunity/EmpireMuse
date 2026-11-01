@@ -9,18 +9,22 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from types import SimpleNamespace
+
+import disnake
 from typing import TYPE_CHECKING, Any, Optional
 
 from empiremuse.rules.radio import Radio
 from empiremuse.utils.radio.directory import DirectoryError
 from empiremuse.utils.radio.discord_ports import DiscordRadioPorts
 from empiremuse.utils.radio.live import StationFailure
+from empiremuse.utils.radio.panel import LiveView, panel_payload
 
 if TYPE_CHECKING:
     from empiremuse.utils.client import BotPool
 
 logger = logging.getLogger(__name__)
+
+PANEL_EDIT_INTERVAL_S = 15.0
 
 
 class LiveRadioPorts(DiscordRadioPorts):
@@ -31,6 +35,10 @@ class LiveRadioPorts(DiscordRadioPorts):
         self.active: str = self.primary
         self._token: Optional[str] = None
         self._names: dict[str, str] = {}
+        self._view: LiveView = LiveView()  # o que o painel deve mostrar (o último pedido)
+        self._shown: Optional[LiveView] = None  # o que o painel mostra de fato
+        self._last_edit: Optional[float] = None
+        self._panel_task: Optional[asyncio.Task] = None
 
     # ------------------------------------------------------------------ estado da fonte
 
@@ -67,15 +75,26 @@ class LiveRadioPorts(DiscordRadioPorts):
         bot, guild, player = self._bot(), self._guild(), self._player()
         if bot is None or guild is None or player is None:
             raise RuntimeError("sem player")
+        from empiremuse.utils.music.models import (
+            LavalinkPlaylist,
+            LavalinkTrack,
+        )  # tarde: os modelos importam o cliente
+
+        self._local_node(bot)  # sem nó local nada é aberto (e isso não é falha da estação)
         await hub.relay.ensure_started()
         token = hub.relay.register(
             station.url_resolved, codec=station.codec, bitrate=station.bitrate, on_title=self._on_title
         )
         self._token = token
         try:
-            music = bot.get_cog("Music")
-            shim = SimpleNamespace(guild=guild, guild_id=guild.id, author=guild.me, bot=bot, channel=self._channel())
-            found, _ = await music.get_tracks(hub.relay.local_url(token), shim, guild.me, bot=bot)
+            # SÓ o nó local e a URL exata (R-8): o get_tracks genérico trocaria a consulta por "ytsearch:<url>" e, sem resultado, a mandaria a
+            # Deezer, Spotify e aos outros nós, vazando o endereço e o token e tocando outra coisa no lugar do fluxo
+            found = await self._local_node(bot).get_tracks(
+                hub.relay.local_url(token),
+                track_cls=LavalinkTrack,
+                playlist_cls=LavalinkPlaylist,
+                requester=bot.user.id,
+            )
             tracks = list(getattr(found, "tracks", found) or [])
             if not tracks:
                 raise RuntimeError("o fluxo não abriu")
@@ -88,6 +107,57 @@ class LiveRadioPorts(DiscordRadioPorts):
             if station_fault and not isinstance(error, StationFailure):
                 raise StationFailure from error  # o Lavalink chegou ao relay e o fluxo não abriu: a estação falhou
             raise
+
+    @staticmethod
+    def _local_node(bot: Any) -> Any:
+        node = bot.music.nodes.get("LOCAL")
+        if node is None:
+            raise RuntimeError("sem nó local")  # o relay só atende o Lavalink deste host
+        return node
+
+    async def _pick_node(self, bot: Any) -> Any:
+        return self._local_node(bot)
+
+    # ------------------------------------------------------------------ painel da call (título, reserva no ar, fora do ar)
+
+    def _panel_view(self) -> LiveView:
+        """Um painel recém-criado já nasce com o estado de agora (e conta como mostrado)."""
+        self._shown = self._view
+        return self._view
+
+    def update_panel(self, view: LiveView) -> None:
+        """Pede a edição do painel. No máximo UMA edição a cada ``PANEL_EDIT_INTERVAL_S``: mudanças dentro da janela se juntam numa tarefa só,
+        que edita uma vez com o valor mais recente (título a cada 100 ms = 1 edição por 15 s)."""
+        self._view = view
+        if view == self._shown or (self._panel_task is not None and not self._panel_task.done()):
+            return
+        self._panel_task = asyncio.get_running_loop().create_task(self._edit_when_due())
+
+    async def _edit_when_due(self) -> None:
+        if self._last_edit is not None:
+            wait = self._last_edit + PANEL_EDIT_INTERVAL_S - self.now()
+            if wait > 0:
+                await self.sleep(wait)
+        view, self._shown, self._last_edit = self._view, self._view, self.now()
+        try:
+            await self._edit_panel(view)
+        except Exception as error:  # noqa: BLE001 - o painel é conveniência: só o tipo vai ao log (R-12)
+            logger.warning("Painel da rádio ao vivo não editado (%s)", type(error).__name__)
+
+    async def _edit_panel(self, view: LiveView) -> None:
+        bot, guild, channel = self._bot(), self._guild(), self._channel()
+        current = await self.pool.radio.store.get(self.radio.id)
+        if bot is None or guild is None or channel is None or current is None or not current.panel_message_id:
+            return
+        try:
+            message = await channel.fetch_message(current.panel_message_id)
+        except disnake.NotFound, disnake.Forbidden:
+            return  # o painel sumiu: o varredor o recria e a próxima edição o encontra
+        tr = await bot.pool.i18n.for_guild(guild)
+        payload = panel_payload(
+            tr, playlist_name=await self._panel_name(current), color=bot.get_color(guild.me), live=True, view=view
+        )
+        await message.edit(allowed_mentions=disnake.AllowedMentions.none(), **payload)
 
     async def _release(self) -> None:
         token, self._token = self._token, None
