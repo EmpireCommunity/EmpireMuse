@@ -1,14 +1,20 @@
 """Textos do player fora das skins (item 21, F2): dicas no idioma de agora, plurais, painel de pedidos e o idle em dois idiomas."""
 
+import ast
+import importlib
+import re
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
 from empiremuse.i18n import get_i18n
+from empiremuse.rules import i18n as rules
 from empiremuse.rules.request_panel import PAUSED, PanelEntry
 from empiremuse.utils.music.interactions.request_panel import render_panel
 from empiremuse.utils.music.models.player import LavalinkPlayer
+from tests.i18n.skins_harness import make_player
 
 pytestmark = pytest.mark.critical
 
@@ -51,7 +57,9 @@ class TestPluralsKeepTodaysPortuguese:
     def test_the_bots_hint(self, count, snippet):
         assert snippet in PT("player.hint.bots_in_guild", count=count, prefix_info="!!")
 
-    @pytest.mark.parametrize(("count", "snippet"), [(1, "mais 1 bot extras"), (4, "mais 4 bots extras")])
+    @pytest.mark.parametrize(
+        ("count", "snippet"), [(1, "mais 1 bot extra no servidor"), (4, "mais 4 bots extras no servidor")]
+    )
     def test_the_outside_bots_hint(self, count, snippet):
         assert snippet in PT("player.hint.bots_outside_guild", count=count, prefix_info="!!")
 
@@ -110,3 +118,60 @@ class TestRequestPanel:
         assert embed.fields[0].value.startswith("-# Playing: ") and "in the queue" in embed.fields[0].value
         assert embed.fields[1].name.endswith("private channel")
         assert data["components"][0].children[0].label == "Request a song"
+
+
+class TestReviewRound175:
+    def test_the_hints_have_no_leftover_marker_and_agree_in_number(self):
+        for text in get_i18n().entries("pt-BR").values():
+            assert "funciona(m)" not in text
+        one = PT("player.hint.bots_outside_guild", count=1, prefix_info="!!")
+        many = PT("player.hint.bots_outside_guild", count=3, prefix_info="!!")
+
+        assert "que funciona com" in one and "que funcionam com" in many
+
+    def test_the_reconnect_failure_message_has_no_placeholder_and_is_the_fixed_text(self):
+        key = "player.a_failure_occurred_while_reconnecting_2"
+        for locale in ("pt-BR", "en-US"):
+            assert not re.search(r"\{\w+\}", get_i18n().entries(locale)[key]), locale
+        assert PT(key) == "Ocorreu uma falha ao reconectar o player no canal de voz."
+        assert EN(key).endswith("to the voice channel.")
+
+    def test_no_exception_caught_in_the_code_is_handed_to_a_translation_call(self):
+        offenders = []
+        root = Path(__file__).resolve().parents[2] / "empiremuse"
+        for path in root.rglob("*.py"):
+            for handler in (
+                n
+                for n in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+                if isinstance(n, ast.ExceptHandler) and n.name
+            ):
+                for call in (n for stmt in handler.body for n in ast.walk(stmt) if isinstance(n, ast.Call)):
+                    if not (isinstance(call.func, ast.Attribute) and call.func.attr == "tr"):
+                        continue
+                    used = {n.id for kw in call.keywords for n in ast.walk(kw.value) if isinstance(n, ast.Name)}
+                    if handler.name in used:
+                        offenders.append(f"{path.name}:{call.lineno}")
+        assert not offenders, offenders
+
+    def test_the_spelling_fixes_are_in(self):
+        flat = " ".join(get_i18n().entries("pt-BR").values())
+        for wrong in (
+            "plater",
+            "perca de",
+            "músca",
+            "excluido",
+            "oscioso",
+            "ne conexão",
+            "IFORMAÇÕES",
+            "devido a falta",
+            "playlists pública",
+        ):
+            assert not re.search(rf"(?<!\w){re.escape(wrong)}(?!\w)", flat), wrong
+
+    def test_the_classic_skin_counts_only_the_tracks_it_does_not_show(self):
+        player = make_player(PT, queue=20)
+        classic = importlib.import_module("empiremuse.utils.music.skins.static_player.classic")
+
+        content = classic.load().load(player)["content"]
+
+        assert "\x1b[0;35m5\x1b[0m" in content and "\x1b[0;35m20\x1b[0m" not in content

@@ -91,7 +91,7 @@ class ClassicStaticSkin:
             if qsize > 15:
                 data["content"] += player.tr(
                     "player.queue.and_more_ansi",
-                    count=qsize,
+                    count=qsize - 15,  # só as que a lista de cima não mostra
                     ansi_0_37="\x1b[0;37m",
                     ansi_0="\x1b[0m",
                     ansi_0_35="\x1b[0;35m",

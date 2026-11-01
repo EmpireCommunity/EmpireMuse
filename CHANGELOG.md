@@ -20,6 +20,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 **Ao atualizar:** o `sync_app_emojis` nunca sobrescreve e cria só os nomes que a aplicação ainda não tem, então os 27 novos aparecem sozinhos na próxima subida; nenhum nome existente mudou, não há nada para apagar no Discord Developer Portal.
 
 ### Corrigido
+- **Falha ao reconectar o player não mostra mais o texto bruto da exceção**: o log do player e o controller trazem só a mensagem fixa ("Ocorreu uma falha ao reconectar o player no canal de voz."); o detalhe fica no log do servidor. Na skin `classic` estática, o aviso "E mais N músicas" passou a contar só as faixas que a lista não mostra (eram todas as da fila). Textos do pt-BR corrigidos (ortografia e concordância das dicas: "funciona"/"funcionam", "bot extra"/"bots extras").
 - **Playlist do servidor escolhida no select de uma mensagem antiga dava "não foi encontrada"**: depois da migração dos ícones (2.1.4) o item `🔴 Red Line` passou a ser `Red Line` com o emoji no `icon`, mas a mensagem do canal de pedidos montada antes ainda guardava o nome antigo no valor da opção. A busca agora tenta o nome exato e, se nada casar, o nome sem o emoji do início. Além disso, ao subir, o painel do canal de pedidos dos servidores alterados pela migração é redesenhado (quando os bots ficam prontos) e passa a trazer o nome novo.
 
 ## [2.1.4] - 2026-10-31

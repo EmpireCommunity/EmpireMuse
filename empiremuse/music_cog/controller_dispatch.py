@@ -351,7 +351,7 @@ class ControllerDispatchMixin:
     async def guild_pin(self, interaction: disnake.MessageInteraction):
         if not self.bot.bot_ready:
             await interaction.send(
-                (await interaction.bot.pool.i18n.for_guild(interaction.guild))("player.i_am_still_starting_up"),
+                (await interaction.bot.pool.i18n.ack_for_guild(interaction))("player.i_am_still_starting_up"),
                 ephemeral=True,
             )
             return
@@ -365,7 +365,7 @@ class ControllerDispatchMixin:
 
         if not interaction.user.voice:
             await interaction.send(
-                (await interaction.bot.pool.i18n.for_guild(interaction.guild))("player.you_must_join_a_voice_2"),
+                (await interaction.bot.pool.i18n.ack_for_guild(interaction))("player.you_must_join_a_voice_2"),
                 ephemeral=True,
             )
             return

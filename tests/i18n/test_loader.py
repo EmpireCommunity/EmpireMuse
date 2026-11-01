@@ -356,3 +356,46 @@ def test_the_production_fallback_is_en_us_and_the_i18n_tests_run_with_it(root):
 
     assert i18n.resolve(None, "ja") == "en-US"
     assert i18n.for_locale("ja").locale == "en-US" and i18n.for_locale(None).locale == "en-US"
+
+
+class TestForGuildWithin:
+    """O modal é a PRIMEIRA resposta da interação: o idioma não pode segurá-la (revisão da #175)."""
+
+    @pytest.mark.asyncio
+    async def test_a_fast_read_returns_the_saved_language(self, root):
+        i18n = I18n(root)
+        i18n.load()
+        saved = type("Servers", (), {"settings": staticmethod(lambda gid: _done({"language": "pt-BR"}))})()
+        i18n.pool = type("Pool", (), {"servers": saved})()
+        guild = type("Guild", (), {"id": 1, "preferred_locale": "en-US"})()
+
+        assert (await i18n.for_guild_within(guild)).locale == "pt-BR"
+
+    @pytest.mark.asyncio
+    async def test_a_slow_read_falls_back_to_the_discord_language_and_still_finishes_in_the_background(self, root):
+        import asyncio
+
+        i18n = I18n(root)
+        i18n.load()
+        release = asyncio.Event()
+        finished = []
+
+        async def slow(gid):
+            await release.wait()
+            finished.append(gid)
+            return {"language": "pt-BR"}
+
+        i18n.pool = type("Pool", (), {"servers": type("Servers", (), {"settings": staticmethod(slow)})()})()
+        guild = type("Guild", (), {"id": 1, "preferred_locale": "en-US"})()
+
+        tr = await i18n.for_guild_within(guild, seconds=0.01)
+
+        assert tr.locale == "en-US" and finished == []  # não esperou
+        release.set()
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert finished == [1]  # a leitura não foi cancelada: o cache esquenta para o próximo clique
+
+
+async def _done(value):
+    return value

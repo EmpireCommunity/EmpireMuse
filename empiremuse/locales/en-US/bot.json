@@ -6,7 +6,7 @@
   "language.no_permission": "You need the **Manage Server** permission to change the language.",
   "language.unavailable": "Could not change the language right now. Try again in a moment.",
   "player.a_failure_occurred_while_reconnecting": "A failure occurred while reconnecting the player to the voice channel{code_suffix}.",
-  "player.a_failure_occurred_while_reconnecting_2": "A failure occurred while reconnecting the player to the voice channel: {e}.",
+  "player.a_failure_occurred_while_reconnecting_2": "A failure occurred while reconnecting the player to the voice channel.",
   "player.a_song_is_being_processed": "A song is being processed right now...",
   "player.add_a_song_playlist_to.description": "Add a song/playlist to the queue.",
   "player.add_song.label": "Add song",

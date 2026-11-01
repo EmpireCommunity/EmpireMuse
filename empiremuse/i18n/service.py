@@ -9,6 +9,7 @@ comando nem o ``value`` de uma choice (I-6).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Mapping
 from pathlib import Path
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+FIRST_RESPONSE_BUDGET = 0.8  # s: bem abaixo dos 3 s da primeira resposta de uma interação
 PROVIDER_KINDS = ("description", "choice", "name")
 
 
@@ -163,6 +165,18 @@ class I18n:
         except Exception:  # noqa: BLE001 - sem o store o servidor segue o idioma do Discord
             return None
         return value if isinstance(value, str) else None
+
+    async def for_guild_within(self, guild: Any | None, seconds: float = FIRST_RESPONSE_BUDGET) -> rules.Translator:
+        """O tradutor do servidor SEM segurar a primeira resposta: um modal não pode vir depois de um ``defer``.
+
+        Lê ``settings.language`` (cache do store; o banco só numa falha de cache) por no máximo ``seconds``. Passou do prazo: usa o idioma do
+        Discord do servidor agora, e a leitura (protegida contra o cancelamento) termina em segundo plano e esquenta o cache do próximo clique.
+        """
+        task = asyncio.ensure_future(self.for_guild(guild))
+        try:
+            return await asyncio.wait_for(asyncio.shield(task), seconds)
+        except TimeoutError:
+            return self.for_locale(self.resolve(None, _locale_value(getattr(guild, "preferred_locale", None))))
 
     async def ack_for_guild(self, interaction: Any) -> rules.Translator:
         """Confirma a interação (efêmera) se ainda não foi respondida e SÓ ENTÃO resolve o idioma do servidor.

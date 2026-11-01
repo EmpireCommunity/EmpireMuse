@@ -174,3 +174,37 @@ async def test_a_failing_acknowledgement_still_gives_the_translator(monkeypatch)
     tr = await get_i18n().ack_for_guild(interaction)
 
     assert tr("player.there_is_no_active_player") == "Não há player ativo no servidor..."
+
+
+@pytest.mark.asyncio
+async def test_the_dropdown_errors_acknowledge_before_the_language_is_read():
+    from empiremuse.music_cog.controller_dispatch import ControllerDispatchMixin
+
+    order = []
+    i18n = get_i18n()
+    original = i18n.for_guild
+
+    async def reading(guild_):
+        order.append("language")
+        return await original(guild_)
+
+    i18n.for_guild = reading
+    try:
+        interaction = SimpleNamespace(
+            guild=guild(),
+            bot=SimpleNamespace(pool=SimpleNamespace(i18n=i18n)),
+            send=AsyncMock(),
+            response=SimpleNamespace(
+                is_done=lambda: False, defer=AsyncMock(side_effect=lambda **kw: order.append("defer"))
+            ),
+        )
+        self_ = SimpleNamespace(bot=SimpleNamespace(bot_ready=False))
+
+        await ControllerDispatchMixin.guild_pin(self_, interaction)
+    finally:
+        del i18n.for_guild
+
+    assert order == ["defer", "language"]
+    interaction.send.assert_awaited_once_with(
+        "Ainda estou inicializando...\nPor favor aguarde mais um pouco...", ephemeral=True
+    )

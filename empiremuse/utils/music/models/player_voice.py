@@ -153,9 +153,9 @@ class PlayerVoiceMixin:
                 try:
                     can_connect(vc, self.guild, bot=self.bot)
                 except (GenericError, PoolException) as e:
-                    self.set_command_log(
-                        self.tr("player.a_failure_occurred_while_reconnecting_2", e=str(e)), controller=True
-                    )
+                    # o detalhe vai ao log; ao usuário só a mensagem fixa (texto de exceção nunca vai para a tela)
+                    logger.warning("Falha ao reconectar o player [%s] (%s)", self.guild.id, type(e).__name__)
+                    self.set_command_log(self.tr("player.a_failure_occurred_while_reconnecting_2"), controller=True)
                     self.update = True
                 except Exception as e:
                     code = log_unexpected_error(logger, e, "reconexão do player no canal de voz")
