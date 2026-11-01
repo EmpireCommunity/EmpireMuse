@@ -87,6 +87,10 @@ jobs:
       - name: Verificação de compilação de bytecode
         run: python -m compileall -q main.py empiremuse
 
+      - name: Verificação dos catálogos de idioma (i18n)
+        if: steps.detect-changes.outputs.code == 'true'
+        run: python -m empiremuse.i18n.check
+
       - name: Verificação estática de tipos (mypy)
         if: github.event_name == 'workflow_dispatch'
         continue-on-error: true
