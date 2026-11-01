@@ -31,6 +31,8 @@ logger = logging.getLogger(__name__)
 USER_AGENT = "EmpireMuse/radio"
 CONNECT_TIMEOUT_S = 5.0
 HEADER_TIMEOUT_S = 10.0
+RESOLVE_TIMEOUT_S = 5.0
+MAX_ADDRESSES = 3
 MAX_HEADER_BYTES = 16 * 1024
 MAX_HEADER_LINES = 100
 DEFAULT_PORTS = {"http": 80, "https": 443}
@@ -101,10 +103,17 @@ def _is_ip(host: str) -> bool:
 
 async def _addresses(host: str, port: int, resolve: Resolve, public: PublicCheck) -> list[str]:
     """Os endereços a tentar. Todos têm de ser públicos: um nome que também aponta para a rede interna (rebinding) é recusado inteiro."""
-    found = [host] if _is_ip(host) else list(await resolve(host, port))
+    try:
+        found = [host] if _is_ip(host) else list(await asyncio.wait_for(resolve(host, port), RESOLVE_TIMEOUT_S))
+    except (
+        OSError,
+        UnicodeError,
+        TimeoutError,
+    ) as error:  # NXDOMAIN, rótulo inválido, DNS lento: recusa, nunca estoura para quem chama
+        raise StreamRefused(ADDRESS_REFUSED) from error
     if not found or not all(public(address) for address in found):
         raise StreamRefused(ADDRESS_REFUSED)
-    return found
+    return found[:MAX_ADDRESSES]  # TODOS foram conferidos; só se tenta alguns (cada um custa 5 s de conexão)
 
 
 def _parse_head(raw: bytes) -> tuple[int, dict[str, str]]:
@@ -193,6 +202,9 @@ async def open_stream(
         except Exception:  # noqa: BLE001 - leitura truncada, cabeçalho enorme, reset: fecha e tenta o próximo endereço
             writer.close()
             last_error = BAD_RESPONSE
+        except BaseException:  # cancelamento (prazo, revogação): o socket da estação não pode ficar aberto
+            writer.close()
+            raise
     logger.warning("Estação não abriu [%s] (%s)", safe_station_url_for_log(checked), last_error)
     raise StreamRefused(last_error)
 

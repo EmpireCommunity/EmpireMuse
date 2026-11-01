@@ -44,7 +44,10 @@ MAX_BODY_BYTES = 256 * 1024
 CACHE_SIZE = 500
 CACHE_TTL_S = 600
 MIRROR_TTL_S = 3600
+MIRROR_RETRY_S = 60.0  # descoberta que falhou (ou veio vazia) não se repete antes disto
+DISCOVERY_TIMEOUT_S = 5.0
 MIRRORS_PER_REQUEST = 3
+MIRROR_CANDIDATES = 12  # quantos IPs do nome de descoberta se resolvem ao contrário
 RATE_PER_S = 2.0
 CHUNK = 8192
 
@@ -85,7 +88,7 @@ async def discover_mirrors() -> list[str]:
     loop = asyncio.get_running_loop()
     infos = await loop.getaddrinfo(DISCOVERY_NAME, 443, type=socket.SOCK_STREAM)
     names: list[str] = []
-    for address in dict.fromkeys(str(info[4][0]) for info in infos):
+    for address in list(dict.fromkeys(str(info[4][0]) for info in infos))[:MIRROR_CANDIDATES]:
         try:
             host, _, _ = await loop.run_in_executor(None, socket.gethostbyaddr, address)
         except OSError:
@@ -179,26 +182,33 @@ class Directory:
         self._cache: TTLCache = TTLCache(maxsize=CACHE_SIZE, ttl=CACHE_TTL_S, timer=clock)
         self._mirrors: list[str] = []
         self._mirrors_at: float | None = None
+        self._mirror_lock = asyncio.Lock()
         self.requests = 0  # as que de fato saíram (para os testes e para o resumo)
 
     # ------------------------------------------------------------------ espelhos e requisição
 
     async def _mirror_list(self) -> list[str]:
-        now = self._clock()
-        if not self._mirrors or self._mirrors_at is None or now - self._mirrors_at > MIRROR_TTL_S:
-            try:
-                found = [m for m in await self._mirror_source() if valid_mirror(m)]
-            except Exception as error:  # noqa: BLE001 - só o tipo vai ao log (R-12)
-                logger.warning("Espelhos do Radio Browser não descobertos (%s)", type(error).__name__)
-                found = []
-            self._rng.shuffle(found)
-            self._mirrors, self._mirrors_at = found, now
-        return list(self._mirrors)
+        """Os espelhos conhecidos. Uma descoberta por vez (trava), com prazo de 5 s, e a que falhou ou veio vazia só se repete após 1 min: um
+        DNS lento não vira uma descoberta nova por tecla do autocomplete, prendendo as threads do executor."""
+        async with self._mirror_lock:
+            now = self._clock()
+            ttl = MIRROR_TTL_S if self._mirrors else MIRROR_RETRY_S
+            if self._mirrors_at is None or now - self._mirrors_at > ttl:
+                try:
+                    found = [
+                        m for m in await asyncio.wait_for(self._mirror_source(), DISCOVERY_TIMEOUT_S) if valid_mirror(m)
+                    ]
+                except Exception as error:  # noqa: BLE001 - só o tipo vai ao log (R-12)
+                    logger.warning("Espelhos do Radio Browser não descobertos (%s)", type(error).__name__)
+                    found = []
+                self._rng.shuffle(found)
+                self._mirrors, self._mirrors_at = found, now
+            return list(self._mirrors)
 
-    async def _get(self, path: str, query: dict[str, str]) -> Any | None:
-        """Pede a um dos espelhos (até 3, em ordem embaralhada). ``None`` em qualquer falha ou se o bucket global está vazio."""
+    async def _get_strict(self, path: str, query: dict[str, str]) -> Any:
+        """Pede a um dos espelhos (até 3, em ordem embaralhada). ``DirectoryError`` se o bucket global está vazio ou nenhum espelho respondeu."""
         if not self._bucket.try_acquire():
-            return None
+            raise DirectoryError("throttled")
         for mirror in (await self._mirror_list())[:MIRRORS_PER_REQUEST]:
             self.requests += 1
             try:
@@ -207,7 +217,14 @@ class Directory:
                 logger.warning("Radio Browser: espelho falhou (%s)", error.reason)
             except Exception as error:  # noqa: BLE001
                 logger.warning("Radio Browser: espelho falhou (%s)", type(error).__name__)
-        return None
+        raise DirectoryError("unavailable")
+
+    async def _get(self, path: str, query: dict[str, str]) -> Any | None:
+        """Como ``_get_strict``, mas qualquer falha vira ``None`` (busca e autocomplete nunca levantam)."""
+        try:
+            return await self._get_strict(path, query)
+        except DirectoryError:
+            return None
 
     @staticmethod
     def _stations(payload: Any) -> list[Station]:
@@ -258,11 +275,17 @@ class Directory:
         return found[0] if found and found[0].uuid == uuid else None
 
     async def fresh_for_play(self, uuid: object) -> Station | None:
-        """A estação para TOCAR agora: ``/json/url/{uuid}`` (registra o clique) e o resultado passa de novo por ``check_station``."""
-        base = await self.by_uuid(uuid)
+        """A estação para TOCAR agora: ``/json/url/{uuid}`` (registra o clique) e o resultado passa de novo por ``check_station``.
+
+        ``None`` = o diretório respondeu e a estação não existe ou não passa nas regras. ``DirectoryError`` = o diretório não respondeu (rede, espelhos,
+        fichas): quem chama NÃO deve culpar a estação."""
+        if not valid_uuid(uuid):
+            return None
+        found = self._stations(await self._get_strict("/json/stations/byuuid", {"uuids": str(uuid)}))
+        base = found[0] if found and found[0].uuid == uuid else None
         if base is None:
             return None
-        payload = await self._get(f"/json/url/{base.uuid}", {})
+        payload = await self._get_strict(f"/json/url/{base.uuid}", {})
         url = payload.get("url") if isinstance(payload, dict) and payload.get("ok") in (True, "true") else None
         checked = check_station(
             {

@@ -25,7 +25,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from empiremuse.rules.icy import IcyStripper, check_metaint
+from empiremuse.rules.icy import IcyStripper, TitleThrottle, check_metaint, clean_title
 from empiremuse.rules.playlists import is_public_address
 from empiremuse.rules.radio_stations import (
     PLAYLIST_MAX_BYTES,
@@ -54,6 +54,9 @@ MAX_REDIRECTS = 3
 REQUEST_LINE_LIMIT = 2048
 REQUEST_TIMEOUT_S = 5.0
 IDLE_TIMEOUT_S = 15.0
+DRAIN_TIMEOUT_S = 30.0  # consumidor que não lê e não fecha
+DEADLINE_S = 20.0  # abrir uma estação inteira (DNS, saltos, playlist, primeiros bytes) dentro do semáforo
+PLAYLIST_READ_S = 10.0
 CHUNK = 8192
 RATE_FACTOR = 1.5
 PROBE_BYTES = 16 * 1024  # o health check lê isto pelo mesmo caminho do relay
@@ -64,22 +67,22 @@ _REQUEST = re.compile(r"GET /r/([A-Za-z0-9_-]{22}) HTTP/1\.[01]")
 
 
 class RateLimiter:
-    """Quanto esperar antes de repassar mais bytes para o consumo ficar em até ``RATE_FACTOR`` × o bitrate. Puro: o relógio vem de fora."""
+    """Balde de fichas: quanto esperar antes de ler mais bytes da estação para o consumo ficar em até ``RATE_FACTOR`` × o bitrate. O crédito
+    acumulado nunca passa da rajada (``burst_s`` segundos), então horas a 1x não compram um despejo depois. Puro: o relógio vem de fora."""
 
     def __init__(self, bitrate_kbps: int, *, burst_s: float = 2.0) -> None:
         kbps = bitrate_kbps if bitrate_kbps > 0 else DEFAULT_BITRATE_KBPS
         self.rate = kbps * 1000 / 8 * RATE_FACTOR  # bytes por segundo
         self.burst = self.rate * burst_s
-        self._start: float | None = None
-        self._sent = 0
+        self._tokens = self.burst
+        self._at: float | None = None
 
     def delay_for(self, nbytes: int, now: float) -> float:
-        if self._start is None:
-            self._start = now
-        self._sent += nbytes
-        allowed = self.burst + (now - self._start) * self.rate
-        excess = self._sent - allowed
-        return excess / self.rate if excess > 0 else 0.0
+        if self._at is not None:
+            self._tokens = min(self.burst, self._tokens + max(0.0, now - self._at) * self.rate)
+        self._at = now
+        self._tokens -= nbytes
+        return -self._tokens / self.rate if self._tokens < 0 else 0.0
 
 
 @dataclass
@@ -90,6 +93,8 @@ class RelaySession:
     bitrate: int
     on_title: Callable[[str], None] | None = None
     busy: bool = False
+    refused: bool = False
+    hits: int = 0  # quantas vezes o Lavalink chegou ao relay com este token (distingue "a estação falhou" de "o Lavalink nem chegou")
     output: asyncio.StreamWriter | None = field(default=None, repr=False)
     task: asyncio.Task | None = field(default=None, repr=False)
 
@@ -209,7 +214,8 @@ class RadioRelay:
         session = self._find(match.group(1))
         if session is None:
             return
-        if session.busy:
+        session.hits += 1
+        if session.busy and not await self._take_over(session):
             await self._reply(writer, "409 Conflict")
             return
         session.busy = True
@@ -220,6 +226,7 @@ class RadioRelay:
                 upstream = await self._connect(session)
             await self._pump(session, upstream, writer)
         except StreamRefused as refusal:
+            session.refused = True
             logger.warning(
                 "Estação recusada pelo relay [%s] (%s)", safe_station_url_for_log(session.url), refusal.reason
             )
@@ -228,6 +235,18 @@ class RadioRelay:
             session.busy = False
             session.output = None
             session.task = None
+
+    @staticmethod
+    async def _take_over(session: RelaySession) -> bool:
+        """O Lavalink abre o endereço duas vezes (carregar a faixa e tocar) e a primeira saída pode ainda estar aberta: o último consumidor vence.
+        Continua UM consumidor por vez, porque a saída anterior é fechada e esperada antes de a nova começar."""
+        previous, output = session.task, session.output
+        if output is not None:
+            output.close()
+        if previous is not None and previous is not asyncio.current_task():
+            previous.cancel()
+            await asyncio.wait({previous}, timeout=2)
+        return not session.busy
 
     @staticmethod
     async def _reply(writer: asyncio.StreamWriter, status: str) -> None:
@@ -240,50 +259,82 @@ class RadioRelay:
     # ------------------------------------------------------------------ saída para a estação
 
     async def _connect(self, session: RelaySession) -> Upstream:
-        return await self._resolve_url(session.url, session.codec, allow_playlist=True)
+        return await self._open_within_deadline(session.url, session.codec)
+
+    async def _open_within_deadline(self, url: str, codec: str) -> Upstream:
+        """Abre a estação inteira (saltos, playlist, primeiros bytes) em até ``DEADLINE_S``: estação lenta de propósito não segura as 4 vagas."""
+        try:
+            async with asyncio.timeout(DEADLINE_S):
+                return await self._resolve_url(url, codec, allow_playlist=True)
+        except TimeoutError as error:
+            raise StreamRefused("timeout") from error
+
+    def touched(self, token: str) -> bool:
+        """O Lavalink chegou a pedir este token?"""
+        session = self._sessions.get(token)
+        return session is not None and session.hits > 0
+
+    def refused(self, token: str) -> bool:
+        session = self._sessions.get(token)
+        return session is not None and session.refused
 
     async def _resolve_url(self, url: str, codec: str, *, allow_playlist: bool) -> Upstream:
         """Segue até 3 redirecionamentos (cada salto de novo pelas regras), resolve playlist (uma vez, aqui) e confere tipo e assinatura."""
         current = url
         for _ in range(MAX_REDIRECTS + 1):
             response = await open_stream(current, resolve=self._resolve, public=self._public)
-            if (target := redirect_target(current, response)) is not None:
-                await response.close()
-                current = target
-                continue
-            if response.status != 200:
-                await response.close()
-                raise StreamRefused("status")
-            content_type = response.headers.get("content-type", "")
-            if looks_like_playlist(current, content_type):
-                if not allow_playlist:
-                    await response.close()
-                    raise StreamRefused("playlist")
-                entries = await self._read_playlist(response)
-                return await self._first_playable(entries, codec)
-            if not content_type_ok(content_type):
-                await response.close()
-                raise StreamRefused("content-type")
             try:
-                first = await asyncio.wait_for(response.reader.readexactly(4), self._idle)
-            except Exception as error:  # noqa: BLE001 - fechou antes dos 4 bytes ou parou
-                await response.close()
-                raise StreamRefused("empty") from error
-            if not signature_ok(codec, first):
-                await response.close()
-                raise StreamRefused("signature")
-            return Upstream(
-                response,
-                first,
-                content_type.split(";", 1)[0].strip().lower(),
-                check_metaint(response.headers.get("icy-metaint")),
-            )
+                if (target := redirect_target(current, response)) is not None:
+                    await response.close()
+                    current = target
+                    continue
+                return await self._accept(response, current, codec, allow_playlist=allow_playlist)
+            except BaseException:
+                await (
+                    response.close()
+                )  # inclusive o cancelamento (prazo, revogação): nenhum socket da estação fica aberto
+                raise
         raise StreamRefused("redirects")
+
+    async def _accept(self, response: StreamResponse, current: str, codec: str, *, allow_playlist: bool) -> Upstream:
+        if response.status != 200:
+            raise StreamRefused("status")
+        content_type = response.headers.get("content-type", "")
+        if looks_like_playlist(current, content_type):
+            if not allow_playlist:
+                raise StreamRefused("playlist")
+            entries = await self._read_playlist(response)
+            return await self._first_playable(entries, codec)
+        if not content_type_ok(content_type):
+            raise StreamRefused("content-type")
+        try:
+            first = await asyncio.wait_for(response.reader.readexactly(4), self._idle)
+        except Exception as error:  # noqa: BLE001 - fechou antes dos 4 bytes ou parou
+            raise StreamRefused("empty") from error
+        if not signature_ok(codec, first):
+            raise StreamRefused("signature")
+        return Upstream(
+            response,
+            first,
+            content_type.split(";", 1)[0].strip().lower(),
+            check_metaint(response.headers.get("icy-metaint")),
+        )
 
     @staticmethod
     async def _read_playlist(response: StreamResponse) -> list[str]:
+        async def collect() -> bytes:
+            body = bytearray()
+            while (
+                len(body) < PLAYLIST_MAX_BYTES
+            ):  # read() devolve o que chegou, não o que foi pedido: lê até EOF ou o teto
+                chunk = await response.reader.read(PLAYLIST_MAX_BYTES - len(body))
+                if not chunk:
+                    break
+                body += chunk
+            return bytes(body)
+
         try:
-            body = await asyncio.wait_for(response.reader.read(PLAYLIST_MAX_BYTES), REQUEST_TIMEOUT_S * 2)
+            body = await asyncio.wait_for(collect(), PLAYLIST_READ_S)
         except Exception as error:  # noqa: BLE001
             raise StreamRefused("playlist") from error
         finally:
@@ -306,7 +357,7 @@ class RadioRelay:
         """O health check (R-10): abre a estação pelo MESMO caminho do relay (R-8) e lê até 16 KiB. ``True`` se chegou áudio. Nunca clica no diretório."""
         try:
             async with self._open:
-                upstream = await self._resolve_url(url, codec, allow_playlist=True)
+                upstream = await self._open_within_deadline(url, codec)
         except StreamRefused:
             return False
         got = len(upstream.first)
@@ -327,7 +378,9 @@ class RadioRelay:
     async def _pump(self, session: RelaySession, upstream: Upstream, writer: asyncio.StreamWriter) -> None:
         stripper = IcyStripper(upstream.metaint)
         limiter = RateLimiter(session.bitrate)
+        throttle = TitleThrottle()
         response = upstream.response
+        last_audio = self._clock()
         try:
             writer.write(
                 f"HTTP/1.0 200 OK\r\nContent-Type: {upstream.content_type}\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n".encode(
@@ -342,16 +395,23 @@ class RadioRelay:
                     chunk = await asyncio.wait_for(response.reader.read(CHUNK), self._idle)
                     if not chunk:
                         return
+                now = self._clock()
                 audio, titles = stripper.feed(chunk)
+                published = None
                 for title in titles:
-                    if session.on_title is not None:
-                        session.on_title(title)
+                    published = throttle.offer(clean_title(title), now) or published  # R-11 e no máximo 1 a cada 15 s
+                published = throttle.poll(now) or published
+                if published is not None and session.on_title is not None:
+                    session.on_title(published)
                 if audio:
+                    last_audio = now
                     writer.write(audio)
-                    await writer.drain()
-                    delay = limiter.delay_for(len(audio), self._clock())
-                    if delay > 0:
-                        await self._sleep(delay)  # type: ignore[misc]
+                    await asyncio.wait_for(writer.drain(), DRAIN_TIMEOUT_S)
+                elif now - last_audio > self._idle:
+                    return  # só metadado há tempo demais: não é um fluxo de áudio
+                delay = limiter.delay_for(len(chunk), now)  # o que a ESTAÇÃO mandou conta, não só o áudio que sobrou
+                if delay > 0:
+                    await self._sleep(delay)  # type: ignore[misc]
         except TimeoutError, ConnectionError, asyncio.IncompleteReadError:
             return
         finally:

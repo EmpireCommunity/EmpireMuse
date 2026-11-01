@@ -19,7 +19,7 @@ from empiremuse.utils.radio.health import (
     HealthChecker,
     StationHealth,
 )
-from empiremuse.utils.radio.live import LiveRadioRunner
+from empiremuse.utils.radio.live import LiveRadioRunner, StationFailure
 from empiremuse.utils.radio.runner import Phase, ProcessLimits
 from empiremuse.utils.radio.service import RadioState
 from tests.cogs.test_radio_runner import FakePorts
@@ -38,6 +38,7 @@ class LivePorts(FakePorts):
         super().__init__(**kwargs)
         self.primary, self.reserve, self.active = MAIN, reserve, MAIN
         self.broken: set[str] = set()
+        self.lavalink_down = False  # falha que NÃO é da estação
         self.live_plays: list[str] = []
         self.exhausted: list[str] = []
         self.unavailable: set[str] = set()
@@ -47,8 +48,10 @@ class LivePorts(FakePorts):
 
     async def play_live(self):
         await self._hold()
+        if self.lavalink_down:
+            raise RuntimeError("lavalink fora")
         if self.active in self.broken:
-            raise RuntimeError("estação fora")
+            raise StationFailure
         self.live_plays.append(self.active)
 
     async def cycle_exhausted(self):
@@ -194,6 +197,61 @@ class TestLiveRunner:
         await runner.on_stream_lost()
 
         assert ports.live_plays == [] and ports.sleeps == []
+
+    @pytest.mark.asyncio
+    async def test_a_station_that_plays_and_drops_at_once_still_closes_the_cycle_and_is_switched(self):
+        runner, ports, _ = make_live()
+        await runner.start()
+
+        for _ in range(5):  # toca, cai em segundos, volta pelo recuo... cinco vezes
+            ports.t += 3
+            await runner.on_stream_lost()
+
+        assert ports.exhausted == [MAIN] and ports.active == RESERVE and runner.phase is Phase.PLAYING
+
+    @pytest.mark.asyncio
+    async def test_drops_after_a_stable_stretch_never_close_the_cycle(self):
+        runner, ports, _ = make_live()
+        await runner.start()
+
+        for _ in range(8):
+            ports.t += 300  # tocou por mais de 2 min antes de cair
+            await runner.on_stream_lost()
+
+        assert ports.exhausted == [] and ports.active == MAIN and runner.failures == 0
+
+    @pytest.mark.asyncio
+    async def test_a_stable_playing_stretch_resets_the_failure_count_on_the_next_tick(self):
+        runner, ports, _ = make_live()
+        await runner.start()
+        ports.t += 3
+        await runner.on_stream_lost()
+        assert runner.failures == 1
+
+        ports.t += 300
+        await runner.tick()
+
+        assert runner.failures == 0
+
+    @pytest.mark.asyncio
+    async def test_failures_that_are_not_the_stations_never_count_or_mark_it(self):
+        ports = LivePorts()
+        ports.lavalink_down = True
+        runner, _, _ = make_live(ports)
+
+        await run_until(runner, ports, lambda: len(ports.sleeps) >= 12)
+
+        assert ports.exhausted == [] and ports.active == MAIN and runner.failures == 0 and not runner.outage
+
+    @pytest.mark.asyncio
+    async def test_a_voice_connection_that_keeps_failing_never_counts_against_the_station(self):
+        ports = LivePorts()
+        ports.connect_results.extend([False] * 12)
+        runner, _, _ = make_live(ports)
+
+        await run_until(runner, ports, lambda: ports.connects >= 12)
+
+        assert ports.exhausted == [] and ports.live_plays == [] and ports.active == MAIN
 
     @pytest.mark.asyncio
     async def test_when_the_main_station_is_rehabilitated_a_radio_on_the_reserve_goes_back(self):
@@ -602,6 +660,34 @@ class TestLivePortsAndEvents:
         marked, health = self.ports()
         health._until[RESERVE] = 10**12
         assert await marked.switch_source() is False
+
+    @pytest.mark.asyncio
+    async def test_the_reserve_is_reread_from_the_store_when_switching(self):
+        ports, _ = self.ports(reserve=None)
+        third = "33333333-3333-3333-3333-333333333333"
+
+        async def get(radio_id):
+            return check_radio(
+                {
+                    "_id": radio_id,
+                    "channel_id": str(CHANNEL),
+                    "kind": "live",
+                    "source": {"station": MAIN, "reserve": third},
+                }
+            )
+
+        ports.pool.radio.store = SimpleNamespace(get=get)
+
+        assert (
+            await ports.switch_source() is True and ports.active == third
+        )  # escolhida na página depois que a rádio ligou
+
+        async def broken(radio_id):
+            raise ConnectionError("mongo fora")
+
+        ports.pool.radio.store = SimpleNamespace(get=broken)
+        ports.active = MAIN
+        assert await ports.switch_source() is True and ports.active == third  # banco fora: mantém a que já conhecia
 
     def test_a_lost_or_failed_live_stream_goes_to_the_manager_but_our_own_stops_do_not(self):
         from empiremuse.utils.music.models import event_steps

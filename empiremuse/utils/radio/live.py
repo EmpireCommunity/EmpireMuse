@@ -17,12 +17,17 @@ from collections.abc import Callable
 from typing import Optional
 
 from empiremuse.rules.radio import LIVE_CYCLE_ATTEMPTS, backoff_s, live_backoff_s
-from empiremuse.utils.radio.runner import Phase, ProcessLimits, RadioPorts, RadioRunner
+from empiremuse.utils.radio.runner import STABLE_AFTER_S, Phase, ProcessLimits, RadioPorts, RadioRunner
 from empiremuse.utils.radio.service import RadioState
 
 logger = logging.getLogger(__name__)
 
 OUTAGE_BACKOFF_STEP = 4  # índice de 60 s em ``BACKOFF_STEPS_S``: sem alternativa, uma tentativa por minuto
+
+
+class StationFailure(Exception):
+    """A falha foi da ESTAÇÃO (recusada pelo relay, sem áudio, sumiu do diretório). Só ela conta para o ciclo e para a saúde; falha do Discord, do
+    Lavalink ou do diretório fora do ar não marca estação nenhuma como indisponível para todos os servidores."""
 
 
 class LiveRadioRunner(RadioRunner):
@@ -38,6 +43,8 @@ class LiveRadioRunner(RadioRunner):
         self.failures = 0  # tentativas falhas do ciclo atual
         self.outage = False  # os dois lados esgotados: em silêncio até alguém voltar
         self.title: Optional[str] = None
+        self._station_fault = False  # a última tentativa falhou por culpa da estação?
+        self._playing_since: Optional[float] = None
 
     # ------------------------------------------------------------------ estado
 
@@ -67,8 +74,13 @@ class LiveRadioRunner(RadioRunner):
 
     async def _start_source(self) -> None:
         self.title = None
-        await self.ports.play_live()  # type: ignore[attr-defined]
-        self.failures = 0
+        self._station_fault = False
+        try:
+            await self.ports.play_live()  # type: ignore[attr-defined]
+        except StationFailure:
+            self._station_fault = True
+            raise
+        self._playing_since = self.ports.now()
         self.outage = False
 
     # ------------------------------------------------------------------ queda, ciclo e reserva
@@ -79,24 +91,44 @@ class LiveRadioRunner(RadioRunner):
         return live_backoff_s(self.attempt, self.ports.jitter())
 
     async def _after_failed_attempt(self) -> None:
+        fault, self._station_fault = self._station_fault, False
+        if not fault:
+            return  # conexão de voz, Lavalink ou diretório: não é a estação
         self.failures += 1
-        if self.failures < LIVE_CYCLE_ATTEMPTS or self.outage:
+        await self._close_cycle_if_due()
+        self._set(Phase.RECONNECTING)  # republica (reserva no ar, fora do ar)
+
+    async def _close_cycle_if_due(self) -> None:
+        """Cinco falhas da estação fecham o ciclo: registra a falha (3 em 1 h a marcam) e tenta a outra estação, se saudável. Não mexe na fase:
+        quem chama já está (ou vai para) o recuo. Em silêncio ("fora do ar") o ciclo também fecha, e assim a outra estação é tentada quando voltar a ser saudável."""
+        if self.failures < LIVE_CYCLE_ATTEMPTS:
             return
         self.failures = 0
         self.attempt = 0
         await self.ports.cycle_exhausted()  # type: ignore[attr-defined]
         if await self.ports.switch_source():  # type: ignore[attr-defined]
             logger.warning("Rádio ao vivo trocou de estação")
-            self._set(Phase.RECONNECTING)
             return
         self.outage = True
-        self._set(Phase.RECONNECTING)
 
     async def on_stream_lost(self) -> None:
         """O Lavalink avisou que o fluxo acabou ou falhou (fim, exceção, travou). Só vale tocando; pausas nossas não passam por aqui."""
         if self._stopped or self.phase is not Phase.PLAYING:
             return
+        if self._is_stable():
+            self.failures = self.attempt = 0
+        else:
+            self.failures += 1  # a estação aceitou e caiu logo: conta como falha, senão o ciclo nunca fecha e ela nunca é trocada nem marcada
+            await self._close_cycle_if_due()
         await self.on_disconnect()
+
+    def _is_stable(self) -> bool:
+        return self._playing_since is not None and self.ports.now() - self._playing_since >= STABLE_AFTER_S
+
+    async def _tick(self) -> None:
+        await super()._tick()
+        if self.phase is Phase.PLAYING and self.failures and self._is_stable():
+            self.failures = self.attempt = 0  # tocando de forma estável: o ciclo de falhas recomeça
 
     async def restore_primary(self) -> bool:
         """O health check reabilitou a estação principal: se a rádio está na reserva (ou em silêncio), volta para ela. Tocando, a volta é pelo

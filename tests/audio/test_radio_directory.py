@@ -429,3 +429,60 @@ class TestTransport:
 
 async def _one_mirror():
     return [MIRROR]
+
+
+class TestReviewFindings:
+    @pytest.mark.asyncio
+    async def test_fresh_for_play_tells_a_missing_station_from_a_directory_that_did_not_answer(self):
+        gone, _, _ = directory({"/json/stations/byuuid": []})
+        assert await gone.fresh_for_play(UUID) is None  # respondeu: a estação não existe
+
+        down, _, _ = directory({"*": DirectoryError("status")})
+        with pytest.raises(DirectoryError):
+            await down.fresh_for_play(UUID)  # não respondeu: não é culpa da estação
+
+        empty, _, _ = directory({"/json/stations/byuuid": [station()]}, bucket=TokenBucket(rate=0.0, capacity=0.0))
+        with pytest.raises(DirectoryError) as throttled:
+            await empty.fresh_for_play(UUID)
+        assert throttled.value.reason == "throttled"
+
+    @pytest.mark.asyncio
+    async def test_a_failed_discovery_is_not_repeated_for_a_minute_and_runs_one_at_a_time(self):
+        calls = []
+        clock = Clock()
+
+        async def failing():
+            calls.append(clock.now)
+            await asyncio.sleep(0)
+            raise OSError("dns fora")
+
+        d = Directory(
+            fetcher=Scripted({"*": [station()]}),
+            mirrors=failing,
+            clock=clock,
+            bucket=TokenBucket(rate=1e9, capacity=1e9),
+        )
+
+        await asyncio.gather(*(d.search(f"termo{n}") for n in range(10)))  # dez teclas ao mesmo tempo
+        assert len(calls) == 1
+
+        clock.now += 30
+        await d.search("outro")
+        assert len(calls) == 1  # dentro do minuto: sem nova descoberta
+
+        clock.now += 40
+        await d.search("mais um")
+        assert len(calls) == 2
+
+    @pytest.mark.asyncio
+    async def test_a_discovery_that_hangs_is_cut_after_five_seconds(self, monkeypatch):
+        from empiremuse.utils.radio import directory as module
+
+        monkeypatch.setattr(module, "DISCOVERY_TIMEOUT_S", 0.1)
+
+        async def hangs():
+            await asyncio.sleep(10)
+
+        d = Directory(fetcher=Scripted({"*": [station()]}), mirrors=hangs)
+
+        assert await d.search("rock") == []

@@ -329,20 +329,25 @@ class TestEntrance:
             assert r._server.sockets[0].getsockname()[0] == "127.0.0.1"
 
     @pytest.mark.asyncio
-    async def test_a_second_consumer_while_the_first_is_playing_gets_409(self):
+    async def test_a_second_consumer_takes_over_and_the_first_output_is_closed_so_there_is_still_one_at_a_time(self):
         head = b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n"
         async with Station(sends(head, MP3 + b"data", keep_open=True)) as station, relay() as r:
             token = r.register(station.url, codec="MP3", bitrate=128)
             reader, writer = await asyncio.open_connection("127.0.0.1", r.port)
             writer.write(f"GET /r/{token} HTTP/1.0\r\n\r\n".encode())
             await writer.drain()
-            await asyncio.wait_for(reader.read(10), 3)  # o primeiro consumidor está tocando
+            await asyncio.wait_for(
+                reader.read(10), 3
+            )  # o primeiro consumidor (loadtracks do Lavalink) ainda está aberto
+            assert r.sessions() == 1
 
-            playing_now = r.sessions()
-            second_head, _ = await fetch(r, token)
+            second_head, second_body = await fetch(r, token)  # o segundo (play) assume
+            first_tail = await asyncio.wait_for(reader.read(), 3)  # e a primeira saída foi fechada
             writer.close()
 
-        assert second_head.startswith(b"HTTP/1.0 409") and playing_now == 1
+            assert second_head.startswith(b"HTTP/1.0 200") and second_body.startswith(MP3)
+            assert r.touched(token) and not r.refused(token)
+            assert first_tail.endswith(b"data") or first_tail == b""
 
     @pytest.mark.asyncio
     async def test_after_the_first_consumer_leaves_a_second_one_may_connect(self):
@@ -408,6 +413,16 @@ class TestRateLimiter:
 
         assert late == pytest.approx(16_000 / 24_000)
 
+    def test_the_credit_never_grows_past_the_burst_however_long_the_station_was_slow(self):
+        limiter = RateLimiter(128)
+        limiter.delay_for(1_000, 0.0)
+
+        wait = limiter.delay_for(
+            48_000 + 24_000, 3600.0
+        )  # uma hora depois: só a rajada de 2 s vale, não 1 h de crédito
+
+        assert wait == pytest.approx(24_000 / 24_000)
+
     def test_time_passing_gives_the_allowance_back(self):
         limiter = RateLimiter(128)
         limiter.delay_for(48_000, 0.0)
@@ -428,3 +443,146 @@ class TestRateLimiter:
 
     def test_without_a_bitrate_the_ceiling_is_the_biggest_accepted_one(self):
         assert RateLimiter(0).rate == RateLimiter(320).rate
+
+
+class TestReviewFindings:
+    """Achados da revisão da R3: título limpo e com teto, taxa pelo que a estação manda, sem socket vazado, DNS e prazo."""
+
+    @pytest.mark.asyncio
+    async def test_a_hostile_stream_title_is_cleaned_and_titles_are_published_at_most_every_fifteen_seconds(self):
+        titles = []
+        hostile = "@everyone <@1> https://evil.example/x " + "z" * 3000
+        body = icy_stream(16, MP3 + b"A" * 60, hostile)
+        head = b"ICY 200 OK\r\nicy-metaint:16\r\nContent-Type: audio/mpeg\r\n\r\n"
+        async with Station(sends(head, body)) as station, relay() as r:
+            token = r.register(station.url, codec="MP3", bitrate=128, on_title=titles.append)
+
+            await fetch(r, token)
+
+        assert len(titles) == 1  # cinco blocos iguais na janela de 15 s: um título
+        assert (
+            "@everyone" not in titles[0]
+            and "<@" not in titles[0]
+            and "https://" not in titles[0]
+            and len(titles[0]) <= 150
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_tiny_metaint_cannot_buy_line_speed_because_the_stations_bytes_are_charged(self):
+        sleeps = []
+
+        async def record(seconds):
+            sleeps.append(seconds)
+
+        body = icy_stream(4, MP3 + b"A" * 3000, "t")  # metaint pequeno: quase tudo que a estação manda é metadado
+        head = b"ICY 200 OK\r\nicy-metaint:4\r\nContent-Type: audio/mpeg\r\n\r\n"
+        async with Station(sends(head, body)) as station, relay(clock=lambda: 0.0, sleep=record) as r:
+            token = r.register(station.url, codec="MP3", bitrate=8)  # 8 kbps: rajada de 3000 B, ritmo de 1500 B/s
+            reader, writer = await asyncio.open_connection("127.0.0.1", r.port)
+            writer.write(f"GET /r/{token} HTTP/1.0\r\n\r\n".encode())
+            await writer.drain()
+
+            await asyncio.wait_for(reader.read(), 5)  # lê até o fim: o consumidor fica até o relay terminar
+            writer.close()
+
+        assert len(body) > 10_000 and sum(sleeps) > 5  # o fluxo ficou parado por muito tempo, não passou direto
+
+    @pytest.mark.asyncio
+    async def test_revoking_while_the_station_is_still_answering_closes_the_stations_socket(self):
+        closed = asyncio.Event()
+
+        async def slow(reader, writer):
+            await reader.readuntil(b"\r\n\r\n")
+            writer.write(b"HTTP/1.0 200 OK\r\n")  # nunca termina os cabeçalhos
+            await writer.drain()
+            await reader.read()  # só volta quando o relay fecha a conexão
+            closed.set()
+
+        async with Station(slow) as station, relay() as r:
+            token = r.register(station.url, codec="MP3", bitrate=128)
+            reader, writer = await asyncio.open_connection("127.0.0.1", r.port)
+            writer.write(f"GET /r/{token} HTTP/1.0\r\n\r\n".encode())
+            await writer.drain()
+            for _ in range(200):
+                await asyncio.sleep(0.01)
+                if station.connections:
+                    break
+
+            await r.revoke(token)
+
+            await asyncio.wait_for(closed.wait(), 3)
+            writer.close()
+
+    @pytest.mark.asyncio
+    async def test_a_slow_station_is_cut_by_the_overall_deadline_and_frees_the_open_slot(self, monkeypatch):
+        from empiremuse.utils.radio import relay as relay_module
+
+        monkeypatch.setattr(relay_module, "DEADLINE_S", 0.3)
+
+        async def never(reader, writer):
+            await reader.readuntil(b"\r\n\r\n")
+            await HOLD.wait()
+
+        async with Station(never) as station, relay() as r:
+            token = r.register(station.url, codec="MP3", bitrate=128)
+
+            got_head, _ = await fetch(r, token)
+
+            assert got_head.startswith(b"HTTP/1.0 502") and r._open._value == 4  # as 4 vagas voltaram
+
+    @pytest.mark.asyncio
+    async def test_a_playlist_that_arrives_in_two_segments_is_read_whole(self):
+        async with Station(sends(b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n", MP3 + b"ZZZZ")) as real:
+            pls = f"[playlist]\nNumberOfEntries=1\nFile1={real.url}\n".encode()
+            half = len(pls) // 2
+
+            async def split(reader, writer):
+                await reader.readuntil(b"\r\n\r\n")
+                writer.write(b"HTTP/1.0 200 OK\r\nContent-Type: audio/x-scpls\r\n\r\n" + pls[:half])
+                await writer.drain()
+                await asyncio.sleep(0.05)
+                writer.write(pls[half:])
+                await writer.drain()
+                writer.close()
+
+            port = free_port(8700)
+            server = await asyncio.start_server(split, "127.0.0.1", port)
+            try:
+                async with relay() as r:
+                    token = r.register(f"http://radio.example:{port}/radio.pls", codec="MP3", bitrate=128)
+
+                    got_head, got_body = await fetch(r, token)
+            finally:
+                server.close()
+                await server.wait_closed()
+
+        assert got_head.startswith(b"HTTP/1.0 200") and got_body == MP3 + b"ZZZZ"
+
+    @pytest.mark.asyncio
+    async def test_a_playlist_entry_that_does_not_resolve_does_not_stop_the_next_ones(self):
+        async with Station(sends(b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n", MP3 + b"ZZZZ")) as real:
+            pls = f"[playlist]\nFile1=http://nxdomain.example:8000/a\nFile2={real.url}\n".encode()
+            port = free_port(8750)
+            server = await asyncio.start_server(
+                sends(b"HTTP/1.0 200 OK\r\nContent-Type: audio/x-scpls\r\n\r\n", pls), "127.0.0.1", port
+            )
+
+            async def resolver(host, p):
+                if host == "nxdomain.example":
+                    raise socket.gaierror("Name or service not known")
+                return ["127.0.0.1"]
+
+            try:
+                r = RadioRelay(resolve=resolver, public=lambda a: True)
+                await r.start()
+                try:
+                    token = r.register(f"http://radio.example:{port}/radio.pls", codec="MP3", bitrate=128)
+
+                    got_head, got_body = await fetch(r, token)
+                finally:
+                    await r.close()
+            finally:
+                server.close()
+                await server.wait_closed()
+
+        assert got_head.startswith(b"HTTP/1.0 200") and got_body == MP3 + b"ZZZZ"

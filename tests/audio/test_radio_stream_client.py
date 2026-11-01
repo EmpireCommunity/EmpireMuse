@@ -298,3 +298,72 @@ class TestTlsIsChecked:
         assert captured["address"] == "93.184.216.34" and captured["server_hostname"] == "radio.example"
         context = captured["ssl"]
         assert context.verify_mode == ssl.CERT_REQUIRED and context.check_hostname is True
+
+
+class TestReviewFindings:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "error", [socket.gaierror("Name or service not known"), UnicodeError("label too long"), TimeoutError()]
+    )
+    async def test_a_dns_failure_is_a_refusal_not_a_raw_exception(self, error):
+        async def failing(host, port):
+            raise error
+
+        with pytest.raises(StreamRefused) as refusal:
+            await open_stream("http://radio.example:8000/live", resolve=failing)
+
+        assert refusal.value.reason == "address"
+
+    @pytest.mark.asyncio
+    async def test_a_slow_dns_is_cut_by_the_resolve_timeout(self, monkeypatch):
+        monkeypatch.setattr(sc, "RESOLVE_TIMEOUT_S", 0.1)
+
+        async def hangs(host, port):
+            await asyncio.sleep(5)
+
+        with pytest.raises(StreamRefused) as refusal:
+            await open_stream("http://radio.example:8000/live", resolve=hangs)
+
+        assert refusal.value.reason == "address"
+
+    @pytest.mark.asyncio
+    async def test_only_three_addresses_are_tried_but_every_one_was_checked(self, monkeypatch):
+        tried = []
+
+        async def fake_open(address, port, **kwargs):
+            tried.append(address)
+            raise ConnectionRefusedError
+
+        monkeypatch.setattr(sc.asyncio, "open_connection", fake_open)
+
+        async def many(host, port):
+            return [f"93.184.216.{n}" for n in range(1, 7)]
+
+        with pytest.raises(StreamRefused):
+            await open_stream("http://radio.example:8000/live", resolve=many)
+        assert len(tried) == 3
+
+        async def one_inside(host, port):
+            return [*[f"93.184.216.{n}" for n in range(1, 6)], "10.0.0.1"]  # o 6º, que nem seria tentado, também conta
+
+        with pytest.raises(StreamRefused) as refusal:
+            await open_stream("http://radio.example:8000/live", resolve=one_inside)
+        assert refusal.value.reason == "address"
+
+    @pytest.mark.asyncio
+    async def test_cancelling_while_waiting_for_the_headers_closes_the_socket(self):
+        closed = asyncio.Event()
+
+        async def silent(reader, writer):
+            await reader.readuntil(b"\r\n\r\n")
+            await reader.read()
+            closed.set()
+
+        async with server(silent) as port:
+            task = asyncio.ensure_future(open_stream(f"http://radio.example:{port}/x", **ALLOW_LOOPBACK))
+            await asyncio.sleep(0.2)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+            await asyncio.wait_for(closed.wait(), 3)

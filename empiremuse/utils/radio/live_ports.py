@@ -7,12 +7,15 @@ já limpo e vai ao ``RadioManager``. Nada de texto externo (nome, título) é pu
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Optional
 
 from empiremuse.rules.radio import Radio
+from empiremuse.utils.radio.directory import DirectoryError
 from empiremuse.utils.radio.discord_ports import DiscordRadioPorts
+from empiremuse.utils.radio.live import StationFailure
 
 if TYPE_CHECKING:
     from empiremuse.utils.client import BotPool
@@ -54,9 +57,12 @@ class LiveRadioPorts(DiscordRadioPorts):
         """Abre a estação ativa pelo relay e manda o Lavalink tocá-la. Qualquer falha propaga e o runner recua."""
         hub = self.pool.radio
         await self._release()
-        station = await hub.directory.fresh_for_play(self.active)
+        try:
+            station = await hub.directory.fresh_for_play(self.active)
+        except DirectoryError as error:  # diretório fora do ar ou sem fichas: não é culpa da estação
+            raise RuntimeError("diretório indisponível") from error
         if station is None:
-            raise RuntimeError("estação indisponível")
+            raise StationFailure  # o diretório respondeu e a estação não existe mais ou deixou de passar nas regras
         self._names[self.active] = station.name
         bot, guild, player = self._bot(), self._guild(), self._player()
         if bot is None or guild is None or player is None:
@@ -76,8 +82,11 @@ class LiveRadioPorts(DiscordRadioPorts):
             player.queue.clear()
             player.queue.append(tracks[0])
             await player.process_next()
-        except BaseException:
+        except BaseException as error:
+            station_fault = hub.relay.touched(token) and not isinstance(error, asyncio.CancelledError)
             await self._release()
+            if station_fault and not isinstance(error, StationFailure):
+                raise StationFailure from error  # o Lavalink chegou ao relay e o fluxo não abriu: a estação falhou
             raise
 
     async def _release(self) -> None:
@@ -102,12 +111,25 @@ class LiveRadioPorts(DiscordRadioPorts):
 
     async def switch_source(self) -> bool:
         """Principal -> reserva ou reserva -> principal, só se a outra existe e está saudável. ``True`` se trocou."""
+        await self._reload_reserve()
         other = self.reserve if self.active == self.primary else self.primary
         health = self.pool.radio.health
         if other is None or health.unavailable(other):
             return False
         self.active = other
         return True
+
+    async def _reload_reserve(self) -> None:
+        """A reserva pode ter mudado pelo seletor da página Rádios (``RadioStore.set_reserve``): relê o documento; banco fora mantém a que já se conhece."""
+        try:
+            current = await self.pool.radio.store.get(self.radio.id)
+        except Exception as error:  # noqa: BLE001 - só o tipo vai ao log (R-12)
+            logger.warning("Reserva da rádio não relida (%s)", type(error).__name__)
+            return
+        if current is not None and current.kind == "live":
+            self.reserve = current.source.get("reserve")
+            if self.active == self.reserve:  # a reserva nova é a estação em que ela já está: nada a trocar
+                self.reserve = None
 
     async def use_primary(self) -> bool:
         """O health check reabilitou a principal: volta para ela (a reserva só vale enquanto a principal estiver fora)."""
