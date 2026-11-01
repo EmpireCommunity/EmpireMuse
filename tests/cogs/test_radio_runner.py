@@ -32,6 +32,7 @@ class FakePorts:
         self.in_flight = 0
         self.max_in_flight = 0
         self.prepared = 0
+        self.origin: float | None = None  # a época gravada da programação virtual (vem do banco no reinício)
         self.prepare_error: Exception | None = None
         self.skips = 0
         self.panels = 0
@@ -39,6 +40,12 @@ class FakePorts:
 
     def now(self):
         return self.t
+
+    def wall(self):
+        return self.t  # o relógio de parede anda junto com o falso
+
+    def clock_origin(self):
+        return self.origin
 
     def jitter(self):
         return self.jitter_value
@@ -831,3 +838,62 @@ class TestPanelButtons:
 
         assert ports.panels == 2 and runner.phase is Phase.PLAYING
         assert "RuntimeError" in caplog.text and "secreto" not in caplog.text
+
+
+class TestVirtualClockSurvivesRestart:
+    """Keystone (contrato §1, Q3 do dono): a programação virtual continua depois do reinício, não volta à faixa 0."""
+
+    @pytest.mark.asyncio
+    async def test_a_restart_resumes_at_the_position_the_stored_origin_gives(self):
+        ports = FakePorts()  # t = 1000
+        ports.origin = 900.0  # a rádio ligou 100 s antes do reinício
+        runner, _, _ = make(ports)
+
+        await runner.start()
+
+        # 100 s de programação: 60 + 30 = 90 s das duas primeiras, 10 s dentro da terceira
+        assert ports.played == [(2, 10_000)]
+
+    @pytest.mark.asyncio
+    async def test_a_restart_long_after_wraps_around_the_playlist(self):
+        ports = FakePorts()
+        ports.origin = 1000.0 - (180 * 5 + 65)  # cinco voltas inteiras de 3 min e mais 65 s
+
+        runner, _, _ = make(ports)
+        await runner.start()
+
+        assert ports.played == [(1, 5_000)]
+
+    @pytest.mark.asyncio
+    async def test_a_radio_without_a_stored_origin_starts_the_clock_now(self):
+        ports = FakePorts()
+        runner, _, _ = make(ports)
+
+        await runner.start()
+
+        assert ports.played == [(0, 0)] and runner.virtual_origin == 1000.0
+
+    @pytest.mark.asyncio
+    async def test_a_future_origin_from_a_wrong_clock_never_gives_a_negative_position(self):
+        ports = FakePorts()
+        ports.origin = 5000.0
+
+        runner, _, _ = make(ports)
+        await runner.start()
+
+        assert ports.played == [(0, 0)]
+
+    @pytest.mark.asyncio
+    async def test_the_origin_is_kept_across_pauses_in_the_same_run(self):
+        ports = FakePorts()
+        ports.origin = 940.0
+        runner, _, _ = make(ports)
+        await runner.start()
+        await runner.on_presence(0)
+        ports.t += 31
+        await runner.tick()
+        await runner.on_presence(1)
+        ports.t += 6
+        await runner.tick()
+
+        assert ports.played[-1] == (2, 7_000)  # 97 s desde a época: 60 + 30 das duas primeiras e 7 s na terceira

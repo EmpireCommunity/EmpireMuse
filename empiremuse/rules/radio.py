@@ -59,6 +59,9 @@ class Radio:
     enabled: bool = False
     rev: int = 0
     panel_message_id: int | None = None
+    clock_started_at: float | None = (
+        None  # época (``time.time()``) em que a programação virtual ligou: sobrevive ao reinício (Q3)
+    )
     extra: dict[str, Any] = field(default_factory=dict, compare=False)
 
 
@@ -171,6 +174,11 @@ def check_radio(raw: object) -> Radio | RuleError:
     panel_id = None if panel in (None, "") else _snowflake(panel)
     if panel not in (None, "") and panel_id is None:
         return RuleError(ID_INVALID, "panel_message_id")
+    clock = raw.get("clock_started_at")
+    if clock is not None and not (
+        isinstance(clock, (int, float)) and not isinstance(clock, bool) and 0 < clock < 4_000_000_000 and clock == clock
+    ):
+        return RuleError(REV_INVALID, "clock_started_at")
     return Radio(
         id=radio_id(bot_id, guild_id),
         bot_id=bot_id,
@@ -182,6 +190,7 @@ def check_radio(raw: object) -> Radio | RuleError:
         enabled=enabled,
         rev=rev,
         panel_message_id=panel_id,
+        clock_started_at=None if clock is None else float(clock),
     )
 
 
@@ -199,6 +208,7 @@ def to_document(radio: Radio, *, updated_by: str = "") -> dict[str, Any]:
         "chat": dict(radio.chat),
         "enabled": radio.enabled,
         "panel_message_id": None if radio.panel_message_id is None else str(radio.panel_message_id),
+        "clock_started_at": radio.clock_started_at,
         "rev": radio.rev,
         "updated_by": str(updated_by)[:40],
     }

@@ -200,16 +200,6 @@ class TestConnect:
         with_perm.guild.me.edit.assert_awaited_once_with(suppress=False)
         without.guild.me.request_to_speak.assert_awaited_once()
 
-    @pytest.mark.asyncio
-    async def test_a_forbidden_on_the_stage_is_tried_once_per_connection(self):
-        w = build(stage=True, mute_members=True)
-        w.guild.me.edit = AsyncMock(side_effect=disnake.Forbidden(MagicMock(status=403), "x"))
-
-        assert await w.ports.connect() is True  # a call continua; só o palco não deixou falar
-        await w.ports.connect()
-
-        assert w.guild.me.edit.await_count == 1
-
 
 class TestVirtualQueue:
     @pytest.mark.asyncio
@@ -370,3 +360,35 @@ class TestChatPorts:
 
         assert voice.stage is False
         assert DiscordChatPorts(stage_world.ports.pool, stage_world.ports.radio).stage is True
+
+
+class TestStageAsksEveryConnection:
+    """Keystone (R-5): UMA tentativa por CONEXÃO; o player sobrevive à queda, então a segunda conexão tenta de novo."""
+
+    @pytest.mark.asyncio
+    async def test_a_second_connection_on_the_same_player_asks_for_the_floor_again(self):
+        w = build(stage=True, mute_members=True)
+
+        await w.ports.connect()
+        await w.ports.connect()  # a volta depois da queda reaproveita o player
+
+        assert w.guild.me.edit.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_one_failing_connection_does_not_silence_the_next_one(self):
+        w = build(stage=True, mute_members=True)
+        w.guild.me.edit = AsyncMock(side_effect=[disnake.Forbidden(MagicMock(status=403), "x"), None])
+
+        assert await w.ports.connect() is True
+        assert await w.ports.connect() is True
+
+        assert w.guild.me.edit.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_inside_one_connection_a_forbidden_is_tried_once(self):
+        w = build(stage=True, mute_members=True)
+        w.guild.me.edit = AsyncMock(side_effect=disnake.Forbidden(MagicMock(status=403), "x"))
+
+        await w.ports.connect()
+
+        assert w.guild.me.edit.await_count == 1

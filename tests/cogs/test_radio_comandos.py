@@ -92,6 +92,7 @@ async def settle(w):
 
 
 async def premium(w):
+    await w.hub.control.load()  # a pausa do dono lida do banco: sem documento, não pausado
     await w.hub.premium.grant(GUILD, by=1)
 
 
@@ -152,6 +153,7 @@ class TestLigar:
     @pytest.mark.asyncio
     async def test_without_premium_or_with_an_unknown_playlist_it_says_why(self):
         no_premium = build()
+        await no_premium.hub.control.load()
         no_playlist = build(playlist=False)
         await premium(no_playlist)
 

@@ -283,6 +283,7 @@
   "radio.refused.no_playlist": "Essa playlist não existe neste servidor.",
   "radio.refused.no_premium": "Este servidor não tem o premium de rádio. Fale com o dono do bot.",
   "radio.refused.not_found": "Não há rádio ligada nesse canal.",
+  "radio.refused.paused_all": "Todas as rádios estão pausadas pelo dono do bot por enquanto, então não dá para ligar uma nova. Tente de novo mais tarde.",
   "radio.state.off": "desligada",
   "radio.state.offline": "reconectando",
   "radio.state.paused": "pausada (ninguém ouvindo)",

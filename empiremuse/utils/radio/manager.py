@@ -137,6 +137,10 @@ class RadioManager:
         partida segue em segundo plano (um canal sem permissão não prende a resposta do comando até o token expirar)."""
         if self.is_running(radio.id):
             return
+        try:
+            radio = await self.hub.store.ensure_clock(radio)
+        except Exception as error:  # noqa: BLE001 - sem gravar a época a rádio ainda toca, só não sobrevive ao reinício
+            logger.warning("Relógio virtual da rádio não gravado (%s)", type(error).__name__)
         runner = self._runner_for(radio)
         if runner is None:
             return
