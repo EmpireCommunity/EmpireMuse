@@ -143,7 +143,7 @@ class ServerDetailTest(ServersBase):
             assert category in body, f"categoria ausente: {category}"
         hrefs = set(re.findall(r'href="(/painel/servidores/100/[a-z]+)(?:\?[^"]*)?"', body))
         assert hrefs == {
-            f"/painel/servidores/100/{c}" for c in ("player", "dj", "aparencia", "geral", "links", "canal")
+            f"/painel/servidores/100/{c}" for c in ("player", "dj", "aparencia", "geral", "links", "canal", "radios")
         }
         assert 'aria-disabled="true"' not in body, "nenhuma categoria fica desabilitada depois da E4c"
         assert not re.findall(r"em breve", body, re.I)

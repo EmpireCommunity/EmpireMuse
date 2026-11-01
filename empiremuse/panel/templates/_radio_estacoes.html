@@ -1,0 +1,18 @@
+{# Resultados da busca de estações (fragmento htmx dentro do formulário da reserva). Variável: form (resultados: StationView,
+   dica: str|None). Os botões enviam ``reserva=<uuid>``; estação indisponível (⛔) não pode ser escolhida. Sem URL de fluxo. #}
+{% if form.dica %}<p class="nota">{{ form.dica }}</p>{% end %}
+{% if form.resultados %}
+<ul class="lista-links" role="list">
+  {% for estacao in form.resultados %}
+  <li class="item-link">
+    <div class="item-link-texto">
+      <strong class="item-link-nome">{{ estacao.nome }}</strong>
+      <span class="item-link-url">{{ estacao.pais }} · {{ estacao.codec }} {{ estacao.bitrate }} kbps{% if estacao.indisponivel %} · ⛔ {{ _("panel.radio.live.unavailable") }}{% end %}</span>
+    </div>
+    <div class="item-link-acoes">
+      <button type="submit" name="reserva" value="{{ estacao.uuid }}"{% if estacao.indisponivel %} disabled{% end %}>{{ _("panel.radio.live.use") }}<span class="visually-hidden"> {{ estacao.nome }}</span></button>
+    </div>
+  </li>
+  {% end %}
+</ul>
+{% end %}

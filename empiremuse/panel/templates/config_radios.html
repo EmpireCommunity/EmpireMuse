@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block titulo %}{{ _("panel.radio.title") }} · {{ acesso.name }}{% end %}
+
+{% block conteudo %}
+{# Rádios do servidor (item 8). Variáveis: premium (None ou .active), pode_escrever, radios (RadioRow: id, slug, bot_nome,
+   canal_nome|None, tipo, estado, titulo|None, form|None), max_radios. Textos pelo ``_`` (panel.json); nada em href/src. #}
+{% set titulo_categoria = _("panel.radio.title") %}
+{% set slug_atual = "radios" %}
+{% set caminho_categoria = "/painel/servidores/" + acesso.guild_id + "/radios" %}
+{% include "_topo_config.html" %}
+{% include "_nav_categorias.html" %}
+<section class="bloco-config bloco-largo" aria-labelledby="titulo-radios-premium">
+  <h2 class="subtitulo" id="titulo-radios-premium">{{ _("panel.radio.premium.title") }}</h2>
+  {% if premium is None %}
+  <p class="aviso aviso-info" role="note">{{ _("panel.radio.premium.none") }}</p>
+  {% else %}
+  <p>{{ _("panel.radio.premium.active", active=premium.active, max=max_radios) }}</p>
+  {% end %}
+  <p class="nota">{{ _("panel.radio.premium.help") }}</p>
+</section>
+{% if not radios %}
+<section class="bloco-config bloco-largo" aria-labelledby="titulo-radios-vazio">
+  <h2 class="subtitulo" id="titulo-radios-vazio">{{ _("panel.radio.list.title") }}</h2>
+  <p class="nota">{{ _("panel.radio.list.empty") }}</p>
+</section>
+{% end %}
+{% for radio in radios %}
+<section class="bloco-config bloco-largo" aria-labelledby="titulo-radio-{{ radio.slug }}">
+  <h2 class="subtitulo" id="titulo-radio-{{ radio.slug }}">{{ radio.bot_nome }}{% if radio.canal_nome %} · {{ radio.canal_nome }}{% end %}</h2>
+  <p>{{ radio.tipo }} · {{ radio.estado }}{% if radio.titulo %} · {{ radio.titulo }}{% end %}</p>
+  {% if radio.canal_nome is None %}
+  <p class="aviso aviso-erro" role="note">{{ _("panel.radio.channel_removed") }}</p>
+  {% end %}
+  {% if radio.ao_vivo %}
+  {% set vivo = radio.ao_vivo %}
+  {% include "form_radio_reserva.html" %}
+  {% end %}
+  {% if radio.form %}
+  {% set form = radio.form %}
+  {% include "form_radio_chat.html" %}
+  {% elif pode_escrever %}
+  <p class="nota">{{ _("panel.radio.chat.need_permission") }}</p>
+  {% end %}
+</section>
+{% end %}
+{% end %}

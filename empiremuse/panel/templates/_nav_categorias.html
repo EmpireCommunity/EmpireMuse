@@ -1,6 +1,6 @@
 {# Navegação por categorias. Variáveis: acesso, slug_atual (str|None), mostrar_seletor, bot_atual. #}
 {# Ícones (mnauliady): web-ui primeiro; media-player quando a categoria é reprodução (player, pedidos de música, playlists). #}
-{% set itens_nav = (("player", "Player", "media-player/play"), ("canal", "Canal de pedidos", "media-player/music-add"), ("dj", "DJ", "web-ui/headphone"), ("aparencia", "Aparência", "web-ui/control"), ("links", "Playlists", "media-player/playlists"), ("geral", "Geral", "web-ui/settings")) %}
+{% set itens_nav = (("player", "Player", "media-player/play"), ("canal", "Canal de pedidos", "media-player/music-add"), ("radios", _("panel.radio.nav"), "media-player/sound-wave"), ("dj", "DJ", "web-ui/headphone"), ("aparencia", "Aparência", "web-ui/control"), ("links", "Playlists", "media-player/playlists"), ("geral", "Geral", "web-ui/settings")) %}
 <nav class="nav-categorias" aria-label="Categorias de configuração">
   <ul class="categorias" role="list">
     {% for slug, nome, icone in itens_nav %}
