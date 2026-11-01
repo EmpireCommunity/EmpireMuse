@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, Union, Optional
 import disnake
 from disnake.ext import commands
 
+from empiremuse.i18n import localized
 from empiremuse.rules.errors import ROLE_DUPLICATE, RuleError
 from empiremuse.rules.limits import (
     CUSTOM_SKIN_PREFIX,
@@ -362,7 +363,7 @@ class MusicSettings(commands.Cog):
         await self.player_settings.callback(self=self, interaction=ctx)
 
     @commands.slash_command(
-        description=f"{desc_prefix}Alterar algumas configurações padrões do player.",
+        description=localized("cmd.player_settings.description"),
         default_member_permissions=disnake.Permissions(manage_guild=True),
     )
     @commands.contexts(guild=True)
@@ -429,7 +430,7 @@ class MusicSettings(commands.Cog):
         await self.setup.callback(self=self, interaction=ctx, target=channel, purge_messages=args.reset)
 
     @commands.slash_command(
-        description=f"{desc_prefix}Criar/escolher um canal dedicado para pedir músicas e deixar player fixado.",
+        description=localized("cmd.setup.description"),
         default_member_permissions=disnake.Permissions(manage_guild=True),
         cooldown=setup_cd,
         max_concurrency=setup_mc,
@@ -440,14 +441,18 @@ class MusicSettings(commands.Cog):
         interaction: disnake.ApplicationCommandInteraction,
         target: Union[
             disnake.TextChannel, disnake.VoiceChannel, disnake.ForumChannel, disnake.StageChannel
-        ] = commands.Param(name="canal", default=None, description="Selecionar um canal existente"),
+        ] = commands.Param(
+            name=localized("cmd.setup.opt.channel.name"),
+            default=None,
+            description=localized("cmd.setup.opt.channel.description"),
+        ),
         purge_messages: str = commands.Param(
-            name="limpar_mensagens",
+            name=localized("cmd.setup.opt.clear_messages.name"),
             default="no",
-            description="Limpar mensagens do canal selecionado (até 100 mensagens, não efetivo em forum).",
+            description=localized("cmd.setup.opt.clear_messages.description"),
             choices=[
-                disnake.OptionChoice(disnake.Localized("Yes", data={disnake.Locale.pt_BR: "Sim"}), "yes"),
-                disnake.OptionChoice(disnake.Localized("No", data={disnake.Locale.pt_BR: "Não"}), "no"),
+                disnake.OptionChoice(localized("cmd.setup.opt.clear_messages.choice.yes"), "yes"),
+                disnake.OptionChoice(localized("cmd.setup.opt.clear_messages.choice.no"), "no"),
             ],
         ),
     ):
@@ -811,7 +816,7 @@ class MusicSettings(commands.Cog):
         await self.reset.callback(self=self, interaction=ctx, delete_channel=delete_channel)
 
     @commands.slash_command(
-        description=f"{desc_prefix}Resetar as configurações relacionadas ao canal de pedir música (song request).",
+        description=localized("cmd.reset.description"),
         default_member_permissions=disnake.Permissions(manage_guild=True),
         cooldown=setup_cd,
         max_concurrency=setup_mc,
@@ -821,10 +826,13 @@ class MusicSettings(commands.Cog):
         self,
         interaction: disnake.ApplicationCommandInteraction,
         delete_channel: str = commands.Param(
-            name="deletar_canal",
-            description="deletar o canal do player controller",
+            name=localized("cmd.reset.opt.delete_channel.name"),
+            description=localized("cmd.reset.opt.delete_channel.description"),
             default=None,
-            choices=["sim", "não"],
+            choices=[
+                disnake.OptionChoice(localized("cmd.reset.opt.delete_channel.choice.yes"), "sim"),
+                disnake.OptionChoice(localized("cmd.reset.opt.delete_channel.choice.no"), "não"),
+            ],
         ),
     ):
         inter, bot = await select_bot_pool(interaction)
@@ -899,7 +907,7 @@ class MusicSettings(commands.Cog):
         await self.add_dj_role.callback(self=self, interaction=ctx, role=role)
 
     @commands.slash_command(
-        description=f"{desc_prefix}Adicionar um cargo para a lista de DJ's do servidor.",
+        description=localized("cmd.add_dj_role.description"),
         default_member_permissions=disnake.Permissions(manage_guild=True),
         cooldown=djrole_cd,
         max_concurrency=djrole_mc,
@@ -908,7 +916,10 @@ class MusicSettings(commands.Cog):
     async def add_dj_role(
         self,
         interaction: disnake.ApplicationCommandInteraction,
-        role: disnake.Role = commands.Param(name="cargo", description="Cargo"),
+        role: disnake.Role = commands.Param(
+            name=localized("cmd.add_dj_role.opt.role.name"),
+            description=localized("cmd.add_dj_role.opt.role.description"),
+        ),
     ):
         inter, bot = await select_bot_pool(interaction)
         guild = bot.get_guild(inter.guild_id) or inter.guild
@@ -956,7 +967,7 @@ class MusicSettings(commands.Cog):
         await self.remove_dj_role.callback(self=self, interaction=ctx, role=role)
 
     @commands.slash_command(
-        description=f"{desc_prefix}Remover um cargo da lista de DJ's do servidor.",
+        description=localized("cmd.remove_dj_role.description"),
         default_member_permissions=disnake.Permissions(manage_guild=True),
         cooldown=djrole_cd,
         max_concurrency=djrole_mc,
@@ -965,7 +976,10 @@ class MusicSettings(commands.Cog):
     async def remove_dj_role(
         self,
         interaction: disnake.ApplicationCommandInteraction,
-        role: disnake.Role = commands.Param(name="cargo", description="Cargo"),
+        role: disnake.Role = commands.Param(
+            name=localized("cmd.remove_dj_role.opt.role.name"),
+            description=localized("cmd.remove_dj_role.opt.role.description"),
+        ),
     ):
         inter, bot = await select_bot_pool(interaction)
 
@@ -1009,7 +1023,7 @@ class MusicSettings(commands.Cog):
         await self.change_skin.callback(self=self, interaction=ctx)
 
     @commands.slash_command(
-        description=f"{desc_prefix}Alterar aparência/skin do player.",
+        description=localized("cmd.change_skin.description"),
         cooldown=skin_cd,
         max_concurrency=skin_mc,
         default_member_permissions=disnake.Permissions(manage_guild=True),
@@ -1435,7 +1449,7 @@ class MusicSettings(commands.Cog):
         await self.nodeinfo.callback(self=self, interaction=ctx)
 
     @commands.cooldown(1, 5, commands.BucketType.user)
-    @commands.slash_command(description=f"{desc_prefix}Ver informações dos servidores de música (lavalink servers).")
+    @commands.slash_command(description=localized("cmd.nodeinfo.description"))
     @commands.contexts(guild=True)
     async def nodeinfo(self, interaction: disnake.ApplicationCommandInteraction):
         inter, bot = await select_bot_pool(interaction, return_new=True)
@@ -1567,7 +1581,7 @@ class MusicSettings(commands.Cog):
     @commands.slash_command(
         cooldown=customskin_cd,
         max_concurrency=customskin__mc,
-        description=f"{desc_prefix}Criar suas próprias skins/templates para o player de música.",
+        description=localized("cmd.custom_skin.description"),
         default_member_permissions=disnake.Permissions(administrator=True),
     )
     @commands.contexts(guild=True)
@@ -1733,9 +1747,7 @@ class RPCCog(commands.Cog):
     async def rich_presence_legacy(self, ctx: CustomContext):
         await self.rich_presence.callback(self=self, inter=ctx)
 
-    @commands.slash_command(
-        description=f"{desc_prefix}Ativar/Desativar o sistema de rich-presence no seu status.", cooldown=rpc_cd
-    )
+    @commands.slash_command(description=localized("cmd.rich_presence.description"), cooldown=rpc_cd)
     @commands.contexts(guild=True)
     async def rich_presence(self, inter: disnake.ApplicationCommandInteraction):
         if not self.bot.config["ENABLE_RPC_COMMAND"] and not any(

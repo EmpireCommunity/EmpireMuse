@@ -19,6 +19,7 @@ from types import SimpleNamespace
 import disnake
 import pytest
 
+from empiremuse.i18n import get_i18n
 from empiremuse.cogs import player_resume
 from empiremuse.utils.music import models
 from empiremuse.utils.music.models import LavalinkPlayer
@@ -125,6 +126,7 @@ def montar(versao_do_no: int, *, canais=None):
     async def get_data(*args, **kwargs):
         return {"player_controller": {"channel": None, "message_id": None}}
 
+    cog.bot.pool.i18n = get_i18n()  # o player retomado recebe o tradutor do servidor
     cog.bot.user = SimpleNamespace(id=1)
     cog.bot.get_channel = canais.get
     cog.bot.get_guild = lambda guild_id: servidor

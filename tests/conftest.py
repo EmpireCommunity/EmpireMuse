@@ -12,6 +12,7 @@ worktrees, então a suíte se comportaria de um jeito num lugar e de outro no ou
 """
 
 import logging
+from pathlib import Path
 import sys
 import threading
 
@@ -28,6 +29,19 @@ def _isolate_real_dotenv(monkeypatch):
         except ImportError:
             continue
         monkeypatch.setattr(f"{mod}.dotenv_values", lambda *args, **kwargs: {})
+
+
+@pytest.fixture(autouse=True)
+def _pt_br_fallback_locale(request, monkeypatch):
+    """O idioma de reserva do resolvedor nos testes é ``pt-BR``: os asserts com texto em português valem sem edição (contrato i18n §7).
+
+    Os testes de i18n (``tests/i18n`` e ``tests/rules/test_i18n.py``) ficam com o fallback de PRODUÇÃO (``en-US``) e passam o idioma
+    explícito quando precisam de outro; o catálogo ``en-US`` (a referência) nunca muda.
+    """
+    path = Path(str(request.node.fspath)).as_posix()
+    if "/tests/i18n/" in path or path.endswith("/tests/rules/test_i18n.py"):
+        return
+    monkeypatch.setattr("empiremuse.rules.i18n.FALLBACK_LOCALE", "pt-BR")
 
 
 @pytest.fixture(autouse=True)

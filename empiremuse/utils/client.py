@@ -54,6 +54,7 @@ from empiremuse.rules.owner_shell import collect_secret_values
 from empiremuse.rules.servers import is_main_identifier
 from empiremuse.updater.notice import on_pool_ready
 from empiremuse.updater.state import read_pending
+from empiremuse.i18n import get_i18n
 from empiremuse.utils import branding
 from empiremuse.version import image_version
 from empiremuse.utils.safe_error import HTTPStatusError, safe_error
@@ -267,6 +268,8 @@ class BotPool:
         self.metrics = MetricsCollector()
         self.usage = UsageRecorder(self)
         self.guild_bans = GuildBans(self)
+        self.i18n = get_i18n()
+        self.i18n.pool = self
         self.servers = ServerStore(self)
         self.request_panel = RequestPanel(self)
         # servidor -> aviso de "sem o principal" já enviado; a validade de 24 h é o limitador único (um aviso por servidor no pool)
@@ -1221,6 +1224,7 @@ class BotPool:
                 default_prefix=self.config["DEFAULT_PREFIX"],
                 pool=self,
                 number=int(self.max_counter),
+                localization_provider=self.i18n.provider,
             )
 
             bot.http.token = token
@@ -1434,6 +1438,14 @@ class BotPool:
         self.start_logs_task()
         self.usage.start(self.loop)
         self.start_update_watch()
+
+        # Catálogos de idioma: estritos (``en-US``/``pt-BR`` quebrado derruba a subida, release quebrada), e a migração do idioma dos
+        # servidores que já existiam roda uma vez, DEPOIS do ``load`` e ANTES dos bots (I-12). Falha da migração fica para a próxima subida.
+        self.i18n.load()
+        try:
+            self.loop.run_until_complete(self.servers.migrate_language())
+        except Exception:
+            logger.exception("Falha ao migrar o idioma dos servidores")
 
         for k, v in all_tokens.items():
             load_bot(k, v, load_modules_log=load_modules_log)

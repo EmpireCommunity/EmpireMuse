@@ -26,11 +26,21 @@ class Minimalist:
 
         data = {
             "embeds": [],
-            "content": f"-# {app_emoji(player.bot, 'play')} `⠂Tocando:` {md_link(player.current.title, player.current.uri or player.current.search_uri, limit=42)} `[{fix_characters(player.current.author, 20)}] {duration}`",
+            "content": player.tr(
+                "player.playing",
+                app_emoji=str(app_emoji(player.bot, "play")),
+                md_link=str(md_link(player.current.title, player.current.uri or player.current.search_uri, limit=42)),
+                fix_characters=str(fix_characters(player.current.author, 20)),
+                duration=str(duration),
+            ),
         }
 
         if player.current_hint:
-            data["content"] += f"\n-# {app_emoji(player.bot, 'notification')} `⠂Dica: {player.current_hint}`"
+            data["content"] += player.tr(
+                "player.tip_3",
+                app_emoji=str(app_emoji(player.bot, "notification")),
+                current_hint=str(player.current_hint),
+            )
 
         return data
 

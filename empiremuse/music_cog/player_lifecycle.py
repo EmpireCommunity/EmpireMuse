@@ -237,6 +237,7 @@ class PlayerLifecycleMixin:
             prefix=global_data["prefix"] or bot.default_prefix,
             stage_title_template=voice_status.template,
         )
+        player.tr = await bot.pool.i18n.for_guild(guild)
 
         # O status do canal vale por padrão em todo servidor (2.1.2): com o bot já no canal, aplica o permanente uma vez, antes
         # do 1º ``update_stage_topic`` do ``_he_track_start``; fora do canal quem aplica é o ``player_vc_disconnect`` ao entrar.
