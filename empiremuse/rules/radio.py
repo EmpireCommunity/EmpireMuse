@@ -8,10 +8,11 @@ limpo ou um ``RuleError`` (``code`` estável, ``key`` = o campo); nada aqui mont
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, NamedTuple
 
+from empiremuse.rules.bot_roles import identifier_sort_key
 from empiremuse.rules.errors import RuleError
 
 KIND_CUSTOM = "custom"
@@ -58,6 +59,9 @@ class Radio:
     enabled: bool = False
     rev: int = 0
     panel_message_id: int | None = None
+    clock_started_at: float | None = (
+        None  # época (``time.time()``) em que a programação virtual ligou: sobrevive ao reinício (Q3)
+    )
     extra: dict[str, Any] = field(default_factory=dict, compare=False)
 
 
@@ -170,6 +174,11 @@ def check_radio(raw: object) -> Radio | RuleError:
     panel_id = None if panel in (None, "") else _snowflake(panel)
     if panel not in (None, "") and panel_id is None:
         return RuleError(ID_INVALID, "panel_message_id")
+    clock = raw.get("clock_started_at")
+    if clock is not None and not (
+        isinstance(clock, (int, float)) and not isinstance(clock, bool) and 0 < clock < 4_000_000_000 and clock == clock
+    ):
+        return RuleError(REV_INVALID, "clock_started_at")
     return Radio(
         id=radio_id(bot_id, guild_id),
         bot_id=bot_id,
@@ -181,6 +190,7 @@ def check_radio(raw: object) -> Radio | RuleError:
         enabled=enabled,
         rev=rev,
         panel_message_id=panel_id,
+        clock_started_at=None if clock is None else float(clock),
     )
 
 
@@ -198,9 +208,59 @@ def to_document(radio: Radio, *, updated_by: str = "") -> dict[str, Any]:
         "chat": dict(radio.chat),
         "enabled": radio.enabled,
         "panel_message_id": None if radio.panel_message_id is None else str(radio.panel_message_id),
+        "clock_started_at": radio.clock_started_at,
         "rev": radio.rev,
         "updated_by": str(updated_by)[:40],
     }
+
+
+# ---------------------------------------------------------------------- qual bot toca a rádio
+
+
+class BotCandidate(NamedTuple):
+    """Um bot do pool visto de um servidor. ``busy`` = já tem player ou está numa call aí; ``has_radio_here`` = já roda uma rádio deste servidor."""
+
+    identifier: str
+    bot_id: int
+    main: bool
+    radio_only: bool
+    ready: bool
+    in_guild: bool
+    busy: bool
+    has_radio_here: bool = False
+
+
+def pick_radio_bot(candidates: Iterable[BotCandidate]) -> int | None:
+    """O bot que vai tocar a rádio: primeiro um reserva ``radio_only`` livre, depois qualquer reserva livre (ordem natural do identificador).
+
+    Nunca o principal, nunca um bot que já está em call no servidor, nem um que já roda uma rádio aqui (uma rádio por bot e servidor).
+    """
+    usable = [c for c in candidates if c.ready and c.in_guild and not c.main and not c.busy and not c.has_radio_here]
+    usable.sort(key=lambda c: (not c.radio_only, identifier_sort_key(c.identifier)))
+    return usable[0].bot_id if usable else None
+
+
+# ---------------------------------------------------------------------- painel na call (R-6)
+
+PANEL_PAUSE_ID = "radio_panel_pause"
+PANEL_NEXT_ID = "radio_panel_next"
+PANEL_STOP_ID = "radio_panel_stop"
+PANEL_IDS = (
+    PANEL_PAUSE_ID,
+    PANEL_NEXT_ID,
+    PANEL_STOP_ID,
+)  # fixos: NADA de rádio, bot ou servidor dentro do ``custom_id``
+SKIP_COOLDOWN_S = 5.0  # a "próxima" não vira rajada de comandos ao Lavalink
+PANEL_RECREATE_S = 5.0  # painel apagado volta na hora, mas quem apaga em laço não vira laço de envios
+
+
+def panel_action(custom_id: object) -> str | None:
+    """``pause``/``next``/``stop`` de um ``custom_id`` do painel; qualquer outra coisa (inclusive um id adulterado) é ``None``."""
+    return (
+        {PANEL_PAUSE_ID: "pause", PANEL_NEXT_ID: "next", PANEL_STOP_ID: "stop"}.get(custom_id)
+        if isinstance(custom_id, str)
+        else None
+    )
 
 
 # ---------------------------------------------------------------------- teto por servidor (R-2)

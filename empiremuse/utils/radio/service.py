@@ -20,6 +20,9 @@ class RadioState:
     on_reserve: bool = False  # tocando a estação reserva (R3)
     offline: bool = False  # o bot não está na call (reconectando) ou a fonte caiu
     title: Optional[str] = None
+    paused_by_admin: bool = (
+        False  # botão "pausar" do painel da call (no fim: a ordem posicional dos campos antigos não muda)
+    )
 
 
 class RadioService:

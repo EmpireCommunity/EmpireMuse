@@ -64,6 +64,9 @@ class PremiumStore:
         self.pool = pool
         self._clock = clock
         self._cache: dict[int, tuple[float, Optional[Premium]]] = {}
+        self._generation: dict[
+            int, int
+        ] = {}  # sobe a cada ``_forget``: uma leitura que começou antes não repõe o cache velho
 
     # ------------------------------------------------------------------ banco
 
@@ -90,6 +93,7 @@ class PremiumStore:
             raise RadioUnavailable from error
 
     def _forget(self, guild_id: int) -> None:
+        self._generation[guild_id] = self._generation.get(guild_id, 0) + 1
         self._cache.pop(guild_id, None)
 
     # ------------------------------------------------------------------ leitura (cache de 30 s)
@@ -100,8 +104,12 @@ class PremiumStore:
         cached = self._cache.get(guild_id)
         if cached is not None and now - cached[0] < CACHE_SECONDS:
             return cached[1]
+        generation = self._generation.get(guild_id, 0)
         premium = await self._find(guild_id)
-        self._cache[guild_id] = (now, premium)
+        if (
+            self._generation.get(guild_id, 0) == generation
+        ):  # uma revogação/reserva durante a leitura invalida o resultado
+            self._cache[guild_id] = (now, premium)
         return premium
 
     async def fresh(self, guild_id: int) -> Optional[Premium]:

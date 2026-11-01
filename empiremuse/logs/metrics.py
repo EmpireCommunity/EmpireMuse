@@ -144,6 +144,7 @@ def format_summary(
     cpu_percent: float | None,
     rss_mib: float | None,
     nodes: Sequence[NodeSample],
+    radios: tuple[int, int, int] | None = None,
 ) -> list[str]:
     """Pura: no máximo ``1 + len(nodes)`` linhas; campo sem dado vira ``—``."""
     errors = ", ".join(f"{kind}: {count}" for kind, count in snapshot.errors.items())
@@ -155,6 +156,9 @@ def format_summary(
         f" · gateway {_ms(gateway_avg)} (máx {_ms(gateway_max)}) · voz p95 {_ms(_p95(voice_ms))}"
         f" · processo CPU {_percent(cpu_percent)} RSS {_mib(rss_mib)}"
     ]
+    if radios is not None:  # item 8: só contagens, sem ID de servidor, canal ou estação
+        on, playing, paused = radios
+        lines[0] += f" · rádios: {on} ligadas ({playing} tocando, {paused} pausadas)"
     for node in nodes:
         name = sanitize_value(str(node.identifier))
         if node.players is None and node.cpu_percent is None and node.memory_mib is None:

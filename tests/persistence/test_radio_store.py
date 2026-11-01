@@ -255,7 +255,7 @@ class TestRevocation:
 
         off = await world.store.revoke_premium(GUILD)
 
-        assert off == 3
+        assert len(off) == 3 and {r.enabled for r in off} == {False}
         assert await world.premium.fresh(GUILD) is None
         assert not any(r.enabled for r in await world.store.list_for_guild(GUILD))
         assert (await world.store.get(radio_id(1, OTHER_GUILD))).enabled and await active(world, OTHER_GUILD) == 1
@@ -392,3 +392,195 @@ class TestBootReconcile:
         assert report.over_cap == 2 and report.without_premium == 1
         assert sum(r.enabled for r in await world.store.list_for_guild(GUILD)) == 3 and await active(world) == 3
         assert not (await world.store.get(radio_id(1, OTHER_GUILD))).enabled
+
+
+class TestReconfigure:
+    @pytest.mark.asyncio
+    async def test_a_disabled_radio_takes_the_new_channel_and_source_and_loses_the_old_panel(self, world):
+        await world.store.create(make_radio())
+        await world.store.set_panel_message(radio_id(1, GUILD), 4242)
+
+        updated = await world.store.reconfigure(
+            make_radio(source={"playlist": "Jazz"}, channel_id="777"),
+            updated_by="9",
+        )
+
+        assert (updated.channel_id, updated.source, updated.panel_message_id) == (777, {"playlist": "Jazz"}, None)
+
+    @pytest.mark.asyncio
+    async def test_an_enabled_radio_cannot_be_reconfigured(self, world):
+        await with_premium(world)
+        await world.store.create(make_radio())
+        await world.store.set_enabled(radio_id(1, GUILD), True)
+
+        with pytest.raises(RadioConflict):
+            await world.store.reconfigure(make_radio(channel_id="777"))
+
+    @pytest.mark.asyncio
+    async def test_a_missing_radio_is_not_found(self, world):
+        with pytest.raises(RadioNotFound):
+            await world.store.reconfigure(make_radio(7))
+
+
+class TestReserveFirst:
+    """Revisão: reservar a vaga ANTES de gravar ``enabled`` mantém o contador igual ao número de rádios ligadas em qualquer ordem."""
+
+    @pytest.mark.asyncio
+    async def test_a_refused_enable_racing_a_disable_never_gives_back_a_slot_that_was_not_reserved(self, world):
+        await with_premium(world)
+        for bot in range(1, 5):
+            await world.store.create(make_radio(bot))
+        for bot in (1, 2, 3):
+            await world.store.set_enabled(radio_id(bot, GUILD), True)
+
+        await asyncio.gather(
+            world.store.set_enabled(radio_id(4, GUILD), True),
+            world.store.set_enabled(radio_id(4, GUILD), False),
+            return_exceptions=True,
+        )
+
+        enabled = sum(r.enabled for r in await world.store.list_for_guild(GUILD))
+        assert enabled == 3 and await active(world) == 3
+
+    @pytest.mark.asyncio
+    async def test_any_mix_of_enables_and_disables_ends_with_the_counter_equal_to_the_radios_on(self, world):
+        await with_premium(world)
+        for bot in range(1, 7):
+            await world.store.create(make_radio(bot))
+        jobs = []
+        for round_ in range(4):
+            for bot in range(1, 7):
+                jobs.append(world.store.set_enabled(radio_id(bot, GUILD), round_ % 2 == 0))
+
+        await asyncio.gather(*jobs, return_exceptions=True)
+
+        enabled = sum(r.enabled for r in await world.store.list_for_guild(GUILD))
+        assert await active(world) == enabled and enabled <= 3
+
+    @pytest.mark.asyncio
+    async def test_a_failed_write_after_the_reservation_gives_the_slot_back(self, world):
+        await with_premium(world)
+        await world.store.create(make_radio())
+        real = world.db.save_doc_cas
+
+        async def flaky(id_, doc, **kwargs):
+            if kwargs["db_name"] == "radios" and doc.get("enabled") is True:
+                raise ConnectionError("mongo fora")
+            return await real(id_, doc, **kwargs)
+
+        world.db.save_doc_cas = flaky
+
+        with pytest.raises(RadioUnavailable):
+            await world.store.set_enabled(radio_id(1, GUILD), True)
+        world.db.save_doc_cas = real
+
+        assert await active(world) == 0 and not (await world.store.get(radio_id(1, GUILD))).enabled
+
+    @pytest.mark.asyncio
+    async def test_a_premium_revoked_between_the_reservation_and_the_write_leaves_the_radio_off(self, world):
+        await with_premium(world)
+        await world.store.create(make_radio())
+        real = world.db.save_doc_cas
+
+        async def revoke_then_save(id_, doc, **kwargs):
+            if kwargs["db_name"] == "radios" and doc.get("enabled") is True:
+                await world.premium.revoke(GUILD)  # a revogação passa exatamente aqui
+            return await real(id_, doc, **kwargs)
+
+        world.db.save_doc_cas = revoke_then_save
+
+        with pytest.raises(NoPremium):
+            await world.store.set_enabled(radio_id(1, GUILD), True)
+        world.db.save_doc_cas = real
+
+        assert not (await world.store.get(radio_id(1, GUILD))).enabled
+
+
+class TestPremiumCacheAgainstRevoke:
+    @pytest.mark.asyncio
+    async def test_a_read_that_started_before_a_revoke_does_not_repopulate_the_cache(self, world):
+        await with_premium(world)
+        real = world.db.find_doc
+        calls = {"n": 0}
+
+        async def slow_first(id_, **kwargs):
+            calls["n"] += 1
+            doc = await real(id_, **kwargs)  # lê o documento ANTES da revogação...
+            if calls["n"] == 1:
+                for _ in range(8):
+                    await asyncio.sleep(0)  # ...e demora a devolver, enquanto a revogação termina
+            return doc
+
+        world.db.find_doc = slow_first
+        await asyncio.gather(world.premium.get(GUILD), world.premium.revoke(GUILD))
+        world.db.find_doc = real
+
+        assert await world.premium.get(GUILD) is None  # sem o cache velho de 30 s
+
+
+class TestClockPersistence:
+    @pytest.mark.asyncio
+    async def test_enabling_stamps_the_virtual_clock_and_disabling_then_enabling_restarts_it(self, world, monkeypatch):
+        from empiremuse.utils.radio import store as store_module
+
+        await with_premium(world)
+        await world.store.create(make_radio())
+        times = iter([1000.0, 5000.0])
+        monkeypatch.setattr(store_module.time, "time", lambda: next(times))
+
+        on = await world.store.set_enabled(radio_id(1, GUILD), True)
+        await world.store.set_enabled(radio_id(1, GUILD), False)
+        again = await world.store.set_enabled(radio_id(1, GUILD), True)
+
+        assert on.clock_started_at == 1000.0 and again.clock_started_at == 5000.0
+        assert (await world.store.get(radio_id(1, GUILD))).clock_started_at == 5000.0
+
+    @pytest.mark.asyncio
+    async def test_a_restart_reads_the_same_origin_back(self, world):
+        await with_premium(world)
+        await world.store.create(make_radio())
+        on = await world.store.set_enabled(radio_id(1, GUILD), True)
+
+        from empiremuse.utils.radio import RadioHub
+
+        reborn = RadioHub(world.pool)
+
+        assert (await reborn.store.get(radio_id(1, GUILD))).clock_started_at == on.clock_started_at
+
+    @pytest.mark.asyncio
+    async def test_an_old_document_without_the_field_is_stamped_once(self, world):
+        await with_premium(world)
+        await world.store.create(make_radio())
+        await world.store.set_enabled(radio_id(1, GUILD), True)
+        del world.db.tables["radios"][radio_id(1, GUILD)]["clock_started_at"]
+        legacy = await world.store.get(radio_id(1, GUILD))
+        assert legacy.clock_started_at is None
+
+        stamped = await world.store.ensure_clock(legacy)
+        again = await world.store.ensure_clock(stamped)
+
+        assert stamped.clock_started_at is not None and again.clock_started_at == stamped.clock_started_at
+
+    @pytest.mark.asyncio
+    async def test_reconfiguring_clears_the_clock(self, world):
+        await world.store.create(make_radio())
+        world.db.tables["radios"][radio_id(1, GUILD)]["clock_started_at"] = 123.0
+
+        updated = await world.store.reconfigure(make_radio(source={"playlist": "Jazz"}))
+
+        assert updated.clock_started_at is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad", [0, -5, True, "x", float("nan"), 5e12])
+    async def test_a_garbage_clock_makes_the_document_invalid(self, world, bad):
+        from empiremuse.rules.radio import check_radio as check
+
+        doc = {
+            "_id": radio_id(1, GUILD),
+            "channel_id": "9",
+            "kind": "custom",
+            "source": {"playlist": "p"},
+            "clock_started_at": bad,
+        }
+
+        assert isinstance(check(doc), RuleError)

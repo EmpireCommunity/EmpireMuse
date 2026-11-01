@@ -63,6 +63,7 @@ from empiremuse.utils.db import MongoDatabase, LocalDatabase, get_prefix, DBMode
 from empiremuse.utils.app_profile import sync_app_profile
 from empiremuse.utils.guild_ban import GuildBans
 from empiremuse.utils.radio import RadioHub
+from empiremuse.utils.radio.notice import refuse_radio_only
 from empiremuse.utils.request_panel import RequestPanel
 from empiremuse.utils.servers import ServerStore
 from empiremuse.rules.usage import KIND_PREFIX, KIND_SLASH
@@ -463,6 +464,7 @@ class BotPool:
             "cpu_percent": None,
             "rss_mib": None,
             "nodes": list(nodes.values()),
+            "radios": tuple(self.radio.manager.counts()) if getattr(self, "radio", None) else None,
         }
 
     async def connect_lavalink_queue_task(self, identifier: str):
@@ -1874,6 +1876,9 @@ class BotCore(commands.AutoShardedBot):
             return
 
         ctx: CustomContext = await self.get_context(message, cls=CustomContext)
+
+        if await refuse_radio_only(self, ctx, message):
+            return  # bot só-rádio (item 8): nem pedido, nem menção, nem prefixo; o comando de prefixo ganha um aviso
 
         try:
             ctx.player = self.music.players[message.guild.id]
