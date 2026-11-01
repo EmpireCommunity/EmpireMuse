@@ -33,5 +33,6 @@
   "panel.radio.chat.save": "Salvar",
   "panel.radio.chat.need_permission": "Para editar as regras, você precisa da permissão Gerenciar Mensagens no canal desta rádio.",
   "panel.radio.chat.forbidden": "Você não tem a permissão necessária para alterar esta rádio.",
-  "panel.radio.chat.invalid": "As regras enviadas não foram aceitas. Recarregue a página e tente de novo."
+  "panel.radio.chat.invalid": "As regras enviadas não foram aceitas. Recarregue a página e tente de novo.",
+  "panel.radio.unavailable": "As rádios não estão disponíveis agora. Tente de novo em instantes."
 }

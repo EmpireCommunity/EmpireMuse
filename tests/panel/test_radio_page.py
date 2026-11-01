@@ -8,7 +8,7 @@ Caminhos de risco: id da rota com sufixo ``:{guild_id}`` (outro servidor = 404),
 import html
 
 from empiremuse.panel.services.base import CONFLICT_TEXT, SAVED_TEXT
-from tests.panel.helpers_radio import install, make_channel, radio_state
+from tests.panel.helpers_radio import UNAVAILABLE, install, make_channel, radio_state
 from tests.panel.helpers_settings import parse_forms
 from tests.panel.test_settings_http import Each, HttpBase
 
@@ -19,7 +19,7 @@ CHANNEL = 123
 class RadioBase(HttpBase):
     def get_app(self):
         app = super().get_app()
-        self.radio = install(self.monkeypatch, self.pool)
+        self.radio = install(self.pool)
         self.world.channels[CHANNEL] = make_channel(CHANNEL, "Sala <i>DJ</i>", ALFA)
         self.world.channels[456] = make_channel(456, "Sala 2", OMEGA, manage_messages=False)
         self.world.channels[789] = make_channel(789, "Sala Ômega", OMEGA)
@@ -170,4 +170,22 @@ class RadioChatTest(RadioBase):
         for response in (denied, no_premium):
             assert response.code == 403, f"status {response.code}"
             assert "permissão necessária" in response.body.decode()
+        assert self.radio.store.updates == []
+
+
+# ============================================================================ banco das rádios fora do ar
+
+
+class RadioUnavailableTest(RadioBase):
+    def test_database_outage_is_503_on_the_page_and_on_the_form(self):
+        radio = self.seed_alfa()
+        browser = self.logged_in()
+        form = self.chat_forms(self.page(browser))[0]
+        pairs = form.pairs(voice_delete_after_s="45")
+        self.radio.premium.fail_with = UNAVAILABLE()
+        page = browser.get(self.url())
+        post = self.post_raw(browser, self.url(ALFA, radio.id), pairs, htmx=True)
+        for response in (page, post):
+            assert response.code == 503, f"status {response.code}"
+            assert "não estão disponíveis agora" in response.body.decode()
         assert self.radio.store.updates == []

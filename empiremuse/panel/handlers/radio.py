@@ -1,7 +1,8 @@
 """Página Rádios (item 8): ``GET /painel/servidores/<gid>/radios`` lista as rádios do servidor;
 ``POST /painel/servidores/<gid>/radios/<bot:guild>`` grava as regras do chat da call (só ``chat.*``).
 
-Só HTTP: autorização da R-6, allowlist, validação e compare-and-set ficam em ``panel/services/radio.py``.
+Só HTTP: autorização da R-6, allowlist, validação e compare-and-set ficam em ``panel/services/radio.py``. Banco das
+rádios fora do ar (``RadioUnavailable``) responde 503 com mensagem própria, como as outras páginas.
 """
 
 from __future__ import annotations
@@ -15,13 +16,13 @@ from empiremuse.panel.handlers.servers import SERVERS_PATH, initial_of
 from empiremuse.panel.handlers.settings import (
     MAX_BODY_BYTES,
     RADIOS_CATEGORY,
+    UNAVAILABLE_TITLE,
     SettingsHandler,
     decode_args,
 )
 from empiremuse.panel.services.base import KIND_ERROR, FormContext, Formulario, panel_translator
 from empiremuse.panel.services.radio import (
     FORBIDDEN_KEY,
-    MAX_RADIOS,
     STATUS_FORBIDDEN,
     RadioPage,
     belongs_to,
@@ -29,10 +30,13 @@ from empiremuse.panel.services.radio import (
     radio_id_of,
 )
 from empiremuse.panel.services.service import Outcome
+from empiremuse.rules.radio import MAX_PER_GUILD
+from empiremuse.utils.radio.premium import RadioUnavailable
 from empiremuse.utils.usage import record_panel_action
 
 PAGE_TEMPLATE = "config_radios.html"
 FORM_TEMPLATE = "form_radio_chat.html"
+UNAVAILABLE_KEY = "panel.radio.unavailable"
 _MSG_RATE = "Muitas alterações em pouco tempo. Aguarde um minuto e tente novamente."
 _MSG_TOO_LARGE = ("Envio grande demais", "Os dados enviados excedem o limite permitido.")
 _RATE_TITLE = "Muitas requisições"
@@ -45,15 +49,25 @@ class RadiosHandler(SettingsHandler):
 
     async def get(self, guild_id: str) -> None:  # type: ignore[override]
         try:
+            await self._get(guild_id)
+        except RadioUnavailable:
+            self._unavailable()
+
+    async def post(self, guild_id: str) -> None:  # type: ignore[override]
+        """A lista não recebe POST: cada rádio tem a própria URL."""
+        raise tornado.web.HTTPError(405)
+
+    async def _get(self, guild_id: str) -> None:
+        try:
             ctx, access, action = await self._resolve(guild_id, RADIOS_CATEGORY, fresh=False)
         except GuildAccessDenied:
             self._not_found()
             return
         await self._render_page(200, access, ctx, action)
 
-    async def post(self, guild_id: str) -> None:  # type: ignore[override]
-        """A lista não recebe POST: cada rádio tem a própria URL."""
-        raise tornado.web.HTTPError(405)
+    def _unavailable(self) -> None:
+        text = panel_translator(self.application.settings.get("pool"))(UNAVAILABLE_KEY)
+        self.render_error(503, UNAVAILABLE_TITLE, text)
 
     async def _render_page(
         self, status: int, access: GuildAccess, ctx: FormContext, action: str, *, form: Optional[Formulario] = None
@@ -72,7 +86,7 @@ class RadiosHandler(SettingsHandler):
             premium=premium,
             pode_escrever=editable,
             radios=rows,
-            max_radios=MAX_RADIOS,
+            max_radios=MAX_PER_GUILD,
         )
 
     @staticmethod
@@ -87,6 +101,12 @@ class RadioChatHandler(RadiosHandler):
         self.redirect(f"{SERVERS_PATH}/{guild_id}/{RADIOS_CATEGORY}")
 
     async def post(self, guild_id: str, radio_id: str) -> None:  # type: ignore[override]
+        try:
+            await self._post(guild_id, radio_id)
+        except RadioUnavailable:
+            self._unavailable()
+
+    async def _post(self, guild_id: str, radio_id: str) -> None:
         if len(self.request.body) > MAX_BODY_BYTES:
             self._reject_plain(413, *_MSG_TOO_LARGE)
             return

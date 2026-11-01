@@ -7,16 +7,12 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
-<<<<<<< HEAD
-### Adicionado
-- **Página Rádios no painel**: nova categoria Rádios por servidor, com o estado de cada rádio (bot, canal, tipo, tocando/pausada/pausada pelo dono/reserva no ar/fora do ar e o título ao vivo) e as regras do chat da call (apagar na voz depois de N segundos; no palco, máximo de mensagens e idade máxima). Só servidores liberados pelo dono do bot editam, e só quem tem Gerenciar Mensagens no canal da rádio; o formulário aceita apenas essas três regras.
-=======
 ### Corrigido
 - **Presença na call**: a checagem de ouvintes ao silenciar/ensurdecer alguém no mesmo canal sempre dava "tem gente" (um gerador é sempre verdadeiro), então o tempo de espera por call sem ouvintes não começava quando só restavam bots ou membros surdos.
 
 ### Adicionado
+- **Página Rádios no painel**: nova categoria Rádios por servidor, com o estado de cada rádio (bot, canal, tipo, tocando/pausada/pausada pelo dono/reserva no ar/fora do ar e o título ao vivo) e as regras do chat da call (apagar na voz depois de N segundos; no palco, máximo de mensagens e idade máxima). Só servidores liberados pelo dono do bot editam, e só quem tem Gerenciar Mensagens no canal da rádio; o formulário aceita apenas essas três regras.
 - **Quadros de áudio no resumo periódico**: a linha do nó mostra `quadros enviados`, `anulados` e `déficit` do último minuto (`frameStats` do Lavalink), e `—` quando o nó não os envia (sem players). Serve para medir picotes de áudio antes de mexer no buffer.
->>>>>>> origin/feat/radio-base
 
 ## [2.2.0] - 2026-11-01
 

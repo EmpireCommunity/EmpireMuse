@@ -11,8 +11,7 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import asdict
-from typing import Any, Mapping, NamedTuple, Optional
+from typing import Any, NamedTuple, Optional
 
 import disnake
 
@@ -31,22 +30,15 @@ from empiremuse.panel.services.base import (
 from empiremuse.panel.services.service import STATUS_CONFLICT, STATUS_INVALID, STATUS_OK, Outcome
 from empiremuse.rules.errors import RuleError
 from empiremuse.rules.i18n import Translator
+from empiremuse.rules.radio import CHAT_FIELDS, CHAT_LIMITS, KINDS, belongs_to_guild, check_chat
+from empiremuse.utils.radio.store import RadioConflict, RadioInvalid, RadioNotFound
 
 logger = logging.getLogger(__name__)
 
 CATEGORY = "radios"
-MAX_RADIOS = 3  # teto por servidor (contrato R1 §2)
 RADIO_ID = re.compile(r"[0-9]{1,20}:[0-9]{1,20}", re.ASCII)
 REV = re.compile(r"[0-9]{1,12}", re.ASCII)
 INTEGER = re.compile(r"[0-9]{1,6}", re.ASCII)
-CHAT_FIELDS = ("voice_delete_after_s", "stage_max_messages", "stage_max_age_s")
-# Faixas do contrato R1 §1, só para o ``min``/``max`` do campo e a mensagem de erro; quem decide é ``check_radio``.
-CHAT_RANGES: dict[str, tuple[int, int]] = {
-    "voice_delete_after_s": (5, 600),
-    "stage_max_messages": (3, 50),
-    "stage_max_age_s": (60, 3600),
-}
-KINDS = ("custom", "live")
 STATE_DISABLED, STATE_OWNER, STATE_OFFLINE, STATE_RESERVE, STATE_PLAYING, STATE_PAUSED = (
     "desligada",
     "pausada_dono",
@@ -57,22 +49,6 @@ STATE_DISABLED, STATE_OWNER, STATE_OFFLINE, STATE_RESERVE, STATE_PLAYING, STATE_
 )
 FORBIDDEN_KEY = "panel.radio.chat.forbidden"
 STATUS_FORBIDDEN = 403
-
-
-# Portas para o esqueleto da R1 (Turbine): importadas na chamada até ``rules/radio.py`` e ``utils/radio/store.py`` entrarem
-# na base; os testes do painel as trocam pelo dublê. Depois viram imports normais no topo.
-def check_radio(doc: Mapping[str, Any]) -> Any:
-    """``rules.radio.check_radio``: devolve ``Radio`` ou ``RuleError(code, key)``; nunca levanta (R1 §1)."""
-    from empiremuse.rules.radio import check_radio as real
-
-    return real(doc)
-
-
-def store_errors() -> tuple[type[Exception], type[Exception]]:
-    """``(RadioConflict, RadioInvalid)`` de ``utils/radio/store.py``."""
-    from empiremuse.utils.radio.store import RadioConflict, RadioInvalid
-
-    return RadioConflict, RadioInvalid
 
 
 class RadioRow(NamedTuple):
@@ -96,7 +72,7 @@ def radio_id_of(guild_id: int, raw: str) -> Optional[str]:
 
 
 def belongs_to(radio: Any, guild_id: int) -> bool:
-    return str(radio.id).endswith(f":{guild_id}") and int(radio.guild_id) == guild_id
+    return belongs_to_guild(radio.id, guild_id) and int(radio.guild_id) == guild_id
 
 
 def state_of(radio: Any, state: Any) -> str:
@@ -196,12 +172,12 @@ class RadioPage:
             erros=errors or {},
             mensagem=message,
             mensagem_tipo=kind,
-            extras={"faixas": CHAT_RANGES, "radio_id": str(radio.id), "bot_id": str(radio.bot_id)},
+            extras={"faixas": CHAT_LIMITS, "radio_id": str(radio.id), "bot_id": str(radio.bot_id)},
         )
 
     @staticmethod
     def parse(radio: Any, args: Args, tr: Translator) -> tuple[dict[str, int], dict[str, str], dict[str, str]]:
-        """Só ``chat.*`` entra (allowlist R-6); inteiro por campo aqui, faixa e coerência por ``check_radio``."""
+        """Só ``chat.*`` entra (allowlist R-6); inteiro por campo aqui, faixa por ``check_chat`` (a store confere de novo)."""
         new: dict[str, int] = {}
         errors: dict[str, str] = {}
         echo: dict[str, str] = {}
@@ -214,7 +190,7 @@ class RadioPage:
                 errors[name] = _range_message(tr, name)
         if errors:
             return new, errors, echo
-        checked = check_radio({**asdict(radio), "chat": {**radio.chat, **new}})
+        checked = check_chat(new, base=radio.chat)
         if isinstance(checked, RuleError):
             field = checked.key if checked.key in CHAT_FIELDS else CHAT_FIELDS[0]
             errors[field] = _range_message(tr, field)
@@ -233,14 +209,13 @@ class RadioPage:
         changed = tuple(name for name in CHAT_FIELDS if new[name] != radio.chat.get(name))
         if not changed:
             return Outcome(STATUS_OK, self.form(radio, action, message=SAVED_TEXT, kind=KIND_OK))
-        conflict, invalid = store_errors()
         try:
             saved = await ctx.pool.radio.store.update_chat(
-                radio.id, {**radio.chat, **new}, expected_rev=int(radio.rev), updated_by=ctx.user_id
+                radio.id, new, expected_rev=int(radio.rev), updated_by=ctx.user_id
             )
-        except conflict:
+        except RadioConflict, RadioNotFound:  # outro escritor venceu, ou a rádio foi desligada e apagada: recarregar
             return Outcome(STATUS_CONFLICT, self.form(radio, action, message=CONFLICT_TEXT, kind=KIND_ERROR))
-        except invalid:
+        except RadioInvalid:
             form = self.form(radio, action, values=echo, message=tr("panel.radio.chat.invalid"), kind=KIND_ERROR)
             return Outcome(STATUS_INVALID, form)
         logger.info(  # só ids e nomes de campo (R-12): valores nunca vão para o log
@@ -255,5 +230,5 @@ class RadioPage:
 
 
 def _range_message(tr: Translator, field: str) -> str:
-    low, high = CHAT_RANGES[field]
+    low, high, _ = CHAT_LIMITS[field]
     return tr("panel.radio.chat.range", min=low, max=high)

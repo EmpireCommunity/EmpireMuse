@@ -1,98 +1,83 @@
-"""Dublê de ``pool.radio`` para a página Rádios, com a interface combinada com o Turbine (contrato R1 §1 e §3).
+"""Dublê de ``pool.radio`` para a página Rádios, sobre as regras REAIS (``rules.radio``) e as exceções reais da store.
 
-``Radio`` congelada (sem ``updated_by``), ``check_radio`` que devolve ``Radio | RuleError(code, key)`` sem levantar, store com
-compare-and-set em ``rev`` que valida de novo, ``premium.get`` e ``service.state``. Enquanto o esqueleto da R1 não está na
-base, as portas ``check_radio``/``store_errors`` do serviço do painel são trocadas por estas.
+Só o banco é de mentira: a store em memória valida com ``check_chat`` como a de verdade e faz compare-and-set em ``rev``;
+``premium.get`` e ``service.state`` seguem a interface do ``RadioHub`` (R1 §3). ``RadioUnavailable`` pode ser armada para
+o teste do 503.
 """
 
-from dataclasses import asdict, dataclass, replace
+from dataclasses import replace
 from types import SimpleNamespace
 
 import disnake
 
-from empiremuse.panel.services import radio as radio_service
 from empiremuse.rules.errors import RuleError
-
-RANGES = {"voice_delete_after_s": (5, 600), "stage_max_messages": (3, 50), "stage_max_age_s": (60, 3600)}
-DEFAULT_CHAT = {"voice_delete_after_s": 30, "stage_max_messages": 7, "stage_max_age_s": 600}
-
-
-@dataclass(frozen=True)
-class Radio:
-    id: str
-    bot_id: int
-    guild_id: int
-    channel_id: int
-    kind: str
-    source: dict
-    chat: dict
-    enabled: bool
-    rev: int
-
-
-def check_radio(doc):
-    chat = doc.get("chat") or {}
-    for name, (low, high) in RANGES.items():
-        value = chat.get(name)
-        if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
-            return RuleError("chat_range", name, value, high)
-    return Radio(**{name: doc[name] for name in Radio.__dataclass_fields__})
-
-
-class RadioConflict(Exception):
-    pass
-
-
-class RadioInvalid(Exception):
-    pass
+from empiremuse.rules.radio import Radio, check_chat, check_radio, default_chat, radio_id
+from empiremuse.utils.radio.premium import Premium, RadioUnavailable
+from empiremuse.utils.radio.store import RadioConflict, RadioInvalid, RadioNotFound
 
 
 class FakeStore:
     def __init__(self):
         self.docs = {}
         self.updates = []  # (radio_id, updated_by)
+        self.fail_with = None  # exceção a levantar em toda leitura (ex.: RadioUnavailable)
 
     def seed(self, bot_id, guild_id, channel_id, *, kind="custom", enabled=True, rev=3, chat=None):
-        radio = Radio(
-            f"{bot_id}:{guild_id}",
-            bot_id,
-            guild_id,
-            channel_id,
-            kind,
-            {"playlist": "Rock"},
-            dict(chat or DEFAULT_CHAT),
-            enabled,
-            rev,
+        source = {"playlist": "Rock"} if kind == "custom" else {"station": "0" * 8 + "-0000-0000-0000-" + "0" * 12}
+        radio = check_radio(
+            {
+                "id": radio_id(bot_id, guild_id),
+                "channel_id": channel_id,
+                "kind": kind,
+                "source": source,
+                "chat": dict(chat or default_chat()),
+                "enabled": enabled,
+                "rev": rev,
+            }
         )
+        assert isinstance(radio, Radio), radio
         self.docs[radio.id] = radio
         return radio
 
+    def _check(self):
+        if self.fail_with is not None:
+            raise self.fail_with
+
     async def list_for_guild(self, guild_id):
+        self._check()
         return [r for r in self.docs.values() if r.guild_id == int(guild_id)]
 
-    async def get(self, radio_id):
-        return self.docs.get(radio_id)
+    async def get(self, radio_id_):
+        self._check()
+        return self.docs.get(radio_id_)
 
-    async def update_chat(self, radio_id, chat, *, expected_rev, updated_by):
-        radio = self.docs[radio_id]
+    async def update_chat(self, radio_id_, chat, *, expected_rev, updated_by=""):
+        self._check()
+        radio = self.docs.get(radio_id_)
+        if radio is None:
+            raise RadioNotFound
         if radio.rev != expected_rev:
             raise RadioConflict
-        if isinstance(check_radio({**asdict(radio), "chat": chat}), RuleError):
-            raise RadioInvalid
-        saved = replace(radio, chat=dict(chat), rev=radio.rev + 1)
-        self.docs[radio_id] = saved
-        self.updates.append((radio_id, updated_by))
+        merged = check_chat(chat, base=radio.chat)
+        if isinstance(merged, RuleError):
+            raise RadioInvalid(merged)
+        saved = replace(radio, chat=merged, rev=radio.rev + 1)
+        self.docs[radio_id_] = saved
+        self.updates.append((radio_id_, updated_by))
         return saved
 
 
 class FakePremium:
     def __init__(self):
         self.docs = {}
+        self.fail_with = None
 
     def grant(self, guild_id, active=1):
-        self.docs[int(guild_id)] = SimpleNamespace(active=active, granted_by="owner", granted_at=0)
+        self.docs[int(guild_id)] = Premium(guild_id=int(guild_id), active=active, granted_by="owner")
 
     async def get(self, guild_id):
+        if self.fail_with is not None:
+            raise self.fail_with
         return self.docs.get(int(guild_id))
 
 
@@ -100,8 +85,8 @@ class FakeService:
     def __init__(self):
         self.states = {}
 
-    def state(self, radio_id):
-        return self.states.get(radio_id)
+    def state(self, radio_id_):
+        return self.states.get(radio_id_)
 
 
 class FakeRadioApi:
@@ -123,9 +108,9 @@ def make_channel(channel_id, name, guild_id, *, manage_messages=True):
     )
 
 
-def install(monkeypatch, pool):
-    api = FakeRadioApi()
-    pool.radio = api
-    monkeypatch.setattr(radio_service, "check_radio", check_radio)
-    monkeypatch.setattr(radio_service, "store_errors", lambda: (RadioConflict, RadioInvalid))
-    return api
+def install(pool):
+    pool.radio = FakeRadioApi()
+    return pool.radio
+
+
+UNAVAILABLE = RadioUnavailable
