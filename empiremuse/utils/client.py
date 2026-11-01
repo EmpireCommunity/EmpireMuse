@@ -127,7 +127,7 @@ def _node_sample(identifier: str, node) -> NodeSample:
         stats.players,
         round(stats.lavalink_load * 100, 1),
         round(stats.memory_used / 1048576, 1),
-        *(None if n == -1 else n for n in (stats.frames_sent, stats.frames_nulled, stats.frames_deficit)),
+        *((stats.frames_sent, stats.frames_nulled, stats.frames_deficit) if stats.has_frame_stats else (None,) * 3),
     )
 
 
