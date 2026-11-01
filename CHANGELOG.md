@@ -14,12 +14,19 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 **Ao atualizar:** a primeira subida grava `settings.language = "pt-BR"` em todo servidor que já existia (migração única, idempotente, só esse campo); servidores novos nascem em automático. Os comandos são sincronizados de novo (descrições e nomes de opção localizados), o que pode levar alguns minutos para aparecer no Discord.
 
 ### Alterado
+- **CI recusa `{% raw %}` e `{% autoescape %}` nos templates do painel** (`empiremuse/panel/templates/`), para o escape automático nunca ser desligado (a diretiva dividida em duas linhas também é pega).
+- **`.github/CODEOWNERS` cobre o i18n**: `empiremuse/locales/en-US/`, `empiremuse/locales/pt-BR/`, `empiremuse/rules/i18n.py` e `empiremuse/i18n/` passam a ter o dono do repositório como revisor (`.github/` já constava).
+- **CI confere os catálogos de idioma**: novo passo `python -m empiremuse.i18n.check` no job `ci` quando o código muda (falha em arquivo recusado, entrada descartada, `en-US`/`pt-BR` abaixo de 100% ou chave de `tr(...)`/`localized(...)` ausente no `en-US`; a saída tem o resumo de cobertura por locale e, por problema, uma linha `ERRO` com chave e motivo, nunca o texto do catálogo).
 - **Player com os ícones da Flaticon (mnauliady) no lugar dos emojis Unicode**: 27 emojis novos em `assets/emojis/` (kits `media-player-icons` e, na falta, `web-ui-icons`; PNG 128x128, `SHA256SUMS` atualizado, atribuição no `CREDITS.md` e no `README.md`). Valem na mensagem do player (Duração, Por/Uploader, Pedido por, Canal de voz, Álbum, Playlist, Adicionado via, repetição, Em pausa/Tocando agora), no select "Mais opções" e no do idle (favoritos, tocar do início, volume, misturar, readicionar, repetição, nightcore, reprodução automática, Last.fm, modo restrito, letra, status de voz, thread), na fila do embed e do `/fila` (relógio, quem pediu, recomendada, Mover, Rotacionar Fila, Recarregar, "As músicas acabam"), no `/nowplaying`, nos botões Pedir uma música e Favoritar e nas respostas do pedido por texto. O que fica Unicode: o rodapé da dica (`💡 Dica`, o Discord não mostra emoji personalizado no rodapé), qualquer emoji dentro de um trecho em crase, as respostas curtas de comando (`Última Interação`), os botões genéricos de paginação e os que não têm ícone parecido (24/7, 💤, ⚠️, ✅/❌ de confirmação). Sem sincronizar o bot, o lugar continua com o Unicode de antes.
 
 **Ao atualizar:** o `sync_app_emojis` nunca sobrescreve e cria só os nomes que a aplicação ainda não tem, então os 27 novos aparecem sozinhos na próxima subida; nenhum nome existente mudou, não há nada para apagar no Discord Developer Portal.
 
 ### Corrigido
 - **Playlist do servidor escolhida no select de uma mensagem antiga dava "não foi encontrada"**: depois da migração dos ícones (2.1.4) o item `🔴 Red Line` passou a ser `Red Line` com o emoji no `icon`, mas a mensagem do canal de pedidos montada antes ainda guardava o nome antigo no valor da opção. A busca agora tenta o nome exato e, se nada casar, o nome sem o emoji do início. Além disso, ao subir, o painel do canal de pedidos dos servidores alterados pela migração é redesenhado (quando os bots ficam prontos) e passa a trazer o nome novo.
+
+### Documentação
+- `docs/guides/emojis.md`: o limite de emojis da aplicação é 64 (eram 25).
+- Novo guia `docs/guides/i18n.md`: catálogos, regras de chave e plural, descartes do validador, como ligar um idioma e a checagem do CI.
 
 ## [2.1.4] - 2026-10-31
 

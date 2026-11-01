@@ -87,6 +87,17 @@ jobs:
       - name: Verificação de compilação de bytecode
         run: python -m compileall -q main.py empiremuse
 
+      - name: Verificação dos catálogos de idioma (i18n)
+        if: steps.detect-changes.outputs.code == 'true'
+        run: python -m empiremuse.i18n.check
+
+      - name: Templates do painel sem raw nem autoescape (I-13)
+        run: |
+          if grep -rlPz '\{%-?\s*(raw|autoescape)' empiremuse/panel/templates; then
+            echo "::error::Template do painel usa {% raw %} ou {% autoescape %}; o escape automático não pode ser desligado."
+            exit 1
+          fi
+
       - name: Verificação estática de tipos (mypy)
         if: github.event_name == 'workflow_dispatch'
         continue-on-error: true
