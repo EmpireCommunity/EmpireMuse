@@ -367,3 +367,137 @@ class TestReviewFindings:
                 await task
 
             await asyncio.wait_for(closed.wait(), 3)
+
+
+class TestHappyEyeballs:
+    """Live test (SWR3): `liveradio.swr.de` e `*.rndfnk.com` têm IPv6 primeiro; sem rota IPv6 cada salto custava 5 s e os 3 saltos estouravam os 20 s do relay
+    (3 `StationFailure` em 1m45). O próximo endereço agora entra na corrida 0,25 s depois, sem esperar o anterior desistir."""
+
+    @staticmethod
+    def fake_connection(behaviour):
+        calls = []
+
+        async def fake_open(address, port, **kwargs):
+            calls.append(address)
+            return await behaviour(address)
+
+        return fake_open, calls
+
+    @pytest.mark.asyncio
+    async def test_a_blackholed_first_address_does_not_delay_the_working_second_one(self, monkeypatch):
+        cancelled = asyncio.Event()
+        real_open = asyncio.open_connection
+        async with server(
+            replying(b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n", then=b"\xff\xfb\x90\x00")
+        ) as port:
+
+            async def behave(address):
+                if address.startswith("2606"):
+                    try:
+                        await asyncio.sleep(3600)  # o IPv6 sem rota: nunca responde
+                    except asyncio.CancelledError:
+                        cancelled.set()
+                        raise
+                return await real_open("127.0.0.1", port)
+
+            fake_open, calls = self.fake_connection(behave)
+            monkeypatch.setattr(sc.asyncio, "open_connection", fake_open)
+
+            async def both(host, port_):
+                return ["2606:4700::1111", "93.184.216.34"]
+
+            started = asyncio.get_running_loop().time()
+            response = await open_stream(f"http://radio.example:{port}/live", resolve=both, public=lambda a: True)
+
+            assert response.status == 200 and calls == ["2606:4700::1111", "93.184.216.34"]
+            assert asyncio.get_running_loop().time() - started < 2.0  # nada dos 5 s do prazo de conexão
+            await asyncio.wait_for(cancelled.wait(), 1)  # e a tentativa perdedora foi cancelada
+            await response.close()
+
+    @pytest.mark.asyncio
+    async def test_the_whole_race_shares_one_connect_deadline(self, monkeypatch):
+        async def behave(address):
+            await asyncio.sleep(3600)
+
+        fake_open, calls = self.fake_connection(behave)
+        monkeypatch.setattr(sc.asyncio, "open_connection", fake_open)
+
+        async def three(host, port):
+            return ["93.184.216.1", "93.184.216.2", "93.184.216.3"]
+
+        started = asyncio.get_running_loop().time()
+        with pytest.raises(StreamRefused) as refusal:
+            await open_stream(
+                "http://radio.example:8000/live", resolve=three, public=lambda a: True, connect_timeout=0.4
+            )
+
+        assert refusal.value.reason == "timeout" and len(calls) == 3
+        assert asyncio.get_running_loop().time() - started < 1.5  # 0,4 s no total, não 0,4 s por endereço
+
+    @pytest.mark.asyncio
+    async def test_a_failing_address_hands_over_to_the_next_at_once(self, monkeypatch):
+        real_open = asyncio.open_connection
+        async with server(replying(b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n")) as port:
+
+            async def behave(address):
+                if address == "93.184.216.1":
+                    raise ConnectionRefusedError
+                return await real_open("127.0.0.1", port)
+
+            fake_open, calls = self.fake_connection(behave)
+            monkeypatch.setattr(sc.asyncio, "open_connection", fake_open)
+
+            async def two(host, port_):
+                return ["93.184.216.1", "93.184.216.2"]
+
+            response = await open_stream(f"http://radio.example:{port}/live", resolve=two, public=lambda a: True)
+
+            assert response.status == 200 and calls == ["93.184.216.1", "93.184.216.2"]
+            await response.close()
+
+    @pytest.mark.asyncio
+    async def test_two_connections_finishing_together_leave_only_the_winner_open(self, monkeypatch):
+        closed = []
+        gate = asyncio.Event()
+
+        class Writer:
+            def __init__(self, name):
+                self.name = name
+
+            def close(self):
+                closed.append(self.name)
+
+        async def together(address, port, **kwargs):
+            await gate.wait()
+            return object(), Writer(address)
+
+        monkeypatch.setattr(sc.asyncio, "open_connection", together)
+        race = asyncio.ensure_future(sc._race_connect(["a", "b"], 80, None, "radio.example", 5.0))
+        await asyncio.sleep(0.4)  # as duas já entraram na corrida
+        gate.set()  # e terminam no mesmo instante
+
+        winner = await race
+
+        assert winner[0] in ("a", "b") and closed == [x for x in ("a", "b") if x != winner[0]]
+
+    @pytest.mark.asyncio
+    async def test_cancelling_the_race_cancels_every_attempt(self, monkeypatch):
+        started, cancelled = [], []
+
+        async def hang(address, port, **kwargs):
+            started.append(address)
+            try:
+                await asyncio.sleep(3600)
+            except asyncio.CancelledError:
+                cancelled.append(address)
+                raise
+
+        monkeypatch.setattr(sc.asyncio, "open_connection", hang)
+        task = asyncio.ensure_future(sc._race_connect(["a", "b"], 80, None, "radio.example", 5.0))
+        await asyncio.sleep(0.4)  # as duas já entraram na corrida
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert sorted(started) == ["a", "b"] and sorted(cancelled) == ["a", "b"]
