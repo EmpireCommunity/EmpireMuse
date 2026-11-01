@@ -55,6 +55,7 @@ class TestTarget:
             ("http://[::ffff:127.0.0.1]/", "::ffff:127.0.0.1"),
             ("http://[64:ff9b::7f00:1]:2333/", "64:ff9b::7f00:1"),
             ("http://127.0.0.1:2333/r/abc", "127.0.0.1"),
+            ("icy://radio.example:8000/live", "radio.example"),
             ("https://music.example.org/a b c", "music.example.org"),  # texto depois do 1º espaço não é o link
         ],
     )
@@ -175,39 +176,62 @@ class TestGuard:
                 await ensure_public_url(f"http://{name}:2333/x", resolve=resolving(address))
 
     @pytest.mark.asyncio
-    async def test_dns_failures_empty_answers_and_timeouts_refuse_closed(self, monkeypatch):
+    async def test_dns_failures_empty_answers_and_timeouts_refuse_closed(self):
         import socket
-
-        from empiremuse.utils import url_guard
 
         async def nxdomain(host, port):
             raise socket.gaierror("Name or service not known")
 
         async def hangs(host, port):
-            await asyncio.sleep(10)
+            await asyncio.Event().wait()  # nunca responde
 
-        monkeypatch.setattr(url_guard, "RESOLVE_TIMEOUT_S", 0.1)
-
-        for resolve in (nxdomain, resolving(), hangs):
+        for resolve in (nxdomain, resolving()):
             with pytest.raises(UnsafeUrl):
                 await ensure_public_url("https://music.example.org/a", resolve=resolve)
+        with pytest.raises(UnsafeUrl):  # o prazo é injetado: sem esperar tempo real
+            await ensure_public_url("https://music.example.org/a", resolve=hangs, timeout=0)
 
     @pytest.mark.asyncio
-    async def test_an_internationalized_host_is_resolved_in_ascii(self):
+    @pytest.mark.parametrize(
+        "host", ["música.example", "straße.example", "ｅｘａｍｐｌｅ.com", "exаmple.com", "good.example。evil.example"]
+    )
+    async def test_a_non_ascii_host_is_refused_without_resolving(
+        self, host
+    ):  # V184 L2: Python (IDNA2003) e Java podem ler outro nome
+        with pytest.raises(UnsafeUrl):
+            await ensure_public_url(f"https://{host}/a", resolve=must_not_resolve)
+
+    @pytest.mark.asyncio
+    async def test_a_punycode_host_is_plain_ascii_and_passes_when_public(self):
+        await ensure_public_url("https://xn--msica-7ua.example/a", resolve=resolving(PUBLIC))
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("scheme", ["icy", "ICY", "Icy"])
+    async def test_icy_links_are_treated_as_http(self, scheme):  # V184 L1: o lavaplayer converte icy:// em http://
+        with pytest.raises(UnsafeUrl):
+            await ensure_public_url(f"{scheme}://127.0.0.1:8000/stream", resolve=must_not_resolve)
+        with pytest.raises(UnsafeUrl):
+            await ensure_public_url(f"{scheme}://radio.example/stream", resolve=resolving("10.0.0.1"))
+        await ensure_public_url(f"{scheme}://radio.example/stream", resolve=resolving(PUBLIC))
+
+    @pytest.mark.asyncio
+    async def test_the_system_resolver_runs_on_its_own_small_executor_not_the_default_one(self, monkeypatch):
+        import socket
+        import threading
+
+        from empiremuse.utils import url_guard
+
         seen = []
 
-        async def resolve(host, port):
-            seen.append(host)
-            return [PUBLIC]
+        def fake_getaddrinfo(host, port, **kwargs):
+            seen.append(threading.current_thread().name)
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (PUBLIC, 0))]
 
-        await ensure_public_url("https://música.example/a", resolve=resolve)
+        monkeypatch.setattr(url_guard.socket, "getaddrinfo", fake_getaddrinfo)
 
-        assert seen == ["xn--msica-7ua.example"]
-
-    @pytest.mark.asyncio
-    async def test_a_host_that_cannot_be_encoded_is_refused(self):
-        with pytest.raises(UnsafeUrl):
-            await ensure_public_url("https://" + "a" * 70 + ".example/x", resolve=resolving(PUBLIC))
+        assert await url_guard.system_resolve("music.example.org", 0) == [PUBLIC]
+        assert seen and seen[0].startswith("url-guard-dns")  # nunca uma thread do executor padrão do laço
+        assert url_guard.RESOLVER_THREADS <= 4
 
     @pytest.mark.asyncio
     async def test_the_refusal_carries_only_the_host(self):
@@ -239,6 +263,9 @@ class TestCogEntryPoint:
             "http://10.0.0.5/a.mp3",
             "http://2130706433/",
             "http://good.example@127.0.0.1/",
+            "icy://127.0.0.1:2333/x",
+            "icy://169.254.169.254/",
+            "ICY://10.0.0.5:8000/live",
         ],
     )
     async def test_an_unsafe_link_gets_a_generic_message_and_never_reaches_a_node(self, query, caplog):
@@ -303,3 +330,89 @@ class TestNodeBackstop:
 
         with pytest.raises(AttributeError):  # passou da barreira (não é link) e só quebrou no nó falso
             await Node.get_tracks(node, "ytsearch:lofi")
+
+
+class TestStoredTracksAreFilteredToo:
+    """V184-1: a faixa guardada (fila salva, sessão retomada) com fonte ``http`` toca por ``encodedTrack``, sem ``loadtracks``. Toda troca de
+    faixa passa pelo ``Node.update_player``, e é ali que o endereço dela é conferido."""
+
+    def node(self, *, source="http", uri="http://127.0.0.1:2333/x"):
+        player = SimpleNamespace(current=SimpleNamespace(info={"sourceName": source, "uri": uri}))
+        sent = []
+
+        async def patch_ok(*args, **kwargs):
+            sent.append(kwargs.get("json"))
+            raise AssertionError("passou da barreira")
+
+        fake = SimpleNamespace(players={7: player}, session_id=None, sent=sent)
+        from empiremuse.wavelink.node import Node
+
+        fake._ensure_current_track_is_public = lambda guild_id: Node._ensure_current_track_is_public(fake, guild_id)
+        return fake
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "uri",
+        [
+            "http://127.0.0.1:2333/v4/stats",
+            "http://localhost:2333/x",
+            "https://169.254.169.254/latest/meta-data/",
+            "http://[::ffff:127.0.0.1]/",
+            "icy://10.0.0.5:8000/live",
+            "http://good.example@127.0.0.1/",
+        ],
+    )
+    async def test_a_stored_http_track_to_an_internal_address_is_refused_before_it_plays(self, uri):
+        from empiremuse.wavelink.errors import TrackNotFound
+        from empiremuse.wavelink.node import Node
+
+        with pytest.raises(TrackNotFound):
+            await Node.update_player(self.node(uri=uri), 7, {"encodedTrack": "QAAA...", "position": 0}, True)
+
+    @pytest.mark.asyncio
+    async def test_a_stored_http_track_to_a_public_address_goes_on_to_the_node(self):
+        from empiremuse.wavelink.errors import MissingSessionID
+        from empiremuse.wavelink.node import Node
+
+        fake = self.node(uri=f"https://{PUBLIC}/a.mp3")
+        fake._client = SimpleNamespace(bot=SimpleNamespace(music=SimpleNamespace(players={})))
+
+        with pytest.raises(MissingSessionID):  # passou da barreira e só parou no nó falso, sem sessão
+            await Node.update_player(fake, 7, {"encodedTrack": "QAAA...", "position": 0}, True)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("source", "uri", "data"),
+        [
+            ("http", "", {"encodedTrack": "QAAA..."}),  # a faixa ao vivo das rádios: uri vazia
+            ("youtube", "http://127.0.0.1/x", {"encodedTrack": "QAAA..."}),  # outras fontes buscam em hosts fixos
+            (
+                "http",
+                "http://127.0.0.1/x",
+                {"paused": True, "volume": 50},
+            ),  # sem faixa nova: pausa e volume não são conferidos
+            ("http", "http://127.0.0.1/x", {"encodedTrack": None}),  # parar o player
+        ],
+        ids=["live_radio_track", "other_source", "no_new_track", "stop"],
+    )
+    async def test_what_is_not_a_stored_http_track_is_untouched(self, source, uri, data):
+        from empiremuse.wavelink.errors import MissingSessionID
+        from empiremuse.wavelink.node import Node
+
+        fake = self.node(source=source, uri=uri)
+        fake._client = SimpleNamespace(bot=SimpleNamespace(music=SimpleNamespace(players={})))
+
+        with pytest.raises(MissingSessionID):
+            await Node.update_player(fake, 7, data, True)
+
+    @pytest.mark.asyncio
+    async def test_the_refusal_logs_only_the_host(self, caplog):
+        from empiremuse.wavelink.errors import TrackNotFound
+        from empiremuse.wavelink.node import Node
+
+        with caplog.at_level(logging.WARNING), pytest.raises(TrackNotFound):
+            await Node.update_player(
+                self.node(uri="http://10.9.8.7:2333/r/TOKEN?token=SEGREDO"), 7, {"encodedTrack": "QAAA..."}, True
+            )
+
+        assert "10.9.8.7" in caplog.text and "SEGREDO" not in caplog.text and "TOKEN" not in caplog.text

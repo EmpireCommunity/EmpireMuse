@@ -69,6 +69,13 @@ _BAD_URL_CHARS = re.compile(
 )  # controle (tab, quebra de linha: alguns parsers os apagam no meio do link) e barra invertida
 
 
+LAVALINK_FETCH_SCHEMES = (
+    "http://",
+    "https://",
+    "icy://",
+)  # o que o Lavalink busca como http (o lavaplayer converte icy:// em http://)
+
+
 class UrlTarget(NamedTuple):
     """O destino de um link http(s) que vai ao Lavalink. ``refused``: a sintaxe é ambígua ou perigosa e o link nem chega a ser resolvido."""
 
@@ -85,7 +92,7 @@ def lavalink_target(query: object) -> Optional[UrlTarget]:
     if not isinstance(query, str):
         return None
     text = query.strip().strip("<>").strip()
-    if not text[:8].lower().startswith(("http://", "https://")):
+    if not text[:8].lower().startswith(LAVALINK_FETCH_SCHEMES):
         return None
     if _BAD_URL_CHARS.search(text):
         return UrlTarget("", True)
@@ -99,7 +106,7 @@ def lavalink_target(query: object) -> Optional[UrlTarget]:
     if "@" in parts.netloc or not host:
         return UrlTarget("", True)
     host = host.rstrip(".").lower()
-    if not host:
+    if not host or not host.isascii():  # link de música é ASCII; IDN é lido de um jeito aqui e de outro no Java
         return UrlTarget("", True)
     if _AMBIGUOUS_NUMERIC_HOST.fullmatch(host):
         try:

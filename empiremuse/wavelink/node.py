@@ -274,7 +274,24 @@ class Node:
 
         __log__.debug("NODE | %s connected:: %r", self.identifier, self)
 
+    async def _ensure_current_track_is_public(self, guild_id: int) -> None:
+        """Faixa guardada (fila salva, sessão retomada) com fonte ``http`` toca por ``encodedTrack`` SEM passar pelo ``loadtracks``: o endereço
+        dela é conferido aqui, no único ponto por onde toda troca de faixa passa. Recusada, levanta ``TrackNotFound`` (quem toca pula a faixa)
+        e o log leva só o host. A faixa ao vivo das rádios tem ``uri`` vazia e segue."""
+        player = self.players.get(int(guild_id))
+        info = getattr(getattr(player, "current", None), "info", None)
+        if not isinstance(info, dict) or str(info.get("sourceName", "")).lower() != "http":
+            return
+        try:
+            await ensure_public_url(info.get("uri"))
+        except UnsafeUrl as error:
+            log_refusal(error)
+            raise TrackNotFound("link recusado") from None
+
     async def update_player(self, guild_id: int, data: dict, replace: bool = False):
+        if data.get("encodedTrack"):
+            await self._ensure_current_track_is_public(guild_id)
+
         if not self.session_id:
             try:
                 player = self._client.bot.music.players[guild_id]

@@ -5,9 +5,6 @@ da nuvem ou para o relay local das rádios seria um SSRF. Antes de o link chegar
 precisa ser público (``rules.playlists.is_public_address``: recusa privado, loopback, link-local, CGNAT, reservado, multicast e IPv4
 dentro de IPv6 mapeado, 6to4, Teredo e NAT64). Falha de DNS, tempo esgotado e resposta vazia recusam (falha fechada).
 
-Limite conhecido: entre esta conferência e a busca do Lavalink o DNS pode mudar (rebinding), e o Lavalink segue redirecionamentos. A correção
-completa é o ``httpConfig.proxyHost`` do Lavalink apontando para um proxy que filtre o destino (configuração do Lavalink, decisão do dono).
-
 O log leva só o host (nunca a URL inteira, que pode ter credencial em ``?token=``).
 """
 
@@ -18,6 +15,7 @@ import ipaddress
 import logging
 import socket
 from collections.abc import Awaitable, Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor
 
 from empiremuse.rules.playlists import is_public_address
 from empiremuse.rules.urls import lavalink_target
@@ -25,6 +23,11 @@ from empiremuse.rules.urls import lavalink_target
 logger = logging.getLogger(__name__)
 
 RESOLVE_TIMEOUT_S = 5.0
+RESOLVER_THREADS = 4
+
+# O DNS do sistema é bloqueante: roda numa fila PRÓPRIA e pequena, não no executor padrão do laço, onde um DNS lento seguraria o resto do bot
+# (``asyncio.to_thread`` e demais). Se a fila enche, só este filtro espera.
+_RESOLVER_POOL = ThreadPoolExecutor(max_workers=RESOLVER_THREADS, thread_name_prefix="url-guard-dns")
 
 Resolve = Callable[[str, int], Awaitable[Sequence[str]]]
 
@@ -39,7 +42,9 @@ class UnsafeUrl(Exception):
 
 async def system_resolve(host: str, port: int) -> list[str]:
     """Todos os endereços (A e AAAA) que o sistema dá para o nome."""
-    infos = await asyncio.get_running_loop().getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    infos = await asyncio.get_running_loop().run_in_executor(
+        _RESOLVER_POOL, lambda: socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    )
     return list(dict.fromkeys(str(info[4][0]) for info in infos))
 
 
@@ -51,7 +56,9 @@ def _is_ip_literal(host: str) -> bool:
     return True
 
 
-async def ensure_public_url(query: object, *, resolve: Resolve = system_resolve) -> None:
+async def ensure_public_url(
+    query: object, *, resolve: Resolve = system_resolve, timeout: float = RESOLVE_TIMEOUT_S
+) -> None:
     """Levanta ``UnsafeUrl`` se ``query`` é um link http(s) que não resolve SÓ para endereços públicos. Texto que não é link passa."""
     target = lavalink_target(query)
     if target is None:
@@ -65,7 +72,7 @@ async def ensure_public_url(query: object, *, resolve: Resolve = system_resolve)
         return
     try:
         ascii_host = host.encode("idna").decode("ascii")
-        addresses = list(await asyncio.wait_for(resolve(ascii_host, 0), RESOLVE_TIMEOUT_S))
+        addresses = list(await asyncio.wait_for(resolve(ascii_host, 0), timeout))
     except (OSError, UnicodeError, TimeoutError) as error:
         raise UnsafeUrl(host) from error
     if not addresses or not all(is_public_address(address) for address in addresses):
