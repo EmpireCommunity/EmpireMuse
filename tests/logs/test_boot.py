@@ -26,6 +26,7 @@ from empiremuse.logs.settings import LogSettings
 from empiremuse.rules.release import Version, parse_current_version
 from empiremuse.updater import releases
 from empiremuse.updater.git_flow import UpdateError
+from empiremuse.i18n import loader as client_i18n
 from empiremuse.utils import client
 from empiremuse.utils.music import local_lavalink
 from tests.logs.test_secret_sources import fabrica, no_json, runtime, sem_rede  # noqa: F401 - fixtures reaproveitadas
@@ -629,3 +630,57 @@ class TestLinhasLongasDoJava:
             assert "-final-A" in texto and "-final-B" in texto
             assert "repetida" not in texto and "↻" not in texto
             assert len([linha for linha in texto.splitlines() if linha]) == 2
+
+
+class TestOrdemDaSubidaDoIdioma:
+    """I-12 (item 21): ``i18n.load`` → ``migrate_language`` → bots, sempre nessa ordem; a migração que falha não derruba a subida."""
+
+    def montar(self, fabrica, monkeypatch, *, migracao_falha=False, carga_falha=False):
+        ordem = []
+        pool = fabrica()
+
+        def carregar(**kwargs):
+            ordem.append("load")
+            if carga_falha:
+                raise client_i18n.I18nError("catálogo obrigatório inválido")
+
+        async def migrar():
+            ordem.append("migrate")
+            if migracao_falha:
+                raise RuntimeError("banco fora")
+            return 0, 0
+
+        monkeypatch.setattr(pool.i18n, "load", carregar)
+        monkeypatch.setattr(pool.servers, "migrate_language", migrar)
+        fabrica_de_bot = client.BotCore
+
+        def bot_registrado(**kwargs):
+            ordem.append("bot")
+            return fabrica_de_bot(**kwargs)
+
+        monkeypatch.setattr(client, "BotCore", bot_registrado)
+        return pool, ordem
+
+    def test_load_then_the_migration_then_the_first_bot(self, fabrica, monkeypatch):
+        pool, ordem = self.montar(fabrica, monkeypatch)
+
+        pool.setup()
+
+        assert ordem[:3] == ["load", "migrate", "bot"]
+
+    def test_a_failing_migration_leaves_the_servers_for_the_next_boot_and_the_boot_goes_on(self, fabrica, monkeypatch):
+        pool, ordem = self.montar(fabrica, monkeypatch, migracao_falha=True)
+
+        pool.setup()
+
+        assert ordem[:3] == ["load", "migrate", "bot"]
+
+    def test_a_broken_required_catalog_stops_the_boot_before_the_migration_and_before_any_bot(
+        self, fabrica, monkeypatch
+    ):
+        pool, ordem = self.montar(fabrica, monkeypatch, carga_falha=True)
+
+        with pytest.raises(client_i18n.I18nError):
+            pool.setup()
+
+        assert ordem == ["load"]

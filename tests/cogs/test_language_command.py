@@ -99,13 +99,19 @@ def test_in_a_dm_the_command_is_refused(world):
     assert world.banco.saves == []
 
 
-def test_the_cooldown_is_ten_seconds_per_guild(world):
+def test_the_cooldown_is_ten_seconds_per_guild(world, monkeypatch):
+    clock = SimpleNamespace(now=1000.0)
+    monkeypatch.setattr("disnake.ext.commands.cooldowns.time", SimpleNamespace(time=lambda: clock.now))
     call(world, "en-US")
 
+    clock.now = 1009.0
     with pytest.raises(GenericError) as error:
         call(world, "pt-BR")
-
     assert saved(world) == "en-US" and error.value.text.startswith("Wait ")
+
+    clock.now = 1010.5  # passados os 10 s, o servidor pode trocar de novo
+    call(world, "pt-BR")
+    assert saved(world) == "pt-BR"
 
 
 def test_a_store_failure_is_a_friendly_error_never_the_exception_text(world, monkeypatch):
