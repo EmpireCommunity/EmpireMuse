@@ -874,7 +874,27 @@ main:focus {
 }
 
 .estacoes-atuais dd {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
   overflow-wrap: anywhere;
+}
+
+/* Logo da estação (PNG servido pelo próprio painel; sem logo, o ícone de onda sonora) */
+.estacao-logo {
+  background: var(--nb-elevada);
+  border: 1px solid var(--nb-borda);
+  border-radius: 0.5rem;
+  flex-shrink: 0;
+  height: 2.5rem;
+  object-fit: contain;
+  padding: 0.125rem;
+  width: 2.5rem;
+}
+
+.item-estacao {
+  align-items: center;
 }
 
 .lista-estacoes .item-link-acoes button {

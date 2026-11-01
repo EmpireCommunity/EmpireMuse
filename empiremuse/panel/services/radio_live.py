@@ -16,6 +16,7 @@ import logging
 import time
 from typing import Any, Callable, NamedTuple, Optional
 
+from empiremuse.panel.handlers.radio_logo import logo_path
 from empiremuse.panel.services.base import (
     CONFLICT_TEXT,
     KIND_ERROR,
@@ -66,6 +67,7 @@ class StationView(NamedTuple):
     codec: str
     bitrate: int
     indisponivel: bool
+    logo: Optional[str] = None  # ``src`` do logo servido pelo próprio painel (a URL do favicon nunca vem aqui)
 
 
 class LiveView(NamedTuple):
@@ -322,7 +324,7 @@ def _audit(ctx: FormContext, radio: Any, field: str) -> None:
 
 def _view(station: Any, uuid: str, health: Any) -> StationView:
     if station is None:
-        return StationView(str(uuid), None, "", "", 0, bool(health.unavailable(uuid)))
+        return StationView(str(uuid), None, "", "", 0, bool(health.unavailable(uuid)), logo_path(uuid))
     return StationView(
         str(station.uuid),
         str(station.name),
@@ -330,4 +332,5 @@ def _view(station: Any, uuid: str, health: Any) -> StationView:
         str(station.codec),
         int(station.bitrate),
         bool(health.unavailable(station.uuid)),
+        logo_path(station.uuid),
     )

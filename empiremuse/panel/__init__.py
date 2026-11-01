@@ -22,6 +22,7 @@ from empiremuse.panel.handlers.brand import BRAND_ROUTE, BrandHandler
 from empiremuse.panel.handlers.pages import HealthHandler, IndexHandler, RedirectToIndexHandler
 from empiremuse.panel.handlers.servers import ServerDetailHandler, ServersHandler
 from empiremuse.panel.handlers.channel import ChannelHandler, ChannelTaskHandler
+from empiremuse.panel.handlers.radio_logo import LOGO_ROUTE, RadioLogoHandler
 from empiremuse.panel.handlers.radio import (
     RadioChatHandler,
     RadioLocalHandler,
@@ -97,6 +98,7 @@ def build_panel_app(
             (PANEL_PREFIX + r"/servidores/([^/]+)/radios", RadiosHandler),
             (PANEL_PREFIX + r"/servidores/([^/]+)/([^/]+)", SettingsHandler),
             (BRAND_ROUTE, BrandHandler),
+            (LOGO_ROUTE, RadioLogoHandler),
             (PANEL_PREFIX + "/.*", NotFoundHandler),
         ],
         debug=False,

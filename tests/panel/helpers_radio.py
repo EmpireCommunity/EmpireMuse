@@ -143,6 +143,17 @@ class RegionResult(NamedTuple):
     partial: bool
 
 
+class LogoResult(NamedTuple):
+    png: Optional[bytes]
+    transient: bool
+
+
+PNG_1PX = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8cfc0f01f00050001"
+    "ff7b5ab4a30000000049454e44ae426082"
+)
+
+
 class FakeDirectory:
     """Radio Browser de mentira: ``results`` para qualquer termo válido, ``stations`` por uuid, ``region_hits`` para
     qualquer nó final; registra os termos buscados e os nós pedidos."""
@@ -155,6 +166,12 @@ class FakeDirectory:
         self.region_hits = []
         self.region_partial = False
         self.region_calls = []  # (node.id, key)
+        self.logos = {}  # uuid -> LogoResult; ausente = LogoResult(None, False)
+        self.logo_calls = []
+
+    async def logo_png(self, uuid):
+        self.logo_calls.append(uuid)
+        return self.logos.get(uuid, LogoResult(None, False))
 
     async def region(self, node, *, key=None):
         self.region_calls.append((node.id, key))

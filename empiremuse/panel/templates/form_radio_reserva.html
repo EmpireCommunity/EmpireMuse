@@ -12,11 +12,13 @@
   <dl class="estacoes-atuais">
     <dt>{{ _("panel.radio.live.station") }}</dt>
     <dd>
+      {% if vivo.principal and vivo.principal.logo %}<img class="estacao-logo" src="{{ vivo.principal.logo }}" alt="" width="40" height="40" loading="lazy" decoding="async" referrerpolicy="no-referrer">{% end %}
       {% if vivo.principal is None %}{{ _("panel.radio.live.none") }}{% elif vivo.principal.nome %}{{ vivo.principal.nome }} ({{ vivo.principal.pais }} · {{ vivo.principal.codec }} {{ vivo.principal.bitrate }} kbps){% else %}{{ _("panel.radio.live.unknown") }} <code>{{ vivo.principal.uuid }}</code>{% end %}
       {% if vivo.principal and vivo.principal.indisponivel %} · ⛔ {{ _("panel.radio.live.unavailable") }}{% end %}
     </dd>
     <dt>{{ _("panel.radio.live.reserve") }}</dt>
     <dd>
+      {% if vivo.reserva and vivo.reserva.logo %}<img class="estacao-logo" src="{{ vivo.reserva.logo }}" alt="" width="40" height="40" loading="lazy" decoding="async" referrerpolicy="no-referrer">{% end %}
       {% if vivo.reserva is None %}{{ _("panel.radio.live.none") }}{% elif vivo.reserva.nome %}{{ vivo.reserva.nome }} ({{ vivo.reserva.pais }} · {{ vivo.reserva.codec }} {{ vivo.reserva.bitrate }} kbps){% else %}{{ _("panel.radio.live.unknown") }} <code>{{ vivo.reserva.uuid }}</code>{% end %}
       {% if vivo.reserva and vivo.reserva.indisponivel %} · ⛔ {{ _("panel.radio.live.unavailable") }}{% end %}
     </dd>

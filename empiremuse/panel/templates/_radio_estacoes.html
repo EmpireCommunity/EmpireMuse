@@ -12,7 +12,8 @@
 {% if form.resultados %}
 <ul class="lista-links lista-estacoes" role="list">
   {% for estacao in form.resultados %}
-  <li class="item-link">
+  <li class="item-link item-estacao">
+    {% if estacao.logo %}<img class="estacao-logo" src="{{ estacao.logo }}" alt="" width="40" height="40" loading="lazy" decoding="async" referrerpolicy="no-referrer">{% end %}
     <div class="item-link-texto">
       <strong class="item-link-nome">{{ estacao.nome }}</strong>
       <span class="item-link-url">{{ estacao.pais }} · {{ estacao.codec }} {{ estacao.bitrate }} kbps{% if estacao.indisponivel %} · ⛔ {{ _("panel.radio.live.unavailable") }}{% end %}</span>
