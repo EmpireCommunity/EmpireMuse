@@ -16,7 +16,7 @@ Os arquivos precisam ser PNG (ou GIF animado) de 128×128 com até 256 KiB e con
 
 Enquanto os emojis não terminam de subir, ou quando um deles não pôde ser criado (arquivo ausente, falta de permissão, limite de envio da API), o bot usa o **emoji Unicode** equivalente no lugar. Nada quebra: o ícone original aparece assim que o emoji de aplicação existir.
 
-A aplicação do Discord comporta até 2000 emojis; o EmpireMuse usa no máximo 25.
+A aplicação do Discord comporta até 2000 emojis; o EmpireMuse usa no máximo 64.
 
 ---
 
@@ -43,4 +43,4 @@ As chaves são os nomes das fontes (`youtube`, `soundcloud`, `spotify`, `deezer`
 | :--- | :--- | :--- |
 | `APP_EMOJIS_GUILD_BOTS` | `false` | Com `true`, os bots **de servidor** do `guild_bots.json` também enviam os emojis para a aplicação deles. |
 
-Por padrão só os bots principais enviam emojis; os bots de servidor usam a reserva Unicode e não chamam a API. Ligue a chave só se **você controla as aplicações** desses bots: o `guild_bots.json` pode conter bots de outras pessoas, e ligar a chave cria até 25 emojis em cada uma delas, ocupando parte do limite de 2000 que o dono daquele bot não escolheu ocupar.
+Por padrão só os bots principais enviam emojis; os bots de servidor usam a reserva Unicode e não chamam a API. Ligue a chave só se **você controla as aplicações** desses bots: o `guild_bots.json` pode conter bots de outras pessoas, e ligar a chave cria até 64 emojis em cada uma delas, ocupando parte do limite de 2000 que o dono daquele bot não escolheu ocupar.
