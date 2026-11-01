@@ -9,6 +9,9 @@ fluxo, contar ouvintes, conferir premium e canal, relógio e sono). Assim as gar
   semáforo global de 3; o recuo tem jitter de ±20 %.
 - **R-5:** pausa só depois de 30 s sem ouvinte (não ensurdecido) e retomada 5 s depois de um ouvinte chegar; toda queda, mudança de canal ou
   desconexão, inclusive a feita por membro, passa pelo recuo (5, 10, 20, 40, 60 s e depois 60 s). Nunca há volta imediata.
+- **Parada de verdade:** ``stop()`` e ``_shutdown`` marcam o runner como parado e todo ``await`` do ciclo confere isso antes de seguir, então uma
+  volta já agendada (recuo, fila de retomada) nunca religa uma rádio desligada. A reconferência do direito também é periódica (30 s), então
+  uma revogação para quem está tocando para ouvintes e nunca pausa.
 - **Pausa geral do dono:** a rádio para o fluxo, fica na call e nada a retoma (presença, botão, ``ligar``, subida) até o dono retomar.
 
 O relógio virtual da rádio personalizada nunca para: a posição ao voltar a tocar é calculada pelo tempo decorrido desde que ela ligou.
@@ -21,12 +24,14 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Protocol
+from typing import Protocol, TypeVar
 
 from empiremuse.rules.radio import backoff_s, should_pause, should_resume, virtual_position
 from empiremuse.utils.radio.service import RadioState
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 RESUME_CONCURRENCY = 2
 RESUME_SPACING_S = 1.0
@@ -34,6 +39,7 @@ RECONNECT_CONCURRENCY = 2
 PRESENCE_CONCURRENCY = 3
 SWEEP_CONCURRENCY = 2
 STABLE_AFTER_S = 120.0  # conectada por tanto tempo, a próxima queda recomeça o recuo do início
+VERDICT_EVERY_S = 30.0  # reconfere premium/canal/permissão de quem está tocando ou pausada
 
 
 class Phase(StrEnum):
@@ -50,6 +56,7 @@ class Allowed(StrEnum):
     NO_PREMIUM = "no_premium"
     NO_CHANNEL = "no_channel"
     NO_PERMISSION = "no_permission"
+    DISABLED = "disabled"  # a rádio foi desligada por fora (comando, painel, revogação) e o runner ainda não soube
 
 
 class RadioPorts(Protocol):
@@ -79,11 +86,12 @@ class ProcessLimits:
     sweep: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(SWEEP_CONCURRENCY))
     spacing_s: float = RESUME_SPACING_S
 
-    async def resumed(self, ports: RadioPorts, action: Callable[[], Awaitable[None]]) -> None:
-        """Uma retomada pela fila global: 2 por vez, com ``spacing_s`` entre o fim de uma e a vaga seguinte."""
+    async def resumed(self, ports: RadioPorts, action: Callable[[], Awaitable[T]]) -> T:
+        """UMA tentativa pela fila global: 2 por vez, com ``spacing_s`` entre o fim de uma e a vaga seguinte. Quem falha repete FORA da vaga."""
         async with self.resume:
-            await action()
+            result = await action()
             await ports.sleep(self.spacing_s)
+            return result
 
 
 class RadioRunner:
@@ -105,6 +113,13 @@ class RadioRunner:
         self.empty_since: float | None = None
         self.listening_since: float | None = None
         self.virtual_started_at: float | None = None
+        self._stopped = False
+        self._tick_lock = asyncio.Lock()
+        self._last_verdict: float | None = None
+
+    @property
+    def stopped(self) -> bool:
+        return self._stopped
 
     # ------------------------------------------------------------------ estado
 
@@ -124,6 +139,7 @@ class RadioRunner:
     async def _verdict(self) -> Allowed | None:
         """A conferência de premium/canal/permissão. Falha do banco ou do Discord NÃO desliga a rádio: devolve ``None`` ("não sei agora") e
         quem chama tenta de novo depois do recuo ou espera a próxima oportunidade."""
+        self._last_verdict = self.ports.now()
         try:
             return await self.ports.allowed()
         except Exception as error:  # noqa: BLE001 - só o tipo vai ao log (R-12)
@@ -133,67 +149,89 @@ class RadioRunner:
     # ------------------------------------------------------------------ ligar / desligar
 
     async def start(self) -> None:
-        """Liga a rádio: confere o que pode, conecta e toca (a pausa geral do dono deixa conectada e parada)."""
+        """Liga a rádio: uma tentativa e, se não deu, o recuo (a fila global só segura a vaga da PRIMEIRA tentativa; ver ``try_start``)."""
+        if await self.try_start():
+            return
+        await self.retry()
+
+    async def try_start(self) -> bool:
+        """A primeira tentativa de ligar. ``True`` = resolvida (tocando, pausada, parada ou desligada); ``False`` = precisa do recuo (``retry``)."""
+        if self._stopped:
+            return True
         verdict = await self._verdict()
+        if self._stopped:
+            return True
         if verdict is not None and verdict is not Allowed.YES:
             await self._shutdown(verdict)
-            return
+            return True
         self._set(Phase.CONNECTING)
         self.virtual_started_at = self.ports.now()
-        await self._connect_with_backoff(wait_first=verdict is None)
+        if verdict is None:
+            return False
+        return await self._attempt()
 
     async def stop(self) -> None:
-        """Desligada por quem manda (comando, painel): para o fluxo e esquece o estado. O contador é da store."""
+        """Desligada por quem manda (comando, painel): para o fluxo e esquece o estado. O contador é da store. Nada mais religa este runner."""
+        self._stopped = True
         await self.ports.stop_stream()
         self._set(Phase.OFF)
 
     async def _shutdown(self, reason: Allowed) -> None:
         logger.warning("Rádio desligada (%s)", reason.value)  # sem IDs, sem nomes (R-12)
+        self._stopped = True
         await self.ports.stop_stream()
         self._set(Phase.OFF)
         await self.ports.turn_off(reason)
 
     # ------------------------------------------------------------------ reconexão (R-5, R-3, R-1)
 
-    async def _connect_with_backoff(self, *, wait_first: bool = False) -> None:
-        """Conecta; falha ou queda espera o recuo (5, 10, 20, 40, 60 s...) e confere premium/canal/permissão antes de cada volta.
-
-        ``wait_first``: depois de uma queda a PRIMEIRA volta também espera o recuo (nunca há volta imediata); só a primeira conexão, ao
-        ligar, é imediata.
-        """
-        first = not wait_first
-        while self.phase is not Phase.OFF:
-            if not first:
-                await self.ports.sleep(backoff_s(self.attempt, self.ports.jitter()))
-                self.attempt += 1
-                verdict = await self._verdict()
-                if verdict is None:
-                    continue  # não deu para conferir: não conecta às cegas, espera o próximo recuo
-                if verdict is not Allowed.YES:
-                    await self._shutdown(verdict)
-                    return
-            first = False
-            async with self.limits.reconnect:
-                connected = await self.ports.connect()
-            if connected:
-                self.connected_at = self.ports.now()
-                try:
-                    await self._after_connected()
-                    return
-                except Exception as error:  # noqa: BLE001 - playlist que não carrega, Lavalink fora: volta pelo recuo
-                    logger.warning("Rádio conectada mas sem tocar (%s)", type(error).__name__)
+    async def _attempt(self) -> bool:
+        """UMA conexão e o que vem depois. ``True`` = resolvida; ``False`` = volta pelo recuo."""
+        async with self.limits.reconnect:
+            connected = await self.ports.connect()
+        if self._stopped:
+            await self.ports.stop_stream()  # desligada enquanto conectava: sai sem tocar
+            return True
+        if not connected:
             self._set(Phase.RECONNECTING)
+            return False
+        self.connected_at = self.ports.now()
+        try:
+            await self._after_connected()
+        except Exception as error:  # noqa: BLE001 - playlist que não carrega, Lavalink fora: volta pelo recuo
+            logger.warning("Rádio conectada mas sem tocar (%s)", type(error).__name__)
+            self._set(Phase.RECONNECTING)
+            return False
+        return True
+
+    async def retry(self) -> None:
+        """O recuo (5, 10, 20, 40, 60 s...): espera, reconfere premium/canal/permissão e tenta de novo. Nunca há volta imediata."""
+        while not self._stopped and self.phase is not Phase.OFF:
+            await self.ports.sleep(backoff_s(self.attempt, self.ports.jitter()))
+            self.attempt += 1
+            if self._stopped:
+                return
+            verdict = await self._verdict()
+            if self._stopped:
+                return
+            if verdict is None:
+                continue  # não deu para conferir: não conecta às cegas, espera o próximo recuo
+            if verdict is not Allowed.YES:
+                await self._shutdown(verdict)
+                return
+            if await self._attempt():
+                return
 
     async def on_disconnect(self) -> None:
         """Queda, mudança de canal ou desconexão (inclusive por membro): sempre pelo recuo, nunca volta imediata."""
-        if self.phase in (Phase.OFF, Phase.RECONNECTING, Phase.CONNECTING):
+        if self._stopped or self.phase in (Phase.OFF, Phase.RECONNECTING, Phase.CONNECTING):
             return  # já voltando: os eventos seguintes se juntam à volta em curso
         now = self.ports.now()
         if self.connected_at is not None and now - self.connected_at >= STABLE_AFTER_S:
             self.attempt = 0
         self._set(Phase.RECONNECTING)
         await self.ports.stop_stream()
-        await self._connect_with_backoff(wait_first=True)
+        await self.retry()
 
     # ------------------------------------------------------------------ depois de conectar
 
@@ -210,10 +248,22 @@ class RadioRunner:
 
     async def _play(self) -> None:
         await self.ports.prepare()  # carrega a playlist: a posição virtual depende da duração das faixas
+        if self._stopped:
+            return
+        if self.ports.paused_all():  # o dono pausou enquanto a playlist carregava: nada toca
+            self._set(Phase.PAUSED_OWNER)
+            return
         elapsed_ms = int((self.ports.now() - (self.virtual_started_at or self.ports.now())) * 1000)
         index, position = virtual_position(self.ports.durations_ms(), elapsed_ms)
         await self.ports.play_virtual(index, position)
-        self.empty_since = self.listening_since = None
+        if self._stopped:
+            await self.ports.stop_stream()
+            return
+        # quem saiu (ou chegou) durante a carga conta de agora: não se apaga o relógio de ausência de quem já estava sozinho
+        if self.ports.listeners() == 0:
+            self.empty_since, self.listening_since = self.ports.now(), None
+        else:
+            self.empty_since = self.listening_since = None
         self._set(Phase.PLAYING)
 
     # ------------------------------------------------------------------ presença (R-5)
@@ -231,10 +281,23 @@ class RadioRunner:
             self.empty_since = None
 
     async def tick(self) -> None:
-        """Avalia pausa e retomada por presença e pelo dono. Chamado de tempos em tempos (e depois de cada evento)."""
-        now = self.ports.now()
-        if self.phase in (Phase.OFF, Phase.CONNECTING, Phase.RECONNECTING):
+        """Avalia pausa e retomada por presença e pelo dono, e reconfere o direito de tempos em tempos. Um passo por vez por runner."""
+        async with self._tick_lock:
+            await self._tick()
+
+    async def _tick(self) -> None:
+        if self._stopped or self.phase in (Phase.OFF, Phase.CONNECTING, Phase.RECONNECTING):
             return
+        now = self.ports.now()
+        if self._last_verdict is None or now - self._last_verdict >= VERDICT_EVERY_S:
+            verdict = (
+                await self._verdict()
+            )  # revogação ou desligamento por fora param quem toca para ouvintes e nunca pausa
+            if self._stopped:
+                return
+            if verdict is not None and verdict is not Allowed.YES:
+                await self._shutdown(verdict)
+                return
         if self.ports.paused_all():
             if self.phase is not Phase.PAUSED_OWNER:
                 await self.ports.stop_stream()
@@ -251,7 +314,7 @@ class RadioRunner:
 
     async def _resume_from_owner(self) -> None:
         verdict = await self._verdict()
-        if verdict is None:
+        if verdict is None or self._stopped:
             return  # sem conferir não retoma; o próximo passo tenta de novo
         if verdict is not Allowed.YES:
             await self._shutdown(verdict)
@@ -265,7 +328,7 @@ class RadioRunner:
     async def _resume_by_presence(self) -> None:
         async with self.limits.presence:
             verdict = await self._verdict()
-            if verdict is None:
+            if verdict is None or self._stopped:
                 return
             if verdict is not Allowed.YES:
                 await self._shutdown(verdict)

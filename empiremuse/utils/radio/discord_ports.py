@@ -80,6 +80,9 @@ class DiscordRadioPorts:
             raise RadioBotUnavailable
         if await self.pool.radio.premium.get(self.radio.guild_id) is None:
             return Allowed.NO_PREMIUM
+        stored = await self.pool.radio.store.get(self.radio.id)
+        if stored is None or not stored.enabled:
+            return Allowed.DISABLED  # desligada por fora (comando, painel, revogação): este runner não pode seguir
         channel = self._channel()
         if channel is None:
             return Allowed.NO_CHANNEL
@@ -226,6 +229,8 @@ class DiscordChatPorts:
         channel = self._channel()
         if channel is None:
             return []
+        current = await self.pool.radio.store.get(self.radio.id)  # o id do painel pode ter mudado depois da ativação
+        panel_id = current.panel_message_id if current is not None else self.radio.panel_message_id
         try:
             messages = [m async for m in channel.history(limit=limit)]
         except disnake.Forbidden as error:
@@ -234,9 +239,7 @@ class DiscordChatPorts:
             (
                 m.id,
                 m.created_at.timestamp(),
-                bool(
-                    m.pinned or m.id == self.radio.panel_message_id or m.author.id == self.radio.bot_id or m.is_system()
-                ),
+                bool(m.pinned or m.id == panel_id or m.author.id == self.radio.bot_id or m.is_system()),
             )
             for m in messages
         ]

@@ -54,8 +54,14 @@ class ChatSweeper:
         self.sweeps = 0
 
     @property
+    def is_stage(self) -> bool:
+        """Palco ou voz, lido a cada varredura: na subida o canal pode ainda não estar no cache e o palco não pode virar "voz" para sempre."""
+        live = getattr(self.ports, "stage", None)
+        return self.stage if live is None else bool(live)
+
+    @property
     def interval_s(self) -> float:
-        return stage_sweep_interval_s() if self.stage else voice_sweep_interval_s(self.chat["voice_delete_after_s"])
+        return stage_sweep_interval_s() if self.is_stage else voice_sweep_interval_s(self.chat["voice_delete_after_s"])
 
     async def sweep_once(self) -> int:
         """Uma varredura. Devolve quantas mensagens apagou; ``0`` também quando a regra se desligou por falta de permissão."""
@@ -65,7 +71,7 @@ class ChatSweeper:
             self.sweeps += 1
             try:
                 messages = await self.ports.fetch_recent(SWEEP_BATCH)
-                victims = sweep_victims(messages, self.ports.now(), stage=self.stage, chat=self.chat)
+                victims = sweep_victims(messages, self.ports.now(), stage=self.is_stage, chat=self.chat)
                 if victims:
                     await self.ports.bulk_delete(victims)
             except PermissionLost:

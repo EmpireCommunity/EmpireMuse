@@ -88,7 +88,10 @@ def _register(bot, player, kwargs):
 
 
 async def grant(w):
+    """Premium e a rádio criada e LIGADA no banco (o runner só segue enquanto o banco diz que ela está ligada)."""
     await w.hub.premium.grant(GUILD, by=1)
+    created = await w.hub.store.create(w.ports.radio)
+    await w.hub.store.set_enabled(created.id, True)
 
 
 class TestAllowed:
@@ -125,6 +128,23 @@ class TestAllowed:
 
         with pytest.raises(Exception):
             await w.ports.allowed()
+
+
+class TestDisabledFromOutside:
+    @pytest.mark.asyncio
+    async def test_a_radio_turned_off_in_the_database_is_no_longer_allowed_to_run(self):
+        w = build()
+        await grant(w)
+        await w.hub.store.set_enabled(w.ports.radio.id, False)
+
+        assert await w.ports.allowed() is Allowed.DISABLED
+
+    @pytest.mark.asyncio
+    async def test_a_deleted_radio_document_is_also_disabled(self):
+        w = build()
+        await w.hub.premium.grant(GUILD, by=1)
+
+        assert await w.ports.allowed() is Allowed.DISABLED
 
 
 class TestListeners:
@@ -247,8 +267,7 @@ class TestTurnOff:
     async def test_losing_the_right_disables_the_radio_forgets_it_and_leaves_the_call(self):
         w = build()
         await grant(w)
-        radio = await w.hub.store.create(w.ports.radio)
-        await w.hub.store.set_enabled(radio.id, True)
+        radio = w.ports.radio
         await w.ports.connect()
 
         await w.ports.turn_off(Allowed.NO_PREMIUM)

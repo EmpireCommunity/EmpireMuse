@@ -21,7 +21,7 @@ GUILD = 500
 @pytest.fixture
 def world():
     db = FakeDb()
-    pool = SimpleNamespace(database=db)
+    pool = SimpleNamespace(database=db, get_all_bots=lambda: [])
     hub = RadioHub(pool)
     shared = FakePorts()
     hub.manager.ports_factory = lambda radio: shared
@@ -257,3 +257,172 @@ class TestChatSweeperLifecycle:
         await world.manager.close()
 
         assert world.manager._sweepers == {} and not world.manager._tasks
+
+
+class TestStoppingForReal:
+    @pytest.mark.asyncio
+    async def test_deactivating_before_a_queued_start_runs_means_it_never_connects(self, world):
+        r = await enabled_radio(world)
+
+        await world.manager.activate(r, queued=True)
+        assert world.manager.is_running(r.id)  # já conta como rodando, mesmo esperando a vez na fila
+        await world.manager.deactivate(r.id)
+        while world.manager._tasks:
+            await asyncio.gather(*list(world.manager._tasks), return_exceptions=True)
+
+        assert world.ports.connects == 0 and not world.manager.is_running(r.id)
+
+    @pytest.mark.asyncio
+    async def test_deactivating_in_the_middle_of_the_backoff_never_reconnects(self, world):
+        r = await enabled_radio(world)
+        world.ports.connect_results.extend([False, False, True])
+        original = world.ports.sleep
+
+        async def sleep_then_deactivate(seconds):
+            await original(seconds)
+            await world.manager.deactivate(r.id)
+
+        world.ports.sleep = sleep_then_deactivate
+
+        await world.manager.activate(r)
+
+        assert world.ports.connects == 1 and world.ports.played == []
+
+    @pytest.mark.asyncio
+    async def test_activate_without_waiting_returns_before_a_slow_start_finishes(self, world):
+        r = await enabled_radio(world)
+        gate = asyncio.Event()
+        original = world.ports.connect
+
+        async def slow_connect():
+            await gate.wait()
+            return await original()
+
+        world.ports.connect = slow_connect
+
+        await asyncio.wait_for(world.manager.activate(r, wait=False), 1)  # não prende a resposta do comando
+        assert world.ports.connects == 0
+        gate.set()
+        while world.manager._tasks:
+            await asyncio.gather(*list(world.manager._tasks))
+
+        assert world.ports.connects == 1
+
+    @pytest.mark.asyncio
+    async def test_a_radio_that_keeps_failing_at_boot_does_not_hold_the_queue(self, world):
+        await world.hub.premium.grant(GUILD, by=1)
+        radios = []
+        for bot in (1, 2, 3):
+            created = await world.store.create(radio(bot))
+            radios.append(await world.store.set_enabled(created.id, True))
+        world.ports.connect_results.extend([False] * 2)  # duas primeiras tentativas falham
+
+        for r in radios:
+            await world.manager.activate(r, queued=True)
+        await asyncio.sleep(0.05)
+        # as três subiram: as duas que falharam recuam fora da fila (e voltam depois do recuo)
+        assert world.ports.connects >= 3
+        for r in radios:
+            await world.manager.deactivate(r.id)
+        while world.manager._tasks:
+            await asyncio.gather(*list(world.manager._tasks), return_exceptions=True)
+
+
+class TestRevokeStopsWhoIsPlaying:
+    @pytest.mark.asyncio
+    async def test_revoking_the_premium_stops_the_runners_and_destroys_the_players(self, world):
+        destroyed = []
+        players = {}
+        for bot in (1, 2):
+            await world.manager.activate(await enabled_radio(world, bot))
+            players[bot] = SimpleNamespace(destroy=lambda b=bot: _async_append(destroyed, b))
+        world.hub.store.pool.get_all_bots = lambda: [
+            SimpleNamespace(user=SimpleNamespace(id=b), music=SimpleNamespace(players={GUILD: players[b]}))
+            for b in players
+        ]
+
+        off = await world.manager.revoke_premium(GUILD)
+
+        assert off == 2 and sorted(destroyed) == [1, 2]
+        assert world.manager.counts() == (0, 0, 0) and world.hub.service.state(radio_id(1, GUILD)) is None
+        assert world.ports.stops >= 2
+
+    @pytest.mark.asyncio
+    async def test_even_when_the_database_fails_midway_nothing_keeps_playing(self, world):
+        await world.manager.activate(await enabled_radio(world))
+
+        async def broken(guild_id, updated_by="owner"):
+            raise RuntimeError("banco caiu")
+
+        world.hub.store.revoke_premium = broken
+
+        with pytest.raises(RuntimeError):
+            await world.manager.revoke_premium(GUILD)
+
+        assert world.manager.counts() == (0, 0, 0)
+
+
+async def _async_append(items, value):
+    items.append(value)
+
+
+class TestTicks:
+    @pytest.mark.asyncio
+    async def test_one_stuck_radio_does_not_hold_the_others(self, world, monkeypatch, caplog):
+        from empiremuse.utils.radio import manager as manager_module
+
+        monkeypatch.setattr(manager_module, "TICK_TIMEOUT_S", 0.05)
+        await world.manager.activate(await enabled_radio(world, 1))
+        await world.manager.activate(await enabled_radio(world, 2))
+        stuck, fine = (world.manager.runner(radio_id(b, GUILD)) for b in (1, 2))
+        calls = []
+
+        async def hang():
+            await asyncio.sleep(10)
+
+        stuck.tick = hang
+        fine.tick = lambda: _record(calls)
+
+        with caplog.at_level(logging.WARNING):
+            await asyncio.wait_for(world.manager.tick_all(), 2)
+
+        assert calls == ["tick"]
+
+
+class TestBootRetry:
+    @pytest.mark.asyncio
+    async def test_a_transient_failure_at_boot_is_retried_with_a_growing_wait(self, world, monkeypatch):
+        from empiremuse.utils.radio import manager as manager_module
+
+        sleeps = []
+
+        async def fake_sleep(seconds):
+            sleeps.append(seconds)
+
+        monkeypatch.setattr(manager_module.asyncio, "sleep", fake_sleep)
+        attempts = {"n": 0}
+
+        async def flaky():
+            attempts["n"] += 1
+            if attempts["n"] < 4:
+                raise RuntimeError("banco fora")
+            return 7
+
+        world.manager.resume_all = flaky
+
+        assert await world.manager.resume_all_with_retry() == 7
+        assert sleeps == [30.0, 60.0, 120.0]
+
+
+class TestBackgroundErrors:
+    @pytest.mark.asyncio
+    async def test_a_background_task_that_dies_leaves_the_error_type_in_the_log(self, world, caplog):
+        async def dies():
+            raise ValueError("segredo")
+
+        with caplog.at_level(logging.WARNING):
+            task = world.manager._spawn(dies())
+            await asyncio.gather(task, return_exceptions=True)
+            await asyncio.sleep(0)
+
+        assert "ValueError" in caplog.text and "segredo" not in caplog.text

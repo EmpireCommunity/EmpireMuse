@@ -85,8 +85,19 @@ def build(*, owner=True, manage_guild=True, manage_messages=True, playlist=True,
     )
 
 
+async def settle(w):
+    """A partida da rádio segue em segundo plano depois do comando; espera as tarefas terminarem."""
+    while w.hub.manager._tasks:
+        await asyncio.gather(*list(w.hub.manager._tasks))
+
+
 async def premium(w):
     await w.hub.premium.grant(GUILD, by=1)
+
+
+async def run_on(w, **kwargs):
+    await radio_cog.Radio.radio_on.callback(w.cog, w.inter, **kwargs)
+    await settle(w)
 
 
 def reply(w):
@@ -99,7 +110,7 @@ class TestLigar:
         w = build()
         await premium(w)
 
-        await radio_cog.Radio.radio_on.callback(w.cog, w.inter, channel=w.channel, playlist="rock")
+        await run_on(w, channel=w.channel, playlist="rock")
 
         assert w.hub.manager.is_running(radio_id(2, GUILD)) and w.ports.connects == 1
         assert f"<#{CHANNEL}>" in reply(w) and "<@2>" in reply(w) and "Rock" in reply(w)
@@ -114,7 +125,7 @@ class TestLigar:
         await premium(w)
 
         with pytest.raises(GenericError) as refusal:
-            await radio_cog.Radio.radio_on.callback(w.cog, w.inter, channel=w.channel, playlist="Rock")
+            await run_on(w, channel=w.channel, playlist="Rock")
 
         assert "bot livre" in str(refusal.value) and not w.hub.manager.is_running(radio_id(1, GUILD))
 
@@ -124,7 +135,7 @@ class TestLigar:
         await premium(w)
 
         with pytest.raises(GenericError) as refusal:
-            await radio_cog.Radio.radio_on.callback(w.cog, w.inter, channel=w.channel, playlist="Rock")
+            await run_on(w, channel=w.channel, playlist="Rock")
 
         assert "Gerenciar Mensagens" in str(refusal.value) and await w.hub.store.list_for_guild(GUILD) == []
 
@@ -134,7 +145,7 @@ class TestLigar:
         await premium(w)
 
         with pytest.raises(GenericError):
-            await radio_cog.Radio.radio_on.callback(w.cog, w.inter, channel=w.channel, playlist="Rock")
+            await run_on(w, channel=w.channel, playlist="Rock")
 
         assert await w.hub.store.list_for_guild(GUILD) == [] and w.ports.connects == 0
 
@@ -162,7 +173,7 @@ class TestLigar:
         w.bots[1].get_guild(GUILD).me.voice = object()  # TOKEN_2 ocupado
         await premium(w)
 
-        await radio_cog.Radio.radio_on.callback(w.cog, w.inter, channel=w.channel, playlist="Rock")
+        await run_on(w, channel=w.channel, playlist="Rock")
 
         assert w.hub.manager.is_running(radio_id(3, GUILD))
 
@@ -172,7 +183,7 @@ class TestLigar:
         await premium(w)
         await w.hub.roles.add("TOKEN_3")
 
-        await radio_cog.Radio.radio_on.callback(w.cog, w.inter, channel=w.channel, playlist="Rock")
+        await run_on(w, channel=w.channel, playlist="Rock")
 
         assert w.hub.manager.is_running(radio_id(3, GUILD))
 
@@ -180,10 +191,10 @@ class TestLigar:
     async def test_a_second_use_inside_ten_seconds_is_told_to_wait(self):
         w = build()
         await premium(w)
-        await radio_cog.Radio.radio_on.callback(w.cog, w.inter, channel=w.channel, playlist="Rock")
+        await run_on(w, channel=w.channel, playlist="Rock")
 
         with pytest.raises(GenericError) as refusal:
-            await radio_cog.Radio.radio_on.callback(w.cog, w.inter, channel=w.channel, playlist="Rock")
+            await run_on(w, channel=w.channel, playlist="Rock")
 
         assert "Aguarde" in str(refusal.value)
 
@@ -194,7 +205,7 @@ class TestLigar:
         w.db.fail = True
 
         with pytest.raises(GenericError):
-            await radio_cog.Radio.radio_on.callback(w.cog, w.inter, channel=w.channel, playlist="Rock")
+            await run_on(w, channel=w.channel, playlist="Rock")
 
 
 class TestDesligarEStatus:
@@ -202,7 +213,7 @@ class TestDesligarEStatus:
     async def test_it_turns_the_radio_off_and_makes_the_bot_leave(self):
         w = build()
         await premium(w)
-        await radio_cog.Radio.radio_on.callback(w.cog, w.inter, channel=w.channel, playlist="Rock")
+        await run_on(w, channel=w.channel, playlist="Rock")
         radio_cog.RADIO_COOLDOWN._cache.clear()
         player = SimpleNamespace(destroy=AsyncMock())
         w.bots[1].music.players[GUILD] = player
@@ -238,7 +249,7 @@ class TestDesligarEStatus:
     async def test_status_lists_the_radios_with_the_state_and_the_owner_pause(self):
         w = build()
         await premium(w)
-        await radio_cog.Radio.radio_on.callback(w.cog, w.inter, channel=w.channel, playlist="Rock")
+        await run_on(w, channel=w.channel, playlist="Rock")
         radio_cog.RADIO_COOLDOWN._cache.clear()
         await w.hub.control.load()
         await w.hub.control.set_paused_all(True, by=1)
@@ -269,6 +280,7 @@ class TestBoot:
 
         await w.cog.radio_boot()
         await w.cog.radio_boot()  # on_ready pode vir mais de uma vez
+        await settle(w)  # a retomada roda em segundo plano, com nova tentativa
 
         assert w.hub.manager.ports_factory is not None and w.hub.manager.resume_all.await_count == 1
         w.hub.manager.start_ticker.assert_called_once()
@@ -317,7 +329,7 @@ class TestPlayerHooks:
     async def test_the_manager_turns_a_disconnect_into_the_backoff_and_a_presence_into_a_registration(self):
         w = build()
         await premium(w)
-        await radio_cog.Radio.radio_on.callback(w.cog, w.inter, channel=w.channel, playlist="Rock")
+        await run_on(w, channel=w.channel, playlist="Rock")
         runner = w.hub.manager.runner(radio_id(2, GUILD))
         assert runner.phase is Phase.PLAYING
 

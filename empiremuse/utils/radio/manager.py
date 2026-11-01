@@ -26,6 +26,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 TICK_SECONDS = 5.0
+TICK_TIMEOUT_S = 60.0  # um passo travado de uma rádio não segura o das outras
+BOOT_RETRY_START_S = 30.0
+BOOT_RETRY_MAX_S = 300.0
 PortsFactory = Callable[[Radio], RadioPorts]
 ChatPortsFactory = Callable[[Radio], ChatPorts]
 
@@ -45,6 +48,8 @@ class RadioManager:
         self.chat_ports_factory: Optional[ChatPortsFactory] = None
         self._sweepers: dict[str, tuple[ChatSweeper, asyncio.Task]] = {}
         self._runners: dict[str, RadioRunner] = {}
+        self._radios: dict[str, Radio] = {}
+        self._starts: dict[str, asyncio.Task] = {}
         self._tasks: set[asyncio.Task] = set()
         self._ticker: Optional[asyncio.Task] = None
         hub.control.on_change(self._on_pause_all_change)
@@ -54,8 +59,14 @@ class RadioManager:
     def _spawn(self, coro) -> asyncio.Task:
         task = asyncio.get_running_loop().create_task(coro)
         self._tasks.add(task)
-        task.add_done_callback(self._tasks.discard)
+        task.add_done_callback(self._finished)
         return task
+
+    def _finished(self, task: asyncio.Task) -> None:
+        """Tarefa de fundo terminou: sai da lista e, se morreu de exceção, o tipo vai ao log (nunca morrer calada)."""
+        self._tasks.discard(task)
+        if not task.cancelled() and (error := task.exception()) is not None:
+            logger.warning("Tarefa de rádio terminou com erro (%s)", type(error).__name__)
 
     def start_ticker(self) -> None:
         """Liga (uma vez) o passo periódico de presença e pausa de todas as rádios do processo."""
@@ -90,8 +101,11 @@ class RadioManager:
         for radio_id in list(self._sweepers):
             self._stop_sweeper(radio_id)
         for runner in list(self._runners.values()):
+            runner._stopped = True
             runner.phase = Phase.OFF
         self._runners.clear()
+        self._radios.clear()
+        self._starts.clear()
 
     # ------------------------------------------------------------------ ativar / desativar
 
@@ -106,14 +120,17 @@ class RadioManager:
             publish=lambda state: self.service.publish(radio.id, state),
         )
         self._runners[radio.id] = runner
+        self._radios[radio.id] = radio
         return runner
 
     def is_running(self, radio_id: str) -> bool:
+        """Há um runner para esta rádio (inclusive o que ainda espera a vez na fila da subida)?"""
         runner = self._runners.get(radio_id)
-        return runner is not None and runner.phase is not Phase.OFF
+        return runner is not None and not runner.stopped
 
-    async def activate(self, radio: Radio, *, queued: bool = False) -> None:
-        """Liga o runner da rádio. ``queued`` (subida): entra na fila global de retomadas; o comando ``/radio ligar`` é imediato."""
+    async def activate(self, radio: Radio, *, queued: bool = False, wait: bool = True) -> None:
+        """Liga o runner da rádio. ``queued`` (subida): entra na fila global de retomadas; ``wait=False`` (comando): devolve na hora e a
+        partida segue em segundo plano (um canal sem permissão não prende a resposta do comando até o token expirar)."""
         if self.is_running(radio.id):
             return
         runner = self._runner_for(radio)
@@ -121,9 +138,16 @@ class RadioManager:
             return
         self._start_sweeper(radio)
         if queued:
-            self._spawn(self.limits.resumed(runner.ports, runner.start))
-        else:
+            self._starts[radio.id] = self._spawn(self._boot(runner))
+        elif wait:
             await runner.start()
+        else:
+            self._starts[radio.id] = self._spawn(runner.start())
+
+    async def _boot(self, runner: RadioRunner) -> None:
+        """Subida: UMA tentativa pela fila global (2 por vez, 1 s entre elas); quem não conseguiu recua FORA da fila, sem segurar vaga."""
+        if not await self.limits.resumed(runner.ports, runner.try_start):
+            await runner.retry()
 
     def _start_sweeper(self, radio: Radio) -> None:
         """A varredura do chat da call (R-4) roda enquanto a rádio estiver ligada, pausada ou não; sem as portas do chat não há varredura."""
@@ -146,13 +170,65 @@ class RadioManager:
             entry[1].cancel()
 
     async def deactivate(self, radio_id: str) -> None:
+        """Para a rádio de verdade: cancela a partida agendada (recuo ou fila da subida) e marca o runner como parado, então nenhuma volta
+        que já estava no ar a religa."""
         self._stop_sweeper(radio_id)
+        start = self._starts.pop(radio_id, None)
         runner = self._runners.pop(radio_id, None)
+        self._radios.pop(radio_id, None)
         if runner is not None:
             await runner.stop()
+        if start is not None and not start.done():
+            start.cancel()
         self.service.publish(radio_id, None)
 
+    async def stop_radios(self, radios, *, destroy_players: bool = True) -> None:
+        """Para as rádios dadas e faz o bot de cada uma sair da call (``destroy``); uma falha não impede as outras."""
+        for radio in radios:
+            try:
+                await self.deactivate(radio.id)
+            finally:
+                if destroy_players:
+                    player = self.player_of(radio)
+                    if player is not None:
+                        try:
+                            await player.destroy()
+                        except Exception as error:  # noqa: BLE001
+                            logger.warning("Rádio sem sair da call (%s)", type(error).__name__)
+
+    def running_in(self, guild_id: int, channel_id: int | None = None) -> list[Radio]:
+        """As rádios deste processo no servidor (e canal, se dado), vistas pelo gerenciador, não pelo banco."""
+        return [
+            r
+            for r in self._radios.values()
+            if r.guild_id == guild_id and (channel_id is None or r.channel_id == channel_id)
+        ]
+
+    async def revoke_premium(self, guild_id: int, *, updated_by: str = "owner") -> int:
+        """R-1 inteira: apaga o premium, desliga as rádios no banco E para os runners e players do servidor. Devolve quantas desligou."""
+        try:
+            disabled = await self.hub.store.revoke_premium(guild_id, updated_by=updated_by)
+        finally:
+            await self.stop_radios(
+                self.running_in(guild_id)
+            )  # mesmo que o banco falhe no meio, nada segue tocando sem direito
+        return len(disabled)
+
     # ------------------------------------------------------------------ subida
+
+    async def resume_all_with_retry(self) -> int:
+        """``resume_all`` até dar certo (30 s, 60 s... até 5 min entre tentativas): uma falha passageira do banco na subida não deixa as
+        rádios caídas até o próximo restart nem a pausa geral sem ser lida."""
+        wait = BOOT_RETRY_START_S
+        while True:
+            try:
+                return await self.resume_all()
+            except Exception as error:  # noqa: BLE001 - só o tipo vai ao log (R-12)
+                logger.warning(
+                    "Rádios não retomadas na subida (%s); nova tentativa em %.0fs", type(error).__name__, wait
+                )
+                await asyncio.sleep(wait)
+                wait = min(wait * 2, BOOT_RETRY_MAX_S)
 
     async def resume_all(self) -> int:
         """Reconcilia o banco e põe na fila global as rádios ligadas. Devolve quantas foram enfileiradas."""
@@ -181,12 +257,15 @@ class RadioManager:
                 return
 
     async def tick_all(self) -> None:
-        """Um passo de presença/pausa em todas as rádios (chamado de ``TICK_SECONDS`` em ``TICK_SECONDS``)."""
-        for runner in list(self._runners.values()):
+        """Um passo de presença/pausa em todas as rádios, em paralelo (chamado de ``TICK_SECONDS`` em ``TICK_SECONDS``)."""
+
+        async def one(runner: RadioRunner) -> None:
             try:
-                await runner.tick()
-            except Exception as error:  # noqa: BLE001 - uma rádio com defeito não para as outras
+                await asyncio.wait_for(runner.tick(), TICK_TIMEOUT_S)
+            except Exception as error:  # noqa: BLE001 - uma rádio com defeito ou travada não para as outras
                 logger.warning("Rádio com falha no passo de presença (%s)", type(error).__name__)
+
+        await asyncio.gather(*(one(r) for r in list(self._runners.values())))
 
     def player_of(self, radio) -> object | None:
         """O player da rádio (se o bot dela tem um): o comando de desligar o destrói para o bot sair da call."""

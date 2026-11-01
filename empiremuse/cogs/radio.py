@@ -82,10 +82,8 @@ class Radio(commands.Cog):
         manager.ports_factory = lambda radio: DiscordRadioPorts(pool, radio)
         manager.chat_ports_factory = lambda radio: DiscordChatPorts(pool, radio)
         manager.start_ticker()
-        try:
-            await manager.resume_all()
-        except Exception as error:  # noqa: BLE001 - as rádios ficam ligadas no banco; a próxima subida tenta de novo
-            logger.warning("Rádios não retomadas na subida (%s)", type(error).__name__)
+        # com nova tentativa (30 s, 60 s... 5 min): uma falha passageira do banco na subida não deixa as rádios caídas até o restart
+        manager._spawn(manager.resume_all_with_retry())
 
     async def _tr(self, ctx: CustomContext):
         return await self.bot.pool.i18n.for_guild(ctx.guild)
@@ -191,7 +189,9 @@ class Radio(commands.Cog):
             raise GenericError(tr(f"radio.refused.{refusal.code}")) from None
         except RadioUnavailable:
             raise GenericError(tr("radio.owner.unavailable")) from None
-        await self.hub.manager.activate(radio)
+        await self.hub.manager.activate(
+            radio, wait=False
+        )  # a partida segue em segundo plano: sem prender a resposta ao token
         logger.info("radio.toggle: ligada (%d neste processo)", self.hub.manager.counts().on)
         name = external_text(radio.source.get("playlist"), NAME_LIMIT)
         await inter.edit_original_message(
@@ -216,11 +216,10 @@ class Radio(commands.Cog):
             raise GenericError(tr(f"radio.refused.{refusal.code}")) from None
         except RadioUnavailable:
             raise GenericError(tr("radio.owner.unavailable")) from None
-        for radio in off:
-            await self.hub.manager.deactivate(radio.id)
-            player = self.hub.manager.player_of(radio)
-            if player is not None:
-                await player.destroy()
+        finally:
+            # mesmo que o banco tenha falhado no meio, o que este processo está tocando nesse canal para (e o bot sai da call)
+            if actor.manage_guild:
+                await self.hub.manager.stop_radios(self.hub.manager.running_in(inter.guild_id, channel.id))
         logger.info("radio.toggle: desligada (%d neste processo)", self.hub.manager.counts().on)
         await inter.edit_original_message(content=tr("radio.off.done", count=len(off), channel=channel.mention))
 
@@ -275,7 +274,7 @@ class Radio(commands.Cog):
                 logger.info("Premium de rádio concedido")
                 await ctx.send(tr("radio.owner.premium_granted", guild=guild_id))
             else:
-                off = await self.hub.store.revoke_premium(guild_id, updated_by=str(ctx.author.id))
+                off = await self.hub.manager.revoke_premium(guild_id, updated_by=str(ctx.author.id))
                 logger.info("Premium de rádio revogado (%d rádios desligadas)", off)
                 await ctx.send(tr("radio.owner.premium_revoked", guild=guild_id, count=off))
         except RadioUnavailable:

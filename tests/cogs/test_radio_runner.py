@@ -507,3 +507,206 @@ class TestProcessLimits:
         await asyncio.gather(*(r.tick() for r in runners))
 
         assert shared.max_in_flight <= 3 and all(r.phase is Phase.PLAYING for r in runners)
+
+
+class TestStoppedMeansStopped:
+    """Revisão: um runner desligado (``deactivate``) nunca é religado por uma volta que já estava agendada."""
+
+    @pytest.mark.asyncio
+    async def test_stopping_during_the_backoff_sleep_never_reconnects(self):
+        ports = FakePorts()
+        ports.connect_results = deque([False, False, True])
+        runner, _, _ = make(ports)
+        original = ports.sleep
+
+        async def sleep_then_stop(seconds):
+            await original(seconds)
+            await runner.stop()  # /radio desligar chega no meio do recuo
+
+        ports.sleep = sleep_then_stop
+        await runner.start()
+
+        assert ports.connects == 1 and ports.played == [] and runner.phase is Phase.OFF
+
+    @pytest.mark.asyncio
+    async def test_a_queued_start_that_runs_after_the_stop_does_nothing(self):
+        runner, ports, _ = make()
+        await runner.stop()
+
+        assert await runner.try_start() is True
+        await runner.start()
+
+        assert ports.connects == 0 and ports.played == [] and runner.phase is Phase.OFF
+
+    @pytest.mark.asyncio
+    async def test_stopping_while_connecting_leaves_without_playing(self):
+        ports = FakePorts()
+        runner, _, _ = make(ports)
+        original = ports.connect
+
+        async def connect_then_stop():
+            ok = await original()
+            await runner.stop()
+            return ok
+
+        ports.connect = connect_then_stop
+        await runner.start()
+
+        assert ports.played == [] and runner.phase is Phase.OFF and ports.stops >= 1
+
+    @pytest.mark.asyncio
+    async def test_a_disconnect_event_after_the_stop_is_ignored(self):
+        runner, ports, _ = make()
+        await runner.start()
+        await runner.stop()
+        connects = ports.connects
+
+        await runner.on_disconnect()
+
+        assert ports.connects == connects and runner.phase is Phase.OFF
+
+    @pytest.mark.asyncio
+    async def test_a_shutdown_by_lost_right_also_stops_for_good(self):
+        ports = FakePorts()
+        runner, _, _ = make(ports)
+        await runner.start()
+        ports.default_verdict = Allowed.NO_PREMIUM
+        ports.t += 31
+        await runner.tick()
+
+        await runner.on_disconnect()
+        await runner.tick()
+
+        assert runner.stopped and ports.offs == [Allowed.NO_PREMIUM] and ports.connects == 1
+
+
+class TestSemaphoreIsNotHeldWhileBackingOff:
+    @pytest.mark.asyncio
+    async def test_a_radio_waiting_for_its_backoff_holds_no_boot_queue_slot(self):
+        limits = ProcessLimits()
+        in_backoff = asyncio.Event()
+        release = asyncio.Event()
+        stuck = FakePorts(listeners=0)
+        stuck.connect_results = deque([False, True])
+        original = stuck.sleep
+
+        async def sleep_held(seconds):
+            if seconds != limits.spacing_s:  # o recuo (o espaço entre retomadas é outro sleep)
+                in_backoff.set()
+                await release.wait()
+            await original(seconds)
+
+        stuck.sleep = sleep_held
+        stuck_runner = RadioRunner("1:2", stuck, limits, publish=lambda s: None)
+
+        async def boot_stuck():
+            if not await limits.resumed(stuck_runner.ports, stuck_runner.try_start):
+                await stuck_runner.retry()
+
+        task = asyncio.get_running_loop().create_task(boot_stuck())
+        await asyncio.wait_for(in_backoff.wait(), 1)
+        assert limits.resume._value == 2  # as duas vagas livres com uma rádio inteira em recuo
+
+        others = [RadioRunner(f"{n}:2", FakePorts(listeners=0), limits, publish=lambda s: None) for n in (2, 3, 4)]
+        await asyncio.wait_for(
+            asyncio.gather(*(limits.resumed(r.ports, r.try_start) for r in others)), 1
+        )  # as outras sobem sem esperar a que está em recuo
+
+        release.set()
+        await asyncio.wait_for(task, 1)
+        assert all(r.phase is Phase.PAUSED_PRESENCE for r in others) and stuck_runner.phase is Phase.PAUSED_PRESENCE
+
+
+class TestPeriodicRecheck:
+    @pytest.mark.asyncio
+    async def test_a_revoked_premium_stops_a_radio_that_never_pauses(self):
+        runner, ports, _ = make()  # com ouvinte o tempo todo: nunca pausa, nunca reconecta
+        await runner.start()
+        ports.default_verdict = Allowed.NO_PREMIUM
+        ports.t += 10
+        await runner.tick()
+        assert runner.phase is Phase.PLAYING  # a conferência é de 30 em 30 s, não a cada passo
+
+        ports.t += 21
+        await runner.tick()
+
+        assert runner.phase is Phase.OFF and ports.offs == [Allowed.NO_PREMIUM] and ports.stops >= 1
+
+    @pytest.mark.asyncio
+    async def test_a_radio_disabled_from_outside_is_stopped_by_the_next_recheck(self):
+        runner, ports, _ = make()
+        await runner.start()
+        ports.default_verdict = Allowed.DISABLED
+        ports.t += 31
+
+        await runner.tick()
+
+        assert runner.phase is Phase.OFF and ports.offs == [Allowed.DISABLED]
+
+    @pytest.mark.asyncio
+    async def test_a_recheck_that_cannot_ask_keeps_the_radio_playing(self):
+        runner, ports, _ = make()
+        await runner.start()
+
+        async def broken():
+            raise RuntimeError("banco fora")
+
+        ports.allowed = broken
+        ports.t += 31
+        await runner.tick()
+
+        assert runner.phase is Phase.PLAYING and ports.offs == []
+
+
+class TestRacesDuringAPlay:
+    @pytest.mark.asyncio
+    async def test_the_owner_pausing_while_the_playlist_loads_stops_the_play(self):
+        ports = FakePorts()
+        original = ports.prepare
+
+        async def prepare_then_pause():
+            await original()
+            ports.paused = True
+
+        ports.prepare = prepare_then_pause
+        runner, _, _ = make(ports)
+
+        await runner.start()
+
+        assert runner.phase is Phase.PAUSED_OWNER and ports.played == []
+
+    @pytest.mark.asyncio
+    async def test_the_last_listener_leaving_while_the_playlist_loads_keeps_the_absence_clock(self):
+        ports = FakePorts()
+        original = ports.prepare
+
+        async def prepare_then_leave():
+            await original()
+            ports.listeners_n = 0
+
+        ports.prepare = prepare_then_leave
+        runner, _, _ = make(ports)
+        await runner.start()
+        assert runner.phase is Phase.PLAYING and runner.empty_since is not None
+
+        ports.t += 31
+        await runner.tick()
+
+        assert runner.phase is Phase.PAUSED_PRESENCE  # não toca para uma call vazia até o próximo evento de voz
+
+    @pytest.mark.asyncio
+    async def test_two_ticks_at_the_same_time_resume_only_once(self):
+        ports = FakePorts()
+        ports.paused = True
+        runner, _, _ = make(ports)
+        await runner.start()
+        ports.paused = False
+
+        await asyncio.gather(runner.tick(), runner.tick())
+
+        assert len(ports.played) == 1 and runner.phase is Phase.PLAYING
+
+
+class TestVerdictDisabledShape:
+    def test_every_verdict_but_yes_means_the_radio_is_not_allowed(self):
+        assert {a.value for a in Allowed} == {"yes", "no_premium", "no_channel", "no_permission", "disabled"}
