@@ -128,3 +128,29 @@ class TestResumo:
         linhas = resumo(nodes=[NodeSample("N\nERROR falso", 1, 1.0, 1.0)])
 
         assert len(linhas) == 2 and "\n" not in linhas[1]
+
+
+class TestQuadrosDoNo:
+    """``frameStats`` do Lavalink (``sent``/``nulled``/``deficit`` do último minuto) na linha do nó."""
+
+    def test_the_node_line_shows_the_three_frame_counters(self):
+        no = NodeSample("LOCAL", 1, 2.0, 100.0, frames_sent=2990, frames_nulled=4, frames_deficit=10)
+
+        linha = resumo(nodes=[no])[1]
+
+        assert re.search(r"quadros enviados 2990", linha)
+        assert re.search(r"anulados 4", linha) and re.search(r"déficit 10", linha)
+
+    def test_a_negative_deficit_is_kept_as_is(self):
+        no = NodeSample("LOCAL", 1, 2.0, 100.0, frames_sent=3010, frames_nulled=0, frames_deficit=-10)
+
+        assert re.search(r"déficit -10", resumo(nodes=[no])[1])
+
+    def test_missing_counters_become_the_dash(self):
+        linha = resumo(nodes=[NodeSample("LOCAL", 1, 2.0, 100.0)])[1]
+
+        assert re.search(r"quadros enviados —", linha)
+        assert re.search(r"anulados —", linha) and re.search(r"déficit —", linha)
+
+    def test_an_unavailable_node_still_says_unavailable(self):
+        assert resumo(nodes=[NodeSample("LOCAL", None, None, None)])[1].endswith("indisponível")

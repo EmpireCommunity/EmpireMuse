@@ -356,10 +356,10 @@ class PlayerLifecycleMixin:
                     except Exception:
                         pass
                     try:
-                        check = (m for m in vc.members if not m.bot and not (m.voice.deaf or m.voice.self_deaf))
+                        check = any(not m.bot and not (m.voice.deaf or m.voice.self_deaf) for m in vc.members)
                     except Exception:
-                        check = None
-                    player.start_members_timeout(check=bool(check))
+                        check = False
+                    player.start_members_timeout(check=check)
             return
 
         try:
