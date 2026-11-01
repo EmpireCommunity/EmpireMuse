@@ -6,5 +6,9 @@
   "panel.language.save": "Salvar",
   "panel.language.unknown": "Escolha um idioma da lista.",
   "panel.language.cooldown": "Aguarde {seconds} segundos entre trocas de idioma.",
-  "panel.language.unavailable": "{code} (tradução indisponível no momento)"
+  "panel.language.unavailable": "{code} (tradução indisponível no momento)",
+  "panel.request_channel.strict.title": "Jukebox estrita",
+  "panel.request_channel.strict.label": "Apagar na hora qualquer mensagem que não seja pedido nem comando",
+  "panel.request_channel.strict.help": "Vale só no canal de pedidos. Um nome de música digitado continua valendo como pedido e também é apagado. Desligado, o canal fica como está hoje.",
+  "panel.request_channel.strict.save": "Salvar"
 }

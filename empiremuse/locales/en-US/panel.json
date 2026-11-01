@@ -6,5 +6,9 @@
   "panel.language.save": "Save",
   "panel.language.unknown": "Choose a language from the list.",
   "panel.language.cooldown": "Wait {seconds} seconds between language changes.",
-  "panel.language.unavailable": "{code} (translation not available right now)"
+  "panel.language.unavailable": "{code} (translation not available right now)",
+  "panel.request_channel.strict.title": "Strict jukebox",
+  "panel.request_channel.strict.label": "Delete right away any message that is not a request or a command",
+  "panel.request_channel.strict.help": "Applies only to the request channel. A typed song name still counts as a request and is deleted too. Off, the channel stays as it is today.",
+  "panel.request_channel.strict.save": "Save"
 }
