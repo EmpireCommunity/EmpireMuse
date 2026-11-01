@@ -47,6 +47,9 @@ MIRROR_TTL_S = 3600
 MIRROR_RETRY_S = 60.0  # descoberta que falhou (ou veio vazia) não se repete antes disto
 DISCOVERY_TIMEOUT_S = 5.0
 MIRRORS_PER_REQUEST = 3
+SEARCH_RESERVE = 1.0  # a busca deixa sempre uma ficha do balde global para o play e o health check
+SEARCH_PER_KEY_RATE = 0.5  # por servidor: uma busca nova a cada 2 s, com rajada de 3
+SEARCH_PER_KEY_BURST = 3
 MIRROR_CANDIDATES = 12  # quantos IPs do nome de descoberta se resolvem ao contrário
 RATE_PER_S = 2.0
 CHUNK = 8192
@@ -73,11 +76,12 @@ class TokenBucket:
         self._tokens = capacity
         self._at = clock()
 
-    def try_acquire(self) -> bool:
+    def try_acquire(self, reserve: float = 0.0) -> bool:
+        """Pega uma ficha se sobrar ao menos ``reserve`` depois dela (a reserva é de quem tem prioridade)."""
         now = self._clock()
         self._tokens = min(self.capacity, self._tokens + (now - self._at) * self.rate)
         self._at = now
-        if self._tokens >= 1:
+        if self._tokens >= 1 + reserve:
             self._tokens -= 1
             return True
         return False
@@ -183,6 +187,7 @@ class Directory:
         self._mirrors: list[str] = []
         self._mirrors_at: float | None = None
         self._mirror_lock = asyncio.Lock()
+        self._key_buckets: TTLCache = TTLCache(maxsize=CACHE_SIZE, ttl=CACHE_TTL_S, timer=clock)
         self.requests = 0  # as que de fato saíram (para os testes e para o resumo)
 
     # ------------------------------------------------------------------ espelhos e requisição
@@ -205,9 +210,9 @@ class Directory:
                 self._mirrors, self._mirrors_at = found, now
             return list(self._mirrors)
 
-    async def _get_strict(self, path: str, query: dict[str, str]) -> Any:
+    async def _get_strict(self, path: str, query: dict[str, str], *, reserve: float = 0.0) -> Any:
         """Pede a um dos espelhos (até 3, em ordem embaralhada). ``DirectoryError`` se o bucket global está vazio ou nenhum espelho respondeu."""
-        if not self._bucket.try_acquire():
+        if not self._bucket.try_acquire(reserve):
             raise DirectoryError("throttled")
         for mirror in (await self._mirror_list())[:MIRRORS_PER_REQUEST]:
             self.requests += 1
@@ -219,10 +224,10 @@ class Directory:
                 logger.warning("Radio Browser: espelho falhou (%s)", type(error).__name__)
         raise DirectoryError("unavailable")
 
-    async def _get(self, path: str, query: dict[str, str]) -> Any | None:
+    async def _get(self, path: str, query: dict[str, str], *, reserve: float = 0.0) -> Any | None:
         """Como ``_get_strict``, mas qualquer falha vira ``None`` (busca e autocomplete nunca levantam)."""
         try:
-            return await self._get_strict(path, query)
+            return await self._get_strict(path, query, reserve=reserve)
         except DirectoryError:
             return None
 
@@ -242,14 +247,24 @@ class Directory:
 
     # ------------------------------------------------------------------ API
 
-    async def search(self, term: object) -> list[Station]:
+    async def search(self, term: object, *, key: object = None) -> list[Station]:
         """Até 25 estações para o termo (2 a 64 caracteres). Termo ruim, bucket vazio ou falha do diretório: lista vazia."""
         checked = check_search_term(term)
         if isinstance(checked, RuleError):
             return []
-        key = checked.casefold()
-        if key in self._cache:
-            return list(self._cache[key])
+        cache_key = checked.casefold()
+        if cache_key in self._cache:
+            return list(self._cache[cache_key])
+        if (
+            key is not None
+        ):  # quem digita no autocomplete é limitado por servidor; o balde global não se esvazia por um admin só
+            bucket = self._key_buckets.get(key)
+            if bucket is None:
+                bucket = self._key_buckets[key] = TokenBucket(
+                    SEARCH_PER_KEY_RATE, SEARCH_PER_KEY_BURST, clock=self._clock
+                )
+            if not bucket.try_acquire():
+                return []
         payload = await self._get(
             "/json/stations/search",
             {
@@ -259,11 +274,12 @@ class Directory:
                 "order": "clickcount",
                 "reverse": "true",
             },
+            reserve=SEARCH_RESERVE,
         )
         if payload is None:
             return []
         stations = self._stations(payload)
-        self._cache[key] = tuple(stations)
+        self._cache[cache_key] = tuple(stations)
         return stations
 
     async def by_uuid(self, uuid: object) -> Station | None:

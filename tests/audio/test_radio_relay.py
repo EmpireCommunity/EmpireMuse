@@ -118,9 +118,9 @@ class TestHappyPath:
     @pytest.mark.asyncio
     async def test_audio_reaches_the_consumer_clean_with_only_fixed_headers_and_the_title_goes_to_the_callback(self):
         titles = []
-        audio = MP3 + b"A" * 28
-        body = icy_stream(16, audio, "Artista - Faixa")
-        head = b"ICY 200 OK\r\nicy-name:Estacao\r\nicy-description:Desc\r\nicy-metaint:16\r\nContent-Type: audio/mpeg\r\n\r\n"
+        audio = MP3 + b"A" * (256 * 2 - 4)
+        body = icy_stream(256, audio, "Artista - Faixa")
+        head = b"ICY 200 OK\r\nicy-name:Estacao\r\nicy-description:Desc\r\nicy-metaint:256\r\nContent-Type: audio/mpeg\r\n\r\n"
         async with Station(sends(head, body)) as station, relay() as r:
             token = r.register(station.url, codec="MP3", bitrate=128, on_title=titles.append)
 
@@ -257,6 +257,36 @@ class TestR8NoSsrf:
         assert got_head.startswith(b"HTTP/1.0 502")
 
     @pytest.mark.asyncio
+    async def test_a_nested_playlist_is_refused_even_when_the_inner_one_exists_and_leads_to_valid_audio(self):
+        async with Station(sends(b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n", MP3 + b"ZZZZ")) as real:
+            inner_body = f"[playlist]\nFile1={real.url}\n".encode()  # a interna EXISTE e aponta para áudio válido
+            inner_port = free_port(8800)
+            inner = await asyncio.start_server(
+                sends(b"HTTP/1.0 200 OK\r\nContent-Type: audio/x-scpls\r\n\r\n", inner_body), "127.0.0.1", inner_port
+            )
+            outer_port = free_port(8820)
+            outer = await asyncio.start_server(
+                sends(
+                    b"HTTP/1.0 200 OK\r\nContent-Type: audio/x-scpls\r\n\r\n",
+                    f"[playlist]\nFile1=http://radio.example:{inner_port}/inner.pls\n".encode(),
+                ),
+                "127.0.0.1",
+                outer_port,
+            )
+            try:
+                async with relay() as r:
+                    token = r.register(f"http://radio.example:{outer_port}/outer.pls", codec="MP3", bitrate=128)
+
+                    got_head, got_body = await fetch(r, token)
+            finally:
+                for server_ in (inner, outer):
+                    server_.close()
+                    await server_.wait_closed()
+
+            assert got_head.startswith(b"HTTP/1.0 502") and MP3 not in got_body
+            assert real.connections == 0  # a estação de áudio nem foi aberta: a interna foi recusada antes
+
+    @pytest.mark.asyncio
     async def test_a_hostile_icy_name_never_reaches_the_consumer(self):
         head = b"ICY 200 OK\r\nicy-name:@everyone <@1>\r\nicy-description:https://evil.example\r\nContent-Type: audio/mpeg\r\n\r\n"
         async with Station(sends(head, MP3 + b"data")) as station, relay() as r:
@@ -289,6 +319,30 @@ class TestR8NoSsrf:
 
 
 class TestEntrance:
+    @pytest.mark.asyncio
+    async def test_a_token_that_is_almost_right_finds_no_session(self):
+        async with relay() as r:
+            token = r.register("http://radio.example:8000/live", codec="MP3", bitrate=128)
+            wrong_last = token[:-1] + ("A" if token[-1] != "A" else "B")
+            wrong_first = ("A" if token[0] != "A" else "B") + token[1:]
+
+            assert r._find(token) is not None
+            assert r._find(wrong_last) is None and r._find(wrong_first) is None  # prefixo (ou sufixo) certo não basta
+            assert r._find(token[:2]) is None and r._find(token + "x") is None and r._find("") is None
+
+    @pytest.mark.asyncio
+    async def test_a_request_with_an_almost_right_token_is_closed_without_touching_the_station(self):
+        async with (
+            Station(sends(b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n", MP3 + b"data")) as station,
+            relay() as r,
+        ):
+            token = r.register(station.url, codec="MP3", bitrate=128)
+            wrong = token[:-1] + ("A" if token[-1] != "A" else "B")
+
+            got_head, got_body = await fetch(r, wrong)
+
+        assert got_head == b"" and got_body == b"" and station.connections == 0 and not r.touched(token)
+
     @pytest.mark.asyncio
     async def test_an_unknown_token_closes_without_reading_anything_more(self):
         async with relay() as r:
@@ -452,8 +506,8 @@ class TestReviewFindings:
     async def test_a_hostile_stream_title_is_cleaned_and_titles_are_published_at_most_every_fifteen_seconds(self):
         titles = []
         hostile = "@everyone <@1> https://evil.example/x " + "z" * 3000
-        body = icy_stream(16, MP3 + b"A" * 60, hostile)
-        head = b"ICY 200 OK\r\nicy-metaint:16\r\nContent-Type: audio/mpeg\r\n\r\n"
+        body = icy_stream(256, MP3 + b"A" * (256 * 5 - 4), hostile)
+        head = b"ICY 200 OK\r\nicy-metaint:256\r\nContent-Type: audio/mpeg\r\n\r\n"
         async with Station(sends(head, body)) as station, relay() as r:
             token = r.register(station.url, codec="MP3", bitrate=128, on_title=titles.append)
 
@@ -474,8 +528,10 @@ class TestReviewFindings:
         async def record(seconds):
             sleeps.append(seconds)
 
-        body = icy_stream(4, MP3 + b"A" * 3000, "t")  # metaint pequeno: quase tudo que a estação manda é metadado
-        head = b"ICY 200 OK\r\nicy-metaint:4\r\nContent-Type: audio/mpeg\r\n\r\n"
+        body = icy_stream(
+            256, MP3 + b"A" * (256 * 12 - 4), "t" * 4000
+        )  # metaint no piso: quase tudo que a estação manda é metadado
+        head = b"ICY 200 OK\r\nicy-metaint:256\r\nContent-Type: audio/mpeg\r\n\r\n"
         async with Station(sends(head, body)) as station, relay(clock=lambda: 0.0, sleep=record) as r:
             token = r.register(station.url, codec="MP3", bitrate=8)  # 8 kbps: rajada de 3000 B, ritmo de 1500 B/s
             reader, writer = await asyncio.open_connection("127.0.0.1", r.port)
@@ -485,7 +541,7 @@ class TestReviewFindings:
             await asyncio.wait_for(reader.read(), 5)  # lê até o fim: o consumidor fica até o relay terminar
             writer.close()
 
-        assert len(body) > 10_000 and sum(sleeps) > 5  # o fluxo ficou parado por muito tempo, não passou direto
+        assert len(body) > 40_000 and sum(sleeps) > 20  # o fluxo ficou parado por muito tempo, não passou direto
 
     @pytest.mark.asyncio
     async def test_revoking_while_the_station_is_still_answering_closes_the_stations_socket(self):
@@ -586,3 +642,99 @@ class TestReviewFindings:
                 await server.wait_closed()
 
         assert got_head.startswith(b"HTTP/1.0 200") and got_body == MP3 + b"ZZZZ"
+
+
+class TestConsumerCap:
+    """V182-1: o token vale para o loadtracks e o play, nada mais; o terceiro não derruba a saída em curso."""
+
+    async def connect(self, r, token):
+        reader, writer = await asyncio.open_connection("127.0.0.1", r.port)
+        writer.write(f"GET /r/{token} HTTP/1.0\r\n\r\n".encode())
+        await writer.drain()
+        return reader, writer
+
+    @pytest.mark.asyncio
+    async def test_the_third_connection_gets_409_and_the_play_keeps_receiving(self):
+        head = b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n"
+        async with Station(sends(head, MP3 + b"data", keep_open=True)) as station, relay() as r:
+            token = r.register(station.url, codec="MP3", bitrate=128)
+            _first = await self.connect(r, token)  # loadtracks
+            await asyncio.wait_for(_first[0].read(10), 3)
+            play_reader, play_writer = await self.connect(r, token)  # play: assume
+            assert (await asyncio.wait_for(play_reader.read(12), 3)).startswith(b"HTTP/1.0 200")
+
+            third_head, _ = await fetch(r, token)  # um terceiro (token vazado)
+
+            assert third_head.startswith(b"HTTP/1.0 409")
+            assert r.sessions() == 1  # a saída do play continua aberta e dela
+            play_writer.close()
+            _first[1].close()
+
+    @pytest.mark.asyncio
+    async def test_a_third_connection_after_the_first_two_left_is_still_refused(self):
+        head = b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n"
+        async with Station(sends(head, MP3 + b"data")) as station, relay() as r:
+            token = r.register(station.url, codec="MP3", bitrate=128)
+
+            first, _ = await fetch(r, token)
+            second, _ = await fetch(r, token)
+            third, _ = await fetch(r, token)
+
+        assert (
+            first.startswith(b"HTTP/1.0 200")
+            and second.startswith(b"HTTP/1.0 200")
+            and third.startswith(b"HTTP/1.0 409")
+        )
+
+    @pytest.mark.asyncio
+    async def test_three_simultaneous_connections_leave_exactly_one_live_output(self):
+        head = b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n"
+        async with Station(sends(head, MP3 + b"data", keep_open=True)) as station, relay() as r:
+            token = r.register(station.url, codec="MP3", bitrate=128)
+            reader, writer = await self.connect(r, token)
+            await asyncio.wait_for(reader.read(10), 3)  # o primeiro está tocando
+
+            # o segundo e o terceiro chegam no mesmo instante, antes de qualquer um terminar
+            opened = await asyncio.gather(self.connect(r, token), self.connect(r, token))
+            heads = [await asyncio.wait_for(rd.read(12), 3) for rd, _ in opened]
+            await asyncio.sleep(0.1)
+
+            assert sorted(h[:12] for h in heads) == [b"HTTP/1.0 200", b"HTTP/1.0 409"]
+            assert r.sessions() == 1  # um único pump vivo, com dono: o revoke consegue fechá-lo
+            await r.revoke(token)
+            assert r.sessions() == 0
+            for _, w in [(reader, writer), *opened]:
+                w.close()
+
+    @pytest.mark.asyncio
+    async def test_a_metaint_below_the_floor_is_refused_before_the_first_byte(self):
+        body = icy_stream(4, MP3 + b"A" * 100, "t")
+        head = b"ICY 200 OK\r\nicy-metaint:4\r\nContent-Type: audio/mpeg\r\n\r\n"
+        async with Station(sends(head, body)) as station, relay() as r:
+            token = r.register(station.url, codec="MP3", bitrate=128)
+
+            got_head, got_body = await fetch(r, token)
+
+        assert got_head.startswith(b"HTTP/1.0 502") and got_body == b""
+
+    @pytest.mark.asyncio
+    async def test_a_probe_that_trickles_one_byte_at_a_time_ends_by_the_total_deadline(self, monkeypatch):
+        from empiremuse.utils.radio import relay as relay_module
+
+        monkeypatch.setattr(relay_module, "PROBE_TOTAL_S", 0.3)
+
+        async def trickle(reader, writer):
+            await reader.readuntil(b"\r\n\r\n")
+            writer.write(b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n" + MP3)
+            await writer.drain()
+            for _ in range(200):
+                await asyncio.sleep(0.05)
+                writer.write(b"x")
+                await writer.drain()
+
+        async with Station(trickle) as station, relay(idle_timeout=5.0) as r:
+            started = asyncio.get_running_loop().time()
+
+            ok = await r.probe(station.url, "MP3")
+
+            assert ok is False and asyncio.get_running_loop().time() - started < 2

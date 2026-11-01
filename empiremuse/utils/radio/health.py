@@ -75,6 +75,10 @@ class StationHealth:
             until, key = doc.get("until"), doc.get("_id")
             if isinstance(key, str) and isinstance(until, (int, float)) and until > now:
                 fresh[key] = float(until)
+            elif isinstance(key, str) and not [
+                t for t in doc.get("fails", []) if isinstance(t, (int, float)) and now - t < WINDOW_S
+            ]:
+                await self.clear(key)  # vencida e sem falhas recentes: o documento não cresce para sempre
         self._until = fresh
 
     # ------------------------------------------------------------------ escrita

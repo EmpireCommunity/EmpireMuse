@@ -76,7 +76,7 @@ async def station_autocomplete(inter: disnake.ApplicationCommandInteraction, cur
         return {}
     tr = await inter.bot.pool.i18n.for_guild(inter.guild)
     choices: dict[str, str] = {}
-    for station in (await hub.directory.search(current))[:MAX_CHOICES]:
+    for station in (await hub.directory.search(current, key=inter.guild_id))[:MAX_CHOICES]:
         detail = f"{station.codec} {station.bitrate}k" if station.bitrate else station.codec
         label = f"{station.name} · {detail}" + (f" · {station.country}" if station.country else "")
         if hub.health.unavailable(station.uuid):
@@ -267,7 +267,14 @@ class Radio(commands.Cog):
         )
         found = await self.bot.pool.servers.playlists.find(inter.guild_id, playlist) if playlist else None
         picked = None
-        if station:  # o valor vem do autocomplete, mas o usuário pode digitar qualquer coisa: o diretório confere (uuid, codec, porta, hls)
+        if station:  # o valor vem do autocomplete, mas o usuário pode digitar qualquer coisa: antes do diretório, o direito (manage_guild e premium)
+            if not actor.manage_guild:
+                raise GenericError(tr(f"radio.refused.{actions.NO_MANAGE_GUILD}"))
+            try:
+                if await self.hub.premium.get(inter.guild_id) is None:
+                    raise GenericError(tr(f"radio.refused.{actions.NO_PREMIUM}"))
+            except RadioUnavailable:
+                raise GenericError(tr("radio.owner.unavailable")) from None
             picked = await self.hub.directory.by_uuid(station)
             if picked is None:
                 raise GenericError(tr("radio.live.not_found"))
@@ -278,7 +285,9 @@ class Radio(commands.Cog):
                 self.hub,
                 guild_id=inter.guild_id,
                 channel_id=channel.id,
-                playlist=(found.name if found else playlist) if picked is None else None,
+                playlist=found.name
+                if found
+                else playlist,  # com estação também, o turn_on recusa (choose_one): nada é ignorado em silêncio
                 station=picked,
                 actor=actor,
                 candidates=candidates,

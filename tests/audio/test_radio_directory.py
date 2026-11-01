@@ -144,9 +144,10 @@ class TestSearch:
 
     @pytest.mark.asyncio
     async def test_a_failed_search_is_not_cached(self):
-        d, fetcher, _ = directory({"*": DirectoryError("status")})
+        d, fetcher, clock = directory({"*": DirectoryError("status")})
 
         assert await d.search("rock") == []
+        clock.now += 1  # o balde recarrega
         assert await d.search("rock") == []
         assert len(fetcher.calls) == 2  # tentou de novo, não guardou o vazio da falha
 
@@ -166,7 +167,12 @@ class TestRateAndMirrors:
 
         results = [await d.search(f"termo{n}") for n in range(5)]
 
-        assert len(fetcher.calls) == 2 and results[2:] == [[], [], []]
+        assert len(fetcher.calls) == 1 and results[1:] == [
+            [],
+            [],
+            [],
+            [],
+        ]  # a busca deixa a segunda ficha do segundo para o play
 
     @pytest.mark.asyncio
     async def test_a_failing_mirror_falls_through_to_the_next_one(self):
@@ -486,3 +492,36 @@ class TestReviewFindings:
         d = Directory(fetcher=Scripted({"*": [station()]}), mirrors=hangs)
 
         assert await d.search("rock") == []
+
+
+class TestReserveAndPerServer:
+    @pytest.mark.asyncio
+    async def test_typing_in_the_autocomplete_cannot_starve_the_play_lookup(self):
+        d, fetcher, _ = directory({"/json/stations/search": [station()], "/json/stations/byuuid": [station()]})
+
+        for n in range(10):
+            await d.search(f"termo{n}")  # um admin digitando sem parar
+        found = await d.by_uuid(UUID)  # e o play do servidor de outra pessoa, no mesmo segundo
+
+        assert found is not None and found.uuid == UUID
+        assert [c[1] for c in fetcher.calls].count("/json/stations/search") == 1
+
+    @pytest.mark.asyncio
+    async def test_one_server_cannot_burn_more_than_a_short_burst_of_searches(self):
+        clock = Clock()
+        d, fetcher, _ = directory(
+            {"/json/stations/search": [station()]},
+            clock=clock,
+            bucket=TokenBucket(rate=1000, capacity=1000, clock=clock),
+        )
+
+        for n in range(10):
+            await d.search(f"termo{n}", key=500)
+        assert len(fetcher.calls) == 3  # rajada de 3 por servidor
+
+        await d.search("outro servidor", key=777)  # o balde de outro servidor é só dele
+        assert len(fetcher.calls) == 4
+
+        clock.now += 2
+        await d.search("depois de 2 s", key=500)
+        assert len(fetcher.calls) == 5

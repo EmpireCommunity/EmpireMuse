@@ -159,6 +159,32 @@ class TestLigar:
         }  # confirma em 3 s, resposta só de quem pediu
 
     @pytest.mark.asyncio
+    async def test_a_playlist_and_a_station_together_are_refused_not_silently_resolved(self):
+        w = build()
+        await premium(w)
+        w.hub.directory.by_uuid = AsyncMock(
+            return_value=SimpleNamespace(uuid="11111111-1111-1111-1111-111111111111", name="Boa FM")
+        )
+
+        with pytest.raises(GenericError) as refusal:
+            await run_on(w, channel=w.channel, playlist="rock", station="11111111-1111-1111-1111-111111111111")
+
+        assert "playlist" in str(refusal.value).lower() and not w.hub.manager.is_running(radio_id(2, GUILD))
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("granted", [False, True])
+    async def test_the_station_lookup_runs_only_after_manage_guild_and_premium_are_checked(self, granted):
+        w = build(manage_guild=granted)
+        if granted:
+            await w.hub.control.load()  # com manage_guild mas sem premium
+        w.hub.directory.by_uuid = AsyncMock()
+
+        with pytest.raises(GenericError):
+            await run_on(w, channel=w.channel, station="11111111-1111-1111-1111-111111111111")
+
+        w.hub.directory.by_uuid.assert_not_awaited()  # o diretório (e o balde dele) só para quem tem o direito
+
+    @pytest.mark.asyncio
     async def test_the_servers_request_channel_is_refused_in_the_command(
         self,
     ):  # V181-1: o chat do canal de pedidos é da Jukebox
