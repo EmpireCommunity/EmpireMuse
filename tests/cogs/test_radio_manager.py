@@ -9,7 +9,7 @@ import pytest
 
 from empiremuse.rules.radio import check_radio, radio_id
 from empiremuse.utils.radio import RadioHub
-from empiremuse.utils.radio.runner import Phase
+from empiremuse.utils.radio.runner import Allowed, Phase
 from tests.cogs.test_radio_runner import FakePorts
 from tests.persistence.test_radio_store import FakeDb
 
@@ -269,6 +269,51 @@ class TestChatSweeperLifecycle:
 
 
 class TestStoppingForReal:
+    @pytest.mark.asyncio
+    async def test_a_start_that_shuts_the_radio_down_is_not_cancelled_by_its_own_deactivate(self, world):
+        """O ``_shutdown`` roda DENTRO da tarefa de partida e chama o ``turn_off`` -> ``deactivate``. Se o deactivate cancelasse a própria tarefa, o
+        ``destroy`` que vem depois receberia ``CancelledError`` e o bot ficaria na call (V181 L2)."""
+        r = await enabled_radio(world)
+        world.ports.default_verdict = Allowed.NO_PREMIUM
+        reached = []
+
+        async def turn_off(reason):
+            world.ports.offs.append(reason)
+            await world.manager.deactivate(r.id)  # como o DiscordRadioPorts.turn_off
+            await asyncio.sleep(0)  # o próximo await: aqui o cancelamento próprio estouraria
+            reached.append("destroy")
+
+        world.ports.turn_off = turn_off
+
+        await world.manager.activate(
+            r, wait=False
+        )  # como o comando: a partida é uma tarefa em ``_starts``, a que o deactivate cancelaria
+        assert r.id in world.manager._starts
+        while world.manager._tasks:
+            await asyncio.gather(*list(world.manager._tasks), return_exceptions=True)
+
+        assert reached == ["destroy"] and world.ports.offs == [Allowed.NO_PREMIUM]
+        assert not world.manager.is_running(r.id)
+
+    @pytest.mark.asyncio
+    async def test_deactivating_from_another_task_still_cancels_a_pending_start(self, world):
+        r = await enabled_radio(world)
+        started = asyncio.Event()
+
+        async def hang():
+            started.set()
+            await asyncio.sleep(3600)
+
+        world.ports.connect = hang  # a partida fica pendurada na conexão
+        await world.manager.activate(r, wait=False)
+        pending = world.manager._starts[r.id]
+        await asyncio.wait_for(started.wait(), 3)
+
+        await world.manager.deactivate(r.id)  # outra tarefa: aqui o cancelamento TEM de acontecer
+        await asyncio.gather(pending, return_exceptions=True)
+
+        assert pending.cancelled() and not world.manager.is_running(r.id)
+
     @pytest.mark.asyncio
     async def test_deactivating_before_a_queued_start_runs_means_it_never_connects(self, world):
         r = await enabled_radio(world)

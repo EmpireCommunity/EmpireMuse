@@ -116,3 +116,64 @@ class TestJukeboxPanelElection:
 
         assert [peer.identifier for peer in request.peers(1)] == ["TOKEN_3"]
         assert request.elected_id(1) == 3  # sem o principal, a primeira reserva que NÃO é só-rádio
+
+
+class TestPlainMention:
+    """V181/CodeRabbit: o bot só-rádio não responde nem à menção pura (o embed de boas-vindas é de um bot de música)."""
+
+    def self_and_message(self, *, radio_only):
+        from unittest.mock import MagicMock
+
+        from empiremuse.utils.client import BotCore
+
+        pool = SimpleNamespace(database=FakeDb(), i18n=get_i18n())
+        pool.radio = RadioHub(pool)
+        pool.radio.roles._radio_only = frozenset({"TOKEN_3"} if radio_only else set())
+        bot = MagicMock()
+        bot.bot_ready, bot.appinfo, bot.exclusive_guild_id = True, object(), None
+        bot.is_closed = lambda: False
+        bot.music.players = {}
+        bot.user = SimpleNamespace(id=99, mention="<@99>")
+        bot.identifier = "TOKEN_3"
+        bot.pool = pool
+        bot.config = {"INTERACTION_COMMAND_ONLY": True, "INVITE_PERMISSIONS": 8, "ENABLE_SONGREQUEST_MENTION": False}
+        bot.is_reserve = False
+        bot.get_color = lambda me: 0
+        bot.can_send_message = AsyncMock(return_value=True)
+        bot.get_prefix = AsyncMock(return_value="!")
+        bot.get_context = AsyncMock(return_value=SimpleNamespace(valid=False))
+        bot._is_radio_only = lambda: BotCore._is_radio_only(bot)
+        guild = SimpleNamespace(id=1, me=SimpleNamespace(), preferred_locale="pt-BR")
+        channel = SimpleNamespace(
+            id=5,
+            send=AsyncMock(),
+            permissions_for=lambda me: SimpleNamespace(read_message_history=True, send_messages=True),
+        )
+        message = SimpleNamespace(
+            content="<@99>",
+            guild=guild,
+            channel=channel,
+            author=SimpleNamespace(bot=False, mention="<@7>", voice=None, id=7),
+            flags=SimpleNamespace(ephemeral=False),
+            id=1,
+            mentions=[],
+            reply=AsyncMock(),
+        )
+        return BotCore, bot, message
+
+    @pytest.mark.asyncio
+    async def test_a_radio_only_bot_does_not_answer_a_plain_mention(self):
+        core, bot, message = self.self_and_message(radio_only=True)
+
+        await core.on_message(bot, message)
+
+        message.reply.assert_not_awaited()
+        message.channel.send.assert_not_awaited()  # nem boas-vindas, nem aviso: a menção pura não é comando
+
+    @pytest.mark.asyncio
+    async def test_a_normal_bot_still_greets_a_plain_mention(self):
+        core, bot, message = self.self_and_message(radio_only=False)
+
+        await core.on_message(bot, message)
+
+        assert message.reply.await_count + message.channel.send.await_count == 1

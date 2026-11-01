@@ -163,6 +163,18 @@ class TestPauseAll:
 
 class TestRadioOnlyBots:
     @pytest.mark.asyncio
+    async def test_the_owner_replies_never_ping_anyone(self):  # V181 L6
+        w, ctx = build(), ctx_of(OWNER)
+
+        await w.cog.radio_bot.callback(w.cog, ctx, "adicionar", "TOKEN_3")
+        changed = ctx.send.await_args.kwargs["allowed_mentions"]
+        await w.cog.radio_bot.callback(w.cog, ctx, "listar")
+        listed = ctx.send.await_args.kwargs["allowed_mentions"]
+
+        for mentions in (changed, listed):
+            assert mentions.everyone is False and mentions.users is False and mentions.roles is False
+
+    @pytest.mark.asyncio
     async def test_add_list_remove(self):
         w, ctx = build(), ctx_of(OWNER)
 
