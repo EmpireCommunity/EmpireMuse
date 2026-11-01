@@ -49,7 +49,11 @@ logger = logging.getLogger(__name__)
 
 LOOPBACK = "127.0.0.1"
 MAX_SOCKETS = 64
-OPEN_CONCURRENCY = 4
+OPEN_CONCURRENCY = (
+    8  # aberturas de estação para tocar (duas por rádio que parte: carregar e tocar); o health check tem as SUAS vagas
+)
+PROBE_CONCURRENCY = 2
+BURST_ON_CONNECT_S = 20.0  # crédito inicial do limite de taxa: estações como a laut.fm despejam ~15 s de áudio ao conectar (``Burst-On-Connect``)
 MAX_REDIRECTS = 3
 REQUEST_LINE_LIMIT = 2048
 REQUEST_TIMEOUT_S = 5.0
@@ -74,18 +78,23 @@ class RateLimiter:
     """Balde de fichas: quanto esperar antes de ler mais bytes da estação para o consumo ficar em até ``RATE_FACTOR`` × o bitrate. O crédito
     acumulado nunca passa da rajada (``burst_s`` segundos), então horas a 1x não compram um despejo depois. Puro: o relógio vem de fora."""
 
-    def __init__(self, bitrate_kbps: int, *, burst_s: float = 2.0) -> None:
+    def __init__(self, bitrate_kbps: int, *, burst_s: float = 2.0, initial_s: float = BURST_ON_CONNECT_S) -> None:
         kbps = bitrate_kbps if bitrate_kbps > 0 else DEFAULT_BITRATE_KBPS
         self.rate = kbps * 1000 / 8 * RATE_FACTOR  # bytes por segundo
         self.burst = self.rate * burst_s
         self._tokens = self.burst
+        self._bonus = (
+            self.rate * initial_s
+        )  # gasto UMA vez, no começo: o despejo inicial da estação passa sem espera e não volta a se acumular
         self._at: float | None = None
 
     def delay_for(self, nbytes: int, now: float) -> float:
         if self._at is not None:
             self._tokens = min(self.burst, self._tokens + max(0.0, now - self._at) * self.rate)
         self._at = now
-        self._tokens -= nbytes
+        free = min(self._bonus, nbytes)
+        self._bonus -= free
+        self._tokens -= nbytes - free
         return -self._tokens / self.rate if self._tokens < 0 else 0.0
 
 
@@ -100,6 +109,8 @@ class RelaySession:
     refused: bool = False
     served: int = 0  # consumidores aceitos neste token (no máximo ``MAX_CONSUMERS``)
     hits: int = 0  # quantas vezes o Lavalink chegou ao relay com este token (distingue "a estação falhou" de "o Lavalink nem chegou")
+    opened: int = 0  # quantas vezes o relay tentou abrir a ESTAÇÃO por este token (distingue "a estação falhou" de "o relay recusou ou esperou o Lavalink")
+    flowing: asyncio.Event = field(default_factory=asyncio.Event, repr=False)  # o primeiro áudio já chegou ao Lavalink
     output: asyncio.StreamWriter | None = field(default=None, repr=False)
     task: asyncio.Task | None = field(default=None, repr=False)
 
@@ -131,6 +142,9 @@ class RadioRelay:
         self._idle = idle_timeout
         self._sessions: dict[str, RelaySession] = {}
         self._open = asyncio.Semaphore(OPEN_CONCURRENCY)
+        self._probe_open = asyncio.Semaphore(
+            PROBE_CONCURRENCY
+        )  # o health check não toma a vaga de uma rádio que está partindo
         self._sockets = 0
         self._server: asyncio.AbstractServer | None = None
         self._start_lock = asyncio.Lock()
@@ -224,6 +238,7 @@ class RadioRelay:
             return
         session.hits += 1
         if session.served >= MAX_CONSUMERS:
+            logger.info("Relay: conexão recusada [consumer_limit]")
             await self._reply(writer, "409 Conflict")  # nada de tocar na saída atual: o play em curso segue recebendo
             return
         session.served += 1  # reservado antes de qualquer await: duas conexões simultâneas não passam juntas do teto
@@ -235,6 +250,7 @@ class RadioRelay:
         session.task = asyncio.current_task()
         try:
             async with self._open:
+                session.opened += 1
                 upstream = await self._connect(session)
             await self._pump(session, upstream, writer)
         except StreamRefused as refusal:
@@ -285,6 +301,22 @@ class RadioRelay:
         """O Lavalink chegou a pedir este token?"""
         session = self._sessions.get(token)
         return session is not None and session.hits > 0
+
+    def reached(self, token: str) -> bool:
+        """O relay chegou a tentar abrir a ESTAÇÃO por este token? (Lavalink que não chegou, ou 409 do relay, não é falha da estação.)"""
+        session = self._sessions.get(token)
+        return session is not None and session.opened > 0
+
+    async def wait_flowing(self, token: str, timeout: float) -> bool:
+        """Espera o primeiro áudio chegar ao Lavalink por este token. ``False`` se o prazo esgotou ou o token foi revogado: a rádio NÃO está tocando."""
+        session = self._sessions.get(token)
+        if session is None:
+            return False
+        try:
+            await asyncio.wait_for(session.flowing.wait(), timeout)
+        except TimeoutError:
+            return False
+        return token in self._sessions
 
     def refused(self, token: str) -> bool:
         session = self._sessions.get(token)
@@ -370,7 +402,7 @@ class RadioRelay:
     async def probe(self, url: str, codec: str) -> bool:
         """O health check (R-10): abre a estação pelo MESMO caminho do relay (R-8) e lê até 16 KiB. ``True`` se chegou áudio. Nunca clica no diretório."""
         try:
-            async with self._open:
+            async with self._probe_open:
                 upstream = await self._open_within_deadline(url, codec)
         except StreamRefused:
             return False
@@ -396,6 +428,8 @@ class RadioRelay:
         throttle = TitleThrottle()
         response = upstream.response
         last_audio = self._clock()
+        reason = "cancelled"  # o que ficar assim é o cancelamento (take-over ou revogação)
+        waiting = "upstream"  # onde está esperando: a estação ou o consumidor
         try:
             writer.write(
                 f"HTTP/1.0 200 OK\r\nContent-Type: {upstream.content_type}\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n".encode(
@@ -407,8 +441,10 @@ class RadioRelay:
                 if pending is not None:
                     chunk, pending = pending, None
                 else:
+                    waiting = "upstream"
                     chunk = await asyncio.wait_for(response.reader.read(CHUNK), self._idle)
                     if not chunk:
+                        reason = "upstream_eof"
                         return
                 now = self._clock()
                 audio, titles = stripper.feed(chunk)
@@ -420,14 +456,22 @@ class RadioRelay:
                     session.on_title(published)
                 if audio:
                     last_audio = now
+                    waiting = "consumer"
                     writer.write(audio)
                     await asyncio.wait_for(writer.drain(), DRAIN_TIMEOUT_S)
+                    session.flowing.set()  # o primeiro áudio já está com o Lavalink: a rádio está tocando de verdade
                 elif now - last_audio > self._idle:
+                    reason = "metadata_only"
                     return  # só metadado há tempo demais: não é um fluxo de áudio
                 delay = limiter.delay_for(len(chunk), now)  # o que a ESTAÇÃO mandou conta, não só o áudio que sobrou
                 if delay > 0:
                     await self._sleep(delay)  # type: ignore[misc]
-        except TimeoutError, ConnectionError, asyncio.IncompleteReadError:
+        except TimeoutError:
+            reason = f"{waiting}_timeout"
+            return
+        except ConnectionError, asyncio.IncompleteReadError:
+            reason = f"{waiting}_closed"
             return
         finally:
+            logger.info("Relay: saída encerrada [%s]", reason)  # só o código do motivo: nunca a URL da estação (R-12)
             await response.close()

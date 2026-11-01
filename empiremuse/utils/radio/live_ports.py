@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import suppress
 
 import disnake
 from typing import TYPE_CHECKING, Any, Optional
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 PANEL_EDIT_INTERVAL_S = 15.0
+FLOW_WAIT_S = 25.0  # o primeiro áudio tem de chegar ao Lavalink neste prazo, senão a rádio NÃO está tocando (abrir a estação leva até 20 s)
 
 
 class LiveRadioPorts(DiscordRadioPorts):
@@ -146,8 +148,15 @@ class LiveRadioPorts(DiscordRadioPorts):
             player.queue.append(track)
             player.volume = self.volume  # o volume da rádio vale para cada fluxo novo (o player começa a faixa com ele)
             await player.process_next()
+            if not await hub.relay.wait_flowing(token, FLOW_WAIT_S):
+                # a rádio só "toca" quando o áudio chegou: fluxo mudo é falha, não estado. Se o relay chegou a abrir a estação, a culpa é dela
+                raise StationFailure if hub.relay.reached(token) else RuntimeError("o fluxo não chegou ao Lavalink")
         except BaseException as error:
-            station_fault = hub.relay.touched(token) and not isinstance(error, asyncio.CancelledError)
+            station_fault = hub.relay.reached(token) and not isinstance(error, asyncio.CancelledError)
+            with suppress(Exception):
+                await (
+                    player.stop()
+                )  # nada de faixa velha esperando o Lavalink: parada de verdade, o runner decide a próxima tentativa
             await self._release()
             if station_fault and not isinstance(error, StationFailure):
                 raise StationFailure from error  # o Lavalink chegou ao relay e o fluxo não abriu: a estação falhou

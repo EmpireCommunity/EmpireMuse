@@ -414,3 +414,97 @@ class TestStageAsksEveryConnection:
         await w.ports.connect()
 
         assert w.guild.me.edit.await_count == 1
+
+
+def panel_message(mid, *, author=BOT_ID, custom_id="radio_panel_mute", pinned=False):
+    """Uma mensagem com os botões do painel de rádio (o que o Discord devolve em ``message.components``)."""
+    message = FakeMessage(mid, 100.0, author=author, pinned=pinned)
+    message.components = [SimpleNamespace(children=[SimpleNamespace(custom_id=custom_id)])]
+    message.delete = AsyncMock()
+    return message
+
+
+class TestOrphanPanels:
+    """Litmus: 62 mensagens acumuladas eram painéis órfãos do próprio bot (o id do painel se perdeu e a limpeza protege tudo que o bot escreveu)."""
+
+    @pytest.mark.asyncio
+    async def test_an_old_panel_of_the_radio_bot_is_swept_but_the_current_one_and_its_notices_are_kept(self):
+        import dataclasses
+
+        notice = FakeMessage(3, 100.0, author=BOT_ID)  # aviso do bot (sem os botões do painel)
+        w, ports = chat_world([panel_message(1), panel_message(2), notice])
+        ports.radio = dataclasses.replace(ports.radio, panel_message_id=2)
+
+        got = await ports.fetch_recent(100)
+
+        assert [(mid, protected) for mid, _, protected in got] == [(1, False), (2, True), (3, True)]
+
+    @pytest.mark.asyncio
+    async def test_without_a_known_panel_id_nothing_is_called_an_orphan(self):
+        w, ports = chat_world([panel_message(1)])
+
+        assert [p for _, _, p in await ports.fetch_recent(100)] == [
+            True
+        ]  # o painel recém-postado ainda sem id gravado não é varrido
+
+    @pytest.mark.asyncio
+    async def test_a_pinned_old_panel_and_the_jukebox_panel_of_another_bot_stay(self):
+        import dataclasses
+
+        w, ports = chat_world(
+            [panel_message(1, pinned=True), panel_message(2, author=55, custom_id="musicplayer_stop"), panel_message(9)]
+        )
+        w.ports.pool.get_all_bots = lambda: [w.bot, SimpleNamespace(user=SimpleNamespace(id=55))]
+        ports.radio = dataclasses.replace(ports.radio, panel_message_id=9)
+
+        got = await ports.fetch_recent(100)
+
+        assert [(mid, protected) for mid, _, protected in got] == [(1, True), (2, True), (9, True)]
+
+    @pytest.mark.asyncio
+    async def test_posting_a_new_panel_deletes_the_old_ones_of_this_bot_only(self):
+        w = build()
+        await grant(w)
+        mine_old, jukebox, mine_pinned = (
+            panel_message(1),
+            panel_message(2, author=55, custom_id="musicplayer_stop"),
+            panel_message(3, pinned=True),
+        )
+
+        async def history(limit):
+            for message in (mine_old, jukebox, mine_pinned):
+                yield message
+
+        w.channel.history = history
+        w.channel.send = AsyncMock(return_value=SimpleNamespace(id=5555))
+        w.channel.fetch_message = AsyncMock()
+        w.bot.get_color = lambda me: 0
+        w.bot.user = SimpleNamespace(id=BOT_ID)
+
+        await w.ports.ensure_panel()
+
+        mine_old.delete.assert_awaited_once()
+        jukebox.delete.assert_not_awaited()
+        mine_pinned.delete.assert_not_awaited()
+        assert (await w.hub.store.get(w.ports.radio.id)).panel_message_id == 5555
+
+    @pytest.mark.asyncio
+    async def test_a_forbidden_cleanup_does_not_stop_the_new_panel(self, caplog):
+        w = build()
+        await grant(w)
+        old = panel_message(1)
+        old.delete = AsyncMock(side_effect=disnake.Forbidden(MagicMock(status=403), "x"))
+
+        async def history(limit):
+            yield old
+
+        w.channel.history = history
+        w.channel.send = AsyncMock(return_value=SimpleNamespace(id=777))
+        w.channel.fetch_message = AsyncMock()
+        w.bot.get_color = lambda me: 0
+        w.bot.user = SimpleNamespace(id=BOT_ID)
+
+        with caplog.at_level("WARNING"):
+            await w.ports.ensure_panel()
+
+        assert (await w.hub.store.get(w.ports.radio.id)).panel_message_id == 777 and "Forbidden" in caplog.text

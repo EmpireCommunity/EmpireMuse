@@ -8,6 +8,8 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 ## [Unreleased]
 
 ### Corrigido
+- **Rádio: limpeza do chat da call de voz**: o padrão passa de 30 s para 60 s (ninguém perde uma mensagem); o do palco não mudou. Painéis antigos da própria rádio deixados no chat (quando o id do painel se perde) são apagados ao postar o novo e deixam de ser protegidos pela limpeza.
+- **Rádio ao vivo: estado verdadeiro e partida concorrente**: a rádio só conta como tocando quando o primeiro áudio chegou ao Lavalink; sem ele no prazo, a tentativa falha e o recuo tenta de novo. O relay ganhou vagas separadas para o health check, crédito inicial para estações que despejam áudio ao conectar e registra o motivo (só o código) de cada encerramento.
 - **Rádio ao vivo**: o status do canal de voz mostrava "Tocando: Unknown title - Unknown artist"; agora mostra a estação e, quando o fluxo manda, o que está tocando (sempre sem menção, link nem formatação). O botão **Próxima** saiu do painel da rádio ao vivo: ele pedia uma faixa a um player sem fila e, com a fila vazia, o player buscava uma sugestão de música (autoplay) em outra fonte. Agora nenhuma rádio busca sugestão: com a fila vazia o player só para. A sessão de música também deixou de guardar o player de uma rádio, que voltaria como um player comum depois de um reinício.
 - **Presença na call**: a checagem de ouvintes ao silenciar/ensurdecer alguém no mesmo canal sempre dava "tem gente" (um gerador é sempre verdadeiro), então o tempo de espera por call sem ouvintes não começava quando só restavam bots ou membros surdos.
 

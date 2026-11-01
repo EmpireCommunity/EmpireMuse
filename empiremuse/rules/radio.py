@@ -25,7 +25,7 @@ PLAYLIST_NAME_MAX = 100
 
 CHAT_FIELDS = ("voice_delete_after_s", "stage_max_messages", "stage_max_age_s")
 CHAT_LIMITS: dict[str, tuple[int, int, int]] = {  # campo: (mínimo, máximo, padrão)
-    "voice_delete_after_s": (5, 600, 30),
+    "voice_delete_after_s": (5, 600, 60),
     "stage_max_messages": (3, 50, 7),
     "stage_max_age_s": (60, 3600, 600),
 }

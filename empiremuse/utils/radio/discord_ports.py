@@ -28,6 +28,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+PANEL_CLEANUP_LIMIT = 50  # mensagens do canal que se olham atrás de painéis antigos do próprio bot
+
 
 class RadioBotUnavailable(Exception):
     """O bot da rádio (ou o servidor dele) ainda não está pronto: o runner trata como "não sei agora" e tenta de novo."""
@@ -226,6 +228,22 @@ class DiscordRadioPorts:
         except Exception as error:  # noqa: BLE001 - o painel é conveniência: só o tipo vai ao log (R-12)
             logger.warning("Painel da rádio não redesenhado (%s)", type(error).__name__)
 
+    async def _remove_old_panels(self, channel: Any, bot: BotCore) -> None:
+        """Apaga os painéis de rádio que ESTE bot deixou no canal (mensagens dele com os botões do painel). Só dele: o painel da Jukebox e os avisos de
+        outros bots não têm esses botões e ficam. Falha só vai para o log (tipo)."""
+        from empiremuse.utils.radio.panel import is_radio_panel  # tarde: o painel importa a camada de texto
+
+        try:
+            old = [
+                message
+                async for message in channel.history(limit=PANEL_CLEANUP_LIMIT)
+                if message.author.id == bot.user.id and not message.pinned and is_radio_panel(message)
+            ]
+            for message in old:
+                await message.delete()
+        except Exception as error:  # noqa: BLE001 - limpar é conveniência: o painel novo sai de qualquer jeito; só o tipo vai ao log (R-12)
+            logger.warning("Painéis antigos da rádio não apagados (%s)", type(error).__name__)
+
     async def ensure_panel(self) -> None:
         """Garante a mensagem de controle no chat da call: mantém a que ainda existe, manda uma nova se sumiu. Sem permissão de enviar: só avisa."""
         bot, guild, channel = self._bot(), self._guild(), self._channel()
@@ -245,6 +263,7 @@ class DiscordRadioPorts:
                 logger.warning("Painel da rádio sem permissão para ler o chat da call")
                 return
         payload = await self._panel_payload(bot, guild, current)
+        await self._remove_old_panels(channel, bot)  # um id de painel perdido não deixa painéis se acumulando no canal
         try:
             message = await channel.send(allowed_mentions=disnake.AllowedMentions.none(), **payload)
         except disnake.Forbidden:
@@ -325,16 +344,33 @@ class DiscordChatPorts:
             messages = [m async for m in channel.history(limit=limit)]
         except disnake.Forbidden as error:
             raise PermissionLost from error
+        from empiremuse.utils.radio.panel import is_radio_panel  # tarde: o painel importa a camada de texto
+
+        def orphan(m: Any) -> bool:
+            """Painel de rádio do PRÓPRIO bot que já não é o de agora (o id se perdeu): lixo que se acumularia, não aviso a proteger."""
+            return (
+                panel_id is not None
+                and m.author.id == self.radio.bot_id
+                and m.id != panel_id
+                and not m.pinned
+                and is_radio_panel(m)
+            )
+
         return [
             (
                 m.id,
                 m.created_at.timestamp(),
                 bool(
                     m.pinned
-                    or m.id == panel_id
-                    or m.author.id == self.radio.bot_id
-                    or m.author.id in pool_bots
-                    or m.is_system()
+                    or (
+                        not orphan(m)
+                        and (
+                            m.id == panel_id
+                            or m.author.id == self.radio.bot_id
+                            or m.author.id in pool_bots
+                            or m.is_system()
+                        )
+                    )
                 ),
             )
             for m in messages

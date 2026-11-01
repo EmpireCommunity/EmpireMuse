@@ -50,6 +50,18 @@ def fallback_emojis(name: str) -> str:
     return APP_EMOJIS[name]
 
 
+def is_radio_panel(message: Any) -> bool:
+    """A mensagem é (ou foi) um painel de rádio? Tem um botão ou select com um dos ``custom_id`` fixos do painel. Serve para achar painéis órfãos."""
+    from empiremuse.rules.radio import PANEL_IDS
+
+    ours = {*PANEL_IDS, PANEL_MENU_ID}
+    for row in getattr(message, "components", None) or ():
+        for child in getattr(row, "children", None) or ():
+            if getattr(child, "custom_id", None) in ours:
+                return True
+    return False
+
+
 @cache
 def generic_icon() -> Optional[bytes]:
     """O ícone genérico de rádio internacional (``assets/radio/global.png``) para a estação sem logo; ``None`` se o arquivo faltar (vale o avatar do bot)."""

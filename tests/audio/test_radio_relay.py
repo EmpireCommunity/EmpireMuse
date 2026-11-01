@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 
 import pytest
 
-from empiremuse.utils.radio.relay import MAX_SOCKETS, RadioRelay, RateLimiter
+from empiremuse.utils.radio.relay import MAX_SOCKETS, OPEN_CONCURRENCY, PROBE_CONCURRENCY, RadioRelay, RateLimiter
 
 pytestmark = pytest.mark.critical
 
@@ -460,7 +460,7 @@ class TestEntrance:
 
 class TestRateLimiter:
     def test_the_burst_goes_through_and_then_the_pace_is_one_and_a_half_times_the_bitrate(self):
-        limiter = RateLimiter(128)  # 128 kbps = 16000 B/s; x1,5 = 24000 B/s; rajada de 2 s = 48000 B
+        limiter = RateLimiter(128, initial_s=0)  # 128 kbps = 16000 B/s; x1,5 = 24000 B/s; rajada de 2 s = 48000 B
 
         assert limiter.delay_for(40_000, 0.0) == 0.0
         late = limiter.delay_for(24_000, 0.0)  # 64000 enviados contra 48000 permitidos
@@ -468,7 +468,7 @@ class TestRateLimiter:
         assert late == pytest.approx(16_000 / 24_000)
 
     def test_the_credit_never_grows_past_the_burst_however_long_the_station_was_slow(self):
-        limiter = RateLimiter(128)
+        limiter = RateLimiter(128, initial_s=0)
         limiter.delay_for(1_000, 0.0)
 
         wait = limiter.delay_for(
@@ -478,13 +478,13 @@ class TestRateLimiter:
         assert wait == pytest.approx(24_000 / 24_000)
 
     def test_time_passing_gives_the_allowance_back(self):
-        limiter = RateLimiter(128)
+        limiter = RateLimiter(128, initial_s=0)
         limiter.delay_for(48_000, 0.0)
 
         assert limiter.delay_for(24_000, 1.0) == 0.0
 
     def test_a_flood_at_50_mb_per_s_is_throttled_to_the_pace(self):
-        limiter = RateLimiter(128)
+        limiter = RateLimiter(128, initial_s=0)
         now, total_wait = 0.0, 0.0
 
         for _ in range(100):  # 100 x 512 KiB "instantâneos"
@@ -738,3 +738,121 @@ class TestConsumerCap:
             ok = await r.probe(station.url, "MP3")
 
             assert ok is False and asyncio.get_running_loop().time() - started < 2
+
+
+class TestBurstOnConnect:
+    """Estações como a laut.fm (``Burst-On-Connect: 15``) despejam ~15 s de áudio ao conectar: o limite de taxa não pode travar esse começo."""
+
+    def test_the_first_fifteen_seconds_of_audio_pass_without_waiting(self):
+        limiter = RateLimiter(128)  # 128 kbps: 16000 B/s de áudio, 15 s = 240000 B
+
+        waits = [limiter.delay_for(8192, 0.0) for _ in range(30)]  # 245760 B de uma vez
+
+        assert all(wait == 0.0 for wait in waits)
+
+    def test_the_initial_credit_is_spent_once_and_never_comes_back(self):
+        limiter = RateLimiter(128)
+        limiter.delay_for(480_000, 0.0)  # gasta o crédito inicial (20 s a 24000 B/s)
+
+        after_an_hour = limiter.delay_for(48_000 + 24_000, 3600.0)
+
+        assert after_an_hour == pytest.approx(1.0)  # só a rajada normal de 2 s, nunca outra sessão de crédito
+
+    def test_without_the_initial_credit_the_same_burst_would_have_waited(self):
+        limiter = RateLimiter(128, initial_s=0)
+
+        assert sum(limiter.delay_for(8192, 0.0) for _ in range(30)) > 5.0
+
+
+class TestFlowAndReach:
+    """O estado da rádio tem de ser verdadeiro: ela só toca quando o primeiro áudio chegou ao Lavalink (Litmus: falhava muda e "tocando")."""
+
+    @pytest.mark.asyncio
+    async def test_the_first_audio_marks_the_token_as_flowing(self):
+        head = b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n"
+        async with Station(sends(head, MP3 + b"A" * 100)) as station, relay() as r:
+            token = r.register(station.url, codec="MP3", bitrate=128)
+            waiter = asyncio.ensure_future(r.wait_flowing(token, 3))
+
+            await fetch(r, token)
+
+            assert await waiter is True and r.reached(token) is True
+
+    @pytest.mark.asyncio
+    async def test_a_token_that_never_gets_audio_times_out_and_is_not_playing(self):
+        async with relay() as r:
+            token = r.register("http://radio.example:8000/live", codec="MP3", bitrate=128)
+
+            assert await r.wait_flowing(token, 0.05) is False
+            assert r.reached(token) is False  # o Lavalink nem chegou: não é falha da estação
+
+    @pytest.mark.asyncio
+    async def test_a_revoked_or_unknown_token_is_never_flowing(self):
+        async with relay() as r:
+            token = r.register("http://radio.example:8000/live", codec="MP3", bitrate=128)
+            waiter = asyncio.ensure_future(r.wait_flowing(token, 3))
+            await asyncio.sleep(0)
+            await r.revoke(token)
+
+            assert await r.wait_flowing("nao-existe", 0.05) is False
+            assert await waiter is False
+
+    @pytest.mark.asyncio
+    async def test_a_station_that_refuses_counts_as_reached_but_not_flowing(self):
+        head = b"HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n"
+        async with Station(sends(head, b"<html>")) as station, relay() as r:
+            token = r.register(station.url, codec="MP3", bitrate=128)
+
+            await fetch(r, token)
+
+            assert r.reached(token) is True and await r.wait_flowing(token, 0.05) is False
+
+    @pytest.mark.asyncio
+    async def test_a_409_from_the_consumer_limit_is_not_reaching_the_station(self):
+        async with (
+            Station(sends(b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n", MP3 + b"A" * 10)) as station,
+            relay() as r,
+        ):
+            token = r.register(station.url, codec="MP3", bitrate=128)
+            r._sessions[token].served = 2  # os dois consumidores do token já foram
+
+            head, _ = await fetch(r, token)
+
+            assert head.startswith(b"HTTP/1.0 409") and r.reached(token) is False and station.connections == 0
+
+
+class TestOpenCapacity:
+    def test_two_radios_starting_at_once_fit_with_room_to_spare(self):
+        assert OPEN_CONCURRENCY >= 8  # cada rádio que parte abre a estação duas vezes (carregar e tocar)
+
+    @pytest.mark.asyncio
+    async def test_the_health_check_does_not_take_the_slot_of_a_radio_that_is_starting(self):
+        head = b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n"
+        async with Station(sends(head, MP3 + b"A" * 2048)) as station, relay() as r:
+            for _ in range(OPEN_CONCURRENCY):  # todas as vagas de tocar estão ocupadas
+                await r._open.acquire()
+
+            ok = await r.probe(station.url, "MP3")
+
+            assert ok is True and PROBE_CONCURRENCY >= 1
+
+    @pytest.mark.asyncio
+    async def test_probes_do_not_wait_for_a_busy_play_slot_and_plays_do_not_wait_for_probes(self):
+        async with relay() as r:
+            for _ in range(PROBE_CONCURRENCY):
+                await r._probe_open.acquire()  # o health check está no teto
+
+            assert r._open._value == OPEN_CONCURRENCY  # e isso não tirou nenhuma vaga de uma rádio
+
+
+class TestWhyAStreamEnded:
+    @pytest.mark.asyncio
+    async def test_the_end_of_a_stream_logs_only_a_reason_code_never_the_station(self, caplog):
+        head = b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n"
+        async with Station(sends(head, MP3 + b"A" * 100)) as station, relay() as r:
+            token = r.register(station.url, codec="MP3", bitrate=128)
+            with caplog.at_level("INFO"):
+                await fetch(r, token)
+
+        assert "saída encerrada [upstream_eof]" in caplog.text
+        assert "radio.example" not in caplog.text and str(station.port) not in caplog.text
