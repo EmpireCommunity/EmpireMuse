@@ -1,6 +1,7 @@
 """As portas reais da rádio (item 8, R1) sobre bot, canal e player falsos: o direito de agora (R-1), os ouvintes, a conexão, o palco (R-5),
 a fila virtual e o desligamento por perda de direito."""
 
+import dataclasses
 from collections import deque
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -333,8 +334,6 @@ class TestChatPorts:
 
     @pytest.mark.asyncio
     async def test_the_panel_message_of_the_radio_is_protected(self):
-        import dataclasses
-
         w, ports = chat_world([FakeMessage(9, 100.0)])
         ports.radio = dataclasses.replace(ports.radio, panel_message_id=9)
 
@@ -429,8 +428,6 @@ class TestOrphanPanels:
 
     @pytest.mark.asyncio
     async def test_an_old_panel_of_the_radio_bot_is_swept_but_the_current_one_and_its_notices_are_kept(self):
-        import dataclasses
-
         notice = FakeMessage(3, 100.0, author=BOT_ID)  # aviso do bot (sem os botões do painel)
         w, ports = chat_world([panel_message(1), panel_message(2), notice])
         ports.radio = dataclasses.replace(ports.radio, panel_message_id=2)
@@ -449,8 +446,6 @@ class TestOrphanPanels:
 
     @pytest.mark.asyncio
     async def test_a_pinned_old_panel_and_the_jukebox_panel_of_another_bot_stay(self):
-        import dataclasses
-
         w, ports = chat_world(
             [panel_message(1, pinned=True), panel_message(2, author=55, custom_id="musicplayer_stop"), panel_message(9)]
         )
@@ -508,3 +503,115 @@ class TestOrphanPanels:
             await w.ports.ensure_panel()
 
         assert (await w.hub.store.get(w.ports.radio.id)).panel_message_id == 777 and "Forbidden" in caplog.text
+
+
+STAGE_MODERATOR = dict(view_channel=True, connect=True, mute_members=True, manage_channels=True, move_members=True)
+
+
+def stage_world(*, instance=None, permissions=None):
+    """Um palco SEM evento ao vivo (``channel.instance`` é ``None``): é aí que o Discord recusa o pedido de fala com 403 50001."""
+    w = build(stage=True, mute_members=True)
+    w.channel.instance = instance
+    w.channel.create_instance = AsyncMock()
+    w.channel.send = AsyncMock()
+    w.channel.permissions_for.return_value = SimpleNamespace(**(permissions or STAGE_MODERATOR))
+    return w
+
+
+class TestStageInstance:
+    """Live test: uma rádio num palco sem evento ao vivo ficava suprimida ("sem permissão para falar no palco") porque nada criava o evento."""
+
+    @pytest.mark.asyncio
+    async def test_a_stage_without_a_live_event_gets_one_before_the_bot_unsuppresses(self):
+        w = stage_world()
+        order = []
+        w.channel.create_instance.side_effect = lambda **kw: order.append("create")
+        w.guild.me.edit.side_effect = lambda **kw: order.append("unsuppress")
+
+        assert await w.ports.connect() is True
+
+        kwargs = w.channel.create_instance.await_args.kwargs
+        assert kwargs["privacy_level"] is disnake.StagePrivacyLevel.guild_only and kwargs["topic"] == "Rock"
+        assert order == ["create", "unsuppress"]
+
+    @pytest.mark.asyncio
+    async def test_the_topic_is_the_sanitised_name_and_fits_the_limit(self):
+        w = stage_world()
+        w.ports.radio = dataclasses.replace(
+            w.ports.radio, source={"playlist": "@everyone <@1> https://evil.example " + "x" * 300}
+        )
+
+        await w.ports.connect()
+
+        topic = w.channel.create_instance.await_args.kwargs["topic"]
+        assert "@everyone" not in topic and "<@" not in topic and "://" not in topic and 0 < len(topic) <= 120
+
+    @pytest.mark.asyncio
+    async def test_a_live_event_that_already_exists_is_left_alone(self):
+        w = stage_world(instance=SimpleNamespace(delete=AsyncMock()))
+
+        await w.ports.connect()
+        await w.ports.end_stage()
+
+        w.channel.create_instance.assert_not_awaited()
+        w.channel.instance.delete.assert_not_awaited()  # o evento era de uma pessoa: o bot não o encerra
+
+    @pytest.mark.asyncio
+    async def test_without_the_stage_moderator_permissions_one_clear_notice_names_what_is_missing(self):
+        w = stage_world(permissions={**STAGE_MODERATOR, "manage_channels": False, "move_members": False})
+        w.player.tr = lambda key, **kw: f"{key}|{kw.get('permissions', '')}"
+
+        await w.ports.connect()
+        await w.ports.connect()  # reconectou: o aviso não se repete
+
+        w.channel.create_instance.assert_not_awaited()
+        w.channel.send.assert_awaited_once()
+        text = w.channel.send.await_args.args[0]
+        assert "radio.stage.perm.manage_channels" in text and "radio.stage.perm.move_members" in text
+        assert "radio.stage.perm.mute_members" not in text
+        assert w.channel.send.await_args.kwargs["allowed_mentions"].everyone is False
+
+    @pytest.mark.asyncio
+    async def test_a_failed_creation_is_only_logged_and_the_bot_still_asks_to_speak(self, caplog):
+        w = stage_world()
+        w.channel.create_instance.side_effect = disnake.Forbidden(MagicMock(status=403), "x")
+
+        with caplog.at_level("WARNING"):
+            assert await w.ports.connect() is True
+
+        assert "Forbidden" in caplog.text
+        w.guild.me.edit.assert_awaited_once_with(suppress=False)
+
+    @pytest.mark.asyncio
+    async def test_turning_the_radio_off_ends_only_the_event_the_bot_created(self):
+        w = stage_world()
+        await w.ports.connect()
+        instance = SimpleNamespace(delete=AsyncMock())
+        w.channel.instance = instance  # agora o evento existe (foi o bot que o criou)
+
+        await w.ports.end_stage()
+        await w.ports.end_stage()  # desligar duas vezes não encerra duas
+
+        instance.delete.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_a_voice_channel_never_creates_an_event(self):
+        w = build(mute_members=True)
+
+        await w.ports.connect()
+        await w.ports.end_stage()
+
+        assert not any(call[0] == "create_instance" for call in w.channel.method_calls)
+
+    @pytest.mark.asyncio
+    async def test_the_manager_ends_the_event_when_the_radio_is_deactivated(self):
+        w = build(stage=True)
+        w.ports.end_stage = AsyncMock()
+        await grant(w)
+        radio = await w.hub.store.create(w.ports.radio)
+        w.hub.manager.ports_factory = lambda r: w.ports
+        await w.hub.manager.activate(radio, wait=True)
+
+        await w.hub.manager.deactivate(radio.id)
+
+        w.ports.end_stage.assert_awaited_once()

@@ -262,6 +262,12 @@ class RadioManager:
         self._radios.pop(radio_id, None)
         if runner is not None:
             await runner.stop()
+            end_stage = getattr(runner.ports, "end_stage", None)
+            if end_stage is not None:
+                try:
+                    await end_stage()  # a rádio desligou: o evento de palco que o bot criou acaba junto
+                except Exception as error:  # noqa: BLE001 - só o tipo vai ao log (R-12)
+                    logger.warning("Evento de palco da rádio não encerrado (%s)", type(error).__name__)
         if start is not None and not start.done() and start is not asyncio.current_task():
             start.cancel()  # a partida que chamou o deactivate (o _shutdown dela) segue até o destroy: não cancela a si mesma
         self.service.publish(radio_id, None)

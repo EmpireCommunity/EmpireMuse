@@ -28,6 +28,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+STAGE_MODERATOR_PERMISSIONS = (
+    "manage_channels",
+    "mute_members",
+    "move_members",
+)  # o que criar um evento de palco exige
+STAGE_TOPIC_LIMIT = 120
 PANEL_CLEANUP_LIMIT = 50  # mensagens do canal que se olham atrás de painéis antigos do próprio bot
 
 
@@ -40,6 +46,8 @@ class DiscordRadioPorts:
         self.pool = pool
         self.radio = radio
         self._tracks: list[Any] = []
+        self._stage_created = False  # o evento de palco foi criado por este bot (e só esse ele encerra)
+        self._stage_noticed = False
 
     # ------------------------------------------------------------------ o mundo
 
@@ -139,14 +147,69 @@ class DiscordRadioPorts:
         player.loop = "queue"  # a playlist dá a volta; a ao vivo troca isto (``LiveRadioPorts``)
 
     async def _speak(self, guild: disnake.Guild, channel: disnake.StageChannel, player: Any) -> None:
-        """Palco: ``suppress=False`` com ``MUTE_MEMBERS``; sem isso, ``request_to_speak``. Um 403 vale UMA tentativa por conexão (R-5)."""
+        """Palco: garante o evento de palco ao vivo (sem ele o Discord recusa o pedido de fala com 403 50001), depois ``suppress=False`` com
+        ``MUTE_MEMBERS``; sem isso, ``request_to_speak``. Um 403 vale UMA tentativa por conexão (R-5)."""
         try:
+            await self._ensure_stage_instance(guild, channel, player)
             if channel.permissions_for(guild.me).mute_members:
                 await guild.me.edit(suppress=False)
             else:
                 await guild.me.request_to_speak()
         except disnake.Forbidden:
             logger.warning("Rádio sem permissão para falar no palco")
+
+    async def _stage_name(self) -> object:
+        return await self._panel_name(self.radio)
+
+    async def _ensure_stage_instance(self, guild: disnake.Guild, channel: disnake.StageChannel, player: Any) -> None:
+        """Sem evento de palco ao vivo, cria um (tópico = nome da estação ou da playlist, já limpo; só para o servidor) se o bot é moderador de palco;
+        sem a permissão, avisa UMA vez quais faltam. Só o evento que o próprio bot criou é encerrado quando a rádio desliga."""
+        if channel.instance is not None:
+            return
+        permissions = channel.permissions_for(guild.me)
+        missing = [name for name in STAGE_MODERATOR_PERMISSIONS if not getattr(permissions, name, False)]
+        if missing:
+            await self._stage_notice(channel, player, missing)
+            return
+        from empiremuse.rules.text import external_text  # tarde: só o palco usa
+
+        topic = external_text(await self._stage_name(), STAGE_TOPIC_LIMIT, markdown=False) or player.tr(
+            "radio.stage.topic"
+        )
+        try:
+            await channel.create_instance(
+                topic=topic, privacy_level=disnake.StagePrivacyLevel.guild_only, reason="Rádio 24/7"
+            )
+        except (disnake.Forbidden, disnake.HTTPException) as error:
+            logger.warning("Evento de palco da rádio não criado (%s)", type(error).__name__)
+            return
+        self._stage_created = True
+
+    async def _stage_notice(self, channel: disnake.StageChannel, player: Any, missing: list[str]) -> None:
+        """Um aviso claro e traduzido no chat do palco com as permissões que faltam (no máximo um por palco a cada minuto e um por ativação)."""
+        if self._stage_noticed or not self.pool.radio.claim_notice(("stage", channel.id)):
+            return
+        self._stage_noticed = True
+        names = ", ".join(f"**{player.tr(f'radio.stage.perm.{name}')}**" for name in missing)
+        try:
+            await channel.send(
+                player.tr("radio.stage.no_instance", permissions=names), allowed_mentions=disnake.AllowedMentions.none()
+            )
+        except (disnake.Forbidden, disnake.HTTPException) as error:
+            logger.warning("Aviso do palco não enviado (%s)", type(error).__name__)
+
+    async def end_stage(self) -> None:
+        """A rádio desligou: encerra o evento de palco SE foi o próprio bot quem o criou (o de uma pessoa nunca é tocado)."""
+        if not self._stage_created:
+            return
+        self._stage_created = False
+        instance = getattr(self._channel(), "instance", None)
+        if instance is None:
+            return
+        try:
+            await instance.delete(reason="Rádio 24/7 desligada")
+        except (disnake.Forbidden, disnake.NotFound, disnake.HTTPException) as error:
+            logger.warning("Evento de palco da rádio não encerrado (%s)", type(error).__name__)
 
     async def _load_tracks(self) -> list[Any]:
         if self._tracks:
