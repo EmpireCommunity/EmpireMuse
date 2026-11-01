@@ -28,6 +28,7 @@ NO_PLAYLIST = "no_playlist"
 NO_FREE_BOT = "no_free_bot"
 BOT_CANNOT_JOIN = "bot_cannot_join"
 CHANNEL_TAKEN = "channel_taken"
+JUKEBOX_CHANNEL = "jukebox_channel"
 CAP_REACHED = "cap_reached"
 INVALID = "invalid"
 CHANGED = "changed"
@@ -61,6 +62,7 @@ async def turn_on(
     candidates: Iterable[BotCandidate],
     playlist_exists: bool,
     bot_can_join: bool,
+    request_channel_id: int | None = None,
 ) -> Radio:
     """Liga uma rádio personalizada neste canal, no bot reserva escolhido. Devolve a rádio ligada (já gravada, ainda sem runner)."""
     if not actor.manage_guild:
@@ -78,6 +80,10 @@ async def turn_on(
         raise Refused(NO_PLAYLIST)
     if not bot_can_join:
         raise Refused(BOT_CANNOT_JOIN)
+    if request_channel_id is not None and request_channel_id == channel_id:
+        raise Refused(
+            JUKEBOX_CHANNEL
+        )  # o chat do canal de pedidos é da Jukebox: a varredura da rádio apagaria o painel dela (V181-1)
     existing = await hub.store.list_for_guild(guild_id)
     if any(radio.enabled and radio.channel_id == channel_id for radio in existing):
         raise Refused(CHANNEL_TAKEN)

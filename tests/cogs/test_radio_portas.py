@@ -310,6 +310,25 @@ class TestChatPorts:
         assert [(mid, protected) for mid, _, protected in got] == [(1, False), (2, True), (3, True), (4, True)]
 
     @pytest.mark.asyncio
+    async def test_the_jukebox_panel_and_notices_of_other_pool_bots_are_protected_in_the_radio_chat(self):  # V181-1
+        w, ports = chat_world(
+            [FakeMessage(1, 100.0, author=55), FakeMessage(2, 100.0, author=77), FakeMessage(3, 100.0, author=BOT_ID)]
+        )
+        w.ports.pool.get_all_bots = lambda: [
+            w.bot,
+            SimpleNamespace(user=SimpleNamespace(id=55)),
+            SimpleNamespace(user=None),
+        ]
+
+        got = await ports.fetch_recent(100)
+
+        assert [(mid, protected) for mid, _, protected in got] == [
+            (1, True),
+            (2, False),
+            (3, True),
+        ]  # só o usuário 77 é varrido
+
+    @pytest.mark.asyncio
     async def test_the_panel_message_of_the_radio_is_protected(self):
         import dataclasses
 
