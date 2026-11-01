@@ -44,6 +44,7 @@ from empiremuse.rules.radio_geo import (
 )
 from empiremuse.rules.radio_stations import Station, check_search_term, check_station, valid_mirror, valid_uuid
 from empiremuse.utils.radio.locations import LocNode
+from empiremuse.utils.radio.logo import LogoResult, LogoService
 from empiremuse.utils.server_playlists_fetch import PinnedResolver
 from empiremuse.version import image_version
 
@@ -71,6 +72,8 @@ REGION_WAIT_S = (
 )
 REGION_POLL_S = 0.25
 REGION_MAX_ITEMS = 400  # itens de uma resposta que se examinam (o corpo já é limitado a 256 KiB)
+FAVICON_MEMORY = 4096  # estações cujo logo o diretório lembra (as de buscas recentes e as já vistas)
+FAVICON_TTL_S = 3600
 GEO_SLACK = 1.05  # a distância devolvida pelo diretório é conferida contra o raio com esta folga
 
 Fetcher = Callable[[str, str, dict[str, str]], Awaitable[Any]]
@@ -214,6 +217,7 @@ class Directory:
         rng: random.Random | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         state_index: StateIndex | None = None,
+        logos: LogoService | None = None,
     ) -> None:
         self._sleep = sleep
         self.state_index = state_index  # o resolvedor de estado do local (``LocationTree.state_index``); sem ele o filtro por estado não roda
@@ -228,6 +232,10 @@ class Directory:
         self._mirror_lock = asyncio.Lock()
         self._key_buckets: TTLCache = TTLCache(maxsize=CACHE_SIZE, ttl=CACHE_TTL_S, timer=clock)
         self.requests = 0  # as que de fato saíram (para os testes e para o resumo)
+        self._favicons: TTLCache = TTLCache(
+            maxsize=FAVICON_MEMORY, ttl=FAVICON_TTL_S, timer=clock
+        )  # uuid -> URL do logo, já limpa
+        self.logos = logos or LogoService(self)
 
     # ------------------------------------------------------------------ espelhos e requisição
 
@@ -285,8 +293,12 @@ class Directory:
         except DirectoryError:
             return None
 
-    @staticmethod
-    def _stations(payload: Any) -> list[Station]:
+    def _remember(self, station: Station) -> None:
+        """Guarda o logo (já validado pelo ``check_station``) da estação: só um uuid que passou por aqui pode ter o logo buscado depois."""
+        if station.favicon:
+            self._favicons[station.uuid] = station.favicon
+
+    def _stations(self, payload: Any) -> list[Station]:
         """Os itens aceitos de uma lista; o que não é lista ou não passa em ``check_station`` é descartado em silêncio."""
         if not isinstance(payload, list):
             return []
@@ -294,6 +306,7 @@ class Directory:
         for item in payload[: SEARCH_LIMIT * 2]:
             station = check_station(item)
             if not isinstance(station, RuleError):
+                self._remember(station)
                 found.append(station)
             if len(found) >= SEARCH_LIMIT:
                 break
@@ -402,6 +415,7 @@ class Directory:
                     continue
             if source == "state" and not self._in_state(item, node):
                 continue
+            self._remember(station)
             found.append(Hit(station, clamp_clicks(item.get("clickcount")), has_geo, source))
         return found
 
@@ -464,6 +478,25 @@ class Directory:
         payload = await self._get("/json/stations/byuuid", {"uuids": str(uuid)})
         found = self._stations(payload)
         return found[0] if found and found[0].uuid == uuid else None
+
+    # ------------------------------------------------------------------ logo (painel)
+
+    def favicon_of(self, uuid: str) -> str | None:
+        """A URL do logo que o diretório já guardou para este uuid (nunca sai daqui para a página; só o ``LogoService`` a usa)."""
+        return self._favicons.get(uuid)
+
+    async def learn(self, uuid: str) -> None:
+        """Consulta a estação pelo uuid (sem registrar clique, respeitando a reserva do play e do health) para saber o logo dela. ``DirectoryError`` se
+        o diretório não respondeu ou não há ficha."""
+        found = self._stations(
+            await self._get_strict("/json/stations/byuuid", {"uuids": str(uuid)}, reserve=SEARCH_RESERVE)
+        )
+        if not found:
+            self._favicons.pop(uuid, None)
+
+    async def logo_png(self, uuid: object, *, configured: bool = False) -> LogoResult:
+        """O logo da estação (PNG de até 128 px, re-codificado) ou ``LogoResult(None)`` = ícone padrão. Nunca levanta; ver ``utils/radio/logo.py``."""
+        return await self.logos.png(uuid, configured=configured)
 
     async def fresh_for_play(self, uuid: object) -> Station | None:
         """A estação para TOCAR agora: ``/json/url/{uuid}`` (registra o clique) e o resultado passa de novo por ``check_station``.
