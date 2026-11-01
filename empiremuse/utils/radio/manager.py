@@ -215,8 +215,8 @@ class RadioManager:
         self._radios.pop(radio_id, None)
         if runner is not None:
             await runner.stop()
-        if start is not None and not start.done():
-            start.cancel()
+        if start is not None and not start.done() and start is not asyncio.current_task():
+            start.cancel()  # a partida que chamou o deactivate (o _shutdown dela) segue até o destroy: não cancela a si mesma
         self.service.publish(radio_id, None)
 
     async def stop_radios(self, radios, *, destroy_players: bool = True) -> None:

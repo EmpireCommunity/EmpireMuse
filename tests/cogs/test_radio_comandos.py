@@ -56,7 +56,9 @@ def make_bot(bot_id, identifier, channel, *, ready=True, in_voice=False):
     )
 
 
-def build(*, owner=True, manage_guild=True, manage_messages=True, playlist=True, free_bots=(2, 3)):
+def build(
+    *, owner=True, manage_guild=True, manage_messages=True, playlist=True, free_bots=(2, 3), request_channel=None
+):
     db = FakeDb()
     channel = make_channel(manage_messages=manage_messages)
     bots = [make_bot(1, "TOKEN", channel), *(make_bot(n, f"TOKEN_{n}", channel) for n in free_bots)]
@@ -66,6 +68,7 @@ def build(*, owner=True, manage_guild=True, manage_messages=True, playlist=True,
     pool.radio.manager.ports_factory = lambda radio: ports
     pool.servers = SimpleNamespace(
         main_bot=lambda: bots[0],
+        request=SimpleNamespace(get=AsyncMock(return_value=SimpleNamespace(channel=request_channel))),
         playlists=SimpleNamespace(
             find=AsyncMock(return_value=SimpleNamespace(name="Rock", url="u") if playlist else None)
         ),
@@ -119,6 +122,18 @@ class TestLigar:
         assert w.inter.response.defer.await_args.kwargs == {
             "ephemeral": True
         }  # confirma em 3 s, resposta só de quem pediu
+
+    @pytest.mark.asyncio
+    async def test_the_servers_request_channel_is_refused_in_the_command(
+        self,
+    ):  # V181-1: o chat do canal de pedidos é da Jukebox
+        w = build(request_channel=CHANNEL)
+        await premium(w)
+
+        with pytest.raises(GenericError) as refusal:
+            await run_on(w, channel=w.channel, playlist="rock")
+
+        assert "pedidos" in str(refusal.value) and not w.hub.manager.is_running(radio_id(2, GUILD))
 
     @pytest.mark.asyncio
     async def test_the_main_bot_is_never_the_one_that_plays(self):

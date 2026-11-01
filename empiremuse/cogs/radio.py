@@ -226,6 +226,7 @@ class Radio(commands.Cog):
             ).manage_messages,  # no CANAL, em execução (R-4)
         )
         found = await self.bot.pool.servers.playlists.find(inter.guild_id, playlist)
+        request_channel = (await self.bot.pool.servers.request.get(inter.guild_id)).channel
         candidates, can_join = self._candidates(inter.guild_id, channel)
         try:
             radio = await actions.turn_on(
@@ -237,6 +238,7 @@ class Radio(commands.Cog):
                 candidates=candidates,
                 playlist_exists=found is not None,
                 bot_can_join=can_join,
+                request_channel_id=request_channel,
             )
         except Refused as refusal:
             raise GenericError(tr(f"radio.refused.{refusal.code}")) from None
@@ -366,7 +368,7 @@ class Radio(commands.Cog):
             if action in LIST:
                 await self.hub.roles.load()
                 bots = ", ".join(f"`{i}`" for i in self.hub.roles.radio_only) or tr("radio.owner.none")
-                await ctx.send(tr("radio.owner.bots_list", bots=bots))
+                await ctx.send(tr("radio.owner.bots_list", bots=bots), allowed_mentions=disnake.AllowedMentions.none())
                 return
             if action not in ADD + REMOVE or not identifier.isascii() or not 1 <= len(identifier) <= 40:
                 raise GenericError(tr("radio.owner.bots_usage"))
@@ -374,7 +376,9 @@ class Radio(commands.Cog):
                 await self.hub.roles.add(identifier)
             else:
                 await self.hub.roles.remove(identifier)
-            await ctx.send(tr("radio.owner.bots_changed", bot=identifier))
+            await ctx.send(
+                tr("radio.owner.bots_changed", bot=identifier), allowed_mentions=disnake.AllowedMentions.none()
+            )
         except MainBotRefused:
             raise GenericError(tr("radio.owner.main_refused"))
         except RadioUnavailable:

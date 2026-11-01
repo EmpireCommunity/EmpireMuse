@@ -261,12 +261,15 @@ class DiscordChatPorts:
         await asyncio.sleep(seconds)
 
     async def fetch_recent(self, limit: int) -> list[tuple[int, float, bool]]:
-        """``(id, criada_em, protegida)``. Protegidas: a fixada, o painel da rádio, o que o próprio bot escreveu e mensagem de sistema."""
+        """``(id, criada_em, protegida)``. Protegidas: a fixada, o painel da rádio, o que qualquer bot do pool escreveu e mensagem de sistema."""
         channel = self._channel()
         if channel is None:
             return []
         current = await self.pool.radio.store.get(self.radio.id)  # o id do painel pode ter mudado depois da ativação
         panel_id = current.panel_message_id if current is not None else self.radio.panel_message_id
+        pool_bots = {
+            b.user.id for b in self.pool.get_all_bots() if b.user
+        }  # o painel da Jukebox e os avisos de outros bots do pool ficam
         try:
             messages = [m async for m in channel.history(limit=limit)]
         except disnake.Forbidden as error:
@@ -275,7 +278,13 @@ class DiscordChatPorts:
             (
                 m.id,
                 m.created_at.timestamp(),
-                bool(m.pinned or m.id == panel_id or m.author.id == self.radio.bot_id or m.is_system()),
+                bool(
+                    m.pinned
+                    or m.id == panel_id
+                    or m.author.id == self.radio.bot_id
+                    or m.author.id in pool_bots
+                    or m.is_system()
+                ),
             )
             for m in messages
         ]

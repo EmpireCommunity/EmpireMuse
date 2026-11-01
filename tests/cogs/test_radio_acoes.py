@@ -50,6 +50,26 @@ async def premium(world, guild_id=GUILD):
 
 class TestTurnOn:
     @pytest.mark.asyncio
+    async def test_the_server_request_channel_is_refused_and_nothing_is_reserved(
+        self, world
+    ):  # V181-1: o chat dele é da Jukebox
+        await premium(world)
+
+        with pytest.raises(Refused) as refusal:
+            await on(world, request_channel_id=CHANNEL)
+
+        assert refusal.value.code == actions.JUKEBOX_CHANNEL
+        assert (await world.hub.premium.fresh(GUILD)).active == 0 and await world.hub.store.list_for_guild(GUILD) == []
+
+    @pytest.mark.asyncio
+    async def test_another_channel_is_fine_even_with_a_request_channel_set(self, world):
+        await premium(world)
+
+        radio = await on(world, request_channel_id=OTHER_CHANNEL)
+
+        assert radio.enabled and radio.channel_id == CHANNEL
+
+    @pytest.mark.asyncio
     async def test_it_creates_enables_and_counts_on_the_first_free_reserve(self, world):
         await premium(world)
 

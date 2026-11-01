@@ -458,6 +458,23 @@ class TestReserveFirst:
         assert await active(world) == enabled and enabled <= 3
 
     @pytest.mark.asyncio
+    async def test_a_reservation_that_raises_leaves_the_radio_off_and_the_counter_untouched(
+        self, world
+    ):  # CodeRabbit #180
+        await with_premium(world)
+        await world.store.create(make_radio())
+
+        async def broken(guild_id):
+            raise ConnectionError("mongo fora")
+
+        world.premium.reserve = broken
+
+        with pytest.raises(ConnectionError):
+            await world.store.set_enabled(radio_id(1, GUILD), True)
+
+        assert not (await world.store.get(radio_id(1, GUILD))).enabled and await active(world) == 0
+
+    @pytest.mark.asyncio
     async def test_a_failed_write_after_the_reservation_gives_the_slot_back(self, world):
         await with_premium(world)
         await world.store.create(make_radio())
