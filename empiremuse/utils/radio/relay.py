@@ -22,6 +22,7 @@ import logging
 import re
 import secrets
 import time
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -64,9 +65,15 @@ PLAYLIST_READ_S = 10.0
 CHUNK = 8192
 RATE_FACTOR = 1.5
 PROBE_TOTAL_S = 30.0  # prazo total do health check: estação que pinga 1 byte por vez não prende a reabilitação de todas
-MAX_CONSUMERS = (
-    2  # por token: o loadtracks e o play do Lavalink; um terceiro só pode ser outro cliente com o token vazado
+MAX_CONSUMERS = 2  # por token, sem condição: o loadtracks e o play do Lavalink (o último vence). Do 3º em diante é RECONEXÃO, com a política abaixo
+RECONNECT_MAX = (
+    6  # reconexões aceitas por token na janela móvel; a 7ª esgota o token de vez (o runner pede um novo pelo recuo)
 )
+RECONNECT_WINDOW_S = 600.0
+RECONNECT_GAP_S = 1.0  # mínimo entre dois aceites
+RECONNECT_IDLE_S = 5.0  # a saída anterior sem escrita há tanto tempo está ociosa e pode ser tomada
+RECONNECT_GRACE_S = 2.0  # quanto a reconexão espera a saída anterior fechar sozinha (EOF ou RST)
+REFUSAL_LOG_EVERY_S = 60.0  # no máximo uma linha de recusa por token por minuto
 PROBE_BYTES = 16 * 1024  # o health check lê isto pelo mesmo caminho do relay
 PROBE_MIN_BYTES = 1024
 DEFAULT_BITRATE_KBPS = 320  # sem bitrate informado, o teto é o do maior bitrate aceito
@@ -111,6 +118,16 @@ class RelaySession:
     hits: int = 0  # quantas vezes o Lavalink chegou ao relay com este token (distingue "a estação falhou" de "o Lavalink nem chegou")
     opened: int = 0  # quantas vezes o relay tentou abrir a ESTAÇÃO por este token (distingue "a estação falhou" de "o relay recusou ou esperou o Lavalink")
     flowing: asyncio.Event = field(default_factory=asyncio.Event, repr=False)  # o primeiro áudio já chegou ao Lavalink
+    free: asyncio.Event = field(
+        default_factory=asyncio.Event, repr=False
+    )  # nenhuma saída aberta agora (a reconexão espera por isto)
+    gate: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)  # as reconexões entram uma de cada vez
+    accepts: deque = field(default_factory=deque, repr=False)  # quando as reconexões aceitas chegaram (janela móvel)
+    last_accept: float | None = None
+    last_write: float = 0.0  # a última vez que o ``_pump`` escreveu áudio para o Lavalink
+    exhausted: bool = False  # a 7ª reconexão: o token não aceita mais nada
+    limited: bool = False  # o relay recusou o Lavalink por política: não é falha da estação
+    last_refusal_log: float | None = None
     output: asyncio.StreamWriter | None = field(default=None, repr=False)
     task: asyncio.Task | None = field(default=None, repr=False)
 
@@ -133,7 +150,9 @@ class RadioRelay:
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], object] = asyncio.sleep,
         idle_timeout: float = IDLE_TIMEOUT_S,
+        reconnect_grace: float = RECONNECT_GRACE_S,
     ) -> None:
+        self._grace = reconnect_grace
         self._resolve = resolve
         self._public = public
         self._max_sockets = max_sockets
@@ -177,7 +196,9 @@ class RadioRelay:
     def register(self, url: str, *, codec: str, bitrate: int, on_title: Callable[[str], None] | None = None) -> str:
         """Um token novo (128 bits) para tocar ``url``. O Lavalink recebe ``local_url(token)``, nunca a URL da estação."""
         token = secrets.token_urlsafe(16)
-        self._sessions[token] = RelaySession(token, url, codec, bitrate, on_title)
+        session = RelaySession(token, url, codec, bitrate, on_title)
+        session.free.set()
+        self._sessions[token] = session
         return token
 
     def local_url(self, token: str) -> str:
@@ -237,17 +258,28 @@ class RadioRelay:
         if session is None:
             return
         session.hits += 1
-        if session.served >= MAX_CONSUMERS:
-            logger.info("Relay: conexão recusada [consumer_limit]")
-            await self._reply(writer, "409 Conflict")  # nada de tocar na saída atual: o play em curso segue recebendo
-            return
-        session.served += 1  # reservado antes de qualquer await: duas conexões simultâneas não passam juntas do teto
-        if session.busy and not await self._take_over(session):
-            await self._reply(writer, "409 Conflict")
-            return
-        session.busy = True
-        session.output = writer
-        session.task = asyncio.current_task()
+        if (
+            session.served >= MAX_CONSUMERS
+        ):  # a reconexão do Lavalink no mesmo token: aceita só dentro da política (nunca com 2 saídas abertas)
+            async with session.gate:
+                refusal = await self._admit_reconnect(session)
+                if refusal is None:
+                    self._claim(session, writer)
+            if refusal is not None:
+                session.limited = True
+                self._log_refusal(session, refusal)
+                await self._reply(
+                    writer, "409 Conflict"
+                )  # nada de tocar na saída atual: o play em curso segue recebendo
+                return
+        else:
+            session.served += (
+                1  # reservado antes de qualquer await: duas conexões simultâneas não passam juntas do teto
+            )
+            if session.busy and not await self._take_over(session):
+                await self._reply(writer, "409 Conflict")
+                return
+            self._claim(session, writer)
         try:
             async with self._open:
                 session.opened += 1
@@ -263,6 +295,53 @@ class RadioRelay:
             session.busy = False
             session.output = None
             session.task = None
+            session.free.set()
+
+    def _claim(self, session: RelaySession, writer: asyncio.StreamWriter) -> None:
+        """Esta conexão passa a ser A saída do token."""
+        session.busy = True
+        session.output = writer
+        session.task = asyncio.current_task()
+        session.free.clear()
+        session.last_write = self._clock()
+
+    async def _admit_reconnect(self, session: RelaySession) -> str | None:
+        """Política da reconexão (3º consumidor em diante): ``None`` = aceita, senão o MOTIVO da recusa. Recusa não gasta a cota. Mantém a regra de
+        sempre: uma saída aberta por vez, e a que escreve não é tocada."""
+        now = self._clock()
+        if session.exhausted:
+            return "exhausted"
+        if session.last_accept is not None and now - session.last_accept < RECONNECT_GAP_S:
+            return "too_soon"
+        while session.accepts and now - session.accepts[0] >= RECONNECT_WINDOW_S:
+            session.accepts.popleft()
+        if len(session.accepts) >= RECONNECT_MAX:
+            session.exhausted = True  # a 7ª: de vez, mesmo depois da janela
+            return "exhausted"
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self._grace
+        while session.busy:  # a anterior costuma fechar sozinha (EOF ou RST); se outra conexão a substituir nesse meio tempo, espera por ela também
+            try:
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    raise TimeoutError
+                await asyncio.wait_for(session.free.wait(), remaining)
+            except TimeoutError:
+                alive = self._clock() - session.last_write < RECONNECT_IDLE_S
+                if alive or not await self._take_over(session):
+                    return "output_alive"
+                break
+        session.accepts.append(self._clock())
+        session.last_accept = self._clock()
+        session.served += 1
+        return None
+
+    def _log_refusal(self, session: RelaySession, reason: str) -> None:
+        """No máximo uma linha por token por minuto, só com o motivo (R-12): um Lavalink insistindo não enche o log."""
+        now = self._clock()
+        if session.last_refusal_log is None or now - session.last_refusal_log >= REFUSAL_LOG_EVERY_S:
+            session.last_refusal_log = now
+            logger.info("Relay: conexão recusada [%s]", reason)
 
     @staticmethod
     async def _take_over(session: RelaySession) -> bool:
@@ -301,6 +380,11 @@ class RadioRelay:
         """O Lavalink chegou a pedir este token?"""
         session = self._sessions.get(token)
         return session is not None and session.hits > 0
+
+    def limited(self, token: str) -> bool:
+        """O relay recusou o Lavalink por política (reconexão fora da conta ou token esgotado)? Isso NÃO é falha da estação."""
+        session = self._sessions.get(token)
+        return session is not None and session.limited
 
     def reached(self, token: str) -> bool:
         """O relay chegou a tentar abrir a ESTAÇÃO por este token? (Lavalink que não chegou, ou 409 do relay, não é falha da estação.)"""
@@ -459,6 +543,7 @@ class RadioRelay:
                     waiting = "consumer"
                     writer.write(audio)
                     await asyncio.wait_for(writer.drain(), DRAIN_TIMEOUT_S)
+                    session.last_write = self._clock()
                     session.flowing.set()  # o primeiro áudio já está com o Lavalink: a rádio está tocando de verdade
                 elif now - last_audio > self._idle:
                     reason = "metadata_only"

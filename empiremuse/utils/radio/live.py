@@ -132,7 +132,9 @@ class LiveRadioRunner(RadioRunner):
         """O Lavalink avisou que o fluxo acabou ou falhou (fim, exceção, travou). Só vale tocando; pausas nossas não passam por aqui."""
         if self._stopped or self.phase is not Phase.PLAYING:
             return
-        if self._is_stable():
+        if getattr(self.ports, "relay_limited", lambda: False)():
+            pass  # o relay recusou a reconexão do Lavalink (política): não é a estação, então nada conta; o token é revogado e o recuo pede outro
+        elif self._is_stable():
             self.failures = self.attempt = 0
         else:
             self.failures += 1  # a estação aceitou e caiu logo: conta como falha, senão o ciclo nunca fecha e ela nunca é trocada nem marcada

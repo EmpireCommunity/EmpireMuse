@@ -656,7 +656,7 @@ class TestConsumerCap:
     @pytest.mark.asyncio
     async def test_the_third_connection_gets_409_and_the_play_keeps_receiving(self):
         head = b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n"
-        async with Station(sends(head, MP3 + b"data", keep_open=True)) as station, relay() as r:
+        async with Station(sends(head, MP3 + b"data", keep_open=True)) as station, relay(reconnect_grace=0.05) as r:
             token = r.register(station.url, codec="MP3", bitrate=128)
             _first = await self.connect(r, token)  # loadtracks
             await asyncio.wait_for(_first[0].read(10), 3)
@@ -671,7 +671,7 @@ class TestConsumerCap:
             _first[1].close()
 
     @pytest.mark.asyncio
-    async def test_a_third_connection_after_the_first_two_left_is_still_refused(self):
+    async def test_a_third_connection_after_the_first_two_left_is_a_reconnection_and_is_accepted(self):
         head = b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n"
         async with Station(sends(head, MP3 + b"data")) as station, relay() as r:
             token = r.register(station.url, codec="MP3", bitrate=128)
@@ -680,16 +680,12 @@ class TestConsumerCap:
             second, _ = await fetch(r, token)
             third, _ = await fetch(r, token)
 
-        assert (
-            first.startswith(b"HTTP/1.0 200")
-            and second.startswith(b"HTTP/1.0 200")
-            and third.startswith(b"HTTP/1.0 409")
-        )
+        assert all(h.startswith(b"HTTP/1.0 200") for h in (first, second, third))
 
     @pytest.mark.asyncio
     async def test_three_simultaneous_connections_leave_exactly_one_live_output(self):
         head = b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n"
-        async with Station(sends(head, MP3 + b"data", keep_open=True)) as station, relay() as r:
+        async with Station(sends(head, MP3 + b"data", keep_open=True)) as station, relay(reconnect_grace=0.05) as r:
             token = r.register(station.url, codec="MP3", bitrate=128)
             reader, writer = await self.connect(r, token)
             await asyncio.wait_for(reader.read(10), 3)  # o primeiro está tocando
@@ -856,3 +852,227 @@ class TestWhyAStreamEnded:
 
         assert "saída encerrada [upstream_eof]" in caplog.text
         assert "radio.example" not in caplog.text and str(station.port) not in caplog.text
+
+
+class FakeClock:
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
+
+
+HEAD = b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n"
+
+
+async def fetch_to_eof(r: RadioRelay, token: str) -> tuple[bytes, bytes]:
+    """Como o ``fetch``, mas só volta quando o relay FECHOU a saída (EOF): então a saída anterior já terminou de verdade."""
+    reader, writer = await asyncio.open_connection("127.0.0.1", r.port)
+    writer.write(f"GET /r/{token} HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n".encode())
+    await writer.drain()
+    data = await asyncio.wait_for(reader.read(), 5)
+    writer.close()
+    head, _, body = data.partition(b"\r\n\r\n")
+    return head, body
+
+
+async def full_connect(r, token):
+    reader, writer = await asyncio.open_connection("127.0.0.1", r.port)
+    writer.write(f"GET /r/{token} HTTP/1.0\r\n\r\n".encode())
+    await writer.drain()
+    return reader, writer
+
+
+class TestReconnectPolicy:
+    """Contrato R3 §2 (Keystone+Vigil): carregar e tocar ficam como estão; do 3º em diante a reconexão do Lavalink vale até 6 por 10 min, com 1 s entre
+    elas, só com a saída anterior fechada ou ociosa há 5 s, e a 7ª esgota o token. Relógio falso: nenhum teste espera 10 minutos."""
+
+    @staticmethod
+    async def sequential(r, token, clock, count, *, gap=2.0):
+        heads = []
+        for _ in range(count):
+            head, _ = await fetch_to_eof(r, token)
+            heads.append(head[:12])
+            assert r.sessions() == 0  # nunca fica saída aberta para trás
+            clock.now += gap
+        return heads
+
+    @pytest.mark.asyncio
+    async def test_load_play_and_six_reconnections_with_the_previous_closed_all_play(self):
+        clock = FakeClock()
+        async with Station(sends(HEAD, MP3 + b"data")) as station, relay(clock=clock) as r:
+            token = r.register(station.url, codec="MP3", bitrate=128)
+
+            heads = await self.sequential(r, token, clock, 2 + 6)
+
+        assert heads == [b"HTTP/1.0 200"] * 8
+
+    @pytest.mark.asyncio
+    async def test_the_seventh_reconnection_gets_409_and_the_token_stays_exhausted_after_ten_minutes(self):
+        clock = FakeClock()
+        async with Station(sends(HEAD, MP3 + b"data")) as station, relay(clock=clock) as r:
+            token = r.register(station.url, codec="MP3", bitrate=128)
+            await self.sequential(r, token, clock, 8)
+
+            seventh, _ = await fetch_to_eof(r, token)
+            clock.now += 700  # a janela inteira passou
+            later, _ = await fetch_to_eof(r, token)
+
+        assert seventh.startswith(b"HTTP/1.0 409") and later.startswith(b"HTTP/1.0 409")
+        assert r._sessions[token].exhausted is True and r.limited(token) is True
+
+    @pytest.mark.asyncio
+    async def test_two_reconnections_less_than_one_second_apart_the_second_gets_409(self):
+        clock = FakeClock()
+        async with Station(sends(HEAD, MP3 + b"data")) as station, relay(clock=clock) as r:
+            token = r.register(station.url, codec="MP3", bitrate=128)
+            await self.sequential(r, token, clock, 2)
+            third, _ = await fetch_to_eof(r, token)  # a 1ª reconexão
+            clock.now += 0.5
+            fourth, _ = await fetch_to_eof(r, token)
+
+        assert third.startswith(b"HTTP/1.0 200") and fourth.startswith(b"HTTP/1.0 409")
+
+    @pytest.mark.asyncio
+    async def test_a_409_does_not_spend_the_quota(self):
+        clock = FakeClock()
+        async with Station(sends(HEAD, MP3 + b"data")) as station, relay(clock=clock) as r:
+            token = r.register(station.url, codec="MP3", bitrate=128)
+            await self.sequential(r, token, clock, 2)
+            await fetch_to_eof(r, token)  # a 1ª reconexão aceita
+            refusals = [(await fetch_to_eof(r, token))[0][:12] for _ in range(10)]  # todas a menos de 1 s: 409
+            clock.now += 2
+            heads = await self.sequential(r, token, clock, 5)  # as outras 5 da cota de 6
+
+        assert refusals == [b"HTTP/1.0 409"] * 10 and heads == [b"HTTP/1.0 200"] * 5
+        assert r._sessions[token].exhausted is False and len(r._sessions[token].accepts) == 6
+
+    @pytest.mark.asyncio
+    async def test_without_blowing_the_quota_the_window_frees_up_after_ten_minutes(self):
+        clock = FakeClock()
+        async with Station(sends(HEAD, MP3 + b"data")) as station, relay(clock=clock) as r:
+            token = r.register(station.url, codec="MP3", bitrate=128)
+            await self.sequential(r, token, clock, 2 + 5)  # 5 reconexões
+            clock.now += 601
+            heads = await self.sequential(r, token, clock, 6)  # mais 6: a janela esvaziou
+
+            exhausted = r._sessions[token].exhausted
+
+        assert heads == [b"HTTP/1.0 200"] * 6 and exhausted is False
+
+    @pytest.mark.asyncio
+    async def test_a_writing_output_and_a_third_consumer_get_409_within_the_grace_and_the_output_keeps_receiving(self):
+        clock = FakeClock()
+        async with (
+            Station(sends(HEAD, MP3 + b"data", keep_open=True)) as station,
+            relay(clock=clock, reconnect_grace=0.1) as r,
+        ):
+            token = r.register(station.url, codec="MP3", bitrate=128)
+            load = await full_connect(r, token)
+            await asyncio.wait_for(load[0].read(10), 3)
+            play = await full_connect(r, token)
+            assert (await asyncio.wait_for(play[0].read(12), 3)).startswith(b"HTTP/1.0 200")
+            started = asyncio.get_running_loop().time()
+
+            head, _ = await fetch(r, token)
+
+            assert head.startswith(b"HTTP/1.0 409") and asyncio.get_running_loop().time() - started < 2
+            assert r.sessions() == 1  # a saída do play segue, sem ter sido tocada
+            play[1].close()
+            load[1].close()
+
+    @pytest.mark.asyncio
+    async def test_an_output_idle_for_five_seconds_is_taken_over_by_the_third_consumer(self):
+        clock = FakeClock()
+        async with (
+            Station(sends(HEAD, MP3 + b"data", keep_open=True)) as station,
+            relay(clock=clock, reconnect_grace=0.05) as r,
+        ):
+            token = r.register(station.url, codec="MP3", bitrate=128)
+            load = await full_connect(r, token)
+            await asyncio.wait_for(load[0].read(10), 3)
+            play = await full_connect(r, token)
+            await asyncio.wait_for(play[0].read(12), 3)
+            clock.now += 6  # sem escrita há 6 s: ociosa
+
+            head, _ = await fetch(r, token)
+
+            assert head.startswith(b"HTTP/1.0 200")  # tomou a saída ociosa
+            assert r._sessions[token].limited is False
+            play[1].close()
+            load[1].close()
+
+    @pytest.mark.asyncio
+    async def test_when_the_previous_closes_by_itself_the_third_is_accepted_without_waiting_the_two_seconds(self):
+        clock = FakeClock()
+        release = asyncio.Event()
+
+        async def ends_when_released(reader, writer):
+            await reader.readuntil(b"\r\n\r\n")
+            writer.write(HEAD + MP3 + b"data")
+            await writer.drain()
+            await release.wait()
+
+        async with Station(ends_when_released) as station, relay(clock=clock) as r:  # a espera padrão é de 2 s
+            token = r.register(station.url, codec="MP3", bitrate=128)
+            load = await full_connect(r, token)
+            await asyncio.wait_for(load[0].read(10), 3)
+            play = await full_connect(r, token)
+            await asyncio.wait_for(play[0].read(12), 3)
+            started = asyncio.get_running_loop().time()
+            third = asyncio.ensure_future(fetch(r, token))
+            for _ in range(5):
+                await asyncio.sleep(0)
+            release.set()  # a estação encerra a saída anterior sozinha
+
+            head, _ = await third
+
+            assert head.startswith(b"HTTP/1.0 200") and asyncio.get_running_loop().time() - started < 1.5
+            play[1].close()
+            load[1].close()
+
+    @pytest.mark.asyncio
+    async def test_50_refusals_in_a_minute_log_one_line_and_the_next_minute_one_more(self, caplog):
+        clock = FakeClock()
+        async with relay(clock=clock) as r:
+            token = r.register("http://radio.example:8000/live", codec="MP3", bitrate=128)
+            r._sessions[token].served = 2
+            r._sessions[token].exhausted = True
+            with caplog.at_level("INFO"):
+                for _ in range(50):
+                    head, _ = await fetch(r, token)
+                    assert head.startswith(b"HTTP/1.0 409")
+                lines = [rec for rec in caplog.records if "conexão recusada" in rec.getMessage()]
+                clock.now += 61
+                await fetch(r, token)
+                lines_later = [rec for rec in caplog.records if "conexão recusada" in rec.getMessage()]
+
+        assert len(lines) == 1 and "[exhausted]" in lines[0].getMessage() and len(lines_later) == 2
+        assert token not in caplog.text and "radio.example" not in caplog.text
+
+
+class TestRunnerWhenTheRelayRefuses:
+    @pytest.mark.asyncio
+    async def test_a_relay_refusal_asks_for_a_fresh_token_and_does_not_touch_the_station_health(self):
+        from tests.cogs.test_radio_ao_vivo import make_live
+
+        runner, ports, _ = make_live()
+        ports.relay_limited = lambda: True  # type: ignore[attr-defined]
+        await runner.start()
+        plays = len(ports.live_plays)
+
+        await runner.on_stream_lost()
+
+        assert runner.failures == 0 and ports.exhausted == []  # nada contou: a estação não tem culpa
+        assert len(ports.live_plays) == plays + 1  # o recuo pediu outra partida (token novo)
+
+    @pytest.mark.asyncio
+    async def test_the_same_drop_without_a_relay_refusal_still_counts_against_the_station(self):
+        from tests.cogs.test_radio_ao_vivo import make_live
+
+        runner, ports, _ = make_live()
+        await runner.start()
+
+        await runner.on_stream_lost()
+
+        assert runner.failures == 1

@@ -152,7 +152,11 @@ class LiveRadioPorts(DiscordRadioPorts):
                 # a rádio só "toca" quando o áudio chegou: fluxo mudo é falha, não estado. Se o relay chegou a abrir a estação, a culpa é dela
                 raise StationFailure if hub.relay.reached(token) else RuntimeError("o fluxo não chegou ao Lavalink")
         except BaseException as error:
-            station_fault = hub.relay.reached(token) and not isinstance(error, asyncio.CancelledError)
+            station_fault = (
+                hub.relay.reached(token)
+                and not hub.relay.limited(token)
+                and not isinstance(error, asyncio.CancelledError)
+            )
             with suppress(Exception):
                 await (
                     player.stop()
@@ -275,6 +279,10 @@ class LiveRadioPorts(DiscordRadioPorts):
             return  # o painel sumiu: o varredor o recria e a próxima edição o encontra
         payload = await self._panel_payload(bot, guild, current)
         await message.edit(allowed_mentions=disnake.AllowedMentions.none(), **self.edit_kwargs(payload))
+
+    def relay_limited(self) -> bool:
+        """O Lavalink foi recusado pelo relay (política de reconexão)? A queda que veio daí não é falha da estação: não conta para o ciclo nem para a saúde."""
+        return self._token is not None and self.pool.radio.relay.limited(self._token)
 
     async def _release(self) -> None:
         token, self._token = self._token, None
