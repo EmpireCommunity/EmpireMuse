@@ -238,5 +238,21 @@
   "player.you_must_join_a_voice": "Você deve entrar em um canal de voz pra usar esse botão....",
   "player.you_must_join_a_voice_2": "Você deve entrar em um canal de voz para usar isto.",
   "player.you_must_use_at_least": "**Você deve usar pelo menos um placeholder válido:** {placeholder_text}",
-  "player.you_will_have_to_wait": "**Você terá que aguardar {time_format} para usar essa função com o status automático do canal ligado...**"
+  "player.you_will_have_to_wait": "**Você terá que aguardar {time_format} para usar essa função com o status automático do canal ligado...**",
+  "radio.owner.bots_changed": "Pronto: a lista de bots só-rádio foi atualizada para `{bot}`.",
+  "radio.owner.bots_list": "Bots só-rádio: {bots}",
+  "radio.owner.bots_usage": "Use `radio-bot adicionar|remover TOKEN_2` ou `radio-bot listar`.",
+  "radio.owner.main_refused": "O bot principal não pode ser só-rádio.",
+  "radio.owner.none": "nenhum",
+  "radio.owner.paused_all": "⏸️ Todas as rádios estão pausadas pelo dono. Nada volta sozinho até o `radio-retomar-todas`.",
+  "radio.owner.paused_all_already": "Todas as rádios já estavam pausadas.",
+  "radio.owner.premium_granted": "Premium de rádio concedido ao servidor `{guild}`.",
+  "radio.owner.premium_list": "Servidores com premium de rádio:\n{lines}",
+  "radio.owner.premium_revoked_many": "Premium de rádio do servidor `{guild}` revogado; {count} rádios desligadas.",
+  "radio.owner.premium_revoked_one": "Premium de rádio do servidor `{guild}` revogado; {count} rádio desligada.",
+  "radio.owner.premium_revoked_other": "Premium de rádio do servidor `{guild}` revogado; {count} rádios desligadas.",
+  "radio.owner.premium_usage": "Use `radio-premium conceder|revogar ID` (o ID do servidor) ou `radio-premium listar`.",
+  "radio.owner.resumed_all": "▶️ Rádios retomadas, duas por vez.",
+  "radio.owner.resumed_all_already": "As rádios não estavam pausadas.",
+  "radio.owner.unavailable": "O banco de dados não respondeu. Tente de novo em instantes."
 }

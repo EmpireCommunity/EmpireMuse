@@ -228,5 +228,20 @@
   "player.you_must_join_a_voice": "You must join a voice channel to use this button....",
   "player.you_must_join_a_voice_2": "You must join a voice channel to use this.",
   "player.you_must_use_at_least": "**You must use at least one valid placeholder:** {placeholder_text}",
-  "player.you_will_have_to_wait": "**You will have to wait {time_format} to use this function with the channel automatic status on...**"
+  "player.you_will_have_to_wait": "**You will have to wait {time_format} to use this function with the channel automatic status on...**",
+  "radio.owner.bots_changed": "Done: the radio-only list was updated for `{bot}`.",
+  "radio.owner.bots_list": "Radio-only bots: {bots}",
+  "radio.owner.bots_usage": "Use `radio-bot add|remove TOKEN_2` or `radio-bot list`.",
+  "radio.owner.main_refused": "The main bot cannot be radio-only.",
+  "radio.owner.none": "none",
+  "radio.owner.paused_all": "⏸️ All radios are paused by the owner. Nothing resumes by itself until `radio-retomar-todas`.",
+  "radio.owner.paused_all_already": "All radios were already paused.",
+  "radio.owner.premium_granted": "Radio premium granted to server `{guild}`.",
+  "radio.owner.premium_list": "Radio premium servers:\n{lines}",
+  "radio.owner.premium_revoked_one": "Radio premium of server `{guild}` revoked; {count} radio turned off.",
+  "radio.owner.premium_revoked_other": "Radio premium of server `{guild}` revoked; {count} radios turned off.",
+  "radio.owner.premium_usage": "Use `radio-premium grant|revoke ID` (the server ID) or `radio-premium list`.",
+  "radio.owner.resumed_all": "▶️ Radios resumed, two at a time.",
+  "radio.owner.resumed_all_already": "The radios were not paused.",
+  "radio.owner.unavailable": "The database did not answer. Try again in a moment."
 }
