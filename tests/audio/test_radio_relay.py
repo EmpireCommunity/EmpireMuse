@@ -257,6 +257,36 @@ class TestR8NoSsrf:
         assert got_head.startswith(b"HTTP/1.0 502")
 
     @pytest.mark.asyncio
+    async def test_a_nested_playlist_is_refused_even_when_the_inner_one_exists_and_leads_to_valid_audio(self):
+        async with Station(sends(b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n", MP3 + b"ZZZZ")) as real:
+            inner_body = f"[playlist]\nFile1={real.url}\n".encode()  # a interna EXISTE e aponta para áudio válido
+            inner_port = free_port(8800)
+            inner = await asyncio.start_server(
+                sends(b"HTTP/1.0 200 OK\r\nContent-Type: audio/x-scpls\r\n\r\n", inner_body), "127.0.0.1", inner_port
+            )
+            outer_port = free_port(8820)
+            outer = await asyncio.start_server(
+                sends(
+                    b"HTTP/1.0 200 OK\r\nContent-Type: audio/x-scpls\r\n\r\n",
+                    f"[playlist]\nFile1=http://radio.example:{inner_port}/inner.pls\n".encode(),
+                ),
+                "127.0.0.1",
+                outer_port,
+            )
+            try:
+                async with relay() as r:
+                    token = r.register(f"http://radio.example:{outer_port}/outer.pls", codec="MP3", bitrate=128)
+
+                    got_head, got_body = await fetch(r, token)
+            finally:
+                for server_ in (inner, outer):
+                    server_.close()
+                    await server_.wait_closed()
+
+            assert got_head.startswith(b"HTTP/1.0 502") and MP3 not in got_body
+            assert real.connections == 0  # a estação de áudio nem foi aberta: a interna foi recusada antes
+
+    @pytest.mark.asyncio
     async def test_a_hostile_icy_name_never_reaches_the_consumer(self):
         head = b"ICY 200 OK\r\nicy-name:@everyone <@1>\r\nicy-description:https://evil.example\r\nContent-Type: audio/mpeg\r\n\r\n"
         async with Station(sends(head, MP3 + b"data")) as station, relay() as r:
@@ -289,6 +319,30 @@ class TestR8NoSsrf:
 
 
 class TestEntrance:
+    @pytest.mark.asyncio
+    async def test_a_token_that_is_almost_right_finds_no_session(self):
+        async with relay() as r:
+            token = r.register("http://radio.example:8000/live", codec="MP3", bitrate=128)
+            wrong_last = token[:-1] + ("A" if token[-1] != "A" else "B")
+            wrong_first = ("A" if token[0] != "A" else "B") + token[1:]
+
+            assert r._find(token) is not None
+            assert r._find(wrong_last) is None and r._find(wrong_first) is None  # prefixo (ou sufixo) certo não basta
+            assert r._find(token[:2]) is None and r._find(token + "x") is None and r._find("") is None
+
+    @pytest.mark.asyncio
+    async def test_a_request_with_an_almost_right_token_is_closed_without_touching_the_station(self):
+        async with (
+            Station(sends(b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n", MP3 + b"data")) as station,
+            relay() as r,
+        ):
+            token = r.register(station.url, codec="MP3", bitrate=128)
+            wrong = token[:-1] + ("A" if token[-1] != "A" else "B")
+
+            got_head, got_body = await fetch(r, wrong)
+
+        assert got_head == b"" and got_body == b"" and station.connections == 0 and not r.touched(token)
+
     @pytest.mark.asyncio
     async def test_an_unknown_token_closes_without_reading_anything_more(self):
         async with relay() as r:

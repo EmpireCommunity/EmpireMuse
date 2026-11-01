@@ -331,8 +331,28 @@ class TestStationHealth:
             clock.now += 600
 
         assert results == [False, False, True] and health.unavailable(MAIN)
-        clock.now += UNAVAILABLE_TTL_S + 1
+        clock.now += 1799 - 600  # ainda dentro dos 30 min (1800 s) contados da marca
+        assert health.unavailable(MAIN)
+        clock.now += 2
         assert not health.unavailable(MAIN)
+        assert (
+            UNAVAILABLE_TTL_S == 1800 and WINDOW_S == 3600
+        )  # os números do contrato (R-10), não os que o código escolher
+
+    @pytest.mark.asyncio
+    async def test_three_failures_inside_the_hour_mark_it_but_the_same_three_spread_over_two_hours_do_not(self):
+        close, _ = make_health(clock := Clock())
+        for _ in range(3):
+            marked = await close.record_exhausted(MAIN)
+            clock.now += 1700  # 3400 s no total: dentro de 1 h
+        assert marked is True
+
+        spread_clock = Clock()
+        spread, _ = make_health(spread_clock)
+        for _ in range(3):
+            marked = await spread.record_exhausted(MAIN)
+            spread_clock.now += 1900  # 3800 s entre a primeira e a terceira: a primeira já saiu da janela
+        assert marked is False and not spread.unavailable(MAIN)
 
     @pytest.mark.asyncio
     async def test_failures_more_than_an_hour_apart_never_mark_it(self):
@@ -341,7 +361,7 @@ class TestStationHealth:
 
         for _ in range(6):
             assert await health.record_exhausted(MAIN) is False
-            clock.now += WINDOW_S + 1
+            clock.now += 3601  # mais de 1 h (3600 s) entre uma falha e a seguinte
 
         assert not health.unavailable(MAIN)
 
