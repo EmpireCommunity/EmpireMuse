@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import datetime
 import gc
 import json
@@ -61,6 +62,7 @@ from empiremuse.utils.safe_error import HTTPStatusError, safe_error
 from empiremuse.utils.db import MongoDatabase, LocalDatabase, get_prefix, DBModel, global_db_models
 from empiremuse.utils.app_profile import sync_app_profile
 from empiremuse.utils.guild_ban import GuildBans
+from empiremuse.utils.radio import RadioHub
 from empiremuse.utils.request_panel import RequestPanel
 from empiremuse.utils.servers import ServerStore
 from empiremuse.rules.usage import KIND_PREFIX, KIND_SLASH
@@ -122,7 +124,11 @@ def _node_sample(identifier: str, node) -> NodeSample:
     if not stats or not getattr(node, "is_available", False):
         return NodeSample(identifier, None, None, None)
     return NodeSample(
-        identifier, stats.players, round(stats.lavalink_load * 100, 1), round(stats.memory_used / 1048576, 1)
+        identifier,
+        stats.players,
+        round(stats.lavalink_load * 100, 1),
+        round(stats.memory_used / 1048576, 1),
+        *((stats.frames_sent, stats.frames_nulled, stats.frames_deficit) if stats.has_frame_stats else (None,) * 3),
     )
 
 
@@ -134,11 +140,10 @@ def _read_process_stats(process_stats, java_pid):
 def _with_java_figures(nodes: list[NodeSample], java_cpu, java_rss) -> list[NodeSample]:
     """Completa o nó ``LOCAL`` com CPU e memória do processo Java onde o ``stats`` do nó não trouxe."""
     return [
-        NodeSample(
-            node.identifier,
-            node.players,
-            node.cpu_percent if node.cpu_percent is not None else java_cpu,
-            node.memory_mib if node.memory_mib is not None else java_rss,
+        dataclasses.replace(
+            node,
+            cpu_percent=node.cpu_percent if node.cpu_percent is not None else java_cpu,
+            memory_mib=node.memory_mib if node.memory_mib is not None else java_rss,
         )
         if node.identifier == "LOCAL"
         else node
@@ -199,6 +204,7 @@ class BotPool:
     guild_bans: Optional[GuildBans] = None
     servers: Optional[ServerStore] = None
     request_panel: Optional[RequestPanel] = None
+    radio: RadioHub
     join_notices: Optional[TTLCache] = None
     logs_task: Optional[asyncio.Task] = None
     version_check_task: Optional[asyncio.Task] = None
@@ -272,6 +278,7 @@ class BotPool:
         self.i18n.pool = self
         self.servers = ServerStore(self)
         self.request_panel = RequestPanel(self)
+        self.radio = RadioHub(self)
         # servidor -> aviso de "sem o principal" já enviado; a validade de 24 h é o limitador único (um aviso por servidor no pool)
         self.join_notices = TTLCache(maxsize=5000, ttl=NOTICE_WINDOW_SECONDS)
         self.logs_task: Optional[asyncio.Task] = None
