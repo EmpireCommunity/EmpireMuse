@@ -4,6 +4,7 @@ import asyncio
 import disnake
 from disnake.ext import commands
 
+from empiremuse.i18n import localized
 from empiremuse.utils.music.checks import (
     check_voice,
     has_source,
@@ -28,9 +29,6 @@ from empiremuse.utils.others import (
 )
 
 # O corpo da classe usa estes nomes, então eles precisam existir neste módulo.
-from empiremuse.music_cog.shared import (
-    DESC_PREFIX as desc_prefix,
-)
 
 
 class PlaybackControlsMixin:
@@ -60,7 +58,7 @@ class PlaybackControlsMixin:
     @has_source()
     @check_voice()
     @commands.slash_command(
-        description=f"{desc_prefix}Ajustar volume da música.",
+        description=localized("cmd.volume.description"),
         extras={"only_voiced": True},
         cooldown=volume_cd,
         max_concurrency=volume_mc,
@@ -70,7 +68,12 @@ class PlaybackControlsMixin:
         self,
         inter: disnake.ApplicationCommandInteraction,
         *,
-        value: int = commands.Param(name="nível", description="nível entre 5 a 150", min_value=5.0, max_value=150.0),
+        value: int = commands.Param(
+            name=localized("cmd.volume.opt.level.name"),
+            description=localized("cmd.volume.opt.level.description"),
+            min_value=5.0,
+            max_value=150.0,
+        ),
     ):
         try:
             bot = inter.music_bot
@@ -134,7 +137,7 @@ class PlaybackControlsMixin:
     @has_source()
     @check_voice()
     @commands.slash_command(
-        description=f"{desc_prefix}Pausar a música.",
+        description=localized("cmd.pause.description"),
         extras={"only_voiced": True},
         cooldown=pause_resume_cd,
         max_concurrency=pause_resume_mc,
@@ -176,7 +179,7 @@ class PlaybackControlsMixin:
     @has_source()
     @check_voice()
     @commands.slash_command(
-        description=f"{desc_prefix}Retomar/Despausar a música.",
+        description=localized("cmd.resume.description"),
         extras={"only_voiced": True},
         cooldown=pause_resume_cd,
         max_concurrency=pause_resume_mc,
@@ -226,7 +229,7 @@ class PlaybackControlsMixin:
     @has_source()
     @check_voice()
     @commands.slash_command(
-        description=f"{desc_prefix}Avançar/Retomar a música para um tempo específico.",
+        description=localized("cmd.seek.description"),
         extras={"only_voiced": True},
         cooldown=seek_cd,
         max_concurrency=seek_mc,
@@ -235,7 +238,9 @@ class PlaybackControlsMixin:
     async def seek(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        position: str = commands.Param(name="tempo", description="Tempo para avançar/voltar (ex: 1:45 / 40 / 0:30)"),
+        position: str = commands.Param(
+            name=localized("cmd.seek.opt.time.name"), description=localized("cmd.seek.opt.time.description")
+        ),
     ):
         try:
             bot = inter.music_bot
@@ -288,7 +293,7 @@ class PlaybackControlsMixin:
         await player.update_stage_topic()
         await player.process_rpc()
 
-    @seek.autocomplete("tempo")
+    @seek.autocomplete("time")
     async def seek_suggestions(self, inter: disnake.Interaction, query: str):
         try:
             if not inter.author.voice:
@@ -396,7 +401,7 @@ class PlaybackControlsMixin:
     @has_source()
     @check_voice()
     @commands.slash_command(
-        description=f"{desc_prefix}Selecionar modo de repetição entre: atual / fila ou desativar.",
+        description=localized("cmd.loop_mode.description"),
         extras={"only_voiced": True},
         cooldown=loop_cd,
         max_concurrency=loop_mc,
@@ -406,13 +411,11 @@ class PlaybackControlsMixin:
         self,
         inter: disnake.ApplicationCommandInteraction,
         mode: str = commands.Param(
-            name="modo",
+            name=localized("cmd.loop_mode.opt.mode.name"),
             choices=[
-                disnake.OptionChoice(
-                    disnake.Localized("Current", data={disnake.Locale.pt_BR: "Música Atual"}), "current"
-                ),
-                disnake.OptionChoice(disnake.Localized("Queue", data={disnake.Locale.pt_BR: "Fila"}), "queue"),
-                disnake.OptionChoice(disnake.Localized("Off", data={disnake.Locale.pt_BR: "Desativar"}), "off"),
+                disnake.OptionChoice(localized("cmd.loop_mode.opt.mode.choice.current"), "current"),
+                disnake.OptionChoice(localized("cmd.loop_mode.opt.mode.choice.queue"), "queue"),
+                disnake.OptionChoice(localized("cmd.loop_mode.opt.mode.choice.off"), "off"),
             ],
         ),
     ):
@@ -454,7 +457,7 @@ class PlaybackControlsMixin:
     @has_source()
     @check_voice()
     @commands.slash_command(
-        description=f"{desc_prefix}Definir quantidade de repetições da música atual.",
+        description=localized("cmd.loop_amount.description"),
         extras={"only_voiced": True},
         cooldown=loop_cd,
         max_concurrency=loop_mc,
@@ -463,7 +466,10 @@ class PlaybackControlsMixin:
     async def loop_amount(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        value: int = commands.Param(name="valor", description="número de repetições."),
+        value: int = commands.Param(
+            name=localized("cmd.loop_amount.opt.value.name"),
+            description=localized("cmd.loop_amount.opt.value.description"),
+        ),
     ):
         try:
             bot = inter.music_bot
@@ -505,7 +511,7 @@ class PlaybackControlsMixin:
     @has_source()
     @check_voice()
     @commands.slash_command(
-        description=f"{desc_prefix}Ativar/Desativar o efeito nightcore (Música acelerada com tom mais agudo).",
+        description=localized("cmd.nightcore.description"),
         extras={"only_voiced": True},
         cooldown=nightcore_cd,
         max_concurrency=nightcore_mc,

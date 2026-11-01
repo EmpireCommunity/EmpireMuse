@@ -209,19 +209,17 @@ class I18n:
         text = self.entries(locale).get(key)
         if text is None:
             return None
-        group = self._groups.get(key)
-        if group is None or not rules.is_command_description(key):
+        group = rules.command_group(key)
+        if group is None:
             return text
         label = self.entries(locale).get(f"cmd.{group}._label") or self.reference.get(f"cmd.{group}._label", "")
         return rules.description_prefix(group, label) + text
 
-    def localized(self, key: str, group: str | None = None) -> disnake.Localized:
+    def localized(self, key: str) -> disnake.Localized:
         """``Localized`` com o texto base em ``en-US`` e a chave: o provider completa os outros idiomas.
 
-        ``group`` é o grupo da legenda (``cmd.<grupo>._label``) de uma descrição de comando; sem ele o texto vai sem legenda.
+        A descrição de um comando leva a legenda do grupo (``COMMAND_GROUPS``) montada no idioma.
         """
-        if group is not None:
-            self._groups[key] = group
         base = self.command_text(rules.REFERENCE_LOCALE, key)
         if base is None:
             raise KeyError(key)
@@ -244,6 +242,6 @@ def get_i18n() -> I18n:
     return _INSTANCE
 
 
-def localized(key: str, group: str | None = None) -> disnake.Localized:
-    """Para declarar um comando: ``description=localized("cmd.play.description", group="music")``."""
-    return get_i18n().localized(key, group)
+def localized(key: str) -> disnake.Localized:
+    """Para declarar um comando: ``description=localized("cmd.play.description")``."""
+    return get_i18n().localized(key)

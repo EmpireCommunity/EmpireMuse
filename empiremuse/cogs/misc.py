@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import datetime
 import json
-import os.path
 import platform
 import logging
 from copy import deepcopy
@@ -20,6 +19,7 @@ from aiohttp import ClientSession
 from disnake.ext import commands
 
 from empiremuse import paths
+from empiremuse.i18n import localized
 from empiremuse.rules.text import format_int, format_mib
 from empiremuse.rules.bot_roles import Peer, invite_order, main_missing_notice, notifier
 from empiremuse.utils import branding
@@ -502,7 +502,7 @@ class Misc(commands.Cog):
         await self.about.callback(self=self, interaction=ctx)
 
     @commands.slash_command(
-        description=f"{desc_prefix}Exibir informações sobre mim.", cooldown=about_cd, extras={"allow_private": True}
+        description=localized("cmd.about.description"), cooldown=about_cd, extras={"allow_private": True}
     )
     @commands.contexts(guild=True)
     async def about(self, interaction: disnake.ApplicationCommandInteraction):
@@ -859,7 +859,7 @@ class Misc(commands.Cog):
         await self.invite.callback(self=self, inter=ctx)
 
     @commands.slash_command(
-        description=f"{desc_prefix}Exibir meu link de convite para você me adicionar no seu servidor.",
+        description=localized("cmd.invite.description"),
         extras={"allow_private": True},
     )
     @commands.contexts(guild=True)

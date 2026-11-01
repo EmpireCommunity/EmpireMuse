@@ -6,17 +6,13 @@ from typing import Union, Optional
 import disnake
 from disnake.ext import commands
 
+from empiremuse.i18n import localized
 from empiremuse.utils.music.checks import (
     check_voice,
     has_player,
     is_dj,
     check_pool_bots,
     check_queue_loading,
-)
-from empiremuse.utils.music.converters import (
-    time_format,
-    fix_characters,
-    string_to_seconds,
 )
 from empiremuse.utils.music.errors import (
     GenericError,
@@ -29,15 +25,12 @@ from empiremuse.utils.music.models import (
 )
 from empiremuse.utils.others import (
     CustomContext,
-    PlayerControls,
-    queue_track_index,
     pool_command,
     CommandArgparse,
 )
 
 # O corpo da classe usa estes nomes, então eles precisam existir neste módulo.
 from empiremuse.music_cog.shared import (
-    DESC_PREFIX as desc_prefix,
     remove_mc,
     queue_manipulation_cd,
 )
@@ -73,7 +66,7 @@ class QueueGroupMixin:
     @is_dj()
     @q.sub_command(
         name="shuffle",
-        description=f"{desc_prefix}Misturar as músicas da fila",
+        description=localized("cmd.queue.shuffle.description"),
         extras={"only_voiced": True},
         cooldown=queue_manipulation_cd,
         max_concurrency=remove_mc,
@@ -113,7 +106,7 @@ class QueueGroupMixin:
 
     @is_dj()
     @q.sub_command(
-        description=f"{desc_prefix}Inverter a ordem das músicas na fila",
+        description=localized("cmd.queue.reverse.description"),
         extras={"only_voiced": True},
         cooldown=queue_manipulation_cd,
         max_concurrency=remove_mc,
@@ -154,7 +147,7 @@ class QueueGroupMixin:
         await self.display.callback(self=self, inter=ctx)
 
     @commands.max_concurrency(1, commands.BucketType.member)
-    @q.sub_command(description=f"{desc_prefix}Exibir as músicas que estão na fila.", max_concurrency=queue_show_mc)
+    @q.sub_command(description=localized("cmd.queue.display.description"), max_concurrency=queue_show_mc)
     async def display(self, inter: disnake.ApplicationCommandInteraction):
         try:
             bot = inter.music_bot
@@ -329,7 +322,7 @@ class QueueGroupMixin:
     @check_voice()
     @q.sub_command(
         name="clear",
-        description=f"{desc_prefix}Limpar a fila de música.",
+        description=localized("cmd.queue.clear.description"),
         extras={"only_voiced": True},
         cooldown=queue_manipulation_cd,
         max_concurrency=remove_mc,
@@ -337,43 +330,65 @@ class QueueGroupMixin:
     async def clear(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        song_name: str = commands.Param(name="nome", description="Incluir um nome que tiver na música.", default=None),
+        song_name: str = commands.Param(
+            name=localized("cmd.queue.clear.opt.name.name"),
+            description=localized("cmd.queue.clear.opt.name.description"),
+            default=None,
+        ),
         song_author: str = commands.Param(
-            name="uploader", description="Incluir um nome que tiver no autor/artista/uploader da música.", default=None
+            name=localized("cmd.queue.clear.opt.uploader.name"),
+            description=localized("cmd.queue.clear.opt.uploader.description"),
+            default=None,
         ),
         user: disnake.Member = commands.Param(
-            name="membro", description="Incluir músicas pedidas pelo membro selecionado.", default=None
+            name=localized("cmd.queue.clear.opt.member.name"),
+            description=localized("cmd.queue.clear.opt.member.description"),
+            default=None,
         ),
-        duplicates: bool = commands.Param(name="duplicados", description="Incluir músicas duplicadas", default=False),
-        playlist: str = commands.Param(description="Incluir nome que tiver na playlist.", default=None),
+        duplicates: bool = commands.Param(
+            name=localized("cmd.queue.clear.opt.duplicates.name"),
+            description=localized("cmd.queue.clear.opt.duplicates.description"),
+            default=False,
+        ),
+        playlist: str = commands.Param(
+            name=localized("cmd.queue.clear.opt.playlist.name"),
+            description=localized("cmd.queue.clear.opt.playlist.description"),
+            default=None,
+        ),
         min_duration: str = commands.Param(
-            name="duração_inicial", description="incluir músicas com duração acima/igual (ex. 1:23).", default=None
+            name=localized("cmd.queue.clear.opt.min_duration.name"),
+            description=localized("cmd.queue.clear.opt.min_duration.description"),
+            default=None,
         ),
         max_duration: str = commands.Param(
-            name="duração_máxima",
-            description="Incluir músicas com duração máxima especificada (ex. 1:45).",
+            name=localized("cmd.queue.clear.opt.max_duration.name"),
+            description=localized("cmd.queue.clear.opt.max_duration.description"),
             default=None,
         ),
         amount: int = commands.Param(
-            name="quantidade", description="Quantidade de músicas para mover.", min_value=0, max_value=99, default=None
+            name=localized("cmd.queue.clear.opt.amount.name"),
+            description=localized("cmd.queue.clear.opt.amount.description"),
+            min_value=0,
+            max_value=99,
+            default=None,
         ),
         range_start: int = commands.Param(
-            name="posição_inicial",
-            description="incluir músicas da fila a partir da posição específicada.",
+            name=localized("cmd.queue.clear.opt.range_start.name"),
+            description=localized("cmd.queue.clear.opt.range_start.description"),
             min_value=1.0,
             max_value=500.0,
             default=0,
         ),
         range_end: int = commands.Param(
-            name="posição_final",
-            description="incluir músicas da fila até a posição especificada.",
+            name=localized("cmd.queue.clear.opt.range_end.name"),
+            description=localized("cmd.queue.clear.opt.range_end.description"),
             min_value=1.0,
             max_value=500.0,
             default=0,
         ),
         absent_members: bool = commands.Param(
-            name="membros_ausentes",
-            description="Incluir músicas adicionads por membros que saíram do canal.",
+            name=localized("cmd.queue.clear.opt.absent_members.name"),
+            description=localized("cmd.queue.clear.opt.absent_members.description"),
             default=False,
         ),
     ):
@@ -471,7 +486,7 @@ class QueueGroupMixin:
     @check_voice()
     @commands.slash_command(
         name="move",
-        description=f"{desc_prefix}Mover músicas da fila.",
+        description=localized("cmd.move.description"),
         extras={"only_voiced": True},
         cooldown=queue_manipulation_cd,
         max_concurrency=remove_mc,
@@ -480,46 +495,72 @@ class QueueGroupMixin:
     async def move(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        song_name: str = commands.Param(name="nome", description="Incluir um nome que tiver na música.", default=None),
+        song_name: str = commands.Param(
+            name=localized("cmd.move.opt.name.name"),
+            description=localized("cmd.move.opt.name.description"),
+            default=None,
+        ),
         position: int = commands.Param(
-            name="posição", description="Posição de destino na fila (Opcional).", min_value=1, max_value=900, default=1
+            name=localized("cmd.move.opt.position.name"),
+            description=localized("cmd.move.opt.position.description"),
+            min_value=1,
+            max_value=900,
+            default=1,
         ),
         song_author: str = commands.Param(
-            name="uploader", description="Incluir um nome que tiver no autor/artista/uploader da música.", default=None
+            name=localized("cmd.move.opt.uploader.name"),
+            description=localized("cmd.move.opt.uploader.description"),
+            default=None,
         ),
         user: disnake.Member = commands.Param(
-            name="membro", description="Incluir músicas pedidas pelo membro selecionado.", default=None
+            name=localized("cmd.move.opt.member.name"),
+            description=localized("cmd.move.opt.member.description"),
+            default=None,
         ),
-        duplicates: bool = commands.Param(name="duplicados", description="Incluir músicas duplicadas", default=False),
-        playlist: str = commands.Param(description="Incluir nome que tiver na playlist.", default=None),
+        duplicates: bool = commands.Param(
+            name=localized("cmd.move.opt.duplicates.name"),
+            description=localized("cmd.move.opt.duplicates.description"),
+            default=False,
+        ),
+        playlist: str = commands.Param(
+            name=localized("cmd.move.opt.playlist.name"),
+            description=localized("cmd.move.opt.playlist.description"),
+            default=None,
+        ),
         min_duration: str = commands.Param(
-            name="duração_inicial", description="incluir músicas com duração acima/igual (ex. 1:23).", default=None
+            name=localized("cmd.move.opt.min_duration.name"),
+            description=localized("cmd.move.opt.min_duration.description"),
+            default=None,
         ),
         max_duration: str = commands.Param(
-            name="duração_máxima",
-            description="Incluir músicas com duração máxima especificada (ex. 1:45).",
+            name=localized("cmd.move.opt.max_duration.name"),
+            description=localized("cmd.move.opt.max_duration.description"),
             default=None,
         ),
         amount: int = commands.Param(
-            name="quantidade", description="Quantidade de músicas para mover.", min_value=0, max_value=99, default=None
+            name=localized("cmd.move.opt.amount.name"),
+            description=localized("cmd.move.opt.amount.description"),
+            min_value=0,
+            max_value=99,
+            default=None,
         ),
         range_start: int = commands.Param(
-            name="posição_inicial",
-            description="incluir músicas da fila a partir da posição específicada.",
+            name=localized("cmd.move.opt.range_start.name"),
+            description=localized("cmd.move.opt.range_start.description"),
             min_value=1.0,
             max_value=500.0,
             default=0,
         ),
         range_end: int = commands.Param(
-            name="posição_final",
-            description="incluir músicas da fila até a posição especificada.",
+            name=localized("cmd.move.opt.range_end.name"),
+            description=localized("cmd.move.opt.range_end.description"),
             min_value=1.0,
             max_value=500.0,
             default=0,
         ),
         absent_members: bool = commands.Param(
-            name="membros_ausentes",
-            description="Incluir músicas adicionads por membros que saíram do canal.",
+            name=localized("cmd.move.opt.absent_members.name"),
+            description=localized("cmd.move.opt.absent_members.description"),
             default=False,
         ),
     ):

@@ -8,6 +8,7 @@ import disnake
 from disnake.ext import commands
 
 import empiremuse.wavelink as wavelink
+from empiremuse.i18n import localized
 from empiremuse.utils.client import BotCore
 from empiremuse.utils.safe_error import HTTPStatusError, safe_error
 from empiremuse.utils.music.checks import (
@@ -28,9 +29,6 @@ from empiremuse.utils.others import (
 )
 
 # O corpo da classe usa estes nomes, então eles precisam existir neste módulo.
-from empiremuse.music_cog.shared import (
-    DESC_PREFIX as desc_prefix,
-)
 
 logger = logging.getLogger("empiremuse.wavelink")
 
@@ -40,12 +38,15 @@ class NodesMixin:
     @has_player()
     @is_dj()
     @commands.cooldown(1, 10, commands.BucketType.guild)
-    @commands.slash_command(description=f"{desc_prefix}Migrar o player para outro servidor de música.")
+    @commands.slash_command(description=localized("cmd.change_node.description"))
     @commands.contexts(guild=True)
     async def change_node(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        node: str = commands.Param(name="servidor", description="Servidor de música"),
+        node: str = commands.Param(
+            name=localized("cmd.change_node.opt.server.name"),
+            description=localized("cmd.change_node.opt.server.description"),
+        ),
     ):
         try:
             bot = inter.music_bot

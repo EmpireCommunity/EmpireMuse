@@ -136,7 +136,7 @@ class TestLoading:
         i18n = I18n(root)
         i18n.load()
 
-        localized = i18n.localized("cmd.play.description", group="music")
+        localized = i18n.localized("cmd.play.description")
 
         assert localized.string == "[🎶 Music] | Play a song."
         assert i18n.provider.get("cmd.play.description") == {"pt-BR": "[🎶 Música] | Tocar uma música."}

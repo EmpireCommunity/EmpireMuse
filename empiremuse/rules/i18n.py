@@ -58,6 +58,63 @@ DESC_PREFIX_FORMAT = "[{emoji} {name}] | "
 # Emoji da legenda de cada grupo de comandos (``cmd.<grupo>._label`` guarda só o nome, no idioma).
 GROUP_EMOJI: dict[str, str] = {"music": "🎶", "settings": "🔧", "lastfm": "🎧", "playlists": "📚", "misc": "🔰"}
 
+# O grupo (``cmd.<grupo>._label``) da legenda de cada comando: a descrição é medida com a legenda do PRÓPRIO grupo.
+COMMAND_GROUPS: Mapping[str, str] = {
+    "247": "music",
+    "about": "misc",
+    "add_dj": "music",
+    "add_dj_role": "settings",
+    "autoplay": "music",
+    "back": "music",
+    "change_node": "music",
+    "change_skin": "settings",
+    "command_log": "music",
+    "connect": "music",
+    "controller": "music",
+    "custom_skin": "settings",
+    "fav_manager": "music",
+    "invite": "misc",
+    "language": "settings",
+    "lastfm": "lastfm",
+    "loop_amount": "music",
+    "loop_mode": "music",
+    "move": "music",
+    "nightcore": "music",
+    "nodeinfo": "settings",
+    "now_playing": "music",
+    "pause": "music",
+    "play": "music",
+    "play_music_file": "music",
+    "player_settings": "settings",
+    "playlists": "playlists",
+    "playlists.exportar": "playlists",
+    "playlists.importar": "playlists",
+    "queue.clear": "music",
+    "queue.display": "music",
+    "queue.reverse": "music",
+    "queue.shuffle": "music",
+    "readd_songs": "music",
+    "remove": "music",
+    "remove_dj": "music",
+    "remove_dj_role": "settings",
+    "reset": "settings",
+    "restrict_mode": "music",
+    "resume": "music",
+    "rich_presence": "settings",
+    "rotate": "music",
+    "save_queue": "music",
+    "search": "music",
+    "seek": "music",
+    "set_voice_status": "music",
+    "setup": "settings",
+    "skip": "music",
+    "skipto": "music",
+    "song_request_thread": "music",
+    "stop": "music",
+    "volume": "music",
+    "voteskip": "music",
+}
+
 _BIDI = frozenset("\u061c\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
 _INVISIBLE = frozenset("\u200b\u2060\ufeff\u00ad")
 _JOINERS = frozenset("\u200d\u200c")
@@ -232,6 +289,13 @@ def description_prefix(group: str, label: str) -> str:
     return DESC_PREFIX_FORMAT.format(emoji=emoji, name=label) if emoji else f"[{label}] | "
 
 
+def command_group(key: str) -> str | None:
+    """O grupo da legenda de ``cmd.<caminho>.description`` (``None`` se o comando não está em ``COMMAND_GROUPS``)."""
+    if not is_command_description(key):
+        return None
+    return COMMAND_GROUPS.get(key[len("cmd.") : -len(".description")])
+
+
 def is_command_description(key: str) -> bool:
     """``cmd.<caminho>.description``: a descrição do comando em si (a única que leva a legenda do grupo; a de uma opção não)."""
     parts = key.split(".")
@@ -335,7 +399,9 @@ def _reference_value(key: str, reference: Mapping[str, str]) -> str | None | boo
     return False
 
 
-def check_entry(key: str, value: str, reference: Mapping[str, str] | None, prefix_units: int = 0) -> str | None:
+def check_entry(
+    key: str, value: str, reference: Mapping[str, str] | None, prefixes: Mapping[str, int] | None = None
+) -> str | None:
     """O motivo de ``(key, value)`` ser descartada, ou ``None`` se passa. ``reference`` ``None`` = validando a própria referência."""
     if len(key) > MAX_KEY_LENGTH or not KEY_PATTERN.fullmatch(key):
         return KEY_INVALID
@@ -378,8 +444,11 @@ def check_entry(key: str, value: str, reference: Mapping[str, str] | None, prefi
     size = utf16_length(value)
     if size > _limit_for(key, ref_value):
         return SIZE
-    if is_command_description(key) and prefix_units + size > LIMITS["description"]:
-        return SIZE
+    if is_command_description(key):
+        group = command_group(key)
+        prefix = (prefixes or {}).get(group) if group else max((prefixes or {}).values(), default=0)
+        if (prefix or 0) + size > LIMITS["description"]:
+            return SIZE
     return None
 
 
@@ -426,13 +495,13 @@ def _validate(namespace: str, raw: bytes, reference: Mapping[str, str] | None) -
         return CatalogReport({}, (), fatal)
     if reference is not None and len(data) > 2 * max(len(reference), 1):
         return CatalogReport({}, (), "chaves demais")
-    prefix_units = _worst_prefix({**_labels(reference or {}), **_labels(data)})
+    prefixes = _prefix_units({**_labels(reference or {}), **_labels(data)})
     entries: dict[str, str] = {}
     dropped: list[tuple[str, str]] = []
     for key, value in data.items():
         is_command = key.startswith("cmd.")
         reason = (
-            KEY_UNKNOWN if is_command != (namespace == "commands") else check_entry(key, value, reference, prefix_units)
+            KEY_UNKNOWN if is_command != (namespace == "commands") else check_entry(key, value, reference, prefixes)
         )
         if reason is None:
             entries[key] = value
@@ -448,9 +517,11 @@ def _labels(source: Mapping[str, str]) -> dict[str, str]:
     return {key: value for key, value in source.items() if key.startswith("cmd.") and key.endswith("._label")}
 
 
-def _worst_prefix(labels: Mapping[str, str]) -> int:
-    """A maior legenda ``[🎶 Música] | `` entre os grupos: a descrição de qualquer comando tem de caber depois dela."""
-    return max((utf16_length(description_prefix(key.split(".")[1], value)) for key, value in labels.items()), default=0)
+def _prefix_units(labels: Mapping[str, str]) -> dict[str, int]:
+    """O tamanho (UTF-16) da legenda ``[🎶 Música] | `` de cada grupo, no idioma do catálogo."""
+    return {
+        key.split(".")[1]: utf16_length(description_prefix(key.split(".")[1], value)) for key, value in labels.items()
+    }
 
 
 def _conflicting_levels(entries: Mapping[str, str], reference: Mapping[str, str] | None) -> list[str]:

@@ -3,6 +3,7 @@
 import disnake
 from disnake.ext import commands
 
+from empiremuse.i18n import localized
 from empiremuse.rules.errors import RuleError
 from empiremuse.rules.settings import validate_voice_status
 from empiremuse.utils.db import DBModel
@@ -23,7 +24,6 @@ from empiremuse.utils.others import (
 )
 
 # O corpo da classe usa ``desc_prefix`` (como no corpo de ``Music``), então o nome precisa existir neste módulo.
-from empiremuse.music_cog.shared import DESC_PREFIX as desc_prefix
 
 
 class VoiceStatusMixin:
@@ -56,7 +56,7 @@ class VoiceStatusMixin:
         await self.set_voice_status.callback(self=self, inter=ctx, template=template)
 
     @commands.slash_command(
-        description=f"{desc_prefix}Ativar/editar o sistema de anúncio/status automático do canal com o nome da música.",
+        description=localized("cmd.set_voice_status.description"),
         extras={"only_voiced": True, "exclusive_cooldown": True},
         cooldown=stage_cd,
         max_concurrency=stage_mc,
@@ -67,7 +67,9 @@ class VoiceStatusMixin:
         self,
         inter: disnake.ApplicationCommandInteraction,
         template: str = commands.Param(
-            name="modelo", default="", description="Especifique manualmente um modelo de status (inclua placeholders)."
+            name=localized("cmd.set_voice_status.opt.template.name"),
+            default="",
+            description=localized("cmd.set_voice_status.opt.template.description"),
         ),
     ):
         if isinstance(template, commands.ParamInfo):
@@ -141,7 +143,7 @@ class VoiceStatusMixin:
             else:
                 await inter.edit_original_message("**O status automático foi definido com sucesso!**")
 
-    @set_voice_status.autocomplete("modelo")
+    @set_voice_status.autocomplete("template")
     async def default_models(self, inter: disnake.Interaction, query: str):
         return [
             "{track.title} - By: {track.author} | {track.timestamp}",
