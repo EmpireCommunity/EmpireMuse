@@ -1,6 +1,7 @@
-{# Rádio ao vivo (contrato R3 §4): principal, reserva e o seletor da reserva. Variável: vivo (LiveView: radio_id, slug,
-   principal|None, reserva|None, form|None; form.acao_busca, form.resultados, form.dica). Só nomes, país, codec e bitrate:
-   a URL do fluxo nunca chega aqui (R-7). Textos pelo ``_`` (panel.json); nada em href/src. #}
+{# Rádio ao vivo (contratos R3 §4 e R4 §5): principal, reserva e os seletores (por local e por nome). Variável: vivo
+   (LiveView: radio_id, slug, principal|None, reserva|None, form|None, local|None; form.acao_busca, form.acao_local,
+   form.acao_estacao, form.resultados, form.dica, form.paginacao). Só nomes, país, codec e bitrate: a URL do fluxo
+   nunca chega aqui (R-7). Textos pelo ``_`` (panel.json); nada em href/src além das ações do próprio painel. #}
 <section id="reserva-{{ vivo.slug }}" aria-labelledby="titulo-reserva-{{ vivo.slug }}">
   <h3 class="subtitulo" id="titulo-reserva-{{ vivo.slug }}">{{ _("panel.radio.live.title") }}</h3>
   {% if vivo.form %}
@@ -8,7 +9,7 @@
   {% set form_id = form.form_id %}
   {% include "_mensagem_form.html" %}
   {% end %}
-  <dl>
+  <dl class="estacoes-atuais">
     <dt>{{ _("panel.radio.live.station") }}</dt>
     <dd>
       {% if vivo.principal is None %}{{ _("panel.radio.live.none") }}{% elif vivo.principal.nome %}{{ vivo.principal.nome }} ({{ vivo.principal.pais }} · {{ vivo.principal.codec }} {{ vivo.principal.bitrate }} kbps){% else %}{{ _("panel.radio.live.unknown") }} <code>{{ vivo.principal.uuid }}</code>{% end %}
@@ -20,9 +21,21 @@
       {% if vivo.reserva and vivo.reserva.indisponivel %} · ⛔ {{ _("panel.radio.live.unavailable") }}{% end %}
     </dd>
   </dl>
-  <p class="nota">{{ _("panel.radio.live.help") }}</p>
+  <p class="nota">{{ _("panel.radio.live.help") }}{% if vivo.form %} {{ _("panel.radio.live.main_help") }}{% end %}</p>
   {% if vivo.form %}
-  <form class="form-config" method="get" action="{{ form.acao_busca }}">
+  {% if vivo.local %}
+  <form class="form-config form-local" method="get" action="{{ form.acao_local }}" aria-labelledby="titulo-local-{{ vivo.slug }}">
+    <fieldset class="opcoes cascata-local">
+      <legend id="titulo-local-{{ vivo.slug }}">{{ _("panel.radio.local.title") }}</legend>
+      <p class="nota">{{ _("panel.radio.local.help") }}</p>
+      <div id="local-{{ vivo.slug }}" class="cascata-niveis">
+        {% include "_radio_local.html" %}
+      </div>
+      <button type="submit" class="secondary">{{ _("panel.radio.local.show") }}</button>
+    </fieldset>
+  </form>
+  {% end %}
+  <form class="form-config form-busca" method="get" action="{{ form.acao_busca }}">
     <label for="busca-{{ vivo.slug }}">{{ _("panel.radio.live.search_label") }}</label>
     <input id="busca-{{ vivo.slug }}" type="search" name="q" value="{{ form.valores.get('q') or '' }}" minlength="2" maxlength="64" autocomplete="off" spellcheck="false" aria-describedby="ajuda-busca-{{ vivo.slug }}" hx-get="{{ form.acao_busca }}" hx-trigger="input changed delay:600ms, search" hx-target="#estacoes-{{ vivo.slug }}" hx-swap="innerHTML">
     <small id="ajuda-busca-{{ vivo.slug }}">{{ _("panel.radio.live.search_help") }}</small>

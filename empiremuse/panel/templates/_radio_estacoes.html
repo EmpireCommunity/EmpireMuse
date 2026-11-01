@@ -1,8 +1,16 @@
-{# Resultados da busca de estações (fragmento htmx dentro do formulário da reserva). Variável: form (resultados: StationView,
-   dica: str|None). Os botões enviam ``reserva=<uuid>``; estação indisponível (⛔) não pode ser escolhida. Sem URL de fluxo. #}
+{# Lista de estações (fragmento htmx dentro do formulário de source.*). Variáveis: vivo (slug), form (resultados:
+   StationView, dica: str|None, paginacao: Paging|None, acao_local, acao_estacao, valores['q']). Os botões enviam
+   ``estacao=<uuid>`` (principal, para /estacao) ou ``reserva=<uuid>``; estação indisponível (⛔) não pode ser escolhida.
+   Os campos escondidos devolvem a mesma lista depois do POST. Sem URL de fluxo. #}
+{% if form.paginacao %}
+<input type="hidden" name="node" value="{{ form.paginacao.node }}">
+<input type="hidden" name="pagina" value="{{ form.paginacao.page }}">
+{% elif form.valores.get('q') %}
+<input type="hidden" name="q" value="{{ form.valores.get('q') }}">
+{% end %}
 {% if form.dica %}<p class="nota">{{ form.dica }}</p>{% end %}
 {% if form.resultados %}
-<ul class="lista-links" role="list">
+<ul class="lista-links lista-estacoes" role="list">
   {% for estacao in form.resultados %}
   <li class="item-link">
     <div class="item-link-texto">
@@ -10,9 +18,18 @@
       <span class="item-link-url">{{ estacao.pais }} · {{ estacao.codec }} {{ estacao.bitrate }} kbps{% if estacao.indisponivel %} · ⛔ {{ _("panel.radio.live.unavailable") }}{% end %}</span>
     </div>
     <div class="item-link-acoes">
-      <button type="submit" name="reserva" value="{{ estacao.uuid }}"{% if estacao.indisponivel %} disabled{% end %}>{{ _("panel.radio.live.use") }}<span class="visually-hidden"> {{ estacao.nome }}</span></button>
+      <button type="submit" name="estacao" formaction="{{ form.acao_estacao }}" hx-post="{{ form.acao_estacao }}" value="{{ estacao.uuid }}"{% if estacao.indisponivel %} disabled{% end %}>{{ _("panel.radio.live.use_main") }}<span class="visually-hidden"> {{ estacao.nome }}</span></button>
+      <button type="submit" class="secondary" name="reserva" value="{{ estacao.uuid }}"{% if estacao.indisponivel %} disabled{% end %}>{{ _("panel.radio.live.use") }}<span class="visually-hidden"> {{ estacao.nome }}</span></button>
     </div>
   </li>
   {% end %}
 </ul>
+{% end %}
+{% if form.paginacao and form.paginacao.pages > 1 %}
+{% set pg = form.paginacao %}
+<nav class="paginacao" aria-label="{{ _('panel.radio.local.pages_label') }}">
+  {% if pg.page > 1 %}<a href="{{ form.acao_local }}?node={{ url_escape(pg.node) }}&amp;pagina={{ pg.page - 1 }}" hx-get="{{ form.acao_local }}?node={{ url_escape(pg.node) }}&amp;pagina={{ pg.page - 1 }}" hx-target="#local-{{ vivo.slug }}" hx-swap="innerHTML">{{ _("panel.radio.local.prev") }}</a>{% end %}
+  <span>{{ _("panel.radio.local.page", page=pg.page, pages=pg.pages) }}</span>
+  {% if pg.page < pg.pages %}<a href="{{ form.acao_local }}?node={{ url_escape(pg.node) }}&amp;pagina={{ pg.page + 1 }}" hx-get="{{ form.acao_local }}?node={{ url_escape(pg.node) }}&amp;pagina={{ pg.page + 1 }}" hx-target="#local-{{ vivo.slug }}" hx-swap="innerHTML">{{ _("panel.radio.local.next") }}</a>{% end %}
+</nav>
 {% end %}

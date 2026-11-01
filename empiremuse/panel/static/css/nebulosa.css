@@ -844,3 +844,51 @@ main:focus {
 .campo-icone {
   max-width: 8rem;
 }
+
+/* Item 8 — Rádios: cascata de local (R4) e lista de estações */
+.cascata-local .nota {
+  margin-top: 0;
+}
+
+.cascata-niveis {
+  display: grid;
+  gap: 0 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+}
+
+.cascata-nivel {
+  min-width: 0;
+}
+
+.cascata-descricao {
+  color: var(--nb-texto-suave);
+  display: block;
+  margin-top: -0.5rem;
+  margin-bottom: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.form-local button[type="submit"],
+.form-busca button[type="submit"] {
+  margin-bottom: 0;
+}
+
+.estacoes-atuais dd {
+  overflow-wrap: anywhere;
+}
+
+.lista-estacoes .item-link-acoes button {
+  white-space: nowrap;
+}
+
+.paginacao {
+  align-items: center;
+  color: var(--nb-texto-suave);
+  display: flex;
+  flex-wrap: wrap;
+  font-variant-numeric: tabular-nums;
+  gap: 0.5rem 1rem;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
