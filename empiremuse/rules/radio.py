@@ -230,6 +230,29 @@ def pick_radio_bot(candidates: Iterable[BotCandidate]) -> int | None:
     return usable[0].bot_id if usable else None
 
 
+# ---------------------------------------------------------------------- painel na call (R-6)
+
+PANEL_PAUSE_ID = "radio_panel_pause"
+PANEL_NEXT_ID = "radio_panel_next"
+PANEL_STOP_ID = "radio_panel_stop"
+PANEL_IDS = (
+    PANEL_PAUSE_ID,
+    PANEL_NEXT_ID,
+    PANEL_STOP_ID,
+)  # fixos: NADA de rádio, bot ou servidor dentro do ``custom_id``
+SKIP_COOLDOWN_S = 5.0  # a "próxima" não vira rajada de comandos ao Lavalink
+PANEL_RECREATE_S = 5.0  # painel apagado volta na hora, mas quem apaga em laço não vira laço de envios
+
+
+def panel_action(custom_id: object) -> str | None:
+    """``pause``/``next``/``stop`` de um ``custom_id`` do painel; qualquer outra coisa (inclusive um id adulterado) é ``None``."""
+    return (
+        {PANEL_PAUSE_ID: "pause", PANEL_NEXT_ID: "next", PANEL_STOP_ID: "stop"}.get(custom_id)
+        if isinstance(custom_id, str)
+        else None
+    )
+
+
 # ---------------------------------------------------------------------- teto por servidor (R-2)
 
 

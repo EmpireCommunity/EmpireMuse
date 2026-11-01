@@ -14,7 +14,7 @@ import disnake
 from disnake.ext import commands
 
 from empiremuse.i18n import localized
-from empiremuse.rules.radio import BotCandidate
+from empiremuse.rules.radio import BotCandidate, panel_action, radio_id
 from empiremuse.rules.servers import is_main_identifier
 from empiremuse.rules.text import external_text
 from empiremuse.utils.music.errors import GenericError
@@ -94,6 +94,59 @@ class Radio(commands.Cog):
     async def cog_check(self, ctx: CustomContext) -> bool:  # type: ignore[override]
         # só os comandos de dono vivem aqui como prefixo; a conferência vale para TODOS eles
         return self._only_main() and is_env_owner(self.bot, ctx.author.id)
+
+    # ------------------------------------------------------------------ painel na call (R-6)
+
+    @commands.Cog.listener("on_raw_message_delete")
+    async def radio_panel_deleted(self, payload: disnake.RawMessageDeleteEvent) -> None:
+        self.hub.manager.panel_deleted(payload.message_id)  # painel apagado volta na hora (no máximo um a cada 5 s)
+
+    @commands.Cog.listener("on_raw_bulk_message_delete")
+    async def radio_panel_bulk_deleted(self, payload: disnake.RawBulkMessageDeleteEvent) -> None:
+        for message_id in payload.message_ids:
+            self.hub.manager.panel_deleted(message_id)
+
+    @commands.Cog.listener("on_button_click")
+    async def radio_panel_click(self, interaction: disnake.MessageInteraction) -> None:
+        """Botões pausar/próxima/desligar. **R-6:** a rádio vem de ``interaction.guild_id`` mais ESTE bot (o dono da mensagem), nunca do
+        ``custom_id`` (que é fixo); ``manage_guild`` é conferido aqui, na execução; a interação tem de ser do canal da rádio."""
+        action = panel_action(interaction.data.custom_id)
+        if action is None or interaction.guild_id is None:
+            return
+        await interaction.response.defer(ephemeral=True, with_message=True)  # resposta só de quem apertou
+        tr = await self.bot.pool.i18n.for_guild(interaction.guild)
+        try:
+            if not interaction.author.guild_permissions.manage_guild:
+                raise GenericError(tr("radio.refused.no_manage_guild"))
+            radio = await self.hub.store.get(radio_id(self.bot.user.id, interaction.guild_id))
+            runner = self.hub.manager.runner(radio.id) if radio is not None else None
+            if radio is None or not radio.enabled or runner is None or interaction.channel_id != radio.channel_id:
+                raise GenericError(tr("radio.panel.gone"))
+            if action == "pause":
+                paused = not runner.admin_paused
+                await runner.set_admin_pause(paused)
+                await interaction.edit_original_message(
+                    content=tr("radio.panel.paused" if paused else "radio.panel.resumed")
+                )
+            elif action == "next":
+                skipped = await runner.skip()
+                await interaction.edit_original_message(
+                    content=tr("radio.panel.skipped" if skipped else "radio.panel.skip_wait")
+                )
+            else:
+                actor = Actor(user_id=interaction.author.id, manage_guild=True)
+                try:
+                    await actions.turn_off(self.hub, guild_id=radio.guild_id, channel_id=radio.channel_id, actor=actor)
+                finally:
+                    await self.hub.manager.stop_radios(self.hub.manager.running_in(radio.guild_id, radio.channel_id))
+                await interaction.edit_original_message(content=tr("radio.panel.stopped"))
+        except GenericError as error:
+            await interaction.edit_original_message(content=str(error))
+        except Refused, RadioUnavailable:
+            await interaction.edit_original_message(content=tr("radio.owner.unavailable"))
+        except Exception as error:  # noqa: BLE001 - o clique não pode ficar sem resposta (3 s); só o tipo vai ao log
+            logger.warning("Botão do painel da rádio falhou (%s)", type(error).__name__)
+            await interaction.edit_original_message(content=tr("radio.owner.unavailable"))
 
     # ------------------------------------------------------------------ /radio (manage_guild; a execução confere de novo)
 

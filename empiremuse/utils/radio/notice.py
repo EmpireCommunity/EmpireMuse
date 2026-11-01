@@ -1,0 +1,36 @@
+"""O bot só-rádio e os comandos de prefixo (item 8, R1): ele não atende ``/play``, pedido nem prefixo; quem tenta recebe UM aviso por canal por minuto.
+
+Chamado no começo do ``on_message`` do ``BotCore``, logo depois de montar o contexto do comando. Devolve ``True`` quando a mensagem é
+dele e já foi tratada (o ``on_message`` para ali): o bot só-rádio nunca segue para a mensagem com menção, o pedido de música nem o comando.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING, Any
+
+import disnake
+
+if TYPE_CHECKING:
+    from empiremuse.utils.client import BotCore
+
+logger = logging.getLogger(__name__)
+
+
+async def refuse_radio_only(bot: BotCore, ctx: Any, message: disnake.Message) -> bool:
+    """``True`` se ``bot`` é só-rádio (a mensagem não segue). Um comando de prefixo ganha o aviso, no máximo um por canal por minuto."""
+    pool = bot.pool
+    hub = getattr(pool, "radio", None)
+    if hub is None or not hub.roles.is_radio_only(bot.identifier):
+        return False
+    if getattr(ctx, "valid", False) and hub.claim_notice(message.channel.id):
+        try:
+            tr = await pool.i18n.for_guild(message.guild)
+            await message.channel.send(
+                tr("radio.only_bot_notice"),
+                allowed_mentions=disnake.AllowedMentions.none(),
+                delete_after=15,
+            )
+        except Exception as error:  # noqa: BLE001 - o aviso é cortesia: sem permissão de enviar, só o tipo vai ao log
+            logger.warning("Aviso do bot só-rádio não enviado (%s)", type(error).__name__)
+    return True

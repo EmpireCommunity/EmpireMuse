@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Protocol, TypeVar
 
-from empiremuse.rules.radio import backoff_s, should_pause, should_resume, virtual_position
+from empiremuse.rules.radio import SKIP_COOLDOWN_S, backoff_s, should_pause, should_resume, virtual_position
 from empiremuse.utils.radio.service import RadioState
 
 logger = logging.getLogger(__name__)
@@ -48,6 +48,7 @@ class Phase(StrEnum):
     PLAYING = "playing"
     PAUSED_PRESENCE = "paused_presence"  # sem ouvinte: o fluxo está parado, o bot segue na call
     PAUSED_OWNER = "paused_owner"  # pausa geral do dono
+    PAUSED_ADMIN = "paused_admin"  # botão "pausar" do painel da call: nada retoma sozinho
     RECONNECTING = "reconnecting"
 
 
@@ -69,6 +70,8 @@ class RadioPorts(Protocol):
     async def connect(self) -> bool: ...
     async def prepare(self) -> None: ...
     async def play_virtual(self, index: int, position_ms: int) -> None: ...
+    async def skip_track(self) -> None: ...
+    async def ensure_panel(self) -> None: ...
     async def stop_stream(self) -> None: ...
     def listeners(self) -> int: ...
     def paused_all(self) -> bool: ...
@@ -114,6 +117,8 @@ class RadioRunner:
         self.listening_since: float | None = None
         self.virtual_started_at: float | None = None
         self._stopped = False
+        self.admin_paused = False
+        self._last_skip: float | None = None
         self._tick_lock = asyncio.Lock()
         self._last_verdict: float | None = None
 
@@ -132,6 +137,7 @@ class RadioRunner:
             RadioState(
                 playing=phase is Phase.PLAYING,
                 paused_by_owner=phase is Phase.PAUSED_OWNER,
+                paused_by_admin=phase is Phase.PAUSED_ADMIN,
                 offline=phase in (Phase.CONNECTING, Phase.RECONNECTING),
             )
         )
@@ -197,6 +203,10 @@ class RadioRunner:
             return False
         self.connected_at = self.ports.now()
         try:
+            await self.ports.ensure_panel()  # o painel da call volta com o bot; falha dele nunca derruba a rádio
+        except Exception as error:  # noqa: BLE001 - só o tipo vai ao log (R-12)
+            logger.warning("Painel da rádio não enviado (%s)", type(error).__name__)
+        try:
             await self._after_connected()
         except Exception as error:  # noqa: BLE001 - playlist que não carrega, Lavalink fora: volta pelo recuo
             logger.warning("Rádio conectada mas sem tocar (%s)", type(error).__name__)
@@ -239,6 +249,9 @@ class RadioRunner:
         if self.ports.paused_all():
             self._set(Phase.PAUSED_OWNER)
             return
+        if self.admin_paused:
+            self._set(Phase.PAUSED_ADMIN)
+            return
         if self.ports.listeners() == 0:
             self.empty_since = self.ports.now()
             self.listening_since = None
@@ -252,6 +265,9 @@ class RadioRunner:
             return
         if self.ports.paused_all():  # o dono pausou enquanto a playlist carregava: nada toca
             self._set(Phase.PAUSED_OWNER)
+            return
+        if self.admin_paused:  # o administrador também
+            self._set(Phase.PAUSED_ADMIN)
             return
         elapsed_ms = int((self.ports.now() - (self.virtual_started_at or self.ports.now())) * 1000)
         index, position = virtual_position(self.ports.durations_ms(), elapsed_ms)
@@ -303,6 +319,8 @@ class RadioRunner:
                 await self.ports.stop_stream()
                 self._set(Phase.PAUSED_OWNER)
             return
+        if self.phase is Phase.PAUSED_ADMIN:
+            return  # só o botão do painel retoma
         if self.phase is Phase.PAUSED_OWNER:
             await self.limits.resumed(self.ports, self._resume_from_owner)  # fila global: 2 por vez, 1 s entre elas
             return
@@ -311,6 +329,36 @@ class RadioRunner:
             self._set(Phase.PAUSED_PRESENCE)
         elif self.phase is Phase.PAUSED_PRESENCE and should_resume(self.listening_since, now):
             await self._resume_by_presence()
+
+    # ------------------------------------------------------------------ botões do painel da call (R-6: quem chama já conferiu manage_guild)
+
+    async def set_admin_pause(self, paused: bool) -> bool:
+        """Pausa ou retoma pelo painel. Devolve ``True`` se mudou algo. Retomar passa pela fila global como qualquer retomada."""
+        async with self._tick_lock:
+            if self._stopped or paused == self.admin_paused:
+                return False
+            self.admin_paused = paused
+            if paused:
+                if self.phase in (Phase.PLAYING, Phase.PAUSED_PRESENCE):
+                    await self.ports.stop_stream()
+                    self._set(Phase.PAUSED_ADMIN)
+                return True
+            if self.phase is Phase.PAUSED_ADMIN:
+                await self.limits.resumed(
+                    self.ports, self._resume_from_owner
+                )  # mesma conferência: direito, ouvintes e pausa do dono
+            return True
+
+    async def skip(self) -> bool:
+        """ "Próxima": só tocando e no máximo uma a cada ``SKIP_COOLDOWN_S``. Devolve ``True`` se pulou."""
+        now = self.ports.now()
+        if self._stopped or self.phase is not Phase.PLAYING:
+            return False
+        if self._last_skip is not None and now - self._last_skip < SKIP_COOLDOWN_S:
+            return False
+        self._last_skip = now
+        await self.ports.skip_track()
+        return True
 
     async def _resume_from_owner(self) -> None:
         verdict = await self._verdict()

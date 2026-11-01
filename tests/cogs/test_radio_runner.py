@@ -33,6 +33,9 @@ class FakePorts:
         self.max_in_flight = 0
         self.prepared = 0
         self.prepare_error: Exception | None = None
+        self.skips = 0
+        self.panels = 0
+        self.panel_error: Exception | None = None
 
     def now(self):
         return self.t
@@ -59,6 +62,14 @@ class FakePorts:
         if self.prepare_error is not None:
             error, self.prepare_error = self.prepare_error, None
             raise error
+
+    async def skip_track(self):
+        self.skips += 1
+
+    async def ensure_panel(self):
+        self.panels += 1
+        if self.panel_error is not None:
+            raise self.panel_error
 
     async def play_virtual(self, index, position_ms):
         await self._hold()
@@ -710,3 +721,113 @@ class TestRacesDuringAPlay:
 class TestVerdictDisabledShape:
     def test_every_verdict_but_yes_means_the_radio_is_not_allowed(self):
         assert {a.value for a in Allowed} == {"yes", "no_premium", "no_channel", "no_permission", "disabled"}
+
+
+class TestPanelButtons:
+    """R-6 (lado do runner): pausa do administrador, "próxima" com intervalo e o painel que acompanha a conexão."""
+
+    @pytest.mark.asyncio
+    async def test_admin_pause_stops_the_stream_and_nothing_resumes_it_on_its_own(self):
+        runner, ports, states = make()
+        await runner.start()
+
+        assert await runner.set_admin_pause(True) is True
+        await runner.on_presence(0)
+        await runner.on_presence(1)
+        ports.t += 600
+        await runner.tick()
+
+        assert runner.phase is Phase.PAUSED_ADMIN and ports.stops == 1 and len(ports.played) == 1
+        assert states[-1] == RadioState(paused_by_admin=True)
+
+    @pytest.mark.asyncio
+    async def test_resuming_plays_again_through_the_global_queue(self):
+        runner, ports, _ = make()
+        await runner.start()
+        await runner.set_admin_pause(True)
+
+        assert await runner.set_admin_pause(False) is True
+
+        assert runner.phase is Phase.PLAYING and len(ports.played) == 2 and ports.sleeps[-1] == 1.0
+
+    @pytest.mark.asyncio
+    async def test_resuming_with_an_empty_call_waits_for_a_listener(self):
+        ports = FakePorts(listeners=0)
+        runner, _, _ = make(ports)
+        await runner.start()
+        await runner.set_admin_pause(True)
+
+        await runner.set_admin_pause(False)
+
+        assert runner.phase is Phase.PAUSED_PRESENCE and ports.played == []
+
+    @pytest.mark.asyncio
+    async def test_pausing_twice_or_resuming_when_not_paused_changes_nothing(self):
+        runner, ports, _ = make()
+        await runner.start()
+
+        assert await runner.set_admin_pause(False) is False
+        assert await runner.set_admin_pause(True) is True
+        assert await runner.set_admin_pause(True) is False
+
+    @pytest.mark.asyncio
+    async def test_the_admin_pause_survives_a_reconnect(self):
+        runner, ports, _ = make()
+        await runner.start()
+        await runner.set_admin_pause(True)
+
+        await runner.on_disconnect()
+
+        assert runner.phase is Phase.PAUSED_ADMIN and len(ports.played) == 1
+
+    @pytest.mark.asyncio
+    async def test_the_owner_pause_wins_over_a_resume_by_the_admin(self):
+        ports = FakePorts()
+        runner, _, _ = make(ports)
+        await runner.start()
+        await runner.set_admin_pause(True)
+        ports.paused = True
+
+        await runner.set_admin_pause(False)
+
+        assert runner.phase is Phase.PAUSED_OWNER and len(ports.played) == 1
+
+    @pytest.mark.asyncio
+    async def test_a_resume_rechecks_the_right_to_play(self):
+        ports = FakePorts()
+        runner, _, _ = make(ports)
+        await runner.start()
+        await runner.set_admin_pause(True)
+        ports.verdicts = deque([Allowed.NO_PREMIUM])
+
+        await runner.set_admin_pause(False)
+
+        assert runner.phase is Phase.OFF and ports.offs == [Allowed.NO_PREMIUM]
+
+    @pytest.mark.asyncio
+    async def test_next_skips_only_while_playing_and_at_most_once_every_five_seconds(self):
+        runner, ports, _ = make()
+        await runner.start()
+
+        assert await runner.skip() is True
+        assert await runner.skip() is False  # dentro dos 5 s
+        ports.t += 5
+        assert await runner.skip() is True
+        await runner.set_admin_pause(True)
+        ports.t += 60
+        assert await runner.skip() is False  # pausada: nada para pular
+
+        assert ports.skips == 2
+
+    @pytest.mark.asyncio
+    async def test_the_panel_is_ensured_on_every_connection_and_its_failure_never_stops_the_radio(self, caplog):
+        ports = FakePorts()
+        ports.panel_error = RuntimeError("sem permissão com token secreto")
+        runner, _, _ = make(ports)
+
+        with caplog.at_level("WARNING"):
+            await runner.start()
+        await runner.on_disconnect()
+
+        assert ports.panels == 2 and runner.phase is Phase.PLAYING
+        assert "RuntimeError" in caplog.text and "secreto" not in caplog.text

@@ -166,6 +166,41 @@ class DiscordRadioPorts:
         player.queue.extend(tracks[index:] + tracks[:index])
         await player.process_next(start_position=position_ms)
 
+    async def skip_track(self) -> None:
+        """Botão "próxima": a fila da rádio dá a volta (``loop = "queue"``), então o próximo da fila toca; o relógio virtual segue."""
+        player = self._player()
+        if player is not None:
+            await player.process_next()
+
+    async def ensure_panel(self) -> None:
+        """Garante a mensagem de controle no chat da call: mantém a que ainda existe, manda uma nova se sumiu. Sem permissão de enviar: só avisa."""
+        bot, guild, channel = self._bot(), self._guild(), self._channel()
+        hub = self.pool.radio
+        current = await hub.store.get(self.radio.id)
+        if bot is None or guild is None or channel is None or current is None:
+            return
+        if current.panel_message_id:
+            try:
+                existing = await channel.fetch_message(current.panel_message_id)
+                hub.manager.note_panel(self.radio.id, existing.id)
+                return
+            except disnake.NotFound:
+                pass  # sumiu: manda outra
+            except disnake.Forbidden:
+                logger.warning("Painel da rádio sem permissão para ler o chat da call")
+                return
+        from empiremuse.utils.radio.panel import panel_payload  # tarde: o painel importa a camada de texto
+
+        tr = await bot.pool.i18n.for_guild(guild)
+        payload = panel_payload(tr, playlist_name=current.source.get("playlist", ""), color=bot.get_color(guild.me))
+        try:
+            message = await channel.send(allowed_mentions=disnake.AllowedMentions.none(), **payload)
+        except disnake.Forbidden:
+            logger.warning("Painel da rádio sem permissão para enviar no chat da call")
+            return
+        await hub.store.set_panel_message(self.radio.id, message.id)
+        hub.manager.note_panel(self.radio.id, message.id)
+
     async def stop_stream(self) -> None:
         player = self._player()
         if player is None:

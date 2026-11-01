@@ -12,10 +12,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, NamedTuple, Optional
 
-from empiremuse.rules.radio import Radio
+from empiremuse.rules.radio import PANEL_RECREATE_S, Radio
 from empiremuse.utils.radio.chat import ChatPorts, ChatSweeper
 from empiremuse.utils.radio.runner import Phase, ProcessLimits, RadioPorts, RadioRunner
 from empiremuse.utils.radio.service import RadioService
@@ -50,6 +51,9 @@ class RadioManager:
         self._runners: dict[str, RadioRunner] = {}
         self._radios: dict[str, Radio] = {}
         self._starts: dict[str, asyncio.Task] = {}
+        self._panels: dict[int, str] = {}  # id da mensagem do painel -> rádio (para recriar na hora se apagarem)
+        self._panel_last: dict[str, float] = {}
+        self._panel_pending: set[str] = set()
         self._tasks: set[asyncio.Task] = set()
         self._ticker: Optional[asyncio.Task] = None
         hub.control.on_change(self._on_pause_all_change)
@@ -157,6 +161,33 @@ class RadioManager:
         sweeper = ChatSweeper(ports, radio.chat, stage=bool(getattr(ports, "stage", False)), limits=self.limits)
         self._sweepers[radio.id] = (sweeper, self._spawn(sweeper.run()))
 
+    def note_panel(self, radio_id: str, message_id: int) -> None:
+        """A rádio tem este painel agora (o anterior, se havia, deixa de valer)."""
+        for old in [m for m, r in self._panels.items() if r == radio_id]:
+            del self._panels[old]
+        self._panels[message_id] = radio_id
+
+    def panel_deleted(self, message_id: int) -> None:
+        """Apagaram uma mensagem: se era o painel de uma rádio ligada, outro vem na hora (no máximo um a cada ``PANEL_RECREATE_S``)."""
+        radio_id = self._panels.pop(message_id, None)
+        runner = self._runners.get(radio_id) if radio_id else None
+        if runner is None or runner.stopped or radio_id in self._panel_pending:
+            return
+        self._panel_pending.add(radio_id)
+        self._spawn(self._recreate_panel(radio_id, runner))
+
+    async def _recreate_panel(self, radio_id: str, runner: RadioRunner) -> None:
+        try:
+            wait = PANEL_RECREATE_S - (time.monotonic() - self._panel_last.get(radio_id, -PANEL_RECREATE_S))
+            if wait > 0:
+                await asyncio.sleep(wait)
+            if runner.stopped:
+                return
+            self._panel_last[radio_id] = time.monotonic()
+            await runner.ports.ensure_panel()
+        finally:
+            self._panel_pending.discard(radio_id)
+
     def update_chat_rules(self, radio: Radio) -> None:
         """A página web mudou as regras do chat: valem na próxima varredura."""
         entry = self._sweepers.get(radio.id)
@@ -173,6 +204,8 @@ class RadioManager:
         """Para a rádio de verdade: cancela a partida agendada (recuo ou fila da subida) e marca o runner como parado, então nenhuma volta
         que já estava no ar a religa."""
         self._stop_sweeper(radio_id)
+        for message_id in [m for m, r in self._panels.items() if r == radio_id]:
+            del self._panels[message_id]
         start = self._starts.pop(radio_id, None)
         runner = self._runners.pop(radio_id, None)
         self._radios.pop(radio_id, None)
