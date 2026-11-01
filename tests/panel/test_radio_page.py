@@ -7,6 +7,7 @@ Caminhos de risco: id da rota com sufixo ``:{guild_id}`` (outro servidor = 404),
 
 import html
 
+from empiremuse.panel.handlers.settings import MAX_BODY_BYTES, WRITE_LIMIT_PER_MINUTE
 from empiremuse.panel.services.base import CONFLICT_TEXT, SAVED_TEXT
 from tests.panel.helpers_radio import UNAVAILABLE, install, make_channel, radio_state
 from tests.panel.helpers_settings import parse_forms
@@ -199,3 +200,27 @@ class RadioUnavailableTest(RadioBase):
             assert response.code == 503, f"status {response.code}"
             assert "não estão disponíveis agora" in response.body.decode()
         assert self.radio.store.updates == []
+
+
+# ============================================================================ limites do handler (corpo e escritas por minuto)
+
+
+class RadioChatLimitsTest(RadioBase):
+    def test_body_over_the_limit_is_413_and_writes_nothing(self):
+        radio = self.seed_alfa()
+        browser = self.logged_in()
+        form = self.chat_forms(self.page(browser))[0]
+        pairs = form.pairs(voice_delete_after_s="45") + [("enchimento", "x" * (MAX_BODY_BYTES + 1))]
+        response = self.post_raw(browser, self.url(ALFA, radio.id), pairs, htmx=True)
+        assert response.code == 413
+        assert self.radio.store.updates == [] and self.radio.manager.chat_updates == []
+
+    def test_writes_past_the_per_minute_limit_are_429_with_retry_after_and_write_nothing(self):
+        radio = self.seed_alfa()
+        browser = self.logged_in()
+        form = self.chat_forms(self.page(browser))[0]
+        for _ in range(WRITE_LIMIT_PER_MINUTE):  # inválidos de propósito: contam como escrita e não gravam
+            assert self.submit(browser, self.url(), form, htmx=True, gap=0, voice_delete_after_s="4").code == 422
+        blocked = self.submit(browser, self.url(), form, htmx=True, gap=0, voice_delete_after_s="45")
+        assert blocked.code == 429 and blocked.headers.get("Retry-After") == "60"
+        assert self.radio.store.updates == [] and self.radio.store.docs[radio.id].rev == radio.rev
