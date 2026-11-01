@@ -148,10 +148,21 @@ class FakeService:
         return self.states.get(radio_id_)
 
 
+class FakeManager:
+    """Só o que a página chama: ``update_chat_rules`` (o varredor da rádio ligada recebe o chat novo)."""
+
+    def __init__(self):
+        self.chat_updates = []  # Radio recebidas
+
+    def update_chat_rules(self, radio):
+        self.chat_updates.append(radio)
+
+
 class FakeRadioApi:
     def __init__(self):
         self.store, self.premium, self.service = FakeStore(), FakePremium(), FakeService()
         self.directory, self.health = FakeDirectory(), FakeHealth()
+        self.manager = FakeManager()
 
 
 def radio_state(*, playing=True, paused_by_owner=False, on_reserve=False, offline=False, title=None):
