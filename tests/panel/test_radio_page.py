@@ -82,7 +82,9 @@ class RadioPageTest(RadioBase):
         assert "Pausada pelo dono" in body and "Tocando" in body
         forms = self.chat_forms(body)
         assert [f.action for f in forms] == [self.url(OMEGA, editable.id)]
-        assert forms[0].value("voice_delete_after_s") == str(default_chat()["voice_delete_after_s"])  # o padrão é da regra
+        assert forms[0].value("voice_delete_after_s") == str(
+            default_chat()["voice_delete_after_s"]
+        )  # o padrão é da regra
         assert "Gerenciar Mensagens" in body  # a rádio do bot 2 fica só para ler
 
     def test_navigation_offers_the_radios_category(self):
