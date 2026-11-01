@@ -606,6 +606,8 @@ class PlayerSession(commands.Cog):
                         session_resuming=True,
                     )
                     player.tr = await self.bot.pool.i18n.for_guild(guild)
+                    player.setup_hints()
+                    player.process_hint()
                 except Exception:
                     logger.exception("Falha ao criar player", extra={"guild": guild.id})
                     if (

@@ -79,7 +79,7 @@ class ClassicSkin:
             if not player.mini_queue_enabled:
                 txt += f"{app_emoji(player.bot, 'music_notes')} **⠂** {player.tr('player.queue.count', count=qsize)}\n"
             else:
-                queue_txt += "```ansi\n[0;33mPróximas Músicas:[0m```" + "\n".join(
+                queue_txt += player.tr("player.ansi_next_songs", ansi_0_33="\x1b[0;33m", ansi_0="\x1b[0m") + "\n".join(
                     f"`{(n + 1):02}) [{time_format(t.duration) if t.duration else '🔴 Livestream'}]` "
                     f"{md_link(t.title, t.uri, limit=29)}"
                     for n, t in enumerate(itertools.islice(player.queue, 3))
@@ -89,7 +89,7 @@ class ClassicSkin:
                     queue_txt += "\n" + player.tr("player.queue.and_more", count=qsize - 3)
 
         elif len(player.queue_autoplay):
-            queue_txt += "```ansi\n[0;33mPróximas Músicas:[0m```" + "\n".join(
+            queue_txt += player.tr("player.ansi_next_songs", ansi_0_33="\x1b[0;33m", ansi_0="\x1b[0m") + "\n".join(
                 f"{app_emoji(player.bot, 'like')} `{(n + 1):02}) [{time_format(t.duration) if t.duration else '🔴 Livestream'}]` "
                 f"{md_link(t.title, t.uri, limit=29)}"
                 for n, t in enumerate(itertools.islice(player.queue_autoplay, 3))

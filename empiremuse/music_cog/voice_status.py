@@ -85,9 +85,7 @@ class VoiceStatusMixin:
             author = inter.author
 
         if not author.guild_permissions.manage_guild and not (await bot.is_owner(author)):
-            raise GenericError(
-                "**Você não possui permissão de gerenciar servidor para ativar/desativar esse sistema.**"
-            )
+            raise GenericError((await inter.bot.pool.i18n.for_guild(inter.guild))("player.you_do_not_have_the"))
 
         if not template:
             await inter.response.defer(ephemeral=True, with_message=True)
@@ -102,7 +100,9 @@ class VoiceStatusMixin:
                 raise GenericError(
                     voice_status_error_text(status)
                     if isinstance(status, RuleError)
-                    else f"**Você deve usar pelo menos um placeholder válido:** {SetStageTitle.placeholder_text}"
+                    else (await inter.bot.pool.i18n.for_guild(inter.guild))(
+                        "player.you_must_use_at_least", placeholder_text=str(SetStageTitle.placeholder_text)
+                    )
                 )
 
             template = status
@@ -120,8 +120,11 @@ class VoiceStatusMixin:
 
             if blocked := voice_status_blocked_channel(player.guild):
                 raise GenericError(
-                    f"**Não tenho a permissão {VOICE_STATUS_PERMISSION} em {blocked.mention}.** "
-                    "Peça a um administrador para liberá-la."
+                    (await inter.bot.pool.i18n.for_guild(inter.guild))(
+                        "player.i_don_t_have_the",
+                        voice_status_permission=str(VOICE_STATUS_PERMISSION),
+                        mention=str(blocked.mention),
+                    )
                 )
 
             await inter.response.defer()
@@ -134,14 +137,21 @@ class VoiceStatusMixin:
 
             await player.process_save_queue()
 
-            player.set_command_log(text="ativou o status automático", emoji="📢")
+            player.set_command_log(
+                text=(await inter.bot.pool.i18n.for_guild(inter.guild))("player.enabled_the_automatic_status"),
+                emoji="📢",
+            )
 
             player.update = True
 
             if isinstance(inter, CustomContext):
-                await inter.send("**O status automático foi definido com sucesso!**")
+                await inter.send(
+                    (await inter.bot.pool.i18n.for_guild(inter.guild))("player.the_automatic_status_was_set")
+                )
             else:
-                await inter.edit_original_message("**O status automático foi definido com sucesso!**")
+                await inter.edit_original_message(
+                    (await inter.bot.pool.i18n.for_guild(inter.guild))("player.the_automatic_status_was_set")
+                )
 
     @set_voice_status.autocomplete("template")
     async def default_models(self, inter: disnake.Interaction, query: str):

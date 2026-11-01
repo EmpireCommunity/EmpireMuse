@@ -48,7 +48,11 @@ class MiniPlayer:
                 embed.description += player.tr(
                     "player.added_via",
                     md_bracketed=str(
-                        md_bracketed(md_link("Recomendação", player.current.info["extra"]["related"]["uri"]))
+                        md_bracketed(
+                            md_link(
+                                player.tr("player.recommendation_name"), player.current.info["extra"]["related"]["uri"]
+                            )
+                        )
                     ),
                 )
             except Exception:

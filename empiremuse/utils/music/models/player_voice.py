@@ -113,7 +113,7 @@ class PlayerVoiceMixin:
                     await asyncio.sleep(3 * channel_check_retries)
                     continue
 
-                msg = "O canal de voz foi excluido..."
+                msg = self.tr("player.the_voice_channel_was_deleted")
 
                 if self.static:
                     self.set_command_log(msg, controller=True)
@@ -154,27 +154,27 @@ class PlayerVoiceMixin:
                     can_connect(vc, self.guild, bot=self.bot)
                 except (GenericError, PoolException) as e:
                     self.set_command_log(
-                        f"Ocorreu uma falha ao reconectar o player no canal de voz: {e}.", controller=True
+                        self.tr("player.a_failure_occurred_while_reconnecting_2", e=str(e)), controller=True
                     )
                     self.update = True
                 except Exception as e:
                     code = log_unexpected_error(logger, e, "reconexão do player no canal de voz")
                     self.set_command_log(
-                        f"Ocorreu uma falha ao reconectar o player no canal de voz{code_suffix(code)}.",
+                        self.tr("player.a_failure_occurred_while_reconnecting", code_suffix=str(code_suffix(code))),
                         controller=True,
                     )
                     self.update = True
                 else:
                     if (ping := round(self.bot.latency * 1000)) > 250:
-                        voice_msg = f"Reconectei no canal de voz devido a um possível problema de instabilidade ne conexão (ping: {ping}ms)."
+                        voice_msg = self.tr("player.i_reconnected_to_the_voice", ping=str(ping))
                     elif self.keep_connected:
-                        voice_msg = f"Notei uma tentativa de me desconectarem do canal <#{vc.id}>."
+                        voice_msg = self.tr("player.i_noticed_an_attempt_to", id=str(vc.id))
                     else:
                         voice_msg = None
 
                     if not voice_msg:
                         self.set_command_log(
-                            text=f"O plater foi finalizado por perca de conexão no canal <#{vc.id}>.",
+                            text=self.tr("player.the_player_was_ended_due", id=str(vc.id)),
                             emoji="⚠️",
                             controller=True,
                         )
@@ -184,7 +184,7 @@ class PlayerVoiceMixin:
                     try:
                         await self.connect(vc.id)
                         self.set_command_log(
-                            text=f"{voice_msg}\nCaso realmente queira me desconectar, use o comando/botão: **stop**.",
+                            text=self.tr("player.if_you_really_want_to", voice_msg=str(voice_msg)),
                             emoji="⚠️",
                             controller=True,
                         )
@@ -256,7 +256,7 @@ class PlayerVoiceMixin:
 
                 try:
                     self.set_command_log(
-                        emoji="🔋", text="O modo **[economia de recursos]** foi desativado.", controller=True
+                        emoji="🔋", text=self.tr("player.the_resource_saving_mode_was"), controller=True
                     )
                     if self.current:
                         self.queue.insert(0, self.current)
@@ -315,8 +315,7 @@ class PlayerVoiceMixin:
                 pass
             self.set_command_log(
                 emoji="🪫",
-                text="O player está no modo **[economia de recursos]** (esse modo será desativado automaticamente quando "
-                f"um membro entrar no canal <#{self.channel_id}>).",
+                text=self.tr("player.the_player_is_in_resource", channel_id=str(self.channel_id)),
                 controller=True,
             )
             self.update = True
@@ -335,7 +334,7 @@ class PlayerVoiceMixin:
             if vc and [m for m in vc.members if not m.bot]:
                 return
 
-            msg = "O player foi desligado por falta de membros no canal" + (f" <#{vc.id}>" if vc else "") + "..."
+            msg = self.tr("player.the_player_was_turned_off_2") + (f" <#{vc.id}>" if vc else "") + "..."
 
             self.command_log = msg
 
@@ -386,7 +385,7 @@ class PlayerVoiceMixin:
             self.stage_title_event = False
             self.set_command_log(
                 emoji="❌",
-                text="O status automático foi desativado devido a falta de permissão pra alterar status.",
+                text=self.tr("player.the_automatic_status_was_turned"),
                 controller=True,
             )
             self.update = True
@@ -448,7 +447,7 @@ class PlayerVoiceMixin:
         self._voice_status_permission_noticed = True
         self.set_command_log(
             emoji="❌",
-            text=f"O status automático do canal não foi ligado: falta a permissão {VOICE_STATUS_PERMISSION} para o bot.",
+            text=self.tr("player.the_channel_s_automatic_status", voice_status_permission=str(VOICE_STATUS_PERMISSION)),
             controller=True,
         )
         self.update = True
@@ -494,7 +493,7 @@ class PlayerVoiceMixin:
         self._voice_status_default_noticed = True
         self.set_command_log(
             emoji="ℹ️",
-            text="Status do canal ligado por padrão; para desligar use /setvoicestatus › permanente ou o painel › Geral.",
+            text=self.tr("player.channel_status_is_on_by"),
             controller=True,
         )
         self.update = True
@@ -663,7 +662,7 @@ class PlayerVoiceMixin:
             msg = msg[:107] + "..."
 
         if not msg:
-            msg = "Status: Aguardando por novas músicas."
+            msg = self.tr("player.status_waiting_for_new_songs")
         else:
             emojis = emoji_pattern.findall(msg)
             for emoji in emojis:
@@ -696,8 +695,7 @@ class PlayerVoiceMixin:
             original_identifier = str(self.node.identifier)
 
             self.set_command_log(
-                txt
-                or "Não há servidores de música disponível. Irei fazer algumas tentativas de conectar em um novo servidor de música.",
+                txt or self.tr("player.there_are_no_music_servers"),
                 emoji="⏰",
                 controller=True,
             )
@@ -758,9 +756,9 @@ class PlayerVoiceMixin:
                 try:
                     if not self.auto_pause:
                         if original_identifier != node.identifier:
-                            txt = f"O player foi movido para o servidor de música **{node.identifier}**."
+                            txt = self.tr("player.the_player_was_moved_to", identifier=str(node.identifier))
                         else:
-                            txt = f"O player foi reconectado no servidor de músca **{self.node.identifier}**"
+                            txt = self.tr("player.the_player_was_reconnected_to", identifier=str(self.node.identifier))
                         self.set_command_log(emoji="📶", text=txt, controller=True)
                         self.update = True
                 except Exception:

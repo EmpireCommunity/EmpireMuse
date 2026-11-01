@@ -167,7 +167,10 @@ class PlayMenusMixin:
             )
 
             try:
-                await func(embed=embed, components=song_request_buttons(self.bot))
+                await func(
+                    embed=embed,
+                    components=song_request_buttons(self.bot, await self.bot.pool.i18n.for_guild(inter.guild)),
+                )
             except AttributeError:
                 logger.exception("Falha ao atualizar a mensagem de pedido de música")
                 pass
@@ -422,11 +425,17 @@ class PlayMenusMixin:
                     )
 
                     try:
-                        await msg.edit(embed=embed, components=song_request_buttons(self.bot))
+                        await msg.edit(
+                            embed=embed,
+                            components=song_request_buttons(self.bot, await self.bot.pool.i18n.for_guild(inter.guild)),
+                        )
                     except AttributeError:
                         try:
                             await select_interaction.response.edit_message(
-                                embed=embed, components=song_request_buttons(self.bot)
+                                embed=embed,
+                                components=song_request_buttons(
+                                    self.bot, await self.bot.pool.i18n.for_guild(inter.guild)
+                                ),
                             )
                         except AttributeError:
                             logger.exception("Falha ao atualizar a mensagem de pedido de música")

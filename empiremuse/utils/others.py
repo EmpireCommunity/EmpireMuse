@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Union, Optional
 import disnake
 from disnake.ext import commands
 
+from empiremuse.rules.i18n import fit
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.app_emojis import APP_EMOJIS
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
@@ -237,10 +238,13 @@ class EmbedPaginator(disnake.ui.View):
         self.stop()
 
 
-def song_request_buttons(bot: BotCore) -> list[disnake.ui.Button]:
+def song_request_buttons(bot: BotCore, tr) -> list[disnake.ui.Button]:
+    """O botão de pedir música; ``tr`` é o tradutor do servidor (``await bot.pool.i18n.for_guild(guild)``)."""
     return [
         disnake.ui.Button(
-            label="Pedir uma música", emoji=app_emoji(bot, "music_notes"), custom_id=PlayerControls.add_song
+            label=fit(tr("player.request_a_song"), 80),
+            emoji=app_emoji(bot, "music_notes"),
+            custom_id=PlayerControls.add_song,
         ),
     ]
 
@@ -387,6 +391,8 @@ async def send_idle_embed(
     if not guild_data:
         guild_data = await bot.get_data(guild_id, db_name=DBModel.guilds)
 
+    tr = await bot.pool.i18n.for_guild(target.guild)
+
     try:
         cmd = (
             f"</play:"
@@ -410,18 +416,20 @@ async def send_idle_embed(
         except Exception:
             continue
 
-    embed = disnake.Embed(
-        description="**Entre em um canal de voz e peça uma música aqui "
-        + ("no post" if is_forum else "no canal ou na conversa abaixo")
-        + f" (ou clique no botão abaixo ou use o comando {cmd} aqui ou em algum outro canal)**\n\n"
-        "**Você pode usar um nome ou um link de site compatível:**\n"
+    links = (
         f"{md_link('Youtube', 'https://www.youtube.com/')}, {md_link('Soundcloud', 'https://soundcloud.com/')}, "
-        f"{md_link('Spotify', 'https://open.spotify.com/')}, {md_link('Twitch', 'https://www.twitch.tv/')}",
+        f"{md_link('Spotify', 'https://open.spotify.com/')}, {md_link('Twitch', 'https://www.twitch.tv/')}"
+    )
+    embed = disnake.Embed(
+        description=fit(
+            tr("player.idle.request_in_post" if is_forum else "player.idle.request_in_channel", cmd=cmd, links=links),
+            4096,
+        ),
         color=bot.get_color(target.guild.me),
     )
 
     if text:
-        embed.description += f"\n\n**ÚLTIMA AÇÃO:** {text.replace('**', '')}\n"
+        embed.description += tr("player.idle.last_action", text=text.replace("**", ""))
 
     embed.set_thumbnail(target.guild.me.display_avatar.replace(size=256).url)
 
@@ -432,7 +440,7 @@ async def send_idle_embed(
     if opts:
         components.append(
             disnake.ui.Select(
-                placeholder="Músicas/Playlists do servidor.",
+                placeholder=fit(tr("player.idle.server_songs_placeholder"), 150),
                 options=opts,
                 custom_id="player_guild_pin",
                 min_values=0,
@@ -441,10 +449,10 @@ async def send_idle_embed(
             )
         )
 
-    components.extend(song_request_buttons(bot))
+    components.extend(song_request_buttons(bot, tr))
 
     if is_forum:
-        content = "🎶 Entre em um canal de voz e peça sua música aqui."
+        content = tr("player.idle.request_forum_content")
     else:
         content = None
 

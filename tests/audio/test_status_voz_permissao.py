@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, MagicMock
 import disnake
 import pytest
 
+from empiremuse.i18n import get_i18n
 from empiremuse.music_cog.voice_status import VoiceStatusMixin
 from empiremuse.utils.music import checks
 from empiremuse.utils.music.errors import GenericError
@@ -94,6 +95,7 @@ async def chamar_comando(canal, *, permitido: bool, template: str = "{track.titl
     jogador = jogador_falso(guilda)
     bot = SimpleNamespace(
         music=SimpleNamespace(players={SERVIDOR: jogador}),
+        pool=SimpleNamespace(i18n=get_i18n()),
         is_owner=AsyncMock(return_value=False),
         edit_voice_channel_status=AsyncMock(),
     )
@@ -171,6 +173,7 @@ class JogadorDeStatus(PlayerVoiceMixin):
             get_member=lambda _: SimpleNamespace(display_name=SOLICITANTE),
         )
         self.bot = bot
+        self.tr = get_i18n().for_locale("pt-BR")
         self.voice_status_permanent = (
             True  # estado do contrato 2.1.2, já inicializado como o __init__ do player real faz
         )

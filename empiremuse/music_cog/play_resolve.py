@@ -307,7 +307,10 @@ class PlayResolveMixin:
                     )
 
                     try:
-                        await func(embed=embed, components=song_request_buttons(self.bot))
+                        await func(
+                            embed=embed,
+                            components=song_request_buttons(self.bot, await self.bot.pool.i18n.for_guild(inter.guild)),
+                        )
                     except Exception:
                         logger.exception("Falha ao atualizar a mensagem de pedido de música")
                     return True
@@ -407,7 +410,10 @@ class PlayResolveMixin:
                 )
 
                 try:
-                    await func(embed=embed, components=song_request_buttons(self.bot))
+                    await func(
+                        embed=embed,
+                        components=song_request_buttons(self.bot, await self.bot.pool.i18n.for_guild(inter.guild)),
+                    )
                 except Exception:
                     logger.exception("Falha ao atualizar a mensagem de pedido de música")
                 return True

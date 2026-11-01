@@ -339,7 +339,7 @@ async def _sr_validate_channel(self, req):
                     "Tente adicionar música usando **/play** ou clique em um dos botões abaixo:",
                     color=self.bot.get_color(message.guild.me),
                 ),
-                components=song_request_buttons(self.bot),
+                components=song_request_buttons(self.bot, await self.bot.pool.i18n.for_guild(message.guild)),
                 delete_after=20,
             )
             return True

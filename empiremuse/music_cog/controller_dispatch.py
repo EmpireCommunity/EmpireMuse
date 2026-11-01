@@ -110,9 +110,7 @@ class ControllerDispatchMixin:
             return self
         bot = pick_request_bot(pool, inter.guild_id, inter.author)
         if bot is None:
-            raise GenericError(
-                "**Todos os bots de música estão em uso no momento.** Entre na call de um deles ou aguarde um ficar livre."
-            )
+            raise GenericError((await self.bot.pool.i18n.for_guild(inter.guild))("player.all_music_bots_are_in"))
         update_attr(inter, bot, bot.get_guild(inter.guild_id))
         return self if bot is self.bot else bot.get_cog("Music")
 
@@ -185,7 +183,9 @@ class ControllerDispatchMixin:
             channel_db = None
         except disnake.Forbidden:
             channel_db = bot.get_channel(inter.channel_id)
-            warn_message = f"Não tenho permissão de acessar o canal <#{static_player['channel']}>, o player será usado no modo tradicional."
+            warn_message = (await inter.bot.pool.i18n.for_guild(inter.guild))(
+                "player.i_don_t_have_permission", v=str(static_player["channel"])
+            )
             static_player["channel"] = None
 
         if (
@@ -244,7 +244,9 @@ class ControllerDispatchMixin:
                                     if not thread:
                                         thread_wmessage = await channel_db.parent.create_thread(
                                             name=f"{bot.user} song-request",
-                                            content="Post para pedido de músicas.",
+                                            content=(await inter.bot.pool.i18n.for_guild(inter.guild))(
+                                                "player.post_for_song_requests"
+                                            ),
                                             auto_archive_duration=10080,
                                             slowmode_delay=5,
                                         )
@@ -265,9 +267,10 @@ class ControllerDispatchMixin:
                                 await channel_db.edit(**thread_kw)
 
                             elif isinstance(channel.parent, disnake.ForumChannel):
-                                warn_message = (
-                                    f"**{bot.user.mention} não possui permissão de gerenciar tópicos "
-                                    f"para desarquivar/destrancar o tópico: {channel_db.mention}**"
+                                warn_message = (await inter.bot.pool.i18n.for_guild(inter.guild))(
+                                    "player.does_not_have_permission_to_3",
+                                    mention=str(bot.user.mention),
+                                    mention_2=str(channel_db.mention),
                                 )
 
                 except AttributeError:
@@ -289,16 +292,20 @@ class ControllerDispatchMixin:
 
                     if not send_message_perm:
                         raise GenericError(
-                            f"**{bot.user.mention} não possui permissão para enviar mensagens no canal <#{static_player['channel']}>**\n"
-                            "Caso queira resetar a configuração do canal de pedir música, use o comando /reset ou /setup "
-                            "novamente..."
+                            (await inter.bot.pool.i18n.for_guild(inter.guild))(
+                                "player.does_not_have_permission_to_2",
+                                mention=str(bot.user.mention),
+                                v=str(static_player["channel"]),
+                            )
                         )
 
                     if not channel_db_perms.embed_links:
                         raise GenericError(
-                            f"**{bot.user.mention} não possui permissão para anexar links/embeds no canal <#{static_player['channel']}>**\n"
-                            "Caso queira resetar a configuração do canal de pedir música, use o comando /reset ou /setup "
-                            "novamente..."
+                            (await inter.bot.pool.i18n.for_guild(inter.guild))(
+                                "player.does_not_have_permission_to",
+                                mention=str(bot.user.mention),
+                                v=str(static_player["channel"]),
+                            )
                         )
 
         return channel_db, warn_message, message
@@ -311,7 +318,7 @@ class ControllerDispatchMixin:
     ):
         if not command:
             raise GenericError(
-                (await self.bot.pool.i18n.for_guild(interaction.guild))("player.command_not_found_implemented")
+                (await interaction.bot.pool.i18n.for_guild(interaction.guild))("player.command_not_found_implemented")
             )
 
         try:
@@ -343,7 +350,10 @@ class ControllerDispatchMixin:
     @commands.Cog.listener("on_dropdown")
     async def guild_pin(self, interaction: disnake.MessageInteraction):
         if not self.bot.bot_ready:
-            await interaction.send("Ainda estou inicializando...\nPor favor aguarde mais um pouco...", ephemeral=True)
+            await interaction.send(
+                (await interaction.bot.pool.i18n.for_guild(interaction.guild))("player.i_am_still_starting_up"),
+                ephemeral=True,
+            )
             return
 
         if interaction.data.custom_id != "player_guild_pin":
@@ -354,7 +364,10 @@ class ControllerDispatchMixin:
             return
 
         if not interaction.user.voice:
-            await interaction.send("Você deve entrar em um canal de voz para usar isto.", ephemeral=True)
+            await interaction.send(
+                (await interaction.bot.pool.i18n.for_guild(interaction.guild))("player.you_must_join_a_voice_2"),
+                ephemeral=True,
+            )
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -364,7 +377,10 @@ class ControllerDispatchMixin:
         try:
             query = interaction.data.values[0]
         except KeyError:
-            await interaction.send("**O item selecionado não foi encontrado na base de dados...**", ephemeral=True)
+            await interaction.send(
+                (await interaction.bot.pool.i18n.for_guild(interaction.guild))("player.the_selected_item_was_not"),
+                ephemeral=True,
+            )
             await send_idle_embed(interaction.message, bot=self.bot, guild_data=guild_data, force=True)
             return
 

@@ -185,6 +185,7 @@ class I18n:
                 if guild is None or player is None:
                     continue
                 player.tr = await self.for_guild(guild)
+                _refresh_hints(player)
                 await player.invoke_np(force=True)
             except Exception as error:  # noqa: BLE001 - enfeite sobre uma configuração já gravada
                 logger.warning("Idioma do player não aplicado [%s] (%s)", guild_id, type(error).__name__)
@@ -224,6 +225,15 @@ class I18n:
         if base is None:
             raise KeyError(key)
         return disnake.Localized(base, key=key)
+
+
+def _refresh_hints(player: Any) -> None:
+    """As dicas do player nascem no idioma do ``player.tr``: refaz quando ele muda. Player sem dicas (ou que falha) é pulado."""
+    try:
+        player.setup_hints()
+        player.process_hint()
+    except Exception:  # noqa: BLE001 - enfeite; o idioma já foi aplicado
+        return
 
 
 def _locale_value(locale: Any) -> str | None:

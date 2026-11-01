@@ -8,12 +8,12 @@ from unittest.mock import AsyncMock, MagicMock
 import disnake
 import pytest
 
+from empiremuse.i18n import get_i18n
 from empiremuse.music_cog import controller_buttons, song_request_steps
 from empiremuse.music_cog.controller_dispatch import ControllerDispatchMixin
 from empiremuse.utils import request_panel as panel_module
 from empiremuse.utils.music.checks import pick_request_bot, resolve_player
 from empiremuse.utils.music.errors import GenericError
-from empiremuse.utils.music.interactions.request_panel import MSG_JOIN_A_CALL
 from empiremuse.utils.request_panel import RequestPanel, entry_for, is_private
 
 pytestmark = pytest.mark.critical
@@ -159,8 +159,13 @@ def click(*, call, panel_bot=True, message_id=PANEL_MESSAGE):
     )
     me.pool = make_pool(me, other)
     me.pool.servers = SimpleNamespace(request=request)
+    me.pool.i18n = get_i18n()
     interaction = SimpleNamespace(
-        guild_id=GID, message=SimpleNamespace(id=message_id), author=member(call), send=AsyncMock()
+        guild_id=GID,
+        guild=SimpleNamespace(id=GID, preferred_locale="pt-BR"),
+        message=SimpleNamespace(id=message_id),
+        author=member(call),
+        send=AsyncMock(),
     )
     req = SimpleNamespace(interaction=interaction, control="pause_resume")
     return SimpleNamespace(bot=me), req, other, interaction
@@ -170,7 +175,9 @@ def click(*, call, panel_bot=True, message_id=PANEL_MESSAGE):
 async def test_a_click_from_someone_in_no_call_only_warns_and_changes_nothing():
     self_, req, other, interaction = click(call=None)
     assert await controller_buttons._pc_route_panel_click(self_, req) is True
-    interaction.send.assert_awaited_once_with(MSG_JOIN_A_CALL, ephemeral=True)
+    interaction.send.assert_awaited_once_with(
+        get_i18n().for_locale("pt-BR")("player.panel.join_a_call"), ephemeral=True
+    )
     assert not hasattr(interaction, "music_bot")
     other.cog.player_controller.assert_not_awaited()
 
@@ -215,7 +222,11 @@ async def test_a_click_is_left_to_the_normal_flow_when_it_is_not_a_cross_bot_pan
 
 def request_inter(author_call, channel_id=PANEL_CHANNEL):
     return SimpleNamespace(
-        guild_id=GID, channel_id=channel_id, channel=SimpleNamespace(parent_id=None), author=member(author_call)
+        guild_id=GID,
+        guild=SimpleNamespace(id=GID, preferred_locale="pt-BR"),
+        channel_id=channel_id,
+        channel=SimpleNamespace(parent_id=None),
+        author=member(author_call),
     )
 
 
@@ -225,6 +236,7 @@ def executor_world(me=None, other=None):
     me.pool = make_pool(me, other)
     request = SimpleNamespace(get=AsyncMock(return_value=SimpleNamespace(channel=PANEL_CHANNEL)))
     me.pool.servers = SimpleNamespace(request=request)
+    me.pool.i18n = get_i18n()
     dispatch = ControllerDispatchMixin.__new__(ControllerDispatchMixin)
     dispatch.bot = me
     return dispatch, me, other
@@ -295,6 +307,7 @@ def panel_world(*bots):
     pool = make_pool(*bots)
     request = SimpleNamespace(get=AsyncMock(), elect=AsyncMock(), set=AsyncMock(), panel_bot=AsyncMock())
     pool.servers = SimpleNamespace(request=request)
+    pool.i18n = get_i18n()
     return RequestPanel(pool), pool
 
 
@@ -839,7 +852,7 @@ async def test_drawing_the_list_resets_each_players_cache_so_going_back_to_one_p
         bot.music.players[GID].last_data = {"skin": "antiga"}
     panel, pool = panel_world(one, two)
     pool.servers.request.panel_bot = AsyncMock(return_value=one)
-    message = SimpleNamespace(guild=SimpleNamespace(), edit=AsyncMock())
+    message = SimpleNamespace(guild=SimpleNamespace(id=GID, preferred_locale="pt-BR"), edit=AsyncMock())
     monkeypatch.setattr(panel_module, "fetch_panel_message", AsyncMock(return_value=message))
     monkeypatch.setattr(ui, "render_panel", lambda *args, **kwargs: {"content": "lista"})
     monkeypatch.setattr(server_playlists, "load_select_options", AsyncMock(return_value=[]))
@@ -868,7 +881,7 @@ async def test_one_player_in_a_private_call_is_drawn_as_the_list_with_no_track_o
     one.music.players[GID].invoke_np = AsyncMock()
     panel, pool = panel_world(one)
     pool.servers.request.panel_bot = AsyncMock(return_value=one)
-    message = SimpleNamespace(guild=SimpleNamespace(), edit=AsyncMock())
+    message = SimpleNamespace(guild=SimpleNamespace(id=GID, preferred_locale="pt-BR"), edit=AsyncMock())
     drawn = []
     monkeypatch.setattr(panel_module, "fetch_panel_message", AsyncMock(return_value=message))
     monkeypatch.setattr(ui, "render_panel", lambda panel_bot, guild, entries, **kw: drawn.extend(entries) or {})

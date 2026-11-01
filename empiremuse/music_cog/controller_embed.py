@@ -50,7 +50,9 @@ async def _pc_embed_resolve(self, req):
     try:
         await self.player_interaction_concurrency.acquire(interaction)
     except Exception:
-        raise GenericError((await self.bot.pool.i18n.for_guild(interaction.guild))("player.a_song_is_being_processed"))
+        raise GenericError(
+            (await interaction.bot.pool.i18n.for_guild(interaction.guild))("player.a_song_is_being_processed")
+        )
 
     bot: Optional[BotCore] = None
     player: Optional[LavalinkPlayer] = None
@@ -323,7 +325,9 @@ async def _pc_fav_embed_save(self, req):
 
     if retry_after := self.bot.pool.add_fav_embed_cooldown.get_bucket(interaction).update_rate_limit():
         await interaction.send(
-            (await self.bot.pool.i18n.for_guild(interaction.guild))("player.cooldown.favorite", count=int(retry_after)),
+            (await interaction.bot.pool.i18n.for_guild(interaction.guild))(
+                "player.cooldown.favorite", count=int(retry_after)
+            ),
             ephemeral=True,
         )
         return True
@@ -380,11 +384,13 @@ async def _pc_fav_embed_reply(self, req):
 
     await interaction.send(
         embed=disnake.Embed(
-            description=f"{md_link(fav_name, embed.author.url)} **foi adicionado nos seus favoritos!**\n\n"
-            "**Como usar?**\n"
-            f"* Usando o comando {cmd} (selecionando o favorito no preenchimento automático da busca)\n"
-            "* Clicando no botão/select de tocar favorito/integração do player.\n"
-            f"* Usando o comando {global_data['prefix'] or self.bot.default_prefix}{self.play_legacy.name} sem incluir um nome ou link de uma música/vídeo.\n"
+            description=(await self.bot.pool.i18n.for_guild(req.interaction.guild))(
+                "player.was_added_to_your_favorites",
+                md_link=str(md_link(fav_name, embed.author.url)),
+                cmd=str(cmd),
+                v=str(global_data["prefix"] or self.bot.default_prefix),
+                name=str(self.play_legacy.name),
+            )
         ).set_footer(
             text=f"Caso queira ver todos os seus favoritos use o comando {global_data['prefix'] or self.bot.default_prefix}{self.fav_manager_legacy.name}"
         ),

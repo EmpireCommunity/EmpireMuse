@@ -111,7 +111,13 @@ class DefaultSkin:
         bar = asset_url("ui_rainbow_bar_3.gif")
 
         if player.command_log:
-            txt += f"```ansi\n [34;1mÚltima Interação:[0m```**┕ {player.command_log_emoji} ⠂**{player.command_log}\n"
+            txt += player.tr(
+                "player.ansi_last_interaction",
+                command_log_emoji=str(player.command_log_emoji),
+                command_log=str(player.command_log),
+                ansi_34_1="\x1b[34;1m",
+                ansi_0="\x1b[0m",
+            )
 
         if player.mini_queue_enabled:
             if len(player.queue):

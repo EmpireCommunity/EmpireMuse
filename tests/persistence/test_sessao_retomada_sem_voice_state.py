@@ -56,6 +56,12 @@ class JogadorRetomado:
         self.conexoes, self.chamadas = [], []
         self.message = None
 
+    def setup_hints(self):
+        self.chamadas.append("setup_hints")
+
+    def process_hint(self):
+        self.chamadas.append("process_hint")
+
     async def apply_permanent_voice_status(self, cfg, *, jitter=False):
         self.chamadas.append(("apply_permanent_voice_status", cfg, jitter))
 

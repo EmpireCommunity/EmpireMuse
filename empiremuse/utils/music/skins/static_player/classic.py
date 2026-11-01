@@ -83,19 +83,25 @@ class ClassicStaticSkin:
             txt += f"{app_emoji(player.bot, 'playlists')} **⠂Playlist:** {md_link(player.current.playlist_name, player.current.playlist_url, limit=20)}\n"
 
         if qsize := len(player.queue):
-            data["content"] = "**Músicas na fila:**\n```ansi\n" + "\n".join(
+            data["content"] = player.tr("player.songs_in_the_queue_ansi") + "\n".join(
                 f"[0;33m{(n + 1):02}[0m [0;34m[{time_format(t.duration) if not t.is_stream else '🔴 stream'}][0m [0;36m{fix_characters(t.title, 45)}[0m"
                 for n, t in enumerate(itertools.islice(player.queue, 15))
             )
 
             if qsize > 15:
-                data["content"] += f"\n\n[0;37mE mais[0m [0;35m{qsize}[0m [0;37mmúsicas{'s'[: qsize ^ 1]}.[0m"
+                data["content"] += player.tr(
+                    "player.queue.and_more_ansi",
+                    count=qsize,
+                    ansi_0_37="\x1b[0;37m",
+                    ansi_0="\x1b[0m",
+                    ansi_0_35="\x1b[0;35m",
+                )
 
             data["content"] += "```"
 
         elif len(player.queue_autoplay):
             data["content"] = (
-                "**Próximas músicas recomendadas:**\n```ansi\n"
+                player.tr("player.next_recommended_songs_ansi")
                 + "\n".join(
                     f"[0;33m{(n + 1):02}[0m [0;34m[{time_format(t.duration) if not t.is_stream else '🔴 stream'}][0m [0;36m{fix_characters(t.title, 45)}[0m"
                     for n, t in enumerate(itertools.islice(player.queue_autoplay, 15))
