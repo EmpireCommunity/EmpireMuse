@@ -88,6 +88,7 @@ async def station_autocomplete(inter: disnake.ApplicationCommandInteraction, cur
 class Radio(commands.Cog):
     def __init__(self, bot: BotCore) -> None:
         self.bot = bot
+        self._boot_task: Any = None
 
     @property
     def hub(self):
@@ -99,7 +100,13 @@ class Radio(commands.Cog):
         """Se o cog carrega DEPOIS do primeiro ``on_ready`` (extensão recarregada, carga tardia), o ouvinte nunca dispara: sobe aqui também.
         O guard de ``ports_factory`` em ``radio_boot`` garante que subir pelos dois caminhos é o mesmo que subir uma vez."""
         if self.bot.is_ready():
-            self.bot.loop.create_task(self.radio_boot())
+            self._boot_task = self.bot.loop.create_task(self.radio_boot())
+
+    def cog_unload(self) -> None:
+        """Descarregar o cog enquanto o boot ainda corre não deixa a tarefa solta instalando portas de um cog que já saiu."""
+        if self._boot_task is not None and not self._boot_task.done():
+            self._boot_task.cancel()
+        self._boot_task = None
 
     @commands.Cog.listener("on_ready")
     async def radio_boot(self) -> None:

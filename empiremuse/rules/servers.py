@@ -31,11 +31,13 @@ SETTINGS_FIELDS = (
     "skin",
     "static_skin",
     "language",
+    "request_channel_strict",
 )
-# O formato antigo nunca enxerga nem grava ``language`` (campo novo, só do documento único: ``save_legacy`` o recusa).
-LEGACY_FIELDS = tuple(name for name in SETTINGS_FIELDS if name != "language")
+# Campos novos, só do documento único: o formato antigo nunca os enxerga nem grava (``save_legacy`` os recusa).
+UNIFIED_ONLY_FIELDS = ("language", "request_channel_strict")
+LEGACY_FIELDS = tuple(name for name in SETTINGS_FIELDS if name not in UNIFIED_ONLY_FIELDS)
 LEGACY_LANGUAGE = "pt-BR"  # o que um servidor que já existia ganha na migração (a comunidade de hoje é brasileira)
-FLAG_FIELDS = ("autoplay", "enable_restrict_mode", "check_other_bots_in_vc")
+FLAG_FIELDS = ("autoplay", "enable_restrict_mode", "check_other_bots_in_vc", "request_channel_strict")
 SKIN_MAX_LENGTH = 100
 MAIN_IDENTIFIERS = ("TOKEN", "TOKEN_1")  # o principal é o token principal, nunca o primeiro por ordem (contrato §3)
 
@@ -70,7 +72,13 @@ def default_settings() -> dict[str, Any]:
         "skin": None,
         "static_skin": None,
         "language": None,  # ``None`` = automático (o idioma do Discord do servidor)
+        "request_channel_strict": False,  # Jukebox estrita: o canal de pedidos apaga tudo o que se escreve nele
     }
+
+
+def request_channel_strict(settings: Mapping[str, Any]) -> bool:
+    """O canal de pedidos do servidor é estrito? Documento antigo não tem a chave: continua como sempre foi (não estrito)."""
+    return settings.get("request_channel_strict") is True
 
 
 def new_doc() -> dict[str, Any]:

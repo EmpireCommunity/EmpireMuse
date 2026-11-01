@@ -12,6 +12,7 @@ from empiremuse.rules.servers import (
     is_main_identifier,
     migrate_settings,
     new_doc,
+    request_channel_strict,
     settings_from_legacy,
     to_legacy,
     validate_changes,
@@ -96,6 +97,7 @@ def test_valid_main_document_is_copied_field_by_field():
     assert migrate_settings(old, ALLOWED) == {
         "djroles": ["10", "20"], "default_player_volume": 40, "autoplay": True, "enable_restrict_mode": True,
         "check_other_bots_in_vc": True, "skin": "default", "static_skin": "static", "language": "pt-BR",
+        "request_channel_strict": False,
     }  # fmt: skip
 
 
@@ -190,3 +192,32 @@ def test_the_old_format_never_sees_or_writes_the_language():
 
     assert "language" not in flat and "language" not in flat.get("player_controller", {})
     assert changed_settings(flat, {}).get("language") is None
+
+
+# ---------------------------------------------------------------------- Jukebox estrita (item 8, J1)
+
+
+def test_the_strict_channel_is_off_by_default_and_unknown_to_the_legacy_format():
+    assert (
+        default_settings()["request_channel_strict"] is False
+        and new_doc()["settings"]["request_channel_strict"] is False
+    )
+    assert "request_channel_strict" not in to_legacy({}, default_settings())
+    assert migrate_settings(legacy(autoplay=True), ALLOWED)["request_channel_strict"] is False
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_the_strict_flag_accepts_only_booleans(value):
+    assert validate_changes({"request_channel_strict": value}, ALLOWED) == {"request_channel_strict": value}
+
+
+@pytest.mark.parametrize("value", [1, 0, "true", None, [], "sim"])
+def test_the_strict_flag_refuses_anything_that_is_not_a_boolean(value):
+    with pytest.raises(SettingError):
+        validate_changes({"request_channel_strict": value}, ALLOWED)
+
+
+def test_a_document_without_the_key_is_not_strict():
+    assert request_channel_strict({}) is False
+    assert request_channel_strict({"request_channel_strict": "true"}) is False
+    assert request_channel_strict({"request_channel_strict": True}) is True

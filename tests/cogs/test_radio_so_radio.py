@@ -38,10 +38,29 @@ class TestNotice:
         assert w.channel.send.await_args.kwargs["allowed_mentions"].everyone is False
         assert w.channel.send.await_args.kwargs["delete_after"] == 15
 
+    @staticmethod
+    def other_bot(*, in_guild=True, can_send=True, thread_parent=None, identifier="TOKEN", ready=True):
+        """Outro bot do pool: pronto, dentro (ou fora) do servidor, com (ou sem) permissão de escrever no canal ou na thread."""
+        from unittest.mock import MagicMock
+
+        import disnake
+
+        me = SimpleNamespace(id=2)
+        if thread_parent is not None:
+            channel = MagicMock(spec=disnake.Thread)
+            channel.parent = MagicMock()
+            channel.parent.permissions_for.return_value = SimpleNamespace(send_messages_in_threads=thread_parent)
+        else:
+            channel = SimpleNamespace(permissions_for=lambda who: SimpleNamespace(send_messages=can_send))
+        guild = SimpleNamespace(me=me, get_channel_or_thread=lambda cid: channel)
+        return SimpleNamespace(
+            identifier=identifier, bot_ready=ready, get_guild=lambda gid: guild if in_guild else None
+        )
+
     @pytest.mark.asyncio
     async def test_no_notice_when_another_ready_bot_will_run_the_shared_prefix_command(self):  # CodeRabbit #180
         w = build()
-        other = SimpleNamespace(identifier="TOKEN", bot_ready=True)
+        other = self.other_bot()
         w.pool.get_guild_bots = lambda gid: [w.bot, other]
 
         handled = await refuse_radio_only(w.bot, SimpleNamespace(valid=True), w.message)
@@ -55,13 +74,40 @@ class TestNotice:
         w.pool.radio.roles._radio_only = frozenset({"TOKEN_3", "TOKEN_4"})
         w.pool.get_guild_bots = lambda gid: [
             w.bot,
-            SimpleNamespace(identifier="TOKEN_4", bot_ready=True),  # também só-rádio
-            SimpleNamespace(identifier="TOKEN", bot_ready=False),  # ainda subindo
+            self.other_bot(identifier="TOKEN_4"),  # também só-rádio
+            self.other_bot(ready=False),  # ainda subindo
         ]
 
         await refuse_radio_only(w.bot, SimpleNamespace(valid=True), w.message)
 
         w.channel.send.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "other",
+        [
+            dict(in_guild=False),  # pronto, mas não está neste servidor
+            dict(can_send=False),  # no servidor, sem permissão de escrever neste canal
+            dict(thread_parent=False),  # numa thread, sem send_messages_in_threads no canal pai
+        ],
+        ids=["absent_from_the_server", "cannot_send_in_the_channel", "cannot_send_in_the_thread"],
+    )
+    async def test_the_notice_stays_when_the_other_bot_cannot_actually_answer(self, other):  # CodeRabbit #180
+        w = build()
+        w.pool.get_guild_bots = lambda gid: [w.bot, self.other_bot(**other)]
+
+        await refuse_radio_only(w.bot, SimpleNamespace(valid=True), w.message)
+
+        w.channel.send.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_in_a_thread_the_notice_is_suppressed_when_the_other_bot_can_send_in_threads(self):
+        w = build()
+        w.pool.get_guild_bots = lambda gid: [w.bot, self.other_bot(thread_parent=True)]
+
+        await refuse_radio_only(w.bot, SimpleNamespace(valid=True), w.message)
+
+        w.channel.send.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_only_one_notice_per_channel_per_window(self):

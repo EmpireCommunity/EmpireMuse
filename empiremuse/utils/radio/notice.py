@@ -24,9 +24,31 @@ def _another_bot_will_answer(bot: BotCore, hub: Any, message: disnake.Message) -
     if guild_bots is None or message.guild is None:
         return False
     return any(
-        other is not bot and getattr(other, "bot_ready", False) and not hub.roles.is_radio_only(other.identifier)
+        other is not bot
+        and getattr(other, "bot_ready", False)
+        and not hub.roles.is_radio_only(other.identifier)
+        and _can_answer_here(other, message)
         for other in guild_bots(message.guild.id)
     )
+
+
+def _can_answer_here(other: Any, message: disnake.Message) -> bool:
+    """O OUTRO bot está neste servidor e pode escrever neste canal (numa thread, no canal pai com ``send_messages_in_threads``)? Pronto não basta:
+    sem estar no servidor ou sem permissão ele não responde, e o aviso do bot só-rádio seria o único retorno."""
+    try:
+        guild = other.get_guild(message.guild.id)
+        if guild is None or guild.me is None:
+            return False
+        channel = guild.get_channel_or_thread(message.channel.id)
+        if channel is None:
+            return False
+        if isinstance(channel, disnake.Thread):
+            return channel.parent is not None and bool(
+                channel.parent.permissions_for(guild.me).send_messages_in_threads
+            )
+        return bool(channel.permissions_for(guild.me).send_messages)
+    except AttributeError:
+        return False  # sem como confirmar, o aviso sai (melhor avisar a mais do que deixar o usuário sem resposta)
 
 
 async def refuse_radio_only(bot: BotCore, ctx: Any, message: disnake.Message) -> bool:

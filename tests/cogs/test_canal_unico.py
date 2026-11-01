@@ -855,7 +855,8 @@ async def test_drawing_the_list_resets_each_players_cache_so_going_back_to_one_p
     message = SimpleNamespace(guild=SimpleNamespace(id=GID, preferred_locale="pt-BR"), edit=AsyncMock())
     monkeypatch.setattr(panel_module, "fetch_panel_message", AsyncMock(return_value=message))
     monkeypatch.setattr(ui, "render_panel", lambda *args, **kwargs: {"content": "lista"})
-    monkeypatch.setattr(server_playlists, "load_select_options", AsyncMock(return_value=[]))
+    monkeypatch.setattr(server_playlists, "safe_list", AsyncMock(return_value=()))
+    monkeypatch.setattr(server_playlists, "select_options", lambda *args, **kwargs: [])
 
     await panel._draw(GID)
 
@@ -885,7 +886,8 @@ async def test_one_player_in_a_private_call_is_drawn_as_the_list_with_no_track_o
     drawn = []
     monkeypatch.setattr(panel_module, "fetch_panel_message", AsyncMock(return_value=message))
     monkeypatch.setattr(ui, "render_panel", lambda panel_bot, guild, entries, **kw: drawn.extend(entries) or {})
-    monkeypatch.setattr(server_playlists, "load_select_options", AsyncMock(return_value=[]))
+    monkeypatch.setattr(server_playlists, "safe_list", AsyncMock(return_value=()))
+    monkeypatch.setattr(server_playlists, "select_options", lambda *args, **kwargs: [])
 
     await panel._draw(GID)
 
