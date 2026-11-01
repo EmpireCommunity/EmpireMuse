@@ -89,6 +89,60 @@ class TestTarget:
         assert target is not None and target.refused is True
 
 
+AMBIGUOUS_LINKS = [
+    "http://2130706433/",
+    "http://0x7f000001/",
+    "http://0x7f.1/",
+    "http://127.1/",
+    "http://010.0.0.1/",
+    "http://017700000001/",
+    "http://user@good.example/",
+    "http://good.example@127.0.0.1/",
+    "http://good.example\\@127.0.0.1/",
+    "http://127.0.0.1\\.good.example/",
+    "http://good.example\t.evil/",
+    "http://good.example\r\n127.0.0.1/",
+    "http://:80/",
+    "http:///path",
+    "http://good.example:99999/",
+    "http://good.example:abc/",
+    "http://good.example @127.0.0.1/x",  # espaço antes do @: o Lavalink recebe o texto inteiro
+    "http://good.example /127.0.0.1/x",
+    "icy://good.example @10.0.0.1/",
+]
+
+
+class TestSyntaxLayerInTheGuard:
+    """A recusa por sintaxe vale no guard mesmo se o DNS devolver um IP PÚBLICO (os hosts da lista seriam resolvidos como públicos)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("query", AMBIGUOUS_LINKS)
+    async def test_ambiguous_or_dangerous_syntax_is_refused_even_when_dns_says_public(self, query):
+        with pytest.raises(UnsafeUrl):
+            await ensure_public_url(query, resolve=resolving(PUBLIC))
+
+    @pytest.mark.asyncio
+    async def test_a_link_followed_by_plain_text_still_passes(self):
+        await ensure_public_url("https://music.example.org/a.mp3 uma música legal", resolve=resolving(PUBLIC))
+
+    def test_the_resolve_deadline_is_five_seconds(self):
+        from empiremuse.utils import url_guard
+
+        assert url_guard.RESOLVE_TIMEOUT_S == 5.0 and url_guard.RESOLVER_THREADS == 4
+
+    def test_trusted_local_is_removed_from_the_kwargs_and_never_reaches_the_load(self):
+        from empiremuse.wavelink.node import take_trusted_local
+
+        kwargs = {"trusted_local": True, "track_cls": object}
+        assert take_trusted_local(kwargs) is True and kwargs == {"track_cls": object}
+
+        untouched = {"track_cls": object}
+        assert take_trusted_local(untouched) is False and untouched == {"track_cls": object}
+
+        user_made = {"trusted_local": "sim"}  # qualquer valor verdadeiro liga: por isso só código interno o passa
+        assert take_trusted_local(user_made) is True and user_made == {}
+
+
 class TestGuard:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("query", ["ytsearch:lofi", "uma música qualquer", "scsearch:x http://127.0.0.1"])

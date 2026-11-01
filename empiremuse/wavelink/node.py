@@ -54,6 +54,11 @@ soundcloud_regex = re.compile(r"https://soundcloud\.com/([^/]+)/sets/([^/]+)")
 exclude_tags = ["remix", "edit", "extend", "compilation", "mashup", "mixed"]
 
 
+def take_trusted_local(kwargs: dict) -> bool:
+    """Tira ``trusted_local`` dos kwargs (ele nunca segue até o ``loadtracks`` nem até as classes de faixa) e devolve se estava ligado."""
+    return bool(kwargs.pop("trusted_local", False))
+
+
 class Node:
     """A WaveLink Node instance.
 
@@ -352,7 +357,7 @@ class Node:
         """
         # Última barreira (a de cima é a do cog, com mensagem ao usuário): nenhum link http(s) chega ao ``loadtracks`` sem resolver só para
         # endereço público. ``trusted_local`` é só do código que registra o próprio endereço local (relay das rádios), nunca de texto do usuário.
-        if not kwargs.pop("trusted_local", False):
+        if not take_trusted_local(kwargs):
             try:
                 await ensure_public_url(query)
             except UnsafeUrl as error:

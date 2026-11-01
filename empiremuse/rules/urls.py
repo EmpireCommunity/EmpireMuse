@@ -97,6 +97,10 @@ def lavalink_target(query: object) -> Optional[UrlTarget]:
     if _BAD_URL_CHARS.search(text):
         return UrlTarget("", True)
     token = text.split(" ", 1)[0]  # o que vem depois do 1º espaço não é o link (um pedido pode ter texto junto)
+    if re.search(r"[@/]", text[len(token) :]):
+        return UrlTarget(
+            "", True
+        )  # "http://bom.example @127.0.0.1/x": o Lavalink recebe o texto INTEIRO, e um parser leniente leria outro host
     try:
         parts = urlsplit(token)
         parts.port  # noqa: B018 - levanta ValueError numa porta inválida
