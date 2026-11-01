@@ -151,6 +151,29 @@ class RadioStore:
             raise RadioConflict
         return checked
 
+    async def reconfigure(self, radio: Radio, *, updated_by: str = "") -> Radio:
+        """Troca canal, tipo e fonte de uma rádio DESLIGADA (o comando ``/radio ligar`` reaproveita o documento do bot). Ligada: ``RadioConflict``."""
+        current = self._radio(await self._find(radio.id))
+        if current is None:
+            raise RadioNotFound
+        if current.enabled:
+            raise RadioConflict
+        updated = dataclasses.replace(
+            current,
+            channel_id=radio.channel_id,
+            kind=radio.kind,
+            source=dict(radio.source),
+            chat=dict(radio.chat),
+            panel_message_id=None,
+            rev=current.rev + 1,
+        )
+        checked = check_radio(to_document(updated))
+        if isinstance(checked, RuleError):
+            raise RadioInvalid(checked)
+        if not await self._save(radio.id, to_document(checked, updated_by=updated_by), current.rev):
+            raise RadioConflict
+        return checked
+
     async def set_panel_message(self, radio_id: str, message_id: Optional[int]) -> None:
         """Guarda o id da mensagem do painel da rádio (sem conflito para quem chama: relê e tenta de novo)."""
         for _ in range(CAS_ATTEMPTS):

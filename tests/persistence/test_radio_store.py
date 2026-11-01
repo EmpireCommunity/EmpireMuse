@@ -392,3 +392,31 @@ class TestBootReconcile:
         assert report.over_cap == 2 and report.without_premium == 1
         assert sum(r.enabled for r in await world.store.list_for_guild(GUILD)) == 3 and await active(world) == 3
         assert not (await world.store.get(radio_id(1, OTHER_GUILD))).enabled
+
+
+class TestReconfigure:
+    @pytest.mark.asyncio
+    async def test_a_disabled_radio_takes_the_new_channel_and_source_and_loses_the_old_panel(self, world):
+        await world.store.create(make_radio())
+        await world.store.set_panel_message(radio_id(1, GUILD), 4242)
+
+        updated = await world.store.reconfigure(
+            make_radio(source={"playlist": "Jazz"}, channel_id="777"),
+            updated_by="9",
+        )
+
+        assert (updated.channel_id, updated.source, updated.panel_message_id) == (777, {"playlist": "Jazz"}, None)
+
+    @pytest.mark.asyncio
+    async def test_an_enabled_radio_cannot_be_reconfigured(self, world):
+        await with_premium(world)
+        await world.store.create(make_radio())
+        await world.store.set_enabled(radio_id(1, GUILD), True)
+
+        with pytest.raises(RadioConflict):
+            await world.store.reconfigure(make_radio(channel_id="777"))
+
+    @pytest.mark.asyncio
+    async def test_a_missing_radio_is_not_found(self, world):
+        with pytest.raises(RadioNotFound):
+            await world.store.reconfigure(make_radio(7))
