@@ -8,9 +8,13 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Mapping, NamedTuple, Optional, Sequence
 
+from empiremuse.i18n import I18n, get_i18n
+from empiremuse.rules.i18n import Translator
 from empiremuse.utils.db import DBModel
 
 Args = Mapping[str, Sequence[str]]
+
+PANEL_LOCALE = "pt-BR"  # o painel fala um idioma só até a F3 (contrato i18n §5)
 
 HEX16 = re.compile(r"[0-9a-f]{16}", re.ASCII)
 DIGITS = re.compile(r"[0-9]{1,20}", re.ASCII)
@@ -36,6 +40,17 @@ def first(args: Args, name: str) -> Optional[str]:
 def flag(args: Args, name: str) -> bool:
     """Checkbox: presente = marcado; ausente = desmarcado."""
     return bool(args.get(name))
+
+
+def panel_i18n(pool: Any) -> I18n:
+    """``pool.i18n`` (o único do processo); sem pool, o mesmo objeto por ``get_i18n()``."""
+    i18n = getattr(pool, "i18n", None)
+    return i18n if i18n is not None else get_i18n()
+
+
+def panel_translator(pool: Any) -> Translator:
+    """O ``_`` dos templates e das mensagens do painel: o ``Translator`` de ``PANEL_LOCALE``."""
+    return panel_i18n(pool).for_locale(PANEL_LOCALE)
 
 
 def load_json_object(raw: str) -> Optional[dict]:
