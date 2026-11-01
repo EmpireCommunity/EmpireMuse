@@ -72,6 +72,12 @@ class Radio(commands.Cog):
 
     # ------------------------------------------------------------------ subida: instala as portas reais e retoma as rádios
 
+    async def cog_load(self) -> None:
+        """Se o cog carrega DEPOIS do primeiro ``on_ready`` (extensão recarregada, carga tardia), o ouvinte nunca dispara: sobe aqui também.
+        O guard de ``ports_factory`` em ``radio_boot`` garante que subir pelos dois caminhos é o mesmo que subir uma vez."""
+        if self.bot.is_ready():
+            self.bot.loop.create_task(self.radio_boot())
+
     @commands.Cog.listener("on_ready")
     async def radio_boot(self) -> None:
         """No principal, uma vez: instala o adaptador do Discord, liga o passo de presença e retoma as rádios ligadas (fila global, R-3)."""
@@ -141,7 +147,7 @@ class Radio(commands.Cog):
                     await self.hub.manager.stop_radios(self.hub.manager.running_in(radio.guild_id, radio.channel_id))
                 await interaction.edit_original_message(content=tr("radio.panel.stopped"))
         except GenericError as error:
-            await interaction.edit_original_message(content=str(error))
+            await interaction.edit_original_message(content=error.text)
         except Refused, RadioUnavailable:
             await interaction.edit_original_message(content=tr("radio.owner.unavailable"))
         except Exception as error:  # noqa: BLE001 - o clique não pode ficar sem resposta (3 s); só o tipo vai ao log

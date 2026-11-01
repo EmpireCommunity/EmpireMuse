@@ -1590,6 +1590,11 @@ class BotCore(commands.AutoShardedBot):
         """O bot principal (token principal), nunca um bot exclusivo de servidor."""
         return is_main_identifier(self.identifier) and not self.exclusive_guild_id
 
+    def _is_radio_only(self) -> bool:
+        """Este bot é dedicado a rádio (item 8)? Ele não responde nem à menção pura."""
+        hub = getattr(self.pool, "radio", None)
+        return bool(hub is not None and hub.roles.is_radio_only(self.identifier))
+
     @property
     def is_reserve(self) -> bool:
         """Reserva: do pool, não é o principal, não é exclusivo de servidor e há um token principal configurado."""
@@ -1828,7 +1833,7 @@ class BotCore(commands.AutoShardedBot):
         elif message.author.bot:
             return
 
-        elif message.content in (f"<@{self.user.id}>", f"<@!{self.user.id}>"):
+        elif message.content in (f"<@{self.user.id}>", f"<@!{self.user.id}>") and not self._is_radio_only():
             if message.author.bot:
                 return
 
