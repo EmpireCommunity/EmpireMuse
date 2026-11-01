@@ -180,61 +180,61 @@ def _np_buttons_default(self, req):
                 ),
                 disnake.SelectOption(
                     label="Adicionar nos seus favoritos",
-                    emoji="💗",
+                    emoji=app_emoji(self.bot, "loved"),
                     value=PlayerControls.add_favorite,
                     description="Adicionar a música atual nos seus favoritos.",
                 ),
                 disnake.SelectOption(
                     label="Tocar do inicio",
-                    emoji="⏪",
+                    emoji=app_emoji(self.bot, "fast_backward"),
                     value=PlayerControls.seek_to_start,
                     description="Voltar o tempo da música atual para o inicio.",
                 ),
                 disnake.SelectOption(
                     label=f"Volume: {self.volume}%",
-                    emoji="🔊",
+                    emoji=app_emoji(self.bot, "volume"),
                     value=PlayerControls.volume,
                     description="Ajustar volume.",
                 ),
                 disnake.SelectOption(
                     label="Misturar",
-                    emoji="🔀",
+                    emoji=app_emoji(self.bot, "shuffle"),
                     value=PlayerControls.shuffle,
                     description="Misturar as músicas da fila.",
                 ),
                 disnake.SelectOption(
                     label="Readicionar",
-                    emoji="🎶",
+                    emoji=app_emoji(self.bot, "playlist_add"),
                     value=PlayerControls.readd,
                     description="Readicionar as músicas tocadas de volta na fila.",
                 ),
                 disnake.SelectOption(
                     label="Repetição",
-                    emoji="🔁",
+                    emoji=app_emoji(self.bot, "repeat_all"),
                     value=PlayerControls.loop_mode,
                     description="Ativar/Desativar repetição da música/fila.",
                 ),
                 disnake.SelectOption(
                     label=("Desativar" if self.nightcore else "Ativar") + " o efeito nightcore",
-                    emoji="🇳",
+                    emoji=app_emoji(self.bot, "sound_spectrum"),
                     value=PlayerControls.nightcore,
                     description="Efeito que aumenta velocidade e tom da música.",
                 ),
                 disnake.SelectOption(
                     label=("Desativar" if self.autoplay else "Ativar") + " a reprodução automática",
-                    emoji="🔄",
+                    emoji=app_emoji(self.bot, "refresh"),
                     value=PlayerControls.autoplay,
                     description="Sistema de reprodução de música automática quando a fila tiver vazia.",
                 ),
                 disnake.SelectOption(
                     label="Last.fm scrobble",
-                    emoji="🎧",
+                    emoji=app_emoji(self.bot, "lastfm"),
                     value=PlayerControls.lastfm_scrobble,
                     description="Ativar/desativar o scrobble/registro de músicas na sua conta do last.fm.",
                 ),
                 disnake.SelectOption(
                     label=("Desativar" if self.restrict_mode else "Ativar") + " o modo restrito",
-                    emoji="🔐",
+                    emoji=app_emoji(self.bot, "lock"),
                     value=PlayerControls.restrict_mode,
                     description="Apenas DJ's/Staff's podem usar comandos restritos.",
                 ),
@@ -274,7 +274,7 @@ def _np_buttons_extra(self, req):
         data["components"][5].options.append(
             disnake.SelectOption(
                 label="Visualizar letras",
-                emoji="📃",
+                emoji=app_emoji(self.bot, "lyrics"),
                 value=PlayerControls.lyrics,
                 description="Obter letra da música atual.",
             )
@@ -294,7 +294,7 @@ def _np_buttons_extra(self, req):
         data["components"][5].options.append(
             disnake.SelectOption(
                 label="Status automático",
-                emoji="📢",
+                emoji=app_emoji(self.bot, "speaker"),
                 value=PlayerControls.set_voice_status,
                 description="Configurar o status automático do canal de voz.",
             )
@@ -304,7 +304,7 @@ def _np_buttons_extra(self, req):
         data["components"][5].options.append(
             disnake.SelectOption(
                 label="Song-Request Thread",
-                emoji="💬",
+                emoji=app_emoji(self.bot, "comment"),
                 value=PlayerControls.song_request_thread,
                 description="Criar uma thread/conversa temporária para pedir músicas usando apenas o nome/link.",
             )

@@ -18,9 +18,12 @@ MuseHeart-MusicBot upstream. Sem esse trabalho, o EmpireMuse não existiria.
 
 ## Ícones
 
-Só 21 dos emojis de aplicação em `assets/emojis/` usam ícones da [Flaticon](https://www.flaticon.com/), licença gratuita com
-atribuição obrigatória: `add_music`, `arrow_left`, `arrow_right`, `backward`, `config`, `gear`, `headset`, `loved`, `music_queue`,
-`pinned`, `play`, `play_source`, `playpause`, `plus`, `replay`, `search`, `skip`, `stagechannel`, `stop`, `tools` e `voice_event`.
+Só 48 dos emojis de aplicação em `assets/emojis/` usam ícones da [Flaticon](https://www.flaticon.com/), licença gratuita com
+atribuição obrigatória (kits `media-player-icons` e `web-ui-icons`, de mnauliady): `add_music`, `arrow_left`, `arrow_right`, `backward`, `cancel`, `comment`, `config`, `disc`, `drag`, `fast_backward`, `gear`,
+`headset`, `history`, `like`, `lock`, `loved`, `lyrics`, `microphone`, `music_note`, `music_notes`, `music_queue`, `notification`,
+`pause`, `pinned`, `play`, `play_source`, `playlist_add`, `playlist_play`, `playlists`, `playpause`, `plus`, `record`, `refresh`,
+`repeat`, `repeat_all`, `replay`, `search`, `shuffle`, `skip`, `sound_spectrum`, `speaker`, `stagechannel`, `star`, `stop`, `tools`,
+`user`, `voice_event` e `volume`.
 
 <a href="https://www.flaticon.com/free-icons/user-interface" title="user interface icons">User interface icons created by mnauliady - Flaticon</a>
 

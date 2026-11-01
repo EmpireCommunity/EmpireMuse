@@ -10,6 +10,7 @@ import disnake
 
 import empiremuse.wavelink as wavelink
 from empiremuse.utils.db import DBModel
+from empiremuse.utils.music.app_emojis import emoji as app_emoji
 from empiremuse.utils.music.audio_sources.deezer import deezer_regex
 from empiremuse.utils.music.audio_sources.spotify import spotify_regex_w_user
 from empiremuse.utils.music.converters import YOUTUBE_VIDEO_REG, music_source_image, md_link
@@ -306,7 +307,7 @@ class PlayResolveMixin:
                     )
 
                     try:
-                        await func(embed=embed, components=song_request_buttons)
+                        await func(embed=embed, components=song_request_buttons(self.bot))
                     except Exception:
                         logger.exception("Falha ao atualizar a mensagem de pedido de música")
                     return True
@@ -359,8 +360,12 @@ class PlayResolveMixin:
                 user=inter.author,
                 timeout=45,
                 buttons=[
-                    disnake.ui.Button(label="Carregar apenas a música", emoji="🎵", custom_id="music"),
-                    disnake.ui.Button(label="Carregar playlist", emoji="🎶", custom_id="playlist"),
+                    disnake.ui.Button(
+                        label="Carregar apenas a música", emoji=app_emoji(self.bot, "music_note"), custom_id="music"
+                    ),
+                    disnake.ui.Button(
+                        label="Carregar playlist", emoji=app_emoji(self.bot, "playlist_play"), custom_id="playlist"
+                    ),
                 ],
             )
 
@@ -402,7 +407,7 @@ class PlayResolveMixin:
                 )
 
                 try:
-                    await func(embed=embed, components=song_request_buttons)
+                    await func(embed=embed, components=song_request_buttons(self.bot))
                 except Exception:
                     logger.exception("Falha ao atualizar a mensagem de pedido de música")
                 return True

@@ -1,4 +1,4 @@
-"""Apoio dos testes de emojis de aplicação (#130): os 37 nomes, imagens sintéticas e um cliente falso da API.
+"""Apoio dos testes de emojis de aplicação (#130): os 64 nomes, imagens sintéticas e um cliente falso da API.
 
 Imagens: só os bytes que o validador lê (assinatura e cabeçalho); sem Pillow. O cliente falso grava cada chamada e mede a concorrência
 (``create`` nunca em paralelo). Nenhum teste dorme: o ``sleep`` é injetado.
@@ -19,7 +19,9 @@ NOMES = (
     "music_queue add_music play play_source playpause stop skip backward arrow_left arrow_right "
     "leftwards_arrow_with_hook help git stagechannel bandcamp youtube youtube_music spotify soundcloud "
     "deezer applemusic twitch jiosaavn tidal lastfm "
-    "loved search config gear replay tools pinned bot voice_event community_server plus headset"
+    "loved search config gear replay tools pinned bot voice_event community_server plus headset "
+    "history microphone user playlists speaker notification fast_backward volume shuffle playlist_add repeat_all "
+    "sound_spectrum refresh lock drag like music_notes music_note playlist_play cancel star lyrics comment disc record repeat pause"
 ).split()
 # §12 do contrato: os 12 extras do dono e a reserva Unicode de cada um; o ``headset`` é o único ANIMADO (GIF89a)
 EXTRAS = {

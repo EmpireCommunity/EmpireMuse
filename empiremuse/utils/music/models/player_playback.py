@@ -228,7 +228,7 @@ class PlayerPlaybackMixin:
                     ),
                     disnake.SelectOption(
                         label="Ativar a reprodução automática",
-                        emoji="🔄",
+                        emoji=app_emoji(self.bot, "refresh"),
                         value=PlayerControls.autoplay,
                         description=f"Tocar música relacionadas a: {play_txt[:19]}",
                     ),
@@ -238,7 +238,7 @@ class PlayerPlaybackMixin:
         if played > 1:
             controller_opts.append(
                 disnake.SelectOption(
-                    emoji="↪️",
+                    emoji=app_emoji(self.bot, "playlist_add"),
                     value=PlayerControls.readd,
                     label="Tocar novamente",
                     description=f"Tocar todas as músicas novamente ({played})",
@@ -247,7 +247,7 @@ class PlayerPlaybackMixin:
 
         controller_opts.append(
             disnake.SelectOption(
-                emoji="🛑",
+                emoji=app_emoji(self.bot, "stop"),
                 value=PlayerControls.stop,
                 label="Finalizar",
                 description=f"Finalizar o player e me desconectar do canal.",

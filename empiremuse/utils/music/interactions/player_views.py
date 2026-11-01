@@ -129,17 +129,24 @@ class QueueInteraction(disnake.ui.View):
         play.callback = self.invoke_command
         self.add_item(play)
 
-        move = disnake.ui.Button(emoji="↪️", label="Mover", style=disnake.ButtonStyle.grey, custom_id="queue_move")
+        move = disnake.ui.Button(
+            emoji=app_emoji(self.bot, "drag"), label="Mover", style=disnake.ButtonStyle.grey, custom_id="queue_move"
+        )
         move.callback = self.move_callback
         self.add_item(move)
 
         rotate_q = disnake.ui.Button(
-            emoji="🔃", label="Rotacionar Fila", style=disnake.ButtonStyle.grey, custom_id="queue_rotate"
+            emoji=app_emoji(self.bot, "repeat_all"),
+            label="Rotacionar Fila",
+            style=disnake.ButtonStyle.grey,
+            custom_id="queue_rotate",
         )
         rotate_q.callback = self.invoke_command
         self.add_item(rotate_q)
 
-        update_q = disnake.ui.Button(emoji="🔄", label="Recarregar", style=disnake.ButtonStyle.grey)
+        update_q = disnake.ui.Button(
+            emoji=app_emoji(self.bot, "refresh"), label="Recarregar", style=disnake.ButtonStyle.grey
+        )
         update_q.callback = self.update_q
         self.add_item(update_q)
 
@@ -230,19 +237,27 @@ class QueueInteraction(disnake.ui.View):
             if self.current_track == t:
                 txt += (
                     f"`╔{'=' * 50}`\n`║` **{index}º) {md_link(t.title, t.uri, code=False, limit=37)}**\n"
-                    f"`║ ⏲️`  **{duration}**"
+                    f"`║` {app_emoji(self.bot, 'history')}  **{duration}**"
                     + (f" - `Repetições: {t.track_loops}`" if t.track_loops else "")
                     + " **|** "
-                    + (f"`✋` <@{t.requester}>" if not t.autoplay else f"`👍⠂Recomendada`")
+                    + (
+                        f"{app_emoji(self.bot, 'user')} <@{t.requester}>"
+                        if not t.autoplay
+                        else f"{app_emoji(self.bot, 'like')} `Recomendada`"
+                    )
                     + f"\n`╚{'=' * 50}`\n"
                 )
             else:
                 txt += (
                     f"`┌ {index})` {md_link(t.title, t.uri, limit=45)}\n"
-                    f"`└ ⏲️ {duration}`"
+                    f"`└` {app_emoji(self.bot, 'history')} `{duration}`"
                     + (f" - `Repetições: {t.track_loops}`" if t.track_loops else "")
                     + f" **|** "
-                    + (f"`✋` <@{t.requester}>" if not t.autoplay else f"`👍⠂Recomendada`")
+                    + (
+                        f"{app_emoji(self.bot, 'user')} <@{t.requester}>"
+                        if not t.autoplay
+                        else f"{app_emoji(self.bot, 'like')} `Recomendada`"
+                    )
                     + "\n"
                 )
 

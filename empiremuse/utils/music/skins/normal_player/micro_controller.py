@@ -81,7 +81,11 @@ class MicroController:
                 custom_id=PlayerControls.queue,
                 disabled=not (player.queue or player.queue_autoplay),
             ),
-            disnake.ui.Button(emoji="💗", label="Adicionar nos seus favoritos", custom_id=PlayerControls.add_favorite),
+            disnake.ui.Button(
+                emoji=app_emoji(player.bot, "loved"),
+                label="Adicionar nos seus favoritos",
+                custom_id=PlayerControls.add_favorite,
+            ),
         ]
 
         return data

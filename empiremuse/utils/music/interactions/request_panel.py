@@ -54,7 +54,10 @@ def _buttons(bot: Any, *, paused: bool) -> list[disnake.ui.Button]:
     """Os botões comuns: pedir, pausar/retomar, pular, parar e favoritos; o estado de pausa vem de todos os players."""
     return [
         disnake.ui.Button(
-            label="Pedir uma música", emoji="🎶", style=disnake.ButtonStyle.primary, custom_id=PlayerControls.add_song
+            label="Pedir uma música",
+            emoji=app_emoji(bot, "music_notes"),
+            style=disnake.ButtonStyle.primary,
+            custom_id=PlayerControls.add_song,
         ),
         disnake.ui.Button(
             emoji=app_emoji(bot, "playpause"),

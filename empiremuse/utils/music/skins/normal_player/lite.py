@@ -4,6 +4,7 @@ from os.path import basename
 import disnake
 
 from empiremuse.utils.branding import asset_url
+from empiremuse.utils.music.app_emojis import emoji as app_emoji
 from empiremuse.utils.music.converters import time_format, md_bracketed, md_link, md_code
 from empiremuse.utils.music.models import LavalinkPlayer
 
@@ -30,7 +31,7 @@ class LiteSkin:
         duration = "`🔴 Livestream`" if player.current.is_stream else time_format(player.current.duration)
 
         embed.description = (
-            f"> -# ▶️ **┃**{md_link(player.current.title, player.current.uri or player.current.search_uri, limit=45)}\n"
+            f"> -# {app_emoji(player.bot, 'play')} **┃**{md_link(player.current.title, player.current.uri or player.current.search_uri, limit=45)}\n"
             f"> -# ℹ️ **┃**`{duration}`┃{md_code(player.current.author, limit=18)}┃"
         )
 
@@ -43,9 +44,7 @@ class LiteSkin:
                 embed.description = "`[Recomendada]`"
 
         if player.current.playlist_name:
-            embed.description += (
-                f"\n> -# 🎼 **┃ Playlist:** {md_link(player.current.playlist_name, player.current.playlist_url)}"
-            )
+            embed.description += f"\n> -# {app_emoji(player.bot, 'playlists')} **┃ Playlist:** {md_link(player.current.playlist_name, player.current.playlist_url)}"
 
         embed.set_thumbnail(player.current.thumb)
 
