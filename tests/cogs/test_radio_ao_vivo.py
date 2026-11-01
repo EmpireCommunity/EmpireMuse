@@ -794,9 +794,53 @@ class TestLiveLoadsOnlyOnTheLocalNode:
             query = self.local.get_tracks.await_args.args[0]
             assert re.fullmatch(r"http://127\.0\.0\.1:\d+/r/[A-Za-z0-9_-]{22}", query)
             assert "ytsearch" not in query and "source" not in self.local.get_tracks.await_args.kwargs
+            assert (
+                self.local.get_tracks.await_args.kwargs["trusted_local"] is True
+            )  # o filtro de IP do nó libera SÓ esta carga
             self.remote.get_tracks.assert_not_awaited()  # nenhum outro nó
             w.music.get_tracks.assert_not_awaited()  # nem o get_tracks genérico (provedores de busca, Deezer, Spotify)
             assert w.player.process_next.await_count == 1
+        finally:
+            await w.hub.relay.close()
+
+    @pytest.mark.asyncio
+    async def test_with_the_real_node_guard_the_relay_load_and_play_are_not_refused_and_the_same_address_from_a_user_is(
+        self,
+    ):
+        """Contra o filtro de IP REAL do nó (#184): a carga do relay passa e a faixa toca sem decodificar; o mesmo endereço pedido por um usuário é recusado."""
+        from collections import OrderedDict
+        from unittest.mock import AsyncMock
+
+        from cachetools import TTLCache
+
+        from empiremuse.wavelink.errors import MissingSessionID, TrackNotFound
+        from empiremuse.wavelink.node import Node
+
+        w, ports = await self.world_with_player()
+        real = object.__new__(Node)
+        real.players = {}
+        real.session_id = None
+        real._client = SimpleNamespace(bot=SimpleNamespace(music=SimpleNamespace(players={})))
+        real._trusted_encoded = OrderedDict()
+        real._checked_encoded = TTLCache(maxsize=64, ttl=600)
+        track = SimpleNamespace(id="LIVE-ENCODED", title="live", info={"uri": "http://127.0.0.1:9/r/x"})
+        real._get_tracks = AsyncMock(return_value=[track])
+        real.build_track = AsyncMock(side_effect=AssertionError("a faixa do relay não deveria ser decodificada"))
+        real.identifier = "LOCAL"
+        w.bot.music.nodes = {"LOCAL": real}
+        try:
+            await ports.connect()
+            await ports.play_live()  # a carga do relay NÃO é recusada pela barreira de IP do nó
+
+            with pytest.raises(
+                MissingSessionID
+            ):  # e o play da faixa passa sem decodificar (chegou ao nó falso, sem sessão)
+                await Node.update_player(real, 7, {"encodedTrack": "LIVE-ENCODED"}, True)
+            real.build_track.assert_not_awaited()
+            with pytest.raises(
+                TrackNotFound
+            ):  # o mesmo endereço, pedido por um usuário (sem trusted_local), é recusado
+                await Node.get_tracks(real, "http://127.0.0.1:9/r/x")
         finally:
             await w.hub.relay.close()
 

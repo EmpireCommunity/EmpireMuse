@@ -89,11 +89,14 @@ class LiveRadioPorts(DiscordRadioPorts):
         try:
             # SÓ o nó local e a URL exata (R-8): o get_tracks genérico trocaria a consulta por "ytsearch:<url>" e, sem resultado, a mandaria a
             # Deezer, Spotify e aos outros nós, vazando o endereço e o token e tocando outra coisa no lugar do fluxo
-            found = await self._local_node(bot).get_tracks(
+            found = await self._local_node(
+                bot
+            ).get_tracks(
                 hub.relay.local_url(token),
                 track_cls=LavalinkTrack,
                 playlist_cls=LavalinkPlaylist,
                 requester=bot.user.id,
+                trusted_local=True,  # só aqui: o filtro de IP do nó recusaria o 127.0.0.1 do relay (que é nosso, com token) e a faixa tocaria sem conferência
             )
             tracks = list(getattr(found, "tracks", found) or [])
             if not tracks:
