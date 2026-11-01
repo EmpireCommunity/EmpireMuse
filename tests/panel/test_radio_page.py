@@ -114,6 +114,9 @@ class RadioChatTest(RadioBase):
             4,
         )
         assert self.radio.store.updates == [(radio.id, "1001")]
+        assert [r.chat for r in self.radio.manager.chat_updates] == [
+            saved.chat
+        ]  # o varredor em execução recebe o chat novo
         audit = self.audit_text()
         assert "escopo=radio:1 categoria=radios campos=voice_delete_after_s" in audit and "45" not in audit
         assert self.chat_forms(self.page(browser))[0].value("versao") == "4"
@@ -162,7 +165,7 @@ class RadioChatTest(RadioBase):
         browser = self.logged_in()
         response = self.save(browser, radio, versao="2", voice_delete_after_s="45")
         assert response.code == 409 and CONFLICT_TEXT in response.body.decode()
-        assert self.radio.store.updates == []
+        assert self.radio.store.updates == [] and self.radio.manager.chat_updates == []
 
     def test_without_manage_messages_in_the_channel_or_premium_is_403_and_nothing_is_written(self):
         radio = self.seed_alfa()

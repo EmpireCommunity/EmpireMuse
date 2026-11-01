@@ -4,7 +4,8 @@ Os dados vêm de ``pool.radio`` (Turbine): ``store`` (``list_for_guild``, ``get`
 cache de 30 s) e ``service`` (``state``). Aqui ficam as conferências da R-6 (id da rota com o sufixo ``:{guild_id}`` do
 ``GuildAccess``, servidor premium e ``manage_messages`` no canal da rádio, lido no bot da rádio), a allowlist ``chat.*``
 (qualquer outro campo do POST é ignorado), a validação por ``rules.radio.check_radio`` e o compare-and-set em ``rev``.
-Nenhum efeito no Discord: o bot relê o documento. Nada do usuário vai para o log além dos ids.
+Nenhum efeito no Discord; a mudança das regras do chat vai ao varredor em execução por ``manager.update_chat_rules``
+(síncrono, mesmo processo), e vale na próxima varredura. Nada do usuário vai para o log além dos ids.
 """
 
 from __future__ import annotations
@@ -231,7 +232,16 @@ class RadioPage:
             CATEGORY,
             ",".join(changed),
         )
+        self._apply_to_sweeper(ctx, saved)
         return Outcome(STATUS_OK, self.form(saved, action, message=SAVED_TEXT, kind=KIND_OK))
+
+    @staticmethod
+    def _apply_to_sweeper(ctx: FormContext, saved: Any) -> None:
+        """O varredor da rádio ligada recebe o chat novo na hora (contrato R1 §3/§4); o dado já está gravado, então uma falha aqui só avisa."""
+        try:
+            ctx.pool.radio.manager.update_chat_rules(saved)
+        except Exception as exc:
+            logger.warning("Regras do chat gravadas, mas o varredor não foi atualizado (%s)", type(exc).__name__)
 
 
 def _range_message(tr: Translator, field: str) -> str:
