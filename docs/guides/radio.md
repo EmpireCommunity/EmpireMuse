@@ -69,7 +69,7 @@ O bot apaga mensagens **só no canal da rádio**, nunca no da Jukebox, e nunca a
 
 | Canal | Regra | Padrão | Faixa |
 | :--- | :--- | :--- | :--- |
-| Voz | apaga a mensagem depois de X segundos | 30 s | 5 a 600 s |
+| Voz | apaga a mensagem depois de X segundos | 60 s | 5 a 600 s |
 | Palco | apaga as mais antigas quando passam de N mensagens | 7 | 3 a 50 |
 | Palco | apaga as com mais de X segundos | 600 s (10 min) | 60 a 3600 s |
 
