@@ -10,6 +10,7 @@ import disnake
 import empiremuse.wavelink as wavelink
 from empiremuse.utils.client import BotCore
 from empiremuse.utils.safe_error import safe_error
+from empiremuse.utils.url_guard import UnsafeUrl, ensure_public_url, log_refusal
 from empiremuse.utils.music.audio_sources.spotify import spotify_link_regex, spotify_regex_w_user
 from empiremuse.utils.music.errors import (
     GenericError,
@@ -30,6 +31,17 @@ from empiremuse.music_cog.shared import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+async def ensure_link_is_public(bot: BotCore, query: str, ctx) -> None:
+    """Todo link http(s) que chega ao Lavalink (``/play``, prefixo, pedido digitado, painel, favoritos, playlists) resolve SÓ para endereço
+    público (``utils/url_guard.py``). Recusa com uma mensagem genérica (nada do host nem do motivo para quem pediu) e o host no log."""
+    try:
+        await ensure_public_url(query)
+    except UnsafeUrl as error:
+        log_refusal(error)
+        tr = await bot.pool.i18n.for_guild(getattr(ctx, "guild", None))
+        raise GenericError(tr("play.url_refused")) from None
 
 
 class TracksMixin:
@@ -205,6 +217,8 @@ class TracksMixin:
         bot: BotCore = None,
         mix=False,
     ):
+        await ensure_link_is_public(self.bot, query, ctx)
+
         exceptions = set()
 
         if mix:
