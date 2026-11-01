@@ -110,6 +110,39 @@ def reply(w):
     return w.inter.edit_original_message.await_args.kwargs["content"]
 
 
+class TestBootFromCogLoad:
+    @pytest.mark.asyncio
+    async def test_a_cog_loaded_after_the_first_ready_boots_from_cog_load_and_only_once(self):  # CodeRabbit #180
+        w = build()
+        w.hub.manager.ports_factory = None  # o build já instala dublês: aqui o boot real é que instala
+        w.cog.bot.is_ready = lambda: True
+        w.cog.bot.loop = asyncio.get_running_loop()
+        w.cog.bot.pool.servers.main_bot = lambda: w.cog.bot
+
+        await w.cog.cog_load()
+        await w.cog.cog_load()  # carregada de novo (reload): o guard de ports_factory impede subir duas vezes
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+        assert w.hub.manager.ports_factory is not None
+        installed = w.hub.manager.ports_factory
+        await w.cog.radio_boot()  # e o on_ready depois também é inofensivo
+        assert w.hub.manager.ports_factory is installed
+        await w.hub.manager.close()
+
+    @pytest.mark.asyncio
+    async def test_a_cog_loaded_before_ready_waits_for_on_ready(self):
+        w = build()
+        w.hub.manager.ports_factory = None
+        w.cog.bot.is_ready = lambda: False
+        w.cog.bot.loop = asyncio.get_running_loop()
+
+        await w.cog.cog_load()
+        await asyncio.sleep(0)
+
+        assert w.hub.manager.ports_factory is None and not w.hub.manager._tasks  # nada subiu: espera o on_ready
+
+
 class TestLigar:
     @pytest.mark.asyncio
     async def test_it_turns_the_radio_on_in_the_first_free_reserve_and_starts_it(self):

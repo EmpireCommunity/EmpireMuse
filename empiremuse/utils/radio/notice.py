@@ -17,13 +17,29 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _another_bot_will_answer(bot: BotCore, hub: Any, message: disnake.Message) -> bool:
+    """Há, neste servidor, outro bot pronto e que NÃO é só-rádio? Num prefixo compartilhado ele executa o comando: dizer "este bot não atende"
+    seria avisar à toa. O aviso fica para quando só o bot só-rádio ouviu."""
+    guild_bots = getattr(bot.pool, "get_guild_bots", None)
+    if guild_bots is None or message.guild is None:
+        return False
+    return any(
+        other is not bot and getattr(other, "bot_ready", False) and not hub.roles.is_radio_only(other.identifier)
+        for other in guild_bots(message.guild.id)
+    )
+
+
 async def refuse_radio_only(bot: BotCore, ctx: Any, message: disnake.Message) -> bool:
     """``True`` se ``bot`` é só-rádio (a mensagem não segue). Um comando de prefixo ganha o aviso, no máximo um por canal por minuto."""
     pool = bot.pool
     hub = getattr(pool, "radio", None)
     if hub is None or not hub.roles.is_radio_only(bot.identifier):
         return False
-    if getattr(ctx, "valid", False) and hub.claim_notice(message.channel.id):
+    if (
+        getattr(ctx, "valid", False)
+        and not _another_bot_will_answer(bot, hub, message)
+        and hub.claim_notice(message.channel.id)
+    ):
         try:
             tr = await pool.i18n.for_guild(message.guild)
             await message.channel.send(

@@ -195,7 +195,7 @@ class RadioStore:
             channel_id=radio.channel_id,
             kind=radio.kind,
             source=dict(radio.source),
-            chat=dict(radio.chat),
+            chat=dict(current.chat),  # as regras de chat gravadas pelo painel sobrevivem à troca de canal e fonte
             panel_message_id=None,
             clock_started_at=None,  # outra playlist, outra programação: o relógio recomeça quando ligar
             rev=current.rev + 1,
