@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
@@ -165,6 +166,7 @@ class RadioStore:
             source=dict(radio.source),
             chat=dict(radio.chat),
             panel_message_id=None,
+            clock_started_at=None,  # outra playlist, outra programação: o relógio recomeça quando ligar
             rev=current.rev + 1,
         )
         checked = check_radio(to_document(updated))
@@ -173,6 +175,21 @@ class RadioStore:
         if not await self._save(radio.id, to_document(checked, updated_by=updated_by), current.rev):
             raise RadioConflict
         return checked
+
+    async def ensure_clock(self, radio: Radio) -> Radio:
+        """A rádio ligada com o relógio virtual gravado: documento antigo (sem ``clock_started_at``) ganha a época de agora, uma vez."""
+        if radio.clock_started_at is not None:
+            return radio
+        for _ in range(CAS_ATTEMPTS):
+            current = self._radio(await self._find(radio.id))
+            if current is None:
+                raise RadioNotFound
+            if current.clock_started_at is not None:
+                return current
+            stamped = dataclasses.replace(current, clock_started_at=time.time(), rev=current.rev + 1)
+            if await self._save(radio.id, to_document(stamped), current.rev):
+                return stamped
+        raise RadioConflict
 
     async def set_panel_message(self, radio_id: str, message_id: Optional[int]) -> None:
         """Guarda o id da mensagem do painel da rádio (sem conflito para quem chama: relê e tenta de novo)."""
@@ -211,6 +228,8 @@ class RadioStore:
             if current.enabled == enabled:
                 return current
             changed = dataclasses.replace(current, enabled=enabled, rev=current.rev + 1)
+            if enabled:  # ligar de verdade começa a programação virtual agora; o reinício do bot a continua dessa época
+                changed = dataclasses.replace(changed, clock_started_at=time.time())
             if not enabled:
                 if not await self._save(radio_id, to_document(changed, updated_by=updated_by), current.rev):
                     continue  # outro escritor passou na frente: relê (a transição pode já ter sido feita por ele)

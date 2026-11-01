@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 NO_MANAGE_GUILD = "no_manage_guild"
 NO_MANAGE_MESSAGES = "no_manage_messages"
 NO_PREMIUM = "no_premium"
+PAUSED_ALL = "paused_all"
 NO_PLAYLIST = "no_playlist"
 NO_FREE_BOT = "no_free_bot"
 BOT_CANNOT_JOIN = "bot_cannot_join"
@@ -66,6 +67,10 @@ async def turn_on(
         raise Refused(NO_MANAGE_GUILD)
     if not actor.manage_messages_in_channel:
         raise Refused(NO_MANAGE_MESSAGES)
+    if (
+        hub.control.paused_all
+    ):  # a válvula de segurança do dono: nenhuma rádio liga (nem ocupa vaga) enquanto ela está fechada
+        raise Refused(PAUSED_ALL)
     premium = await hub.premium.fresh(guild_id)
     if premium is None:
         raise Refused(NO_PREMIUM)

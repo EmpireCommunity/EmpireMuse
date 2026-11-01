@@ -44,6 +44,7 @@ async def on(world, **over):
 
 
 async def premium(world, guild_id=GUILD):
+    await world.hub.control.load()  # a pausa do dono lida do banco: sem documento, não pausado
     await world.hub.premium.grant(guild_id, by=1)
 
 
@@ -73,6 +74,7 @@ class TestTurnOn:
 
     @pytest.mark.asyncio
     async def test_without_premium_nothing_is_written(self, world):
+        await world.hub.control.load()
         with pytest.raises(Refused) as refusal:
             await on(world)
 
@@ -229,3 +231,41 @@ class TestStatus:
 
         assert result.premium.active == 1 and result.paused_all is False
         assert [(line.radio.id, line.state) for line in result.lines] == [(radio.id, RadioState(playing=True))]
+
+
+class TestPausedAllBlocksTurnOn:
+    """Keystone (contrato §2): com a pausa do dono ligada, ``ligar`` é recusado ANTES de gravar, de ocupar vaga ou de o bot entrar na call."""
+
+    @pytest.mark.asyncio
+    async def test_turn_on_is_refused_while_the_owner_pause_is_on_and_nothing_is_written(self, world):
+        await premium(world)
+        await world.hub.control.set_paused_all(True, by=1)
+
+        with pytest.raises(Refused) as refusal:
+            await on(world)
+
+        assert refusal.value.code == actions.PAUSED_ALL
+        assert await world.hub.store.list_for_guild(GUILD) == [] and (await world.hub.premium.fresh(GUILD)).active == 0
+
+    @pytest.mark.asyncio
+    async def test_it_works_again_after_the_owner_resumes(self, world):
+        await premium(world)
+        await world.hub.control.set_paused_all(True, by=1)
+        await world.hub.control.set_paused_all(False, by=1)
+
+        assert (await on(world)).enabled
+
+    @pytest.mark.asyncio
+    async def test_before_the_pause_flag_is_read_from_the_database_the_valve_stays_closed(self, world):
+        await world.hub.premium.grant(GUILD, by=1)  # sem control.load(): começa fechado
+
+        with pytest.raises(Refused) as refusal:
+            await on(world)
+
+        assert refusal.value.code == actions.PAUSED_ALL
+
+    def test_the_refusal_has_a_translated_text(self):
+        from empiremuse.i18n import get_i18n
+
+        for locale, snippet in (("pt-BR", "pausadas pelo dono"), ("en-US", "paused by the bot owner")):
+            assert snippet in get_i18n().for_locale(locale)("radio.refused.paused_all")

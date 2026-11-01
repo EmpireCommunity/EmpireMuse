@@ -271,6 +271,7 @@
   "radio.refused.no_playlist": "That playlist does not exist on this server.",
   "radio.refused.no_premium": "This server does not have radio premium. Ask the bot owner.",
   "radio.refused.not_found": "There is no radio on in that channel.",
+  "radio.refused.paused_all": "All radios are paused by the bot owner for now, so a new radio cannot be turned on. Try again later.",
   "radio.state.off": "off",
   "radio.state.offline": "reconnecting",
   "radio.state.paused": "paused (nobody listening)",

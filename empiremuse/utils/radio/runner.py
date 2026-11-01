@@ -64,6 +64,8 @@ class RadioPorts(Protocol):
     """Tudo que o runner pede ao mundo. O adaptador real (Discord + Lavalink) e o dublê dos testes implementam isto."""
 
     def now(self) -> float: ...
+    def wall(self) -> float: ...
+    def clock_origin(self) -> float | None: ...
     def jitter(self) -> float: ...
     async def sleep(self, seconds: float) -> None: ...
     async def allowed(self) -> Allowed: ...
@@ -115,7 +117,9 @@ class RadioRunner:
         self.connected_at: float | None = None
         self.empty_since: float | None = None
         self.listening_since: float | None = None
-        self.virtual_started_at: float | None = None
+        self.virtual_origin: float | None = (
+            None  # época (relógio de parede) em que a programação virtual começou; vem do banco no reinício
+        )
         self._stopped = False
         self.admin_paused = False
         self._last_skip: float | None = None
@@ -171,7 +175,8 @@ class RadioRunner:
             await self._shutdown(verdict)
             return True
         self._set(Phase.CONNECTING)
-        self.virtual_started_at = self.ports.now()
+        if self.virtual_origin is None:
+            self.virtual_origin = self.ports.clock_origin() or self.ports.wall()
         if verdict is None:
             return False
         return await self._attempt()
@@ -269,7 +274,8 @@ class RadioRunner:
         if self.admin_paused:  # o administrador também
             self._set(Phase.PAUSED_ADMIN)
             return
-        elapsed_ms = int((self.ports.now() - (self.virtual_started_at or self.ports.now())) * 1000)
+        origin = self.virtual_origin if self.virtual_origin is not None else self.ports.wall()
+        elapsed_ms = max(0, int((self.ports.wall() - origin) * 1000))
         index, position = virtual_position(self.ports.durations_ms(), elapsed_ms)
         await self.ports.play_virtual(index, position)
         if self._stopped:

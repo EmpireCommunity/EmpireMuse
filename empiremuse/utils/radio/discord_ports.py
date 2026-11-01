@@ -38,9 +38,6 @@ class DiscordRadioPorts:
         self.pool = pool
         self.radio = radio
         self._tracks: list[Any] = []
-        self._stage_tried: Optional[int] = (
-            None  # id da conexão em que o 403 do palco já foi tentado (R-5: uma vez por conexão)
-        )
 
     # ------------------------------------------------------------------ o mundo
 
@@ -65,6 +62,13 @@ class DiscordRadioPorts:
 
     def now(self) -> float:
         return time.monotonic()
+
+    def wall(self) -> float:
+        return time.time()
+
+    def clock_origin(self) -> float | None:
+        """A época gravada em que a programação virtual começou (sobrevive ao reinício do bot)."""
+        return self.radio.clock_started_at
 
     def jitter(self) -> float:
         return random.random()
@@ -129,9 +133,6 @@ class DiscordRadioPorts:
 
     async def _speak(self, guild: disnake.Guild, channel: disnake.StageChannel, player: Any) -> None:
         """Palco: ``suppress=False`` com ``MUTE_MEMBERS``; sem isso, ``request_to_speak``. Um 403 vale UMA tentativa por conexão (R-5)."""
-        if self._stage_tried == id(player):
-            return
-        self._stage_tried = id(player)
         try:
             if channel.permissions_for(guild.me).mute_members:
                 await guild.me.edit(suppress=False)

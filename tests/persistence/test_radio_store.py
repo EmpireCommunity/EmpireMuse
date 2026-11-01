@@ -516,3 +516,71 @@ class TestPremiumCacheAgainstRevoke:
         world.db.find_doc = real
 
         assert await world.premium.get(GUILD) is None  # sem o cache velho de 30 s
+
+
+class TestClockPersistence:
+    @pytest.mark.asyncio
+    async def test_enabling_stamps_the_virtual_clock_and_disabling_then_enabling_restarts_it(self, world, monkeypatch):
+        from empiremuse.utils.radio import store as store_module
+
+        await with_premium(world)
+        await world.store.create(make_radio())
+        times = iter([1000.0, 5000.0])
+        monkeypatch.setattr(store_module.time, "time", lambda: next(times))
+
+        on = await world.store.set_enabled(radio_id(1, GUILD), True)
+        await world.store.set_enabled(radio_id(1, GUILD), False)
+        again = await world.store.set_enabled(radio_id(1, GUILD), True)
+
+        assert on.clock_started_at == 1000.0 and again.clock_started_at == 5000.0
+        assert (await world.store.get(radio_id(1, GUILD))).clock_started_at == 5000.0
+
+    @pytest.mark.asyncio
+    async def test_a_restart_reads_the_same_origin_back(self, world):
+        await with_premium(world)
+        await world.store.create(make_radio())
+        on = await world.store.set_enabled(radio_id(1, GUILD), True)
+
+        from empiremuse.utils.radio import RadioHub
+
+        reborn = RadioHub(world.pool)
+
+        assert (await reborn.store.get(radio_id(1, GUILD))).clock_started_at == on.clock_started_at
+
+    @pytest.mark.asyncio
+    async def test_an_old_document_without_the_field_is_stamped_once(self, world):
+        await with_premium(world)
+        await world.store.create(make_radio())
+        await world.store.set_enabled(radio_id(1, GUILD), True)
+        del world.db.tables["radios"][radio_id(1, GUILD)]["clock_started_at"]
+        legacy = await world.store.get(radio_id(1, GUILD))
+        assert legacy.clock_started_at is None
+
+        stamped = await world.store.ensure_clock(legacy)
+        again = await world.store.ensure_clock(stamped)
+
+        assert stamped.clock_started_at is not None and again.clock_started_at == stamped.clock_started_at
+
+    @pytest.mark.asyncio
+    async def test_reconfiguring_clears_the_clock(self, world):
+        await world.store.create(make_radio())
+        world.db.tables["radios"][radio_id(1, GUILD)]["clock_started_at"] = 123.0
+
+        updated = await world.store.reconfigure(make_radio(source={"playlist": "Jazz"}))
+
+        assert updated.clock_started_at is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad", [0, -5, True, "x", float("nan"), 5e12])
+    async def test_a_garbage_clock_makes_the_document_invalid(self, world, bad):
+        from empiremuse.rules.radio import check_radio as check
+
+        doc = {
+            "_id": radio_id(1, GUILD),
+            "channel_id": "9",
+            "kind": "custom",
+            "source": {"playlist": "p"},
+            "clock_started_at": bad,
+        }
+
+        assert isinstance(check(doc), RuleError)
