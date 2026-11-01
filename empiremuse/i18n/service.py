@@ -288,9 +288,11 @@ def _refresh_hints(player: Any) -> None:
 
 
 def _consume_result(task: asyncio.Future[Any]) -> None:
-    """Lê o desfecho de uma leitura em segundo plano para o asyncio não avisar de exceção nunca recuperada."""
-    if not task.cancelled():
-        task.exception()
+    """Lê o desfecho de uma leitura em segundo plano (o asyncio não avisa de exceção nunca recuperada) e registra só o TIPO da falha."""
+    if task.cancelled():
+        return
+    if (error := task.exception()) is not None:
+        logger.warning("Falha na leitura do idioma do servidor em segundo plano (%s)", type(error).__name__)
 
 
 def _locale_value(locale: Any) -> str | None:

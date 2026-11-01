@@ -437,6 +437,21 @@ class TestForGuildWithin:
         assert calls == [1]
 
     @pytest.mark.asyncio
+    async def test_a_background_read_that_fails_is_logged_with_the_exception_type_only(self, slow_store, caplog):
+        i18n, guild, release, calls = slow_store
+
+        async def failing(guild_):
+            raise RuntimeError("segredo-do-banco")
+
+        i18n.for_guild = failing
+        with caplog.at_level("WARNING", logger="empiremuse.i18n.service"):
+            await i18n.for_guild_within(guild)
+            with pytest.raises(RuntimeError):
+                await i18n._reads[1]
+
+        assert "RuntimeError" in caplog.text and "segredo-do-banco" not in caplog.text
+
+    @pytest.mark.asyncio
     async def test_close_cancels_the_pending_reads(self, slow_store):
         import asyncio
 
