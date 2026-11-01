@@ -47,6 +47,7 @@ from empiremuse.logs.aggregate import AGGREGATE_WINDOW
 from empiremuse.logs.boot import BootReport, check_new_version
 from empiremuse.logs.context import guild_extra
 from empiremuse.logs.errors import command_context, install_exception_handlers
+from empiremuse.logs.alarm import DegradationAlarm
 from empiremuse.logs.metrics import SUMMARY_PREFIX, MetricsCollector, NodeSample, format_summary
 from empiremuse.logs.metrics import process_stats as metrics_process_stats
 from empiremuse.rules.bot_roles import NOTICE_WINDOW_SECONDS, main_missing_hint
@@ -402,6 +403,7 @@ class BotPool:
         """
         interval = parse_log_settings(self.config, os.environ)[0].metrics_interval
         summary_logger = logging.getLogger("empiremuse.metrics")
+        alarm = DegradationAlarm()
         last_summary = clock()
         while True:
             await sleep(AGGREGATE_WINDOW)
@@ -423,6 +425,9 @@ class BotPool:
                     for line in format_summary(snapshot, **inputs):
                         # O 📊 é do formatter do console (emoji da categoria empiremuse.metrics); o arquivo não leva emoji.
                         summary_logger.info("%s", line.removeprefix(SUMMARY_PREFIX))
+                    # Os alertas de CPU e de quadros saem no mesmo log do resumo, uma amostra por resumo.
+                    for alert in alarm.observe(now, cpu_percent=inputs["cpu_percent"], nodes=inputs["nodes"]):
+                        summary_logger.warning("%s", alert)
             except asyncio.CancelledError:
                 raise
             except Exception as e:
