@@ -202,6 +202,16 @@ class RadioUnavailableTest(RadioBase):
         assert self.radio.store.updates == []
 
 
+class RadioSweeperFailureTest(RadioBase):
+    def test_a_sweeper_failure_does_not_undo_the_save_and_only_warns(self):
+        radio = self.seed_alfa()
+        self.radio.manager.fail_with = RuntimeError("varredor caiu")
+        response = self.save(self.logged_in(), radio, voice_delete_after_s="45")
+        assert response.code == 200 and SAVED_TEXT in response.body.decode()
+        assert self.radio.store.docs[radio.id].chat["voice_delete_after_s"] == 45
+        assert "varredor não foi atualizado (RuntimeError)" in self.all_log_text()
+
+
 # ============================================================================ limites do handler (corpo e escritas por minuto)
 
 

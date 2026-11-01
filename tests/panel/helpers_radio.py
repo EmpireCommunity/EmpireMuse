@@ -94,8 +94,11 @@ class FakeManager:
 
     def __init__(self):
         self.chat_updates = []  # Radio recebidas
+        self.fail_with = None  # exceção a levantar em update_chat_rules (o save não pode depender do varredor)
 
     def update_chat_rules(self, radio):
+        if self.fail_with is not None:
+            raise self.fail_with
         self.chat_updates.append(radio)
 
 
