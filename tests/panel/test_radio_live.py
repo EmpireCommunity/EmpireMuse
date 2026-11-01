@@ -6,12 +6,18 @@ a principal fica fora dos resultados; gravar a reserva só por ``source.reserve`
 uuid inválido, igual à principal, indisponível ou rádio personalizada → 422 sem gravar; auditoria só com o nome do campo.
 """
 
+import asyncio
 import html
 import re
+from types import SimpleNamespace
 
+from empiremuse.panel.handlers.settings import MAX_BODY_BYTES, WRITE_LIMIT_PER_MINUTE
 from empiremuse.panel.services.base import CONFLICT_TEXT, SAVED_TEXT
+from empiremuse.panel.services.radio_live import NAME_CACHE_SIZE, NAME_CACHE_TTL_S, LivePage, StationNames
+from empiremuse.rules.errors import RuleError
 from empiremuse.rules.radio_stations import Station
-from tests.panel.helpers_radio import make_channel, radio_state
+from empiremuse.utils.radio.store import RadioConflict, RadioInvalid, RadioNotFound
+from tests.panel.helpers_radio import UNAVAILABLE, make_channel, radio_state
 from tests.panel.helpers_settings import parse_forms
 from tests.panel.test_radio_page import ALFA, CHANNEL, RadioBase
 from tests.panel.test_settings_http import Each
@@ -46,6 +52,14 @@ class LiveBase(RadioBase):
     def search(self, browser, radio, term, *, htmx=True):
         headers = {"HX-Request": "true"} if htmx else {}
         return browser.get(f"{self.url(ALFA, radio.id)}/estacoes?q={term}", headers=headers)
+
+    def reserve_pairs(self, browser, **overrides):
+        form = self.reserve_form(self.page(browser))
+        assert form is not None
+        return form.pairs(**overrides)
+
+    def post_reserve(self, browser, radio_id, pairs, **kwargs):
+        return self.post_raw(browser, f"{self.url(ALFA, radio_id)}/reserva", pairs, htmx=True, **kwargs)
 
 
 # ============================================================================ página
@@ -164,3 +178,189 @@ class LiveReserveTest(LiveBase):
         response = self.choose(self.logged_in(), radio, B, versao="1")
         assert response.code == 409 and CONFLICT_TEXT in response.body.decode()
         assert self.radio.store.updates == []
+
+
+# ============================================================================ limites, banco fora do ar e escape (Litmus)
+
+
+class LiveLimitsTest(LiveBase):
+    def test_body_over_the_limit_is_413_without_writing(self):
+        radio = self.seed_live()
+        browser = self.logged_in()
+        pairs = self.reserve_pairs(browser, reserva=B) + [("enchimento", "x" * (MAX_BODY_BYTES + 1))]
+        assert self.post_reserve(browser, radio.id, pairs).code == 413
+        assert self.radio.store.updates == []
+
+    def test_writes_and_searches_past_the_per_minute_limit_are_429_and_the_directory_is_not_called(self):
+        radio = self.seed_live()
+        browser = self.logged_in()
+        pairs = self.reserve_pairs(browser, reserva="zzz")  # inválida: conta como escrita e não grava
+        for _ in range(WRITE_LIMIT_PER_MINUTE):
+            assert self.post_reserve(browser, radio.id, pairs, gap=0).code == 422
+        blocked = self.post_reserve(browser, radio.id, self.reserve_pairs(browser, reserva=B), gap=0)
+        assert blocked.code == 429 and blocked.headers.get("Retry-After") == "60"
+        search = self.search(browser, radio, "fm")
+        assert search.code == 429 and search.headers.get("Retry-After") == "60"
+        assert self.radio.store.updates == [] and self.radio.directory.calls == []
+
+    def test_search_counts_against_the_same_limit(self):
+        radio = self.seed_live()
+        browser = self.logged_in()
+        self.page(browser)
+        for _ in range(WRITE_LIMIT_PER_MINUTE):
+            assert self.search(browser, radio, "fm").code == 200
+        assert self.search(browser, radio, "fm").code == 429
+        assert len(self.radio.directory.calls) == WRITE_LIMIT_PER_MINUTE
+
+
+class LiveUnavailableTest(LiveBase):
+    def test_database_outage_is_503_on_search_and_on_reserve_without_calling_the_directory(self):
+        radio = self.seed_live()
+        browser = self.logged_in()
+        pairs = self.reserve_pairs(browser, reserva=B)
+        self.radio.premium.fail_with = UNAVAILABLE()
+        search = self.search(browser, radio, "fm")
+        reserve = self.post_reserve(browser, radio.id, pairs)
+        for response in (search, reserve):
+            assert response.code == 503, f"status {response.code}"
+            assert "não estão disponíveis agora" in response.body.decode()
+        assert self.radio.directory.calls == [] and self.radio.store.updates == []
+
+
+HOSTILE = ("<script>alert(1)</script>", '" onmouseover="alert(1)')
+
+
+class LiveEscapeTest(LiveBase):
+    def test_hostile_names_are_escaped_in_search_results_backup_bot_and_channel(self):
+        radio = self.seed_live(reserve=B)
+        script, attr = HOSTILE
+        self.radio.directory.stations[B] = station(B, script, attr)
+        self.radio.directory.results = [station(C, attr, script)]
+        self.world.bot1.user.name = script
+        self.world.channels[CHANNEL] = make_channel(CHANNEL, attr, ALFA)
+        browser = self.logged_in()
+        page = self.page(browser)
+        results = self.search(browser, radio, "fm").body.decode()
+        for body in (page, results):
+            assert "<script>" not in body and 'onmouseover="alert' not in body and "alert(1)" in body
+        assert page.count("&lt;script&gt;alert(1)&lt;/script&gt;") >= 2  # bot e reserva
+        assert "&quot; onmouseover=&quot;alert(1)" in page  # canal e país da reserva
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in results and "&quot; onmouseover=" in results
+        assert 'value="' + C + '"' in results
+
+
+class LiveReserveLayersTest(LiveBase):
+    def test_bad_version_custom_radio_and_store_refusals_are_handled_per_layer(self):
+        live = self.seed_live()
+        custom = self.radio.store.seed(2, ALFA, CHANNEL)
+        self.world.bot2 = SimpleNamespace()  # o bot 2 não está em Alfa: a rádio custom é só do teste do 422
+        browser = self.logged_in()
+        pairs_ok = self.reserve_pairs(browser, reserva=B)
+
+        def with_version(version):
+            return [(k, version if k == "versao" else v) for k, v in pairs_ok]
+
+        def check(case):
+            name, radio_id, pairs, error, status = case
+            self.radio.store.set_reserve_error = error
+            response = self.post_reserve(browser, radio_id, pairs)
+            self.radio.store.set_reserve_error = None
+            assert response.code == status, f"{name}: status {response.code}"
+            assert self.radio.store.updates == [], name
+
+        Each.run(
+            [
+                ("versão não numérica", live.id, with_version("abc"), None, 422),
+                ("versão com 13 dígitos", live.id, with_version("1" * 13), None, 422),
+                ("store: rev mudou depois do pré-check", live.id, pairs_ok, RadioConflict(), 409),
+                ("store: rádio sumiu depois do pré-check", live.id, pairs_ok, RadioNotFound(), 409),
+                (
+                    "store: recusa depois do pré-check",
+                    live.id,
+                    pairs_ok,
+                    RadioInvalid(RuleError("radio_source_invalid", "reserve")),
+                    422,
+                ),
+            ],
+            check,
+        )
+        assert self.radio.store.docs[live.id].source["reserve"] is None
+
+    def test_custom_radio_has_no_backup_even_with_a_valid_version(self):
+        self.radio.premium.grant(ALFA)
+        custom = self.radio.store.seed(1, ALFA, CHANNEL)
+        browser = self.logged_in()
+        pairs = [("versao", str(custom.rev)), ("reserva", B)]
+        response = self.post_reserve(browser, custom.id, pairs)
+        assert response.code == 422 and "Só rádios ao vivo" in html.unescape(response.body.decode())
+        assert self.radio.store.updates == [] and self.radio.store.docs[custom.id].source == custom.source
+
+
+class NoPremiumDirectoryTest(LiveBase):
+    def test_server_without_premium_never_asks_the_directory_for_station_names(self):
+        self.radio.store.seed_live(1, ALFA, CHANNEL, station=A, reserve=B)
+        self.radio.directory.stations[A] = station(A, "Alfa")
+        body = self.page(self.logged_in())
+        assert "Estação ao vivo" not in body and self.radio.directory.by_uuid_calls == []
+
+
+# ============================================================================ cache de nomes (unitário)
+
+
+class FakeClock:
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
+
+
+class RecordingDirectory:
+    def __init__(self, stations):
+        self.stations, self.calls = stations, []
+
+    async def by_uuid(self, uuid):
+        self.calls.append(uuid)
+        return self.stations.get(uuid)
+
+
+def test_station_names_cache_hits_within_the_ttl_expires_after_and_never_keeps_failures():
+    async def run():
+        clock = FakeClock()
+        names = StationNames(clock=clock)
+        directory = RecordingDirectory({A: station(A, "Alfa")})
+        assert (await names.get(directory, A)).name == "Alfa" and await names.get(directory, A) is not None
+        assert directory.calls == [A]
+        clock.now += NAME_CACHE_TTL_S
+        await names.get(directory, A)
+        assert directory.calls == [A, A]  # venceu: consulta de novo
+        assert await names.get(directory, B) is None and await names.get(directory, B) is None
+        assert directory.calls.count(B) == 2  # falha não entra no cache
+
+    asyncio.run(run())
+
+
+def test_station_names_cache_is_bounded():
+    async def run():
+        names = StationNames(clock=FakeClock())
+        uuids = [f"{i:08x}-0000-0000-0000-000000000000" for i in range(NAME_CACHE_SIZE + 5)]
+        directory = RecordingDirectory({u: station(u, u[:8]) for u in uuids})
+        for uuid in uuids:
+            await names.get(directory, uuid)
+        assert len(names._items) == NAME_CACHE_SIZE
+        await names.get(directory, uuids[0])
+        assert directory.calls.count(uuids[0]) == 2  # o mais antigo saiu
+
+    asyncio.run(run())
+
+
+def test_station_view_ignores_invalid_uuids_without_touching_the_directory():
+    async def run():
+        directory = RecordingDirectory({})
+        page = LivePage()
+        ctx = SimpleNamespace(pool=SimpleNamespace(radio=SimpleNamespace(directory=directory, health=None)))
+        for raw in (None, "", "zzz", "../" + A, A.upper()):
+            assert await page.station_view(ctx, raw) is None, raw
+        assert directory.calls == []
+
+    asyncio.run(run())

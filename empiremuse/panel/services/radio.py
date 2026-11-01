@@ -146,7 +146,9 @@ class RadioPage:
             if can_edit:
                 form = self.form(radio, f"{action}/{radio.id}")
             kind = str(radio.kind)
-            live = await self.live.view(ctx, radio, f"{action}/{radio.id}", can_edit) if kind == KIND_LIVE else None
+            live = None
+            if kind == KIND_LIVE and editable:  # sem premium a página só mostra o aviso: nada vai ao diretório
+                live = await self.live.view(ctx, radio, f"{action}/{radio.id}", can_edit)
             title = getattr(state, "title", None) if state is not None else None
             rows.append(
                 RadioRow(

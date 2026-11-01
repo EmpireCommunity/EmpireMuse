@@ -23,6 +23,7 @@ class FakeStore:
         self.docs = {}
         self.updates = []  # (radio_id, updated_by)
         self.fail_with = None  # exceção a levantar em toda leitura (ex.: RadioUnavailable)
+        self.set_reserve_error = None
 
     def seed(self, bot_id, guild_id, channel_id, *, kind="custom", enabled=True, rev=3, chat=None):
         source = {"playlist": "Rock"} if kind == "custom" else {"station": "0" * 8 + "-0000-0000-0000-" + "0" * 12}
@@ -85,8 +86,11 @@ class FakeStore:
         return saved
 
     async def set_reserve(self, radio_id_, reserve, *, expected_rev, updated_by=""):
-        """Como a store real (R3): só rádio ao vivo, uuid válido e diferente da principal, compare-and-set em ``rev``."""
+        """Como a store real (R3): só rádio ao vivo, uuid válido e diferente da principal, compare-and-set em ``rev``.
+        ``set_reserve_error`` (uma exceção) simula a store recusando DEPOIS do pré-check do painel."""
         self._check()
+        if self.set_reserve_error is not None:
+            raise self.set_reserve_error
         radio = self.docs.get(radio_id_)
         if radio is None:
             raise RadioNotFound
@@ -109,12 +113,14 @@ class FakeDirectory:
         self.results = []
         self.stations = {}
         self.calls = []
+        self.by_uuid_calls = []
 
     async def search(self, term, *, key=None):
         self.calls.append((term, key))
         return list(self.results)
 
     async def by_uuid(self, uuid):
+        self.by_uuid_calls.append(uuid)
         return self.stations.get(uuid)
 
 

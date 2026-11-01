@@ -8,7 +8,9 @@ Caminhos de risco: id da rota com sufixo ``:{guild_id}`` (outro servidor = 404),
 import html
 
 from empiremuse.panel.handlers.settings import MAX_BODY_BYTES, WRITE_LIMIT_PER_MINUTE
+from empiremuse.panel.handlers.radio import RadiosHandler
 from empiremuse.panel.services.base import CONFLICT_TEXT, SAVED_TEXT
+from empiremuse.panel.services.radio_live import StationNames
 from tests.panel.helpers_radio import UNAVAILABLE, install, make_channel, radio_state
 from tests.panel.helpers_settings import parse_forms
 from tests.panel.test_settings_http import Each, HttpBase
@@ -21,6 +23,7 @@ class RadioBase(HttpBase):
     def get_app(self):
         app = super().get_app()
         self.radio = install(self.pool)
+        RadiosHandler.page.live.names = StationNames()  # o cache de nomes é da classe: não vaza entre testes
         self.world.channels[CHANNEL] = make_channel(CHANNEL, "Sala <i>DJ</i>", ALFA)
         self.world.channels[456] = make_channel(456, "Sala 2", OMEGA, manage_messages=False)
         self.world.channels[789] = make_channel(789, "Sala Ômega", OMEGA)
