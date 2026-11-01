@@ -93,7 +93,7 @@ jobs:
 
       - name: Templates do painel sem raw nem autoescape (I-13)
         run: |
-          if grep -rnE '\{%-?[[:space:]]*(raw|autoescape)' empiremuse/panel/templates; then
+          if grep -rlPz '\{%-?\s*(raw|autoescape)' empiremuse/panel/templates; then
             echo "::error::Template do painel usa {% raw %} ou {% autoescape %}; o escape automático não pode ser desligado."
             exit 1
           fi
