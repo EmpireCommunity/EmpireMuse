@@ -58,6 +58,13 @@ class RadioPageTest(RadioBase):
         assert "Este servidor não tem rádios liberadas" in body
         assert self.chat_forms(body) == []
 
+    def test_premium_without_any_radio_on_still_allows_editing(self):
+        self.radio.premium.grant(ALFA, active=0)
+        radio = self.radio.store.seed(1, ALFA, CHANNEL, enabled=False)
+        body = self.page(self.logged_in())
+        assert "Ligadas agora: 0 de 3." in body and "Desligada" in body
+        assert [f.action for f in self.chat_forms(body)] == [self.url(ALFA, radio.id)]
+
     def test_lists_state_and_title_escaped_with_a_form_only_where_the_user_manages_messages(self):
         self.radio.premium.grant(OMEGA, active=2)
         editable = self.radio.store.seed(1, OMEGA, 789)

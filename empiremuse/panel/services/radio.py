@@ -88,8 +88,8 @@ def state_of(radio: Any, state: Any) -> str:
 
 
 def can_write(premium: Any) -> bool:
-    """Premium concedido pelo dono e com rádio ligada (``active`` 1..3); sem isso a página só mostra o aviso."""
-    return premium is not None and int(getattr(premium, "active", 0) or 0) > 0
+    """Servidor premium = documento concedido pelo dono (R1 §1), ligadas ou não; sem ele a página só mostra o aviso."""
+    return premium is not None
 
 
 class RadioPage:
@@ -99,8 +99,13 @@ class RadioPage:
 
     @staticmethod
     def bot_of(ctx: FormContext, radio: Any) -> Any:
-        """O bot da rádio, só se ele está neste servidor."""
-        return next((b for b in ctx.pool.get_guild_bots(ctx.guild_id) if int(b.user.id) == int(radio.bot_id)), None)
+        """O bot da rádio, só se ele está neste servidor (bot ainda sem ``user`` = não conectado: não conta)."""
+        wanted = int(radio.bot_id)
+        for bot in ctx.pool.get_guild_bots(ctx.guild_id):
+            user = getattr(bot, "user", None)
+            if user is not None and int(user.id) == wanted:
+                return bot
+        return None
 
     async def can_edit(self, ctx: FormContext, radio: Any) -> bool:
         """``manage_messages`` no canal da rádio, conferido no bot da rádio (R-4, R-6); sem bot, canal ou membro: não."""
