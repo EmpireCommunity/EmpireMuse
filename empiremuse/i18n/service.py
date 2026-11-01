@@ -164,6 +164,19 @@ class I18n:
             return None
         return value if isinstance(value, str) else None
 
+    async def ack_for_guild(self, interaction: Any) -> rules.Translator:
+        """Confirma a interação (efêmera) se ainda não foi respondida e SÓ ENTÃO resolve o idioma do servidor.
+
+        Ler ``settings.language`` pode ir ao banco; a interação tem 3 s para ser confirmada. Para as mensagens de erro de um componente,
+        que respondem depois pelo ``interaction.send`` (já como resposta adicional efêmera). Nunca levanta por causa da confirmação.
+        """
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.defer(ephemeral=True)
+        except Exception as error:  # noqa: BLE001 - já respondida ou expirada: o texto sai pelo caminho de erro de sempre
+            logger.debug("Interação não confirmada antes do idioma (%s)", type(error).__name__)
+        return await self.for_guild(getattr(interaction, "guild", None))
+
     async def for_guild(self, guild: Any | None) -> rules.Translator:
         """O tradutor do servidor (cache do ``ServerStore``); DM ou servidor fora do pool usam o ``preferred_locale``."""
         preferred = _locale_value(getattr(guild, "preferred_locale", None))
