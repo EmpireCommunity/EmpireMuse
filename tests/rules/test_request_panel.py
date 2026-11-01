@@ -4,14 +4,21 @@ o botão age só no player da call de quem apertou (S7) e a migração copia só
 import pytest
 
 from empiremuse.rules.request_panel import (
+    HEAL_MIN_INTERVAL_MS,
     PANEL_REFRESH_MS,
     PAUSED,
     PLAYING,
     PanelPeer,
+    StrictAction,
     choose_player,
+    clock,
     elect_panel_bot,
+    heal_wait_ms,
+    last_action_of,
     make_entry,
+    progress_text,
     refresh_wait_ms,
+    strict_action,
 )
 from empiremuse.rules.servers import SettingError, changed_request, migrate_request
 
@@ -146,3 +153,85 @@ def test_a_writer_that_sets_the_request_channel_to_garbage_is_refused_and_unchan
     assert changed_request({"player_controller": {"message_id": None}}, seen) == {"message_id": None}
     with pytest.raises(SettingError):
         changed_request({"player_controller": {"channel": "não é id"}}, seen)
+
+
+# ---------------------------------------------------------------------- Jukebox estrita (item 8, J1)
+
+
+def entrada(**over):
+    base = dict(bot_name="B", bot_id=1, voice_name="Call", private=False, title="T", url="u", paused=False, queue=0)
+    return make_entry(**{**base, **over})
+
+
+class TestProgresso:
+    def test_the_bar_fills_in_proportion_and_shows_both_clocks(self):
+        assert progress_text(45_000, 90_000, width=10) == "▰▰▰▰▰▱▱▱▱▱ 0:45 / 1:30"
+
+    def test_hours_only_appear_when_needed(self):
+        assert clock(59_000) == "0:59" and clock(3_600_000) == "1:00:00" and clock(3_725_000) == "1:02:05"
+
+    @pytest.mark.parametrize("position, duration", [(None, 90_000), (10, None), (10, 0), (10, -5)])
+    def test_without_position_or_duration_there_is_no_bar(self, position, duration):
+        assert progress_text(position, duration) is None
+
+    def test_a_position_past_the_end_is_a_full_bar_and_a_negative_one_is_empty(self):
+        assert progress_text(200_000, 100_000, width=4) == "▰▰▰▰ 1:40 / 1:40"
+        assert progress_text(-5, 100_000, width=4) == "▱▱▱▱ 0:00 / 1:40"
+
+
+class TestEntradaComVolumeEProgresso:
+    def test_volume_and_progress_are_kept_and_bounded(self):
+        e = entrada(volume=5000, position_ms=-3, duration_ms=200_000)
+        assert (e.volume, e.position_ms, e.duration_ms) == (1000, 0, 200_000)
+
+    def test_a_private_call_never_carries_volume_or_progress(self):
+        e = entrada(private=True, volume=80, position_ms=1000, duration_ms=2000)
+        assert (e.volume, e.position_ms, e.duration_ms) == (None, None, None)
+
+    @pytest.mark.parametrize("junk", ["80", True, None, []])
+    def test_text_and_boolean_volumes_are_dropped(self, junk):
+        assert entrada(volume=junk).volume is None
+
+    def test_a_zero_or_missing_duration_is_a_live_stream(self):
+        assert entrada(duration_ms=0).duration_ms is None and entry().duration_ms is None
+
+
+class TestPainelApagado:
+    def test_first_heal_is_immediate_and_a_second_inside_the_window_waits(self):
+        assert heal_wait_ms(None, 1_000) == 0
+        assert heal_wait_ms(1_000, 1_000 + 2_000) == HEAL_MIN_INTERVAL_MS - 2_000
+        assert heal_wait_ms(1_000, 1_000 + HEAL_MIN_INTERVAL_MS) == 0
+
+    def test_a_clock_that_went_back_does_not_block(self):
+        assert heal_wait_ms(10_000, 5_000) == 0
+
+
+class TestModoEstrito:
+    @staticmethod
+    def action(strict, **over):
+        facts = dict(author_is_bot=False, is_command=False, has_mentions=False, is_system=False)
+        return strict_action(strict, **{**facts, **over})
+
+    @pytest.mark.parametrize("strict", [True, False])
+    def test_bots_and_commands_are_never_touched(self, strict):
+        assert self.action(strict, author_is_bot=True) is StrictAction.IGNORE
+        assert self.action(strict, is_command=True) is StrictAction.IGNORE
+
+    def test_off_keeps_todays_flow(self):
+        assert self.action(False) is StrictAction.PROCESS
+        assert self.action(False, has_mentions=True) is StrictAction.IGNORE
+
+    def test_on_a_typed_name_is_deleted_at_once_and_still_served(self):
+        assert self.action(True) is StrictAction.DELETE_AND_PROCESS
+
+    def test_on_mentions_and_system_messages_are_deleted_without_a_request(self):
+        assert self.action(True, has_mentions=True) is StrictAction.DELETE
+        assert self.action(True, is_system=True) is StrictAction.DELETE
+
+
+class TestUltimaAcao:
+    def test_the_first_non_private_non_empty_action_wins(self):
+        assert last_action_of([(True, "secreto"), (False, ""), (False, "pulou"), (False, "pausou")]) == "pulou"
+
+    def test_nothing_usable_is_empty(self):
+        assert last_action_of([]) == "" and last_action_of([(True, "x"), (False, None)]) == ""

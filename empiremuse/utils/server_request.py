@@ -85,6 +85,11 @@ class ServerRequest:
     async def get(self, gid: int) -> RequestConfig:
         return _config(await self.store.get_sections(gid, *SECTIONS))
 
+    def peek_message_id(self, gid: int) -> Optional[int]:
+        """O id da mensagem do painel olhando só o cache (sem cópia, sem banco); ``None`` = não sei (documento fora do cache)."""
+        section = self.store.peek_section(gid, SECTION_REQUEST)
+        return None if section is None else _as_id(section.get("message_id")) or 0
+
     # ------------------------------------------------------------------ escrita
 
     async def set(

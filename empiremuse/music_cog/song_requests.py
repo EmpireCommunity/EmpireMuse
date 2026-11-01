@@ -8,6 +8,8 @@ from typing import Union, Optional
 import disnake
 from disnake.ext import commands
 
+from empiremuse.rules.request_panel import StrictAction, strict_action
+from empiremuse.rules.servers import request_channel_strict
 from empiremuse.rules.usage import KIND_REQUEST
 from empiremuse.utils.client import BotCore
 from empiremuse.utils.db import DBModel
@@ -60,6 +62,19 @@ from empiremuse.music_cog.song_request_steps import (
     _sr_prepare_query,
     _sr_validate_channel,
 )
+
+
+async def _request_channel_strict(self, message: disnake.Message) -> bool:
+    """O servidor liga a Jukebox estrita? Sem servidor, documento antigo ou store indisponível, não (o canal fica como sempre foi)."""
+    if message.guild is None:
+        return False
+    try:
+        return request_channel_strict(await self.bot.pool.servers.settings(message.guild.id))
+    except Exception as error:  # noqa: BLE001 - sem a configuração o canal segue o fluxo de antes (não estrito), mas fica no log
+        logger.warning(
+            "Jukebox estrita: configuração do servidor não lida, seguindo sem o modo estrito (%s)", type(error).__name__
+        )
+        return False
 
 
 class SongRequestsMixin:
@@ -194,13 +209,15 @@ class SongRequestsMixin:
         if message.channel.permissions_for(message.guild.me).manage_messages or message.author.id == self.bot.user.id:
             try:
                 await message.delete(delay=delay)
+            except disnake.NotFound:
+                pass  # já apagada (a Jukebox estrita apaga na hora; o fluxo do pedido tenta de novo no fim)
             except Exception:
                 logger.exception("Falha em delete_message")
 
     @commands.Cog.listener("on_song_request")
     async def song_requests(self, ctx: Optional[CustomContext], message: disnake.Message):
         req = SongRequestState(ctx=ctx, message=message)
-        if req.ctx.command or req.message.mentions:
+        if req.ctx.command:
             return
 
         if req.message.author.bot and not isinstance(req.message.channel, disnake.StageChannel):
@@ -215,6 +232,25 @@ class SongRequestsMixin:
 
         if await _sr_validate_channel(self, req):
             return
+
+        # só aqui, já sabendo que a mensagem é do canal de pedidos (este listener roda em toda mensagem de todo servidor)
+        strict = await _request_channel_strict(self, req.message)
+        if req.message.mentions and not strict:
+            return  # sem o modo estrito, mensagem com menção segue ignorada como sempre foi
+        action = strict_action(
+            strict,
+            author_is_bot=req.message.author.bot,
+            is_command=False,
+            has_mentions=bool(req.message.mentions),
+            is_system=req.message.is_system(),
+        )
+        if action is StrictAction.DELETE:
+            await self.delete_message(req.message)  # texto que não é pedido: some na hora, sem resposta
+            return
+        # o nome digitado vale como pedido, mas a mensagem já não fica no canal. Arquivo de áudio sem texto fica: apagar a mensagem
+        # apaga o anexo e o Lavalink ainda vai baixá-lo (o fluxo a apaga no fim).
+        if action is StrictAction.DELETE_AND_PROCESS and not (req.message.attachments and not req.message.content):
+            await self.delete_message(req.message)
 
         if req.message.content.startswith("/") or req.message.is_system():
             await self.delete_message(req.message)
@@ -242,6 +278,10 @@ class SongRequestsMixin:
                 return
 
             if await _sr_empty_content(self, req):
+                if action is StrictAction.DELETE_AND_PROCESS:
+                    await self.delete_message(
+                        req.message
+                    )  # anexo que não é áudio, grande demais ou sem nada: no modo estrito também some
                 return
 
             if await _sr_prepare_query(self, req):
