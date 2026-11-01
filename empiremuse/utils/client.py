@@ -463,6 +463,7 @@ class BotPool:
             "cpu_percent": None,
             "rss_mib": None,
             "nodes": list(nodes.values()),
+            "radios": tuple(self.radio.manager.counts()) if getattr(self, "radio", None) else None,
         }
 
     async def connect_lavalink_queue_task(self, identifier: str):

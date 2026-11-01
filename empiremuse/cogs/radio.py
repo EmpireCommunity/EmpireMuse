@@ -8,13 +8,21 @@ carrega este cog, os comandos de dono só rodam no principal (senão cada bot re
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Union
 
+import disnake
 from disnake.ext import commands
 
+from empiremuse.i18n import localized
+from empiremuse.rules.radio import BotCandidate
+from empiremuse.rules.servers import is_main_identifier
+from empiremuse.rules.text import external_text
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.others import CustomContext
+from empiremuse.utils.radio import actions
+from empiremuse.utils.radio.actions import Actor, Refused
 from empiremuse.utils.radio.control import MainBotRefused
+from empiremuse.utils.radio.discord_ports import DiscordRadioPorts
 from empiremuse.utils.radio.premium import RadioUnavailable
 
 if TYPE_CHECKING:
@@ -38,6 +46,22 @@ def _guild_id(raw: str) -> int | None:
     return int(raw) if raw.isdecimal() and 0 < int(raw) < 1 << 64 else None
 
 
+RADIO_COOLDOWN = commands.CooldownMapping.from_cooldown(1, 10, commands.BucketType.guild)
+MAX_CHOICES = 25
+NAME_LIMIT = 80
+
+
+async def playlist_autocomplete(inter: disnake.ApplicationCommandInteraction, current: str) -> list[str]:
+    """Até 25 nomes de playlist do servidor; o texto digitado só filtra e quem decide é o ``find`` da store em execução."""
+    if inter.guild_id is None or not inter.author.guild_permissions.manage_guild:
+        return []
+    from empiremuse.utils.server_playlists import safe_list  # tarde: o módulo importa muita coisa
+
+    wanted = (current or "").strip().casefold()
+    names = [p.name for p in await safe_list(inter.bot, inter.guild_id) if wanted in p.name.casefold()]
+    return names[:MAX_CHOICES]
+
+
 class Radio(commands.Cog):
     def __init__(self, bot: BotCore) -> None:
         self.bot = bot
@@ -45,6 +69,22 @@ class Radio(commands.Cog):
     @property
     def hub(self):
         return self.bot.pool.radio
+
+    # ------------------------------------------------------------------ subida: instala as portas reais e retoma as rádios
+
+    @commands.Cog.listener("on_ready")
+    async def radio_boot(self) -> None:
+        """No principal, uma vez: instala o adaptador do Discord, liga o passo de presença e retoma as rádios ligadas (fila global, R-3)."""
+        manager = self.hub.manager
+        if not self._only_main() or manager.ports_factory is not None:
+            return
+        pool = self.bot.pool
+        manager.ports_factory = lambda radio: DiscordRadioPorts(pool, radio)
+        manager.start_ticker()
+        try:
+            await manager.resume_all()
+        except Exception as error:  # noqa: BLE001 - as rádios ficam ligadas no banco; a próxima subida tenta de novo
+            logger.warning("Rádios não retomadas na subida (%s)", type(error).__name__)
 
     async def _tr(self, ctx: CustomContext):
         return await self.bot.pool.i18n.for_guild(ctx.guild)
@@ -55,6 +95,164 @@ class Radio(commands.Cog):
     async def cog_check(self, ctx: CustomContext) -> bool:  # type: ignore[override]
         # só os comandos de dono vivem aqui como prefixo; a conferência vale para TODOS eles
         return self._only_main() and is_env_owner(self.bot, ctx.author.id)
+
+    # ------------------------------------------------------------------ /radio (manage_guild; a execução confere de novo)
+
+    def _candidates(self, guild_id: int, channel: Any) -> tuple[list[BotCandidate], bool]:
+        """Os bots do pool vistos deste servidor e este canal. Sem ``view_channel`` e ``connect`` no canal, o bot conta como ocupado."""
+        pool = self.bot.pool
+        candidates: list[BotCandidate] = []
+        can_join = False
+        reserves_here = False
+        for bot in pool.get_all_bots():
+            if bot.user is None:
+                continue
+            guild = bot.get_guild(guild_id)
+            exclusive = getattr(bot, "exclusive_guild_id", None)
+            in_guild = guild is not None and not (exclusive and exclusive != guild_id)
+            main = is_main_identifier(bot.identifier)
+            perms_ok = False
+            if in_guild:
+                seen = guild.get_channel(channel.id)
+                permissions = seen.permissions_for(guild.me) if seen is not None else None
+                perms_ok = bool(permissions and permissions.view_channel and permissions.connect)
+            busy = not perms_ok or guild_id in bot.music.players or bool(in_guild and guild.me.voice)
+            reserves_here = reserves_here or (in_guild and not main)
+            can_join = can_join or (perms_ok and not main)
+            candidates.append(
+                BotCandidate(
+                    bot.identifier,
+                    bot.user.id,
+                    main,
+                    pool.radio.roles.is_radio_only(bot.identifier),
+                    bool(bot.bot_ready),
+                    bool(in_guild),
+                    busy,
+                )
+            )
+        # sem nenhum reserva no servidor a recusa certa é "não há bot livre", não "nenhum consegue entrar"
+        return candidates, can_join or not reserves_here
+
+    @commands.slash_command(
+        name="radio",
+        description=localized("cmd.radio.description"),
+        default_member_permissions=disnake.Permissions(manage_guild=True),
+    )
+    @commands.contexts(guild=True)
+    async def radio(self, inter: disnake.ApplicationCommandInteraction) -> None:
+        pass
+
+    async def _gate(self, inter: disnake.ApplicationCommandInteraction):
+        """Confirma em 3 s, traduz e aplica o cooldown de 10 s por servidor."""
+        await inter.response.defer(ephemeral=True)
+        tr = await self.bot.pool.i18n.for_guild(inter.guild)
+        bucket = RADIO_COOLDOWN.get_bucket(inter)
+        if bucket is not None and (retry := bucket.update_rate_limit()):
+            raise GenericError(tr("radio.cooldown", seconds=int(retry) + 1))
+        return tr
+
+    @radio.sub_command(name="ligar", description=localized("cmd.radio.ligar.description"))
+    async def radio_on(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        channel: Union[disnake.VoiceChannel, disnake.StageChannel] = commands.Param(
+            name=localized("cmd.radio.ligar.opt.channel.name"),
+            description=localized("cmd.radio.ligar.opt.channel.description"),
+        ),
+        playlist: str = commands.Param(
+            name=localized("cmd.radio.ligar.opt.playlist.name"),
+            description=localized("cmd.radio.ligar.opt.playlist.description"),
+            autocomplete=playlist_autocomplete,
+        ),
+    ) -> None:
+        tr = await self._gate(inter)
+        actor = Actor(
+            user_id=inter.author.id,
+            manage_guild=inter.author.guild_permissions.manage_guild,
+            manage_messages_in_channel=channel.permissions_for(
+                inter.author
+            ).manage_messages,  # no CANAL, em execução (R-4)
+        )
+        found = await self.bot.pool.servers.playlists.find(inter.guild_id, playlist)
+        candidates, can_join = self._candidates(inter.guild_id, channel)
+        try:
+            radio = await actions.turn_on(
+                self.hub,
+                guild_id=inter.guild_id,
+                channel_id=channel.id,
+                playlist=found.name if found else playlist,
+                actor=actor,
+                candidates=candidates,
+                playlist_exists=found is not None,
+                bot_can_join=can_join,
+            )
+        except Refused as refusal:
+            raise GenericError(tr(f"radio.refused.{refusal.code}")) from None
+        except RadioUnavailable:
+            raise GenericError(tr("radio.owner.unavailable")) from None
+        await self.hub.manager.activate(radio)
+        logger.info("radio.toggle: ligada (%d neste processo)", self.hub.manager.counts().on)
+        name = external_text(radio.source.get("playlist"), NAME_LIMIT)
+        await inter.edit_original_message(
+            content=tr("radio.on.done", channel=channel.mention, playlist=name, bot=f"<@{radio.bot_id}>"),
+            allowed_mentions=disnake.AllowedMentions.none(),
+        )
+
+    @radio.sub_command(name="desligar", description=localized("cmd.radio.desligar.description"))
+    async def radio_off(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        channel: Union[disnake.VoiceChannel, disnake.StageChannel] = commands.Param(
+            name=localized("cmd.radio.desligar.opt.channel.name"),
+            description=localized("cmd.radio.desligar.opt.channel.description"),
+        ),
+    ) -> None:
+        tr = await self._gate(inter)
+        actor = Actor(user_id=inter.author.id, manage_guild=inter.author.guild_permissions.manage_guild)
+        try:
+            off = await actions.turn_off(self.hub, guild_id=inter.guild_id, channel_id=channel.id, actor=actor)
+        except Refused as refusal:
+            raise GenericError(tr(f"radio.refused.{refusal.code}")) from None
+        except RadioUnavailable:
+            raise GenericError(tr("radio.owner.unavailable")) from None
+        for radio in off:
+            await self.hub.manager.deactivate(radio.id)
+            player = self.hub.manager.player_of(radio)
+            if player is not None:
+                await player.destroy()
+        logger.info("radio.toggle: desligada (%d neste processo)", self.hub.manager.counts().on)
+        await inter.edit_original_message(content=tr("radio.off.done", count=len(off), channel=channel.mention))
+
+    @radio.sub_command(name="status", description=localized("cmd.radio.status.description"))
+    async def radio_status(self, inter: disnake.ApplicationCommandInteraction) -> None:
+        tr = await self._gate(inter)
+        try:
+            result = await actions.status(self.hub, guild_id=inter.guild_id)
+        except RadioUnavailable:
+            raise GenericError(tr("radio.owner.unavailable")) from None
+        if result.premium is None:
+            await inter.edit_original_message(content=tr("radio.status.no_premium"))
+            return
+        lines = [tr("radio.status.header", active=result.premium.active, cap=3)]
+        for line in result.lines:
+            state = line.state
+            key = (
+                "radio.state.paused_owner"
+                if state and state.paused_by_owner
+                else "radio.state.offline"
+                if state and state.offline
+                else "radio.state.playing"
+                if state and state.playing
+                else "radio.state.paused"
+                if state
+                else "radio.state.off"
+            )
+            lines.append(tr("radio.status.line", channel=f"<#{line.radio.channel_id}>", state=tr(key)))
+        if not result.lines:
+            lines.append(tr("radio.status.none"))
+        if result.paused_all:
+            lines.append(tr("radio.status.paused_all"))
+        await inter.edit_original_message(content="\n".join(lines), allowed_mentions=disnake.AllowedMentions.none())
 
     # ------------------------------------------------------------------ premium
 

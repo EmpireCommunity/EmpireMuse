@@ -42,6 +42,7 @@ class RadioManager:
         self.ports_factory: Optional[PortsFactory] = None
         self._runners: dict[str, RadioRunner] = {}
         self._tasks: set[asyncio.Task] = set()
+        self._ticker: Optional[asyncio.Task] = None
         hub.control.on_change(self._on_pause_all_change)
 
     # ------------------------------------------------------------------ tarefas de fundo
@@ -52,7 +53,33 @@ class RadioManager:
         task.add_done_callback(self._tasks.discard)
         return task
 
+    def start_ticker(self) -> None:
+        """Liga (uma vez) o passo periódico de presença e pausa de todas as rádios do processo."""
+        if self._ticker is None or self._ticker.done():
+            self._ticker = asyncio.get_running_loop().create_task(self._tick_loop())
+
+    async def _tick_loop(self) -> None:
+        while True:
+            await asyncio.sleep(TICK_SECONDS)
+            await self.tick_all()
+
+    # ------------------------------------------------------------------ eventos do player (ganchos de ``player_voice``)
+
+    def note_presence(self, radio_id: str, listening: bool) -> None:
+        """Alguém entrou, saiu ou ensurdeceu na call da rádio: registra e deixa o passo seguinte decidir."""
+        runner = self._runners.get(radio_id)
+        if runner is not None:
+            self._spawn(runner.on_presence(1 if listening else 0))
+
+    def note_disconnect(self, radio_id: str) -> None:
+        """O bot caiu, foi movido ou desconectado (inclusive por membro): volta pelo recuo."""
+        runner = self._runners.get(radio_id)
+        if runner is not None:
+            self._spawn(runner.on_disconnect())
+
     async def close(self) -> None:
+        if self._ticker is not None:
+            self._ticker.cancel()
         for task in list(self._tasks):
             task.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
@@ -132,6 +159,13 @@ class RadioManager:
                 await runner.tick()
             except Exception as error:  # noqa: BLE001 - uma rádio com defeito não para as outras
                 logger.warning("Rádio com falha no passo de presença (%s)", type(error).__name__)
+
+    def player_of(self, radio) -> object | None:
+        """O player da rádio (se o bot dela tem um): o comando de desligar o destrói para o bot sair da call."""
+        for bot in self.hub.store.pool.get_all_bots():
+            if bot.user is not None and bot.user.id == radio.bot_id:
+                return bot.music.players.get(radio.guild_id)
+        return None
 
     def runner(self, radio_id: str) -> Optional[RadioRunner]:
         return self._runners.get(radio_id)

@@ -60,6 +60,7 @@ class RadioPorts(Protocol):
     async def sleep(self, seconds: float) -> None: ...
     async def allowed(self) -> Allowed: ...
     async def connect(self) -> bool: ...
+    async def prepare(self) -> None: ...
     async def play_virtual(self, index: int, position_ms: int) -> None: ...
     async def stop_stream(self) -> None: ...
     def listeners(self) -> int: ...
@@ -176,8 +177,11 @@ class RadioRunner:
                 connected = await self.ports.connect()
             if connected:
                 self.connected_at = self.ports.now()
-                await self._after_connected()
-                return
+                try:
+                    await self._after_connected()
+                    return
+                except Exception as error:  # noqa: BLE001 - playlist que não carrega, Lavalink fora: volta pelo recuo
+                    logger.warning("Rádio conectada mas sem tocar (%s)", type(error).__name__)
             self._set(Phase.RECONNECTING)
 
     async def on_disconnect(self) -> None:
@@ -205,6 +209,7 @@ class RadioRunner:
         await self._play()
 
     async def _play(self) -> None:
+        await self.ports.prepare()  # carrega a playlist: a posição virtual depende da duração das faixas
         elapsed_ms = int((self.ports.now() - (self.virtual_started_at or self.ports.now())) * 1000)
         index, position = virtual_position(self.ports.durations_ms(), elapsed_ms)
         await self.ports.play_virtual(index, position)

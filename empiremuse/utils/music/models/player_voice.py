@@ -94,6 +94,11 @@ def schedule_permanent_voice_status(player: Any, cfg: VoiceStatusConfig, *, jitt
 
 class PlayerVoiceMixin:
     async def reconnect_voice_channel(self):
+        if radio_id := getattr(self, "radio_id", None):
+            # rádio (item 8): a volta é do ``RadioRunner`` (recuo de 5 a 60 s, premium reconferido), nunca imediata
+            self.bot.pool.radio.manager.note_disconnect(radio_id)
+            return
+
         channel_check_retries = 0
 
         while True:
@@ -348,6 +353,10 @@ class PlayerVoiceMixin:
             await self.destroy()
 
     def start_members_timeout(self, check: bool, force: bool = False, idle_timeout=None):
+        if radio_id := getattr(self, "radio_id", None):
+            # rádio (item 8): a presença é do ``RadioRunner`` (pausa em 30 s, retomada em 5 s); sem modo economia nem ``destroy``
+            self.bot.pool.radio.manager.note_presence(radio_id, bool(check))
+            return
         try:
             self.members_timeout_task.cancel()
         except Exception:

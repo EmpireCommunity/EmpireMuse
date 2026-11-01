@@ -31,6 +31,8 @@ class FakePorts:
         self.durations = list(durations)
         self.in_flight = 0
         self.max_in_flight = 0
+        self.prepared = 0
+        self.prepare_error: Exception | None = None
 
     def now(self):
         return self.t
@@ -51,6 +53,12 @@ class FakePorts:
         self.connect_times.append(self.t)
         await self._hold()
         return self.connect_results.popleft() if self.connect_results else True
+
+    async def prepare(self):
+        self.prepared += 1
+        if self.prepare_error is not None:
+            error, self.prepare_error = self.prepare_error, None
+            raise error
 
     async def play_virtual(self, index, position_ms):
         await self._hold()
@@ -290,6 +298,28 @@ class TestRevocationAndLostPermissions:
         await runner.start()
 
         assert ports.connects == 0 and ports.offs == [Allowed.NO_PREMIUM]
+
+
+class TestPlaylistFailure:
+    @pytest.mark.asyncio
+    async def test_a_playlist_that_does_not_load_goes_through_the_backoff_and_then_plays(self, caplog):
+        ports = FakePorts()
+        ports.prepare_error = RuntimeError("playlist sem faixas")
+        runner, _, _ = make(ports)
+
+        with caplog.at_level(logging.WARNING):
+            await runner.start()
+
+        assert runner.phase is Phase.PLAYING and ports.sleeps == [5] and ports.connects == 2
+        assert "sem tocar (RuntimeError)" in caplog.text and "playlist sem faixas" not in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_the_playlist_is_prepared_before_the_virtual_position_is_computed(self):
+        runner, ports, _ = make()
+
+        await runner.start()
+
+        assert ports.prepared == 1
 
 
 class TestVerdictFailure:
