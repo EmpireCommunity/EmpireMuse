@@ -22,6 +22,7 @@ from empiremuse.rules import i18n as rules
 
 logger = logging.getLogger(__name__)
 
+REQUIRED_FILES = ("commands", "bot")  # o ``panel.json`` é opcional até a F3
 DEFAULT_ROOT = Path(__file__).resolve().parent.parent / "locales"
 LOCALE_NAMES = frozenset(locale.value for locale in disnake.Locale)
 
@@ -38,6 +39,7 @@ class LocaleData:
     entries: dict[str, str] = field(default_factory=dict)
     dropped: list[tuple[str, str, str]] = field(default_factory=list)  # (arquivo, chave, motivo)
     fatal: list[tuple[str, str]] = field(default_factory=list)  # (arquivo, motivo)
+    missing: list[str] = field(default_factory=list)  # arquivos ausentes, ilegíveis ou recusados (link, FIFO)
     coverage: float = 0.0
     categories: tuple[str, ...] = ("one", "other")
 
@@ -103,8 +105,9 @@ def _load_locale(root: Path, locale: str, reference: Mapping[str, Mapping[str, s
     for namespace in rules.NAMESPACES:
         raw = read_catalog(root / locale / f"{namespace}.json")
         if raw is None:
+            data.missing.append(namespace)
             continue
-        report = rules.validate_catalog(locale, namespace, raw, reference[namespace])
+        report = rules.validate_catalog(locale, namespace, raw, reference.get(namespace, {}))
         if report.fatal:
             data.fatal.append((namespace, report.fatal))
             continue
@@ -144,6 +147,7 @@ def _load_locale_reference(root: Path, per_namespace: dict[str, dict[str, str]])
         raw = read_catalog(root / rules.REFERENCE_LOCALE / f"{namespace}.json")
         per_namespace[namespace] = {}
         if raw is None:
+            data.missing.append(namespace)
             continue
         report = rules.validate_catalog(rules.REFERENCE_LOCALE, namespace, raw, None)
         if report.fatal:
@@ -172,7 +176,7 @@ def log_report(loaded: Mapping[str, LocaleData], enabled: Collection[str]) -> No
         for namespace, reason in data.fatal:
             logger.warning("Idioma %s: arquivo %s recusado (%s)", name, namespace, reason)
         for namespace, key, reason in data.dropped:
-            logger.warning("Idioma %s: chave %s.%s descartada (%s)", name, namespace, key, reason)
+            logger.warning("Idioma %s: chave %s.%s descartada (%s)", name, namespace, rules.loggable_key(key), reason)
 
 
 def required_errors(loaded: Mapping[str, LocaleData]) -> list[str]:
@@ -184,5 +188,11 @@ def required_errors(loaded: Mapping[str, LocaleData]) -> list[str]:
             problems.append(f"{name}: catálogo ausente")
             continue
         problems.extend(f"{name}: {namespace} recusado ({reason})" for namespace, reason in data.fatal)
-        problems.extend(f"{name}: {namespace}.{key} descartada ({reason})" for namespace, key, reason in data.dropped)
+        problems.extend(
+            f"{name}: {namespace} ausente ou recusado" for namespace in data.missing if namespace in REQUIRED_FILES
+        )
+        problems.extend(
+            f"{name}: {namespace}.{rules.loggable_key(key)} descartada ({reason})"
+            for namespace, key, reason in data.dropped
+        )
     return problems

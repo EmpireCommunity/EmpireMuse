@@ -24,6 +24,7 @@ from empiremuse.rules.playlists import move_leading_icons, plan_migration, to_do
 from empiremuse.rules.servers import (
     SECTION_PLAYLISTS,
     SECTION_REQUEST,
+    LEGACY_LANGUAGE,
     SECTION_SETTINGS,
     Allowed,
     SettingError,
@@ -49,6 +50,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 SERVERS_DB = "global"
+_ABSENT = object()  # campo que o documento ainda não tem (ex.: ``language`` antes da migração)
 CACHE_SIZE = 2000
 CACHE_TTL = 300
 CONTROLLER_KEYS = (
@@ -136,6 +138,13 @@ class ServerStore:
             None,
         )
 
+    def _languages(self) -> frozenset[str]:
+        """Os idiomas ligados no pool (``pool.i18n.enabled``); o ``I18n`` único do processo quando o pool não o traz."""
+        from empiremuse.i18n import get_i18n
+
+        i18n = getattr(self.pool, "i18n", None) or get_i18n()
+        return i18n.enabled
+
     def _allowed(self, gid: int, settings: Optional[dict] = None) -> Allowed:
         """Skins carregadas e cargos do servidor; a skin já gravada continua valendo (como no painel)."""
         bots = self.pool.get_all_bots()
@@ -145,7 +154,7 @@ class ServerStore:
         static = frozenset(getattr(bot, "player_static_skins", ()) or ()) | {saved.get("static_skin")} - {None}
         guild = self._loaded_guild(gid)
         roles = frozenset(str(role.id) for role in guild.roles) if guild is not None else frozenset()
-        return Allowed(skins, static, roles)
+        return Allowed(skins, static, roles, self._languages())
 
     # ------------------------------------------------------------------ banco
 
@@ -230,7 +239,12 @@ class ServerStore:
                 self._loaded_guild(int(gid)) is None
             ):  # o servidor pode ter voltado a ficar indisponível durante a leitura
                 raise ServerConfigUnavailable
+            saved_language = (new.get("settings") or {}).get(
+                "language"
+            )  # gravado pela migração de boot; sem legado, ``None`` apagaria
             new["settings"] = migrate_settings(legacy, self._allowed(int(gid)))
+            if saved_language is not None:
+                new["settings"]["language"] = saved_language
             new["migrated"][SECTION_SETTINGS] = True
             logger.info(
                 "Servidor [%s] migrado: configuração antiga do principal %s", gid, "copiada" if legacy else "ausente"
@@ -326,6 +340,36 @@ class ServerStore:
 
         await self._transact(gid, plan)
 
+    async def migrate_language(self) -> tuple[int, int]:
+        """Uma vez por subida, DEPOIS de ``I18n.load`` e ANTES dos bots: servidor que já existia e ainda não tem ``settings.language`` ganha ``pt-BR``.
+
+        Mexe só nesse campo, sob a trava e com ``rev`` +1 (``mutate_stored``). Documento com a chave (inclusive ``None``) fica intacto, então
+        rodar de novo não muda nada; um servidor que falha fica para a próxima subida. O log leva só contagens. Devolve ``(alterados, falhas)``.
+        """
+        changed = failed = 0
+        for gid in await self.stored_ids():
+            wrote = False
+
+            def apply(doc: dict) -> bool:
+                nonlocal wrote
+                wrote = False
+                settings = doc.get(SECTION_SETTINGS)
+                if not isinstance(settings, dict) or "language" in settings:
+                    return False
+                settings["language"] = LEGACY_LANGUAGE
+                wrote = True
+                return True
+
+            try:
+                await self.mutate_stored(gid, apply)
+            except Exception:  # noqa: BLE001 - o servidor fica para a próxima subida; o motivo já foi logado pelo store
+                failed += 1
+                continue
+            changed += wrote
+        if changed or failed:
+            logger.info("Idioma dos servidores existentes: %d migrados para pt-BR (%d falharam)", changed, failed)
+        return changed, failed
+
     async def settings(self, gid: int) -> dict:
         return (await self.get(gid))[SECTION_SETTINGS]
 
@@ -367,7 +411,7 @@ class ServerStore:
         async def plan(doc: Optional[dict]) -> Optional[dict]:
             new, changed = await self._prepare(key, doc)
             fields = change(new[SECTION_SETTINGS], self._allowed(int(key), new[SECTION_SETTINGS]))
-            if any(new[SECTION_SETTINGS][name] != value for name, value in fields.items()):
+            if any(new[SECTION_SETTINGS].get(name, _ABSENT) != value for name, value in fields.items()):
                 new[SECTION_SETTINGS].update(fields)
                 changed = True
             return new if changed else None

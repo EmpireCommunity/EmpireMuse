@@ -95,7 +95,7 @@ def test_valid_main_document_is_copied_field_by_field():
     )  # fmt: skip
     assert migrate_settings(old, ALLOWED) == {
         "djroles": ["10", "20"], "default_player_volume": 40, "autoplay": True, "enable_restrict_mode": True,
-        "check_other_bots_in_vc": True, "skin": "default", "static_skin": "static",
+        "check_other_bots_in_vc": True, "skin": "default", "static_skin": "static", "language": "pt-BR",
     }  # fmt: skip
 
 
@@ -113,7 +113,7 @@ def test_valid_main_document_is_copied_field_by_field():
 def test_invalid_value_falls_back_to_the_default_and_keeps_the_rest(field, invalid):
     other = "check_other_bots_in_vc" if field == "autoplay" else "autoplay"
     settings = migrate_settings(legacy(**{field: invalid, other: True}), ALLOWED)
-    assert settings == default_settings() | {other: True}
+    assert settings == default_settings() | {other: True, "language": "pt-BR"}
 
 
 @pytest.mark.parametrize("invalid", ["sim", 1, 0, None, [], "False"])
@@ -147,3 +147,46 @@ def test_legacy_view_round_trips_and_detects_a_writer_that_changed_settings():
     flat["autoplay"], flat["player_controller"]["skin"] = False, "outra"
     assert changed_settings(flat, settings) == {"autoplay": False, "skin": "outra"}
     assert base["player_controller"]["skin"] == "velha"  # a base não é alterada
+
+
+# ---------------------------------------------------------------------- idioma (item 21)
+
+LANGUAGES = Allowed(languages=frozenset({"en-US", "pt-BR", "de"}))
+
+
+def test_the_language_is_a_setting_field_and_the_default_is_automatic():
+    assert (
+        "language" in SETTINGS_FIELDS
+        and default_settings()["language"] is None
+        and new_doc()["settings"]["language"] is None
+    )
+
+
+@pytest.mark.parametrize("value", [None, "pt-BR", "en-US", "de"])
+def test_an_enabled_language_or_none_is_accepted(value):
+    assert validate_changes({"language": value}, LANGUAGES) == {"language": value}
+
+
+@pytest.mark.parametrize("value", ["pt-br", "en-US ", "../x", "fr", "", "auto", 5, True, ["pt-BR"], "pt-BR\n"])
+def test_anything_but_an_exact_enabled_locale_is_refused(value):
+    with pytest.raises(SettingError):
+        validate_changes({"language": value}, LANGUAGES)
+
+
+def test_no_enabled_language_means_only_none_is_valid():
+    assert validate_changes({"language": None}, Allowed()) == {"language": None}
+    with pytest.raises(SettingError):
+        validate_changes({"language": "pt-BR"}, Allowed())
+
+
+def test_an_old_document_migrates_to_pt_br_and_a_missing_one_stays_automatic():
+    assert migrate_settings(legacy(autoplay=True), ALLOWED)["language"] == "pt-BR"
+    assert migrate_settings(None, ALLOWED)["language"] is None
+
+
+def test_the_old_format_never_sees_or_writes_the_language():
+    assert settings_from_legacy({"language": "de"})["language"] is None  # o formato antigo nunca lê o campo
+    flat = to_legacy({}, default_settings() | {"language": "de"}, None)
+
+    assert "language" not in flat and "language" not in flat.get("player_controller", {})
+    assert changed_settings(flat, {}).get("language") is None

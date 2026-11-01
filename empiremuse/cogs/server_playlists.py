@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Optional, Union
 import disnake
 from disnake.ext import commands
 
+from empiremuse.i18n import localized
 from empiremuse.rules.errors import (
     FILE_FORMAT,
     FILE_TOO_LARGE,
@@ -154,7 +155,7 @@ class ServerPlaylistsCog(commands.Cog):
 
     @commands.slash_command(
         name="playlists",
-        description=f"{desc_prefix}Playlists do servidor.",
+        description=localized("cmd.playlists.description"),
         default_member_permissions=disnake.Permissions(manage_guild=True),
     )
     @commands.contexts(guild=True)
@@ -163,7 +164,7 @@ class ServerPlaylistsCog(commands.Cog):
 
     @playlists.sub_command(
         name="importar",
-        description=f"{desc_prefix}Importar playlists de arquivo, anexo, link ou texto (só acrescenta).",
+        description=localized("cmd.playlists.importar.description"),
         cooldown=cooldown,
     )
     @commands.check(_manage_check)
@@ -171,17 +172,19 @@ class ServerPlaylistsCog(commands.Cog):
         self,
         inter: disnake.ApplicationCommandInteraction,
         file: Optional[str] = commands.Param(
-            name="arquivo",
-            description="Um arquivo de playlists que acompanha o bot",
+            name=localized("cmd.playlists.importar.opt.file.name"),
+            description=localized("cmd.playlists.importar.opt.file.description"),
             default=None,
             autocomplete=_file_autocomplete,
         ),
         attachment: Optional[disnake.Attachment] = commands.Param(
-            name="anexo", description="Um arquivo .json de playlists (até 64 KiB)", default=None
+            name=localized("cmd.playlists.importar.opt.attachment.name"),
+            description=localized("cmd.playlists.importar.opt.attachment.description"),
+            default=None,
         ),
         link: Optional[str] = commands.Param(
-            name="link",
-            description="Link https de um .json (GitHub, Gist ou Discord)",
+            name=localized("cmd.playlists.importar.opt.link.name"),
+            description=localized("cmd.playlists.importar.opt.link.description"),
             default=None,
             max_length=2000,
         ),
@@ -228,7 +231,7 @@ class ServerPlaylistsCog(commands.Cog):
 
     @playlists.sub_command(
         name="exportar",
-        description=f"{desc_prefix}Exportar as playlists do servidor em um arquivo .json.",
+        description=localized("cmd.playlists.exportar.description"),
         cooldown=cooldown,
     )
     @commands.check(_manage_check)

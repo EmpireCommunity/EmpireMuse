@@ -136,7 +136,7 @@ class TestLoading:
         i18n = I18n(root)
         i18n.load()
 
-        localized = i18n.localized("cmd.play.description", group="music")
+        localized = i18n.localized("cmd.play.description")
 
         assert localized.string == "[🎶 Music] | Play a song."
         assert i18n.provider.get("cmd.play.description") == {"pt-BR": "[🎶 Música] | Tocar uma música."}
@@ -244,8 +244,12 @@ class TestGuildResolution:
 
 
 class TestCli:
+    @pytest.fixture(autouse=True)
+    def _empty_code(self, root):
+        (root / "empty-code").mkdir()  # sem chaves usadas: o resultado só depende dos catálogos temporários
+
     def test_a_valid_tree_exits_zero(self, root, capsys):
-        assert check.main(["--root", str(root)]) == 0
+        assert check.main(["--root", str(root), "--code", str(root / "empty-code")]) == 0
         assert "en-US: cobertura 100.0%" in capsys.readouterr().out
 
     def test_a_dropped_entry_and_a_fatal_fail_without_echoing_catalog_text(self, root, capsys):
@@ -253,7 +257,7 @@ class TestCli:
         write(root, "de", {"cmd.music._label": "Musik"}, None)
         (root / "de" / "bot.json").write_bytes(b"\xff")
 
-        assert check.main(["--root", str(root)]) == 1
+        assert check.main(["--root", str(root), "--code", str(root / "empty-code")]) == 1
         err = capsys.readouterr().err
         assert "pt-BR: bot.player.paused descartada" in err and "de: arquivo bot recusado" in err
         assert "Pausado" not in err
@@ -261,7 +265,7 @@ class TestCli:
     def test_a_required_locale_below_100_percent_fails(self, root, capsys):
         write(root, "pt-BR", PT_COMMANDS, {"player.paused": "Pausado por {user}."})
 
-        assert check.main(["--root", str(root)]) == 1
+        assert check.main(["--root", str(root), "--code", str(root / "empty-code")]) == 1
         assert "pt-BR: cobertura abaixo de 100%" in capsys.readouterr().err
 
     def test_a_key_used_in_code_but_missing_from_en_us_is_reported(self, tmp_path):
@@ -282,3 +286,73 @@ class TestCli:
 
     def test_the_real_catalogs_and_code_pass_the_check(self):
         assert check.main([]) == 0
+
+
+class TestRequiredFiles:
+    """Revisão (I-7): arquivo obrigatório ausente, ilegível ou trocado por link derruba a subida; faltar o diretório do en-US não dá traceback."""
+
+    @pytest.mark.parametrize(
+        "locale, name", [("en-US", "bot"), ("en-US", "commands"), ("pt-BR", "bot"), ("pt-BR", "commands")]
+    )
+    def test_a_missing_required_file_fails_the_boot(self, root, locale, name):
+        (root / locale / f"{name}.json").unlink()
+
+        with pytest.raises(loader.I18nError):
+            I18n(root).load()
+
+    def test_a_required_file_replaced_by_a_symlink_or_fifo_fails_the_boot(self, root, tmp_path):
+        outside = tmp_path / "x.json"
+        outside.write_text("{}", encoding="utf-8")
+        (root / "pt-BR" / "bot.json").unlink()
+        os.symlink(outside, root / "pt-BR" / "bot.json")
+        with pytest.raises(loader.I18nError):
+            I18n(root).load()
+
+        (root / "pt-BR" / "bot.json").unlink()
+        os.mkfifo(root / "pt-BR" / "bot.json")
+        with pytest.raises(loader.I18nError):
+            I18n(root).load()
+
+    def test_the_panel_file_is_optional(self, root):
+        assert not (root / "en-US" / "panel.json").exists()
+
+        I18n(root).load()
+
+    def test_a_tree_without_the_en_us_directory_is_an_error_not_a_traceback(self, tmp_path):
+        base = tmp_path / "locales"
+        write(base, "pt-BR", PT_COMMANDS, PT_BOT)
+
+        loaded = loader.load_catalogs(base)
+
+        assert "en-US" not in loaded and loader.required_errors(loaded)
+        with pytest.raises(loader.I18nError):
+            I18n(base).load()
+
+    def test_the_log_and_the_cli_never_print_a_raw_community_key(self, root, capsys, caplog):
+        write(root, "de", {"cmd.music._label": "Musik", "a.b\n::error::x": "y"})
+
+        with caplog.at_level("WARNING"):
+            I18n(root).load()
+        check.main(["--root", str(root), "--code", str(root / "none")])
+
+        assert "::error::x" not in caplog.text and "::error::x" not in capsys.readouterr().err
+
+
+def test_a_disnake_locale_enum_resolves_like_its_value(root):
+    import disnake
+
+    i18n = I18n(root)
+    i18n.load()
+
+    assert i18n.resolve(None, disnake.Locale.pt_BR) == "pt-BR"
+    assert i18n.resolve(disnake.Locale.en_US, None) == "en-US"
+    assert i18n.resolve(None, disnake.Locale.ja) == rules.FALLBACK_LOCALE
+
+
+def test_the_production_fallback_is_en_us_and_the_i18n_tests_run_with_it(root):
+    assert rules.FALLBACK_LOCALE == "en-US" and rules.REFERENCE_LOCALE == "en-US"
+    i18n = I18n(root)
+    i18n.load()
+
+    assert i18n.resolve(None, "ja") == "en-US"
+    assert i18n.for_locale("ja").locale == "en-US" and i18n.for_locale(None).locale == "en-US"

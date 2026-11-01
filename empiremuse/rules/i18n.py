@@ -56,18 +56,78 @@ ALLOWED_DOMAINS = frozenset({"github.com", "last.fm", "www.last.fm"})
 
 DESC_PREFIX_FORMAT = "[{emoji} {name}] | "
 # Emoji da legenda de cada grupo de comandos (``cmd.<grupo>._label`` guarda só o nome, no idioma).
-GROUP_EMOJI: dict[str, str] = {"music": "🎶"}
+GROUP_EMOJI: dict[str, str] = {"music": "🎶", "settings": "🔧", "lastfm": "🎧", "playlists": "📚", "misc": "🔰"}
+
+# O grupo (``cmd.<grupo>._label``) da legenda de cada comando: a descrição é medida com a legenda do PRÓPRIO grupo.
+COMMAND_GROUPS: Mapping[str, str] = {
+    "247": "music",
+    "about": "misc",
+    "add_dj": "music",
+    "add_dj_role": "settings",
+    "autoplay": "music",
+    "back": "music",
+    "change_node": "music",
+    "change_skin": "settings",
+    "command_log": "music",
+    "connect": "music",
+    "controller": "music",
+    "custom_skin": "settings",
+    "fav_manager": "music",
+    "invite": "misc",
+    "language": "settings",
+    "lastfm": "lastfm",
+    "loop_amount": "music",
+    "loop_mode": "music",
+    "move": "music",
+    "nightcore": "music",
+    "nodeinfo": "settings",
+    "now_playing": "music",
+    "pause": "music",
+    "play": "music",
+    "play_music_file": "music",
+    "player_settings": "settings",
+    "playlists": "playlists",
+    "playlists.exportar": "playlists",
+    "playlists.importar": "playlists",
+    "queue.clear": "music",
+    "queue.display": "music",
+    "queue.reverse": "music",
+    "queue.shuffle": "music",
+    "readd_songs": "music",
+    "remove": "music",
+    "remove_dj": "music",
+    "remove_dj_role": "settings",
+    "reset": "settings",
+    "restrict_mode": "music",
+    "resume": "music",
+    "rich_presence": "settings",
+    "rotate": "music",
+    "save_queue": "music",
+    "search": "music",
+    "seek": "music",
+    "set_voice_status": "music",
+    "setup": "settings",
+    "skip": "music",
+    "skipto": "music",
+    "song_request_thread": "music",
+    "stop": "music",
+    "volume": "music",
+    "voteskip": "music",
+}
 
 _BIDI = frozenset("\u061c\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
-_INVISIBLE = frozenset("\u200b\u2060\ufeff\u00ad")
+_INVISIBLE = frozenset("\u200b\u2060\ufeff\u00ad\u2800\u3164\u115f\u1160\uffa0\u180e")
+_LINE_BREAKS = frozenset("\u2028\u2029")
 _JOINERS = frozenset("\u200d\u200c")
 _MARK_PATTERNS = ("@everyone", "@here", "<@&", "<@", "<#", "</", "<id:")
-_BARE_DOMAIN = re.compile(r"[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}/")
-_HOST = re.compile(r"(?:://|www\.)([a-z0-9.-]+)")
+_FULL_URL = re.compile(r"https?://[^\s<>)\]`\"']{1,512}")
+_BARE_DOMAIN = re.compile(r"[a-z0-9-]{1,63}(?:\.[a-z0-9-]{1,63}){0,8}\.[a-z]{2,24}/")
+_HOST = re.compile(r"(?:://|www\.)([^\s/\\?#<>]{0,255})")  # a barra invertida também encerra o host, como no navegador
 _ANGLE_TOKEN = re.compile(r"<[^<>]*>")
-_LINE_START = re.compile(r"^(-#|#{1,6}|>)", re.MULTILINE)
+_LINE_START = re.compile(r"^(-# |#{1,6} |>{1,3} ?|- )", re.MULTILINE)
 _FIELD_REMOVER = re.compile(r"\{[a-z_][a-z0-9_]*\}")
 _MAX_COMBINING_RUN = 4
+_LABEL_KEY = re.compile(r"cmd\.([a-z0-9_]+)\._label")
 _MARKDOWN_MARKERS = ("`", "*", "_", "~~", "||", "\\", "](")
 
 # Motivos de uma entrada descartada (estáveis: vão ao log e aos testes).
@@ -97,6 +157,15 @@ class CatalogReport(NamedTuple):
 # ---------------------------------------------------------------------- texto
 
 
+def loggable_key(key: str) -> str:
+    """A chave como pode ir ao log/CI: só se tiver o formato de chave; qualquer outra coisa (texto da comunidade) vira um marcador."""
+    return (
+        key
+        if len(key) <= MAX_KEY_LENGTH and KEY_PATTERN.fullmatch(key)
+        else f"<chave inválida de {len(key)} caracteres>"
+    )
+
+
 def utf16_length(text: str) -> int:
     """O tamanho que o Discord conta: unidades UTF-16 (o emoji fora do plano básico vale 2)."""
     return sum(2 if ord(char) > 0xFFFF else 1 for char in text)
@@ -107,12 +176,12 @@ def _normalized(text: str) -> str:
 
 
 def kind_of(key: str) -> str | None:
-    """O tipo da chave para os limites: o último segmento (``description``, ``label``...) ou ``choice`` em qualquer segmento."""
+    """O tipo da chave para os limites: ``choice`` (em qualquer segmento antes do último, que é o VALOR) ou o último segmento."""
     segments = key.split(".")
+    if "choice" in segments[:-1]:
+        return "choice"
     last = segments[-1].lstrip("_")
-    if last in LIMITS:
-        return last
-    return "choice" if "choice" in segments[:-1] else None
+    return last if last in LIMITS else None
 
 
 def plural_parts(key: str) -> tuple[str, str] | None:
@@ -134,7 +203,9 @@ def _bad_chars(value: str) -> bool:
         category = unicodedata.category(char)
         if category in ("Cs", "Co", "Cn") or (category == "Cc" and char != "\n"):
             return True
-        if char in (" ", " ") or char in _BIDI or char in _INVISIBLE:
+        if char in _LINE_BREAKS or char in _BIDI or char in _INVISIBLE:
+            return True
+        if category == "Cf" and char not in _JOINERS:
             return True
         if char in _JOINERS:
             following = value[index + 1] if index + 1 < len(value) else ""
@@ -232,6 +303,13 @@ def description_prefix(group: str, label: str) -> str:
     return DESC_PREFIX_FORMAT.format(emoji=emoji, name=label) if emoji else f"[{label}] | "
 
 
+def command_group(key: str) -> str | None:
+    """O grupo da legenda de ``cmd.<caminho>.description`` (``None`` se o comando não está em ``COMMAND_GROUPS``)."""
+    if not is_command_description(key):
+        return None
+    return COMMAND_GROUPS.get(key[len("cmd.") : -len(".description")])
+
+
 def is_command_description(key: str) -> bool:
     """``cmd.<caminho>.description``: a descrição do comando em si (a única que leva a legenda do grupo; a de uma opção não)."""
     parts = key.split(".")
@@ -248,8 +326,11 @@ def option_parts(key: str) -> tuple[str, str] | None:
 
 
 def is_option_name(key: str) -> bool:
+    """``cmd.<caminho>.opt.<base>.name``: o nome (traduzido) de uma opção. Uma choice cujo valor é ``name`` não conta."""
     parts = key.split(".")
-    return parts[0] == "cmd" and parts[-1] == "name" and "opt" in parts[2:-2]
+    return (
+        len(parts) >= 5 and parts[0] == "cmd" and parts[-1] == "name" and parts[-3] == "opt" and "choice" not in parts
+    )
 
 
 def option_name_ok(value: str) -> bool:
@@ -273,8 +354,11 @@ def _link_tokens(value: str) -> Counter:
         if marker in text:
             found[marker] += text.count(marker)
     hosts = _HOST.findall(text)
-    for host in hosts:
-        found["host:" + host.rstrip(".")] += 1
+    for authority in hosts:
+        host = authority.rsplit("@", 1)[-1].split(":")[0].rstrip(".")  # o host de verdade vem depois do userinfo
+        found["host:" + host] += 1
+    for url in _FULL_URL.findall(text):
+        found["url:" + url.rstrip(".,;:!?")] += 1  # a URL INTEIRA: o mesmo host com outro caminho é outro link
     for domain in _BARE_DOMAIN.findall(text):
         found["bare:" + domain] += 1
     if not hosts:
@@ -288,7 +372,8 @@ def _links_ok(value: str, reference_value: str | None) -> bool:
     tokens = _link_tokens(value)
     if reference_value is None:
         return all(
-            (token.startswith("host:") and token[5:] in ALLOWED_DOMAINS)
+            token.startswith("url:")
+            or (token.startswith("host:") and token[5:] in ALLOWED_DOMAINS)
             or (token.startswith("bare:") and token[5:-1] in ALLOWED_DOMAINS)
             for token in tokens
         )
@@ -309,7 +394,7 @@ def _marks_ok(value: str, reference_value: str | None) -> bool:
 
 def _markdown_signature(value: str) -> tuple:
     plain = _FIELD_REMOVER.sub("", value)
-    starts = Counter("#" if m.startswith("#") else m for m in _LINE_START.findall(plain))
+    starts = Counter(marker.rstrip() for marker in _LINE_START.findall(plain))
     return (
         tuple(plain.count(marker) for marker in _MARKDOWN_MARKERS),
         tuple(sorted(starts.items())),
@@ -335,9 +420,13 @@ def _reference_value(key: str, reference: Mapping[str, str]) -> str | None | boo
     return False
 
 
-def check_entry(key: str, value: str, reference: Mapping[str, str] | None, prefix_units: int = 0) -> str | None:
+def check_entry(
+    key: str, value: str, reference: Mapping[str, str] | None, prefixes: Mapping[str, int] | None = None
+) -> str | None:
     """O motivo de ``(key, value)`` ser descartada, ou ``None`` se passa. ``reference`` ``None`` = validando a própria referência."""
     if len(key) > MAX_KEY_LENGTH or not KEY_PATTERN.fullmatch(key):
+        return KEY_INVALID
+    if key.endswith("._label") and (not (match := _LABEL_KEY.fullmatch(key)) or match.group(1) not in GROUP_EMOJI):
         return KEY_INVALID
     ref_value: str | None = None
     if reference is not None:
@@ -356,6 +445,8 @@ def check_entry(key: str, value: str, reference: Mapping[str, str] | None, prefi
         return None  # o conjunto de caracteres já exclui menção, link, markdown e placeholder
     if not value.strip():
         return EMPTY
+    if utf16_length(value) > _limit_for(key, ref_value):
+        return SIZE  # antes de qualquer regex: nenhuma delas vê mais do que o teto da chave
     if _bad_chars(value):
         return CHARS
     parsed = parse_template(value)
@@ -378,8 +469,11 @@ def check_entry(key: str, value: str, reference: Mapping[str, str] | None, prefi
     size = utf16_length(value)
     if size > _limit_for(key, ref_value):
         return SIZE
-    if is_command_description(key) and prefix_units + size > LIMITS["description"]:
-        return SIZE
+    if is_command_description(key):
+        group = command_group(key)
+        prefix = (prefixes or {}).get(group) if group else max((prefixes or {}).values(), default=0)
+        if (prefix or 0) + size > LIMITS["description"]:
+            return SIZE
     return None
 
 
@@ -426,13 +520,14 @@ def _validate(namespace: str, raw: bytes, reference: Mapping[str, str] | None) -
         return CatalogReport({}, (), fatal)
     if reference is not None and len(data) > 2 * max(len(reference), 1):
         return CatalogReport({}, (), "chaves demais")
-    prefix_units = _worst_prefix({**_labels(reference or {}), **_labels(data)})
+    accepted = {key: value for key, value in _labels(data).items() if check_entry(key, value, reference) is None}
+    prefixes = _prefix_units({**_labels(reference or {}), **accepted})
     entries: dict[str, str] = {}
     dropped: list[tuple[str, str]] = []
     for key, value in data.items():
         is_command = key.startswith("cmd.")
         reason = (
-            KEY_UNKNOWN if is_command != (namespace == "commands") else check_entry(key, value, reference, prefix_units)
+            KEY_UNKNOWN if is_command != (namespace == "commands") else check_entry(key, value, reference, prefixes)
         )
         if reason is None:
             entries[key] = value
@@ -448,9 +543,11 @@ def _labels(source: Mapping[str, str]) -> dict[str, str]:
     return {key: value for key, value in source.items() if key.startswith("cmd.") and key.endswith("._label")}
 
 
-def _worst_prefix(labels: Mapping[str, str]) -> int:
-    """A maior legenda ``[🎶 Música] | `` entre os grupos: a descrição de qualquer comando tem de caber depois dela."""
-    return max((utf16_length(description_prefix(key.split(".")[1], value)) for key, value in labels.items()), default=0)
+def _prefix_units(labels: Mapping[str, str]) -> dict[str, int]:
+    """O tamanho (UTF-16) da legenda ``[🎶 Música] | `` de cada grupo, no idioma do catálogo."""
+    return {
+        key.split(".")[1]: utf16_length(description_prefix(key.split(".")[1], value)) for key, value in labels.items()
+    }
 
 
 def _conflicting_levels(entries: Mapping[str, str], reference: Mapping[str, str] | None) -> list[str]:

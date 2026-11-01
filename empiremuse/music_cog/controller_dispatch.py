@@ -310,7 +310,9 @@ class ControllerDispatchMixin:
         kwargs: dict,
     ):
         if not command:
-            raise GenericError("comando não encontrado/implementado.")
+            raise GenericError(
+                (await self.bot.pool.i18n.for_guild(interaction.guild))("player.command_not_found_implemented")
+            )
 
         try:
             interaction.application_command = command
@@ -410,6 +412,7 @@ class ControllerDispatchMixin:
     async def check_stage_title(self, inter, bot: BotCore, player: LavalinkPlayer):
         if (remaining := voice_status_lock_remaining(player)) > 0 and not (await bot.is_owner(inter.author)):
             raise GenericError(
-                f"**Você terá que aguardar {time_format(remaining * 1000, use_names=True)} para usar essa função "
-                f"com o status automático do canal ligado...**"
+                player.tr(
+                    "player.you_will_have_to_wait", time_format=str(time_format(remaining * 1000, use_names=True))
+                )
             )

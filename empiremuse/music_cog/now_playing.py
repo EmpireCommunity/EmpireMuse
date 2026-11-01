@@ -5,6 +5,7 @@ from typing import Optional
 import disnake
 from disnake.ext import commands
 
+from empiremuse.i18n import localized
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.checks import (
     check_voice,
@@ -27,9 +28,6 @@ from empiremuse.utils.others import (
 )
 
 # O corpo da classe usa estes nomes, então eles precisam existir neste módulo.
-from empiremuse.music_cog.shared import (
-    DESC_PREFIX as desc_prefix,
-)
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
 
 
@@ -46,7 +44,7 @@ class NowPlayingMixin:
         await self.now_playing.callback(self=self, inter=ctx)
 
     @commands.slash_command(
-        description=f"{desc_prefix}Exibir info da música que que você está ouvindo (em qualquer servidor).",
+        description=localized("cmd.now_playing.description"),
         cooldown=np_cd,
         extras={"allow_private": True},
     )
@@ -287,7 +285,7 @@ class NowPlayingMixin:
     @has_source()
     @check_voice()
     @commands.slash_command(
-        description=f"{desc_prefix}Enviar player controller para um canal específico/atual.",
+        description=localized("cmd.controller.description"),
         extras={"only_voiced": True},
         cooldown=controller_cd,
         max_concurrency=controller_mc,

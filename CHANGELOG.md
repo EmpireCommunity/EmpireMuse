@@ -7,6 +7,12 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Adicionado
+- **Idiomas (item 21, F1 e comandos/player da F2)**: o bot fala o idioma do servidor, com `en-US` como reserva. Os textos ficam em catálogos JSON (`empiremuse/locales/<locale>/{commands,bot,panel}.json`) que a comunidade traduz; um idioma novo com 90% ou mais de cobertura liga sozinho (`python -m empiremuse.i18n.check` valida). Cada texto é validado na subida (placeholders, menções, links, markdown, caracteres e limites do Discord); `en-US` ou `pt-BR` quebrado derruba a subida, outro idioma inválido só fica desligado. Novo `/language` (só em servidor, exige Gerenciar Servidor, 10 s de cooldown) e `settings.language` (`auto` = idioma do Discord do servidor). As descrições, os nomes das opções e as choices dos comandos de barra são localizados pelo provider do disnake (nomes de comando continuam em inglês); o player, as skins e o controller passam a usar `player.tr`. Dependência nova: `babel` 2.18.0 (BSD-3, com hash).
+- **Nomes das opções dos comandos em inglês**: a base de cada opção agora é em inglês (`query`, `position`, `play_now`...) e o pt-BR continua vendo o nome de hoje (`busca`, `posição`, `tocar_agora`...). Quem usa o Discord em outro idioma passa a ver a base em inglês.
+
+**Ao atualizar:** a primeira subida grava `settings.language = "pt-BR"` em todo servidor que já existia (migração única, idempotente, só esse campo); servidores novos nascem em automático. Os comandos são sincronizados de novo (descrições e nomes de opção localizados), o que pode levar alguns minutos para aparecer no Discord.
+
 ### Alterado
 - **CI recusa `{% raw %}` e `{% autoescape %}` nos templates do painel** (`empiremuse/panel/templates/`), para o escape automático nunca ser desligado.
 - **`.github/CODEOWNERS` cobre o i18n**: `empiremuse/locales/en-US/`, `empiremuse/locales/pt-BR/`, `empiremuse/rules/i18n.py` e `empiremuse/i18n/` passam a ter o dono do repositório como revisor (`.github/` já constava).

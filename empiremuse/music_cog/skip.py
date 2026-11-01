@@ -3,6 +3,7 @@
 import disnake
 from disnake.ext import commands
 
+from empiremuse.i18n import localized
 from empiremuse.utils.music.checks import (
     check_voice,
     has_player,
@@ -29,7 +30,6 @@ from empiremuse.utils.others import (
 
 # O corpo da classe usa estes nomes, então eles precisam existir neste módulo.
 from empiremuse.music_cog.shared import (
-    DESC_PREFIX as desc_prefix,
     case_sensitive_args,
 )
 
@@ -69,7 +69,7 @@ class SkipMixin:
     @has_source()
     @check_voice()
     @commands.slash_command(
-        description=f"{desc_prefix}Pular para uma música específica da fila.",
+        description=localized("cmd.skipto.description"),
         extras={"only_voiced": True},
         cooldown=skip_back_cd,
         max_concurrency=skip_back_mc,
@@ -78,11 +78,13 @@ class SkipMixin:
     async def skipto(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        query: str = commands.Param(name="nome", description="Nome da música (completa ou parte dela)."),
+        query: str = commands.Param(
+            name=localized("cmd.skipto.opt.name.name"), description=localized("cmd.skipto.opt.name.description")
+        ),
         case_sensitive: bool = commands.Param(
-            name="nome_exato",
+            name=localized("cmd.skipto.opt.exact_name.name"),
             default=False,
-            description="Buscar por músicas com a frase exata no nome da música ao invés de buscar palavra por palavra.",
+            description=localized("cmd.skipto.opt.exact_name.description"),
         ),
     ):
         await self.skip.callback(self=self, inter=inter, query=query, case_sensitive=case_sensitive)
@@ -94,7 +96,7 @@ class SkipMixin:
     @has_player()
     @check_voice()
     @commands.slash_command(
-        description=f"{desc_prefix}Pular a música atual que está tocando.",
+        description=localized("cmd.skip.description"),
         extras={"only_voiced": True},
         cooldown=skip_back_cd,
         max_concurrency=skip_back_mc,
@@ -105,20 +107,20 @@ class SkipMixin:
         inter: disnake.ApplicationCommandInteraction,
         *,
         query: str = commands.Param(
-            name="nome",
-            description="Nome da música (completa ou parte dela).",
+            name=localized("cmd.skip.opt.name.name"),
+            description=localized("cmd.skip.opt.name.description"),
             default=None,
         ),
         play_only: str = commands.Param(
-            name=disnake.Localized("play_only", data={disnake.Locale.pt_BR: "tocar_apenas"}),
-            choices=[disnake.OptionChoice(disnake.Localized("Yes", data={disnake.Locale.pt_BR: "Sim"}), "yes")],
-            description="Apenas tocar a música imediatamente (sem rotacionar a flia)",
+            name=localized("cmd.skip.opt.play_only.name"),
+            choices=[disnake.OptionChoice(localized("cmd.skip.opt.play_only.choice.yes"), "yes")],
+            description=localized("cmd.skip.opt.play_only.description"),
             default="no",
         ),
         case_sensitive: bool = commands.Param(
-            name="nome_exato",
+            name=localized("cmd.skip.opt.exact_name.name"),
             default=False,
-            description="Buscar por músicas com a frase exata no nome da música ao invés de buscar palavra por palavra.",
+            description=localized("cmd.skip.opt.exact_name.description"),
         ),
     ):
         try:
@@ -258,7 +260,7 @@ class SkipMixin:
     @check_voice()
     @commands.max_concurrency(1, commands.BucketType.member)
     @commands.slash_command(
-        description=f"{desc_prefix}Voltar para a música anterior.",
+        description=localized("cmd.back.description"),
         extras={"only_voiced": True},
         cooldown=skip_back_cd,
         max_concurrency=skip_back_mc,
@@ -331,7 +333,7 @@ class SkipMixin:
     @check_queue_loading()
     @has_source()
     @check_voice()
-    @commands.slash_command(description=f"{desc_prefix}Votar para pular a música atual.", extras={"only_voiced": True})
+    @commands.slash_command(description=localized("cmd.voteskip.description"), extras={"only_voiced": True})
     @commands.contexts(guild=True)
     async def voteskip(self, inter: disnake.ApplicationCommandInteraction):
         try:

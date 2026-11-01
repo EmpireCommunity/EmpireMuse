@@ -3,6 +3,7 @@
 import disnake
 from disnake.ext import commands
 
+from empiremuse.i18n import localized
 from empiremuse.utils.music.checks import (
     check_voice,
     has_player,
@@ -17,9 +18,6 @@ from empiremuse.utils.others import (
 )
 
 # O corpo da classe usa estes nomes, então eles precisam existir neste módulo.
-from empiremuse.music_cog.shared import (
-    DESC_PREFIX as desc_prefix,
-)
 
 
 class PlayerModesMixin:
@@ -45,7 +43,7 @@ class PlayerModesMixin:
     @has_player()
     @check_voice()
     @commands.slash_command(
-        description=f"{desc_prefix}Ativar/Desativar o modo restrito de comandos que requer DJ/Staff.",
+        description=localized("cmd.restrict_mode.description"),
         extras={"only_voiced": True},
         cooldown=restrict_cd,
         max_concurrency=restrict_mc,
@@ -92,7 +90,7 @@ class PlayerModesMixin:
     @check_voice()
     @commands.slash_command(
         name="247",
-        description=f"{desc_prefix}Ativar/Desativar o modo 24/7 do player (Em testes).",
+        description=localized("cmd.247.description"),
         default_member_permissions=disnake.Permissions(manage_guild=True),
         extras={"only_voiced": True},
         cooldown=nonstop_cd,
@@ -151,7 +149,7 @@ class PlayerModesMixin:
     @check_voice()
     @commands.slash_command(
         name="autoplay",
-        description=f"{desc_prefix}Ativar/Desativar a reprodução automática ao acabar as músicas da fila.",
+        description=localized("cmd.autoplay.description"),
         extras={"only_voiced": True},
         cooldown=autoplay_cd,
         max_concurrency=autoplay_mc,
