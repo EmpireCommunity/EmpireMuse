@@ -145,6 +145,7 @@ from empiremuse.music_cog.queue_group import QueueGroupMixin  # noqa: E402
 from empiremuse.music_cog.autocompletes import AutocompletesMixin  # noqa: E402
 from empiremuse.music_cog.nodes import NodesMixin  # noqa: E402
 from empiremuse.music_cog.controller_dispatch import ControllerDispatchMixin  # noqa: E402
+from empiremuse.music_cog.panel_interactions import PanelInteractionsMixin  # noqa: E402
 from empiremuse.music_cog.player_controller import PlayerControllerMixin  # noqa: E402
 from empiremuse.music_cog.song_requests import SongRequestsMixin  # noqa: E402
 from empiremuse.music_cog.tracks import TracksMixin  # noqa: E402
@@ -158,6 +159,7 @@ class Music(
     SongRequestsMixin,
     PlayerControllerMixin,
     ControllerDispatchMixin,
+    PanelInteractionsMixin,
     FavoritesMixin,
     NodesMixin,
     PlayerModesMixin,

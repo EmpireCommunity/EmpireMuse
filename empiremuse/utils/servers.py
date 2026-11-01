@@ -292,6 +292,16 @@ class ServerStore:
 
         return deepcopy(await self._transact(key, plan))
 
+    def peek_section(self, gid: object, section: str) -> Optional[dict]:
+        """A seção do documento em cache, SEM cópia e sem banco (``None`` se o documento não está em cache ou a seção não foi migrada).
+
+        Só para decidir rápido se vale a pena ler de verdade (ex.: um evento por mensagem apagada): quem chama não pode alterar o retorno.
+        """
+        doc = self._docs.get(str(as_guild_id(gid) or ""))
+        if doc is None or not doc.get("migrated", {}).get(section):
+            return None
+        return doc.get(section)
+
     async def get(self, gid: int) -> dict:
         """Cópia do documento único do servidor (migra ``settings`` na primeira vez)."""
         return await self._ensure(gid, (SECTION_SETTINGS,))

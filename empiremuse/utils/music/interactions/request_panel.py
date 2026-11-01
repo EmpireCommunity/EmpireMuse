@@ -15,7 +15,14 @@ from typing import Any
 import disnake
 
 from empiremuse.rules.i18n import Translator, fit
-from empiremuse.rules.request_panel import PAUSED, PanelEntry
+from empiremuse.rules.request_panel import (
+    GENRE_SELECT_ID,
+    MAX_GENRE_OPTIONS,
+    PAUSED,
+    QUEUE_BUTTON_ID,
+    PanelEntry,
+    progress_text,
+)
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
 from empiremuse.utils.music.converters import md_code, md_link
 from empiremuse.utils.others import PlayerControls
@@ -39,11 +46,15 @@ def _body(entry: PanelEntry, tr: Translator) -> str:
     state = tr(state_key)
     track = md_link(entry.title, entry.url, limit=60) if entry.title else tr("player.panel.no_track")
     line = f"-# {state}: {track}"
+    if progress := progress_text(entry.position_ms, entry.duration_ms):
+        line += f"\n-# {progress}"
     details = []
     if entry.requester:
         details.append(f"✋ {md_code(entry.requester, limit=32)}")
     if entry.queue:
         details.append(tr("player.panel.queue_count", count=entry.queue))
+    if entry.volume is not None:
+        details.append(tr("player.panel.volume", volume=entry.volume))
     if details:
         line += "\n-# " + " · ".join(details)
     return line[:1024]
@@ -69,6 +80,26 @@ def _buttons(bot: Any, tr: Translator, *, paused: bool) -> list[disnake.ui.Butto
     ]
 
 
+def _queue_button(bot: Any, tr: Translator) -> disnake.ui.Button:
+    """Abre (só para quem apertou, efêmero) a fila do player da call dele, 25 músicas por página."""
+    return disnake.ui.Button(
+        label=fit(tr("player.panel.queue.button"), 80), emoji=app_emoji(bot, "music_queue"), custom_id=QUEUE_BUTTON_ID
+    )
+
+
+def _genre_select(tr: Translator, genres: Sequence[str]) -> disnake.ui.Select:
+    """Os gêneros das playlists do servidor; o valor é o ÍNDICE na lista (nunca o texto), e o tratamento confere contra a lista de agora."""
+    return disnake.ui.Select(
+        placeholder=fit(tr("player.panel.genre.placeholder"), 150),
+        options=[
+            disnake.SelectOption(label=fit(g, 100), value=str(i)) for i, g in enumerate(genres[:MAX_GENRE_OPTIONS])
+        ],
+        custom_id=GENRE_SELECT_ID,
+        min_values=0,
+        max_values=1,
+    )
+
+
 def render_panel(
     bot: Any,
     guild: disnake.Guild,
@@ -77,6 +108,7 @@ def render_panel(
     tr: Translator,
     playlist_options: Sequence[disnake.SelectOption] = (),
     last_action: str = "",
+    genres: Sequence[str] = (),
 ) -> dict[str, Any]:
     """A mensagem do painel com 2+ players: ``{"content", "embeds", "components"}`` (quem envia põe ``AllowedMentions.none()``)."""
     embed = disnake.Embed(title=tr("player.panel.title"), color=bot.get_color(guild.me))
@@ -92,8 +124,11 @@ def render_panel(
     embed.set_thumbnail(guild.me.display_avatar.replace(size=256).url)
 
     components: list[Any] = [
-        disnake.ui.ActionRow(*_buttons(bot, tr, paused=all(e.state == PAUSED for e in entries) if entries else False))
+        disnake.ui.ActionRow(*_buttons(bot, tr, paused=all(e.state == PAUSED for e in entries) if entries else False)),
+        disnake.ui.ActionRow(_queue_button(bot, tr)),
     ]
+    if genres:
+        components.append(disnake.ui.ActionRow(_genre_select(tr, genres)))
     if playlist_options:
         components.append(
             disnake.ui.ActionRow(

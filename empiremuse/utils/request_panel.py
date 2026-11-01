@@ -13,11 +13,22 @@ import asyncio
 import logging
 import time
 import weakref
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, Optional
 
 import disnake
 
-from empiremuse.rules.request_panel import PanelEntry, make_entry, refresh_wait_ms
+from empiremuse.rules.request_panel import (
+    MAX_GENRE_OPTIONS,
+    PANEL_TICK_MS,
+    PLAYING,
+    PanelEntry,
+    heal_wait_ms,
+    last_action_of,
+    make_entry,
+    plain_mentions,
+    refresh_wait_ms,
+)
 
 if TYPE_CHECKING:
     from empiremuse.utils.client import BotCore, BotPool
@@ -47,6 +58,11 @@ def entry_for(bot: BotCore, player: LavalinkPlayer) -> Optional[PanelEntry]:
     if track is not None and getattr(track, "requester", None):
         member = player.guild.get_member(int(track.requester)) if str(track.requester).isdigit() else None
         requester = member.display_name if member else None
+    live = track is not None and not getattr(track, "is_stream", False)
+    try:
+        position = player.position if live else None
+    except Exception:  # noqa: BLE001 - sem posição o painel só não mostra a barra
+        position = None
     return make_entry(
         bot_name=bot.user.display_name,
         bot_id=bot.user.id,
@@ -57,6 +73,9 @@ def entry_for(bot: BotCore, player: LavalinkPlayer) -> Optional[PanelEntry]:
         paused=bool(getattr(player, "paused", False)),
         queue=len(player.queue),
         requester=requester,
+        volume=getattr(player, "volume", None),
+        position_ms=position,
+        duration_ms=getattr(track, "duration", None) if live else None,
     )
 
 
@@ -80,6 +99,9 @@ class RequestPanel:
         self.pool = pool
         self._last: dict[int, int] = {}
         self._pending: dict[int, asyncio.Task] = {}
+        self._ticks: dict[int, asyncio.Task] = {}
+        self._healed: dict[int, int] = {}
+        self._healing: set[int] = set()
         self._tasks: set[asyncio.Task] = set()
         self._handoff_running: set[int] = set()
         self._handoff_pending: set[int] = (
@@ -158,7 +180,8 @@ class RequestPanel:
     async def _draw(self, guild_id: int) -> None:
         from empiremuse.utils.others import send_idle_embed  # tarde: utils.others importa muita coisa
         from empiremuse.utils.music.interactions.request_panel import render_panel
-        from empiremuse.utils.server_playlists import load_select_options
+        from empiremuse.rules.playlists import genres_of
+        from empiremuse.utils.server_playlists import safe_list, select_options
 
         panel_bot = await self.pool.servers.request.panel_bot(guild_id)
         message = await fetch_panel_message(self.pool, guild_id)
@@ -172,15 +195,110 @@ class RequestPanel:
         else:
             for _, player in players:
                 player.last_data = {}  # o painel vira lista: ao voltar à skin, ela precisa ser redesenhada
-            entries = [e for bot, player in players if (e := entry_for(bot, player)) is not None]
+            pairs = [(e, player) for bot, player in players if (e := entry_for(bot, player)) is not None]
+            entries = [e for e, _ in pairs]
+            playlists = await safe_list(panel_bot, guild_id)
             payload = render_panel(
                 panel_bot,
                 message.guild,
                 entries,
                 tr=await self.pool.i18n.for_guild(message.guild),
-                playlist_options=await load_select_options(panel_bot, guild_id),
+                playlist_options=select_options(panel_bot, playlists),
+                last_action=self._last_action(message.guild, pairs),
+                genres=genres_of(playlists)[:MAX_GENRE_OPTIONS],
             )
             await message.edit(allowed_mentions=NO_MENTIONS, **payload)
+            if any(e.state == PLAYING and e.duration_ms for e in entries):
+                self._schedule_tick(
+                    guild_id
+                )  # a barra de progresso anda sozinha, no máximo uma edição a cada PANEL_TICK_MS
+
+    @staticmethod
+    def _last_action(guild: disnake.Guild, pairs: list[tuple[PanelEntry, Any]]) -> str:
+        """O texto da última ação de um player de call aberta, sem menção viva (o rodapé do Discord não as renderiza)."""
+        text = last_action_of([(entry.private, getattr(player, "command_log", "")) for entry, player in pairs])
+
+        def name_of(member_id: int) -> Optional[str]:
+            member = guild.get_member(member_id)
+            return member.display_name if member else None
+
+        return plain_mentions(text, name_of)
+
+    def _schedule_tick(self, guild_id: int) -> None:
+        task = self._ticks.get(guild_id)
+        if task is None or task.done():
+            self._ticks[guild_id] = self._spawn(self._tick(guild_id))
+
+    async def _tick(self, guild_id: int) -> None:
+        await asyncio.sleep(PANEL_TICK_MS / 1000)
+        self._ticks.pop(guild_id, None)  # o redesenho agenda o próximo, se ainda houver música tocando
+        await self.refresh(guild_id)
+
+    # ------------------------------------------------------------------ painel apagado (autorrecuperação)
+
+    async def on_messages_deleted(self, guild_id: int, message_ids: Iterable[int]) -> None:
+        """Alguém apagou mensagens no servidor: se uma é o painel, manda um novo na hora (no máximo um a cada ``HEAL_MIN_INTERVAL_MS``).
+
+        Várias fontes (um evento por bot, apagamento em massa) caem aqui: só uma recuperação por vez e por servidor. Uma mensagem apagada
+        pelo próprio painel (a antiga numa passagem) já não é a gravada, então não conta.
+        """
+        ids = set(message_ids)
+        if guild_id in self._healing:
+            return
+        stored = self.pool.servers.request.peek_message_id(
+            guild_id
+        )  # sem cópia do documento: roda a cada mensagem apagada
+        if stored is not None and stored not in ids:
+            return
+        try:
+            config = await self.pool.servers.request.get(guild_id)
+        except Exception:  # noqa: BLE001 - servidor desconhecido ou store indisponível: nada a recuperar agora
+            return
+        if not config.message_id or config.message_id not in ids or guild_id in self._healing:
+            return
+        self._healing.add(guild_id)
+        try:
+            self._spawn(self._heal(guild_id, config.message_id))
+        except RuntimeError:
+            self._healing.discard(guild_id)
+
+    async def _heal(self, guild_id: int, gone_id: int) -> None:
+        try:
+            wait = heal_wait_ms(self._healed.get(guild_id), int(time.monotonic() * 1000))
+            if wait:
+                await asyncio.sleep(wait / 1000)
+            self._healed[guild_id] = int(time.monotonic() * 1000)
+            config = await self.pool.servers.request.get(guild_id)
+            if config.message_id != gone_id:
+                return  # outro caminho (passagem, /setup) já pôs um painel novo
+            await self.handoff(guild_id)
+        except Exception as exc:  # noqa: BLE001 - o painel é enfeite; a próxima chamada (ou a subida) tenta de novo
+            logger.warning("Painel do canal de pedidos não recuperado [%s] (%s)", guild_id, type(exc).__name__)
+        finally:
+            self._healing.discard(guild_id)
+
+    async def verify_on_boot(self, bot: BotCore) -> None:
+        """Na subida do ``bot``: nos servidores em que ele é o bot do painel, confere que a mensagem do painel existe e é dele (senão,
+        a passagem manda um painel novo). Falha de um servidor não impede os outros."""
+        for guild in list(bot.guilds):
+            try:
+                config = await self.pool.servers.request.get(guild.id)
+                if not config.channel or not await self.pool.servers.request.is_panel_bot(guild.id, bot):
+                    continue
+                try:
+                    message = await fetch_panel_message(self.pool, guild.id)
+                except disnake.NotFound:
+                    message = None  # só "não existe" conta; 403/5xx caem no aviso abaixo (reenviar sem poder apagar duplicaria o painel)
+                if message is None or message.author.id != bot.user.id:
+                    await self.handoff(guild.id)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Conferência do painel na subida falhou [%s] (%s)", guild.id, type(exc).__name__)
+
+    def schedule_boot_check(self, bot: BotCore) -> None:
+        try:
+            self._spawn(self.verify_on_boot(bot))
+        except RuntimeError:
+            return
 
     async def resend(self, guild_id: int, *, replace_message_id: Optional[int] = None) -> Optional[disnake.Message]:
         """O BOT DO PAINEL envia um painel novo no canal de pedidos e grava o id (a mensagem anterior sumiu ou era de outro bot).
@@ -201,8 +319,13 @@ class RequestPanel:
             if replace_message_id is None:
                 try:
                     existing = await fetch_panel_message(self.pool, guild_id)
+                except disnake.NotFound:
+                    existing = None
                 except disnake.HTTPException:
                     existing = None
+                    replace_message_id = (
+                        config.message_id
+                    )  # não deu para ver a mensagem: o painel novo tenta apagar a gravada
                 if existing is not None:
                     if existing.author.id == bot.user.id:
                         return existing  # já é do bot do painel: nada a reenviar
