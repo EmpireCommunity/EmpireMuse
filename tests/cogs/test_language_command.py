@@ -18,9 +18,8 @@ pytestmark = pytest.mark.critical
 
 @pytest.fixture
 def world(monkeypatch):
-    monkeypatch.setattr(
-        language_cog, "LANGUAGE_COOLDOWN", commands.CooldownMapping.from_cooldown(1, 10, commands.BucketType.guild)
-    )
+    # uma CÓPIA do mapping de produção: o estado de cada teste é novo, mas o (1, 10 s) é o do código
+    monkeypatch.setattr(language_cog, "LANGUAGE_COOLDOWN", language_cog.LANGUAGE_COOLDOWN.copy())
     banco = Banco()
     banco.put(*SERVERS, GID, stored(language="pt-BR"))
     bot = make_bot(MAIN_ID, "TOKEN")
@@ -44,7 +43,8 @@ def inter(world, *, manage=True, in_guild=True, preferred="en-US"):
         guild_id=GID if in_guild else None,
         author=author,
         bot=world.bot,
-        response=SimpleNamespace(send_message=AsyncMock()),
+        response=SimpleNamespace(defer=AsyncMock(), send_message=AsyncMock()),
+        edit_original_message=AsyncMock(),
     )
 
 
@@ -62,9 +62,11 @@ def test_a_manager_changes_the_language_and_gets_the_answer_in_the_new_one(world
     context = call(world, "en-US")
 
     assert saved(world) == "en-US"
-    message = context.response.send_message.await_args.args[0]
-    assert message == "Language changed to **English (United States)**."
-    assert context.response.send_message.await_args.kwargs == {"ephemeral": True}
+    context.response.defer.assert_awaited_once_with(ephemeral=True)  # a interação é confirmada antes de qualquer E/S
+    assert context.edit_original_message.await_args.kwargs == {
+        "content": "Language changed to **English (United States)**."
+    }
+    context.response.send_message.assert_not_awaited()
     world.i18n.apply_language.assert_awaited_once_with(GID)
 
 
@@ -72,7 +74,7 @@ def test_auto_stores_none_and_answers_in_the_guild_language(world):
     context = call(world, "auto", preferred="pt-BR")
 
     assert saved(world) is None
-    assert "Automático" in context.response.send_message.await_args.args[0]
+    assert "Automático" in context.edit_original_message.await_args.kwargs["content"]
 
 
 @pytest.mark.parametrize("value", ["../x", "pt-br", "en-US ", "fr", "", "PT-BR", "pt-BR\n", "auto "])
@@ -99,6 +101,15 @@ def test_in_a_dm_the_command_is_refused(world):
     assert world.banco.saves == []
 
 
+def test_the_production_cooldown_is_one_use_per_ten_seconds_per_guild():
+    cooldown = language_cog.LANGUAGE_COOLDOWN._cooldown
+
+    assert (cooldown.rate, cooldown.per) == (
+        1,
+        10,
+    ) and language_cog.LANGUAGE_COOLDOWN._type == commands.BucketType.guild
+
+
 def test_the_cooldown_is_ten_seconds_per_guild(world, monkeypatch):
     clock = SimpleNamespace(now=1000.0)
     monkeypatch.setattr("disnake.ext.commands.cooldowns.time", SimpleNamespace(time=lambda: clock.now))
@@ -112,6 +123,23 @@ def test_the_cooldown_is_ten_seconds_per_guild(world, monkeypatch):
     clock.now = 1010.5  # passados os 10 s, o servidor pode trocar de novo
     call(world, "pt-BR")
     assert saved(world) == "pt-BR"
+
+
+def test_the_interaction_is_acknowledged_before_the_slow_work(world):
+    order = []
+    original = world.pool.servers.settings
+
+    async def slow(gid):
+        order.append("settings")
+        return await original(gid)
+
+    world.pool.servers.settings = slow
+    context = inter(world)
+    context.response.defer = AsyncMock(side_effect=lambda **kw: order.append("defer"))
+
+    run(language_cog.Language.language.callback(world.cog, context, "en-US"))
+
+    assert order[:2] == ["defer", "settings"]
 
 
 def test_a_store_failure_is_a_friendly_error_never_the_exception_text(world, monkeypatch):

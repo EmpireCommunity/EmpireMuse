@@ -227,7 +227,9 @@ async def _pc_player_checks(self, req):
     try:
         player: LavalinkPlayer = self.bot.music.players[interaction.guild_id]
     except KeyError:
-        await interaction.send(player.tr("player.there_is_no_active_player"), ephemeral=True)
+        await interaction.send(
+            (await self.bot.pool.i18n.for_guild(interaction.guild))("player.there_is_no_active_player"), ephemeral=True
+        )
         await send_idle_embed(interaction.message, bot=self.bot)
         return True
 

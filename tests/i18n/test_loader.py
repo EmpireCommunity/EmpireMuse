@@ -347,3 +347,12 @@ def test_a_disnake_locale_enum_resolves_like_its_value(root):
     assert i18n.resolve(None, disnake.Locale.pt_BR) == "pt-BR"
     assert i18n.resolve(disnake.Locale.en_US, None) == "en-US"
     assert i18n.resolve(None, disnake.Locale.ja) == rules.FALLBACK_LOCALE
+
+
+def test_the_production_fallback_is_en_us_and_the_i18n_tests_run_with_it(root):
+    assert rules.FALLBACK_LOCALE == "en-US" and rules.REFERENCE_LOCALE == "en-US"
+    i18n = I18n(root)
+    i18n.load()
+
+    assert i18n.resolve(None, "ja") == "en-US"
+    assert i18n.for_locale("ja").locale == "en-US" and i18n.for_locale(None).locale == "en-US"

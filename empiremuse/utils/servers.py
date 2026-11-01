@@ -239,7 +239,12 @@ class ServerStore:
                 self._loaded_guild(int(gid)) is None
             ):  # o servidor pode ter voltado a ficar indisponível durante a leitura
                 raise ServerConfigUnavailable
+            saved_language = (new.get("settings") or {}).get(
+                "language"
+            )  # gravado pela migração de boot; sem legado, ``None`` apagaria
             new["settings"] = migrate_settings(legacy, self._allowed(int(gid)))
+            if saved_language is not None:
+                new["settings"]["language"] = saved_language
             new["migrated"][SECTION_SETTINGS] = True
             logger.info(
                 "Servidor [%s] migrado: configuração antiga do principal %s", gid, "copiada" if legacy else "ausente"

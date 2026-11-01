@@ -8,9 +8,12 @@ sem partir menção ou emoji, e nunca levanta: o que não for reconhecido fica c
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from empiremuse.rules.i18n import fit, utf16_length
+
+logger = logging.getLogger(__name__)
 
 EMBED_TOTAL = 6000
 EMBED_TITLE = 256
@@ -73,21 +76,82 @@ def _fit_component(component: Any) -> None:
             option.description = fit(option.description, OPTION_TEXT)
 
 
+def _cut_evenly(texts: list[tuple[Any, Any]], over: int) -> int:
+    """Tira ``over`` unidades de ``texts`` (pares ``(ler, gravar)``) dividindo por igual; cada texto fica com pelo menos 1. Devolve o que sobrou."""
+    while over > 0:
+        stalled = False
+        sizes = [utf16_length(read()) for read, _ in texts]
+        eligible = [index for index, size in enumerate(sizes) if size > 1]
+        if not eligible:
+            break
+        share = -(-over // len(eligible))
+        for index in eligible:
+            if over <= 0:
+                break
+            read, write = texts[index]
+            write(fit(read(), sizes[index] - min(share, sizes[index] - 1, over)))
+            done = sizes[index] - utf16_length(read())
+            over -= done
+            stalled = stalled or done <= 0
+        if stalled:
+            break
+    return over
+
+
+def _shrink(embeds: list[Any], over: int) -> list[Any]:
+    """Tira ``over`` unidades do total de ``embeds`` sem deixar vazio nenhum texto que o Discord exige.
+
+    Ordem: as descrições, os valores dos campos e os rodapés (cada grupo dividido por igual entre os textos); se ainda passar, tira os
+    últimos campos e, por fim, os últimos embeds (o primeiro nunca sai). Cada texto mantém ao menos 1 unidade.
+    """
+    descriptions = [
+        (lambda e=e: e.description, lambda t, e=e: setattr(e, "description", t)) for e in embeds if e.description
+    ]
+    over = _cut_evenly(descriptions, over)
+    values = [
+        (
+            lambda e=e, i=i: e.fields[i].value,  # sempre o campo de agora: set_field_at troca o objeto
+            lambda t, e=e, i=i: e.set_field_at(i, name=e.fields[i].name, value=t, inline=e.fields[i].inline),
+        )
+        for e in embeds
+        for i in range(len(e.fields))
+    ]
+    over = _cut_evenly(values, over)
+    footers = [
+        (
+            lambda e=e: e.footer.text,
+            lambda t, e=e: e.set_footer(text=t, icon_url=getattr(e.footer, "icon_url", None)),
+        )
+        for e in embeds
+        if getattr(e.footer, "text", None)
+    ]
+    over = _cut_evenly(footers, over)
+    for embed in reversed(embeds):
+        while over > 0 and embed.fields:
+            last = embed.fields[-1]
+            over -= utf16_length(last.name or "") + utf16_length(last.value or "")
+            embed.remove_field(len(embed.fields) - 1)
+    while over > 0 and len(embeds) > 1:
+        over -= _embed_total(embeds.pop())
+    return embeds
+
+
 def fit_payload(data: Any) -> Any:
-    """Aplica os limites do Discord a ``data`` (o dicionário de uma skin) e o devolve. Nunca levanta."""
+    """Aplica os limites do Discord a ``data`` (o dicionário de uma skin) e o devolve. Nunca levanta (a falha vai ao log, só com o tipo)."""
     try:
         embeds = list(data.get("embeds") or ([data["embed"]] if data.get("embed") else []))
         for embed in embeds:
             _fit_embed(embed)
         over = sum(_embed_total(embed) for embed in embeds) - EMBED_TOTAL
-        if over > 0 and embeds:
-            biggest = max(embeds, key=lambda embed: utf16_length(embed.description or ""))
-            current = utf16_length(biggest.description or "")
-            biggest.description = fit(biggest.description or "", max(1, current - over))
+        if over > 0:
+            kept = _shrink(embeds, over)
+            if data.get("embeds"):
+                data["embeds"] = kept
         if isinstance(data.get("content"), str):
             data["content"] = fit(data["content"], CONTENT)
         for component in data.get("components") or ():
             _fit_component(component)
-    except Exception:  # noqa: BLE001 - a rede de segurança nunca derruba o redesenho do player
+    except Exception as error:  # noqa: BLE001 - a rede de segurança nunca derruba o redesenho do player
+        logger.warning("Limites do Discord não aplicados à mensagem do player (%s)", type(error).__name__)
         return data
     return data

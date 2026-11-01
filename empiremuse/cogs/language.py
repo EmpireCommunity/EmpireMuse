@@ -61,6 +61,7 @@ class Language(commands.Cog):
             autocomplete=language_autocomplete,
         ),
     ):
+        await inter.response.defer(ephemeral=True)  # confirma em 3 s; a leitura do idioma e a gravação podem demorar
         i18n = self.bot.pool.i18n
         tr = await i18n.for_guild(inter.guild)
 
@@ -87,7 +88,7 @@ class Language(commands.Cog):
         logger.info("Idioma do servidor [%s] alterado por %s: %s -> %s", inter.guild_id, inter.author.id, before, value)
         new_tr = await i18n.for_guild(inter.guild)
         shown = new_tr("language.auto") if value is None else i18n.display_name(value)
-        await inter.response.send_message(new_tr("language.changed", language=shown), ephemeral=True)
+        await inter.edit_original_message(content=new_tr("language.changed", language=shown))
         await i18n.apply_language(inter.guild_id)
 
 
