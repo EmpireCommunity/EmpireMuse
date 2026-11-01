@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from empiremuse.rules.errors import RuleError
 from empiremuse.rules.radio import (
+    KIND_CUSTOM,
     KIND_LIVE,
     MAX_PER_GUILD,
     SOURCE_INVALID,
@@ -26,6 +27,8 @@ from empiremuse.rules.radio import (
     check_radio,
     to_document,
 )
+from empiremuse.rules.radio_station import from_document as from_station_document
+from empiremuse.rules.radio_station import valid_station_id
 from empiremuse.rules.radio_stations import valid_uuid
 from empiremuse.utils.radio.premium import CAS_ATTEMPTS, GLOBAL_DB, PremiumStore, RadioUnavailable
 
@@ -35,6 +38,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 RADIOS_DB = "radios"  # nome da coleção
+STATIONS_COLLECTION = "radio_stations"  # as estações do servidor (``utils/radio/stations.py``)
 KEEP: object = object()  # "não mexa" em ``set_station(station_list=...)``
 
 
@@ -176,6 +180,37 @@ class RadioStore:
         if current.kind != KIND_LIVE or reserve == current.source.get("station"):
             raise RadioInvalid(RuleError(SOURCE_INVALID, "reserve"))
         updated = dataclasses.replace(current, source={**current.source, "reserve": reserve}, rev=current.rev + 1)
+        checked = check_radio(to_document(updated))
+        if isinstance(checked, RuleError):
+            raise RadioInvalid(checked)
+        if not await self._save(radio_id, to_document(checked, updated_by=updated_by), expected_rev):
+            raise RadioConflict
+        return checked
+
+    async def set_custom_station(
+        self, radio_id: str, station_id: object, *, expected_rev: int, updated_by: str = ""
+    ) -> Radio:
+        """Põe uma estação do SERVIDOR (R5) numa rádio PERSONALIZADA. ``RadioInvalid`` se a rádio não é personalizada ou a estação não existe NESTE servidor,
+        ``RadioConflict`` se o ``rev`` mudou. Quem muda a estação de uma rádio ligada chama depois ``RadioManager.change_station``."""
+        current = self._radio(await self._find(radio_id))
+        if current is None:
+            raise RadioNotFound
+        if current.rev != expected_rev:
+            raise RadioConflict
+        stored = (
+            await self._database.find_doc(station_id, db_name=STATIONS_COLLECTION, collection=GLOBAL_DB)
+            if valid_station_id(station_id)
+            else None
+        )
+        found = from_station_document(stored) if stored else None
+        if (
+            current.kind != KIND_CUSTOM
+            or isinstance(found, RuleError)
+            or found is None
+            or found.guild_id != current.guild_id
+        ):
+            raise RadioInvalid(RuleError(SOURCE_INVALID, "station"))
+        updated = dataclasses.replace(current, source={"station": found.id}, rev=current.rev + 1)
         checked = check_radio(to_document(updated))
         if isinstance(checked, RuleError):
             raise RadioInvalid(checked)

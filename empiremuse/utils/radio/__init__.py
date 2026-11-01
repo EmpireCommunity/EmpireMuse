@@ -17,6 +17,7 @@ from empiremuse.utils.radio.manager import RadioManager
 from empiremuse.utils.radio.premium import PremiumStore
 from empiremuse.utils.radio.relay import RadioRelay
 from empiremuse.utils.radio.service import RadioService
+from empiremuse.utils.radio.stations import StationStore
 from empiremuse.utils.radio.store import RadioStore
 
 if TYPE_CHECKING:
@@ -39,13 +40,14 @@ def load_locations() -> LocationTree | None:
 
 
 class RadioHub:
-    """``pool.radio.store`` (rádios), ``.premium`` (concessões e contador) e ``.service`` (o que roda agora)."""
+    """``pool.radio.store`` (rádios), ``.stations`` (estações do servidor), ``.premium`` (concessões e contador) e ``.service`` (o que roda agora)."""
 
     def __init__(self, pool: BotPool) -> None:
         self.premium = PremiumStore(pool)
         self.control = RadioControl(pool)  # "pausar todas" (dono)
         self.roles = BotRoles(pool)  # bots só-rádio (dono)
         self.store = RadioStore(pool, self.premium)
+        self.stations = StationStore(pool, self.store)  # estações do servidor para a rádio personalizada (R5)
         self.favorites = RadioFavorites(pool)  # estações favoritas do servidor (painel da rádio ao vivo)
         self.service = RadioService(pool)
         self.manager = RadioManager(self, self.service)  # quem faz as rádios rodarem neste processo

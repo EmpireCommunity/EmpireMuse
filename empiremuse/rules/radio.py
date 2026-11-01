@@ -42,6 +42,7 @@ REV_INVALID = "radio_rev_invalid"
 
 _SNOWFLAKE = re.compile(r"[0-9]{1,20}")
 _RADIO_ID = re.compile(r"([0-9]{1,20}):([0-9]{1,20})")
+_CUSTOM_STATION_ID = re.compile(r"[0-9a-f]{24}")
 _STATION_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 
@@ -140,11 +141,14 @@ def clamp_volume(value: object) -> int:
 
 
 def check_source(kind: str, raw: object) -> dict[str, Any] | RuleError:
-    """A fonte: ``{playlist}`` na personalizada; ``{station, reserve}`` na ao vivo (a R3 usa; aqui só se confere o formato)."""
+    """A fonte: ``{station}`` (id da estação do servidor, R5; ``{playlist}`` é o legado da R1) na personalizada; ``{station, reserve}`` na ao vivo (a R3 usa; aqui só se confere o formato)."""
     if not isinstance(raw, Mapping):
         return RuleError(SOURCE_INVALID, "source")
     if kind == KIND_CUSTOM:
-        playlist = raw.get("playlist")
+        station_id = raw.get("station")
+        if set(raw) == {"station"} and isinstance(station_id, str) and _CUSTOM_STATION_ID.fullmatch(station_id):
+            return {"station": station_id}  # R5: a estação do servidor (``radio_stations``)
+        playlist = raw.get("playlist")  # legado da R1: vale até a migração da subida trocar por ``{station}``
         if set(raw) != {"playlist"} or not isinstance(playlist, str):
             return RuleError(SOURCE_INVALID, "source")
         name = playlist.strip()
