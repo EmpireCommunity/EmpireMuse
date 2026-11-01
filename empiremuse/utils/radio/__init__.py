@@ -1,0 +1,21 @@
+"""Rádio 24/7 (item 8, R1): o ``pool.radio`` reúne a store de rádios, o premium e o estado em memória."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from empiremuse.utils.radio.premium import PremiumStore
+from empiremuse.utils.radio.service import RadioService
+from empiremuse.utils.radio.store import RadioStore
+
+if TYPE_CHECKING:
+    from empiremuse.utils.client import BotPool
+
+
+class RadioHub:
+    """``pool.radio.store`` (rádios), ``.premium`` (concessões e contador) e ``.service`` (o que roda agora)."""
+
+    def __init__(self, pool: BotPool) -> None:
+        self.premium = PremiumStore(pool)
+        self.store = RadioStore(pool, self.premium)
+        self.service = RadioService(pool)

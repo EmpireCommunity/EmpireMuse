@@ -62,6 +62,7 @@ from empiremuse.utils.safe_error import HTTPStatusError, safe_error
 from empiremuse.utils.db import MongoDatabase, LocalDatabase, get_prefix, DBModel, global_db_models
 from empiremuse.utils.app_profile import sync_app_profile
 from empiremuse.utils.guild_ban import GuildBans
+from empiremuse.utils.radio import RadioHub
 from empiremuse.utils.request_panel import RequestPanel
 from empiremuse.utils.servers import ServerStore
 from empiremuse.rules.usage import KIND_PREFIX, KIND_SLASH
@@ -203,6 +204,7 @@ class BotPool:
     guild_bans: Optional[GuildBans] = None
     servers: Optional[ServerStore] = None
     request_panel: Optional[RequestPanel] = None
+    radio: RadioHub
     join_notices: Optional[TTLCache] = None
     logs_task: Optional[asyncio.Task] = None
     version_check_task: Optional[asyncio.Task] = None
@@ -276,6 +278,7 @@ class BotPool:
         self.i18n.pool = self
         self.servers = ServerStore(self)
         self.request_panel = RequestPanel(self)
+        self.radio = RadioHub(self)
         # servidor -> aviso de "sem o principal" já enviado; a validade de 24 h é o limitador único (um aviso por servidor no pool)
         self.join_notices = TTLCache(maxsize=5000, ttl=NOTICE_WINDOW_SECONDS)
         self.logs_task: Optional[asyncio.Task] = None
