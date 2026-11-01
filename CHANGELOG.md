@@ -7,21 +7,28 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-11-01
+
+Idiomas: o bot passa a falar o idioma do servidor (`en-US` e `pt-BR`), com o comando `/language` e o campo Idioma no painel; comandos e player traduzidos, e mais 27 ícones da Flaticon no player.
+
+**Ao atualizar:**
+- O `update` do Docker troca só a imagem do bot. A imagem do `updater-proxy` não muda nesta versão (`proxy.py` e o `Dockerfile` ficam como na 2.1.4), então, em quem já tem a 2.1.4 instalada, a linha do proxy no compose fica como está. Numa instalação nova, as duas linhas `image:` do compose usam a 2.2.0. Não há variável nova.
+- **Idioma dos servidores:** na primeira subida o bot grava `settings.language = "pt-BR"` em todo servidor que já existia (migração única e idempotente, só esse campo); servidores novos nascem em automático. Cada servidor muda o idioma com `/language` ou no campo Idioma da categoria Geral do painel.
+- **Comandos de barra:** o Discord sincroniza todos os comandos mais uma vez, com os nomes-base das opções em inglês (`query`, `position`, `play_now`...). Quem usa o Discord em pt-BR continua vendo os mesmos nomes de hoje. Pode levar alguns minutos para aparecer.
+- **Emojis da aplicação:** o `sync_app_emojis` nunca sobrescreve e cria só os nomes que a aplicação ainda não tem, então os 27 novos aparecem sozinhos na próxima subida; nenhum nome existente mudou, não há nada para apagar no Discord Developer Portal.
+- **Textos:** o player está traduzido; mensagens de erro, menus e configurações ainda estão em português (F2, parte 2).
+
 ### Adicionado
 - **Idiomas (item 21, F1 e comandos/player da F2)**: o bot fala o idioma do servidor, com `en-US` como reserva. Os textos ficam em catálogos JSON (`empiremuse/locales/<locale>/{commands,bot,panel}.json`) que a comunidade traduz; um idioma novo com 90% ou mais de cobertura liga sozinho (`python -m empiremuse.i18n.check` valida). Cada texto é validado na subida (placeholders, menções, links, markdown, caracteres e limites do Discord); `en-US` ou `pt-BR` quebrado derruba a subida, outro idioma inválido só fica desligado. Novo `/language` (só em servidor, exige Gerenciar Servidor, 10 s de cooldown) e `settings.language` (`auto` = idioma do Discord do servidor). As descrições, os nomes das opções e as choices dos comandos de barra são localizados pelo provider do disnake (nomes de comando continuam em inglês); o player, as skins e o controller passam a usar `player.tr`. Dependência nova: `babel` 2.18.0 (BSD-3, com hash).
 - **Idiomas no resto do player (item 21, F2)**: os blocos ANSI das skins, as dicas, o painel do canal de pedidos, o idle (o embed e o botão de pedir música), o status automático do canal, o log de ações do player e os botões de favoritos/last.fm do controller passam a sair no idioma do servidor, com as frases inteiras (plural por chave) no lugar dos pedaços. As dicas fixas são refeitas quando o idioma do servidor muda. O texto em pt-BR não mudou, com duas correções de passagem: o fim da lista de faixas deixa de sair "músicass" e o painel de pedidos fala "1 player ativo" no singular.
 - **Nomes das opções dos comandos em inglês**: a base de cada opção agora é em inglês (`query`, `position`, `play_now`...) e o pt-BR continua vendo o nome de hoje (`busca`, `posição`, `tocar_agora`...). Quem usa o Discord em outro idioma passa a ver a base em inglês.
 - **Idioma do servidor no painel**: a categoria Geral ganha o campo Idioma (automático ou um dos idiomas ligados); a troca vale em todos os bots do servidor. O painel passa a ler seus textos de `locales/<locale>/panel.json` (pt-BR até a F3).
 
-**Ao atualizar:** a primeira subida grava `settings.language = "pt-BR"` em todo servidor que já existia (migração única, idempotente, só esse campo); servidores novos nascem em automático. Os comandos são sincronizados de novo (descrições e nomes de opção localizados), o que pode levar alguns minutos para aparecer no Discord.
-
 ### Alterado
 - **CI recusa `{% raw %}` e `{% autoescape %}` nos templates do painel** (`empiremuse/panel/templates/`), para o escape automático nunca ser desligado (a diretiva dividida em duas linhas também é pega).
 - **`.github/CODEOWNERS` cobre o i18n**: `empiremuse/locales/en-US/`, `empiremuse/locales/pt-BR/`, `empiremuse/rules/i18n.py` e `empiremuse/i18n/` passam a ter o dono do repositório como revisor (`.github/` já constava).
 - **CI confere os catálogos de idioma**: novo passo `python -m empiremuse.i18n.check` no job `ci` quando o código muda (falha em arquivo recusado, entrada descartada, `en-US`/`pt-BR` abaixo de 100% ou chave de `tr(...)`/`localized(...)` ausente no `en-US`; a saída tem o resumo de cobertura por locale e, por problema, uma linha `ERRO` com chave e motivo, nunca o texto do catálogo).
 - **Player com os ícones da Flaticon (mnauliady) no lugar dos emojis Unicode**: 27 emojis novos em `assets/emojis/` (kits `media-player-icons` e, na falta, `web-ui-icons`; PNG 128x128, `SHA256SUMS` atualizado, atribuição no `CREDITS.md` e no `README.md`). Valem na mensagem do player (Duração, Por/Uploader, Pedido por, Canal de voz, Álbum, Playlist, Adicionado via, repetição, Em pausa/Tocando agora), no select "Mais opções" e no do idle (favoritos, tocar do início, volume, misturar, readicionar, repetição, nightcore, reprodução automática, Last.fm, modo restrito, letra, status de voz, thread), na fila do embed e do `/fila` (relógio, quem pediu, recomendada, Mover, Rotacionar Fila, Recarregar, "As músicas acabam"), no `/nowplaying`, nos botões Pedir uma música e Favoritar e nas respostas do pedido por texto. O que fica Unicode: o rodapé da dica (`💡 Dica`, o Discord não mostra emoji personalizado no rodapé), qualquer emoji dentro de um trecho em crase, as respostas curtas de comando (`Última Interação`), os botões genéricos de paginação e os que não têm ícone parecido (24/7, 💤, ⚠️, ✅/❌ de confirmação). Sem sincronizar o bot, o lugar continua com o Unicode de antes.
-
-**Ao atualizar:** o `sync_app_emojis` nunca sobrescreve e cria só os nomes que a aplicação ainda não tem, então os 27 novos aparecem sozinhos na próxima subida; nenhum nome existente mudou, não há nada para apagar no Discord Developer Portal.
 
 ### Corrigido
 - **Falha ao reconectar o player não mostra mais o texto bruto da exceção**: o log do player e o controller trazem só a mensagem fixa ("Ocorreu uma falha ao reconectar o player no canal de voz."); o detalhe fica no log do servidor. Na skin `classic` estática, o aviso "E mais N músicas" passou a contar só as faixas que a lista não mostra (eram todas as da fila). Textos do pt-BR corrigidos (ortografia e concordância das dicas: "funciona"/"funcionam", "bot extra"/"bots extras").
@@ -702,7 +709,8 @@ O **EmpireMuse** é uma obra derivada e evolução contínua do projeto [MuseHea
 - **Ponto de partida do fork/bifurcação**: Commit upstream [`32f227e9`](https://github.com/zRitsu/MuseHeart-MusicBot/commit/32f227e96bca59d5e54f58f56f5fb7e804704b32) de 02/03/2026 (implementação do suporte ao protocolo DAVE com envio de `channelId` no payload de voz).
 - **Histórico anterior**: O histórico completo de commits, versões e contribuições anteriores a esse ponto de partida permanece preservado no repositório original do upstream.
 
-[Unreleased]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.1.4...HEAD
+[Unreleased]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.1.4...v2.2.0
 [2.1.4]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.1.3...v2.1.4
 [2.1.3]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.1.2...v2.1.3
 [2.1.2]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.1.1...v2.1.2
