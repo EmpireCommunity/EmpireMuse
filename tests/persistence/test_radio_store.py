@@ -297,6 +297,16 @@ class TestChatRules:
         assert world.db.tables["radios"][radio_id(1, GUILD)]["updated_by"] == "42"
 
     @pytest.mark.asyncio
+    async def test_reconfiguring_keeps_the_chat_rules_the_panel_saved(self, world):  # CodeRabbit #180
+        await world.store.create(make_radio())
+        await world.store.update_chat(radio_id(1, GUILD), {"voice_delete_after_s": 90}, expected_rev=0)
+
+        updated = await world.store.reconfigure(make_radio(channel_id="777", source={"playlist": "Jazz"}))
+
+        assert updated.chat["voice_delete_after_s"] == 90  # as regras não voltam aos padrões
+        assert (updated.channel_id, updated.source) == (777, {"playlist": "Jazz"})
+
+    @pytest.mark.asyncio
     async def test_a_stale_rev_is_a_conflict(self, world):
         await world.store.create(make_radio())
         await world.store.update_chat(radio_id(1, GUILD), {"stage_max_messages": 5}, expected_rev=0)

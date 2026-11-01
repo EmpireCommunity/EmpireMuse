@@ -189,6 +189,15 @@ class TestClose:
         assert world.manager.counts() == (0, 0, 0) and not world.manager._tasks
 
 
+async def until(predicate, *, rounds=1000):
+    """Cede o laço até a condição valer (sem esperar tempo real); estoura se ela nunca valer."""
+    for _ in range(rounds):
+        if predicate():
+            return
+        await asyncio.sleep(0)
+    raise AssertionError("a condição nunca ficou verdadeira")
+
+
 class FakeChatPorts:
     stage = False
 
@@ -201,7 +210,7 @@ class FakeChatPorts:
 
     async def sleep(self, seconds):
         self.sleeps.append(seconds)
-        await asyncio.sleep(0.01)
+        await asyncio.sleep(0)  # só cede o laço: nenhuma espera em tempo real
 
     async def fetch_recent(self, limit):
         return []
@@ -218,12 +227,12 @@ class TestChatSweeperLifecycle:
         r = await enabled_radio(world)
 
         await world.manager.activate(r)
-        await asyncio.sleep(0.05)
-        assert chat.sleeps and r.id in world.manager._sweepers
+        await until(lambda: chat.sleeps and r.id in world.manager._sweepers)
 
         await world.manager.deactivate(r.id)
         sleeps = len(chat.sleeps)
-        await asyncio.sleep(0.05)
+        for _ in range(50):  # cede o laço: um varredor que sobrou teria rodado
+            await asyncio.sleep(0)
 
         assert r.id not in world.manager._sweepers and len(chat.sleeps) == sleeps
         await world.manager.close()
@@ -319,7 +328,7 @@ class TestStoppingForReal:
 
         for r in radios:
             await world.manager.activate(r, queued=True)
-        await asyncio.sleep(0.05)
+        await until(lambda: world.ports.connects >= 3)
         # as três subiram: as duas que falharam recuam fora da fila (e voltam depois do recuo)
         assert world.ports.connects >= 3
         for r in radios:
