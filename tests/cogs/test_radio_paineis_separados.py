@@ -246,6 +246,41 @@ class TestNoAutoplayOnRadios:
         assert await PlayerAutoqueueMixin.get_autoqueue_tracks(radio) is None
 
 
+class TestRadioIsOutsideTheMusicSession:
+    """A sessão de música (retomada após o reinício) não guarda o player de uma rádio: ela o traria de volta como um player comum, controlável pela
+    Jukebox (a personalizada) ou com a URL local do relay (a ao vivo). Quem retoma a rádio é o gerenciador de rádios."""
+
+    @pytest.mark.asyncio
+    async def test_save_info_skips_a_radio_player_even_connected_to_a_call(self):
+        from empiremuse.cogs.player_resume import PlayerSession
+
+        saved = AsyncMock()
+        cog = SimpleNamespace(save_session=saved)
+        in_call = SimpleNamespace(channel=SimpleNamespace(id=900))
+        radio = SimpleNamespace(
+            radio_id="1:2", guild=SimpleNamespace(me=SimpleNamespace(voice=in_call)), is_closing=False
+        )
+
+        await PlayerSession.save_info(cog, radio)  # sem o guard isto seguiria montando e gravando a sessão
+
+        saved.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_process_save_queue_does_nothing_for_a_radio_player(self):
+        from empiremuse.utils.music.models.player_state import PlayerStateMixin
+
+        radio = SimpleNamespace(radio_id="1:2", _session_resuming=False, bot=MagicMock())
+
+        await PlayerStateMixin.process_save_queue(radio)
+
+        radio.bot.get_cog.assert_not_called()
+        normal = SimpleNamespace(_session_resuming=False, _queue_updater_task=None, bot=MagicMock())
+        normal.bot.config = {"PLAYER_SESSIONS_MONGODB": False, "MONGO": False}
+        normal.bot.get_cog.return_value = None
+        await PlayerStateMixin.process_save_queue(normal)
+        normal.bot.get_cog.assert_called_once_with("PlayerSession")
+
+
 class TestLiveSkipDoesNothing:
     @pytest.mark.asyncio
     async def test_the_live_ports_never_call_process_next_on_a_skip(self):

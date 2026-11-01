@@ -95,6 +95,8 @@ class PlayerSession(commands.Cog):
                 logger.exception("Falha em queue_updater_task", extra=guild_extra(getattr(player, "guild_id", None)))
 
     async def save_info(self, player: LavalinkPlayer):
+        if getattr(player, "radio_id", None) is not None:
+            return  # rádio (item 8): quem a retoma é o gerenciador de rádios; a sessão a traria de volta como um player comum, controlável pela Jukebox
         if not player.guild.me.voice or player.is_closing:
             return
 

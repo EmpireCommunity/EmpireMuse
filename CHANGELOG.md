@@ -8,7 +8,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 ## [Unreleased]
 
 ### Corrigido
-- **Rádio ao vivo**: o status do canal de voz mostrava "Tocando: Unknown title - Unknown artist"; agora mostra a estação e, quando o fluxo manda, o que está tocando (sempre sem menção, link nem formatação). O botão **Próxima** saiu do painel da rádio ao vivo: ele pedia uma faixa a um player sem fila e, com a fila vazia, o player buscava uma sugestão de música (autoplay) em outra fonte. Agora nenhuma rádio busca sugestão: com a fila vazia o player só para.
+- **Rádio ao vivo**: o status do canal de voz mostrava "Tocando: Unknown title - Unknown artist"; agora mostra a estação e, quando o fluxo manda, o que está tocando (sempre sem menção, link nem formatação). O botão **Próxima** saiu do painel da rádio ao vivo: ele pedia uma faixa a um player sem fila e, com a fila vazia, o player buscava uma sugestão de música (autoplay) em outra fonte. Agora nenhuma rádio busca sugestão: com a fila vazia o player só para. A sessão de música também deixou de guardar o player de uma rádio, que voltaria como um player comum depois de um reinício.
 - **Presença na call**: a checagem de ouvintes ao silenciar/ensurdecer alguém no mesmo canal sempre dava "tem gente" (um gerador é sempre verdadeiro), então o tempo de espera por call sem ouvintes não começava quando só restavam bots ou membros surdos.
 
 ### Adicionado
