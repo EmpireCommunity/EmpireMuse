@@ -155,6 +155,7 @@ class TestCicloDeVida:
         pool.update_watch_task, pool.helper_watch_tasks = None, set()
         pool.logs_task = SimpleNamespace(cancel=lambda: cancelada.append(True))
         pool.lavalink_instance = None
+        pool.i18n = SimpleNamespace(close=lambda: None)
 
         asyncio.run(pool.shutdown(0))
 

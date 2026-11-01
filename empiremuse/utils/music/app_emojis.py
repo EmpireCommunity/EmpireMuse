@@ -156,7 +156,7 @@ def _format_emoji(name: str, emoji_id: object, animated: object) -> str | None:
 
 
 def _index_remote(remote: object) -> dict[str, str]:
-    """Os emojis da aplicação que são NOSSOS (nome exato entre os 25), já no formato de uso."""
+    """Os emojis da aplicação que são NOSSOS (nome exato entre os de ``APP_EMOJIS``), já no formato de uso."""
     found: dict[str, str] = {}
 
     for item in remote or ():
@@ -288,7 +288,7 @@ async def sync_app_emojis(
     emojis_dir: Path,
     sleep: Callable[[float], Awaitable[Any]] = asyncio.sleep,
 ) -> dict[str, str]:
-    """Garante os 25 emojis na aplicação do ``bot`` e devolve ``nome -> "<:nome:id>"``. Nunca apaga nem sobrescreve; nunca levanta."""
+    """Garante os emojis de ``APP_EMOJIS`` na aplicação do ``bot`` e devolve ``nome -> "<:nome:id>"``. Nunca apaga nem sobrescreve; nunca levanta."""
     try:
         remote = await bot.fetch_application_emojis()
     except asyncio.CancelledError:

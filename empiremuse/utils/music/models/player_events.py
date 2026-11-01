@@ -44,7 +44,7 @@ class PlayerEventsMixin:
                     await asyncio.sleep(5)
                     self.set_command_log(
                         emoji="⚠️",
-                        text=f"Caso queira me desconectar do canal {vc.mention} com o modo 24/7 ativo, use o comando ou o botão **stop/parar**.",
+                        text=self.tr("player.if_you_want_to_disconnect", mention=str(vc.mention)),
                     )
                     await self.connect(vc.id)
                     self.update = True

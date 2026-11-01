@@ -11,6 +11,17 @@ from empiremuse.rules import i18n as rules
 
 pytestmark = pytest.mark.critical
 
+needs_fifo = pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="os.mkfifo não existe nesta plataforma (Windows)")
+
+
+def make_symlink(source, link, *, directory=False):
+    """``os.symlink`` ou pula o teste: no Windows sem privilégio de symlink ele levanta ``OSError``."""
+    try:
+        os.symlink(source, link, target_is_directory=directory)
+    except (OSError, NotImplementedError) as error:
+        pytest.skip(f"symlink indisponível nesta plataforma ({type(error).__name__})")
+
+
 EN_COMMANDS = {
     "cmd.music._label": "Music",
     "cmd.play.description": "Play a song.",
@@ -147,10 +158,11 @@ class TestFiles:
         outside = tmp_path / "outside.json"
         outside.write_text(json.dumps({"player.paused": "Pausado por {user}."}), encoding="utf-8")
         write(root, "de", {"cmd.music._label": "Musik"})
-        os.symlink(outside, root / "de" / "bot.json")
+        make_symlink(outside, root / "de" / "bot.json")
 
         assert loader.read_catalog(root / "de" / "bot.json") is None
 
+    @needs_fifo
     def test_a_fifo_does_not_hang_the_boot(self, root):
         write(root, "de", {"cmd.music._label": "Musik"})
         os.mkfifo(root / "de" / "bot.json")
@@ -174,7 +186,7 @@ class TestFiles:
     def test_a_symlinked_locale_directory_is_ignored(self, root, tmp_path):
         target = tmp_path / "elsewhere"
         write(target, "de", {"cmd.music._label": "Musik"})
-        os.symlink(target / "de", root / "de")
+        make_symlink(target / "de", root / "de", directory=True)
 
         assert "de" not in loader.locale_directories(root)
 
@@ -300,16 +312,20 @@ class TestRequiredFiles:
         with pytest.raises(loader.I18nError):
             I18n(root).load()
 
-    def test_a_required_file_replaced_by_a_symlink_or_fifo_fails_the_boot(self, root, tmp_path):
+    def test_a_required_file_replaced_by_a_symlink_fails_the_boot(self, root, tmp_path):
         outside = tmp_path / "x.json"
         outside.write_text("{}", encoding="utf-8")
         (root / "pt-BR" / "bot.json").unlink()
-        os.symlink(outside, root / "pt-BR" / "bot.json")
+        make_symlink(outside, root / "pt-BR" / "bot.json")
+
         with pytest.raises(loader.I18nError):
             I18n(root).load()
 
+    @needs_fifo
+    def test_a_required_file_replaced_by_a_fifo_fails_the_boot(self, root):
         (root / "pt-BR" / "bot.json").unlink()
         os.mkfifo(root / "pt-BR" / "bot.json")
+
         with pytest.raises(loader.I18nError):
             I18n(root).load()
 
@@ -356,3 +372,127 @@ def test_the_production_fallback_is_en_us_and_the_i18n_tests_run_with_it(root):
 
     assert i18n.resolve(None, "ja") == "en-US"
     assert i18n.for_locale("ja").locale == "en-US" and i18n.for_locale(None).locale == "en-US"
+
+
+class TestForGuildWithin:
+    """O modal é a PRIMEIRA resposta da interação: o idioma não pode segurá-la (revisão da #175)."""
+
+    @pytest.mark.asyncio
+    async def test_a_fast_read_returns_the_saved_language(self, root):
+        i18n = I18n(root)
+        i18n.load()
+        saved = type("Servers", (), {"settings": staticmethod(lambda gid: _done({"language": "pt-BR"}))})()
+        i18n.pool = type("Pool", (), {"servers": saved})()
+        guild = type("Guild", (), {"id": 1, "preferred_locale": "en-US"})()
+
+        assert (await i18n.for_guild_within(guild)).locale == "pt-BR"
+
+    @pytest.fixture
+    def slow_store(self, root, monkeypatch):
+        """Um store que só responde quando o teste libera, e um prazo que vence na hora (sem relógio)."""
+        import asyncio
+
+        i18n = I18n(root)
+        i18n.load()
+        release = asyncio.Event()
+        calls = []
+
+        async def slow(gid):
+            calls.append(gid)
+            await release.wait()
+            return {"language": "pt-BR"}
+
+        async def deadline_passed(awaitable, timeout):
+            raise TimeoutError
+
+        i18n.pool = type("Pool", (), {"servers": type("Servers", (), {"settings": staticmethod(slow)})()})()
+        monkeypatch.setattr("empiremuse.i18n.service.asyncio.wait_for", deadline_passed)
+        guild = type("Guild", (), {"id": 1, "preferred_locale": "en-US"})()
+        return i18n, guild, release, calls
+
+    @pytest.mark.asyncio
+    async def test_a_slow_read_falls_back_to_the_discord_language_and_still_finishes_in_the_background(
+        self, slow_store
+    ):
+        i18n, guild, release, calls = slow_store
+
+        tr = await i18n.for_guild_within(guild)
+        task = i18n._reads[1]
+
+        assert tr.locale == "en-US" and not task.done()  # não esperou a leitura
+        release.set()
+        assert (await task).locale == "pt-BR"  # a leitura não foi cancelada: o cache esquenta para o próximo clique
+        assert i18n._reads == {}
+
+    @pytest.mark.asyncio
+    async def test_repeated_clicks_on_a_slow_store_share_one_read_per_server(self, slow_store):
+        i18n, guild, release, calls = slow_store
+
+        for _ in range(5):
+            await i18n.for_guild_within(guild)
+        task = i18n._reads[1]
+        release.set()
+        await task
+
+        assert calls == [1]
+
+    @pytest.mark.asyncio
+    async def test_a_background_read_that_fails_is_logged_with_the_exception_type_only(self, slow_store, caplog):
+        i18n, guild, release, calls = slow_store
+
+        async def failing(guild_):
+            raise RuntimeError("segredo-do-banco")
+
+        i18n.for_guild = failing
+        with caplog.at_level("WARNING", logger="empiremuse.i18n.service"):
+            await i18n.for_guild_within(guild)
+            with pytest.raises(RuntimeError):
+                await i18n._reads[1]
+
+        assert "RuntimeError" in caplog.text and "segredo-do-banco" not in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_close_cancels_the_pending_reads(self, slow_store):
+        import asyncio
+
+        i18n, guild, release, calls = slow_store
+        await i18n.for_guild_within(guild)
+        task = i18n._reads[1]
+
+        i18n.close()
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert i18n._reads == {}
+
+
+async def _done(value):
+    return value
+
+
+class TestReviewRound173:
+    """Achados do CodeRabbit na #173 sobre o código que entrou pela #174."""
+
+    def test_a_locale_without_the_reference_is_reported_not_raised(self, tmp_path):
+        base = tmp_path / "locales"
+        write(base, "pt-BR", None, PT_BOT)
+
+        loaded = loader.load_catalogs(base)
+
+        assert "en-US" not in loaded
+        assert loader.required_errors(loaded)
+
+    def test_the_boot_with_only_one_non_reference_locale_fails_with_i18n_error_not_key_error(self, tmp_path):
+        base = tmp_path / "locales"
+        write(base, "pt-BR", PT_COMMANDS, PT_BOT)
+
+        with pytest.raises(loader.I18nError):
+            I18n(base).load()
+
+    def test_root_without_code_does_not_compare_the_real_code_with_the_temporary_catalog(self, root, capsys):
+        assert check.main(["--root", str(root)]) == 0
+        assert "chave usada no código" not in capsys.readouterr().err
+
+    def test_the_default_run_still_checks_the_real_code_against_the_real_catalog(self, capsys):
+        assert check.main([]) == 0
+        assert "pt-BR: cobertura 100.0%" in capsys.readouterr().out

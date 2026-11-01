@@ -3,6 +3,7 @@
 
 Sai com código diferente de zero se houver arquivo recusado (fatal) ou entrada descartada em qualquer locale, se ``en-US``/``pt-BR``
 ficarem abaixo de 100% ou se o código usar uma chave (``tr("…")``/``localized("…")`` com texto literal) que não existe no ``en-US``.
+A conferência código ↔ catálogo só faz sentido contra o catálogo REAL: com ``--root`` ela só roda se ``--code`` apontar o código a varrer.
 Roda o MESMO validador do ``BotPool``; o CI não é fronteira (I-8), então a saída leva só chaves e motivos, nunca texto de catálogo.
 """
 
@@ -51,8 +52,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--code",
         type=Path,
-        default=PACKAGE_DIR,
-        help="pasta do código varrida atrás de chaves usadas (padrão: o pacote)",
+        default=None,
+        help="pasta do código varrida atrás de chaves usadas (padrão: o pacote, e só sem --root)",
     )
     args = parser.parse_args(argv)
 
@@ -79,8 +80,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif data.coverage < 1.0:
             problems.append(f"{name}: cobertura abaixo de 100%")
     reference = loaded.get(rules.REFERENCE_LOCALE)
-    if reference is not None:
-        for key in missing_keys(used_keys(args.code), reference.entries):
+    code_dir = args.code if args.code is not None else PACKAGE_DIR if args.root is None else None
+    if reference is not None and code_dir is not None:
+        for key in missing_keys(used_keys(code_dir), reference.entries):
             problems.append(f"chave usada no código e ausente no {rules.REFERENCE_LOCALE}: {key}")
     for problem in problems:
         sys.stderr.write(f"ERRO {problem}\n")

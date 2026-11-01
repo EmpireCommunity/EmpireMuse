@@ -176,18 +176,10 @@ class PlayerMessageMixin:
         hints = list(self.initial_hints)
 
         if self.static:
-            hints.append(
-                "É possível fixar músicas/playlists na mensagem do player quando tiver no modo de "
-                "espera/oscioso para permitir os membros ouvi-las de forma pública. Pra isso use o "
-                f"comando /fav_manager ou {self.prefix_info}favmanager (apenas membros com permissão "
-                "de gerenciar servidor podem usar esse recurso)."
-            )
+            hints.append(self.tr("player.you_can_pin_songs_playlists", prefix_info=str(self.prefix_info)))
 
         elif self.bot.intents.message_content and self.controller_mode:
-            hints.append(
-                "Ao criar uma conversa/thread na mensagem do player, será ativado o modo de song-request "
-                "nela (possibilitando pedir música apenas enviando o nome/link da música na conversa)."
-            )
+            hints.append(self.tr("player.creating_a_thread_on_the"))
 
         if len(self.bot.pool.get_guild_bots(self.guild.id)) > 1:
             bots_in_guild = 0
@@ -210,25 +202,18 @@ class PlayerMessageMixin:
 
             if bots_in_guild:
                 hints.append(
-                    "Caso algum membro queira me usar em outro canal de voz sem precisar aguardar me "
-                    f"desconectarem ou me interromperem do canal atual, há mais {bots_in_guild} bot{'s'[: bots_in_guild ^ 1]} no servidor que "
-                    f"funciona{'m'[: bots_in_guild ^ 1]} com o meu sistema/comandos (usando o mesmo prefixo/comandos de barra). "
-                    f"Experimente entrar em um canal de voz diferente do meu atual e use o comando "
-                    f"{self.prefix_info}play ou /play."
+                    self.tr("player.hint.bots_in_guild", count=bots_in_guild, prefix_info=str(self.prefix_info))
                 )
 
             elif bots_outside_guild:
                 hints.append(
-                    "Caso algum membro queira me usar em outro canal de voz sem precisar aguardar me "
-                    f"desconectarem ou me interromperem do canal atual. Dá para adicionar mais {bots_outside_guild} bot{'s'[: bots_outside_guild ^ 1]} "
-                    f"extras no servidor atual que funciona(m) com o mesmo sistema/comandos (usando o mesmo "
-                    f"prefixo/comandos de barra). Use o comando {self.prefix_info}invite ou /invite para adicioná-los."
+                    self.tr(
+                        "player.hint.bots_outside_guild", count=bots_outside_guild, prefix_info=str(self.prefix_info)
+                    )
                 )
 
         if self.controller_mode:
-            hints.append(
-                "Ao clicar nesse emoji 🎛️ das mensagens de alguns comandos você será redirecionado para o player-controller."
-            )
+            hints.append(self.tr("player.clicking_this_emoji_in_the"))
 
         random.shuffle(hints)
         self.hints = cycle(hints)

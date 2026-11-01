@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 import disnake
 import pytest
 
+from empiremuse.i18n import get_i18n
 from empiremuse.utils.others import send_idle_embed
 
 pytestmark = [pytest.mark.critical, pytest.mark.asyncio]
@@ -50,7 +51,7 @@ async def sem_playlists(gid):
 
 def bot_falso():
     return SimpleNamespace(
-        pool=SimpleNamespace(servers=SimpleNamespace(playlists=SimpleNamespace(list=sem_playlists))),
+        pool=SimpleNamespace(servers=SimpleNamespace(playlists=SimpleNamespace(list=sem_playlists)), i18n=get_i18n()),
         music=SimpleNamespace(nodes={}),
         get_color=lambda *a: 0,
         get_global_command_named=lambda *a, **k: None,

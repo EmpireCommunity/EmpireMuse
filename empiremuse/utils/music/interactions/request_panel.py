@@ -14,47 +14,46 @@ from typing import Any
 
 import disnake
 
+from empiremuse.rules.i18n import Translator, fit
 from empiremuse.rules.request_panel import PAUSED, PanelEntry
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
 from empiremuse.utils.music.converters import md_code, md_link
 from empiremuse.utils.others import PlayerControls
 
-MSG_JOIN_A_CALL = "**Entre na call em que um dos bots está tocando para usar isto.**"
-TITLE = "🎶 Pedidos de música"
-FOOTER = "Os botões e o select agem no player da call em que você está."
 LAST_ACTION_MAX = 200
 
-_STATE = {PAUSED: ("⏸️", "Em pausa"), "playing": ("▶️", "Tocando")}
+_STATE = {PAUSED: ("⏸️", "player.panel.state_paused"), "playing": ("▶️", "player.panel.state_playing")}
 
 
-def _header(entry: PanelEntry) -> str:
+def _header(entry: PanelEntry, tr: Translator) -> str:
     """Nome do campo (texto puro no Discord: sem markdown nem menção): estado, bot e call."""
     icon, _ = _STATE.get(entry.state, _STATE["playing"])
-    call = "canal privado" if entry.private else entry.voice_name
+    call = tr("player.panel.private_call") if entry.private else entry.voice_name
     return f"{icon} {entry.bot_name} · 🔊 {call}"[:256]
 
 
-def _body(entry: PanelEntry) -> str:
+def _body(entry: PanelEntry, tr: Translator) -> str:
     if entry.private:
-        return "-# 🔒 A call é privada: a faixa não aparece aqui."
-    _, state = _STATE.get(entry.state, _STATE["playing"])
-    track = md_link(entry.title, entry.url, limit=60) if entry.title else "`sem faixa`"
+        return tr("player.panel.private_body")
+    _, state_key = _STATE.get(entry.state, _STATE["playing"])
+    state = tr(state_key)
+    track = md_link(entry.title, entry.url, limit=60) if entry.title else tr("player.panel.no_track")
     line = f"-# {state}: {track}"
     details = []
     if entry.requester:
         details.append(f"✋ {md_code(entry.requester, limit=32)}")
     if entry.queue:
-        details.append(f"📑 {entry.queue} na fila")
+        details.append(tr("player.panel.queue_count", count=entry.queue))
     if details:
         line += "\n-# " + " · ".join(details)
     return line[:1024]
 
 
-def _buttons(bot: Any, *, paused: bool) -> list[disnake.ui.Button]:
+def _buttons(bot: Any, tr: Translator, *, paused: bool) -> list[disnake.ui.Button]:
     """Os botões comuns: pedir, pausar/retomar, pular, parar e favoritos; o estado de pausa vem de todos os players."""
     return [
         disnake.ui.Button(
-            label="Pedir uma música",
+            label=fit(tr("player.request_a_song"), 80),
             emoji=app_emoji(bot, "music_notes"),
             style=disnake.ButtonStyle.primary,
             custom_id=PlayerControls.add_song,
@@ -75,31 +74,31 @@ def render_panel(
     guild: disnake.Guild,
     entries: Sequence[PanelEntry],
     *,
+    tr: Translator,
     playlist_options: Sequence[disnake.SelectOption] = (),
     last_action: str = "",
 ) -> dict[str, Any]:
     """A mensagem do painel com 2+ players: ``{"content", "embeds", "components"}`` (quem envia põe ``AllowedMentions.none()``)."""
-    embed = disnake.Embed(title=TITLE, color=bot.get_color(guild.me))
-    embed.description = (
-        f"Entre em um canal de voz e peça uma música aqui no canal (ou pelo botão abaixo). "
-        f"**{len(entries)} players ativos** neste servidor:"
-    )
+    embed = disnake.Embed(title=tr("player.panel.title"), color=bot.get_color(guild.me))
+    embed.description = tr("player.panel.intro", count=len(entries))
     for entry in entries[:25]:  # um embed tem no máximo 25 campos
-        embed.add_field(name=_header(entry), value=_body(entry), inline=False)
-    footer = FOOTER
+        embed.add_field(name=_header(entry, tr), value=_body(entry, tr), inline=False)
+    footer = tr("player.panel.footer")
     if last_action:
-        footer = f"Última ação: {last_action.replace('**', '')[:LAST_ACTION_MAX]}\n{FOOTER}"
+        footer = tr(
+            "player.panel.last_action_footer", action=last_action.replace("**", "")[:LAST_ACTION_MAX], footer=footer
+        )
     embed.set_footer(text=footer)
     embed.set_thumbnail(guild.me.display_avatar.replace(size=256).url)
 
     components: list[Any] = [
-        disnake.ui.ActionRow(*_buttons(bot, paused=all(e.state == PAUSED for e in entries) if entries else False))
+        disnake.ui.ActionRow(*_buttons(bot, tr, paused=all(e.state == PAUSED for e in entries) if entries else False))
     ]
     if playlist_options:
         components.append(
             disnake.ui.ActionRow(
                 disnake.ui.Select(
-                    placeholder="Playlists do servidor (toca na sua call).",
+                    placeholder=fit(tr("player.panel.playlists.placeholder"), 150),
                     options=list(playlist_options)[:25],
                     custom_id="player_guild_pin",
                     min_values=0,

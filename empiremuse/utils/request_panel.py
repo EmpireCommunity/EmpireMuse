@@ -177,6 +177,7 @@ class RequestPanel:
                 panel_bot,
                 message.guild,
                 entries,
+                tr=await self.pool.i18n.for_guild(message.guild),
                 playlist_options=await load_select_options(panel_bot, guild_id),
             )
             await message.edit(allowed_mentions=NO_MENTIONS, **payload)

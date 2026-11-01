@@ -9,6 +9,7 @@ comando nem o ``value`` de uma choice (I-6).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Mapping
 from pathlib import Path
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+FIRST_RESPONSE_BUDGET = 0.8  # s: bem abaixo dos 3 s da primeira resposta de uma interação
 PROVIDER_KINDS = ("description", "choice", "name")
 
 
@@ -70,6 +72,9 @@ class I18n:
         self._enabled: frozenset[str] = frozenset(rules.REQUIRED_LOCALES)
         self._translators: dict[str, rules.Translator] = {}
         self._warned: set[tuple[str, str]] = set()
+        self._reads: dict[
+            int, asyncio.Future[rules.Translator]
+        ] = {}  # leituras de idioma em andamento (uma por servidor)
         self._groups: dict[
             str, str
         ] = {}  # chave de descrição de comando -> grupo da legenda (registrado na declaração)
@@ -164,6 +169,39 @@ class I18n:
             return None
         return value if isinstance(value, str) else None
 
+    async def for_guild_within(self, guild: Any | None, seconds: float = FIRST_RESPONSE_BUDGET) -> rules.Translator:
+        """O tradutor do servidor SEM segurar a primeira resposta: um modal não pode vir depois de um ``defer``.
+
+        Lê ``settings.language`` (cache do store; o banco só numa falha de cache) por no máximo ``seconds``. Passou do prazo: usa o idioma do
+        Discord do servidor agora, e a leitura (protegida contra o cancelamento) termina em segundo plano e esquenta o cache do próximo clique.
+        """
+        task = self._read_in_flight(guild)
+        try:
+            return await asyncio.wait_for(asyncio.shield(task), seconds)
+        except TimeoutError:
+            return self.for_locale(self.resolve(None, _locale_value(getattr(guild, "preferred_locale", None))))
+
+    def _read_in_flight(self, guild: Any | None) -> asyncio.Future[rules.Translator]:
+        """A leitura do idioma de ``guild`` em andamento, ou uma nova: cliques repetidos num store lento não empilham consultas."""
+        key = getattr(guild, "id", None)
+        task = self._reads.get(key) if key is not None else None
+        if task is not None and not task.done():
+            return task
+        task = asyncio.ensure_future(self.for_guild(guild))
+        task.add_done_callback(_consume_result)
+        if key is not None:
+            self._reads[key] = task
+            task.add_done_callback(
+                lambda done, key=key: self._reads.pop(key, None) if self._reads.get(key) is done else None
+            )
+        return task
+
+    def close(self) -> None:
+        """No encerramento do pool: cancela as leituras de idioma que ficaram pendentes."""
+        for task in list(self._reads.values()):
+            task.cancel()
+        self._reads.clear()
+
     async def ack_for_guild(self, interaction: Any) -> rules.Translator:
         """Confirma a interação (efêmera) se ainda não foi respondida e SÓ ENTÃO resolve o idioma do servidor.
 
@@ -198,6 +236,7 @@ class I18n:
                 if guild is None or player is None:
                     continue
                 player.tr = await self.for_guild(guild)
+                _refresh_hints(player)
                 await player.invoke_np(force=True)
             except Exception as error:  # noqa: BLE001 - enfeite sobre uma configuração já gravada
                 logger.warning("Idioma do player não aplicado [%s] (%s)", guild_id, type(error).__name__)
@@ -237,6 +276,23 @@ class I18n:
         if base is None:
             raise KeyError(key)
         return disnake.Localized(base, key=key)
+
+
+def _refresh_hints(player: Any) -> None:
+    """As dicas do player nascem no idioma do ``player.tr``: refaz quando ele muda. Player sem dicas (ou que falha) é pulado."""
+    try:
+        player.setup_hints()
+        player.process_hint()
+    except Exception:  # noqa: BLE001 - enfeite; o idioma já foi aplicado
+        return
+
+
+def _consume_result(task: asyncio.Future[Any]) -> None:
+    """Lê o desfecho de uma leitura em segundo plano (o asyncio não avisa de exceção nunca recuperada) e registra só o TIPO da falha."""
+    if task.cancelled():
+        return
+    if (error := task.exception()) is not None:
+        logger.warning("Falha na leitura do idioma do servidor em segundo plano (%s)", type(error).__name__)
 
 
 def _locale_value(locale: Any) -> str | None:

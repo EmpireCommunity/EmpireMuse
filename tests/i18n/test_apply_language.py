@@ -1,7 +1,7 @@
 """``apply_language`` (item 21, §7): depois da troca de idioma o controller sai no idioma novo, e um player com falha não impede os demais."""
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -25,7 +25,10 @@ def i18n(tmp_path):
 
 def bot_with_player(i18n, *, preferred="en-US", fails=False, guild=True):
     player = SimpleNamespace(
-        tr=i18n.for_locale("pt-BR"), invoke_np=AsyncMock(side_effect=RuntimeError("falha") if fails else None)
+        tr=i18n.for_locale("pt-BR"),
+        invoke_np=AsyncMock(side_effect=RuntimeError("falha") if fails else None),
+        setup_hints=MagicMock(),
+        process_hint=MagicMock(),
     )
     server = SimpleNamespace(id=GID, preferred_locale=preferred) if guild else None
     bot = SimpleNamespace(
@@ -87,3 +90,14 @@ async def test_without_a_pool_it_does_nothing(i18n):
     i18n.pool = None
 
     await i18n.apply_language(GID)
+
+
+@pytest.mark.asyncio
+async def test_the_hints_are_rebuilt_in_the_new_language(i18n):
+    bot, player = bot_with_player(i18n)
+    attach(i18n, "en-US", bot)
+
+    await i18n.apply_language(GID)
+
+    player.setup_hints.assert_called_once_with()
+    player.process_hint.assert_called_once_with()

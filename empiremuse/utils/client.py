@@ -691,6 +691,7 @@ class BotPool:
             task.cancel()
         if self.request_panel:
             self.request_panel.close()
+        self.i18n.close()  # leituras de idioma que ficaram pendentes
         for bot in self.get_all_bots():
             try:
                 if not bot.is_closed():

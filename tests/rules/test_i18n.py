@@ -524,6 +524,15 @@ class TestReviewFindings:
 
         assert "cmd.pause.description" in dict(report.dropped)
 
+    def test_an_unknown_group_label_never_enters_the_prefix(self):
+        ref = {"cmd.music._label": "Music", "cmd.pause.description": "p" * 80}
+        data = {"cmd.music._label": "Música", "cmd.fake._label": "F" * 60, "cmd.pause.description": "p" * 86}
+
+        report = rules.validate_catalog("es-ES", "commands", raw(data), ref)
+
+        assert dict(report.dropped)["cmd.fake._label"] == rules.KEY_INVALID
+        assert "cmd.pause.description" in report.entries  # a legenda inventada não encurta a descrição válida
+
     def test_a_dropped_label_falls_back_to_the_reference_label_for_the_size(self):
         ref = {"cmd.music._label": "Music", "cmd.pause.description": "p" * 80}
         data = {"cmd.music._label": "M​", "cmd.pause.description": "p" * 90}

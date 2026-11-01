@@ -97,7 +97,7 @@ async def _pc_modal_integration_options(self, req):
 
         modal_components.append(
             disnake.ui.Label(
-                text="💠⠂Integrações:",
+                text=req.tr("player.integrations"),
                 component=disnake.ui.StringSelect(
                     options=integration_opts, required=False, min_values=0, custom_id="integration_links"
                 ),
@@ -112,20 +112,21 @@ async def _pc_modal_send(self, req):
     """Envia o modal de pedido de música."""
     interaction = req.interaction
     modal_components = req.modal_components
+    tr = req.tr
 
     modal_components = [
         disnake.ui.Label(
-            text="Nome ou link do youtube/spotify/soundcloud...",
+            text=fit(tr("player.name_or_link_from_youtube"), 45),
             component=disnake.ui.TextInput(custom_id="song_input", max_length=150, required=not modal_components),
         ),
         disnake.ui.Label(
-            text="Posição da fila (número).",
+            text=fit(tr("player.queue_position_number"), 45),
             component=disnake.ui.TextInput(custom_id="song_position", max_length=3, required=False),
         ),
     ] + modal_components
 
     await interaction.response.send_modal(
-        title="Pedir uma música",
+        title=fit(tr("player.request_a_song"), 45),
         custom_id="modal_add_song" + (f"_{interaction.message.id}" if interaction.message.thread else ""),
         components=modal_components,
     )
@@ -154,17 +155,25 @@ async def _pc_lastfm(self, req):
             cmd = "/lastfm"
 
         await interaction.edit_original_message(
-            content=f"Você não possui uma conta do last.fm vinculada nos meus dados. "
-            f"Você pode vincular uma conta do last.fm usando o comando {cmd}."
+            content=(await self.bot.pool.i18n.for_guild(req.interaction.guild))(
+                "player.you_do_not_have_a", cmd=str(cmd)
+            )
         )
         return True
 
     user_data["lastfm"]["scrobble"] = not user_data["lastfm"]["scrobble"]
     self.bot.pool.lastfm_sessions[interaction.author.id] = user_data["lastfm"]
     await self.bot.update_global_data(interaction.author.id, user_data, db_name=DBModel.users)
+    lastfm = user_data["lastfm"]
+    account = md_link(lastfm["username"], f"https://www.last.fm/user/{lastfm['username']}", code=False)
+    tr = await self.bot.pool.i18n.for_guild(interaction.guild)
     await interaction.edit_original_message(
         embed=disnake.Embed(
-            description=f"**O scrobble/registro de músicas foi {'ativado' if user_data['lastfm']['scrobble'] else 'desativado'} na conta: {md_link(user_data['lastfm']['username'], f'https://www.last.fm/user/{user_data["lastfm"]["username"]}', code=False)}.**",
+            description=(
+                tr("player.scrobble_enabled", account=account)
+                if lastfm["scrobble"]
+                else tr("player.scrobble_disabled", account=account)
+            ),
             color=self.bot.get_color(),
         )
     )
@@ -198,9 +207,9 @@ async def _pc_route_panel_click(self, req) -> bool:
 
     resolved = resolve_player(pool, interaction.guild_id, interaction.author)
     if resolved is None:
-        from empiremuse.utils.music.interactions.request_panel import MSG_JOIN_A_CALL
-
-        await interaction.send(MSG_JOIN_A_CALL, ephemeral=True)
+        await interaction.send(
+            (await self.bot.pool.i18n.for_guild(interaction.guild))("player.panel.join_a_call"), ephemeral=True
+        )
         return True
     bot, _ = resolved
     if bot is self.bot:
@@ -255,16 +264,9 @@ async def _pc_help_button(self, req):
     interaction = req.interaction
 
     embed = disnake.Embed(
-        description="📘 **IFORMAÇÕES SOBRE OS BOTÕES** 📘\n\n"
-        "⏯️ `= Pausar/Retomar a música.`\n"
-        "⏮️ `= Voltar para a música tocada anteriormente.`\n"
-        "⏭️ `= Pular para a próxima música.`\n"
-        "🔀 `= Misturar as músicas da fila.`\n"
-        "🎶 `= Adicionar música/playlist/favorito.`\n"
-        "⏹️ `= Parar o player e me desconectar do canal.`\n"
-        "📑 `= Exibir a fila de música.`\n"
-        "🛠️ `= Alterar algumas configurações do player:`\n"
-        "`volume / efeito nightcore / repetição / modo restrito.`\n",
+        description=(await self.bot.pool.i18n.for_guild(req.interaction.guild))(
+            "player.information_about_the_buttons_pause"
+        ),
         color=self.bot.get_color(interaction.guild.me),
     )
 
@@ -345,7 +347,9 @@ async def _pc_favorite_select(self, req):
         await interaction.send(
             embed=disnake.Embed(
                 color=self.bot.get_color(interaction.guild.me),
-                description=f"### Selecione um item da música atual para adicionar nos seus favoritos:\n\n{msg}",
+                description=(await self.bot.pool.i18n.for_guild(req.interaction.guild))(
+                    "player.select_an_item_from_the", msg=str(msg)
+                ),
             ),
             view=view,
             ephemeral=True,
@@ -362,7 +366,10 @@ async def _pc_favorite_select(self, req):
                 pass
             await interaction.edit_original_message(
                 embed=disnake.Embed(
-                    color=self.bot.get_color(interaction.guild.me), description="### Operação cancelada!"
+                    color=self.bot.get_color(interaction.guild.me),
+                    description=(await self.bot.pool.i18n.for_guild(req.interaction.guild))(
+                        "player.operation_cancelled.description"
+                    ),
                 ),
                 view=None,
             )
@@ -422,12 +429,14 @@ async def _pc_favorite_save(self, req):
     await interaction.edit_original_response(
         embed=disnake.Embed(
             color=self.bot.get_color(interaction.guild.me),
-            description="### Item adicionado/editado com sucesso nos seus favoritos:\n\n"
-            f"**{select_type}:** {md_link(info['name'], info['url'])}\n\n"
-            f"### Como usar?\n"
-            f"* Usando o comando {slashcmd} (no preenchimento automático da busca)\n"
-            f"* Clicando no botão/select de tocar favorito/integração do player.\n"
-            f"* Usando o comando {global_data['prefix'] or self.bot.default_prefix}{self.play_legacy.name} sem incluir um nome ou link de uma música/vídeo.",
+            description=(await self.bot.pool.i18n.for_guild(req.interaction.guild))(
+                "player.item_added_edited_successfully_in",
+                select_type=str(select_type),
+                md_link=str(md_link(info["name"], info["url"])),
+                slashcmd=str(slashcmd),
+                v=str(global_data["prefix"] or self.bot.default_prefix),
+                name=str(self.play_legacy.name),
+            ),
         ),
         view=None,
     )

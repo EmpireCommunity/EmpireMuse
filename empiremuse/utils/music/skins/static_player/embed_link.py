@@ -116,14 +116,17 @@ class EmbedLinkStaticSkin:
             )
 
         if qsize := len(player.queue):
-            qtext = "> -# **Músicas na lista"
-
-            if qsize > 4:
-                qtext += f" [{qsize}]:"
-
-            qtext += "**\n" + "\n".join(
-                f"> -# `{(n + 1)} [{time_format(t.duration) if not t.is_stream else '🔴 stream'}]` {md_link(t.title, t.uri, limit=30)}"
-                for n, t in enumerate(itertools.islice(player.queue, 4))
+            qtext = (
+                (
+                    player.tr("player.queue.list_count_header", size=qsize)
+                    if qsize > 4
+                    else player.tr("player.queue.list_header")
+                )
+                + "\n"
+                + "\n".join(
+                    f"> -# `{(n + 1)} [{time_format(t.duration) if not t.is_stream else '🔴 stream'}]` {md_link(t.title, t.uri, limit=30)}"
+                    for n, t in enumerate(itertools.islice(player.queue, 4))
+                )
             )
 
             txt = f"{qtext}\n{txt}"

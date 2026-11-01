@@ -384,11 +384,13 @@ async def _pc_fav_embed_reply(self, req):
 
     await interaction.send(
         embed=disnake.Embed(
-            description=f"{md_link(fav_name, embed.author.url)} **foi adicionado nos seus favoritos!**\n\n"
-            "**Como usar?**\n"
-            f"* Usando o comando {cmd} (selecionando o favorito no preenchimento automático da busca)\n"
-            "* Clicando no botão/select de tocar favorito/integração do player.\n"
-            f"* Usando o comando {global_data['prefix'] or self.bot.default_prefix}{self.play_legacy.name} sem incluir um nome ou link de uma música/vídeo.\n"
+            description=(await self.bot.pool.i18n.for_guild(req.interaction.guild))(
+                "player.was_added_to_your_favorites",
+                md_link=str(md_link(fav_name, embed.author.url)),
+                cmd=str(cmd),
+                v=str(global_data["prefix"] or self.bot.default_prefix),
+                name=str(self.play_legacy.name),
+            )
         ).set_footer(
             text=f"Caso queira ver todos os seus favoritos use o comando {global_data['prefix'] or self.bot.default_prefix}{self.fav_manager_legacy.name}"
         ),

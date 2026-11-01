@@ -142,19 +142,6 @@ class LavalinkPlayer(
 
         self.extra_info = {}
 
-        self.initial_hints = [
-            f"É possível alterar a skin/aparência do player usando o comando /change_skin ou {self.prefix_info}skin "
-            f"(Apenas membros com permissão de gerenciar servidor podem usar esse comando).",
-            "Dê uma nova cara para o player de música no servidor criando skins personalizadas. Experimente usando "
-            f"o comando /custom_skin ou {self.prefix_info}customskin (Apenas membros com permissão de administrador "
-            "podem usar esse comando).",
-            "É possível definir o status automático no canal de voz com informações sobre "
-            "a música que está sendo tocada no momento. Experimente usando o comando /set_voice_status ou "
-            f"{self.prefix_info}stageannounce (Apenas membros com permissão de gerenciar servidor podem usar esse recurso).",
-            f"Caso a música esteja com lag, audio travando etc. Experimente alterar a região do canal de voz "
-            f"(caso esteja em um palco/stage use o comando {self.prefix_info}stageregion).",
-        ]
-
         self.retry_setup_hints = False
 
         hint_platforms = ["youtube, soundcloud"]
@@ -164,24 +151,13 @@ class LavalinkPlayer(
 
         hint_platforms.append("deezer")
 
-        if self.bot.config["LASTFM_KEY"] and self.bot.config["LASTFM_SECRET"]:
-            self.initial_hints.append(
-                f"Você pode vincular uma conta do last.fm para registrar as músicas que você ouvir por aqui na sua "
-                f"lista de músicas tocadas. Experimente usando o comando /lastfm ou {self.prefix_info}lastfm."
-            )
-
-        if hint_platforms:
-            self.initial_hints.append(
-                "Você pode adicionar/integrar link de perfis/canais do " + " e ".join(hint_platforms) + " para tocar "
-                f"playlists pública que tem no canal/perfil via comando {self.prefix_info}play (sem incluir "
-                "nome/link) ou no comando /play (via preenchimento automático da busca). Experimente usando o "
-                f'comando /fav_manager ou {self.prefix_info}favmanager selecionando a opção "integrações".'
-            )
-
+        # as dicas fixas são montadas em ``initial_hints`` a cada ``setup_hints``, no idioma de ``self.tr`` naquele momento
+        self._hint_platforms = hint_platforms
+        self._hint_lastfm = bool(self.bot.config["LASTFM_KEY"] and self.bot.config["LASTFM_SECRET"])
         try:
-            self.initial_hints.extend(kwargs.pop("extra_hints"))
+            self._extra_hints = list(kwargs.pop("extra_hints"))
         except Exception:
-            pass
+            self._extra_hints = []
 
         self.lastfm_users = {}
 
@@ -196,8 +172,28 @@ class LavalinkPlayer(
 
         self.bot.dispatch("player_create", player=self)
 
+    @property
+    def initial_hints(self) -> list[str]:
+        """As dicas fixas no idioma de ``self.tr`` AGORA (o ``setup_hints`` as relê quando o idioma do servidor muda)."""
+        prefix = str(self.prefix_info)
+        hints = [
+            self.tr("player.you_can_change_the_skin", prefix_info=prefix),
+            self.tr("player.give_the_music_player_on", prefix_info=prefix),
+            self.tr("player.you_can_set_the_automatic", prefix_info=prefix),
+            self.tr("player.if_the_song_is_lagging", prefix_info=prefix),
+        ]
+        if self._hint_lastfm:
+            hints.append(self.tr("player.you_can_link_a_last", prefix_info=prefix))
+        if self._hint_platforms:
+            platforms = self.tr("player.hint.platforms_join").join(self._hint_platforms)
+            hints.append(self.tr("player.hint.integrations", platforms=platforms, prefix_info=prefix))
+        hints.extend(self._extra_hints)
+        return hints
+
     def __str__(self) -> str:
-        return f"Servidor de música atual: {self.node.identifier} (v{self.node.version})"
+        return self.tr(
+            "player.current_music_server_v", identifier=str(self.node.identifier), version=str(self.node.version)
+        )
 
     def __repr__(self):
         return (
@@ -266,13 +262,17 @@ class LavalinkPlayer(
         cog = self.bot.get_cog("Music")
 
         if cog and cog.error_report_queue:
-            embed.description += (
-                f"\n**Fonte:** {md_code(track.info['sourceName'])}"
-                f"\n**Servidor:** {md_code(f'{self.guild.name} [{self.guild.id}]')}"
+            embed.description += self.tr(
+                "player.source_server",
+                md_code=str(md_code(track.info["sourceName"])),
+                md_code_2=str(md_code(f"{self.guild.name} [{self.guild.id}]")),
             )
 
             try:
-                embed.description += f"\n**Canal:** {md_code(f'{self.guild.me.voice.channel.name} [{self.guild.me.voice.channel.id}]')}\n"
+                embed.description += self.tr(
+                    "player.channel",
+                    md_code=str(md_code(f"{self.guild.me.voice.channel.name} [{self.guild.me.voice.channel.id}]")),
+                )
             except Exception:
                 pass
 
