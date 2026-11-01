@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import ipaddress
 import re
-from typing import Any, Optional
+from typing import Any, NamedTuple, Optional
+from urllib.parse import urlsplit
 
 from empiremuse.rules.errors import URL_INVALID, URL_TOO_LONG, RuleError
 from empiremuse.rules.limits import ITG_AVATAR_MAX
@@ -57,3 +59,62 @@ def clean_avatar(avatar) -> Optional[str]:
     if avatar is None or avatar == "":
         return ""
     return clean_url(avatar, ITG_AVATAR_MAX)
+
+
+# ---------------------------------------------------------------------- link que vai para o Lavalink (filtro de IP)
+
+_AMBIGUOUS_NUMERIC_HOST = re.compile(r"(?:0x[0-9a-f]*|\d+)(?:\.(?:0x[0-9a-f]*|\d+))*", re.IGNORECASE)
+_BAD_URL_CHARS = re.compile(
+    r"[\x00-\x1f\x7f\\]"
+)  # controle (tab, quebra de linha: alguns parsers os apagam no meio do link) e barra invertida
+
+
+LAVALINK_FETCH_SCHEMES = (
+    "http://",
+    "https://",
+    "icy://",
+)  # o que o Lavalink busca como http (o lavaplayer converte icy:// em http://)
+
+
+class UrlTarget(NamedTuple):
+    """O destino de um link http(s) que vai ao Lavalink. ``refused``: a sintaxe é ambígua ou perigosa e o link nem chega a ser resolvido."""
+
+    host: str  # em minúsculas, sem colchetes nem ponto final; vazio se a sintaxe foi recusada
+    refused: bool = False
+
+
+def lavalink_target(query: object) -> Optional[UrlTarget]:
+    """O host de um link ``http(s)://`` que o Lavalink buscaria, ou ``None`` se o texto não é link (busca por nome, ``ytsearch:...``).
+
+    Recusa por sintaxe, antes de qualquer DNS, o que cada parser lê de um jeito: ``usuário@host``, barra invertida, espaço/controle no
+    link, porta inválida, host vazio e host numérico fora da forma canônica (``2130706433``, ``0x7f.1``, ``010.0.0.1``, ``127.1``), porque
+    a biblioteca do Lavalink e o sistema podem resolvê-lo para endereços diferentes do que aqui se conferiu."""
+    if not isinstance(query, str):
+        return None
+    text = query.strip().strip("<>").strip()
+    if not text[:8].lower().startswith(LAVALINK_FETCH_SCHEMES):
+        return None
+    if _BAD_URL_CHARS.search(text):
+        return UrlTarget("", True)
+    token = text.split(" ", 1)[0]  # o que vem depois do 1º espaço não é o link (um pedido pode ter texto junto)
+    if re.search(r"[@/]", text[len(token) :]):
+        return UrlTarget(
+            "", True
+        )  # "http://bom.example @127.0.0.1/x": o Lavalink recebe o texto INTEIRO, e um parser leniente leria outro host
+    try:
+        parts = urlsplit(token)
+        parts.port  # noqa: B018 - levanta ValueError numa porta inválida
+        host = parts.hostname
+    except ValueError:
+        return UrlTarget("", True)
+    if "@" in parts.netloc or not host:
+        return UrlTarget("", True)
+    host = host.rstrip(".").lower()
+    if not host or not host.isascii():  # link de música é ASCII; IDN é lido de um jeito aqui e de outro no Java
+        return UrlTarget("", True)
+    if _AMBIGUOUS_NUMERIC_HOST.fullmatch(host):
+        try:
+            ipaddress.ip_address(host)
+        except ValueError:
+            return UrlTarget(host, True)
+    return UrlTarget(host)
