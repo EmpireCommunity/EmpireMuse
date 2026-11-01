@@ -6,6 +6,7 @@ import json
 import logging
 from copy import deepcopy
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -257,7 +258,7 @@ def test_the_boot_migration_moves_only_the_leading_emoji_and_runs_once(world, ca
     world.banco.put(*SERVERS, GID, stored)
 
     with caplog.at_level(logging.INFO):
-        assert run(world.playlists.migrate_icons()) == (1, 1)
+        assert run(world.playlists.migrate_icons()) == (1, 1, (GID,))
 
     saved = world.banco.servers_doc()["playlists"]
     assert [(p["name"], p.get("icon")) for p in saved] == [
@@ -270,8 +271,46 @@ def test_the_boot_migration_moves_only_the_leading_emoji_and_runs_once(world, ca
     assert world.banco.servers_doc()["rev"] == 5
     assert "Red Line" not in caplog.text and "Funk" not in caplog.text  # o log leva só contagens
 
-    assert run(world.playlists.migrate_icons()) == (0, 0)  # segunda vez: nada muda
+    assert run(world.playlists.migrate_icons()) == (0, 0, ())  # segunda vez: nada muda
     assert world.banco.servers_doc()["rev"] == 5 and len(world.banco.saves) == 1
+
+
+def test_a_select_value_from_before_the_migration_still_finds_the_playlist(world):
+    """Regressão: a mensagem montada na 2.1.3 guarda ``> pin: 🔴 Red Line``; a migração renomeou o item para ``Red Line`` + ícone."""
+    stored = {**new_doc(), "_id": str(GID)}
+    stored["migrated"] = {section: True for section in stored["migrated"]}
+    stored["playlists"] = [
+        {**item("🔴 Red Line", 1, url=f"{BASE}red")._asdict(), "genres": []},
+        {**item("Rock", 2, url=f"{BASE}rock")._asdict(), "genres": []},
+    ]
+    world.banco.put(*SERVERS, GID, stored)
+    run(world.playlists.migrate_icons())
+
+    assert run(world.playlists.find(GID, "🔴 Red Line")).name == "Red Line"  # valor velho do select
+    assert run(world.playlists.find(GID, "red line")).name == "Red Line"  # nome exato, sem diferenciar caixa
+    assert run(world.playlists.find(GID, "🎧 Rock")).name == "Rock"  # o emoji só é tirado se nada casa exato
+    assert run(world.playlists.find(GID, "🔴 Inexistente")) is None
+
+
+def test_the_boot_migration_redraws_the_panel_of_each_changed_server_only_when_the_bots_are_ready():
+    from empiremuse.utils.client import BotPool
+
+    order = []
+    ready = SimpleNamespace(wait_until_ready=AsyncMock(side_effect=lambda: order.append("ready")))
+    playlists = SimpleNamespace(
+        migrate_icons=AsyncMock(return_value=(2, 3, (GID, GID + 1))),
+        refresh_idle=MagicMock(side_effect=lambda gid: order.append(gid)),
+    )
+    pool = SimpleNamespace(servers=SimpleNamespace(playlists=playlists), get_all_bots=lambda: [ready])
+
+    run(BotPool.migrate_playlist_icons(pool))
+
+    assert order == ["ready", GID, GID + 1]
+
+    playlists.migrate_icons.return_value = (0, 0, ())  # nada mudou: ninguém espera nem redesenha
+    order.clear()
+    run(BotPool.migrate_playlist_icons(pool))
+    assert order == []
 
 
 # ---------------------------------------------------------------------- A5: escritas simultâneas e versão velha
