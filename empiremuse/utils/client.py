@@ -47,6 +47,7 @@ from empiremuse.logs.aggregate import AGGREGATE_WINDOW
 from empiremuse.logs.boot import BootReport, check_new_version
 from empiremuse.logs.context import guild_extra
 from empiremuse.logs.errors import command_context, install_exception_handlers
+from empiremuse.logs.alarm import DegradationAlarm
 from empiremuse.logs.metrics import SUMMARY_PREFIX, MetricsCollector, NodeSample, format_summary
 from empiremuse.logs.metrics import process_stats as metrics_process_stats
 from empiremuse.rules.bot_roles import NOTICE_WINDOW_SECONDS, main_missing_hint
@@ -128,6 +129,17 @@ def _node_sample(identifier: str, node) -> NodeSample:
         round(stats.lavalink_load * 100, 1),
         round(stats.memory_used / 1048576, 1),
         *((stats.frames_sent, stats.frames_nulled, stats.frames_deficit) if stats.has_frame_stats else (None,) * 3),
+    )
+
+
+def _session_players_playing(bot, node) -> int:
+    """Players deste bot tocando neste nó (com faixa e sem pausa): só eles geram os ``frameStats`` da sessão do bot."""
+    return sum(
+        1
+        for player in bot.music.players.values()
+        if getattr(player, "node", None) is node
+        and getattr(player, "is_playing", False)
+        and not getattr(player, "is_paused", False)
     )
 
 
@@ -402,6 +414,7 @@ class BotPool:
         """
         interval = parse_log_settings(self.config, os.environ)[0].metrics_interval
         summary_logger = logging.getLogger("empiremuse.metrics")
+        alarm = DegradationAlarm()
         last_summary = clock()
         while True:
             await sleep(AGGREGATE_WINDOW)
@@ -416,6 +429,7 @@ class BotPool:
                     # leitura do psutil, que bloqueia, vai para uma thread.
                     inputs = self._collect_summary_inputs()
                     java_pid = inputs.pop("java_pid")
+                    sessions = inputs.pop("node_sessions")
                     process, java = await asyncio.to_thread(_read_process_stats, process_stats, java_pid)
                     inputs["cpu_percent"], inputs["rss_mib"] = process
                     if java is not None:
@@ -423,6 +437,9 @@ class BotPool:
                     for line in format_summary(snapshot, **inputs):
                         # O 📊 é do formatter do console (emoji da categoria empiremuse.metrics); o arquivo não leva emoji.
                         summary_logger.info("%s", line.removeprefix(SUMMARY_PREFIX))
+                    # Os alertas de CPU e de quadros saem no mesmo log do resumo, uma amostra por resumo.
+                    for alert in alarm.observe(now, cpu_percent=inputs["cpu_percent"], nodes=sessions):
+                        summary_logger.warning("%s", alert)
             except asyncio.CancelledError:
                 raise
             except Exception as e:
@@ -439,6 +456,9 @@ class BotPool:
         bots = [bot for bot in self.get_all_bots() if getattr(bot, "music", None)]
         gateway_ms, voice_ms, players_active = [], [], 0
         nodes: dict[str, NodeSample] = {}
+        sessions: list[
+            NodeSample
+        ] = []  # uma amostra por bot e nó: o Lavalink calcula os quadros por sessão (um bot), não pelo nó todo
         for bot in bots:
             latency = getattr(bot, "latency", None)
             if isinstance(latency, int | float) and latency == latency and latency != float("inf"):
@@ -448,8 +468,10 @@ class BotPool:
                 if isinstance(getattr(player, "ping", None), int | float):
                     voice_ms.append(float(player.ping))
             for identifier, node in bot.music.nodes.items():
-                if identifier not in nodes:
-                    nodes[identifier] = _node_sample(identifier, node)
+                sample = _node_sample(identifier, node)
+                playing = _session_players_playing(bot, node) if sample.players is not None else None
+                sessions.append(dataclasses.replace(sample, players_playing=playing))
+                nodes.setdefault(identifier, sample)
         java_pid = getattr(getattr(self, "lavalink_instance", None), "pid", None)
         return {
             "java_pid": java_pid if java_pid and "LOCAL" in nodes else None,
@@ -460,6 +482,7 @@ class BotPool:
             "cpu_percent": None,
             "rss_mib": None,
             "nodes": list(nodes.values()),
+            "node_sessions": sessions,
         }
 
     async def connect_lavalink_queue_task(self, identifier: str):

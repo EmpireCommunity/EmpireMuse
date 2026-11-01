@@ -43,6 +43,8 @@ class NodeSample:
     frames_sent: int | None = None
     frames_nulled: int | None = None
     frames_deficit: int | None = None
+    # Players DESTA sessão (bot) tocando no nó: sem eles o Lavalink não manda ``frameStats`` da sessão, e o alarme precisa distinguir isso de dado perdido.
+    players_playing: int | None = None
 
 
 class MetricsCollector:
