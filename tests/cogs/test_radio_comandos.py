@@ -100,6 +100,8 @@ async def premium(w):
 
 
 async def run_on(w, **kwargs):
+    kwargs.setdefault("station", None)  # o callback direto não passa pelo default do commands.Param
+    kwargs.setdefault("playlist", None)
     await radio_cog.Radio.radio_on.callback(w.cog, w.inter, **kwargs)
     await settle(w)
 
@@ -174,12 +176,12 @@ class TestLigar:
 
         with pytest.raises(GenericError) as first:
             await radio_cog.Radio.radio_on.callback(
-                no_premium.cog, no_premium.inter, channel=no_premium.channel, playlist="x"
+                no_premium.cog, no_premium.inter, channel=no_premium.channel, playlist="x", station=None
             )
         radio_cog.RADIO_COOLDOWN._cache.clear()
         with pytest.raises(GenericError) as second:
             await radio_cog.Radio.radio_on.callback(
-                no_playlist.cog, no_playlist.inter, channel=no_playlist.channel, playlist="x"
+                no_playlist.cog, no_playlist.inter, channel=no_playlist.channel, playlist="x", station=None
             )
 
         assert "premium" in str(first.value) and "playlist" in str(second.value)

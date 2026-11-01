@@ -17,11 +17,14 @@ from empiremuse.rules.text import external_text
 NAME_LIMIT = 80
 
 
-def panel_payload(tr: Any, *, playlist_name: object, color: int = 0) -> dict[str, Any]:
+def panel_payload(tr: Any, *, playlist_name: object, color: int = 0, live: bool = False) -> dict[str, Any]:
     """``{"embeds", "components"}`` do painel; quem envia põe ``AllowedMentions.none()``."""
     embed = disnake.Embed(
         title=tr("radio.panel.title"),
-        description=tr("radio.panel.description", playlist=external_text(playlist_name, NAME_LIMIT)),
+        description=tr(
+            "radio.live.panel_description" if live else "radio.panel.description",
+            **{"station" if live else "playlist": external_text(playlist_name, NAME_LIMIT)},
+        ),
         color=color,
     )
     buttons = [

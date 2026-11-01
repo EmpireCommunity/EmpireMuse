@@ -137,13 +137,14 @@ class RadioRunner:
         if phase is Phase.OFF:
             self._publish(None)
             return
-        self._publish(
-            RadioState(
-                playing=phase is Phase.PLAYING,
-                paused_by_owner=phase is Phase.PAUSED_OWNER,
-                paused_by_admin=phase is Phase.PAUSED_ADMIN,
-                offline=phase in (Phase.CONNECTING, Phase.RECONNECTING),
-            )
+        self._publish(self._state(phase))
+
+    def _state(self, phase: Phase) -> RadioState:
+        return RadioState(
+            playing=phase is Phase.PLAYING,
+            paused_by_owner=phase is Phase.PAUSED_OWNER,
+            paused_by_admin=phase is Phase.PAUSED_ADMIN,
+            offline=phase in (Phase.CONNECTING, Phase.RECONNECTING),
         )
 
     async def _verdict(self) -> Allowed | None:
@@ -222,7 +223,7 @@ class RadioRunner:
     async def retry(self) -> None:
         """O recuo (5, 10, 20, 40, 60 s...): espera, reconfere premium/canal/permissão e tenta de novo. Nunca há volta imediata."""
         while not self._stopped and self.phase is not Phase.OFF:
-            await self.ports.sleep(backoff_s(self.attempt, self.ports.jitter()))
+            await self.ports.sleep(self._backoff())
             self.attempt += 1
             if self._stopped:
                 return
@@ -236,6 +237,13 @@ class RadioRunner:
                 return
             if await self._attempt():
                 return
+            await self._after_failed_attempt()
+
+    def _backoff(self) -> float:
+        return backoff_s(self.attempt, self.ports.jitter())
+
+    async def _after_failed_attempt(self) -> None:
+        """Gancho: a rádio ao vivo conta o ciclo de tentativas e troca para a reserva."""
 
     async def on_disconnect(self) -> None:
         """Queda, mudança de canal ou desconexão (inclusive por membro): sempre pelo recuo, nunca volta imediata."""
@@ -264,8 +272,17 @@ class RadioRunner:
             return
         await self._play()
 
-    async def _play(self) -> None:
+    async def _load_source(self) -> None:
         await self.ports.prepare()  # carrega a playlist: a posição virtual depende da duração das faixas
+
+    async def _start_source(self) -> None:
+        origin = self.virtual_origin if self.virtual_origin is not None else self.ports.wall()
+        elapsed_ms = max(0, int((self.ports.wall() - origin) * 1000))
+        index, position = virtual_position(self.ports.durations_ms(), elapsed_ms)
+        await self.ports.play_virtual(index, position)
+
+    async def _play(self) -> None:
+        await self._load_source()
         if self._stopped:
             return
         if self.ports.paused_all():  # o dono pausou enquanto a playlist carregava: nada toca
@@ -274,10 +291,7 @@ class RadioRunner:
         if self.admin_paused:  # o administrador também
             self._set(Phase.PAUSED_ADMIN)
             return
-        origin = self.virtual_origin if self.virtual_origin is not None else self.ports.wall()
-        elapsed_ms = max(0, int((self.ports.wall() - origin) * 1000))
-        index, position = virtual_position(self.ports.durations_ms(), elapsed_ms)
-        await self.ports.play_virtual(index, position)
+        await self._start_source()
         if self._stopped:
             await self.ports.stop_stream()
             return

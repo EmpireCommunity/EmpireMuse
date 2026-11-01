@@ -16,8 +16,9 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, NamedTuple, Optional
 
-from empiremuse.rules.radio import PANEL_RECREATE_S, Radio
+from empiremuse.rules.radio import KIND_LIVE, PANEL_RECREATE_S, Radio
 from empiremuse.utils.radio.chat import ChatPorts, ChatSweeper
+from empiremuse.utils.radio.live import LiveRadioRunner
 from empiremuse.utils.radio.runner import Phase, ProcessLimits, RadioPorts, RadioRunner
 from empiremuse.utils.radio.service import RadioService
 
@@ -96,9 +97,40 @@ class RadioManager:
         if runner is not None:
             self._spawn(runner.on_disconnect())
 
+    def note_stream_lost(self, radio_id: str) -> None:
+        """O Lavalink avisou que o fluxo ao vivo acabou ou falhou: volta pelo recuo de 2 a 32 s."""
+        runner = self._runners.get(radio_id)
+        if isinstance(runner, LiveRadioRunner):
+            self._spawn(runner.on_stream_lost())
+
+    def note_title(self, radio_id: str, title: str) -> None:
+        """O relay leu um título novo do fluxo (já limpo, no máximo 1 a cada 15 s)."""
+        runner = self._runners.get(radio_id)
+        if isinstance(runner, LiveRadioRunner):
+            runner.set_title(title)
+
+    def referenced_stations(self) -> set[str]:
+        """Os uuids (principal e reserva) das rádios ao vivo LIGADAS neste processo: o health check só olha estes."""
+        found: set[str] = set()
+        for radio in self._radios.values():
+            if radio.kind == KIND_LIVE:
+                found.update(
+                    u for u in (radio.source.get("station"), radio.source.get("reserve")) if isinstance(u, str)
+                )
+        return found
+
+    async def station_recovered(self, uuid: str) -> None:
+        """O health check reabilitou ``uuid``: as rádios que estão na reserva por causa dele voltam para a principal."""
+        for radio_id, runner in list(self._runners.items()):
+            radio = self._radios.get(radio_id)
+            if isinstance(runner, LiveRadioRunner) and radio is not None and radio.source.get("station") == uuid:
+                self._spawn(runner.restore_primary())
+
     async def close(self) -> None:
         if self._ticker is not None:
             self._ticker.cancel()
+        self.hub.health_checker.stop()
+        await self.hub.relay.close()
         for task in list(self._tasks):
             task.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
@@ -117,7 +149,8 @@ class RadioManager:
         if self.ports_factory is None:
             logger.warning("Rádio não iniciada: o adaptador do Discord não foi instalado")
             return None
-        runner = RadioRunner(
+        runner_class = LiveRadioRunner if radio.kind == KIND_LIVE else RadioRunner
+        runner = runner_class(
             radio.id,
             self.ports_factory(radio),
             self.limits,
