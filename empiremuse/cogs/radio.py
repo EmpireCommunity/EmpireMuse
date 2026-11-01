@@ -22,7 +22,7 @@ from empiremuse.utils.others import CustomContext
 from empiremuse.utils.radio import actions
 from empiremuse.utils.radio.actions import Actor, Refused
 from empiremuse.utils.radio.control import MainBotRefused
-from empiremuse.utils.radio.discord_ports import DiscordRadioPorts
+from empiremuse.utils.radio.discord_ports import DiscordChatPorts, DiscordRadioPorts
 from empiremuse.utils.radio.premium import RadioUnavailable
 
 if TYPE_CHECKING:
@@ -80,6 +80,7 @@ class Radio(commands.Cog):
             return
         pool = self.bot.pool
         manager.ports_factory = lambda radio: DiscordRadioPorts(pool, radio)
+        manager.chat_ports_factory = lambda radio: DiscordChatPorts(pool, radio)
         manager.start_ticker()
         try:
             await manager.resume_all()

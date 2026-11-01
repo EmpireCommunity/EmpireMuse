@@ -16,6 +16,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, NamedTuple, Optional
 
 from empiremuse.rules.radio import Radio
+from empiremuse.utils.radio.chat import ChatPorts, ChatSweeper
 from empiremuse.utils.radio.runner import Phase, ProcessLimits, RadioPorts, RadioRunner
 from empiremuse.utils.radio.service import RadioService
 
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 TICK_SECONDS = 5.0
 PortsFactory = Callable[[Radio], RadioPorts]
+ChatPortsFactory = Callable[[Radio], ChatPorts]
 
 
 class RadioCounts(NamedTuple):
@@ -40,6 +42,8 @@ class RadioManager:
         self.service = service
         self.limits = limits or ProcessLimits()
         self.ports_factory: Optional[PortsFactory] = None
+        self.chat_ports_factory: Optional[ChatPortsFactory] = None
+        self._sweepers: dict[str, tuple[ChatSweeper, asyncio.Task]] = {}
         self._runners: dict[str, RadioRunner] = {}
         self._tasks: set[asyncio.Task] = set()
         self._ticker: Optional[asyncio.Task] = None
@@ -83,6 +87,8 @@ class RadioManager:
         for task in list(self._tasks):
             task.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
+        for radio_id in list(self._sweepers):
+            self._stop_sweeper(radio_id)
         for runner in list(self._runners.values()):
             runner.phase = Phase.OFF
         self._runners.clear()
@@ -113,12 +119,34 @@ class RadioManager:
         runner = self._runner_for(radio)
         if runner is None:
             return
+        self._start_sweeper(radio)
         if queued:
             self._spawn(self.limits.resumed(runner.ports, runner.start))
         else:
             await runner.start()
 
+    def _start_sweeper(self, radio: Radio) -> None:
+        """A varredura do chat da call (R-4) roda enquanto a rádio estiver ligada, pausada ou não; sem as portas do chat não há varredura."""
+        if self.chat_ports_factory is None or radio.id in self._sweepers:
+            return
+        ports = self.chat_ports_factory(radio)
+        sweeper = ChatSweeper(ports, radio.chat, stage=bool(getattr(ports, "stage", False)), limits=self.limits)
+        self._sweepers[radio.id] = (sweeper, self._spawn(sweeper.run()))
+
+    def update_chat_rules(self, radio: Radio) -> None:
+        """A página web mudou as regras do chat: valem na próxima varredura."""
+        entry = self._sweepers.get(radio.id)
+        if entry is not None:
+            entry[0].update(radio.chat)
+
+    def _stop_sweeper(self, radio_id: str) -> None:
+        entry = self._sweepers.pop(radio_id, None)
+        if entry is not None:
+            entry[0].running = False
+            entry[1].cancel()
+
     async def deactivate(self, radio_id: str) -> None:
+        self._stop_sweeper(radio_id)
         runner = self._runners.pop(radio_id, None)
         if runner is not None:
             await runner.stop()

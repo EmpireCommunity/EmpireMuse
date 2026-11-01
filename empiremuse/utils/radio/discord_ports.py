@@ -13,12 +13,14 @@ import asyncio
 import logging
 import random
 import time
+from collections.abc import Sequence
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Optional
 
 import disnake
 
 from empiremuse.rules.radio import Radio
+from empiremuse.utils.radio.chat import PermissionLost
 from empiremuse.utils.radio.runner import Allowed
 
 if TYPE_CHECKING:
@@ -195,3 +197,55 @@ class DiscordRadioPorts:
 
     def durations_ms(self) -> list[int]:
         return [int(getattr(t, "duration", 0) or 0) for t in self._tracks]
+
+
+class DiscordChatPorts:
+    """O chat da call de UMA rádio para o ``ChatSweeper``: amarrado ao canal da rádio (nunca ao da Jukebox), 403 vira ``PermissionLost``."""
+
+    def __init__(self, pool: BotPool, radio: Radio) -> None:
+        self.pool = pool
+        self.radio = radio
+
+    def _channel(self) -> Any:
+        bot = next((b for b in self.pool.get_all_bots() if b.user is not None and b.user.id == self.radio.bot_id), None)
+        guild = bot.get_guild(self.radio.guild_id) if bot is not None else None
+        return guild.get_channel(self.radio.channel_id) if guild is not None else None
+
+    @property
+    def stage(self) -> bool:
+        return isinstance(self._channel(), disnake.StageChannel)
+
+    def now(self) -> float:
+        return time.time()
+
+    async def sleep(self, seconds: float) -> None:
+        await asyncio.sleep(seconds)
+
+    async def fetch_recent(self, limit: int) -> list[tuple[int, float, bool]]:
+        """``(id, criada_em, protegida)``. Protegidas: a fixada, o painel da rádio, o que o próprio bot escreveu e mensagem de sistema."""
+        channel = self._channel()
+        if channel is None:
+            return []
+        try:
+            messages = [m async for m in channel.history(limit=limit)]
+        except disnake.Forbidden as error:
+            raise PermissionLost from error
+        return [
+            (
+                m.id,
+                m.created_at.timestamp(),
+                bool(
+                    m.pinned or m.id == self.radio.panel_message_id or m.author.id == self.radio.bot_id or m.is_system()
+                ),
+            )
+            for m in messages
+        ]
+
+    async def bulk_delete(self, ids: Sequence[int]) -> None:
+        channel = self._channel()
+        if channel is None or not ids:
+            return
+        try:
+            await channel.delete_messages([disnake.Object(id=i) for i in ids])
+        except disnake.Forbidden as error:
+            raise PermissionLost from error

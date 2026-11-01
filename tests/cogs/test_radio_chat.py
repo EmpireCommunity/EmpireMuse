@@ -154,6 +154,26 @@ class TestPermission:
         assert s.disabled and ports.sleeps == [15.0] and ports.fetches == 1
 
 
+class TestTransientFailure:
+    @pytest.mark.asyncio
+    async def test_a_network_error_loses_one_sweep_and_keeps_the_rule_on(self, caplog):
+        ports = FakeChat([(1, 1_000_000.0 - 500, False)])
+
+        async def boom(limit):
+            raise ConnectionError("rede com token secreto")
+
+        original = ports.fetch_recent
+        ports.fetch_recent = boom
+        s = sweeper(ports)
+
+        with caplog.at_level(logging.WARNING):
+            assert await s.sweep_once() == 0
+        ports.fetch_recent = original
+
+        assert not s.disabled and "ConnectionError" in caplog.text and "secreto" not in caplog.text
+        assert await s.sweep_once() == 1
+
+
 class TestProcessLimit:
     @pytest.mark.asyncio
     async def test_thirty_sweeps_at_once_run_at_most_two_at_a_time(self):

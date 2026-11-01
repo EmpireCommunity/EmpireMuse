@@ -72,6 +72,9 @@ class ChatSweeper:
                 self.disabled = True
                 logger.warning("Regras do chat da rádio desligadas: o Discord recusou a permissão")
                 return 0
+            except Exception as error:  # noqa: BLE001 - falha passageira (rede, 5xx): esta varredura se perde e a próxima tenta
+                logger.warning("Varredura do chat da rádio falhou (%s)", type(error).__name__)
+                return 0
         self.deleted_total += len(victims)
         if victims:
             logger.debug("Chat da rádio: %d mensagens apagadas", len(victims))

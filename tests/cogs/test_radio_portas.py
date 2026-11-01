@@ -256,3 +256,98 @@ class TestTurnOff:
         assert not (await w.hub.store.get(radio.id)).enabled
         assert (await w.hub.premium.fresh(GUILD)).active == 0
         w.player.destroy.assert_awaited_once()
+
+
+class FakeMessage:
+    def __init__(self, mid, created, *, pinned=False, author=77, system=False):
+        self.id = mid
+        self.created_at = SimpleNamespace(timestamp=lambda: created)
+        self.pinned = pinned
+        self.author = SimpleNamespace(id=author)
+        self._system = system
+
+    def is_system(self):
+        return self._system
+
+
+def chat_world(messages):
+    from empiremuse.utils.radio.discord_ports import DiscordChatPorts
+
+    w = build()
+    channel = w.channel
+
+    async def history(limit):
+        for message in messages[:limit]:
+            yield message
+
+    channel.history = history
+    channel.delete_messages = AsyncMock()
+    return w, DiscordChatPorts(w.ports.pool, w.ports.radio)
+
+
+class TestChatPorts:
+    @pytest.mark.asyncio
+    async def test_the_pinned_the_panel_the_bots_own_and_system_messages_are_protected(self):
+        messages = [
+            FakeMessage(1, 100.0),
+            FakeMessage(2, 100.0, pinned=True),
+            FakeMessage(3, 100.0, author=BOT_ID),
+            FakeMessage(4, 100.0, system=True),
+        ]
+        w, ports = chat_world(messages)
+
+        got = await ports.fetch_recent(100)
+
+        assert [(mid, protected) for mid, _, protected in got] == [(1, False), (2, True), (3, True), (4, True)]
+
+    @pytest.mark.asyncio
+    async def test_the_panel_message_of_the_radio_is_protected(self):
+        import dataclasses
+
+        w, ports = chat_world([FakeMessage(9, 100.0)])
+        ports.radio = dataclasses.replace(ports.radio, panel_message_id=9)
+
+        assert [p for _, _, p in await ports.fetch_recent(100)] == [True]
+
+    @pytest.mark.asyncio
+    async def test_a_forbidden_history_or_delete_becomes_permission_lost(self):
+        from empiremuse.utils.radio.chat import PermissionLost
+
+        w, ports = chat_world([FakeMessage(1, 100.0)])
+        w.channel.delete_messages = AsyncMock(side_effect=disnake.Forbidden(MagicMock(status=403), "x"))
+
+        with pytest.raises(PermissionLost):
+            await ports.bulk_delete([1])
+
+        async def refused(limit):
+            raise disnake.Forbidden(MagicMock(status=403), "x")
+            yield  # pragma: no cover
+
+        w.channel.history = refused
+        with pytest.raises(PermissionLost):
+            await ports.fetch_recent(100)
+
+    @pytest.mark.asyncio
+    async def test_the_delete_goes_to_the_radios_own_channel_in_one_call(self):
+        w, ports = chat_world([])
+
+        await ports.bulk_delete([5, 6, 7])
+
+        w.channel.delete_messages.assert_awaited_once()
+        assert [o.id for o in w.channel.delete_messages.await_args.args[0]] == [5, 6, 7]
+
+    @pytest.mark.asyncio
+    async def test_a_gone_channel_has_nothing_to_sweep(self):
+        w, ports = chat_world([])
+        w.guild.get_channel = lambda cid: None
+
+        assert await ports.fetch_recent(100) == []
+        await ports.bulk_delete([1])
+
+    def test_a_stage_channel_is_told_apart_from_a_voice_channel(self):
+        _, voice = chat_world([])
+        stage_world = build(stage=True)
+        from empiremuse.utils.radio.discord_ports import DiscordChatPorts
+
+        assert voice.stage is False
+        assert DiscordChatPorts(stage_world.ports.pool, stage_world.ports.radio).stage is True

@@ -187,3 +187,73 @@ class TestClose:
         await world.manager.close()
 
         assert world.manager.counts() == (0, 0, 0) and not world.manager._tasks
+
+
+class FakeChatPorts:
+    stage = False
+
+    def __init__(self):
+        self.t = 1_000_000.0
+        self.sleeps = []
+
+    def now(self):
+        return self.t
+
+    async def sleep(self, seconds):
+        self.sleeps.append(seconds)
+        await asyncio.sleep(0.01)
+
+    async def fetch_recent(self, limit):
+        return []
+
+    async def bulk_delete(self, ids):
+        return None
+
+
+class TestChatSweeperLifecycle:
+    @pytest.mark.asyncio
+    async def test_the_sweeper_runs_while_the_radio_is_on_and_stops_with_it(self, world):
+        chat = FakeChatPorts()
+        world.manager.chat_ports_factory = lambda radio: chat
+        r = await enabled_radio(world)
+
+        await world.manager.activate(r)
+        await asyncio.sleep(0.05)
+        assert chat.sleeps and r.id in world.manager._sweepers
+
+        await world.manager.deactivate(r.id)
+        sleeps = len(chat.sleeps)
+        await asyncio.sleep(0.05)
+
+        assert r.id not in world.manager._sweepers and len(chat.sleeps) == sleeps
+        await world.manager.close()
+
+    @pytest.mark.asyncio
+    async def test_without_chat_ports_there_is_no_sweeper(self, world):
+        r = await enabled_radio(world)
+
+        await world.manager.activate(r)
+
+        assert world.manager._sweepers == {}
+
+    @pytest.mark.asyncio
+    async def test_new_chat_rules_from_the_web_page_reach_the_running_sweeper(self, world):
+        world.manager.chat_ports_factory = lambda radio: FakeChatPorts()
+        r = await enabled_radio(world)
+        await world.manager.activate(r)
+
+        updated = await world.store.update_chat(r.id, {"voice_delete_after_s": 90}, expected_rev=r.rev)
+        world.manager.update_chat_rules(updated)
+
+        assert world.manager._sweepers[r.id][0].chat["voice_delete_after_s"] == 90
+        await world.manager.close()
+
+    @pytest.mark.asyncio
+    async def test_closing_cancels_every_sweeper(self, world):
+        world.manager.chat_ports_factory = lambda radio: FakeChatPorts()
+        await world.manager.activate(await enabled_radio(world, 1))
+        await world.manager.activate(await enabled_radio(world, 2))
+
+        await world.manager.close()
+
+        assert world.manager._sweepers == {} and not world.manager._tasks
