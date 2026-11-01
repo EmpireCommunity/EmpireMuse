@@ -127,6 +127,11 @@
     </form>
   </section>
 
+  <section class="bloco-config bloco-largo" aria-labelledby="titulo-estrito">
+    {% set form = estrito %}
+    {% include "form_estrito.html" %}
+  </section>
+
   {% if canal_atual.configurado %}
   <section class="bloco-config bloco-largo" aria-labelledby="titulo-reset">
     <h2 class="subtitulo" id="titulo-reset">Reiniciar o canal de pedidos</h2>
