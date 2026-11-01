@@ -110,8 +110,8 @@ class FakeDirectory:
         self.stations = {}
         self.calls = []
 
-    async def search(self, term):
-        self.calls.append(term)
+    async def search(self, term, *, key=None):
+        self.calls.append((term, key))
         return list(self.results)
 
     async def by_uuid(self, uuid):

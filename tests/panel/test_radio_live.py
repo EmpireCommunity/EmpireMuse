@@ -86,7 +86,7 @@ class LiveSearchTest(LiveBase):
         assert re.findall(r'name="reserva" value="([^"]*)"', body) == [B, C]
         assert f'value="{C}" disabled' in body and f'value="{A}"' not in body
         assert "Beta FM" in body and SECRET not in body
-        assert self.radio.directory.calls == ["fm"]
+        assert self.radio.directory.calls == [("fm", ALFA)]  # a busca do painel é limitada por servidor
 
     def test_short_term_or_missing_permission_or_premium_never_reaches_the_directory(self):
         radio = self.seed_live()

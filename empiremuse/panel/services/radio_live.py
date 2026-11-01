@@ -151,7 +151,7 @@ class LivePage:
         term = check_search_term(raw[:SEARCH_RAW_LIMIT])
         if isinstance(term, RuleError):
             return (), tr("panel.radio.live.search_term")
-        stations = await ctx.pool.radio.directory.search(term)
+        stations = await ctx.pool.radio.directory.search(term, key=ctx.guild_id)  # limite por servidor (R-3)
         main = radio.source.get("station")
         health = ctx.pool.radio.health
         views = tuple(_view(s, s.uuid, health) for s in stations if s.uuid != main)
