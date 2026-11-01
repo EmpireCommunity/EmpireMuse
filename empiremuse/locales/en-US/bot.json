@@ -264,6 +264,8 @@
   "radio.refused.cap_reached": "This server already has 3 radios on, the limit.",
   "radio.refused.changed": "The radio changed while you were setting it up. Try again.",
   "radio.refused.channel_taken": "There is already a radio in that channel.",
+  "radio.refused.jukebox_channel": "That is the server's song request channel; its chat belongs to the Jukebox. Pick another voice channel.",
+  "radio.player_locked": "This call is a radio: use the radio panel or /radio.",
   "radio.refused.invalid": "I could not use those values for a radio.",
   "radio.refused.no_free_bot": "There is no free bot to play a radio here. A radio needs a spare bot that is not in a call.",
   "radio.refused.no_manage_guild": "You need the **Manage Server** permission to use this.",

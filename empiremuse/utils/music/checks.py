@@ -48,8 +48,8 @@ def resolve_player(pool: BotPool, guild_id: int, member: disnake.Member) -> Opti
         player = bot.music.players.get(guild_id) if bot.user else None
         channel = getattr(getattr(player, "guild", None), "me", None)
         bot_voice = getattr(getattr(channel, "voice", None), "channel", None)
-        if player is None or bot_voice is None:
-            continue
+        if player is None or bot_voice is None or getattr(player, "radio_id", None) is not None:
+            continue  # o player de uma rádio nunca atende pedido nem botão da Jukebox (V181-2)
         found[bot.user.id] = (bot, player)
         candidates.append((bot.user.id, bot_voice.id))
     chosen = choose_player(candidates, voice_id)
@@ -62,6 +62,11 @@ def is_radio_only(pool: BotPool, bot: BotCore) -> bool:
     return bool(roles is not None and roles.is_radio_only(getattr(bot, "identifier", None)))
 
 
+def has_radio_player(bot: BotCore, guild_id: int) -> bool:
+    """O player deste bot neste servidor é de uma rádio (item 8)? Rádio é tocada só pelo painel e pelo ``/radio``, nunca por comando de música."""
+    return getattr(bot.music.players.get(guild_id), "radio_id", None) is not None
+
+
 def pick_request_bot(pool: BotPool, guild_id: int, member: disnake.Member) -> Optional[BotCore]:
     """Quem atende um PEDIDO feito no canal único: o bot que já está na call de quem pediu; senão o 1º livre (ordem do ``identifier``).
 
@@ -71,6 +76,8 @@ def pick_request_bot(pool: BotPool, guild_id: int, member: disnake.Member) -> Op
         return resolved[0]
     for bot in sorted(pool.get_all_bots(), key=lambda b: b.identifier):
         if not bot.user or not bot.bot_ready or (guild := bot.get_guild(guild_id)) is None or is_radio_only(pool, bot):
+            continue
+        if has_radio_player(bot, guild_id):
             continue
         exclusive = getattr(bot, "exclusive_guild_id", None)
         if exclusive and exclusive != guild_id:
@@ -262,7 +269,7 @@ async def check_pool_bots(
     bot_in_guild = False
 
     for bot in sorted(guild_bots, key=lambda b: b.identifier):
-        if not bot.bot_ready or is_radio_only(inter.bot.pool, bot):
+        if not bot.bot_ready or is_radio_only(inter.bot.pool, bot) or has_radio_player(bot, inter.guild_id):
             continue
 
         if not (guild := bot.get_guild(inter.guild_id)):
@@ -733,6 +740,12 @@ async def check_player_perm(inter, bot: BotCore, channel, guild_data: dict = Non
         player: LavalinkPlayer = bot.music.players[guild_id]
     except KeyError:
         return True
+
+    if (
+        getattr(player, "radio_id", None) is not None
+    ):  # a call é de uma rádio: nem manage_channels toca, pula ou para por aqui (V181-2)
+        tr = await bot.pool.i18n.for_guild(player.guild)
+        raise GenericError(tr("radio.player_locked"))
 
     try:
         vc = player.guild.me.voice.channel

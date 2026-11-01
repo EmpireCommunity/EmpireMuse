@@ -276,6 +276,8 @@
   "radio.refused.cap_reached": "Este servidor já tem 3 rádios ligadas, o limite.",
   "radio.refused.changed": "A rádio mudou enquanto você a configurava. Tente de novo.",
   "radio.refused.channel_taken": "Já existe uma rádio nesse canal.",
+  "radio.refused.jukebox_channel": "Esse é o canal de pedidos do servidor; o chat dele é da Jukebox. Escolha outro canal de voz.",
+  "radio.player_locked": "Esta call é de uma rádio: use o painel da rádio ou o /radio.",
   "radio.refused.invalid": "Não consegui usar esses valores para uma rádio.",
   "radio.refused.no_free_bot": "Não há bot livre para tocar uma rádio aqui. A rádio precisa de um bot reserva que não esteja em call.",
   "radio.refused.no_manage_guild": "Você precisa da permissão **Gerenciar Servidor** para usar isto.",
