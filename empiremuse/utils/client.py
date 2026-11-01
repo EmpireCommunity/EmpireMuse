@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import datetime
 import gc
 import json
@@ -122,7 +123,11 @@ def _node_sample(identifier: str, node) -> NodeSample:
     if not stats or not getattr(node, "is_available", False):
         return NodeSample(identifier, None, None, None)
     return NodeSample(
-        identifier, stats.players, round(stats.lavalink_load * 100, 1), round(stats.memory_used / 1048576, 1)
+        identifier,
+        stats.players,
+        round(stats.lavalink_load * 100, 1),
+        round(stats.memory_used / 1048576, 1),
+        *(None if n == -1 else n for n in (stats.frames_sent, stats.frames_nulled, stats.frames_deficit)),
     )
 
 
@@ -134,11 +139,10 @@ def _read_process_stats(process_stats, java_pid):
 def _with_java_figures(nodes: list[NodeSample], java_cpu, java_rss) -> list[NodeSample]:
     """Completa o nó ``LOCAL`` com CPU e memória do processo Java onde o ``stats`` do nó não trouxe."""
     return [
-        NodeSample(
-            node.identifier,
-            node.players,
-            node.cpu_percent if node.cpu_percent is not None else java_cpu,
-            node.memory_mib if node.memory_mib is not None else java_rss,
+        dataclasses.replace(
+            node,
+            cpu_percent=node.cpu_percent if node.cpu_percent is not None else java_cpu,
+            memory_mib=node.memory_mib if node.memory_mib is not None else java_rss,
         )
         if node.identifier == "LOCAL"
         else node

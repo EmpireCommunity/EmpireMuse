@@ -39,6 +39,10 @@ class NodeSample:
     players: int | None
     cpu_percent: float | None
     memory_mib: float | None
+    # ``frameStats`` do último minuto (``sent``/``nulled``/``deficit``); ``None`` quando o Lavalink não os enviou (sem players).
+    frames_sent: int | None = None
+    frames_nulled: int | None = None
+    frames_deficit: int | None = None
 
 
 class MetricsCollector:
@@ -126,6 +130,10 @@ def _mib(value: float | None) -> str:
     return DASH if value is None else f"{value:.1f} MiB"
 
 
+def _count(value: int | None) -> str:
+    return DASH if value is None else str(value)
+
+
 def format_summary(
     snapshot: MetricsSnapshot,
     *,
@@ -155,5 +163,7 @@ def format_summary(
         players = DASH if node.players is None else str(node.players)
         lines.append(
             f"{SUMMARY_PREFIX}nó {name}: players {players} · CPU {_percent(node.cpu_percent)} · memória {_mib(node.memory_mib)}"
+            f" · quadros enviados {_count(node.frames_sent)} anulados {_count(node.frames_nulled)}"
+            f" déficit {_count(node.frames_deficit)}"
         )
     return lines
