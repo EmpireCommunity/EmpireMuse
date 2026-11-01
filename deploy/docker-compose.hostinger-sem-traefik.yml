@@ -19,7 +19,7 @@ name: empiremuse
 services:
   bot:
     container_name: empiremuse
-    image: or4cu1o/empiremuse:2.1.4@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    image: or4cu1o/empiremuse:2.2.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
     pull_policy: missing
     restart: unless-stopped
     stop_grace_period: 30s
@@ -178,7 +178,7 @@ services:
     # Nome completo (docker.io/...): a linha nunca casa com a do bot, que é a que o auxiliar edita. O digest é
     # obrigatório: o "Update project" do painel puxa e recria todos os serviços, e só com tag um token vazado do Hub
     # viraria root pelo proxy. Troque o marcador pelo digest do image-digest.txt da mesma release.
-    image: docker.io/or4cu1o/empiremuse:2.1.4@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    image: docker.io/or4cu1o/empiremuse:2.2.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
     pull_policy: missing
     restart: unless-stopped
     command: ["/usr/local/bin/python3", "-I", "-S", "/app/empiremuse/updater/proxy.py"]
