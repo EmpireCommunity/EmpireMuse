@@ -1,0 +1,49 @@
+{# Formulário de uma estação personalizada (criar ou editar). Variável: form (Formulario: acao, versao, valores{name,
+   kind, genre, artists, playlists[]}, erros, mensagem, mensagem_tipo, station_id|None, generos[(id, nome)],
+   playlists[nomes], limites). Uma só fonte: o tipo escolhido decide qual campo vale. #}
+{% set form_id = form.form_id %}
+{% set erros = form.erros %}
+{% set valores = form.valores %}
+{% set limites = form.limites %}
+<form id="{{ form.form_id }}" class="form-config form-estacao" method="post" action="{{ form.acao }}" hx-post="{{ form.acao }}" hx-target="#estacoes-servidor" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]">
+  {% module xsrf_form_html() %}
+  {% if form.station_id %}
+  <input type="hidden" name="versao" value="{{ form.versao }}">
+  <input type="hidden" name="acao" value="salvar">
+  {% end %}
+  {% include "_mensagem_form.html" %}
+  <label for="{{ form_id }}-name">{{ _("panel.radio.station.name_label", max=limites["name_max"]) }}</label>
+  <input id="{{ form_id }}-name" type="text" name="name" value="{{ valores.get('name') or '' }}" maxlength="{{ limites['name_max'] }}" autocomplete="off" required{% if erros.get("name") %} aria-invalid="true" aria-describedby="{{ form_id }}-erro-name"{% end %}>
+  {% if erros.get("name") %}<small id="{{ form_id }}-erro-name" class="erro-campo">{{ erros["name"] }}</small>{% end %}
+  <fieldset class="opcoes">
+    <legend>{{ _("panel.radio.station.kind") }}</legend>
+    {% for tipo in ("genre", "artists", "playlists") %}
+    <label><input type="radio" name="kind" value="{{ tipo }}"{% if valores.get("kind") == tipo %} checked{% end %}{% if erros.get("kind") %} aria-invalid="true"{% end %}> {{ _("panel.radio.station.kind." + tipo) }}</label>
+    {% end %}
+    {% if erros.get("kind") %}<small class="erro-campo">{{ erros["kind"] }}</small>{% end %}
+  </fieldset>
+  <label for="{{ form_id }}-genre">{{ _("panel.radio.station.genre") }}</label>
+  <select id="{{ form_id }}-genre" name="genre"{% if erros.get("genre") %} aria-invalid="true" aria-describedby="{{ form_id }}-erro-genre"{% end %}>
+    <option value="">{{ _("panel.radio.local.choose") }}</option>
+    {% for genero_id, genero_nome in form.generos %}
+    <option value="{{ genero_id }}"{% if valores.get("genre") == genero_id %} selected{% end %}>{{ genero_nome }}</option>
+    {% end %}
+  </select>
+  {% if erros.get("genre") %}<small id="{{ form_id }}-erro-genre" class="erro-campo">{{ erros["genre"] }}</small>{% end %}
+  <label for="{{ form_id }}-artists">{{ _("panel.radio.station.artists", max=limites["artists_max"]) }}</label>
+  <textarea id="{{ form_id }}-artists" name="artists" rows="4" maxlength="{{ limites['artists_max'] * (limites['artist_max'] + 1) }}" autocomplete="off" spellcheck="false" aria-describedby="{{ form_id }}-ajuda-artists{% if erros.get('artists') %} {{ form_id }}-erro-artists{% end %}"{% if erros.get("artists") %} aria-invalid="true"{% end %}>{{ valores.get('artists') or '' }}</textarea>
+  <small id="{{ form_id }}-ajuda-artists">{{ _("panel.radio.station.artists_help", max=limites["artists_max"], chars=limites["artist_max"]) }}</small>
+  {% if erros.get("artists") %}<small id="{{ form_id }}-erro-artists" class="erro-campo">{{ erros["artists"] }}</small>{% end %}
+  <fieldset class="opcoes">
+    <legend>{{ _("panel.radio.station.playlists", max=limites["playlists_max"]) }}</legend>
+    {% if form.playlists %}
+    {% for nome in form.playlists %}
+    <label><input type="checkbox" name="playlists" value="{{ nome }}"{% if nome in (valores.get("playlists") or []) %} checked{% end %}{% if erros.get("playlists") %} aria-invalid="true"{% end %}> {{ nome }}</label>
+    {% end %}
+    {% else %}
+    <small>{{ _("panel.radio.station.no_playlists") }}</small>
+    {% end %}
+    {% if erros.get("playlists") %}<small class="erro-campo">{{ erros["playlists"] }}</small>{% end %}
+  </fieldset>
+  <button type="submit">{% if form.station_id %}{{ _("panel.radio.station.save") }}{% else %}{{ _("panel.radio.station.create_button") }}{% end %}</button>
+</form>

@@ -1,0 +1,51 @@
+{# Estações personalizadas do servidor (contrato R5 §5 "Web"; fragmento htmx). Variável: estacoes (StationsView: rows
+   [StationRow: id, nome, tipo, fonte, avisos, em_uso, form], total, maximo, form (criar), lastfm_url). Textos pelo
+   ``_`` (panel.json); nomes, artistas e playlists só em texto ou atributo entre aspas (autoescape); nada do usuário
+   em href/src. #}
+<section id="estacoes-servidor" class="bloco-config bloco-largo" aria-labelledby="titulo-estacoes">
+  <div class="links-cabecalho">
+    <h2 class="subtitulo" id="titulo-estacoes">{{ _("panel.radio.station.title") }}</h2>
+    <p class="contagem-links"><strong>{{ estacoes.total }} de {{ estacoes.maximo }}</strong> {{ _("panel.radio.station.count") }}</p>
+  </div>
+  <p class="nota">{{ _("panel.radio.station.help") }}</p>
+  <p class="nota credito-lastfm">{{ _("panel.radio.station.lastfm") }} <a href="{{ estacoes.lastfm_url }}" rel="noopener noreferrer" target="_blank">Powered by Last.fm<span class="visually-hidden"> (abre em outra aba)</span></a></p>
+  {% if estacoes.rows %}
+  <ul class="lista-links lista-estacoes-servidor" role="list">
+    {% for item in estacoes.rows %}
+    {% set editando = item.form.mensagem is not None %}
+    <li class="item-link">
+      <div class="item-link-texto">
+        <strong class="item-link-nome">{{ item.nome }}</strong>
+        <span class="item-link-descricao"><span class="chip-genero">{{ item.tipo }}</span>{% if item.fonte %} {{ " · ".join(item.fonte) }}{% end %}</span>
+        {% if item.avisos %}<span class="item-link-descricao aviso-estacao">⚠️ {{ _("panel.radio.station.unknown") }} {{ ", ".join(item.avisos) }}</span>{% end %}
+        {% if item.em_uso %}<span class="item-link-descricao">{{ _("panel.radio.station.in_use_by", channels=", ".join(item.em_uso)) }}</span>{% end %}
+      </div>
+      <div class="item-link-acoes">
+        <details{% if editando %} open{% end %}>
+          <summary role="button" class="secondary outline">{{ _("panel.radio.station.edit") }}<span class="visually-hidden"> {{ item.nome }}</span></summary>
+          {% set form = item.form %}
+          {% include "form_radio_station.html" %}
+        </details>
+        <form class="form-apagar" method="post" action="{{ item.form.acao }}" hx-post="{{ item.form.acao }}" hx-target="#estacoes-servidor" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]">
+          {% module xsrf_form_html() %}
+          <input type="hidden" name="versao" value="{{ item.form.versao }}">
+          <input type="hidden" name="acao" value="apagar">
+          <button type="submit" class="secondary outline botao-perigo"{% if item.em_uso %} disabled{% end %}>{{ _("panel.radio.station.delete") }}<span class="visually-hidden"> {{ item.nome }}</span></button>
+        </form>
+      </div>
+    </li>
+    {% end %}
+  </ul>
+  {% else %}
+  <p class="nota">{{ _("panel.radio.station.empty") }}</p>
+  {% end %}
+  {% if estacoes.total < estacoes.maximo %}
+  <details class="detalhes-nova-estacao"{% if estacoes.form.mensagem is not None %} open{% end %}>
+    <summary role="button">{{ _("panel.radio.station.create") }}</summary>
+    {% set form = estacoes.form %}
+    {% include "form_radio_station.html" %}
+  </details>
+  {% else %}
+  <p class="nota">{{ _("panel.radio.station.limit", max=estacoes.maximo) }}</p>
+  {% end %}
+</section>

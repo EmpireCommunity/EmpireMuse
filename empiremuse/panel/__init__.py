@@ -29,6 +29,8 @@ from empiremuse.panel.handlers.radio import (
     RadioReserveHandler,
     RadiosHandler,
     RadioStationHandler,
+    RadioStationItemHandler,
+    RadioStationSearchHandler,
     RadioStationsHandler,
 )
 from empiremuse.panel.handlers.settings import WRITE_LIMIT_PER_MINUTE, LinksExportHandler, SettingsHandler
@@ -90,7 +92,9 @@ def build_panel_app(
             (PANEL_PREFIX + r"/servidores/([^/]+)/links/exportar", LinksExportHandler),
             (PANEL_PREFIX + r"/servidores/([^/]+)/canal/tarefas/(.*)", ChannelTaskHandler),
             (PANEL_PREFIX + r"/servidores/([^/]+)/canal", ChannelHandler),
-            (PANEL_PREFIX + r"/servidores/([^/]+)/radios/([^/]+)/estacoes", RadioStationsHandler),
+            (PANEL_PREFIX + r"/servidores/([^/]+)/radios/estacoes", RadioStationsHandler),
+            (PANEL_PREFIX + r"/servidores/([^/]+)/radios/estacoes/([0-9a-f]{24})", RadioStationItemHandler),
+            (PANEL_PREFIX + r"/servidores/([^/]+)/radios/([^/]+)/estacoes", RadioStationSearchHandler),
             (PANEL_PREFIX + r"/servidores/([^/]+)/radios/([^/]+)/estacao", RadioStationHandler),
             (PANEL_PREFIX + r"/servidores/([^/]+)/radios/([^/]+)/local", RadioLocalHandler),
             (PANEL_PREFIX + r"/servidores/([^/]+)/radios/([^/]+)/reserva", RadioReserveHandler),

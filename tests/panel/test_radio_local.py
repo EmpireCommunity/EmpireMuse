@@ -286,8 +286,8 @@ class MainStationTest(LocalBase):
         custom = self.radio.store.seed(1, ALFA, CHANNEL)
         pairs = [("versao", str(custom.rev)), ("estacao", B)]
         response = self.post_raw(browser, f"{self.url(ALFA, custom.id)}/estacao", pairs, htmx=True)
-        assert response.code == 422 and "Só rádios ao vivo" in html.unescape(response.body.decode())
-        assert self.radio.store.docs[custom.id].source == custom.source
+        assert response.code == 422 and "não existe mais neste servidor" in html.unescape(response.body.decode())
+        assert self.radio.store.docs[custom.id].source == custom.source  # R5: a personalizada escolhe estação por id
 
     def test_manager_failure_does_not_undo_the_save_and_is_only_a_warning(self):
         radio = self.seed_local()

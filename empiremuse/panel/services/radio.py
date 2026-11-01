@@ -65,6 +65,8 @@ class RadioRow(NamedTuple):
     titulo: Optional[str]
     form: Optional[Formulario]
     ao_vivo: Optional[LiveView] = None  # só nas rádios ao vivo (R3): principal, reserva e o seletor
+    personalizada: Any = None  # só nas rádios personalizadas (R5): o seletor de estação (CustomView)
+    radio: Any = None  # a rádio crua, para a página montar o seletor da personalizada (não vai ao template)
 
 
 def radio_id_of(guild_id: int, raw: str) -> Optional[str]:
@@ -161,6 +163,7 @@ class RadioPage:
                     titulo=str(title) if title else None,
                     form=form,
                     ao_vivo=live,
+                    radio=radio,
                 )
             )
         return tuple(rows)

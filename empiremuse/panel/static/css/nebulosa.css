@@ -912,3 +912,29 @@ main:focus {
   margin-bottom: 1rem;
 }
 
+/* Item 8 — Rádios: estações personalizadas (R5) */
+.credito-lastfm a {
+  font-weight: 600;
+}
+
+.aviso-estacao {
+  color: var(--nb-texto);
+}
+
+.form-apagar {
+  margin: 0;
+}
+
+.detalhes-nova-estacao > summary {
+  width: auto;
+}
+
+.form-estacao .opcoes label {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.form-estacao textarea {
+  resize: vertical;
+}
+

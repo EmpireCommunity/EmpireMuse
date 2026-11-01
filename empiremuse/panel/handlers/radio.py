@@ -1,7 +1,9 @@
 """Página Rádios (item 8): ``GET /painel/servidores/<gid>/radios`` lista as rádios do servidor;
 ``POST /painel/servidores/<gid>/radios/<bot:guild>`` grava as regras do chat da call (só ``chat.*``);
-``/reserva`` e ``/estacao`` (POST) trocam a reserva e a principal de uma rádio ao vivo; ``/estacoes?q=`` (busca) e
-``/local?node=&pagina=`` (cascata de local, R4) devolvem a lista de estações para o seletor.
+``/reserva`` e ``/estacao`` (POST) trocam a reserva e a principal de uma rádio ao vivo (ou a estação de uma rádio
+personalizada); ``/estacoes?q=`` (busca) e ``/local?node=&pagina=`` (cascata de local, R4) devolvem a lista de estações
+para o seletor; ``POST /radios/estacoes`` e ``/radios/estacoes/<id>`` criam, editam e apagam as estações
+personalizadas do servidor (R5).
 
 Só HTTP: autorização da R-6, allowlist, validação e compare-and-set ficam em ``panel/services/radio.py``. Banco das
 rádios fora do ar (``RadioUnavailable``) responde 503 com mensagem própria, como as outras páginas.
@@ -40,8 +42,17 @@ from empiremuse.panel.services.radio_live import (
     list_state,
 )
 from empiremuse.panel.services.radio_local import NODE_FIELD, PAGE_FIELD, NODE_LIMIT, parse_page, resolve_node, tree_of
+from empiremuse.panel.services.radio_stations import (
+    ACTION_DELETE,
+    ACTION_SAVE,
+    StationsOutcome,
+    StationsPage,
+    StationsView,
+    station_id_of,
+)
+from empiremuse.panel.services.radio_stations import belongs_to as station_belongs_to
 from empiremuse.panel.services.service import Outcome
-from empiremuse.rules.radio import KIND_LIVE, MAX_PER_GUILD
+from empiremuse.rules.radio import KIND_CUSTOM, KIND_LIVE, MAX_PER_GUILD
 from empiremuse.utils.radio.premium import RadioUnavailable
 from empiremuse.utils.usage import record_panel_action
 
@@ -50,6 +61,9 @@ FORM_TEMPLATE = "form_radio_chat.html"
 LIVE_TEMPLATE = "form_radio_reserva.html"
 STATIONS_TEMPLATE = "_radio_estacoes.html"
 LOCAL_TEMPLATE = "_radio_local_fragmento.html"
+STATIONS_SECTION_TEMPLATE = "config_radio_stations.html"
+CUSTOM_TEMPLATE = "form_radio_estacao.html"
+STATIONS_PATH = "estacoes"
 UNAVAILABLE_KEY = "panel.radio.unavailable"
 _MSG_RATE = "Muitas alterações em pouco tempo. Aguarde um minuto e tente novamente."
 _MSG_TOO_LARGE = ("Envio grande demais", "Os dados enviados excedem o limite permitido.")
@@ -60,6 +74,7 @@ class RadiosHandler(SettingsHandler):
     """``GET /painel/servidores/<gid>/radios``."""
 
     page = RadioPage()
+    stations = StationsPage()
 
     async def get(self, guild_id: str) -> None:  # type: ignore[override]
         try:
@@ -92,6 +107,8 @@ class RadiosHandler(SettingsHandler):
         *,
         form: Optional[Formulario] = None,
         live: Optional[LiveView] = None,
+        stations: Optional[StationsView] = None,
+        custom: Any = None,
     ) -> None:
         tr = panel_translator(ctx.pool)
         premium = await ctx.pool.radio.premium.get(ctx.guild_id)
@@ -101,6 +118,10 @@ class RadiosHandler(SettingsHandler):
             rows = tuple(row._replace(form=form) if row.id == form.radio_id else row for row in rows)
         if live is not None:
             rows = tuple(row._replace(ao_vivo=live) if row.id == live.radio_id else row for row in rows)
+        if editable:
+            if stations is None:
+                stations = await self.stations.view(ctx, f"{action}/{STATIONS_PATH}", tr)
+            rows = await self._with_custom(ctx, action, rows, tr, custom)
         self.set_status(status)
         self.render_page(
             PAGE_TEMPLATE,
@@ -110,7 +131,25 @@ class RadiosHandler(SettingsHandler):
             pode_escrever=editable,
             radios=rows,
             max_radios=MAX_PER_GUILD,
+            estacoes=stations,
         )
+
+    async def _with_custom(self, ctx: FormContext, action: str, rows: tuple, tr: Any, custom: Any) -> tuple:
+        """O seletor de estação em cada rádio personalizada editável (o resultado do POST entra na rádio dele)."""
+        if not any(row.form is not None and str(row.radio.kind) == KIND_CUSTOM for row in rows):
+            return rows
+        stations = await ctx.pool.radio.stations.list_for_guild(ctx.guild_id)
+        done = []
+        for row in rows:
+            if row.form is None or str(row.radio.kind) != KIND_CUSTOM:
+                done.append(row)
+                continue
+            if custom is not None and custom.radio_id == row.id:
+                done.append(row._replace(personalizada=custom))
+                continue
+            view = self.stations.custom_view(ctx, row.radio, f"{action}/{row.id}", stations, tr)
+            done.append(row._replace(personalizada=view))
+        return tuple(done)
 
     @staticmethod
     def _common(access: GuildAccess) -> dict[str, Any]:
@@ -172,7 +211,7 @@ class RadioChatHandler(RadiosHandler):
         await self._render_page(outcome.status, access, ctx, action, form=outcome.form)
 
 
-class RadioStationsHandler(RadiosHandler):
+class RadioStationSearchHandler(RadiosHandler):
     """``GET /painel/servidores/<gid>/radios/<bot:guild>/estacoes?q=``: busca no diretório para o seletor da reserva (R3, R-7)."""
 
     async def get(self, guild_id: str, radio_id: str) -> None:  # type: ignore[override]
@@ -241,6 +280,9 @@ class RadioSourceHandler(RadiosHandler):
         found = await self._radio_for_write(guild_id, radio_id, fresh=True)
         if found is None:
             return
+        await self._post_found(found)
+
+    async def _post_found(self, found: tuple) -> None:
         ctx, access, action, radio, allowed = found
         tr = panel_translator(ctx.pool)
         radio_action = f"{action}/{radio.id}"
@@ -270,12 +312,43 @@ class RadioReserveHandler(RadioSourceHandler):
 
 
 class RadioStationHandler(RadioSourceHandler):
-    """``POST /painel/servidores/<gid>/radios/<bot:guild>/estacao``: a estação principal (R4 §5); a rádio ligada troca na hora."""
+    """``POST /painel/servidores/<gid>/radios/<bot:guild>/estacao``: a estação principal de uma rádio ao vivo (R4 §5) ou a
+    estação de uma rádio personalizada (R5 §5); a rádio ligada troca na hora."""
 
     action_name = "estacao"
 
     async def _decide(self, ctx: FormContext, radio: Any, args: dict, tr: Any) -> LiveOutcome:
         return await self.page.live.set_station(ctx, radio, args, tr)
+
+    async def _post(self, guild_id: str, radio_id: str) -> None:
+        if len(self.request.body) > MAX_BODY_BYTES:
+            self._reject_plain(413, *_MSG_TOO_LARGE)
+            return
+        if not self._write_allowed():
+            self.set_header("Retry-After", "60")
+            self._reject_plain(429, _RATE_TITLE, _MSG_RATE)
+            return
+        found = await self._radio_for_write(guild_id, radio_id, fresh=True)
+        if found is None:
+            return
+        ctx, access, action, radio, allowed = found
+        if str(radio.kind) != KIND_CUSTOM:
+            await self._post_found(found)
+            return
+        tr = panel_translator(ctx.pool)
+        args = decode_args(self)
+        if not allowed:
+            status, message, kind, after = STATUS_FORBIDDEN, tr(FORBIDDEN_KEY), KIND_ERROR, radio
+        else:
+            status, message, kind, after = await self.stations.set_custom_station(ctx, radio, args, tr)
+        record_panel_action(ctx, f"{RADIOS_CATEGORY}/estacao", status)
+        stations = await ctx.pool.radio.stations.list_for_guild(ctx.guild_id)
+        view = self.stations.custom_view(ctx, after, f"{action}/{radio.id}", stations, tr, message=message, kind=kind)
+        self.set_status(status)
+        if self._is_htmx():
+            self.render_page(CUSTOM_TEMPLATE, personalizada=view, form=view.form, **self._common(access))
+            return
+        await self._render_page(status, access, ctx, action, custom=view)
 
 
 class RadioLocalHandler(RadiosHandler):
@@ -343,3 +416,81 @@ class RadioLocalHandler(RadiosHandler):
             self.render_page(LOCAL_TEMPLATE, vivo=view, form=view.form, **self._common(access))
             return
         await self._render_page(status, access, ctx, action, live=view)
+
+
+class RadioStationsHandler(RadiosHandler):
+    """``POST /painel/servidores/<gid>/radios/estacoes``: cria uma estação personalizada do servidor (R5 §5)."""
+
+    async def get(self, guild_id: str, *rest: str) -> None:  # type: ignore[override]
+        self.redirect(f"{SERVERS_PATH}/{guild_id}/{RADIOS_CATEGORY}")
+
+    async def post(self, guild_id: str, *rest: str) -> None:  # type: ignore[override]
+        try:
+            await self._post(guild_id, *rest)
+        except RadioUnavailable:
+            self._unavailable()
+
+    async def _gate(self, guild_id: str) -> Optional[tuple]:
+        """``(ctx, access, action)`` ou ``None`` depois de responder (413, 429, 404 ou 403 sem premium)."""
+        if len(self.request.body) > MAX_BODY_BYTES:
+            self._reject_plain(413, *_MSG_TOO_LARGE)
+            return None
+        if not self._write_allowed():
+            self.set_header("Retry-After", "60")
+            self._reject_plain(429, _RATE_TITLE, _MSG_RATE)
+            return None
+        try:
+            ctx, access, action = await self._resolve(guild_id, RADIOS_CATEGORY, fresh=True)
+        except GuildAccessDenied:
+            self._not_found()
+            return None
+        if not can_write(await ctx.pool.radio.premium.get(ctx.guild_id)):  # sem premium: nada a gerenciar
+            tr = panel_translator(ctx.pool)
+            self._reject_plain(STATUS_FORBIDDEN, UNAVAILABLE_TITLE, tr(FORBIDDEN_KEY))
+            return None
+        return ctx, access, action
+
+    async def _post(self, guild_id: str, *rest: str) -> None:
+        gated = await self._gate(guild_id)
+        if gated is None:
+            return
+        ctx, access, action = gated
+        tr = panel_translator(ctx.pool)
+        outcome = await self.stations.create(ctx, decode_args(self), f"{action}/{STATIONS_PATH}", tr)
+        record_panel_action(ctx, f"{RADIOS_CATEGORY}/{STATIONS_PATH}", outcome.status)
+        await self._respond(outcome, access, ctx, action)
+
+    async def _respond(self, outcome: StationsOutcome, access: GuildAccess, ctx: FormContext, action: str) -> None:
+        self.set_status(outcome.status)
+        if self._is_htmx():
+            self.render_page(STATIONS_SECTION_TEMPLATE, estacoes=outcome.view, **self._common(access))
+            return
+        await self._render_page(outcome.status, access, ctx, action, stations=outcome.view)
+
+
+class RadioStationItemHandler(RadioStationsHandler):
+    """``POST /painel/servidores/<gid>/radios/estacoes/<id>`` com ``acao=salvar|apagar`` (R5 §5); outro servidor é 404."""
+
+    async def _post(self, guild_id: str, *rest: str) -> None:
+        gated = await self._gate(guild_id)
+        if gated is None:
+            return
+        ctx, access, action = gated
+        wanted = station_id_of(rest[0]) if rest else None
+        station = await ctx.pool.radio.stations.get(wanted) if wanted is not None else None
+        if station is None or not station_belongs_to(station, ctx.guild_id):
+            self._not_found()
+            return
+        tr = panel_translator(ctx.pool)
+        args = decode_args(self)
+        what = (args.get("acao") or [""])[0]
+        list_action = f"{action}/{STATIONS_PATH}"
+        if what == ACTION_DELETE:
+            outcome = await self.stations.delete(ctx, station, args, list_action, tr)
+        elif what == ACTION_SAVE:
+            outcome = await self.stations.update(ctx, station, args, list_action, tr)
+        else:
+            self._reject_plain(422, UNAVAILABLE_TITLE, tr("panel.radio.station.error.action"))
+            return
+        record_panel_action(ctx, f"{RADIOS_CATEGORY}/{STATIONS_PATH}/{what}", outcome.status)
+        await self._respond(outcome, access, ctx, action)
