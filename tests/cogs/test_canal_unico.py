@@ -925,6 +925,7 @@ async def test_the_pool_shutdown_closes_the_request_panel_before_closing_the_bot
         playlist_icons_task=None,
         helper_watch_tasks=set(),
         request_panel=SimpleNamespace(close=lambda: order.append("panel")),
+        i18n=SimpleNamespace(close=lambda: order.append("i18n")),
         get_all_bots=lambda: [closing_bot],
         lavalink_instance=None,
         usage=None,
@@ -932,7 +933,7 @@ async def test_the_pool_shutdown_closes_the_request_panel_before_closing_the_bot
 
     await BotPool.shutdown(pool)
 
-    assert order == ["panel", "bot"]
+    assert order == ["panel", "i18n", "bot"]  # as leituras de idioma pendentes são canceladas no encerramento
 
 
 @pytest.mark.asyncio

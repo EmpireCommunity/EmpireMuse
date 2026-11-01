@@ -97,7 +97,7 @@ async def _pc_modal_integration_options(self, req):
 
         modal_components.append(
             disnake.ui.Label(
-                text=(await self.bot.pool.i18n.for_guild_within(req.interaction.guild))("player.integrations"),
+                text=req.tr("player.integrations"),
                 component=disnake.ui.StringSelect(
                     options=integration_opts, required=False, min_values=0, custom_id="integration_links"
                 ),
@@ -112,9 +112,7 @@ async def _pc_modal_send(self, req):
     """Envia o modal de pedido de música."""
     interaction = req.interaction
     modal_components = req.modal_components
-    tr = await self.bot.pool.i18n.for_guild_within(
-        interaction.guild
-    )  # o modal é a PRIMEIRA resposta: sem esperar o banco
+    tr = req.tr
 
     modal_components = [
         disnake.ui.Label(

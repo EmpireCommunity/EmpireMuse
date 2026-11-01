@@ -312,17 +312,20 @@ class TestRequiredFiles:
         with pytest.raises(loader.I18nError):
             I18n(root).load()
 
-    @needs_fifo
-    def test_a_required_file_replaced_by_a_symlink_or_fifo_fails_the_boot(self, root, tmp_path):
+    def test_a_required_file_replaced_by_a_symlink_fails_the_boot(self, root, tmp_path):
         outside = tmp_path / "x.json"
         outside.write_text("{}", encoding="utf-8")
         (root / "pt-BR" / "bot.json").unlink()
         make_symlink(outside, root / "pt-BR" / "bot.json")
+
         with pytest.raises(loader.I18nError):
             I18n(root).load()
 
+    @needs_fifo
+    def test_a_required_file_replaced_by_a_fifo_fails_the_boot(self, root):
         (root / "pt-BR" / "bot.json").unlink()
         os.mkfifo(root / "pt-BR" / "bot.json")
+
         with pytest.raises(loader.I18nError):
             I18n(root).load()
 
@@ -384,30 +387,68 @@ class TestForGuildWithin:
 
         assert (await i18n.for_guild_within(guild)).locale == "pt-BR"
 
-    @pytest.mark.asyncio
-    async def test_a_slow_read_falls_back_to_the_discord_language_and_still_finishes_in_the_background(self, root):
+    @pytest.fixture
+    def slow_store(self, root, monkeypatch):
+        """Um store que só responde quando o teste libera, e um prazo que vence na hora (sem relógio)."""
         import asyncio
 
         i18n = I18n(root)
         i18n.load()
         release = asyncio.Event()
-        finished = []
+        calls = []
 
         async def slow(gid):
+            calls.append(gid)
             await release.wait()
-            finished.append(gid)
             return {"language": "pt-BR"}
 
+        async def deadline_passed(awaitable, timeout):
+            raise TimeoutError
+
         i18n.pool = type("Pool", (), {"servers": type("Servers", (), {"settings": staticmethod(slow)})()})()
+        monkeypatch.setattr("empiremuse.i18n.service.asyncio.wait_for", deadline_passed)
         guild = type("Guild", (), {"id": 1, "preferred_locale": "en-US"})()
+        return i18n, guild, release, calls
 
-        tr = await i18n.for_guild_within(guild, seconds=0.01)
+    @pytest.mark.asyncio
+    async def test_a_slow_read_falls_back_to_the_discord_language_and_still_finishes_in_the_background(
+        self, slow_store
+    ):
+        i18n, guild, release, calls = slow_store
 
-        assert tr.locale == "en-US" and finished == []  # não esperou
+        tr = await i18n.for_guild_within(guild)
+        task = i18n._reads[1]
+
+        assert tr.locale == "en-US" and not task.done()  # não esperou a leitura
         release.set()
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
-        assert finished == [1]  # a leitura não foi cancelada: o cache esquenta para o próximo clique
+        assert (await task).locale == "pt-BR"  # a leitura não foi cancelada: o cache esquenta para o próximo clique
+        assert i18n._reads == {}
+
+    @pytest.mark.asyncio
+    async def test_repeated_clicks_on_a_slow_store_share_one_read_per_server(self, slow_store):
+        i18n, guild, release, calls = slow_store
+
+        for _ in range(5):
+            await i18n.for_guild_within(guild)
+        task = i18n._reads[1]
+        release.set()
+        await task
+
+        assert calls == [1]
+
+    @pytest.mark.asyncio
+    async def test_close_cancels_the_pending_reads(self, slow_store):
+        import asyncio
+
+        i18n, guild, release, calls = slow_store
+        await i18n.for_guild_within(guild)
+        task = i18n._reads[1]
+
+        i18n.close()
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert i18n._reads == {}
 
 
 async def _done(value):

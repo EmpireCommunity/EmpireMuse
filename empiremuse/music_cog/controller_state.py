@@ -23,6 +23,7 @@ class ControllerState:
         "seek_status",
         "select_type",
         "track",
+        "tr",
         "url",
         "user_data",
         "vc",
@@ -48,6 +49,7 @@ class ControllerState:
         self.seek_status = None
         self.select_type = None
         self.track = None
+        self.tr = None
         self.url = None
         self.user_data = None
         self.vc = None

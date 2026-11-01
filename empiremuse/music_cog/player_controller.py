@@ -134,6 +134,8 @@ class PlayerControllerMixin:
                 req.user_data = await self.bot.get_global_data(id_=req.interaction.user.id, db_name=DBModel.users)
 
                 req.modal_components = []
+                # o modal é a PRIMEIRA resposta: um tradutor só (sem esperar o banco), usado em todos os textos dele
+                req.tr = await self.bot.pool.i18n.for_guild_within(req.interaction.guild)
 
                 _pc_modal_fav_options(self, req)
 
