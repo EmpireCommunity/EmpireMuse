@@ -39,6 +39,31 @@ class TestNotice:
         assert w.channel.send.await_args.kwargs["delete_after"] == 15
 
     @pytest.mark.asyncio
+    async def test_no_notice_when_another_ready_bot_will_run_the_shared_prefix_command(self):  # CodeRabbit #180
+        w = build()
+        other = SimpleNamespace(identifier="TOKEN", bot_ready=True)
+        w.pool.get_guild_bots = lambda gid: [w.bot, other]
+
+        handled = await refuse_radio_only(w.bot, SimpleNamespace(valid=True), w.message)
+
+        assert handled is True  # ele continua não atendendo
+        w.channel.send.assert_not_awaited()  # mas não avisa à toa: o outro bot executa
+
+    @pytest.mark.asyncio
+    async def test_the_notice_stays_when_the_only_other_bots_are_radio_only_or_not_ready(self):
+        w = build()
+        w.pool.radio.roles._radio_only = frozenset({"TOKEN_3", "TOKEN_4"})
+        w.pool.get_guild_bots = lambda gid: [
+            w.bot,
+            SimpleNamespace(identifier="TOKEN_4", bot_ready=True),  # também só-rádio
+            SimpleNamespace(identifier="TOKEN", bot_ready=False),  # ainda subindo
+        ]
+
+        await refuse_radio_only(w.bot, SimpleNamespace(valid=True), w.message)
+
+        w.channel.send.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_only_one_notice_per_channel_per_window(self):
         w = build()
         for _ in range(5):

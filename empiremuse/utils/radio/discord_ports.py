@@ -150,7 +150,11 @@ class DiscordRadioPorts:
             return []
         music = bot.get_cog("Music")
         shim = SimpleNamespace(guild=guild, guild_id=guild.id, author=guild.me, bot=bot, channel=self._channel())
-        found, _ = await music.get_tracks(playlist.url, shim, guild.me, bot=bot)
+        player = self._player()
+        # source=False: a URL exata, sem "ytsearch:" nem Deezer/Spotify; no nó do player quando há (como o controlador, controller_embed.py)
+        found, _ = await music.get_tracks(
+            playlist.url, shim, guild.me, source=False, node=getattr(player, "node", None), bot=bot
+        )
         self._tracks = list(getattr(found, "tracks", found) or [])
         return self._tracks
 

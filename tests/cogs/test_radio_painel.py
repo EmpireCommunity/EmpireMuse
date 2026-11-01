@@ -86,7 +86,8 @@ class TestEnsurePanel:
 
         await w.ports.ensure_panel()
 
-        w.channel.send.assert_not_awaited() and w.hub.manager._panels == {4242: w.ports.radio.id}
+        w.channel.send.assert_not_awaited()
+        assert w.hub.manager._panels == {4242: w.ports.radio.id}
 
     @pytest.mark.asyncio
     async def test_a_deleted_panel_is_replaced(self):
@@ -336,6 +337,19 @@ class TestButtons:
             and "secreto" not in caplog.text
             and "RuntimeError" in caplog.text
         )
+
+    @pytest.mark.asyncio
+    async def test_a_generic_error_is_shown_with_its_plain_text_not_the_escaped_one(self):  # CodeRabbit #180
+        from empiremuse.utils.music.errors import GenericError
+
+        w = build_world()
+        runner = await running(w)
+        runner.skip = AsyncMock(side_effect=GenericError("canal_de_voz *sem* escape"))
+        press = click(PANEL_NEXT_ID)
+
+        await w.cog.radio_panel_click(press)
+
+        assert press.edit_original_message.await_args.kwargs["content"] == "canal_de_voz *sem* escape"
 
     @pytest.mark.asyncio
     async def test_the_cog_forwards_deleted_messages_to_the_manager(self):
