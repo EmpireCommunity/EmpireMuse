@@ -223,6 +223,9 @@ class TestVirtualQueue:
         await w.ports.play_virtual(0, 0)
 
         assert w.music.get_tracks.await_count == 1 and w.music.get_tracks.await_args.args[0] == "https://x.invalid/list"
+        assert (
+            w.music.get_tracks.await_args.kwargs["source"] is False
+        )  # URL exata: nada de "ytsearch:" nem Deezer/Spotify (gate R-8)
 
     @pytest.mark.asyncio
     async def test_an_empty_or_missing_playlist_raises_so_the_runner_backs_off(self):
