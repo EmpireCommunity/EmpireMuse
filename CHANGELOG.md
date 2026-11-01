@@ -7,6 +7,9 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Adicionado
+- **Página Rádios no painel**: nova categoria Rádios por servidor, com o estado de cada rádio (bot, canal, tipo, tocando/pausada/pausada pelo dono/reserva no ar/fora do ar e o título ao vivo) e as regras do chat da call (apagar na voz depois de N segundos; no palco, máximo de mensagens e idade máxima). Só servidores liberados pelo dono do bot editam, e só quem tem Gerenciar Mensagens no canal da rádio; o formulário aceita apenas essas três regras.
+
 ## [2.2.0] - 2026-11-01
 
 Idiomas: o bot passa a falar o idioma do servidor (`en-US` e `pt-BR`), com o comando `/language` e o campo Idioma no painel; comandos e player traduzidos, e mais 27 ícones da Flaticon no player.

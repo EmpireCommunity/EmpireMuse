@@ -1,0 +1,173 @@
+"""Item 8 (R1 §3 "Página web", R-6) · Rádios: lista e regras do chat da call no painel.
+
+Caminhos de risco: id da rota com sufixo ``:{guild_id}`` (outro servidor = 404), premium e ``manage_messages`` no canal
+(senão 403, nada gravado), allowlist ``chat.*`` (``enabled``, ``channel_id`` e ``source`` ignorados), validação por campo
+(422 sem gravar), compare-and-set em ``rev`` (409) e auditoria só com nomes de campo.
+"""
+
+import html
+
+from empiremuse.panel.services.base import CONFLICT_TEXT, SAVED_TEXT
+from tests.panel.helpers_radio import install, make_channel, radio_state
+from tests.panel.helpers_settings import parse_forms
+from tests.panel.test_settings_http import Each, HttpBase
+
+ALFA, OMEGA = 100, 800  # Alfa: bot 1, usuário administrador · Ômega: bots 1 e 2
+CHANNEL = 123
+
+
+class RadioBase(HttpBase):
+    def get_app(self):
+        app = super().get_app()
+        self.radio = install(self.monkeypatch, self.pool)
+        self.world.channels[CHANNEL] = make_channel(CHANNEL, "Sala <i>DJ</i>", ALFA)
+        self.world.channels[456] = make_channel(456, "Sala 2", OMEGA, manage_messages=False)
+        self.world.channels[789] = make_channel(789, "Sala Ômega", OMEGA)
+        return app
+
+    def url(self, gid=ALFA, radio_id=None):  # noqa: D102 - o helper da base tem outra assinatura
+        return f"/painel/servidores/{gid}/radios" + (f"/{radio_id}" if radio_id else "")
+
+    def page(self, browser, gid=ALFA):
+        response = browser.get(self.url(gid))
+        assert response.code == 200, f"GET radios: {response.code}"
+        return response.body.decode()
+
+    def chat_forms(self, body):
+        return [f for f in parse_forms(body) if f.has("voice_delete_after_s")]
+
+    def seed_alfa(self, **kwargs):
+        self.radio.premium.grant(ALFA)
+        radio = self.radio.store.seed(1, ALFA, CHANNEL, **kwargs)
+        self.radio.service.states[radio.id] = radio_state(title="Rock <b>FM</b>")
+        return radio
+
+    def save(self, browser, radio, *, htmx=True, **fields):
+        form = next(f for f in self.chat_forms(self.page(browser)) if f.value("versao") == str(radio.rev))
+        return self.submit(browser, self.url(), form, htmx=htmx, **fields)
+
+
+# ============================================================================ página
+
+
+class RadioPageTest(RadioBase):
+    def test_without_premium_shows_the_notice_and_no_form_even_with_a_radio(self):
+        radio = self.radio.store.seed(1, ALFA, CHANNEL)
+        self.radio.service.states[radio.id] = radio_state()
+        body = self.page(self.logged_in())
+        assert "Este servidor não tem rádios liberadas" in body
+        assert self.chat_forms(body) == []
+
+    def test_lists_state_and_title_escaped_with_a_form_only_where_the_user_manages_messages(self):
+        self.radio.premium.grant(OMEGA, active=2)
+        editable = self.radio.store.seed(1, OMEGA, 789)
+        read_only = self.radio.store.seed(2, OMEGA, 456)
+        self.radio.service.states[editable.id] = radio_state(title="Rock <b>FM</b>")
+        self.radio.service.states[read_only.id] = radio_state(playing=False, paused_by_owner=True)
+        body = self.page(self.logged_in(), OMEGA)
+        assert "Ligadas agora: 2 de 3." in body
+        assert "Rock &lt;b&gt;FM&lt;/b&gt;" in body and "<b>FM</b>" not in body
+        assert "Pausada pelo dono" in body and "Tocando" in body
+        forms = self.chat_forms(body)
+        assert [f.action for f in forms] == [self.url(OMEGA, editable.id)]
+        assert forms[0].value("voice_delete_after_s") == "30"
+        assert "Gerenciar Mensagens" in body  # a rádio do bot 2 fica só para ler
+
+    def test_navigation_offers_the_radios_category(self):
+        body = self.page(self.logged_in())
+        assert f'href="{self.url()}"' in body and 'aria-current="page"' in body
+
+
+# ============================================================================ gravação (R-6)
+
+
+class RadioChatTest(RadioBase):
+    def test_saving_writes_only_chat_bumps_rev_audits_field_names_and_ignores_other_fields(self):
+        radio = self.seed_alfa()
+        browser = self.logged_in()
+        response = self.save(
+            browser,
+            radio,
+            voice_delete_after_s="45",
+            stage_max_age_s="600",
+            enabled=None,
+            channel_id="999",
+            source="x",
+            kind="live",
+        )
+        body = response.body.decode()
+        assert response.code == 200 and SAVED_TEXT in body and "<html" not in body.lower()
+        saved = self.radio.store.docs[radio.id]
+        assert saved.chat == {"voice_delete_after_s": 45, "stage_max_messages": 7, "stage_max_age_s": 600}
+        assert (saved.enabled, saved.channel_id, saved.source, saved.kind, saved.rev) == (
+            True,
+            CHANNEL,
+            radio.source,
+            "custom",
+            4,
+        )
+        assert self.radio.store.updates == [(radio.id, "1001")]
+        audit = self.audit_text()
+        assert "escopo=radio:1 categoria=radios campos=voice_delete_after_s" in audit and "45" not in audit
+        assert self.chat_forms(self.page(browser))[0].value("versao") == "4"
+
+    def test_route_ids_outside_this_server_or_malformed_are_404_and_write_nothing(self):
+        self.seed_alfa()
+        self.radio.premium.grant(OMEGA)
+        other = self.radio.store.seed(1, OMEGA, CHANNEL)
+        browser = self.logged_in()
+        form = self.chat_forms(self.page(browser))[0]
+        pairs = form.pairs(voice_delete_after_s="45")
+
+        def check(radio_id):
+            response = self.post_raw(browser, self.url(ALFA, radio_id), pairs, htmx=True)
+            assert response.code == 404, f"status {response.code}"
+
+        Each.run([other.id, "2:100", "1:1000", "1:100/x", "abc", "1:100%00", "../1:100"], check)
+        assert self.radio.store.updates == [] and self.radio.store.docs[other.id].rev == 3
+
+    def test_invalid_values_are_422_per_field_without_writing(self):
+        radio = self.seed_alfa()
+        browser = self.logged_in()
+
+        def check(case):
+            field, value = case
+            response = self.save(browser, radio, **{field: value})
+            body = html.unescape(response.body.decode())
+            assert response.code == 422, f"status {response.code}"
+            assert f'name="{field}"' in body and "Use um número inteiro de" in body
+            assert self.radio.store.updates == []
+
+        Each.run(
+            [
+                ("voice_delete_after_s", "4"),
+                ("voice_delete_after_s", "601"),
+                ("stage_max_messages", "abc"),
+                ("stage_max_messages", "-3"),
+                ("stage_max_age_s", "1e3"),
+                ("stage_max_age_s", ""),
+            ],
+            check,
+        )
+
+    def test_stale_rev_is_409_and_nothing_is_written(self):
+        radio = self.seed_alfa()
+        browser = self.logged_in()
+        response = self.save(browser, radio, versao="2", voice_delete_after_s="45")
+        assert response.code == 409 and CONFLICT_TEXT in response.body.decode()
+        assert self.radio.store.updates == []
+
+    def test_without_manage_messages_in_the_channel_or_premium_is_403_and_nothing_is_written(self):
+        radio = self.seed_alfa()
+        browser = self.logged_in()
+        form = self.chat_forms(self.page(browser))[0]
+        pairs = form.pairs(voice_delete_after_s="45")
+        self.world.channels[CHANNEL] = make_channel(CHANNEL, "Sala", ALFA, manage_messages=False)
+        denied = self.post_raw(browser, self.url(ALFA, radio.id), pairs, htmx=True)
+        self.world.channels[CHANNEL] = make_channel(CHANNEL, "Sala", ALFA)
+        self.radio.premium.docs.clear()
+        no_premium = self.post_raw(browser, self.url(ALFA, radio.id), pairs, htmx=True)
+        for response in (denied, no_premium):
+            assert response.code == 403, f"status {response.code}"
+            assert "permissão necessária" in response.body.decode()
+        assert self.radio.store.updates == []
