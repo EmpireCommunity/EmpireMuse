@@ -88,6 +88,27 @@ def _he_same_node(self, event) -> bool:
     return event.node.identifier == self.node.identifier
 
 
+LIVE_LOST_REASONS = frozenset(
+    {"FINISHED", "LOAD_FAILED"}
+)  # fim e falha de um fluxo ao vivo; STOPPED/REPLACED/CLEANUP são nossos
+
+
+def _he_live_radio(self, event) -> bool:
+    """Rádio ao vivo (item 8, R3): fim, exceção e travada do fluxo NUNCA seguem o caminho de música (fila, autoplay, destroy); viram um aviso ao
+    ``RadioManager``, que volta pelo recuo de 2 a 32 s. Devolve ``True`` se o evento foi consumido aqui."""
+    if not getattr(self, "radio_live", False) or not isinstance(
+        event, (wavelink.TrackEnd, wavelink.TrackException, wavelink.TrackStuck)
+    ):
+        return False
+    node = getattr(event, "node", None)
+    if node is not None and node.identifier != self.node.identifier:
+        return True  # evento atrasado de um nó antigo: não é queda do fluxo de agora
+    lost = not isinstance(event, wavelink.TrackEnd) or str(getattr(event, "reason", "")).upper() in LIVE_LOST_REASONS
+    if lost and (radio_id := getattr(self, "radio_id", None)):
+        self.bot.pool.radio.manager.note_stream_lost(radio_id)
+    return True
+
+
 async def _he_dispatch(self, event) -> None:
     """Despacha o evento do Lavalink com o contexto de log (bot e servidor) e as métricas do pool."""
     with log_context(bot=getattr(self.bot, "identifier", None), guild=self.guild.id):
@@ -98,7 +119,8 @@ async def _he_dispatch(self, event) -> None:
             if (usage := usage_of(self.bot)) and _he_same_node(self, event):
                 usage.playback_ended(self.bot, self.guild.id, getattr(event, "reason", ""))
             _he_log_track_event(self, f"Faixa terminada ({getattr(event, 'reason', '?')})", self.last_track)
-            await _he_track_end(self, event)
+            if not _he_live_radio(self, event):  # rádio ao vivo: o fim é do runner (recuo), nunca da fila
+                await _he_track_end(self, event)
         elif isinstance(event, wavelink.TrackStart):
             if metrics:
                 metrics.track_started(self.guild.id)
@@ -107,7 +129,11 @@ async def _he_dispatch(self, event) -> None:
             _he_log_track_event(self, "Faixa iniciada", self.current)
             await _he_track_start(self, event)
         elif isinstance(event, wavelink.TrackException):
-            await _he_track_exception(self, event)
+            if _he_live_radio(self, event):
+                if metrics:
+                    metrics.error("track_exception")
+            else:
+                await _he_track_exception(self, event)
         elif isinstance(event, wavelink.TrackStuck):
             if metrics:
                 metrics.error("track_stuck")
@@ -119,7 +145,8 @@ async def _he_dispatch(self, event) -> None:
                 _he_source(self.current),
                 time_format(getattr(self, "position", 0) or 0),
             )
-            await _he_track_stuck(self)
+            if not _he_live_radio(self, event):
+                await _he_track_stuck(self)
         else:
             logger.debug("Evento Wavelink desconhecido: %s", type(event).__name__)
 

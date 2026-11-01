@@ -305,6 +305,17 @@ def backoff_s(attempt: int, unit: float = 0.5) -> float:
     return round(base * (1 - BACKOFF_JITTER + 2 * BACKOFF_JITTER * spread), 3)
 
 
+LIVE_BACKOFF_STEPS_S = (2, 4, 8, 16, 32)  # rádio ao vivo (R3): 5 tentativas formam um ciclo; esgotado, tenta a reserva
+LIVE_CYCLE_ATTEMPTS = len(LIVE_BACKOFF_STEPS_S)
+
+
+def live_backoff_s(attempt: int, unit: float = 0.5) -> float:
+    """O recuo da rádio ao vivo antes da tentativa ``attempt``: 2, 4, 8, 16 e 32 s (e 32 s depois), com ±20 % de jitter (``unit`` em [0, 1])."""
+    base = LIVE_BACKOFF_STEPS_S[min(max(attempt, 0), len(LIVE_BACKOFF_STEPS_S) - 1)]
+    spread = max(0.0, min(1.0, unit))
+    return round(base * (1 - BACKOFF_JITTER + 2 * BACKOFF_JITTER * spread), 3)
+
+
 # ---------------------------------------------------------------------- varredura do chat (R-4)
 
 STAGE_SWEEP_MIN_S = 30

@@ -17,7 +17,15 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
 
 from empiremuse.rules.errors import RuleError
-from empiremuse.rules.radio import MAX_PER_GUILD, Radio, check_chat, check_radio, to_document
+from empiremuse.rules.radio import (
+    KIND_LIVE,
+    MAX_PER_GUILD,
+    SOURCE_INVALID,
+    Radio,
+    check_chat,
+    check_radio,
+    to_document,
+)
 from empiremuse.utils.radio.premium import CAS_ATTEMPTS, GLOBAL_DB, PremiumStore, RadioUnavailable
 
 if TYPE_CHECKING:
@@ -145,6 +153,29 @@ class RadioStore:
         if isinstance(merged, RuleError):
             raise RadioInvalid(merged)
         updated = dataclasses.replace(current, chat=merged, rev=current.rev + 1)
+        checked = check_radio(to_document(updated))
+        if isinstance(checked, RuleError):
+            raise RadioInvalid(checked)
+        if not await self._save(radio_id, to_document(checked, updated_by=updated_by), expected_rev):
+            raise RadioConflict
+        return checked
+
+    async def set_reserve(
+        self, radio_id: str, reserve: Optional[str], *, expected_rev: int, updated_by: str = ""
+    ) -> Radio:
+        """Muda só a estação reserva de uma rádio AO VIVO (R3; o seletor da página Rádios). ``None`` tira a reserva. Mesmas regras do ``update_chat``:
+        ``RadioConflict`` se o ``rev`` mudou, ``RadioInvalid`` se não é rádio ao vivo, se o uuid não é válido ou se a reserva é a própria principal.
+        A rádio ligada pega a mudança na próxima troca de fonte (o runner relê o documento)."""
+        current = self._radio(await self._find(radio_id))
+        if current is None:
+            raise RadioNotFound
+        if current.rev != expected_rev:
+            raise RadioConflict
+        if current.kind != KIND_LIVE or reserve == current.source.get("station"):
+            raise RadioInvalid(RuleError(SOURCE_INVALID, "reserve"))
+        updated = dataclasses.replace(
+            current, source={"station": current.source["station"], "reserve": reserve}, rev=current.rev + 1
+        )
         checked = check_radio(to_document(updated))
         if isinstance(checked, RuleError):
             raise RadioInvalid(checked)

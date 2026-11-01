@@ -8,12 +8,13 @@ carrega este cog, os comandos de dono só rodam no principal (senão cada bot re
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import disnake
 from disnake.ext import commands
 
 from empiremuse.i18n import localized
+from empiremuse.rules.i18n import fit
 from empiremuse.rules.radio import BotCandidate, panel_action, radio_id
 from empiremuse.rules.servers import is_main_identifier
 from empiremuse.rules.text import external_text
@@ -23,6 +24,7 @@ from empiremuse.utils.radio import actions
 from empiremuse.utils.radio.actions import Actor, Refused
 from empiremuse.utils.radio.control import MainBotRefused
 from empiremuse.utils.radio.discord_ports import DiscordChatPorts, DiscordRadioPorts
+from empiremuse.utils.radio.live_ports import LiveRadioPorts
 from empiremuse.utils.radio.premium import RadioUnavailable
 
 if TYPE_CHECKING:
@@ -62,6 +64,27 @@ async def playlist_autocomplete(inter: disnake.ApplicationCommandInteraction, cu
     return names[:MAX_CHOICES]
 
 
+async def station_autocomplete(inter: disnake.ApplicationCommandInteraction, current: str) -> dict[str, str]:
+    """Até 25 estações do Radio Browser como ``{nome mostrado: uuid}``. Sem ``manage_guild`` ou sem premium (cache): vazio, e NENHUMA requisição ao diretório."""
+    if inter.guild_id is None or not inter.author.guild_permissions.manage_guild:
+        return {}
+    hub = inter.bot.pool.radio
+    try:
+        if await hub.premium.get(inter.guild_id) is None:
+            return {}
+    except RadioUnavailable:
+        return {}
+    tr = await inter.bot.pool.i18n.for_guild(inter.guild)
+    choices: dict[str, str] = {}
+    for station in (await hub.directory.search(current, key=inter.guild_id))[:MAX_CHOICES]:
+        detail = f"{station.codec} {station.bitrate}k" if station.bitrate else station.codec
+        label = f"{station.name} · {detail}" + (f" · {station.country}" if station.country else "")
+        if hub.health.unavailable(station.uuid):
+            label = f"⛔ {label} · {tr('radio.live.unavailable')}"
+        choices[fit(label, 100)] = station.uuid
+    return choices
+
+
 class Radio(commands.Cog):
     def __init__(self, bot: BotCore) -> None:
         self.bot = bot
@@ -92,9 +115,13 @@ class Radio(commands.Cog):
         if not self._only_main() or manager.ports_factory is not None:
             return
         pool = self.bot.pool
-        manager.ports_factory = lambda radio: DiscordRadioPorts(pool, radio)
+        manager.ports_factory = lambda radio: (
+            LiveRadioPorts(pool, radio) if radio.kind == "live" else DiscordRadioPorts(pool, radio)
+        )
         manager.chat_ports_factory = lambda radio: DiscordChatPorts(pool, radio)
         manager.start_ticker()
+        await self.hub.health.refresh()
+        self.hub.health_checker.start()
         # com nova tentativa (30 s, 60 s... 5 min): uma falha passageira do banco na subida não deixa as rádios caídas até o restart
         manager._spawn(manager.resume_all_with_retry())
 
@@ -224,10 +251,17 @@ class Radio(commands.Cog):
             name=localized("cmd.radio.ligar.opt.channel.name"),
             description=localized("cmd.radio.ligar.opt.channel.description"),
         ),
-        playlist: str = commands.Param(
+        playlist: Optional[str] = commands.Param(
+            default=None,
             name=localized("cmd.radio.ligar.opt.playlist.name"),
             description=localized("cmd.radio.ligar.opt.playlist.description"),
             autocomplete=playlist_autocomplete,
+        ),
+        station: Optional[str] = commands.Param(
+            default=None,
+            name=localized("cmd.radio.ligar.opt.station.name"),
+            description=localized("cmd.radio.ligar.opt.station.description"),
+            autocomplete=station_autocomplete,
         ),
     ) -> None:
         tr = await self._gate(inter)
@@ -238,7 +272,19 @@ class Radio(commands.Cog):
                 inter.author
             ).manage_messages,  # no CANAL, em execução (R-4)
         )
-        found = await self.bot.pool.servers.playlists.find(inter.guild_id, playlist)
+        found = await self.bot.pool.servers.playlists.find(inter.guild_id, playlist) if playlist else None
+        picked = None
+        if station:  # o valor vem do autocomplete, mas o usuário pode digitar qualquer coisa: antes do diretório, o direito (manage_guild e premium)
+            if not actor.manage_guild:
+                raise GenericError(tr(f"radio.refused.{actions.NO_MANAGE_GUILD}"))
+            try:
+                if await self.hub.premium.get(inter.guild_id) is None:
+                    raise GenericError(tr(f"radio.refused.{actions.NO_PREMIUM}"))
+            except RadioUnavailable:
+                raise GenericError(tr("radio.owner.unavailable")) from None
+            picked = await self.hub.directory.by_uuid(station)
+            if picked is None:
+                raise GenericError(tr("radio.live.not_found"))
         request_channel = (await self.bot.pool.servers.request.get(inter.guild_id)).channel
         candidates, can_join = self._candidates(inter.guild_id, channel)
         try:
@@ -246,7 +292,10 @@ class Radio(commands.Cog):
                 self.hub,
                 guild_id=inter.guild_id,
                 channel_id=channel.id,
-                playlist=found.name if found else playlist,
+                playlist=found.name
+                if found
+                else playlist,  # com estação também, o turn_on recusa (choose_one): nada é ignorado em silêncio
+                station=picked,
                 actor=actor,
                 candidates=candidates,
                 playlist_exists=found is not None,

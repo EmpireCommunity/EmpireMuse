@@ -140,6 +140,8 @@ class PlayerStateMixin:
         users: List[int] = None,
         wait: bool = False,
     ):
+        if getattr(self, "radio_id", None):
+            return  # rádio (item 8): o RPC levaria a URL do relay local, com o token, a cada membro da call
         try:
             if not voice_channel and not close:
                 try:

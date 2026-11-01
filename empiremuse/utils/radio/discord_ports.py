@@ -113,8 +113,7 @@ class DiscordRadioPorts:
     async def _create_player(self, bot: BotCore, guild: disnake.Guild, channel: Any) -> Any:
         from empiremuse.utils.music.models import LavalinkPlayer  # tarde: modelos importam o cliente
 
-        music = bot.get_cog("Music")
-        node = await music.get_best_node(bot)
+        node = await self._pick_node(bot)
         player = bot.music.get_player(
             guild_id=guild.id,
             cls=LavalinkPlayer,
@@ -127,9 +126,15 @@ class DiscordRadioPorts:
         )
         player.radio_id = self.radio.id
         player.controller_mode = False
-        player.loop = "queue"
+        self._configure_player(player)
         player.tr = await bot.pool.i18n.for_guild(guild)
         return player
+
+    async def _pick_node(self, bot: BotCore) -> Any:
+        return await bot.get_cog("Music").get_best_node(bot)
+
+    def _configure_player(self, player: Any) -> None:
+        player.loop = "queue"  # a playlist dá a volta; a ao vivo troca isto (``LiveRadioPorts``)
 
     async def _speak(self, guild: disnake.Guild, channel: disnake.StageChannel, player: Any) -> None:
         """Palco: ``suppress=False`` com ``MUTE_MEMBERS``; sem isso, ``request_to_speak``. Um 403 vale UMA tentativa por conexão (R-5)."""
@@ -177,6 +182,12 @@ class DiscordRadioPorts:
         if player is not None:
             await player.process_next()
 
+    async def _panel_name(self, current: Radio) -> object:
+        return current.source.get("playlist", "")
+
+    def _panel_view(self) -> Any:
+        return None  # a ao vivo mostra título, reserva no ar e fora do ar (``LiveRadioPorts``)
+
     async def ensure_panel(self) -> None:
         """Garante a mensagem de controle no chat da call: mantém a que ainda existe, manda uma nova se sumiu. Sem permissão de enviar: só avisa."""
         bot, guild, channel = self._bot(), self._guild(), self._channel()
@@ -197,7 +208,13 @@ class DiscordRadioPorts:
         from empiremuse.utils.radio.panel import panel_payload  # tarde: o painel importa a camada de texto
 
         tr = await bot.pool.i18n.for_guild(guild)
-        payload = panel_payload(tr, playlist_name=current.source.get("playlist", ""), color=bot.get_color(guild.me))
+        payload = panel_payload(
+            tr,
+            playlist_name=await self._panel_name(current),
+            color=bot.get_color(guild.me),
+            live=self.radio.kind == "live",
+            view=self._panel_view(),
+        )
         try:
             message = await channel.send(allowed_mentions=disnake.AllowedMentions.none(), **payload)
         except disnake.Forbidden:

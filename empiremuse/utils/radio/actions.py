@@ -12,7 +12,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from empiremuse.rules.errors import RuleError
-from empiremuse.rules.radio import KIND_CUSTOM, BotCandidate, Radio, check_radio, pick_radio_bot, radio_id
+from empiremuse.rules.radio_stations import Station
+from empiremuse.rules.radio import KIND_CUSTOM, KIND_LIVE, BotCandidate, Radio, check_radio, pick_radio_bot, radio_id
 from empiremuse.utils.radio.premium import Premium
 from empiremuse.utils.radio.service import RadioState
 from empiremuse.utils.radio.store import NoPremium, NoRoom, RadioConflict, RadioInvalid, RadioNotFound
@@ -29,6 +30,8 @@ NO_FREE_BOT = "no_free_bot"
 BOT_CANNOT_JOIN = "bot_cannot_join"
 CHANNEL_TAKEN = "channel_taken"
 JUKEBOX_CHANNEL = "jukebox_channel"
+STATION_DOWN = "station_down"
+CHOOSE_ONE = "choose_one"
 CAP_REACHED = "cap_reached"
 INVALID = "invalid"
 CHANGED = "changed"
@@ -57,12 +60,13 @@ async def turn_on(
     *,
     guild_id: int,
     channel_id: int,
-    playlist: str,
+    playlist: str | None,
     actor: Actor,
     candidates: Iterable[BotCandidate],
     playlist_exists: bool,
     bot_can_join: bool,
     request_channel_id: int | None = None,
+    station: Station | None = None,
 ) -> Radio:
     """Liga uma rádio personalizada neste canal, no bot reserva escolhido. Devolve a rádio ligada (já gravada, ainda sem runner)."""
     if not actor.manage_guild:
@@ -76,8 +80,12 @@ async def turn_on(
     premium = await hub.premium.fresh(guild_id)
     if premium is None:
         raise Refused(NO_PREMIUM)
-    if not playlist_exists:
+    if (station is None) == (playlist is None):
+        raise Refused(CHOOSE_ONE)  # ou uma playlist do servidor ou uma estação ao vivo, nunca as duas nem nenhuma
+    if station is None and not playlist_exists:
         raise Refused(NO_PLAYLIST)
+    if station is not None and hub.health.unavailable(station.uuid):
+        raise Refused(STATION_DOWN)
     if not bot_can_join:
         raise Refused(BOT_CANNOT_JOIN)
     if request_channel_id is not None and request_channel_id == channel_id:
@@ -95,8 +103,8 @@ async def turn_on(
         {
             "_id": radio_id(picked, guild_id),
             "channel_id": str(channel_id),
-            "kind": KIND_CUSTOM,
-            "source": {"playlist": playlist},
+            "kind": KIND_CUSTOM if station is None else KIND_LIVE,
+            "source": {"playlist": playlist} if station is None else {"station": station.uuid, "reserve": None},
         }
     )
     if isinstance(wanted, RuleError):
