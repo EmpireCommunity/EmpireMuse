@@ -31,6 +31,15 @@ def _isolate_real_dotenv(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _pt_br_fallback_locale(monkeypatch):
+    """O idioma de reserva do resolvedor nos testes é ``pt-BR``: os asserts com texto em português valem sem edição (contrato i18n §7).
+
+    Os testes do resolvedor passam ``fallback`` explícito; o catálogo ``en-US`` (a referência) não muda.
+    """
+    monkeypatch.setattr("empiremuse.rules.i18n.FALLBACK_LOCALE", "pt-BR")
+
+
+@pytest.fixture(autouse=True)
 def _hide_dev_runtime(monkeypatch):
     hide_path(monkeypatch, REAL_PROJECT_DIR / DEV_RUNTIME_DIRNAME)
 
