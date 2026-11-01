@@ -8,10 +8,11 @@ limpo ou um ``RuleError`` (``code`` estável, ``key`` = o campo); nada aqui mont
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, NamedTuple
 
+from empiremuse.rules.bot_roles import identifier_sort_key
 from empiremuse.rules.errors import RuleError
 
 KIND_CUSTOM = "custom"
@@ -201,6 +202,32 @@ def to_document(radio: Radio, *, updated_by: str = "") -> dict[str, Any]:
         "rev": radio.rev,
         "updated_by": str(updated_by)[:40],
     }
+
+
+# ---------------------------------------------------------------------- qual bot toca a rádio
+
+
+class BotCandidate(NamedTuple):
+    """Um bot do pool visto de um servidor. ``busy`` = já tem player ou está numa call aí; ``has_radio_here`` = já roda uma rádio deste servidor."""
+
+    identifier: str
+    bot_id: int
+    main: bool
+    radio_only: bool
+    ready: bool
+    in_guild: bool
+    busy: bool
+    has_radio_here: bool = False
+
+
+def pick_radio_bot(candidates: Iterable[BotCandidate]) -> int | None:
+    """O bot que vai tocar a rádio: primeiro um reserva ``radio_only`` livre, depois qualquer reserva livre (ordem natural do identificador).
+
+    Nunca o principal, nunca um bot que já está em call no servidor, nem um que já roda uma rádio aqui (uma rádio por bot e servidor).
+    """
+    usable = [c for c in candidates if c.ready and c.in_guild and not c.main and not c.busy and not c.has_radio_here]
+    usable.sort(key=lambda c: (not c.radio_only, identifier_sort_key(c.identifier)))
+    return usable[0].bot_id if usable else None
 
 
 # ---------------------------------------------------------------------- teto por servidor (R-2)

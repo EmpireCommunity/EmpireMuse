@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from empiremuse.utils.radio.control import BotRoles, RadioControl
+from empiremuse.utils.radio.manager import RadioManager
 from empiremuse.utils.radio.premium import PremiumStore
 from empiremuse.utils.radio.service import RadioService
 from empiremuse.utils.radio.store import RadioStore
@@ -22,3 +23,4 @@ class RadioHub:
         self.roles = BotRoles(pool)  # bots só-rádio (dono)
         self.store = RadioStore(pool, self.premium)
         self.service = RadioService(pool)
+        self.manager = RadioManager(self, self.service)  # quem faz as rádios rodarem neste processo
