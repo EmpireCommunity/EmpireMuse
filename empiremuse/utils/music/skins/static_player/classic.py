@@ -60,7 +60,7 @@ class ClassicStaticSkin:
         txt = f"{duration}\n{app_emoji(player.bot, 'microphone')} **⠂Uploader:** {md_code(player.current.author)}\n"
 
         if not player.current.autoplay:
-            f"{app_emoji(player.bot, 'user')} **⠂Pedido por:** <@{player.current.requester}>\n"
+            txt += f"{app_emoji(player.bot, 'user')} **⠂Pedido por:** <@{player.current.requester}>\n"
         else:
             try:
                 mode = f" {md_link('Recomendação', player.current.info['extra']['related']['uri'])}"

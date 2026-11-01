@@ -237,7 +237,7 @@ class EmbedPaginator(disnake.ui.View):
         self.stop()
 
 
-def song_request_buttons(bot) -> list[disnake.ui.Button]:
+def song_request_buttons(bot: BotCore) -> list[disnake.ui.Button]:
     return [
         disnake.ui.Button(
             label="Pedir uma música", emoji=app_emoji(bot, "music_notes"), custom_id=PlayerControls.add_song
