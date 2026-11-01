@@ -16,7 +16,7 @@ import logging
 from collections.abc import Callable
 from typing import Optional
 
-from empiremuse.rules.radio import LIVE_CYCLE_ATTEMPTS, backoff_s, live_backoff_s
+from empiremuse.rules.radio import LIVE_CYCLE_ATTEMPTS, SKIP_COOLDOWN_S, backoff_s, live_backoff_s
 from empiremuse.utils.radio.panel import LiveView
 from empiremuse.utils.radio.runner import STABLE_AFTER_S, Phase, ProcessLimits, RadioPorts, RadioRunner
 from empiremuse.utils.radio.service import RadioState
@@ -139,6 +139,33 @@ class LiveRadioRunner(RadioRunner):
         await super()._tick()
         if self.phase is Phase.PLAYING and self.failures and self._is_stable():
             self.failures = self.attempt = 0  # tocando de forma estável: o ciclo de falhas recomeça
+
+    async def station_changed(self) -> None:
+        """A principal mudou (painel da call ou página Rádios): zera o ciclo de falhas e o título e recomeça pelo recuo; pausada ou em recuo, a próxima
+        tentativa já usa a estação nova."""
+        if self._stopped:
+            return
+        self.failures = 0
+        self.outage = False
+        self.title = None
+        if self.phase is Phase.PLAYING:
+            self.attempt = 0
+            await self.on_disconnect()
+
+    async def switch_station(self) -> bool:
+        """Botão "Reserva": vai para a outra estação (principal ↔ reserva) se ela existe e está saudável. No máximo uma por ``SKIP_COOLDOWN_S``."""
+        now = self.ports.now()
+        if self._stopped or self.phase is not Phase.PLAYING:
+            return False
+        if self._last_skip is not None and now - self._last_skip < SKIP_COOLDOWN_S:
+            return False
+        self._last_skip = now
+        if not await self.ports.switch_source():  # type: ignore[attr-defined]
+            return False
+        self.failures = self.attempt = 0
+        self.title = None
+        await self.on_disconnect()
+        return True
 
     async def restore_primary(self) -> bool:
         """O health check reabilitou a estação principal: se a rádio está na reserva (ou em silêncio), volta para ela. Tocando, a volta é pelo

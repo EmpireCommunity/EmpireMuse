@@ -15,7 +15,8 @@ from disnake.ext import commands
 
 from empiremuse.i18n import localized
 from empiremuse.rules.i18n import fit
-from empiremuse.rules.radio import BotCandidate, panel_action, radio_id
+from empiremuse.rules.radio import KIND_LIVE, BotCandidate, panel_action, radio_id
+from empiremuse.rules.radio_stations import Station
 from empiremuse.rules.servers import is_main_identifier
 from empiremuse.rules.text import external_text
 from empiremuse.utils.music.errors import GenericError
@@ -24,7 +25,9 @@ from empiremuse.utils.radio import actions
 from empiremuse.utils.radio.actions import Actor, Refused
 from empiremuse.utils.radio.control import MainBotRefused
 from empiremuse.utils.radio.discord_ports import DiscordChatPorts, DiscordRadioPorts
+from empiremuse.utils.radio.live import LiveRadioRunner
 from empiremuse.utils.radio.live_ports import LiveRadioPorts
+from empiremuse.utils.radio.picker import RadioPicker
 from empiremuse.utils.radio.premium import RadioUnavailable
 
 if TYPE_CHECKING:
@@ -162,6 +165,10 @@ class Radio(commands.Cog):
             runner = self.hub.manager.runner(radio.id) if radio is not None else None
             if radio is None or not radio.enabled or runner is None or interaction.channel_id != radio.channel_id:
                 raise GenericError(tr("radio.panel.gone"))
+            live = radio.kind == KIND_LIVE
+            if action in ("next", "stations", "reserve") and live != (action != "next"):
+                # cada painel tem os SEUS botões: um painel antigo na tela não faz a rádio ao vivo "pular" nem a personalizada trocar de estação
+                raise GenericError(tr("radio.panel.not_here"))
             if action == "pause":
                 paused = not runner.admin_paused
                 await runner.set_admin_pause(paused)
@@ -173,6 +180,13 @@ class Radio(commands.Cog):
                 await interaction.edit_original_message(
                     content=tr("radio.panel.skipped" if skipped else "radio.panel.skip_wait")
                 )
+            elif action == "reserve":
+                switched = isinstance(runner, LiveRadioRunner) and await runner.switch_station()
+                await interaction.edit_original_message(
+                    content=tr("radio.panel.reserve_done" if switched else "radio.panel.reserve_none")
+                )
+            elif action == "stations":
+                await self._open_station_picker(interaction, tr, radio.id)
             else:
                 actor = Actor(user_id=interaction.author.id, manage_guild=True)
                 try:
@@ -265,6 +279,40 @@ class Radio(commands.Cog):
         ),
     ) -> None:
         tr = await self._gate(inter)
+        if playlist is None and station is None:
+            await self._open_start_picker(inter, tr, channel)  # nem playlist nem estação: escolhe a estação por local
+            return
+        found = await self.bot.pool.servers.playlists.find(inter.guild_id, playlist) if playlist else None
+        picked = None
+        if station:  # o valor vem do autocomplete, mas o usuário pode digitar qualquer coisa: antes do diretório, o direito (manage_guild e premium)
+            await self._require_station_rights(inter, tr)
+            picked = await self.hub.directory.by_uuid(station)
+            if picked is None:
+                raise GenericError(tr("radio.live.not_found"))
+        text = await self._start(inter, tr, channel, playlist=playlist, found=found, picked=picked)
+        await inter.edit_original_message(content=text, allowed_mentions=disnake.AllowedMentions.none())
+
+    async def _require_station_rights(self, inter: Any, tr: Any) -> None:
+        """Antes de qualquer pedido ao diretório: ``manage_guild`` e premium do servidor (como no autocomplete)."""
+        if not inter.author.guild_permissions.manage_guild:
+            raise GenericError(tr(f"radio.refused.{actions.NO_MANAGE_GUILD}"))
+        try:
+            if await self.hub.premium.get(inter.guild_id) is None:
+                raise GenericError(tr(f"radio.refused.{actions.NO_PREMIUM}"))
+        except RadioUnavailable:
+            raise GenericError(tr("radio.owner.unavailable")) from None
+
+    async def _start(
+        self,
+        inter: Any,
+        tr: Any,
+        channel: Any,
+        *,
+        playlist: Optional[str],
+        found: Any,
+        picked: Optional[Station],
+    ) -> str:
+        """Liga a rádio (personalizada com ``found`` ou ao vivo com ``picked``) e devolve o texto da resposta. Vale para o comando e para o seletor."""
         actor = Actor(
             user_id=inter.author.id,
             manage_guild=inter.author.guild_permissions.manage_guild,
@@ -272,19 +320,6 @@ class Radio(commands.Cog):
                 inter.author
             ).manage_messages,  # no CANAL, em execução (R-4)
         )
-        found = await self.bot.pool.servers.playlists.find(inter.guild_id, playlist) if playlist else None
-        picked = None
-        if station:  # o valor vem do autocomplete, mas o usuário pode digitar qualquer coisa: antes do diretório, o direito (manage_guild e premium)
-            if not actor.manage_guild:
-                raise GenericError(tr(f"radio.refused.{actions.NO_MANAGE_GUILD}"))
-            try:
-                if await self.hub.premium.get(inter.guild_id) is None:
-                    raise GenericError(tr(f"radio.refused.{actions.NO_PREMIUM}"))
-            except RadioUnavailable:
-                raise GenericError(tr("radio.owner.unavailable")) from None
-            picked = await self.hub.directory.by_uuid(station)
-            if picked is None:
-                raise GenericError(tr("radio.live.not_found"))
         request_channel = (await self.bot.pool.servers.request.get(inter.guild_id)).channel
         candidates, can_join = self._candidates(inter.guild_id, channel)
         try:
@@ -310,11 +345,63 @@ class Radio(commands.Cog):
             radio, wait=False
         )  # a partida segue em segundo plano: sem prender a resposta ao token
         logger.info("radio.toggle: ligada (%d neste processo)", self.hub.manager.counts().on)
+        if picked is not None:
+            return tr(
+                "radio.on.done_station",
+                channel=channel.mention,
+                station=external_text(picked.name, NAME_LIMIT),
+                bot=f"<@{radio.bot_id}>",
+            )
         name = external_text(radio.source.get("playlist"), NAME_LIMIT)
-        await inter.edit_original_message(
-            content=tr("radio.on.done", channel=channel.mention, playlist=name, bot=f"<@{radio.bot_id}>"),
-            allowed_mentions=disnake.AllowedMentions.none(),
+        return tr("radio.on.done", channel=channel.mention, playlist=name, bot=f"<@{radio.bot_id}>")
+
+    # ------------------------------------------------------------------ seletor de estação por local (R4)
+
+    @staticmethod
+    def _can_manage(interaction: Any) -> bool:
+        return bool(interaction.author.guild_permissions.manage_guild)
+
+    def _picker(self, interaction: Any, tr: Any, apply: Any, confirm_label: str) -> RadioPicker:
+        tree = self.hub.locations
+        if tree is None:  # o arquivo de dados não carregou: o filtro some e a busca por nome (``estacao:``) segue
+            raise GenericError(tr("radio.local.unavailable"))
+        guild_locale = getattr(interaction.guild, "preferred_locale", None)
+        return RadioPicker(
+            self.hub,
+            tree,
+            tr,
+            author_id=interaction.author.id,
+            guild_id=interaction.guild_id,
+            locale=tr.locale,
+            guild_locale=str(getattr(guild_locale, "value", guild_locale)) if guild_locale else None,
+            apply=apply,
+            confirm_label=confirm_label,
+            check=self._can_manage,
         )
+
+    async def _open_start_picker(self, inter: Any, tr: Any, channel: Any) -> None:
+        await self._require_station_rights(inter, tr)
+
+        async def apply(click: disnake.MessageInteraction, station: Station) -> str:
+            return await self._start(click, tr, channel, playlist=None, found=None, picked=station)
+
+        picker = self._picker(inter, tr, apply, tr("radio.local.confirm_start", channel=channel.name))
+        await inter.edit_original_message(**await picker.render())
+
+    async def _open_station_picker(self, interaction: disnake.MessageInteraction, tr: Any, radio_key: str) -> None:
+        """O botão "Estações" do painel ao vivo: escolhe uma estação por local e troca a principal da rádio que já toca."""
+        await self._require_station_rights(interaction, tr)
+
+        async def apply(click: disnake.MessageInteraction, station: Station) -> str:
+            actor = Actor(user_id=click.author.id, manage_guild=click.author.guild_permissions.manage_guild)
+            try:
+                await actions.change_station(self.hub, radio_id=radio_key, station=station, actor=actor)
+            except Refused as refusal:
+                raise GenericError(tr(f"radio.refused.{refusal.code}")) from None
+            return tr("radio.local.changed", station=external_text(station.name, NAME_LIMIT))
+
+        picker = self._picker(interaction, tr, apply, tr("radio.local.confirm_change"))
+        await interaction.edit_original_message(**await picker.render())
 
     @radio.sub_command(name="desligar", description=localized("cmd.radio.desligar.description"))
     async def radio_off(

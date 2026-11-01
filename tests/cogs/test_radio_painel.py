@@ -32,22 +32,23 @@ def tr_pt():
 
 
 class TestPayload:
-    def test_three_buttons_with_fixed_ids_and_nothing_of_the_radio_inside(self):
+    def test_the_custom_panel_has_three_buttons_with_fixed_ids_and_nothing_of_the_radio_inside(self):
         payload = panel_payload(tr_pt(), playlist_name="Rock")
 
         row = payload["components"][0]
-        assert [b.custom_id for b in row.children] == list(PANEL_IDS)
+        assert [b.custom_id for b in row.children] == [PANEL_PAUSE_ID, PANEL_NEXT_ID, PANEL_STOP_ID]
         assert all(":" not in b.custom_id and not any(ch.isdigit() for ch in b.custom_id) for b in row.children)
         assert row.children[2].style is disnake.ButtonStyle.danger
 
     def test_the_playlist_name_goes_through_the_single_external_text_function(self):
         payload = panel_payload(tr_pt(), playlist_name="@everyone <@123> https://evil.example/x")
 
-        text = payload["embeds"][0].description
+        embed = payload["embeds"][0]
+        text = "\n".join([embed.description or "", *(f"{f.name}\n{f.value}" for f in embed.fields)])
         assert "@everyone" not in text and "<@123>" not in text and "://" not in text
 
-    def test_panel_actions_map_only_the_three_fixed_ids(self):
-        assert [panel_action(i) for i in (PANEL_PAUSE_ID, PANEL_NEXT_ID, PANEL_STOP_ID)] == ["pause", "next", "stop"]
+    def test_panel_actions_map_only_the_fixed_ids(self):
+        assert [panel_action(i) for i in PANEL_IDS] == ["pause", "next", "stop", "stations", "reserve"]
         for forged in (
             "radio_panel_pause:1:2",
             "radio_panel_stop ",

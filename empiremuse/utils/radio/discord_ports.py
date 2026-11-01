@@ -188,6 +188,35 @@ class DiscordRadioPorts:
     def _panel_view(self) -> Any:
         return None  # a ao vivo mostra título, reserva no ar e fora do ar (``LiveRadioPorts``)
 
+    async def _station_card(self, current: Radio) -> Any:
+        return None  # só a rádio ao vivo tem estação (``LiveRadioPorts``)
+
+    async def _panel_payload(self, bot: BotCore, guild: disnake.Guild, current: Radio) -> dict[str, Any]:
+        """O painel do tipo desta rádio (ao vivo ou personalizada) com o visual da Jukebox: ícones do bot, miniatura e cor."""
+        from empiremuse.utils.music.app_emojis import emoji as app_emoji  # tarde: o módulo importa o cliente
+        from empiremuse.utils.radio.panel import panel_payload
+
+        tr = await bot.pool.i18n.for_guild(guild)
+        live = self.radio.kind == "live"
+        return panel_payload(
+            tr,
+            playlist_name="" if live else await self._panel_name(current),
+            color=bot.get_color(guild.me),
+            live=live,
+            view=self._panel_view(),
+            station=await self._station_card(current),
+            emojis=lambda name: app_emoji(bot, name),
+            avatar=guild.me.display_avatar.replace(size=256).url,
+        )
+
+    async def _refresh_existing(self, message: Any, bot: BotCore, guild: disnake.Guild, current: Radio) -> None:
+        """O painel que já existia (de antes de uma atualização do bot, ou do reinício) é redesenhado uma vez com o visual de agora."""
+        try:
+            payload = await self._panel_payload(bot, guild, current)
+            await message.edit(allowed_mentions=disnake.AllowedMentions.none(), **payload)
+        except Exception as error:  # noqa: BLE001 - o painel é conveniência: só o tipo vai ao log (R-12)
+            logger.warning("Painel da rádio não redesenhado (%s)", type(error).__name__)
+
     async def ensure_panel(self) -> None:
         """Garante a mensagem de controle no chat da call: mantém a que ainda existe, manda uma nova se sumiu. Sem permissão de enviar: só avisa."""
         bot, guild, channel = self._bot(), self._guild(), self._channel()
@@ -199,22 +228,14 @@ class DiscordRadioPorts:
             try:
                 existing = await channel.fetch_message(current.panel_message_id)
                 hub.manager.note_panel(self.radio.id, existing.id)
+                await self._refresh_existing(existing, bot, guild, current)
                 return
             except disnake.NotFound:
                 pass  # sumiu: manda outra
             except disnake.Forbidden:
                 logger.warning("Painel da rádio sem permissão para ler o chat da call")
                 return
-        from empiremuse.utils.radio.panel import panel_payload  # tarde: o painel importa a camada de texto
-
-        tr = await bot.pool.i18n.for_guild(guild)
-        payload = panel_payload(
-            tr,
-            playlist_name=await self._panel_name(current),
-            color=bot.get_color(guild.me),
-            live=self.radio.kind == "live",
-            view=self._panel_view(),
-        )
+        payload = await self._panel_payload(bot, guild, current)
         try:
             message = await channel.send(allowed_mentions=disnake.AllowedMentions.none(), **payload)
         except disnake.Forbidden:

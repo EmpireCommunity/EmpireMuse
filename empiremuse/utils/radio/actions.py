@@ -123,6 +123,34 @@ async def turn_on(
         raise Refused(CHANGED if isinstance(error, RadioConflict) else INVALID) from error
 
 
+async def change_station(hub: RadioHub, *, radio_id: str, station: Station, actor: Actor) -> Radio:
+    """Troca a estação PRINCIPAL de uma rádio ao vivo LIGADA (painel da call): a store grava com ``rev`` e o gerenciador troca ao vivo.
+
+    ``manage_guild`` e premium são conferidos AQUI, em execução (o select que trouxe a estação vive 5 minutos). Lê a rádio de novo: o ``rev`` usado é o de agora.
+    """
+    if not actor.manage_guild:
+        raise Refused(NO_MANAGE_GUILD)
+    current = await hub.store.get(radio_id)
+    if current is None or not current.enabled or current.kind != KIND_LIVE:
+        raise Refused(NOT_FOUND)
+    if await hub.premium.fresh(current.guild_id) is None:
+        raise Refused(NO_PREMIUM)
+    if hub.health.unavailable(station.uuid):
+        raise Refused(STATION_DOWN)
+    try:
+        updated = await hub.store.set_station(
+            radio_id, station.uuid, expected_rev=current.rev, updated_by=str(actor.user_id)
+        )
+    except RadioConflict as error:
+        raise Refused(CHANGED) from error
+    except RadioInvalid as error:
+        raise Refused(INVALID) from error
+    except RadioNotFound as error:
+        raise Refused(NOT_FOUND) from error
+    await hub.manager.change_station(updated)
+    return updated
+
+
 async def turn_off(hub: RadioHub, *, guild_id: int, channel_id: int, actor: Actor) -> list[Radio]:
     """Desliga as rádios ligadas deste canal (de qualquer bot do servidor). Devolve as desligadas; nenhuma ligada ali é ``NOT_FOUND``."""
     if not actor.manage_guild:

@@ -922,12 +922,13 @@ class TestLivePanel:
             return key + "|" + "|".join(f"{k}={v}" for k, v in sorted(kw.items()))
 
         def text(view):
-            return panel_payload(tr, playlist_name="Boa FM", live=True, view=view)["embeds"][0].description
+            embed = panel_payload(tr, playlist_name="Boa FM", live=True, view=view)["embeds"][0]
+            return "\n".join(f"{field.name}\n{field.value}" for field in embed.fields)
 
-        assert "panel_now|title=Artista - Faixa" in text(LiveView(title="Artista - Faixa"))
+        assert "panel_now_title|title=Artista - Faixa" in text(LiveView(title="Artista - Faixa"))
         assert "panel_live" in text(LiveView()) and "panel_reserve" not in text(LiveView())
         assert "panel_reserve" in text(LiveView(on_reserve=True))
-        assert "panel_offline" in text(LiveView(offline=True)) and "panel_now" not in text(
+        assert "panel_offline" in text(LiveView(offline=True)) and "panel_now_title" not in text(
             LiveView(offline=True, title="x")
         )
         assert len(text(LiveView(title="z" * 1000))) < 400  # o título tem teto

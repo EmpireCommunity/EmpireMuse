@@ -26,6 +26,7 @@ from empiremuse.rules.radio import (
     check_radio,
     to_document,
 )
+from empiremuse.rules.radio_stations import valid_uuid
 from empiremuse.utils.radio.premium import CAS_ATTEMPTS, GLOBAL_DB, PremiumStore, RadioUnavailable
 
 if TYPE_CHECKING:
@@ -175,6 +176,30 @@ class RadioStore:
             raise RadioInvalid(RuleError(SOURCE_INVALID, "reserve"))
         updated = dataclasses.replace(
             current, source={"station": current.source["station"], "reserve": reserve}, rev=current.rev + 1
+        )
+        checked = check_radio(to_document(updated))
+        if isinstance(checked, RuleError):
+            raise RadioInvalid(checked)
+        if not await self._save(radio_id, to_document(checked, updated_by=updated_by), expected_rev):
+            raise RadioConflict
+        return checked
+
+    async def set_station(self, radio_id: str, uuid: object, *, expected_rev: int, updated_by: str = "") -> Radio:
+        """Muda a estação PRINCIPAL de uma rádio AO VIVO (o seletor de local do painel da call e da página Rádios). Mesmas regras do ``set_reserve``:
+        ``RadioConflict`` se o ``rev`` mudou, ``RadioInvalid`` se não é rádio ao vivo ou o uuid não é válido. A reserva igual à nova principal é tirada.
+        Quem muda a estação de uma rádio ligada chama depois ``RadioManager.change_station`` (o runner guarda a principal que leu na partida)."""
+        current = self._radio(await self._find(radio_id))
+        if current is None:
+            raise RadioNotFound
+        if current.rev != expected_rev:
+            raise RadioConflict
+        if current.kind != KIND_LIVE or not valid_uuid(uuid):
+            raise RadioInvalid(RuleError(SOURCE_INVALID, "station"))
+        reserve = current.source.get("reserve")
+        updated = dataclasses.replace(
+            current,
+            source={"station": uuid, "reserve": None if reserve == uuid else reserve},
+            rev=current.rev + 1,
         )
         checked = check_radio(to_document(updated))
         if isinstance(checked, RuleError):

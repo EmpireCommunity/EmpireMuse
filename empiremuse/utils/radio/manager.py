@@ -109,6 +109,20 @@ class RadioManager:
         if isinstance(runner, LiveRadioRunner):
             runner.set_title(title)
 
+    async def change_station(self, radio: Radio) -> bool:
+        """A estação principal de uma rádio ao vivo mudou na store (``set_station``): se ela está ligada neste processo, troca de estação ao vivo.
+        Desligada, ou de outra instância do bot, não faz nada (a próxima partida já lê o documento novo). ``True`` se trocou."""
+        runner = self._runners.get(radio.id)
+        if runner is None or runner.stopped or radio.kind != KIND_LIVE or not isinstance(runner, LiveRadioRunner):
+            return False
+        self._radios[radio.id] = radio
+        apply = getattr(runner.ports, "apply_station", None)
+        if apply is None:
+            return False
+        await apply(radio)
+        await runner.station_changed()
+        return True
+
     def referenced_stations(self) -> set[str]:
         """Os uuids (principal e reserva) das rádios ao vivo LIGADAS neste processo: o health check só olha estes."""
         found: set[str] = set()

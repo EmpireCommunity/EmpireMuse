@@ -30,6 +30,18 @@ atribuição obrigatória (kits `media-player-icons` e `web-ui-icons`, de mnauli
 Os demais emojis (logotipos de plataformas como YouTube, Spotify, Deezer, SoundCloud, Twitch e Tidal, e os outros que não foram
 trocados) não vêm desse kit e não fazem parte dessa licença.
 
+## Dados geográficos
+
+O filtro de local das rádios (região, país, estado e cidade) usa uma lista FIXA, gerada uma vez por `tools/radio_geo/build.py` e distribuída em
+`empiremuse/utils/radio/data/locations.json`; nada é buscado em execução. A procedência (URL, data e sha256 de cada entrada) está em
+`empiremuse/utils/radio/data/locations.meta.json`.
+
+- **GeoNames** (`cities5000` e `admin1CodesASCII`): dados de localização de [GeoNames](https://www.geonames.org/), licença
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Os dados foram reduzidos (24 cidades por estado) e agrupados.
+- **CLDR 46** (`territoryContainment`): [Unicode CLDR](https://cldr.unicode.org/), Unicode License v3 (regiões por sub-região M49).
+- **iso-codes** (`iso_3166-2`): nomes e siglas das subdivisões, LGPL-2.1+, usados só na geração.
+- **Radio Browser**: contagens de estações e geografia, domínio público.
+
 ## Recursos espelhados
 
 Alguns recursos externos dos quais o projeto depende foram espelhados em repositórios da
