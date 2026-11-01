@@ -15,7 +15,7 @@ import pytest
 
 from empiremuse.cogs import music
 from empiremuse.music_cog import panel_interactions
-from empiremuse.rules.request_panel import GENRE_SELECT_ID, QUEUE_BUTTON_ID, PanelEntry
+from empiremuse.rules.request_panel import GENRE_SELECT_ID, QUEUE_BUTTON_ID, PanelEntry, genre_for_key, genre_key
 from empiremuse.utils import request_panel as panel_module
 from empiremuse.utils.music.interactions import SelectInteraction
 from empiremuse.utils.music.interactions.request_panel import render_panel
@@ -82,6 +82,34 @@ class TestModoEstritoNoCanal:
         await classe.song_requests(self_, ctx, mensagem)
 
         assert ordem == ["atendeu"]  # apagar a mensagem apaga o anexo, que o Lavalink ainda vai baixar
+
+    @pytest.mark.asyncio
+    async def test_an_attachment_that_is_not_audio_is_deleted_in_the_strict_mode(self, monkeypatch):
+        classe, self_, ctx, mensagem, _envios, _ = montar_pedido(monkeypatch, RuntimeError("não deve chegar aqui"))
+        self_.bot.pool.servers.settings = AsyncMock(return_value={"request_channel_strict": True})
+        self_.delete_message = AsyncMock()
+        mensagem.content = ""
+        mensagem.attachments = [SimpleNamespace(size=10, content_type="image/png", url="https://cdn.invalid/a.png")]
+        self_.audio_formats = ("audio/mpeg",)
+
+        await classe.song_requests(self_, ctx, mensagem)
+
+        self_.delete_message.assert_awaited_once_with(mensagem)
+        self_.parse_song_request.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_an_unreadable_configuration_is_logged_with_the_error_type_only(self, monkeypatch, caplog):
+        from empiremuse.music_cog import song_requests as module
+
+        quebrado = AsyncMock(side_effect=RuntimeError("segredo na mensagem"))
+        mensagem = SimpleNamespace(guild=SimpleNamespace(id=1))
+        self_ = SimpleNamespace(bot=SimpleNamespace(pool=SimpleNamespace(servers=SimpleNamespace(settings=quebrado))))
+
+        with caplog.at_level("WARNING", logger=module.logger.name):
+            assert await module._request_channel_strict(self_, mensagem) is False
+
+        texto = "\n".join(r.getMessage() for r in caplog.records)
+        assert "RuntimeError" in texto and "segredo" not in texto
 
     @pytest.mark.asyncio
     async def test_other_bots_and_commands_are_never_deleted(self, monkeypatch):
@@ -345,10 +373,11 @@ class TestFilaEGeneroNoPainel:
 
         assert all(getattr(c.children[0], "custom_id", "") != GENRE_SELECT_ID for c in sem)
         select = next(c.children[0] for c in com if getattr(c.children[0], "custom_id", "") == GENRE_SELECT_ID)
-        assert [o.label for o in select.options] == ["Rock", "Pop"] and [o.value for o in select.options] == ["0", "1"]
+        assert [o.label for o in select.options] == ["Rock", "Pop"]
+        assert [o.value for o in select.options] == [genre_key("Rock"), genre_key("Pop")]
         assert len(com) <= 5  # o Discord aceita no máximo 5 linhas
 
-    def test_the_queue_select_options_use_the_index_and_the_choice_is_read_again_from_the_live_queue(self):
+    def test_the_queue_select_options_carry_the_unique_id_and_the_choice_is_read_again_from_the_live_queue(self):
         faixa = SimpleNamespace(
             single_title="Canção",
             title="Canção - Banda",
@@ -357,33 +386,53 @@ class TestFilaEGeneroNoPainel:
             authors_string="Banda",
             unique_id="abc123",
         )
-        opcoes = panel_interactions.queue_options([faixa, faixa])
+        opcoes = panel_interactions.queue_options([faixa])
 
-        assert [o.value for o in opcoes] == ["0", "1"] and opcoes[0].label.startswith("1. ")
-        fila = [faixa]
-        assert panel_interactions.queue_query_at(fila, "0") == "Canção - Banda || ID > abc123"
-        for ruim in ("1", "-1", "x", "", "9999"):
-            assert panel_interactions.queue_query_at(fila, ruim) is None
+        assert [o.value for o in opcoes] == ["abc123"] and opcoes[0].label.startswith("1. ")
+        assert panel_interactions.queue_query_for([faixa], "abc123") == "Canção - Banda || ID > abc123"
+        for ruim in ("zzz", "", None, 5):
+            assert panel_interactions.queue_query_for([faixa], ruim) is None
 
-    def test_two_tracks_with_the_same_beginning_are_told_apart_by_their_unique_id(self):
-        """O ``skipto`` por título casa o COMEÇO do título e mandaria para a primeira: o pedido leva o ``unique_id`` da escolhida."""
-        outra = SimpleNamespace(title="Hello", unique_id="id-3")
-        igual = SimpleNamespace(title="Hello (Live)", unique_id="id-20")
+    def test_a_queue_that_moved_while_the_view_was_open_still_picks_the_chosen_track(self):
+        """Pela posição, a fila que andou mandaria para outra música; pelo ``unique_id`` a escolhida é a mesma, e se ela saiu, nada acontece."""
+        a = SimpleNamespace(title="Hello", unique_id="id-a")
+        b = SimpleNamespace(title="Hello (Live)", unique_id="id-b")
+        c = SimpleNamespace(title="Outra", unique_id="id-c")
 
-        assert panel_interactions.queue_query_at([outra, igual], "1").endswith(" || ID > id-20")
-        assert panel_interactions.queue_query_at([outra, igual], "0").endswith(" || ID > id-3")
+        assert panel_interactions.queue_query_for([a, b, c], "id-b").endswith(" || ID > id-b")
+        assert panel_interactions.queue_query_for([c, b], "id-b").endswith(
+            " || ID > id-b"
+        )  # a faixa "a" saiu, "b" subiu
+        assert panel_interactions.queue_query_for([c], "id-b") is None  # a escolhida já tocou ou saiu
 
     def test_a_title_that_contains_the_separator_cannot_break_the_request(self):
         esperta = SimpleNamespace(title="x || ID > y", unique_id="id-1")
 
-        consulta = panel_interactions.queue_query_at([esperta], "0")
+        consulta = panel_interactions.queue_query_for([esperta], "id-1")
 
         assert consulta.count(" || ID > ") == 1 and consulta.endswith(" || ID > id-1")
 
+    def test_a_genre_is_found_by_its_key_even_when_another_genre_appears_before_it(self):
+        antes = ["Pop", "Rock"]
+        chave = genre_key("Rock")
+        depois = ["Axé", "Pop", "Rock"]  # um gênero novo entrou antes na ordem
+
+        assert genre_for_key(antes, chave) == "Rock" and genre_for_key(depois, chave) == "Rock"
+        assert genre_for_key(["Pop"], chave) is None  # o gênero sumiu: recusa, nunca troca por outro
+        assert genre_for_key(depois, 3) is None and genre_for_key(depois, None) is None
+
+    def test_genre_keys_fit_a_select_value_and_ignore_case(self):
+        assert len(genre_key("a" * 500)) <= 100 and genre_key("ROCK") == genre_key("rock")
+
     @pytest.mark.asyncio
     async def test_a_long_queue_pages_at_25_options_per_select(self):
-        faixa = SimpleNamespace(single_title="T", title="T", duration=1000, is_stream=False, authors_string="A")
-        opcoes = panel_interactions.queue_options([faixa] * 60)
+        faixas = [
+            SimpleNamespace(
+                single_title="T", title="T", duration=1000, is_stream=False, authors_string="A", unique_id=f"id-{n}"
+            )
+            for n in range(60)
+        ]
+        opcoes = panel_interactions.queue_options(faixas)
 
         visao = SelectInteraction(user=SimpleNamespace(id=1), opts=opcoes, timeout=1)
 
@@ -484,3 +533,108 @@ class TestCliquesDoPainel:
 
         interacao.response.defer.assert_awaited_once_with(ephemeral=True, with_message=True)
         assert "canal de voz" in interacao.edit_original_message.await_args.kwargs["content"]
+
+
+class TestFimDoFluxoDoPainel:
+    @pytest.mark.asyncio
+    async def test_a_click_inside_the_view_is_answered_on_that_interaction(self):
+        clicada = SimpleNamespace(response=SimpleNamespace(is_done=lambda: False, edit_message=AsyncMock()))
+        original = SimpleNamespace(edit_original_message=AsyncMock())
+
+        await panel_interactions._say(SimpleNamespace(inter=clicada), original, content="x", view=None)
+
+        clicada.response.edit_message.assert_awaited_once_with(content="x", view=None)
+        original.edit_original_message.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_a_timeout_edits_the_original_ephemeral_message(self):
+        original = SimpleNamespace(edit_original_message=AsyncMock())
+
+        await panel_interactions._say(SimpleNamespace(inter=None), original, content="x", view=None)
+
+        original.edit_original_message.assert_awaited_once_with(content="x", view=None)
+
+
+class FakeView:
+    """Uma ``SelectInteraction`` que já nasce respondida: ``selected``/``inter`` vêm do teste, e ``wait`` volta na hora."""
+
+    escolha: object = None
+    clique: object = None
+
+    def __init__(self, *args, **kwargs):
+        self.selected = type(self).escolha
+        self.inter = type(self).clique
+
+    async def wait(self):
+        return True
+
+
+def faixa_com_id(unique_id, title="Canção"):
+    return SimpleNamespace(
+        single_title=title, title=title, duration=1000, is_stream=False, authors_string="A", unique_id=unique_id
+    )
+
+
+class TestFilaDePontaAPonta:
+    @staticmethod
+    def preparar(monkeypatch, *, fila, escolha, clicou=True):
+        pulou = AsyncMock()
+        bot_da_call = SimpleNamespace(
+            get_guild=lambda gid: SimpleNamespace(id=gid),
+            get_cog=lambda nome: SimpleNamespace(process_player_interaction=pulou),
+            get_slash_command=lambda nome: f"/{nome}",
+        )
+        player = SimpleNamespace(queue=fila)
+        monkeypatch.setattr(panel_interactions, "resolve_player", lambda *a: (bot_da_call, player))
+        monkeypatch.setattr(panel_interactions, "SelectInteraction", FakeView)
+        FakeView.escolha = escolha
+        FakeView.clique = (
+            SimpleNamespace(response=SimpleNamespace(is_done=lambda: False, edit_message=AsyncMock()))
+            if clicou
+            else None
+        )
+        return pulou, player
+
+    @pytest.mark.asyncio
+    async def test_the_chosen_track_is_skipped_to_by_its_unique_id(self, monkeypatch):
+        pulou, _ = self.preparar(monkeypatch, fila=[faixa_com_id("a"), faixa_com_id("b", "Hello")], escolha="b")
+        classe, eu, interacao = clique()
+
+        await classe.request_panel_queue(eu, interacao)
+
+        pulou.assert_awaited_once()
+        assert pulou.await_args.kwargs["kwargs"] == {"query": "Hello || ID > b", "case_sensitive": True}
+        assert pulou.await_args.kwargs["command"] == "/skipto"
+        eu.bot.dispatch.assert_not_called()  # nenhum erro engolido
+
+    @pytest.mark.asyncio
+    async def test_cancel_answers_the_clicked_button_and_skips_nothing(self, monkeypatch):
+        pulou, _ = self.preparar(monkeypatch, fila=[faixa_com_id("a")], escolha=False)
+        classe, eu, interacao = clique()
+
+        await classe.request_panel_queue(eu, interacao)
+
+        pulou.assert_not_awaited()
+        FakeView.clique.response.edit_message.assert_awaited_once()
+        eu.bot.dispatch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_track_that_left_the_queue_while_the_view_was_open_is_not_replaced_by_another(self, monkeypatch):
+        pulou, player = self.preparar(monkeypatch, fila=[faixa_com_id("a")], escolha="b")
+        classe, eu, interacao = clique()
+
+        await classe.request_panel_queue(eu, interacao)
+
+        pulou.assert_not_awaited()
+        FakeView.clique.response.edit_message.assert_awaited_once()
+        assert "mudou" in FakeView.clique.response.edit_message.await_args.kwargs["content"]
+
+    @pytest.mark.asyncio
+    async def test_a_view_that_timed_out_edits_the_original_message(self, monkeypatch):
+        pulou, _ = self.preparar(monkeypatch, fila=[faixa_com_id("a")], escolha=None, clicou=False)
+        classe, eu, interacao = clique()
+
+        await classe.request_panel_queue(eu, interacao)
+
+        pulou.assert_not_awaited()
+        assert interacao.edit_original_message.await_count == 2  # o prompt com a view e o aviso de cancelado

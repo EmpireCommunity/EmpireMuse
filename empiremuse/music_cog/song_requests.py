@@ -70,7 +70,10 @@ async def _request_channel_strict(self, message: disnake.Message) -> bool:
         return False
     try:
         return request_channel_strict(await self.bot.pool.servers.settings(message.guild.id))
-    except Exception:  # noqa: BLE001 - sem a configuração o canal segue o fluxo de antes
+    except Exception as error:  # noqa: BLE001 - sem a configuração o canal segue o fluxo de antes (não estrito), mas fica no log
+        logger.warning(
+            "Jukebox estrita: configuração do servidor não lida, seguindo sem o modo estrito (%s)", type(error).__name__
+        )
         return False
 
 
@@ -217,14 +220,6 @@ class SongRequestsMixin:
         if req.ctx.command:
             return
 
-        # Jukebox estrita (item 8): a mensagem com menção só deixa de ser ignorada se o servidor liga o modo estrito. Sem menção a
-        # configuração só é lida DEPOIS de saber que a mensagem é do canal de pedidos (este listener roda em toda mensagem de todo servidor).
-        strict = False
-        if req.message.mentions:
-            strict = await _request_channel_strict(self, req.message)
-            if not strict:
-                return
-
         if req.message.author.bot and not isinstance(req.message.channel, disnake.StageChannel):
             return
 
@@ -238,8 +233,10 @@ class SongRequestsMixin:
         if await _sr_validate_channel(self, req):
             return
 
-        if not req.message.mentions:
-            strict = await _request_channel_strict(self, req.message)
+        # só aqui, já sabendo que a mensagem é do canal de pedidos (este listener roda em toda mensagem de todo servidor)
+        strict = await _request_channel_strict(self, req.message)
+        if req.message.mentions and not strict:
+            return  # sem o modo estrito, mensagem com menção segue ignorada como sempre foi
         action = strict_action(
             strict,
             author_is_bot=req.message.author.bot,
@@ -281,6 +278,10 @@ class SongRequestsMixin:
                 return
 
             if await _sr_empty_content(self, req):
+                if action is StrictAction.DELETE_AND_PROCESS:
+                    await self.delete_message(
+                        req.message
+                    )  # anexo que não é áudio, grande demais ou sem nada: no modo estrito também some
                 return
 
             if await _sr_prepare_query(self, req):

@@ -7,6 +7,7 @@ mostra faixa nem quem pediu (S-V7). Aqui só há decisões e dados; os bots, o b
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections.abc import Callable, Iterable, Sequence
 from enum import StrEnum
@@ -178,6 +179,16 @@ def plain_mentions(text: str, name_of: Callable[[int], str | None]) -> str:
         return f"@{name}" if name else "…"
 
     return _MENTION.sub(replace, text)
+
+
+def genre_key(genre: str) -> str:
+    """O valor estável de um gênero no select do painel (cabe nos 100 caracteres do Discord e não muda se outro gênero entra na lista)."""
+    return hashlib.sha1(genre.casefold().encode("utf-8")).hexdigest()[:10]
+
+
+def genre_for_key(genres: Sequence[str], key: object) -> str | None:
+    """O gênero de AGORA que tem essa chave, ou ``None`` se ele já não existe (a escolha é recusada, nunca trocada por outro)."""
+    return next((genre for genre in genres if isinstance(key, str) and genre_key(genre) == key), None)
 
 
 def last_action_of(candidates: Sequence[tuple[bool, str | None]]) -> str:

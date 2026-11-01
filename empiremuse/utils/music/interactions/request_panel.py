@@ -21,6 +21,7 @@ from empiremuse.rules.request_panel import (
     PAUSED,
     QUEUE_BUTTON_ID,
     PanelEntry,
+    genre_key,
     progress_text,
 )
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
@@ -88,12 +89,10 @@ def _queue_button(bot: Any, tr: Translator) -> disnake.ui.Button:
 
 
 def _genre_select(tr: Translator, genres: Sequence[str]) -> disnake.ui.Select:
-    """Os gêneros das playlists do servidor; o valor é o ÍNDICE na lista (nunca o texto), e o tratamento confere contra a lista de agora."""
+    """Os gêneros das playlists do servidor; o valor é uma chave estável do gênero (nunca o texto nem a posição), e o tratamento confere contra a lista de agora."""
     return disnake.ui.Select(
         placeholder=fit(tr("player.panel.genre.placeholder"), 150),
-        options=[
-            disnake.SelectOption(label=fit(g, 100), value=str(i)) for i, g in enumerate(genres[:MAX_GENRE_OPTIONS])
-        ],
+        options=[disnake.SelectOption(label=fit(g, 100), value=genre_key(g)) for g in genres[:MAX_GENRE_OPTIONS]],
         custom_id=GENRE_SELECT_ID,
         min_values=0,
         max_values=1,

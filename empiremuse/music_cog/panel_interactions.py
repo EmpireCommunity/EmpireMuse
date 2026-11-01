@@ -12,13 +12,16 @@ a lista de agora.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from typing import Any
+
 import disnake
 from disnake.ext import commands
 
 from empiremuse.music_cog.play_guild_menu import GuildPlaylistSelect
 from empiremuse.rules.i18n import fit
 from empiremuse.rules.playlists import filter_by_genre, genres_of
-from empiremuse.rules.request_panel import GENRE_SELECT_ID, MAX_GENRE_OPTIONS, QUEUE_BUTTON_ID
+from empiremuse.rules.request_panel import GENRE_SELECT_ID, MAX_GENRE_OPTIONS, QUEUE_BUTTON_ID, genre_for_key
 from empiremuse.utils.music.checks import resolve_player, update_attr
 from empiremuse.utils.music.converters import fix_characters, time_format
 from empiremuse.utils.music.interactions import SelectInteraction
@@ -27,15 +30,15 @@ from empiremuse.utils.server_playlists import safe_list
 PROMPT_TIMEOUT = 60
 
 
-def queue_options(queue) -> list[disnake.SelectOption]:
-    """Uma opção por música da fila, na ordem; o valor é o ÍNDICE (a escolha é relida na fila de agora, nunca confiada)."""
+def queue_options(queue: Sequence[Any]) -> list[disnake.SelectOption]:
+    """Uma opção por música da fila, na ordem; o valor é o ``unique_id`` da faixa (a escolha é relida na fila de AGORA, nunca confiada)."""
     return [
         disnake.SelectOption(
             label=fix_characters(f"{n + 1}. {track.single_title}", 90),
             description=fix_characters(
                 f"[{time_format(track.duration) if not track.is_stream else '🔴 Live'}] {track.authors_string}", 90
             ),
-            value=str(n),
+            value=str(track.unique_id),
         )
         for n, track in enumerate(queue)
     ]
@@ -46,38 +49,45 @@ ID_SEPARATOR = (
 )
 
 
-def queue_query_at(queue, raw_index: object) -> str | None:
-    """O pedido de ``skipto`` para o índice escolhido, lido na fila de AGORA; ``None`` se o índice não vale (a fila andou).
+def queue_query_for(queue: Sequence[Any], unique_id: object) -> str | None:
+    """O pedido de ``skipto`` para a faixa escolhida, achada pelo ``unique_id`` na fila de AGORA; ``None`` se ela já saiu da fila.
 
-    Leva o ``unique_id`` da faixa: pelo título, duas faixas que começam igual (ou iguais) mandariam para a primeira.
+    Pela posição, uma fila que andou com a view aberta mandaria para outra música; pelo título, duas faixas que começam igual
+    mandariam para a primeira.
     """
-    try:
-        index = int(str(raw_index))
-    except ValueError:
+    track = next((t for t in queue if isinstance(unique_id, str) and str(t.unique_id) == unique_id), None)
+    if track is None:
         return None
-    if not 0 <= index < len(queue):
-        return None
-    track = queue[index]
     return f"{str(track.title).replace(ID_SEPARATOR, ' ')}{ID_SEPARATOR}{track.unique_id}"
+
+
+async def _say(flow: Any, interaction: disnake.MessageInteraction, **kwargs: Any) -> None:
+    """Responde no fim de um fluxo: se o usuário clicou em algo da view (``flow.inter``: Cancelar, a escolha), é ESSA interação que se
+    confirma; só no tempo esgotado se edita a mensagem efêmera original."""
+    clicked = flow.inter
+    if clicked is not None and not clicked.response.is_done():
+        await clicked.response.edit_message(**kwargs)
+    else:
+        await interaction.edit_original_message(**kwargs)
 
 
 class PanelInteractionsMixin:
     # ------------------------------------------------------------------ painel apagado
 
     @commands.Cog.listener("on_raw_message_delete")
-    async def request_panel_deleted(self, payload: disnake.RawMessageDeleteEvent):
+    async def request_panel_deleted(self, payload: disnake.RawMessageDeleteEvent) -> None:
         if payload.guild_id is not None and self.bot.pool.request_panel is not None:
             await self.bot.pool.request_panel.on_messages_deleted(payload.guild_id, (payload.message_id,))
 
     @commands.Cog.listener("on_raw_bulk_message_delete")
-    async def request_panel_bulk_deleted(self, payload: disnake.RawBulkMessageDeleteEvent):
+    async def request_panel_bulk_deleted(self, payload: disnake.RawBulkMessageDeleteEvent) -> None:
         if payload.guild_id is not None and self.bot.pool.request_panel is not None:
             await self.bot.pool.request_panel.on_messages_deleted(payload.guild_id, payload.message_ids)
 
     # ------------------------------------------------------------------ fila
 
     @commands.Cog.listener("on_button_click")
-    async def request_panel_queue(self, interaction: disnake.MessageInteraction):
+    async def request_panel_queue(self, interaction: disnake.MessageInteraction) -> None:
         if interaction.data.custom_id != QUEUE_BUTTON_ID:
             return
         # Numa resposta de componente só ``with_message=True`` cria uma mensagem efêmera nova; sem isso o ``edit_original_message``
@@ -99,11 +109,11 @@ class PanelInteractionsMixin:
             )
             await view.wait()
             if not view.inter or view.selected is False:
-                await interaction.edit_original_message(content=tr("player.operation_cancelled.description"), view=None)
+                await _say(view, interaction, content=tr("player.operation_cancelled.description"), view=None)
                 return
-            query = queue_query_at(player.queue, view.selected)
+            query = queue_query_for(player.queue, view.selected)
             if query is None:
-                await view.inter.response.edit_message(content=tr("player.panel.queue.changed"), view=None)
+                await _say(view, interaction, content=tr("player.panel.queue.changed"), view=None)
                 return
             update_attr(view.inter, bot, bot.get_guild(interaction.guild_id))
             cog = bot.get_cog("Music")
@@ -118,7 +128,7 @@ class PanelInteractionsMixin:
     # ------------------------------------------------------------------ gênero
 
     @commands.Cog.listener("on_dropdown")
-    async def request_panel_genre(self, interaction: disnake.MessageInteraction):
+    async def request_panel_genre(self, interaction: disnake.MessageInteraction) -> None:
         if interaction.data.custom_id != GENRE_SELECT_ID:
             return
         if not interaction.data.values:
@@ -134,8 +144,9 @@ class PanelInteractionsMixin:
                 return
             playlists = await safe_list(self.bot, interaction.guild_id)
             genres = genres_of(playlists)[:MAX_GENRE_OPTIONS]
-            raw = interaction.data.values[0]
-            genre = genres[int(raw)] if raw.isdecimal() and int(raw) < len(genres) else None
+            genre = genre_for_key(
+                genres, interaction.data.values[0]
+            )  # a chave do gênero, não a posição: a lista pode ter mudado
             chosen = filter_by_genre(playlists, genre) if genre is not None else ()
             if not chosen:
                 await interaction.edit_original_message(content=tr("player.panel.genre.none"))
@@ -146,7 +157,7 @@ class PanelInteractionsMixin:
             )
             await view.wait()
             if not view.inter or view.selected is False:
-                await interaction.edit_original_message(content=tr("player.operation_cancelled.description"), view=None)
+                await _say(view, interaction, content=tr("player.operation_cancelled.description"), view=None)
                 return
             kwargs = {
                 "query": view.selected,  # já vem como ``> pin: <nome>``; o /play o resolve de novo no store
