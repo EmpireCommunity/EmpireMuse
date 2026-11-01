@@ -17,7 +17,7 @@ NODE_FIELD = "node"
 PAGE_FIELD = "pagina"
 NODE_LIMIT = 100  # ids da árvore têm menos de 100 caracteres (R4 §5); o resto nem chega a ``tree.node``
 PAGE_SIZE = 24
-MAX_PAGES = 7  # ``region()`` devolve no máximo 150 estações
+PAGE_DIGITS = 4  # o número da página vem do usuário: até 4 dígitos, e a lista o limita à última página
 LEVEL_KEYS = {None: "pick_region", "region": "pick_country", "country": "pick_state", "state": "pick_city"}
 
 
@@ -63,7 +63,7 @@ def guild_locale_of(ctx: Any) -> Optional[str]:
 
 def parse_page(raw: Any) -> int:
     text = str(raw or "")
-    if text.isdigit() and 1 <= int(text) <= MAX_PAGES:
+    if text.isdigit() and len(text) <= PAGE_DIGITS and int(text) >= 1:
         return int(text)
     return 1
 

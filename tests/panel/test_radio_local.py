@@ -30,8 +30,14 @@ def uuids(body, field):
 
 
 def selected(form):
-    """O valor escolhido em cada select ``node`` da cascata, na ordem dos níveis."""
-    return [c["values"][0] if c["values"] else "" for c in form.controls if c.get("name") == "node"]
+    """O valor escolhido em cada select ``node`` da cascata, na ordem dos níveis ("" = só o "Escolha…", que volta ao pai)."""
+    result = []
+    for control in form.controls:
+        if control.get("name") != "node":
+            continue
+        chosen = next((o for o in control["options"] if o["selected"]), None)
+        result.append("" if chosen is None or chosen["label"].startswith("Escolha") else chosen["value"])
+    return result
 
 
 class LocalBase(LiveBase):
@@ -74,7 +80,7 @@ class LocalPageTest(LocalBase):
         form = self.local_form(body)
         assert form is not None and CREDIT in body
         assert form.choices("node")[:3] == ["", "c:BR", "r:america_norte"] and len(form.choices("node")) == 8
-        assert "⭐ Brasil (1603)" in body and "América Latina" in body
+        assert "⭐ Brasil" in body and "América Latina" in body and "países" not in body  # descrição só da escolhida
         assert self.radio.directory.region_calls == [] and self.radio.locations.calls[0] == (None, "pt-BR", "pt-BR")
 
     def test_without_a_server_country_or_a_tree_the_page_degrades(self):
@@ -98,9 +104,10 @@ class LocalPageTest(LocalBase):
             "r:america_latina",
             "",
         ]
-        assert "Nicarágua (26)" in region and uuids(region, "estacao") == []
+        assert "Nicarágua" in region and "2 países" in region and uuids(region, "estacao") == []
         country = self.local(browser, radio, "c:BR").body.decode()
-        assert "Demais estados: Norte (8)" in country and "Acre, Amapá" not in country  # descrição só da escolhida
+        assert "Demais estados: Norte" in country and "1603 estações" in country
+        assert "Acre, Amapá" not in country and "317 estações" not in country  # descrição só da escolhida
         state = self.local(browser, radio, "s:BR:@norte").body.decode()
         assert "Acre, Amapá, Rondônia, Roraima" in state and "Porto Velho" in state
         assert self.radio.directory.region_calls == []
@@ -250,7 +257,6 @@ class MainStationTest(LocalBase):
 
     def test_invalid_main_stations_are_422_or_409_without_writing(self):
         radio = self.seed_local()
-        custom = self.radio.store.seed(2, ALFA, 789)
         self.radio.health.down.add(C)
         browser = self.logged_in()
 
@@ -276,6 +282,8 @@ class MainStationTest(LocalBase):
         )
         same = self.post_station(browser, radio, A)
         assert same.code == 200 and self.radio.store.updates == []  # a mesma principal: nada a gravar
+        self.radio.store.docs.clear()
+        custom = self.radio.store.seed(1, ALFA, CHANNEL)
         pairs = [("versao", str(custom.rev)), ("estacao", B)]
         response = self.post_raw(browser, f"{self.url(ALFA, custom.id)}/estacao", pairs, htmx=True)
         assert response.code == 422 and "Só rádios ao vivo" in html.unescape(response.body.decode())
@@ -292,7 +300,8 @@ class MainStationTest(LocalBase):
         radio = self.seed_local()
         browser = self.logged_in()
         self.world.channels[CHANNEL] = make_channel(CHANNEL, "Sala", ALFA, manage_messages=False)
-        response = self.post_station(browser, radio, B, extra=[("node", SP)])
+        pairs = [("versao", str(radio.rev)), ("estacao", B), ("node", SP)]
+        response = self.post_raw(browser, f"{self.url(ALFA, radio.id)}/estacao", pairs, htmx=True)
         assert response.code == 403 and self.radio.store.updates == []
         assert self.radio.directory.region_calls == [] and self.radio.manager.station_changes == []
 

@@ -270,11 +270,19 @@ class FakeTree:
     def children(self, parent, locale, *, guild_locale=None):
         self.calls.append((parent, locale, guild_locale))
         items = [
-            LocOption(i, self.nodes[i].name, self.descriptions[i], self.counts[i]) for i in self.below.get(parent, [])
+            LocOption(i, self.nodes[i].name, self.descriptions[i] or self._count_text(i), self.counts[i])
+            for i in self.below.get(parent, [])
         ]
         if parent is None and guild_locale == "pt-BR" and "c:BR" in self.nodes:
             items.insert(0, LocOption("c:BR", "⭐ Brasil", "", self.counts["c:BR"]))
         return items[: self.LIMIT]
+
+    def _count_text(self, id_):
+        """Como a árvore real: região = "n países", país/estado = "n estações", cidade = nada."""
+        node = self.nodes[id_]
+        if node.kind == "region":
+            return f"{len(self.below[id_])} países"
+        return f"{self.counts[id_]} estações" if node.kind in ("country", "state") else ""
 
 
 REGIONS = (

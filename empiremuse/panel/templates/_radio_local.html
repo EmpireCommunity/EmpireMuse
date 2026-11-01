@@ -10,7 +10,7 @@
   <select id="{{ id_nivel }}" name="node" hx-get="{{ form.acao_local }}" hx-trigger="change" hx-target="#local-{{ vivo.slug }}" hx-swap="innerHTML"{% if escolhida and escolhida.description %} aria-describedby="{{ id_nivel }}-desc"{% end %}>
     <option value="{{ nivel.parent or '' }}"{% if nivel.selected is None %} selected{% end %}>{{ _("panel.radio.local.choose") }}</option>
     {% for opcao in nivel.options %}
-    <option value="{{ opcao.id }}"{% if opcao.id == nivel.selected %} selected{% end %}>{{ opcao.label }}{% if opcao.count %} ({{ opcao.count }}){% end %}</option>
+    <option value="{{ opcao.id }}"{% if opcao.id == nivel.selected %} selected{% end %}>{{ opcao.label }}</option>
     {% end %}
   </select>
   {% if escolhida and escolhida.description %}<small id="{{ id_nivel }}-desc" class="cascata-descricao">{{ escolhida.description }}</small>{% end %}
