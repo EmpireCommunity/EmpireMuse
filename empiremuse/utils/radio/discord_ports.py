@@ -127,9 +127,12 @@ class DiscordRadioPorts:
         )
         player.radio_id = self.radio.id
         player.controller_mode = False
-        player.loop = "queue"
+        self._configure_player(player)
         player.tr = await bot.pool.i18n.for_guild(guild)
         return player
+
+    def _configure_player(self, player: Any) -> None:
+        player.loop = "queue"  # a playlist dá a volta; a ao vivo troca isto (``LiveRadioPorts``)
 
     async def _speak(self, guild: disnake.Guild, channel: disnake.StageChannel, player: Any) -> None:
         """Palco: ``suppress=False`` com ``MUTE_MEMBERS``; sem isso, ``request_to_speak``. Um 403 vale UMA tentativa por conexão (R-5)."""
@@ -173,6 +176,9 @@ class DiscordRadioPorts:
         if player is not None:
             await player.process_next()
 
+    async def _panel_name(self, current: Radio) -> object:
+        return current.source.get("playlist", "")
+
     async def ensure_panel(self) -> None:
         """Garante a mensagem de controle no chat da call: mantém a que ainda existe, manda uma nova se sumiu. Sem permissão de enviar: só avisa."""
         bot, guild, channel = self._bot(), self._guild(), self._channel()
@@ -193,7 +199,12 @@ class DiscordRadioPorts:
         from empiremuse.utils.radio.panel import panel_payload  # tarde: o painel importa a camada de texto
 
         tr = await bot.pool.i18n.for_guild(guild)
-        payload = panel_payload(tr, playlist_name=current.source.get("playlist", ""), color=bot.get_color(guild.me))
+        payload = panel_payload(
+            tr,
+            playlist_name=await self._panel_name(current),
+            color=bot.get_color(guild.me),
+            live=self.radio.kind == "live",
+        )
         try:
             message = await channel.send(allowed_mentions=disnake.AllowedMentions.none(), **payload)
         except disnake.Forbidden:

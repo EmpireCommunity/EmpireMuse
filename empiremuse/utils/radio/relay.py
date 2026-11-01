@@ -56,6 +56,8 @@ REQUEST_TIMEOUT_S = 5.0
 IDLE_TIMEOUT_S = 15.0
 CHUNK = 8192
 RATE_FACTOR = 1.5
+PROBE_BYTES = 16 * 1024  # o health check lê isto pelo mesmo caminho do relay
+PROBE_MIN_BYTES = 1024
 DEFAULT_BITRATE_KBPS = 320  # sem bitrate informado, o teto é o do maior bitrate aceito
 _TOKEN = re.compile(r"[A-Za-z0-9_-]{22}")
 _REQUEST = re.compile(r"GET /r/([A-Za-z0-9_-]{22}) HTTP/1\.[01]")
@@ -121,6 +123,7 @@ class RadioRelay:
         self._open = asyncio.Semaphore(OPEN_CONCURRENCY)
         self._sockets = 0
         self._server: asyncio.AbstractServer | None = None
+        self._start_lock = asyncio.Lock()
         self.port = 0
 
     # ------------------------------------------------------------------ ciclo de vida
@@ -128,6 +131,13 @@ class RadioRelay:
     async def start(self) -> int:
         self._server = await asyncio.start_server(self._handle, LOOPBACK, 0)
         self.port = self._server.sockets[0].getsockname()[1]
+        return self.port
+
+    async def ensure_started(self) -> int:
+        """Sobe o servidor local uma vez (sob demanda, na primeira rádio ao vivo que toca). Devolve a porta."""
+        async with self._start_lock:
+            if self._server is None:
+                await self.start()
         return self.port
 
     async def close(self) -> None:
@@ -291,6 +301,26 @@ class RadioRelay:
             except StreamRefused as refusal:
                 last = refusal
         raise last
+
+    async def probe(self, url: str, codec: str) -> bool:
+        """O health check (R-10): abre a estação pelo MESMO caminho do relay (R-8) e lê até 16 KiB. ``True`` se chegou áudio. Nunca clica no diretório."""
+        try:
+            async with self._open:
+                upstream = await self._resolve_url(url, codec, allow_playlist=True)
+        except StreamRefused:
+            return False
+        got = len(upstream.first)
+        try:
+            while got < PROBE_BYTES:
+                chunk = await asyncio.wait_for(upstream.response.reader.read(CHUNK), self._idle)
+                if not chunk:
+                    break
+                got += len(chunk)
+        except TimeoutError, ConnectionError, asyncio.IncompleteReadError:
+            pass
+        finally:
+            await upstream.response.close()
+        return got >= PROBE_MIN_BYTES
 
     # ------------------------------------------------------------------ fluxo
 

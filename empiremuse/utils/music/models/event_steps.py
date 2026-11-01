@@ -88,9 +88,29 @@ def _he_same_node(self, event) -> bool:
     return event.node.identifier == self.node.identifier
 
 
+LIVE_LOST_REASONS = frozenset(
+    {"FINISHED", "LOAD_FAILED"}
+)  # fim e falha de um fluxo ao vivo; STOPPED/REPLACED/CLEANUP são nossos
+
+
+def _he_live_radio(self, event) -> bool:
+    """Rádio ao vivo (item 8, R3): fim, exceção e travada do fluxo NUNCA seguem o caminho de música (fila, autoplay, destroy); viram um aviso ao
+    ``RadioManager``, que volta pelo recuo de 2 a 32 s. Devolve ``True`` se o evento foi consumido aqui."""
+    if not getattr(self, "radio_live", False) or not isinstance(
+        event, (wavelink.TrackEnd, wavelink.TrackException, wavelink.TrackStuck)
+    ):
+        return False
+    lost = not isinstance(event, wavelink.TrackEnd) or str(getattr(event, "reason", "")).upper() in LIVE_LOST_REASONS
+    if lost and (radio_id := getattr(self, "radio_id", None)):
+        self.bot.pool.radio.manager.note_stream_lost(radio_id)
+    return True
+
+
 async def _he_dispatch(self, event) -> None:
     """Despacha o evento do Lavalink com o contexto de log (bot e servidor) e as métricas do pool."""
     with log_context(bot=getattr(self.bot, "identifier", None), guild=self.guild.id):
+        if _he_live_radio(self, event):
+            return
         metrics = getattr(getattr(self.bot, "pool", None), "metrics", None)
         if isinstance(event, wavelink.TrackEnd):
             if metrics:
