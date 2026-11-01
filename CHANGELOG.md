@@ -7,6 +7,12 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Corrigido
+- **Presença na call**: a checagem de ouvintes ao silenciar/ensurdecer alguém no mesmo canal sempre dava "tem gente" (um gerador é sempre verdadeiro), então o tempo de espera por call sem ouvintes não começava quando só restavam bots ou membros surdos.
+
+### Adicionado
+- **Quadros de áudio no resumo periódico**: a linha do nó mostra `quadros enviados`, `anulados` e `déficit` do último minuto (`frameStats` do Lavalink), e `—` quando o nó não os envia (sem players). Serve para medir picotes de áudio antes de mexer no buffer.
+
 ## [2.2.0] - 2026-11-01
 
 Idiomas: o bot passa a falar o idioma do servidor (`en-US` e `pt-BR`), com o comando `/language` e o campo Idioma no painel; comandos e player traduzidos, e mais 27 ícones da Flaticon no player.

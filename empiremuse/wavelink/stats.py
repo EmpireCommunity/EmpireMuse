@@ -59,6 +59,9 @@ class Stats:
         self.lavalink_load = cpu["lavalinkLoad"]
 
         frame_stats = data.get("frameStats", {}) or {}
+        self.has_frame_stats = bool(
+            frame_stats
+        )  # o ``-1`` abaixo é só o sentinela de ausente; o déficit real pode ser -1
         self.frames_sent = frame_stats.get("sent", -1)
         self.frames_nulled = frame_stats.get("nulled", -1)
         self.frames_deficit = frame_stats.get("deficit", -1)
