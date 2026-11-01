@@ -638,3 +638,42 @@ class TestFilaDePontaAPonta:
 
         pulou.assert_not_awaited()
         assert interacao.edit_original_message.await_count == 2  # o prompt com a view e o aviso de cancelado
+
+
+class TestGeneroContraTodosOsGeneros:
+    @pytest.mark.asyncio
+    async def test_a_genre_beyond_the_rendered_page_is_still_found_by_its_key(self, monkeypatch):
+        """O painel mostra só os primeiros 25 gêneros; uma lista que mudou pode ter empurrado o escolhido para além deles."""
+        nomes = [f"Gênero {n:02}" for n in range(30)]
+        playlists = tuple(SimpleNamespace(name=f"P{n}", genres=(nome,)) for n, nome in enumerate(nomes))
+        escolhido = nomes[27]  # na ordem de agora ele é o 28º: fora dos 25 desenhados
+        vistos = []
+
+        class VistaFalsa(FakeView):
+            def __init__(self, user, bot, chosen, **kwargs):
+                super().__init__()
+                vistos.append([p.name for p in chosen])
+
+        async def lista(bot, gid):
+            return playlists
+
+        monkeypatch.setattr(panel_interactions, "safe_list", lista)
+        monkeypatch.setattr(panel_interactions, "GuildPlaylistSelect", VistaFalsa)
+        FakeView.escolha, FakeView.clique = None, None
+        classe, eu, interacao = clique(custom_id=GENRE_SELECT_ID, valores=[genre_key(escolhido)])
+
+        await classe.request_panel_genre(eu, interacao)
+
+        assert vistos == [["P27"]]  # abriu as playlists daquele gênero, não a mensagem de "não há mais"
+
+    @pytest.mark.asyncio
+    async def test_a_key_of_a_genre_that_is_gone_is_refused(self, monkeypatch):
+        async def lista(bot, gid):
+            return (SimpleNamespace(name="P", genres=("Rock",)),)
+
+        monkeypatch.setattr(panel_interactions, "safe_list", lista)
+        classe, eu, interacao = clique(custom_id=GENRE_SELECT_ID, valores=[genre_key("Jazz")])
+
+        await classe.request_panel_genre(eu, interacao)
+
+        assert "mais" in interacao.edit_original_message.await_args.kwargs["content"]

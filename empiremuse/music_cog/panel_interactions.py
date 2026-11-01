@@ -21,7 +21,7 @@ from disnake.ext import commands
 from empiremuse.music_cog.play_guild_menu import GuildPlaylistSelect
 from empiremuse.rules.i18n import fit
 from empiremuse.rules.playlists import filter_by_genre, genres_of
-from empiremuse.rules.request_panel import GENRE_SELECT_ID, MAX_GENRE_OPTIONS, QUEUE_BUTTON_ID, genre_for_key
+from empiremuse.rules.request_panel import GENRE_SELECT_ID, QUEUE_BUTTON_ID, genre_for_key
 from empiremuse.utils.music.checks import resolve_player, update_attr
 from empiremuse.utils.music.converters import fix_characters, time_format
 from empiremuse.utils.music.interactions import SelectInteraction
@@ -143,7 +143,9 @@ class PanelInteractionsMixin:
                 await interaction.edit_original_message(content=tr("player.you_must_join_a_voice_2"))
                 return
             playlists = await safe_list(self.bot, interaction.guild_id)
-            genres = genres_of(playlists)[:MAX_GENRE_OPTIONS]
+            genres = genres_of(
+                playlists
+            )  # TODOS os gêneros de agora: o painel só mostra os primeiros, mas a chave pode ser de qualquer um
             genre = genre_for_key(
                 genres, interaction.data.values[0]
             )  # a chave do gênero, não a posição: a lista pode ter mudado
