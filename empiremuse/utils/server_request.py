@@ -136,8 +136,14 @@ class ServerRequest:
             exclusive = getattr(bot, "exclusive_guild_id", None)
             if bot.user is None or bot.get_guild(gid) is None or (exclusive and exclusive != gid):
                 continue
+            if self._radio_only(bot):
+                continue  # item 8: o bot só-rádio nunca vira bot do painel da Jukebox
             found.append(PanelPeer(bot.identifier, bot.user.id, bool(exclusive)))
         return found
+
+    def _radio_only(self, bot: BotCore) -> bool:
+        roles = getattr(getattr(self.store.pool, "radio", None), "roles", None)
+        return bool(roles is not None and roles.is_radio_only(getattr(bot, "identifier", None)))
 
     def _bot_by_id(self, bot_id: Optional[int]) -> Optional[BotCore]:
         return next((b for b in self.store.pool.get_all_bots() if b.user is not None and b.user.id == bot_id), None)

@@ -62,6 +62,8 @@ from empiremuse.utils.safe_error import HTTPStatusError, safe_error
 from empiremuse.utils.db import MongoDatabase, LocalDatabase, get_prefix, DBModel, global_db_models
 from empiremuse.utils.app_profile import sync_app_profile
 from empiremuse.utils.guild_ban import GuildBans
+from empiremuse.utils.radio import RadioHub
+from empiremuse.utils.radio.notice import refuse_radio_only
 from empiremuse.utils.request_panel import RequestPanel
 from empiremuse.utils.servers import ServerStore
 from empiremuse.rules.usage import KIND_PREFIX, KIND_SLASH
@@ -203,6 +205,7 @@ class BotPool:
     guild_bans: Optional[GuildBans] = None
     servers: Optional[ServerStore] = None
     request_panel: Optional[RequestPanel] = None
+    radio: RadioHub
     join_notices: Optional[TTLCache] = None
     logs_task: Optional[asyncio.Task] = None
     version_check_task: Optional[asyncio.Task] = None
@@ -276,6 +279,7 @@ class BotPool:
         self.i18n.pool = self
         self.servers = ServerStore(self)
         self.request_panel = RequestPanel(self)
+        self.radio = RadioHub(self)
         # servidor -> aviso de "sem o principal" já enviado; a validade de 24 h é o limitador único (um aviso por servidor no pool)
         self.join_notices = TTLCache(maxsize=5000, ttl=NOTICE_WINDOW_SECONDS)
         self.logs_task: Optional[asyncio.Task] = None
@@ -460,6 +464,7 @@ class BotPool:
             "cpu_percent": None,
             "rss_mib": None,
             "nodes": list(nodes.values()),
+            "radios": tuple(self.radio.manager.counts()) if getattr(self, "radio", None) else None,
         }
 
     async def connect_lavalink_queue_task(self, identifier: str):
@@ -1588,6 +1593,11 @@ class BotCore(commands.AutoShardedBot):
         """O bot principal (token principal), nunca um bot exclusivo de servidor."""
         return is_main_identifier(self.identifier) and not self.exclusive_guild_id
 
+    def _is_radio_only(self) -> bool:
+        """Este bot é dedicado a rádio (item 8)? Ele não responde nem à menção pura."""
+        hub = getattr(self.pool, "radio", None)
+        return bool(hub is not None and hub.roles.is_radio_only(self.identifier))
+
     @property
     def is_reserve(self) -> bool:
         """Reserva: do pool, não é o principal, não é exclusivo de servidor e há um token principal configurado."""
@@ -1826,7 +1836,7 @@ class BotCore(commands.AutoShardedBot):
         elif message.author.bot:
             return
 
-        elif message.content in (f"<@{self.user.id}>", f"<@!{self.user.id}>"):
+        elif message.content in (f"<@{self.user.id}>", f"<@!{self.user.id}>") and not self._is_radio_only():
             if message.author.bot:
                 return
 
@@ -1874,6 +1884,9 @@ class BotCore(commands.AutoShardedBot):
             return
 
         ctx: CustomContext = await self.get_context(message, cls=CustomContext)
+
+        if await refuse_radio_only(self, ctx, message):
+            return  # bot só-rádio (item 8): nem pedido, nem menção, nem prefixo; o comando de prefixo ganha um aviso
 
         try:
             ctx.player = self.music.players[message.guild.id]
