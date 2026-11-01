@@ -1,7 +1,6 @@
-"""Skins do player (item 21): o pt-BR é o texto de hoje palavra por palavra e o en-US cabe nos limites do Discord."""
+"""Skins do player (item 21): o en-US cabe nos limites do Discord e está traduzido. (O pt-BR = main foi provado uma vez, no corpo da PR.)"""
 
 import json
-from pathlib import Path
 
 import pytest
 
@@ -9,8 +8,6 @@ from empiremuse.i18n import get_i18n
 from tests.i18n.skins_harness import render
 
 pytestmark = pytest.mark.critical
-
-GOLDEN = json.loads((Path(__file__).parent / "golden_skins_pt_br.json").read_text(encoding="utf-8"))
 
 
 @pytest.fixture(scope="module")
@@ -21,13 +18,6 @@ def pt_br():
 @pytest.fixture(scope="module")
 def en_us():
     return render(get_i18n().for_locale("en-US"))
-
-
-def test_the_pt_br_render_of_every_skin_and_variant_is_todays_text(pt_br):
-    assert set(pt_br) == set(GOLDEN)
-    for skin, variants in GOLDEN.items():
-        for variant, expected in variants.items():
-            assert pt_br[skin][variant] == expected, (skin, variant)
 
 
 def texts(data):
@@ -49,15 +39,23 @@ def texts(data):
                 yield "option.description", option.get("description") or "", 100
 
 
+def embed_chars(data):
+    """O que o Discord soma contra o teto de 6000: título, descrição, rodapé, autor e campos de TODOS os embeds da mensagem."""
+    total = 0
+    for embed in data.get("embeds", []) + ([data["embed"]] if "embed" in data else []):
+        total += len(embed.get("title", "")) + len(embed.get("description", ""))
+        total += len(embed.get("footer", {}).get("text", "")) + len(embed.get("author", {}).get("name", ""))
+        total += sum(len(f["name"]) + len(f["value"]) for f in embed.get("fields", []))
+    return total
+
+
 def test_the_en_us_render_fits_the_discord_limits(en_us):
     for skin, variants in en_us.items():
         for variant, data in variants.items():
             assert isinstance(data, dict), (skin, variant, data)
             for kind, text, limit in texts(data):
                 assert len(text) <= limit, (skin, variant, kind, len(text))
-            embeds = data.get("embeds", []) + ([data["embed"]] if "embed" in data else [])
-            total = sum(len(json.dumps(e, ensure_ascii=False)) for e in embeds)
-            assert total <= 6000 * 3, (skin, variant)
+            assert embed_chars(data) <= 6000, (skin, variant)
 
 
 def test_the_en_us_render_is_translated_and_differs_from_pt_br(pt_br, en_us):

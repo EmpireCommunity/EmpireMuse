@@ -336,3 +336,14 @@ class TestRequiredFiles:
         check.main(["--root", str(root), "--code", str(root / "none")])
 
         assert "::error::x" not in caplog.text and "::error::x" not in capsys.readouterr().err
+
+
+def test_a_disnake_locale_enum_resolves_like_its_value(root):
+    import disnake
+
+    i18n = I18n(root)
+    i18n.load()
+
+    assert i18n.resolve(None, disnake.Locale.pt_BR) == "pt-BR"
+    assert i18n.resolve(disnake.Locale.en_US, None) == "en-US"
+    assert i18n.resolve(None, disnake.Locale.ja) == rules.FALLBACK_LOCALE

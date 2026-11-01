@@ -3,8 +3,8 @@
 
 Um objeto só por processo (``get_i18n()``): os comandos são declarados na importação dos módulos, antes de existir o ``BotPool``, e já
 precisam do texto base (``localized``). O ``BotPool.setup`` chama ``load()`` (estrito: ``en-US``/``pt-BR`` quebrado faz a subida
-falhar) antes dos bots. O provider devolve só descrições de comando e nomes de choice dos locales ligados, nunca nome de comando ou
-de opção nem o ``value`` de uma choice (I-6).
+falhar) antes dos bots. O provider devolve só descrições de comando, nomes de opção e nomes de choice dos locales ligados, nunca nome de
+comando nem o ``value`` de uma choice (I-6).
 """
 
 from __future__ import annotations
@@ -151,7 +151,7 @@ class I18n:
 
     def resolve(self, saved: str | None, preferred: str | None) -> str:
         """O locale que vale: ``saved`` ligado → ``preferred`` ligado → irmão → reserva (``saved`` desligado continua gravado, só é pulado)."""
-        return rules.resolve_locale(saved, preferred, self.enabled, rules.FALLBACK_LOCALE)
+        return rules.resolve_locale(_locale_value(saved), _locale_value(preferred), self.enabled, rules.FALLBACK_LOCALE)
 
     async def language_of(self, guild_id: int) -> str | None:
         """``settings.language`` do servidor (``None`` = automático); qualquer falha do store também é ``None``."""

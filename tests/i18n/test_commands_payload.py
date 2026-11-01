@@ -153,3 +153,10 @@ def test_the_provider_never_serves_command_names_or_choice_values(provider):
     assert provider.get("cmd.play.name") is None and provider.get("cmd.play.opt.play_now.choice.value") is None
     assert provider.get("cmd.play.opt.play_now.choice.yes") == {"pt-BR": "Sim"}
     assert provider.get("cmd.play.opt.query.name") == {"pt-BR": "busca"}
+
+
+def test_every_command_description_key_has_a_legend_group():
+    reference = get_i18n().reference
+    keys = [key for key in reference if rules.is_command_description(key)]
+
+    assert keys and all(rules.command_group(key) in rules.GROUP_EMOJI for key in keys)
