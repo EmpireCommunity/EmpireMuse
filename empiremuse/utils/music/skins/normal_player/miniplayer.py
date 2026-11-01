@@ -72,7 +72,7 @@ class MiniPlayer:
                 emoji=app_emoji(player.bot, "stop"), custom_id=PlayerControls.stop, style=disnake.ButtonStyle.red
             ),
             disnake.ui.Button(emoji=app_emoji(player.bot, "skip"), custom_id=PlayerControls.skip),
-            disnake.ui.Button(emoji="🤍", custom_id=PlayerControls.add_favorite),
+            disnake.ui.Button(emoji=app_emoji(player.bot, "loved"), custom_id=PlayerControls.add_favorite),
         ]
 
         return data

@@ -146,4 +146,4 @@ Agradecimentos especiais aos projetos de código aberto que tornam o EmpireMuse 
 - [Lavalink-Devs](https://github.com/lavalink-devs) pelo servidor de áudio Lavalink e Lavaplayer;
 - [Pythonista Guild](https://github.com/PythonistaGuild) pela biblioteca WaveLink;
 - À comunidade e equipe do servidor **EmpireHUB** pelo apoio contínuo;
-- Ícones de 21 dos emojis do bot (`assets/emojis/`, lista no [CREDITS.md](CREDITS.md)): <a href="https://www.flaticon.com/free-icons/user-interface" title="user interface icons">User interface icons created by mnauliady - Flaticon</a>.
+- Ícones de 48 dos emojis do bot (`assets/emojis/`, lista no [CREDITS.md](CREDITS.md)): <a href="https://www.flaticon.com/free-icons/user-interface" title="user interface icons">User interface icons created by mnauliady - Flaticon</a>.

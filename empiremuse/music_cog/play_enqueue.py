@@ -632,7 +632,9 @@ class PlayEnqueueMixin:
 
             elif loadtype == "track":
                 components = [
-                    disnake.ui.Button(emoji="💗", label="Favoritar", custom_id=PlayerControls.embed_add_fav),
+                    disnake.ui.Button(
+                        emoji=app_emoji(self.bot, "loved"), label="Favoritar", custom_id=PlayerControls.embed_add_fav
+                    ),
                     disnake.ui.Button(
                         emoji=app_emoji(self.bot, "play"),
                         label="Tocar" + (" agora" if (player.current and player.current.autoplay) else ""),
@@ -651,7 +653,9 @@ class PlayEnqueueMixin:
                 except Exception:
                     pass
                 components = [
-                    disnake.ui.Button(emoji="💗", label="Favoritar", custom_id=PlayerControls.embed_add_fav),
+                    disnake.ui.Button(
+                        emoji=app_emoji(self.bot, "loved"), label="Favoritar", custom_id=PlayerControls.embed_add_fav
+                    ),
                     disnake.ui.Button(
                         emoji=app_emoji(self.bot, "add_music"),
                         label="Adicionar na fila",

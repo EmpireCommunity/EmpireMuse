@@ -167,7 +167,7 @@ class PlayMenusMixin:
             )
 
             try:
-                await func(embed=embed, components=song_request_buttons)
+                await func(embed=embed, components=song_request_buttons(self.bot))
             except AttributeError:
                 logger.exception("Falha ao atualizar a mensagem de pedido de música")
                 pass
@@ -422,10 +422,12 @@ class PlayMenusMixin:
                     )
 
                     try:
-                        await msg.edit(embed=embed, components=song_request_buttons)
+                        await msg.edit(embed=embed, components=song_request_buttons(self.bot))
                     except AttributeError:
                         try:
-                            await select_interaction.response.edit_message(embed=embed, components=song_request_buttons)
+                            await select_interaction.response.edit_message(
+                                embed=embed, components=song_request_buttons(self.bot)
+                            )
                         except AttributeError:
                             logger.exception("Falha ao atualizar a mensagem de pedido de música")
                     return True

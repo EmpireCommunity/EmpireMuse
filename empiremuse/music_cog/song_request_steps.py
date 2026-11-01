@@ -134,9 +134,7 @@ async def _pr_playlist(self, req):
 
     if isinstance(message.channel, disnake.Thread) and not isinstance(message.channel.parent, disnake.ForumChannel):
         tcount = len(tracks.tracks)
-        embed.description = (
-            f"✋ **⠂ Pedido por:** {message.author.mention}\n🎼 **⠂ Música{'s'[: tcount ^ 1]}:** `[{tcount}]`"
-        )
+        embed.description = f"{app_emoji(self.bot, 'user')} **⠂ Pedido por:** {message.author.mention}\n{app_emoji(self.bot, 'music_notes')} **⠂ Música{'s'[: tcount ^ 1]}:** `[{tcount}]`"
         embed.set_thumbnail(url=tracks.tracks[0].thumb)
         embed.set_author(
             name="⠂" + fix_characters(tracks.tracks[0].playlist_name, 35),
@@ -145,7 +143,9 @@ async def _pr_playlist(self, req):
         )
 
         try:
-            embed.description += f"\n🔊 **⠂ Canal de voz:** {message.author.voice.channel.mention}"
+            embed.description += (
+                f"\n{app_emoji(self.bot, 'speaker')} **⠂ Canal de voz:** {message.author.voice.channel.mention}"
+            )
         except AttributeError:
             pass
 
@@ -156,7 +156,9 @@ async def _pr_playlist(self, req):
 
         components.extend(
             [
-                disnake.ui.Button(emoji="💗", label="Favoritar", custom_id=PlayerControls.embed_add_fav),
+                disnake.ui.Button(
+                    emoji=app_emoji(self.bot, "loved"), label="Favoritar", custom_id=PlayerControls.embed_add_fav
+                ),
                 disnake.ui.Button(
                     emoji=app_emoji(self.bot, "add_music"),
                     label="Adicionar na fila",
@@ -207,13 +209,15 @@ async def _pr_single(self, req):
 
     if isinstance(message.channel, disnake.Thread) and not isinstance(message.channel.parent, disnake.ForumChannel):
         embed.description = (
-            f"💠 **⠂ Uploader:** {md_code(track.author)}\n"
-            f"✋ **⠂ Pedido por:** {message.author.mention}\n"
-            f"⏰ **⠂ Duração:** `{time_format(track.duration) if not track.is_stream else '🔴 Livestream'}`"
+            f"{app_emoji(self.bot, 'microphone')} **⠂ Uploader:** {md_code(track.author)}\n"
+            f"{app_emoji(self.bot, 'user')} **⠂ Pedido por:** {message.author.mention}\n"
+            f"{app_emoji(self.bot, 'history')} **⠂ Duração:** `{time_format(track.duration) if not track.is_stream else '🔴 Livestream'}`"
         )
 
         try:
-            embed.description += f"\n🔊 **⠂ Canal de voz:** {message.author.voice.channel.mention}"
+            embed.description += (
+                f"\n{app_emoji(self.bot, 'speaker')} **⠂ Canal de voz:** {message.author.voice.channel.mention}"
+            )
         except AttributeError:
             pass
 
@@ -224,7 +228,9 @@ async def _pr_single(self, req):
 
         components.extend(
             [
-                disnake.ui.Button(emoji="💗", label="Favoritar", custom_id=PlayerControls.embed_add_fav),
+                disnake.ui.Button(
+                    emoji=app_emoji(self.bot, "loved"), label="Favoritar", custom_id=PlayerControls.embed_add_fav
+                ),
                 disnake.ui.Button(
                     emoji=app_emoji(self.bot, "play"),
                     label="Tocar" + (" agora" if (player.current and player.current.autoplay) else ""),
@@ -333,7 +339,7 @@ async def _sr_validate_channel(self, req):
                     "Tente adicionar música usando **/play** ou clique em um dos botões abaixo:",
                     color=self.bot.get_color(message.guild.me),
                 ),
-                components=song_request_buttons,
+                components=song_request_buttons(self.bot),
                 delete_after=20,
             )
             return True
@@ -412,8 +418,12 @@ async def _sr_prepare_query(self, req):
                 user=message.author,
                 timeout=45,
                 buttons=[
-                    disnake.ui.Button(label="Carregar apenas a música", emoji="🎵", custom_id="music"),
-                    disnake.ui.Button(label="Carregar playlist", emoji="🎶", custom_id="playlist"),
+                    disnake.ui.Button(
+                        label="Carregar apenas a música", emoji=app_emoji(self.bot, "music_note"), custom_id="music"
+                    ),
+                    disnake.ui.Button(
+                        label="Carregar playlist", emoji=app_emoji(self.bot, "playlist_play"), custom_id="playlist"
+                    ),
                 ],
             )
 

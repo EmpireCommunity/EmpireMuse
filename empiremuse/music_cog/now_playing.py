@@ -118,7 +118,7 @@ class NowPlayingMixin:
         footer_kw = {}
 
         if player.current.is_stream:
-            txt += "> 🔴 **⠂Transmissão ao vivo**\n"
+            txt += f"> {app_emoji(inter.bot, 'record')} **⠂Transmissão ao vivo**\n"
         else:
             progress = ProgressBar(player.position, player.current.duration, bar_count=8)
 
@@ -127,33 +127,35 @@ class NowPlayingMixin:
                 f"[{time_format(player.current.duration)}][0m```\n"
             )
 
-        txt += f"> 👤 **⠂Uploader:** {player.current.authors_md}\n"
+        txt += f"> {app_emoji(inter.bot, 'microphone')} **⠂Uploader:** {player.current.authors_md}\n"
 
         if player.current.album_name:
-            txt += f"> 💽 **⠂Álbum:** {md_link(player.current.album_name, player.current.album_url, limit=20)}\n"
+            txt += f"> {app_emoji(inter.bot, 'disc')} **⠂Álbum:** {md_link(player.current.album_name, player.current.album_url, limit=20)}\n"
 
         if not player.current.autoplay:
-            txt += f"> ✋ **⠂Solicitado por:** <@{player.current.requester}>\n"
+            txt += f"> {app_emoji(inter.bot, 'user')} **⠂Solicitado por:** <@{player.current.requester}>\n"
         else:
             try:
                 mode = f" {md_link('Recomendação', player.current.info['extra']['related']['uri'])}"
             except Exception:
                 mode = "`Recomendação`"
-            txt += f"> 👍 **⠂Adicionado via:** {mode}\n"
+            txt += f"> {app_emoji(inter.bot, 'like')} **⠂Adicionado via:** {mode}\n"
 
         if player.current.playlist_name:
-            txt += (
-                f"> 📑 **⠂Playlist:** {md_link(player.current.playlist_name, player.current.playlist_url, limit=20)}\n"
-            )
+            txt += f"> {app_emoji(inter.bot, 'playlists')} **⠂Playlist:** {md_link(player.current.playlist_name, player.current.playlist_url, limit=20)}\n"
 
         try:
-            txt += f"> *️⃣ **⠂Canal de voz:** {player.guild.me.voice.channel.jump_url}\n"
+            txt += f"> {app_emoji(inter.bot, 'speaker')} **⠂Canal de voz:** {player.guild.me.voice.channel.jump_url}\n"
         except AttributeError:
             pass
 
-        txt += f"> 🔊 **⠂Volume:** `{player.volume}%`\n"
+        txt += f"> {app_emoji(inter.bot, 'volume')} **⠂Volume:** `{player.volume}%`\n"
 
-        components = [disnake.ui.Button(custom_id=f"np_{inter.author.id}", label="Atualizar", emoji="🔄")]
+        components = [
+            disnake.ui.Button(
+                custom_id=f"np_{inter.author.id}", label="Atualizar", emoji=app_emoji(inter.bot, "refresh")
+            )
+        ]
 
         if player.guild_id != inter.guild_id:
             if (
@@ -170,9 +172,9 @@ class NowPlayingMixin:
                 )
                 > 1
             ):
-                txt += f"> 🎧 **⠂Ouvintes atuais:** `{listeners}`\n"
+                txt += f"> {app_emoji(inter.bot, 'headset')} **⠂Ouvintes atuais:** `{listeners}`\n"
 
-            txt += f"> ⏱️ **⠂Player ativo:** <t:{player.uptime}:R>\n"
+            txt += f"> {app_emoji(inter.bot, 'history')} **⠂Player ativo:** <t:{player.uptime}:R>\n"
 
             try:
                 footer_kw = {"icon_url": player.guild.icon.with_static_format("png").url}
@@ -194,15 +196,20 @@ class NowPlayingMixin:
 
         if player.queue or player.queue_autoplay:
             if player.guild_id == inter.guild_id:
-                txt += f"### 🎶 ⠂Próximas músicas ({(qsize := len(player.queue + player.queue_autoplay))}):\n" + (
-                    "\n"
-                ).join(
-                    f"> `{n + 1})` {md_link(t.title, t.uri, limit=28)}\n"
-                    f"> `⏲️ {time_format(t.duration) if not t.is_stream else '🔴 Ao vivo'}`"
-                    + (f" - `Repetições: {t.track_loops}`" if t.track_loops else "")
-                    + f" **|** "
-                    + (f"`✋` <@{t.requester}>" if not t.autoplay else f"`👍⠂Recomendada`")
-                    for n, t in enumerate(itertools.islice(player.queue + player.queue_autoplay, 3))
+                txt += (
+                    f"### {app_emoji(inter.bot, 'music_notes')} ⠂Próximas músicas ({(qsize := len(player.queue + player.queue_autoplay))}):\n"
+                    + ("\n").join(
+                        f"> `{n + 1})` {md_link(t.title, t.uri, limit=28)}\n"
+                        f"> {app_emoji(inter.bot, 'history')} `{time_format(t.duration) if not t.is_stream else '🔴 Ao vivo'}`"
+                        + (f" - `Repetições: {t.track_loops}`" if t.track_loops else "")
+                        + f" **|** "
+                        + (
+                            f"{app_emoji(inter.bot, 'user')} <@{t.requester}>"
+                            if not t.autoplay
+                            else f"{app_emoji(inter.bot, 'like')} `Recomendada`"
+                        )
+                        for n, t in enumerate(itertools.islice(player.queue + player.queue_autoplay, 3))
+                    )
                 )
 
                 if qsize > 3:
@@ -215,7 +222,7 @@ class NowPlayingMixin:
                     )
 
             elif player.queue:
-                txt += f"> 🎶 **⠂Músicas na fila:** `{len(player.queue)}`\n"
+                txt += f"> {app_emoji(inter.bot, 'music_notes')} **⠂Músicas na fila:** `{len(player.queue)}`\n"
 
         if player.static and player.guild_id == inter.guild_id:
             if player.message:

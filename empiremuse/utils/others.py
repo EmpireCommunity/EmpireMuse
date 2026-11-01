@@ -237,9 +237,12 @@ class EmbedPaginator(disnake.ui.View):
         self.stop()
 
 
-song_request_buttons = [
-    disnake.ui.Button(label="Pedir uma música", emoji="🎶", custom_id=PlayerControls.add_song),
-]
+def song_request_buttons(bot) -> list[disnake.ui.Button]:
+    return [
+        disnake.ui.Button(
+            label="Pedir uma música", emoji=app_emoji(bot, "music_notes"), custom_id=PlayerControls.add_song
+        ),
+    ]
 
 
 def pool_command(*args, **kwargs) -> PoolCommand:
@@ -438,7 +441,7 @@ async def send_idle_embed(
             )
         )
 
-    components.extend(song_request_buttons)
+    components.extend(song_request_buttons(bot))
 
     if is_forum:
         content = "🎶 Entre em um canal de voz e peça sua música aqui."
