@@ -25,7 +25,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from empiremuse.rules.icy import IcyStripper, TitleThrottle, check_metaint, clean_title
+from empiremuse.rules.icy import IcyStripper, TitleThrottle, check_metaint, clean_title, metaint_too_small
 from empiremuse.rules.playlists import is_public_address
 from empiremuse.rules.radio_stations import (
     PLAYLIST_MAX_BYTES,
@@ -59,6 +59,10 @@ DEADLINE_S = 20.0  # abrir uma estação inteira (DNS, saltos, playlist, primeir
 PLAYLIST_READ_S = 10.0
 CHUNK = 8192
 RATE_FACTOR = 1.5
+PROBE_TOTAL_S = 30.0  # prazo total do health check: estação que pinga 1 byte por vez não prende a reabilitação de todas
+MAX_CONSUMERS = (
+    2  # por token: o loadtracks e o play do Lavalink; um terceiro só pode ser outro cliente com o token vazado
+)
 PROBE_BYTES = 16 * 1024  # o health check lê isto pelo mesmo caminho do relay
 PROBE_MIN_BYTES = 1024
 DEFAULT_BITRATE_KBPS = 320  # sem bitrate informado, o teto é o do maior bitrate aceito
@@ -94,6 +98,7 @@ class RelaySession:
     on_title: Callable[[str], None] | None = None
     busy: bool = False
     refused: bool = False
+    served: int = 0  # consumidores aceitos neste token (no máximo ``MAX_CONSUMERS``)
     hits: int = 0  # quantas vezes o Lavalink chegou ao relay com este token (distingue "a estação falhou" de "o Lavalink nem chegou")
     output: asyncio.StreamWriter | None = field(default=None, repr=False)
     task: asyncio.Task | None = field(default=None, repr=False)
@@ -190,6 +195,9 @@ class RadioRelay:
 
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         if self._sockets >= self._max_sockets:
+            logger.warning(
+                "Relay das rádios no teto de sockets (%d): conexão recusada", self._max_sockets
+            )  # é o teto prático de rádios ao vivo por processo
             writer.close()
             return
         self._sockets += 1
@@ -215,6 +223,10 @@ class RadioRelay:
         if session is None:
             return
         session.hits += 1
+        if session.served >= MAX_CONSUMERS:
+            await self._reply(writer, "409 Conflict")  # nada de tocar na saída atual: o play em curso segue recebendo
+            return
+        session.served += 1  # reservado antes de qualquer await: duas conexões simultâneas não passam juntas do teto
         if session.busy and not await self._take_over(session):
             await self._reply(writer, "409 Conflict")
             return
@@ -313,6 +325,8 @@ class RadioRelay:
             raise StreamRefused("empty") from error
         if not signature_ok(codec, first):
             raise StreamRefused("signature")
+        if metaint_too_small(response.headers.get("icy-metaint")):
+            raise StreamRefused("metaint")
         return Upstream(
             response,
             first,
@@ -362,11 +376,12 @@ class RadioRelay:
             return False
         got = len(upstream.first)
         try:
-            while got < PROBE_BYTES:
-                chunk = await asyncio.wait_for(upstream.response.reader.read(CHUNK), self._idle)
-                if not chunk:
-                    break
-                got += len(chunk)
+            async with asyncio.timeout(PROBE_TOTAL_S):
+                while got < PROBE_BYTES:
+                    chunk = await asyncio.wait_for(upstream.response.reader.read(CHUNK), self._idle)
+                    if not chunk:
+                        break
+                    got += len(chunk)
         except TimeoutError, ConnectionError, asyncio.IncompleteReadError:
             pass
         finally:

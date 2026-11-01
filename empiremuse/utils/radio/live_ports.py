@@ -98,8 +98,13 @@ class LiveRadioPorts(DiscordRadioPorts):
             tracks = list(getattr(found, "tracks", found) or [])
             if not tracks:
                 raise RuntimeError("o fluxo não abriu")
+            track = tracks[0]
+            track.info["uri"] = (
+                ""  # o endereço local (com o token) só existe para o Lavalink: nenhuma tela, comando ou RPC o mostra
+            )
+            track.info["title"] = station.name
             player.queue.clear()
-            player.queue.append(tracks[0])
+            player.queue.append(track)
             await player.process_next()
         except BaseException as error:
             station_fault = hub.relay.touched(token) and not isinstance(error, asyncio.CancelledError)

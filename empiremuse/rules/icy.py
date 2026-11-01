@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 
 from empiremuse.rules.text import external_text
 
-MIN_METAINT = 1
+MIN_METAINT = 256  # abaixo disto o laço do relay rodaria por byte (CPU no laço de eventos): a estação é recusada
 MAX_METAINT = 65536
 BLOCK_UNIT = 16
 MAX_BLOCK = 255 * BLOCK_UNIT  # 4080 bytes
@@ -25,7 +25,7 @@ _TAG = b"StreamTitle='"
 
 
 def check_metaint(raw: object) -> int | None:
-    """O valor do cabeçalho ``icy-metaint`` como inteiro de 1 a 65536, ou ``None`` (ausente, 0, negativo, enorme ou lixo)."""
+    """O valor do cabeçalho ``icy-metaint`` como inteiro de 256 a 65536, ou ``None`` (ausente, 0, negativo, enorme ou lixo)."""
     if isinstance(raw, bytes):
         try:
             raw = raw.decode("ascii")
@@ -38,6 +38,15 @@ def check_metaint(raw: object) -> int | None:
         return None
     value = int(text)
     return value if MIN_METAINT <= value <= MAX_METAINT else None
+
+
+def metaint_too_small(raw: object) -> bool:
+    """O cabeçalho traz um ``icy-metaint`` de 1 a 255? (0 é "sem metadados" e vale; lixo cai em ``check_metaint`` e vira "sem parse".)"""
+    text = raw.decode("ascii", "ignore") if isinstance(raw, bytes) else raw
+    if not isinstance(text, str):
+        return False
+    text = text.strip()
+    return text.isascii() and text.isdecimal() and len(text) <= 6 and 0 < int(text) < MIN_METAINT
 
 
 def decode_block(block: bytes) -> str:

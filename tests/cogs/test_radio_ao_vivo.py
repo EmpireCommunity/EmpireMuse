@@ -771,7 +771,8 @@ class TestLiveLoadsOnlyOnTheLocalNode:
         )
         ports = LiveRadioPorts(w.ports.pool, radio)
         self.local = SimpleNamespace(
-            identifier="LOCAL", get_tracks=AsyncMock(return_value=[SimpleNamespace(title="live")])
+            identifier="LOCAL",
+            get_tracks=AsyncMock(return_value=[SimpleNamespace(title="live", info={"uri": "http://127.0.0.1:9/r/x"})]),
         )
         self.remote = SimpleNamespace(
             identifier="PUBLICO", get_tracks=AsyncMock(return_value=[SimpleNamespace(title="outro")])
@@ -964,3 +965,58 @@ class TestLivePanel:
         kwargs = message.edit.await_args.kwargs
         assert kwargs["allowed_mentions"].everyone is False and kwargs["allowed_mentions"].users is False
         assert "embeds" in kwargs and "components" in kwargs
+
+
+class TestStationHealthCleanup:
+    @pytest.mark.asyncio
+    async def test_a_refresh_deletes_expired_marks_so_the_collection_does_not_grow_forever(self):
+        clock = Clock()
+        health, db = make_health(clock)
+        for _ in range(CYCLES_TO_MARK):
+            await health.record_exhausted(MAIN)
+        assert MAIN in db.tables["stations_health"]
+
+        clock.now += 1801 + 3601  # a marca venceu e as falhas saíram da janela
+        await health.refresh()
+
+        assert MAIN not in db.tables["stations_health"] and not health.unavailable(MAIN)
+
+    @pytest.mark.asyncio
+    async def test_a_refresh_keeps_a_mark_that_is_still_valid_and_recent_failures(self):
+        clock = Clock()
+        health, db = make_health(clock)
+        for _ in range(CYCLES_TO_MARK):
+            await health.record_exhausted(MAIN)
+        await health.record_exhausted(RESERVE)  # uma falha só, recente
+
+        clock.now += 60
+        await health.refresh()
+
+        assert MAIN in db.tables["stations_health"] and RESERVE in db.tables["stations_health"]
+
+
+class TestRadioStaysOutOfTheRpc:
+    @pytest.mark.asyncio
+    async def test_a_radio_player_publishes_nothing_so_the_relay_url_never_reaches_the_call(self):
+        from empiremuse.utils.music.models.player_state import PlayerStateMixin
+
+        touched = []
+        player = SimpleNamespace(radio_id="1:2", __getattr__=None)
+        player.bot = SimpleNamespace(get_channel=lambda _id: touched.append("channel"))
+
+        result = await PlayerStateMixin.process_rpc(player)
+
+        assert result is None and touched == []  # saiu antes de olhar canal, faixa ou membros
+
+    @pytest.mark.asyncio
+    async def test_the_live_track_carries_neither_the_local_url_nor_a_title_derived_from_it(self):
+        w, ports = await TestLiveLoadsOnlyOnTheLocalNode().world_with_player()
+        try:
+            await ports.connect()
+            await ports.play_live()
+
+            queued = w.player.queue[0]
+            assert queued.info["uri"] == "" and queued.info["title"] == STATION.name
+            assert "127.0.0.1" not in str(queued.info)
+        finally:
+            await w.hub.relay.close()

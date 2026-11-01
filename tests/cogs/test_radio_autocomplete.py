@@ -80,7 +80,7 @@ class TestStationAutocomplete:
 
         choices = await station_autocomplete(i, "rock")
 
-        directory.search.assert_awaited_once_with("rock")
+        directory.search.assert_awaited_once_with("rock", key=500)  # limitado por servidor
         assert choices[next(k for k in choices if k.startswith("Boa FM"))] == GOOD
         down = next(k for k in choices if "Fora FM" in k)
         assert down.startswith("⛔") and "indisponível" in down and choices[down] == DOWN

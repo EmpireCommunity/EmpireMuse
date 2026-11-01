@@ -35,13 +35,14 @@ def stream(metaint: int, parts: list[bytes], *, meta: list[bytes]) -> bytes:
 
 class TestMetaint:
     @pytest.mark.parametrize(
-        "raw, expected", [("1", 1), ("8192", 8192), ("65536", 65536), (" 16000 ", 16000), (b"4096", 4096)]
+        "raw, expected", [("256", 256), ("8192", 8192), ("65536", 65536), (" 16000 ", 16000), (b"4096", 4096)]
     )
     def test_the_valid_range(self, raw, expected):
         assert check_metaint(raw) == expected
 
     @pytest.mark.parametrize(
-        "raw", ["0", "-1", "65537", "1000000000", "", "abc", "12 34", "1e3", None, 5, "０５", "9" * 7, b"\xff"]
+        "raw",
+        ["0", "1", "255", "-1", "65537", "1000000000", "", "abc", "12 34", "1e3", None, 5, "０５", "9" * 7, b"\xff"],
     )
     def test_anything_else_means_no_parsing(self, raw):
         assert check_metaint(raw) is None
