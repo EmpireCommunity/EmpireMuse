@@ -38,5 +38,21 @@
   "panel.radio.chat.need_permission": "Para editar as regras, você precisa da permissão Gerenciar Mensagens no canal desta rádio.",
   "panel.radio.chat.forbidden": "Você não tem a permissão necessária para alterar esta rádio.",
   "panel.radio.chat.invalid": "As regras enviadas não foram aceitas. Recarregue a página e tente de novo.",
-  "panel.radio.unavailable": "As rádios não estão disponíveis agora. Tente de novo em instantes."
+  "panel.radio.unavailable": "As rádios não estão disponíveis agora. Tente de novo em instantes.",
+  "panel.radio.live.title": "Estação ao vivo",
+  "panel.radio.live.station": "Principal",
+  "panel.radio.live.reserve": "Reserva",
+  "panel.radio.live.none": "nenhuma",
+  "panel.radio.live.unknown": "estação não encontrada no diretório",
+  "panel.radio.live.unavailable": "indisponível",
+  "panel.radio.live.help": "Quando a principal cai, a rádio troca para a reserva até a principal voltar. A rádio ligada pega a mudança na próxima troca de estação, sem reiniciar.",
+  "panel.radio.live.search_label": "Buscar estação no Radio Browser",
+  "panel.radio.live.search_help": "De 2 a 64 caracteres. Os resultados aparecem abaixo; escolha uma para ser a reserva.",
+  "panel.radio.live.search_button": "Buscar",
+  "panel.radio.live.search_term": "Digite de 2 a 64 caracteres para buscar.",
+  "panel.radio.live.search_empty": "Nenhuma estação encontrada para esse termo.",
+  "panel.radio.live.use": "Usar como reserva",
+  "panel.radio.live.remove": "Remover a reserva",
+  "panel.radio.live.invalid": "Essa estação não pode ser a reserva. Escolha outra da lista.",
+  "panel.radio.live.not_live": "Só rádios ao vivo têm estação reserva."
 }

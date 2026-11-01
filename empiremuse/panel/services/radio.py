@@ -27,10 +27,11 @@ from empiremuse.panel.services.base import (
     Formulario,
     first,
 )
+from empiremuse.panel.services.radio_live import LivePage, LiveView
 from empiremuse.panel.services.service import STATUS_CONFLICT, STATUS_INVALID, STATUS_OK, Outcome
 from empiremuse.rules.errors import RuleError
 from empiremuse.rules.i18n import Translator
-from empiremuse.rules.radio import CHAT_FIELDS, CHAT_LIMITS, KINDS, belongs_to_guild, check_chat
+from empiremuse.rules.radio import CHAT_FIELDS, CHAT_LIMITS, KIND_LIVE, KINDS, belongs_to_guild, check_chat
 from empiremuse.utils.radio.store import RadioConflict, RadioInvalid, RadioNotFound
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,7 @@ class RadioRow(NamedTuple):
     estado: str
     titulo: Optional[str]
     form: Optional[Formulario]
+    ao_vivo: Optional[LiveView] = None  # só nas rádios ao vivo (R3): principal, reserva e o seletor
 
 
 def radio_id_of(guild_id: int, raw: str) -> Optional[str]:
@@ -94,6 +96,9 @@ def can_write(premium: Any) -> bool:
 
 class RadioPage:
     """Leitura e edição das rádios de um servidor, sempre a partir do ``FormContext`` do usuário autorizado."""
+
+    def __init__(self) -> None:
+        self.live = LivePage()
 
     # ------------------------------------------------------------------ leitura
 
@@ -136,9 +141,11 @@ class RadioPage:
             channel = bot.get_channel(int(radio.channel_id)) if bot is not None else None
             state = ctx.pool.radio.service.state(radio.id)
             form = None
-            if editable and await self.can_edit(ctx, radio):
+            can_edit = editable and await self.can_edit(ctx, radio)
+            if can_edit:
                 form = self.form(radio, f"{action}/{radio.id}")
             kind = str(radio.kind)
+            live = await self.live.view(ctx, radio, f"{action}/{radio.id}", can_edit) if kind == KIND_LIVE else None
             title = getattr(state, "title", None) if state is not None else None
             rows.append(
                 RadioRow(
@@ -150,6 +157,7 @@ class RadioPage:
                     estado=tr(f"panel.radio.state.{state_of(radio, state)}"),
                     titulo=str(title) if title else None,
                     form=form,
+                    ao_vivo=live,
                 )
             )
         return tuple(rows)

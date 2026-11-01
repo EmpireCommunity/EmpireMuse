@@ -32,6 +32,10 @@
   {% if radio.canal_nome is None %}
   <p class="aviso aviso-erro" role="note">{{ _("panel.radio.channel_removed") }}</p>
   {% end %}
+  {% if radio.ao_vivo %}
+  {% set vivo = radio.ao_vivo %}
+  {% include "form_radio_reserva.html" %}
+  {% end %}
   {% if radio.form %}
   {% set form = radio.form %}
   {% include "form_radio_chat.html" %}

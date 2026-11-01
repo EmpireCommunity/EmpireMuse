@@ -11,7 +11,9 @@ from types import SimpleNamespace
 import disnake
 
 from empiremuse.rules.errors import RuleError
-from empiremuse.rules.radio import Radio, check_chat, check_radio, default_chat, radio_id
+from empiremuse.rules.radio import KIND_LIVE, Radio, check_chat, check_radio, default_chat, radio_id
+from empiremuse.rules.errors import RuleError as _RuleError  # noqa: F401 - reexport para os testes
+from empiremuse.rules.radio_stations import valid_uuid
 from empiremuse.utils.radio.premium import Premium, RadioUnavailable
 from empiremuse.utils.radio.store import RadioConflict, RadioInvalid, RadioNotFound
 
@@ -31,6 +33,22 @@ class FakeStore:
                 "kind": kind,
                 "source": source,
                 "chat": dict(chat or default_chat()),
+                "enabled": enabled,
+                "rev": rev,
+            }
+        )
+        assert isinstance(radio, Radio), radio
+        self.docs[radio.id] = radio
+        return radio
+
+    def seed_live(self, bot_id, guild_id, channel_id, *, station, reserve=None, enabled=True, rev=3):
+        radio = check_radio(
+            {
+                "id": radio_id(bot_id, guild_id),
+                "channel_id": channel_id,
+                "kind": KIND_LIVE,
+                "source": {"station": station, "reserve": reserve},
+                "chat": default_chat(),
                 "enabled": enabled,
                 "rev": rev,
             }
@@ -66,6 +84,47 @@ class FakeStore:
         self.updates.append((radio_id_, updated_by))
         return saved
 
+    async def set_reserve(self, radio_id_, reserve, *, expected_rev, updated_by=""):
+        """Como a store real (R3): só rádio ao vivo, uuid válido e diferente da principal, compare-and-set em ``rev``."""
+        self._check()
+        radio = self.docs.get(radio_id_)
+        if radio is None:
+            raise RadioNotFound
+        if radio.rev != expected_rev:
+            raise RadioConflict
+        if radio.kind != KIND_LIVE or reserve == radio.source.get("station"):
+            raise RadioInvalid(RuleError("radio_source_invalid", "reserve"))
+        if reserve is not None and not valid_uuid(reserve):
+            raise RadioInvalid(RuleError("radio_source_invalid", "reserve"))
+        saved = replace(radio, source={"station": radio.source["station"], "reserve": reserve}, rev=radio.rev + 1)
+        self.docs[radio_id_] = saved
+        self.updates.append((radio_id_, updated_by))
+        return saved
+
+
+class FakeDirectory:
+    """Radio Browser de mentira: ``results`` para qualquer termo válido, ``stations`` por uuid; registra os termos buscados."""
+
+    def __init__(self):
+        self.results = []
+        self.stations = {}
+        self.calls = []
+
+    async def search(self, term):
+        self.calls.append(term)
+        return list(self.results)
+
+    async def by_uuid(self, uuid):
+        return self.stations.get(uuid)
+
+
+class FakeHealth:
+    def __init__(self):
+        self.down = set()
+
+    def unavailable(self, uuid):
+        return uuid in self.down
+
 
 class FakePremium:
     def __init__(self):
@@ -92,6 +151,7 @@ class FakeService:
 class FakeRadioApi:
     def __init__(self):
         self.store, self.premium, self.service = FakeStore(), FakePremium(), FakeService()
+        self.directory, self.health = FakeDirectory(), FakeHealth()
 
 
 def radio_state(*, playing=True, paused_by_owner=False, on_reserve=False, offline=False, title=None):

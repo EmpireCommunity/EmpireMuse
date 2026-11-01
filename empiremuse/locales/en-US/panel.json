@@ -38,5 +38,21 @@
   "panel.radio.chat.need_permission": "To edit the rules you need the Manage Messages permission in this radio's channel.",
   "panel.radio.chat.forbidden": "You do not have the permission needed to change this radio.",
   "panel.radio.chat.invalid": "The rules sent were not accepted. Reload the page and try again.",
-  "panel.radio.unavailable": "Radios are not available right now. Try again in a moment."
+  "panel.radio.unavailable": "Radios are not available right now. Try again in a moment.",
+  "panel.radio.live.title": "Live station",
+  "panel.radio.live.station": "Main",
+  "panel.radio.live.reserve": "Backup",
+  "panel.radio.live.none": "none",
+  "panel.radio.live.unknown": "station not found in the directory",
+  "panel.radio.live.unavailable": "unavailable",
+  "panel.radio.live.help": "When the main station drops, the radio switches to the backup until the main one is back. A radio that is on picks the change at the next station switch, without restarting.",
+  "panel.radio.live.search_label": "Search a station on Radio Browser",
+  "panel.radio.live.search_help": "From 2 to 64 characters. Results show below; pick one to be the backup.",
+  "panel.radio.live.search_button": "Search",
+  "panel.radio.live.search_term": "Type from 2 to 64 characters to search.",
+  "panel.radio.live.search_empty": "No station found for that term.",
+  "panel.radio.live.use": "Use as backup",
+  "panel.radio.live.remove": "Remove the backup",
+  "panel.radio.live.invalid": "That station cannot be the backup. Pick another one from the list.",
+  "panel.radio.live.not_live": "Only live radios have a backup station."
 }
