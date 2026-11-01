@@ -51,6 +51,10 @@ class LavalinkPlayer(
         self.version = 1.1
         self.volume = 100
         self.guild: disnake.Guild = kwargs.pop("guild")
+        # O tradutor do servidor (``player_lifecycle``/``player_resume`` o acertam pelo idioma gravado; ``apply_language`` o refaz).
+        self.tr = self.bot.pool.i18n.for_locale(
+            self.bot.pool.i18n.resolve(None, getattr(self.guild, "preferred_locale", None))
+        )
         self.text_channel: Union[disnake.TextChannel, disnake.VoiceChannel, disnake.Thread] = kwargs.pop("channel")
         self.message: Optional[disnake.Message] = kwargs.pop("message", None)
         self.static: bool = kwargs.pop("static", False)

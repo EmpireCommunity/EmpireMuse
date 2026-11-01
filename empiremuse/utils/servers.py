@@ -24,6 +24,7 @@ from empiremuse.rules.playlists import move_leading_icons, plan_migration, to_do
 from empiremuse.rules.servers import (
     SECTION_PLAYLISTS,
     SECTION_REQUEST,
+    LEGACY_LANGUAGE,
     SECTION_SETTINGS,
     Allowed,
     SettingError,
@@ -136,6 +137,13 @@ class ServerStore:
             None,
         )
 
+    def _languages(self) -> frozenset[str]:
+        """Os idiomas ligados no pool (``pool.i18n.enabled``); o ``I18n`` único do processo quando o pool não o traz."""
+        from empiremuse.i18n import get_i18n
+
+        i18n = getattr(self.pool, "i18n", None) or get_i18n()
+        return i18n.enabled
+
     def _allowed(self, gid: int, settings: Optional[dict] = None) -> Allowed:
         """Skins carregadas e cargos do servidor; a skin já gravada continua valendo (como no painel)."""
         bots = self.pool.get_all_bots()
@@ -145,7 +153,7 @@ class ServerStore:
         static = frozenset(getattr(bot, "player_static_skins", ()) or ()) | {saved.get("static_skin")} - {None}
         guild = self._loaded_guild(gid)
         roles = frozenset(str(role.id) for role in guild.roles) if guild is not None else frozenset()
-        return Allowed(skins, static, roles)
+        return Allowed(skins, static, roles, self._languages())
 
     # ------------------------------------------------------------------ banco
 
@@ -325,6 +333,35 @@ class ServerStore:
             return new if change(new) else None
 
         await self._transact(gid, plan)
+
+    async def migrate_language(self) -> tuple[int, int]:
+        """Uma vez por subida, DEPOIS de ``I18n.load`` e ANTES dos bots: servidor que já existia e ainda não tem ``settings.language`` ganha ``pt-BR``.
+
+        Mexe só nesse campo, sob a trava e com ``rev`` +1 (``mutate_stored``). Documento com a chave (inclusive ``None``) fica intacto, então
+        rodar de novo não muda nada; um servidor que falha fica para a próxima subida. O log leva só contagens. Devolve ``(alterados, falhas)``.
+        """
+        changed = failed = 0
+        for gid in await self.stored_ids():
+            wrote = False
+
+            def apply(doc: dict) -> bool:
+                nonlocal wrote
+                settings = doc.get(SECTION_SETTINGS)
+                if not isinstance(settings, dict) or "language" in settings:
+                    return False
+                settings["language"] = LEGACY_LANGUAGE
+                wrote = True
+                return True
+
+            try:
+                await self.mutate_stored(gid, apply)
+            except Exception:  # noqa: BLE001 - o servidor fica para a próxima subida; o motivo já foi logado pelo store
+                failed += 1
+                continue
+            changed += wrote
+        if changed or failed:
+            logger.info("Idioma dos servidores existentes: %d migrados para pt-BR (%d falharam)", changed, failed)
+        return changed, failed
 
     async def settings(self, gid: int) -> dict:
         return (await self.get(gid))[SECTION_SETTINGS]

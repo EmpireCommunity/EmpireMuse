@@ -30,7 +30,11 @@ SETTINGS_FIELDS = (
     "check_other_bots_in_vc",
     "skin",
     "static_skin",
+    "language",
 )
+# O formato antigo nunca enxerga nem grava ``language`` (campo novo, só do documento único: ``save_legacy`` o recusa).
+LEGACY_FIELDS = tuple(name for name in SETTINGS_FIELDS if name != "language")
+LEGACY_LANGUAGE = "pt-BR"  # o que um servidor que já existia ganha na migração (a comunidade de hoje é brasileira)
 FLAG_FIELDS = ("autoplay", "enable_restrict_mode", "check_other_bots_in_vc")
 SKIN_MAX_LENGTH = 100
 MAIN_IDENTIFIERS = ("TOKEN", "TOKEN_1")  # o principal é o token principal, nunca o primeiro por ordem (contrato §3)
@@ -50,6 +54,7 @@ class Allowed:
     skins: frozenset[str] = frozenset()
     static_skins: frozenset[str] = frozenset()
     role_ids: frozenset[str] = frozenset()
+    languages: frozenset[str] = frozenset()  # os locales ligados no pool (``pool.i18n.enabled``)
 
 
 # ---------------------------------------------------------------------- modelo
@@ -64,6 +69,7 @@ def default_settings() -> dict[str, Any]:
         "check_other_bots_in_vc": False,
         "skin": None,
         "static_skin": None,
+        "language": None,  # ``None`` = automático (o idioma do Discord do servidor)
     }
 
 
@@ -136,6 +142,11 @@ def _field_error(name: str, value: object, allowed: Allowed) -> str | None:
         return None if valid_skin(value, allowed.skins) else "skin inexistente"
     if name == "static_skin":
         return None if valid_skin(value, allowed.static_skins) else "skin estática inexistente"
+    if name == "language":
+        # igualdade EXATA com um locale ligado (nunca vira caminho; ``pt-br``, ``en-US `` e ``../x`` não passam) ou ``None``
+        return (
+            None if value is None or (isinstance(value, str) and value in allowed.languages) else "idioma inexistente"
+        )
     return None
 
 
@@ -166,7 +177,7 @@ def _legacy_value(name: str, flat: Mapping[str, Any]) -> tuple[bool, Any]:
 def settings_from_legacy(flat: Mapping[str, Any]) -> dict[str, Any]:
     """Os campos de ``settings`` de um documento no formato antigo (ausente = padrão; ``djroles`` sempre como texto)."""
     settings = default_settings()
-    for name in SETTINGS_FIELDS:
+    for name in LEGACY_FIELDS:
         found, value = _legacy_value(name, flat)
         if found:
             settings[name] = deepcopy(value)
@@ -219,7 +230,7 @@ def to_legacy(
     if request is not None:
         for name in REQUEST_FIELDS:
             controller[name] = request.get(name)
-    for name in SETTINGS_FIELDS:
+    for name in LEGACY_FIELDS:
         value = deepcopy(settings[name])
         if name in _LEGACY_CONTROLLER_KEYS:
             controller[_LEGACY_CONTROLLER_KEYS[name]] = value
@@ -231,7 +242,7 @@ def to_legacy(
 def changed_settings(flat: Mapping[str, Any], seen: Mapping[str, Any]) -> dict[str, Any]:
     """Os campos de ``settings`` do documento antigo que diferem do que o escritor leu (vazio = ele não mexeu em ``settings``)."""
     now = settings_from_legacy(flat)
-    return {name: now[name] for name in SETTINGS_FIELDS if now[name] != seen.get(name)}
+    return {name: now[name] for name in LEGACY_FIELDS if now[name] != seen.get(name)}
 
 
 # ---------------------------------------------------------------------- migração
@@ -244,7 +255,7 @@ def migrate_settings(legacy: Mapping[str, Any] | None, allowed: Allowed) -> dict
     settings = default_settings()
     if legacy is None:
         return settings
-    for name in SETTINGS_FIELDS:
+    for name in LEGACY_FIELDS:
         found, value = _legacy_value(name, legacy)
         if not found:
             continue
@@ -254,4 +265,7 @@ def migrate_settings(legacy: Mapping[str, Any] | None, allowed: Allowed) -> dict
             settings[name] = deepcopy(value)
         elif name == "enable_restrict_mode":
             settings[name] = True
+    settings["language"] = (
+        LEGACY_LANGUAGE  # já existia um documento antigo: fica no português de hoje (o novo nasce automático)
+    )
     return settings

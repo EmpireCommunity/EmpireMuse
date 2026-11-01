@@ -170,6 +170,25 @@ class I18n:
         saved = await self.language_of(guild.id) if guild is not None else None
         return self.for_locale(self.resolve(saved, preferred))
 
+    async def apply_language(self, guild_id: int) -> None:
+        """Depois de ``settings.language`` mudar: recalcula o ``player.tr`` do servidor em TODOS os bots e redesenha o controller.
+
+        Nunca levanta (a configuração já foi gravada); um player com falha não impede os demais. Quem chama limita a taxa (10 s por servidor).
+        """
+        pool = self.pool
+        if pool is None:
+            return
+        for bot in pool.get_all_bots():
+            try:
+                guild = bot.get_guild(guild_id)
+                player = bot.music.players.get(guild_id)
+                if guild is None or player is None:
+                    continue
+                player.tr = await self.for_guild(guild)
+                await player.invoke_np(force=True)
+            except Exception as error:  # noqa: BLE001 - enfeite sobre uma configuração já gravada
+                logger.warning("Idioma do player não aplicado [%s] (%s)", guild_id, type(error).__name__)
+
     # ------------------------------------------------------------------ nomes e comandos
 
     def display_name(self, locale: str) -> str:
