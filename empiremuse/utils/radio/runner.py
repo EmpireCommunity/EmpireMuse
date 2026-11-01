@@ -120,17 +120,26 @@ class RadioRunner:
             )
         )
 
+    async def _verdict(self) -> Allowed | None:
+        """A conferência de premium/canal/permissão. Falha do banco ou do Discord NÃO desliga a rádio: devolve ``None`` ("não sei agora") e
+        quem chama tenta de novo depois do recuo ou espera a próxima oportunidade."""
+        try:
+            return await self.ports.allowed()
+        except Exception as error:  # noqa: BLE001 - só o tipo vai ao log (R-12)
+            logger.warning("Rádio sem conferir o direito agora (%s)", type(error).__name__)
+            return None
+
     # ------------------------------------------------------------------ ligar / desligar
 
     async def start(self) -> None:
         """Liga a rádio: confere o que pode, conecta e toca (a pausa geral do dono deixa conectada e parada)."""
-        verdict = await self.ports.allowed()
-        if verdict is not Allowed.YES:
+        verdict = await self._verdict()
+        if verdict is not None and verdict is not Allowed.YES:
             await self._shutdown(verdict)
             return
         self._set(Phase.CONNECTING)
         self.virtual_started_at = self.ports.now()
-        await self._connect_with_backoff()
+        await self._connect_with_backoff(wait_first=verdict is None)
 
     async def stop(self) -> None:
         """Desligada por quem manda (comando, painel): para o fluxo e esquece o estado. O contador é da store."""
@@ -156,7 +165,9 @@ class RadioRunner:
             if not first:
                 await self.ports.sleep(backoff_s(self.attempt, self.ports.jitter()))
                 self.attempt += 1
-                verdict = await self.ports.allowed()
+                verdict = await self._verdict()
+                if verdict is None:
+                    continue  # não deu para conferir: não conecta às cegas, espera o próximo recuo
                 if verdict is not Allowed.YES:
                     await self._shutdown(verdict)
                     return
@@ -234,7 +245,9 @@ class RadioRunner:
             await self._resume_by_presence()
 
     async def _resume_from_owner(self) -> None:
-        verdict = await self.ports.allowed()
+        verdict = await self._verdict()
+        if verdict is None:
+            return  # sem conferir não retoma; o próximo passo tenta de novo
         if verdict is not Allowed.YES:
             await self._shutdown(verdict)
             return
@@ -246,7 +259,9 @@ class RadioRunner:
 
     async def _resume_by_presence(self) -> None:
         async with self.limits.presence:
-            verdict = await self.ports.allowed()
+            verdict = await self._verdict()
+            if verdict is None:
+                return
             if verdict is not Allowed.YES:
                 await self._shutdown(verdict)
                 return

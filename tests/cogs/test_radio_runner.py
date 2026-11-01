@@ -292,6 +292,72 @@ class TestRevocationAndLostPermissions:
         assert ports.connects == 0 and ports.offs == [Allowed.NO_PREMIUM]
 
 
+class TestVerdictFailure:
+    """Um soluço do banco ao conferir o premium NUNCA desliga a rádio: não retoma às cegas e tenta de novo."""
+
+    @pytest.mark.asyncio
+    async def test_a_failing_check_on_reconnect_waits_for_the_next_backoff_instead_of_turning_off(self, caplog):
+        ports = FakePorts()
+        calls = deque([RuntimeError("mongo fora"), RuntimeError("mongo fora"), Allowed.YES])
+
+        async def allowed():
+            item = calls.popleft() if calls else Allowed.YES
+            if isinstance(item, Exception):
+                raise item
+            return item
+
+        runner, _, _ = make(ports)
+        await runner.start()
+        ports.allowed = allowed
+
+        with caplog.at_level(logging.WARNING):
+            await runner.on_disconnect()
+
+        assert runner.phase is Phase.PLAYING and ports.offs == []
+        assert ports.sleeps[:3] == [5, 10, 20] and ports.connects == 2  # só conectou depois de conseguir conferir
+        assert "RuntimeError" in caplog.text and "mongo" not in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_a_failing_check_on_a_presence_resume_keeps_it_paused_for_the_next_tick(self):
+        runner, ports, _ = make()
+        await runner.start()
+        await runner.on_presence(0)
+        ports.t += 31
+        await runner.tick()
+        await runner.on_presence(1)
+        ports.t += 6
+
+        async def broken():
+            raise RuntimeError("x")
+
+        good = ports.allowed
+        ports.allowed = broken
+        await runner.tick()
+        assert runner.phase is Phase.PAUSED_PRESENCE and len(ports.played) == 1
+        ports.allowed = good
+        await runner.tick()
+
+        assert runner.phase is Phase.PLAYING and len(ports.played) == 2
+
+    @pytest.mark.asyncio
+    async def test_a_failing_check_on_the_first_start_goes_to_the_backoff(self):
+        ports = FakePorts()
+        state = {"n": 0}
+
+        async def allowed():
+            state["n"] += 1
+            if state["n"] == 1:
+                raise RuntimeError("x")
+            return Allowed.YES
+
+        ports.allowed = allowed
+        runner, _, _ = make(ports)
+
+        await runner.start()
+
+        assert runner.phase is Phase.PLAYING and ports.sleeps[0] == 5 and ports.offs == []
+
+
 class TestOwnerPause:
     @pytest.mark.asyncio
     async def test_starting_while_paused_connects_and_stays_silent(self):
