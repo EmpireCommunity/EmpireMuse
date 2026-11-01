@@ -131,6 +131,30 @@ class TestBootFromCogLoad:
         await w.hub.manager.close()
 
     @pytest.mark.asyncio
+    async def test_unloading_the_cog_cancels_a_boot_that_is_still_running(self):  # CodeRabbit #180
+        w = build()
+        w.cog.bot.is_ready = lambda: True
+        w.cog.bot.loop = asyncio.get_running_loop()
+        hung = asyncio.Event()
+
+        async def slow_boot():
+            hung.set()
+            await asyncio.sleep(3600)
+
+        w.cog.radio_boot = slow_boot
+        await w.cog.cog_load()
+        await asyncio.wait_for(hung.wait(), 3)
+        task = w.cog._boot_task
+
+        w.cog.cog_unload()
+        await asyncio.wait_for(
+            asyncio.gather(task, return_exceptions=True), 2
+        )  # com prazo: sem o cancelamento falha rápido
+
+        assert task.cancelled() and w.cog._boot_task is None
+        w.cog.cog_unload()  # idempotente: sem tarefa, nada a fazer
+
+    @pytest.mark.asyncio
     async def test_a_cog_loaded_before_ready_waits_for_on_ready(self):
         w = build()
         w.hub.manager.ports_factory = None
