@@ -38,6 +38,8 @@ from empiremuse.panel.services.channel import (
     Confirmation,
     TaskView,
 )
+from empiremuse.panel.services.channel_strict import STRICT_ACTION, StrictRequestsForm
+from empiremuse.panel.services.service import Outcome
 from empiremuse.panel.services.tasks import Task, TaskBusy, TaskLimit, valid_task_id
 from empiremuse.utils.server_request import RequestConfig
 from empiremuse.utils.servers import ServerConfigConflict, ServerConfigUnavailable
@@ -46,6 +48,8 @@ from empiremuse.utils.usage import record_panel_action
 CHANNEL_TEMPLATE = "bloco_canal.html"
 TASK_TEMPLATE = "bloco_tarefa_canal.html"
 PAGE_TEMPLATE = "config_canal.html"
+STRICT_TEMPLATE = "form_estrito.html"
+STRICT_FORM = StrictRequestsForm()  # Jukebox estrita (J1): formulário de servidor exibido nesta página, acao=estrito
 _MSG_RATE = "Muitas alterações em pouco tempo. Aguarde um minuto e tente novamente."
 _MSG_ACTION = "Ação desconhecida."
 _MSG_VERSION = "Não foi possível validar o formulário. Recarregue a página e tente novamente."
@@ -96,7 +100,7 @@ class ChannelHandler(SettingsHandler):
             self._not_found()
             return
         config = await self._config(ctx)
-        self._render(200, access, ctx, self._namespace_for(ctx, config, action, task=self._own_active_task(ctx)))
+        await self._render(200, access, ctx, self._namespace_for(ctx, config, action, task=self._own_active_task(ctx)))
 
     # ------------------------------------------------------------------ POST
 
@@ -119,10 +123,13 @@ class ChannelHandler(SettingsHandler):
             self._not_found()
             return
         args = decode_args(self)
+        if first(args, "acao") == STRICT_ACTION:
+            await self._post_strict(ctx, access, action, args)
+            return
         if self.channels.runner.active_for_guild(ctx.guild_id) is not None:
             # Antes do lock: a tarefa em andamento o segura até terminar e este POST não deve esperar por ela.
             config = await self._config(ctx)
-            self._render(
+            await self._render(
                 409,
                 access,
                 ctx,
@@ -136,7 +143,33 @@ class ChannelHandler(SettingsHandler):
             config = await self._config(ctx)
             status, namespace = 409, self._namespace_for(ctx, config, action, message=CONFLICT_TEXT)
         record_panel_action(ctx, f"canal/{_audited_action(args)}", status)
-        self._render(status, access, ctx, namespace)
+        await self._render(status, access, ctx, namespace)
+
+    # ------------------------------------------------------------------ Jukebox estrita (acao=estrito)
+
+    async def _post_strict(self, ctx: FormContext, access: GuildAccess, action: str, args: Args) -> None:
+        """``settings.request_channel_strict`` pelo fluxo genérico dos formulários: sem tarefa e sem efeito no Discord."""
+        if self.channels.runner.active_for_guild(ctx.guild_id) is not None:  # a tarefa segura a trava do servidor
+            state = await self.service.read(STRICT_FORM, ctx, action, message=MSG_BUSY, kind=KIND_ERROR)
+            outcome = Outcome(409, state)
+        else:
+            try:
+                outcome = await self.service.submit(
+                    STRICT_FORM, ctx, args, action, audit_user=ctx.user_id, category="canal"
+                )
+            except ServerConfigConflict:
+                state = await self.service.read(STRICT_FORM, ctx, action, message=CONFLICT_TEXT, kind=KIND_ERROR)
+                outcome = Outcome(409, state)
+        record_panel_action(ctx, f"canal/{STRICT_ACTION}", outcome.status)
+        self.set_status(outcome.status)
+        if self._is_htmx():
+            self._render_strict(access, outcome.form)
+            return
+        config = await self._config(ctx)
+        await self._render(outcome.status, access, ctx, self._namespace_for(ctx, config, action), estrito=outcome.form)
+
+    def _render_strict(self, access: GuildAccess, form: Formulario) -> None:
+        self.render_page(STRICT_TEMPLATE, form=form, acesso=access, inicial=initial_of(access.name), bot_atual=None)
 
     async def _dispatch(self, ctx: FormContext, action: str, args: Args) -> tuple[int, dict[str, Any]]:
         config = await self._config(ctx)
@@ -213,8 +246,14 @@ class ChannelHandler(SettingsHandler):
         except GuildAccessDenied:
             self._not_found()
             return
+        if first(decode_args(self), "acao") == STRICT_ACTION:
+            self.set_status(429)
+            self._render_strict(
+                access, await self.service.read(STRICT_FORM, ctx, action, message=_MSG_RATE, kind=KIND_ERROR)
+            )
+            return
         config = await self._config(ctx)
-        self._render(429, access, ctx, self._namespace_for(ctx, config, action, message=_MSG_RATE))
+        await self._render(429, access, ctx, self._namespace_for(ctx, config, action, message=_MSG_RATE))
 
     # ------------------------------------------------------------------ montagem do que vai ao template
 
@@ -256,9 +295,19 @@ class ChannelHandler(SettingsHandler):
             "confirmacao": confirmation,
         }
 
-    def _render(self, status: int, access: GuildAccess, ctx: FormContext, namespace: dict[str, Any]) -> None:
+    async def _render(
+        self,
+        status: int,
+        access: GuildAccess,
+        ctx: FormContext,
+        namespace: dict[str, Any],
+        *,
+        estrito: Optional[Formulario] = None,
+    ) -> None:
         self.set_status(status)
-        common = {"acesso": access, "inicial": initial_of(access.name), "bot_atual": None}
+        if estrito is None:  # o bloco da Jukebox estrita mora no fragmento do canal: vai em toda renderização
+            estrito = await self.service.read(STRICT_FORM, ctx, namespace["formulario"].acao)
+        common = {"acesso": access, "inicial": initial_of(access.name), "bot_atual": None, "estrito": estrito}
         if self._is_htmx():
             self.render_page(CHANNEL_TEMPLATE, **common, **namespace)
             return
@@ -287,7 +336,7 @@ class ChannelTaskHandler(ChannelHandler):
         except ServerConfigUnavailable as exc:
             self.render_error(503, UNAVAILABLE_TITLE, exc.text)
             return
-        self._render(200, access, ctx, self._namespace_for(ctx, config, action, task=task))
+        await self._render(200, access, ctx, self._namespace_for(ctx, config, action, task=task))
 
     async def post(self, *args: str) -> None:  # type: ignore[override]
         """A URL de acompanhamento só aceita GET (o POST herdado tem outra assinatura e daria 500)."""

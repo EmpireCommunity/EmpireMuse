@@ -7,6 +7,9 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Adicionado
+- **Jukebox estrita no painel**: a página Canal de pedidos ganha a chave "Jukebox estrita" (`settings.request_channel_strict`, desligada por padrão): ligada, o bot apaga na hora qualquer mensagem do canal que não seja pedido nem comando (um nome digitado continua valendo como pedido e também é apagado). Vale para todos os bots do servidor.
+
 ## [2.2.0] - 2026-11-01
 
 Idiomas: o bot passa a falar o idioma do servidor (`en-US` e `pt-BR`), com o comando `/language` e o campo Idioma no painel; comandos e player traduzidos, e mais 27 ícones da Flaticon no player.
