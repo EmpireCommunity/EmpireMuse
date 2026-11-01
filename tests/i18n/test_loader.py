@@ -11,6 +11,17 @@ from empiremuse.rules import i18n as rules
 
 pytestmark = pytest.mark.critical
 
+needs_fifo = pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="os.mkfifo não existe nesta plataforma (Windows)")
+
+
+def make_symlink(source, link, *, directory=False):
+    """``os.symlink`` ou pula o teste: no Windows sem privilégio de symlink ele levanta ``OSError``."""
+    try:
+        os.symlink(source, link, target_is_directory=directory)
+    except (OSError, NotImplementedError) as error:
+        pytest.skip(f"symlink indisponível nesta plataforma ({type(error).__name__})")
+
+
 EN_COMMANDS = {
     "cmd.music._label": "Music",
     "cmd.play.description": "Play a song.",
@@ -147,10 +158,11 @@ class TestFiles:
         outside = tmp_path / "outside.json"
         outside.write_text(json.dumps({"player.paused": "Pausado por {user}."}), encoding="utf-8")
         write(root, "de", {"cmd.music._label": "Musik"})
-        os.symlink(outside, root / "de" / "bot.json")
+        make_symlink(outside, root / "de" / "bot.json")
 
         assert loader.read_catalog(root / "de" / "bot.json") is None
 
+    @needs_fifo
     def test_a_fifo_does_not_hang_the_boot(self, root):
         write(root, "de", {"cmd.music._label": "Musik"})
         os.mkfifo(root / "de" / "bot.json")
@@ -174,7 +186,7 @@ class TestFiles:
     def test_a_symlinked_locale_directory_is_ignored(self, root, tmp_path):
         target = tmp_path / "elsewhere"
         write(target, "de", {"cmd.music._label": "Musik"})
-        os.symlink(target / "de", root / "de")
+        make_symlink(target / "de", root / "de", directory=True)
 
         assert "de" not in loader.locale_directories(root)
 
@@ -300,11 +312,12 @@ class TestRequiredFiles:
         with pytest.raises(loader.I18nError):
             I18n(root).load()
 
+    @needs_fifo
     def test_a_required_file_replaced_by_a_symlink_or_fifo_fails_the_boot(self, root, tmp_path):
         outside = tmp_path / "x.json"
         outside.write_text("{}", encoding="utf-8")
         (root / "pt-BR" / "bot.json").unlink()
-        os.symlink(outside, root / "pt-BR" / "bot.json")
+        make_symlink(outside, root / "pt-BR" / "bot.json")
         with pytest.raises(loader.I18nError):
             I18n(root).load()
 
@@ -399,3 +412,31 @@ class TestForGuildWithin:
 
 async def _done(value):
     return value
+
+
+class TestReviewRound173:
+    """Achados do CodeRabbit na #173 sobre o código que entrou pela #174."""
+
+    def test_a_locale_without_the_reference_is_reported_not_raised(self, tmp_path):
+        base = tmp_path / "locales"
+        write(base, "pt-BR", None, PT_BOT)
+
+        loaded = loader.load_catalogs(base)
+
+        assert "en-US" not in loaded
+        assert loader.required_errors(loaded)
+
+    def test_the_boot_with_only_one_non_reference_locale_fails_with_i18n_error_not_key_error(self, tmp_path):
+        base = tmp_path / "locales"
+        write(base, "pt-BR", PT_COMMANDS, PT_BOT)
+
+        with pytest.raises(loader.I18nError):
+            I18n(base).load()
+
+    def test_root_without_code_does_not_compare_the_real_code_with_the_temporary_catalog(self, root, capsys):
+        assert check.main(["--root", str(root)]) == 0
+        assert "chave usada no código" not in capsys.readouterr().err
+
+    def test_the_default_run_still_checks_the_real_code_against_the_real_catalog(self, capsys):
+        assert check.main([]) == 0
+        assert "pt-BR: cobertura 100.0%" in capsys.readouterr().out
