@@ -1001,7 +1001,7 @@ class TestRadioStaysOutOfTheRpc:
         from empiremuse.utils.music.models.player_state import PlayerStateMixin
 
         touched = []
-        player = SimpleNamespace(radio_id="1:2", __getattr__=None)
+        player = SimpleNamespace(radio_id="1:2", channel_id=10, guild=SimpleNamespace(voice_client=None))
         player.bot = SimpleNamespace(get_channel=lambda _id: touched.append("channel"))
 
         result = await PlayerStateMixin.process_rpc(player)
