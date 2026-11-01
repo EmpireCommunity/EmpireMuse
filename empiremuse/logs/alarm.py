@@ -18,11 +18,14 @@ from empiremuse.logs.redact import sanitize_value
 # CPU do processo Python (``psutil``; um núcleo cheio é 100%).
 CPU_DEGRADED_PERCENT = 90.0
 CPU_RECOVERED_PERCENT = 70.0
-# Quadros de áudio do último minuto: (anulados + déficit) / esperados. Abaixo de ``FRAMES_MIN_EXPECTED`` (um player por um minuto) a
-# amostra é pequena demais para julgar e conta como saudável.
+# Quadros de áudio do último minuto: (anulados + déficit) / esperados. O Lavalink manda médias POR PLAYER e por sessão (um bot), com
+# divisão inteira nos três campos: a soma de um minuto cheio dá até 2 quadros a menos que 3000. Abaixo de ``FRAMES_MIN_EXPECTED``
+# (um player por um minuto, menos essa folga) a amostra é pequena demais para julgar e conta como saudável.
 FRAMES_DEGRADED_RATIO = 0.05
 FRAMES_RECOVERED_RATIO = 0.02
-FRAMES_MIN_EXPECTED = 3000
+FRAMES_PER_PLAYER_MINUTE = 3000
+FRAMES_ROUNDING_SLACK = 3
+FRAMES_MIN_EXPECTED = FRAMES_PER_PLAYER_MINUTE - FRAMES_ROUNDING_SLACK
 TRIGGER_SAMPLES = 2
 RECOVER_SAMPLES = 2
 COOLDOWN_S = 1800.0
@@ -31,16 +34,25 @@ CPU_KEY = "cpu"
 
 
 def frame_failure_ratio(node: NodeSample) -> float | None:
-    """Fração de quadros que falharam no último minuto; ``None`` com o nó indisponível (sem informação, o estado não muda)."""
-    if node.players is None and node.cpu_percent is None and node.memory_mib is None:
-        return None
+    """Fração de quadros que falharam no último minuto numa sessão do nó; ``None`` quando não há informação (o estado não muda).
+
+    Sem ``frameStats`` a amostra só é saudável se NINGUÉM está tocando no nó (``players_playing == 0``): é assim que o Lavalink avisa
+    que não há o que medir. Nó indisponível (mesmo com CPU e memória do Java preenchidas depois) ou sessão sem dado enquanto há
+    players tocando é ``None``, nunca normalização.
+    """
     if node.frames_sent is None or node.frames_nulled is None or node.frames_deficit is None:
-        return 0.0  # nó no ar sem players: o Lavalink não manda ``frameStats``
+        return 0.0 if node.players_playing == 0 else None
     failed = node.frames_nulled + max(node.frames_deficit, 0)
     expected = node.frames_sent + failed
     if expected < FRAMES_MIN_EXPECTED:
         return 0.0
     return failed / expected
+
+
+def _worst_session(samples: Sequence[NodeSample]) -> tuple[float, NodeSample] | None:
+    """A pior das sessões (bots) do mesmo nó que tem informação; ``None`` se nenhuma tem."""
+    rated = [(ratio, sample) for sample in samples if (ratio := frame_failure_ratio(sample)) is not None]
+    return max(rated, key=lambda item: item[0], default=None)
 
 
 @dataclasses.dataclass
@@ -91,12 +103,15 @@ class DegradationAlarm:
         event = self._step(CPU_KEY, now, cpu_percent, CPU_DEGRADED_PERCENT, CPU_RECOVERED_PERCENT)
         if event is not None and cpu_percent is not None:
             lines.append(_cpu_line(event, cpu_percent))
-        for node in nodes:
-            name = sanitize_value(str(node.identifier))
-            ratio = frame_failure_ratio(node)
+        by_node: dict[str, list[NodeSample]] = {}
+        for node in nodes:  # uma amostra por sessão (bot): o alarme olha a pior de cada nó
+            by_node.setdefault(sanitize_value(str(node.identifier)), []).append(node)
+        for name, sessions in by_node.items():
+            worst = _worst_session(sessions)
+            ratio, sample = worst if worst is not None else (None, None)
             event = self._step(f"frames:{name}", now, ratio, FRAMES_DEGRADED_RATIO, FRAMES_RECOVERED_RATIO)
-            if event is not None and ratio is not None:
-                lines.append(_frames_line(event, name, ratio, node))
+            if event is not None and ratio is not None and sample is not None:
+                lines.append(_frames_line(event, name, ratio, sample))
         return lines
 
 

@@ -129,6 +129,7 @@ def _node_sample(identifier: str, node) -> NodeSample:
         round(stats.lavalink_load * 100, 1),
         round(stats.memory_used / 1048576, 1),
         *((stats.frames_sent, stats.frames_nulled, stats.frames_deficit) if stats.has_frame_stats else (None,) * 3),
+        stats.playing_players,
     )
 
 
@@ -418,6 +419,7 @@ class BotPool:
                     # leitura do psutil, que bloqueia, vai para uma thread.
                     inputs = self._collect_summary_inputs()
                     java_pid = inputs.pop("java_pid")
+                    sessions = inputs.pop("node_sessions")
                     process, java = await asyncio.to_thread(_read_process_stats, process_stats, java_pid)
                     inputs["cpu_percent"], inputs["rss_mib"] = process
                     if java is not None:
@@ -426,7 +428,7 @@ class BotPool:
                         # O 📊 é do formatter do console (emoji da categoria empiremuse.metrics); o arquivo não leva emoji.
                         summary_logger.info("%s", line.removeprefix(SUMMARY_PREFIX))
                     # Os alertas de CPU e de quadros saem no mesmo log do resumo, uma amostra por resumo.
-                    for alert in alarm.observe(now, cpu_percent=inputs["cpu_percent"], nodes=inputs["nodes"]):
+                    for alert in alarm.observe(now, cpu_percent=inputs["cpu_percent"], nodes=sessions):
                         summary_logger.warning("%s", alert)
             except asyncio.CancelledError:
                 raise
@@ -444,6 +446,9 @@ class BotPool:
         bots = [bot for bot in self.get_all_bots() if getattr(bot, "music", None)]
         gateway_ms, voice_ms, players_active = [], [], 0
         nodes: dict[str, NodeSample] = {}
+        sessions: list[
+            NodeSample
+        ] = []  # uma amostra por bot e nó: o Lavalink calcula os quadros por sessão (um bot), não pelo nó todo
         for bot in bots:
             latency = getattr(bot, "latency", None)
             if isinstance(latency, int | float) and latency == latency and latency != float("inf"):
@@ -453,8 +458,9 @@ class BotPool:
                 if isinstance(getattr(player, "ping", None), int | float):
                     voice_ms.append(float(player.ping))
             for identifier, node in bot.music.nodes.items():
-                if identifier not in nodes:
-                    nodes[identifier] = _node_sample(identifier, node)
+                sample = _node_sample(identifier, node)
+                sessions.append(sample)
+                nodes.setdefault(identifier, sample)
         java_pid = getattr(getattr(self, "lavalink_instance", None), "pid", None)
         return {
             "java_pid": java_pid if java_pid and "LOCAL" in nodes else None,
@@ -465,6 +471,7 @@ class BotPool:
             "cpu_percent": None,
             "rss_mib": None,
             "nodes": list(nodes.values()),
+            "node_sessions": sessions,
         }
 
     async def connect_lavalink_queue_task(self, identifier: str):

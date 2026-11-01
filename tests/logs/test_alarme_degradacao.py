@@ -13,7 +13,7 @@ from empiremuse.logs.alarm import (
     DegradationAlarm,
 )
 from empiremuse.logs.metrics import NodeSample
-from tests.logs.test_logs_loop_resumo import Bot, Cenario
+from tests.logs.test_logs_loop_resumo import Bot, Cenario, no_com_stats
 
 pytestmark = pytest.mark.critical
 
@@ -24,7 +24,12 @@ BAIXA = CPU_RECOVERED_PERCENT - 20
 
 
 def no(identificador="N1", *, enviados=3000, anulados=0, deficit=0):
-    return NodeSample(identificador, 5, 10.0, 200.0, enviados, anulados, deficit)
+    return NodeSample(identificador, 5, 10.0, 200.0, enviados, anulados, deficit, 5)
+
+
+def sem_quadros(identificador="N1", *, tocando=1):
+    """Sessão (ou nó) no ar sem ``frameStats``: o Lavalink só deixa de mandar quando ninguém toca nela."""
+    return NodeSample(identificador, 5, 10.0, 200.0, players_playing=tocando)
 
 
 def sem_dados(identificador="N1"):
@@ -108,12 +113,68 @@ class TestAlarmeDeQuadros:
     def test_node_without_frame_stats_is_healthy_and_a_node_name_with_control_chars_is_sanitized(self):
         alarme = DegradationAlarm()
         ruim = NodeSample("N\n1", 5, 1.0, 1.0, 1000, 3000, 0)
-        alarme.observe(0, cpu_percent=None, nodes=[NodeSample("N0", 0, 1.0, 1.0)])
+        alarme.observe(0, cpu_percent=None, nodes=[NodeSample("N0", 0, 1.0, 1.0, players_playing=0)])
 
         alarme.observe(RESUMO, cpu_percent=None, nodes=[ruim])
         linhas = alarme.observe(2 * RESUMO, cpu_percent=None, nodes=[ruim])
 
         assert len(linhas) == 1 and "\n" not in linhas[0]
+
+
+def degradar(alarme, nos):
+    alarme.observe(0, cpu_percent=None, nodes=nos)
+    return alarme.observe(RESUMO, cpu_percent=None, nodes=nos)
+
+
+class TestQuadrosAusentesNaoSaoRecuperacao:
+    def test_a_node_without_data_while_players_are_playing_or_unavailable_never_recovers_the_alarm(self):
+        alarme = DegradationAlarm()
+        assert degradar(alarme, [no("N1", enviados=2700, anulados=200, deficit=100)])  # degradado
+        # LOCAL indisponível: o Java preenche CPU e memória, mas players e quadros ficam sem dado
+        indisponivel_com_java = NodeSample("N1", None, 50.0, 900.0)
+
+        for passo in range(2, 8):
+            amostra = indisponivel_com_java if passo % 2 else sem_quadros("N1", tocando=2)
+            assert alarme.observe(passo * RESUMO, cpu_percent=None, nodes=[amostra]) == []
+
+        saudavel = [no("N1")]
+        alarme.observe(8 * RESUMO, cpu_percent=None, nodes=saudavel)
+        assert "normalizados" in alarme.observe(9 * RESUMO, cpu_percent=None, nodes=saudavel)[0]
+
+    def test_a_node_where_nobody_is_playing_has_nothing_to_measure_and_recovers(self):
+        alarme = DegradationAlarm()
+        assert degradar(alarme, [no("N1", enviados=2700, anulados=200, deficit=100)])
+
+        parado = sem_quadros("N1", tocando=0)
+        assert alarme.observe(2 * RESUMO, cpu_percent=None, nodes=[parado]) == []
+        assert "normalizados" in alarme.observe(3 * RESUMO, cpu_percent=None, nodes=[parado])[0]
+
+
+class TestArredondamentoDoLavalink:
+    def test_averages_that_add_up_to_2999_frames_still_count(self):
+        # o Lavalink divide os três campos por inteiro: 2800 + 150 + 49 = 2999 e 199 quadros falharam (6,6%)
+        alarme = DegradationAlarm()
+
+        linhas = degradar(alarme, [no("N1", enviados=2800, anulados=150, deficit=49)])
+
+        assert len(linhas) == 1 and "6.6%" in linhas[0]
+
+    def test_a_really_small_sample_is_still_ignored(self):
+        alarme = DegradationAlarm()
+
+        assert degradar(alarme, [no("N1", enviados=1500, anulados=1000, deficit=0)]) == []
+
+
+class TestSessoesDoMesmoNo:
+    def test_a_failing_session_alerts_whatever_the_order_of_the_idle_and_healthy_ones(self):
+        ruim = no("N1", enviados=2700, anulados=200, deficit=100)
+        for sessoes in ([sem_quadros("N1"), ruim], [ruim, sem_quadros("N1")], [no("N1"), ruim, no("N1")]):
+            linhas = degradar(DegradationAlarm(), sessoes)
+
+            assert len(linhas) == 1 and "anulados 200" in linhas[0]
+
+    def test_idle_and_healthy_sessions_alone_do_not_alert(self):
+        assert degradar(DegradationAlarm(), [sem_quadros("N1"), no("N1")]) == []
 
 
 class TestNoLacoDoResumo:
@@ -128,3 +189,19 @@ class TestNoLacoDoResumo:
         assert len(resumos) == 2  # t=300 e t=600
         assert len(alertas) == 1 and "CPU do processo degradada" in alertas[0]
         assert " WARNING " in alertas[0]
+
+    def test_the_loop_gives_the_alarm_every_bot_session_of_a_node_not_only_the_first(self):
+        def bot_com(frames):
+            no_do_bot = no_com_stats("N-OK")
+            no_do_bot.stats.frames_sent, no_do_bot.stats.frames_nulled, no_do_bot.stats.frames_deficit = frames
+            return Bot(0.05, 1, {"N-OK": no_do_bot}, {})
+
+        ocioso = bot_com((3000, 0, 0))
+        ruim = bot_com((2700, 200, 100))  # 10% falharam, na SEGUNDA sessão do mesmo nó
+        cenario = Cenario(bots=[ocioso, ruim])
+        cenario.pool.get_all_bots = lambda: [ocioso, ruim]  # ordem fixa (o real devolve um ``set``)
+
+        cenario.rodar()
+        alertas = [linha for linha in cenario.console.getvalue().splitlines() if "alerta:" in linha]
+
+        assert len(alertas) == 1 and "nó N-OK" in alertas[0] and "anulados 200" in alertas[0]
