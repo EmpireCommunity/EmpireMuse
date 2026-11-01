@@ -1,0 +1,10 @@
+{
+  "panel.language.title": "Server language",
+  "panel.language.label": "Language",
+  "panel.language.auto": "Automatic (the language set in Discord for this server)",
+  "panel.language.help": "Applies to the texts already translated: slash command descriptions, the player and its controls. Texts not translated yet still show in Portuguese. Automatic follows the language set in Discord; without a complete translation it uses English.",
+  "panel.language.save": "Save",
+  "panel.language.unknown": "Choose a language from the list.",
+  "panel.language.cooldown": "Wait {seconds} seconds between language changes.",
+  "panel.language.unavailable": "{code} (translation not available right now)"
+}

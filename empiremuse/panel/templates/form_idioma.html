@@ -1,0 +1,19 @@
+{# Idioma do servidor (item 21). Textos pelo ``_`` (catálogo panel.json), sempre em texto ou atributo entre aspas (I-13). #}
+{% set form_id = "form-idioma" %}
+{% set erros = form.erros %}
+<form id="form-idioma" class="form-config" method="post" action="{{ form.acao }}" hx-post="{{ form.acao }}" hx-target="this" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]">
+  {% module xsrf_form_html() %}
+  <input type="hidden" name="versao" value="{{ form.versao }}">
+  <h2 class="subtitulo">{{ _("panel.language.title") }}</h2>
+  {% include "_mensagem_form.html" %}
+  <label for="campo-idioma">{{ _("panel.language.label") }}</label>
+  <select id="campo-idioma" name="language"{% if erros.get("language") %} aria-invalid="true" aria-describedby="erro-idioma ajuda-idioma"{% else %} aria-describedby="ajuda-idioma"{% end %}>
+    <option value=""{% if not form.valores.get("language") %} selected{% end %}>{{ _("panel.language.auto") }}</option>
+    {% for codigo, nome in idiomas %}
+    <option value="{{ codigo }}"{% if codigo == form.valores.get("language") %} selected{% end %}>{{ nome }}</option>
+    {% end %}
+  </select>
+  {% if erros.get("language") %}<small id="erro-idioma" class="erro-campo">{{ erros["language"] }}</small>{% end %}
+  <small id="ajuda-idioma">{{ _("panel.language.help") }}</small>
+  <button type="submit">{{ _("panel.language.save") }}</button>
+</form>

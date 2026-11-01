@@ -29,7 +29,7 @@ from empiremuse.panel.services.base import (
     FormContext,
     SettingsForm,
 )
-from empiremuse.panel.services.general import PrefixForm, VoiceStatusForm
+from empiremuse.panel.services.general import LanguageForm, PrefixForm, VoiceStatusForm
 from empiremuse.panel.services.links import LinksForm
 from empiremuse.panel.services.listen_along import ListenAlongForm
 from empiremuse.panel.services.player import DjForm, PlayerForm
@@ -45,7 +45,7 @@ CATEGORY_FORMS: dict[str, tuple[SettingsForm, ...]] = {
     "dj": (DjForm(),),
     "aparencia": (SkinsServerForm(), SkinsGlobalForm()),
     "links": (LinksForm(),),
-    "geral": (PrefixForm(), VoiceStatusForm(), ListenAlongForm()),
+    "geral": (PrefixForm(), VoiceStatusForm(), LanguageForm(), ListenAlongForm()),
 }
 PER_BOT_CATEGORIES: frozenset[str] = (
     frozenset()
