@@ -15,3 +15,9 @@
 /empiremuse/utils/owner_panel.py @Or4cu1o
 /empiremuse/utils/db.py @Or4cu1o
 /pyproject.toml @Or4cu1o
+
+# Idiomas (i18n): catálogos de referência, regras de validação e o carregador. /.github/ já está coberto acima.
+/empiremuse/locales/en-US/ @Or4cu1o
+/empiremuse/locales/pt-BR/ @Or4cu1o
+/empiremuse/rules/i18n.py @Or4cu1o
+/empiremuse/i18n/ @Or4cu1o
