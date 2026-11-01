@@ -35,6 +35,7 @@ from rapidfuzz import fuzz
 
 from empiremuse.rules.title_match import title_matches
 from empiremuse.utils.safe_error import HTTPStatusError, safe_error
+from empiremuse.utils.url_guard import UnsafeUrl, ensure_public_url, log_refusal
 from .backoff import ExponentialBackoff
 from .errors import *
 from .player import Player, Track, TrackPlaylist
@@ -332,6 +333,15 @@ class Node:
             A list of or TrackPlaylist instance of :class:`wavelink.player.Track` objects.
             This could be None if no tracks were found.
         """
+        # Última barreira (a de cima é a do cog, com mensagem ao usuário): nenhum link http(s) chega ao ``loadtracks`` sem resolver só para
+        # endereço público. ``trusted_local`` é só do código que registra o próprio endereço local (relay das rádios), nunca de texto do usuário.
+        if not kwargs.pop("trusted_local", False):
+            try:
+                await ensure_public_url(query)
+            except UnsafeUrl as error:
+                log_refusal(error)
+                raise TrackNotFound("link recusado") from None
+
         backoff = ExponentialBackoff(base=1)
 
         ytid = None

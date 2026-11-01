@@ -5,6 +5,7 @@
   "language.invalid": "Esse idioma não está disponível.",
   "language.no_permission": "Você precisa da permissão **Gerenciar Servidor** para alterar o idioma.",
   "language.unavailable": "Não foi possível alterar o idioma agora. Tente de novo em instantes.",
+  "play.url_refused": "Não consigo carregar esse link.",
   "player.a_failure_occurred_while_reconnecting": "Ocorreu uma falha ao reconectar o player no canal de voz{code_suffix}.",
   "player.a_failure_occurred_while_reconnecting_2": "Ocorreu uma falha ao reconectar o player no canal de voz.",
   "player.a_song_is_being_processed": "Há uma música sendo processada no momento...",
