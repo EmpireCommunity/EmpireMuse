@@ -6,9 +6,7 @@ opção em pt-BR igual ao de hoje, os autocompletes (citam a base) e o mascarame
 
 import importlib
 import inspect
-import json
 import pkgutil
-from pathlib import Path
 
 import disnake
 import pytest
@@ -20,7 +18,68 @@ from empiremuse.rules import i18n as rules
 
 pytestmark = pytest.mark.critical
 
-GOLDEN = json.loads((Path(__file__).parent / "golden_option_names_pt_br.json").read_text(encoding="utf-8"))
+# O contrato com quem usa o bot em português (decisão do dono): os nomes de opção que o pt-BR vê são os de hoje, palavra por palavra.
+# É a única prova disso (o nome antigo deixou de existir no código), por isso fica aqui, curta e à vista, e não em arquivo.
+TODAYS_PT_BR_NAMES = {
+    "add_dj": ["membro"],
+    "add_dj_role": ["cargo"],
+    "change_node": ["servidor"],
+    "connect": ["canal"],
+    "language": ["idioma"],
+    "loop_amount": ["valor"],
+    "loop_mode": ["modo"],
+    "move": [
+        "duplicados",
+        "duração_inicial",
+        "duração_máxima",
+        "membro",
+        "membros_ausentes",
+        "nome",
+        "playlist",
+        "posição",
+        "posição_final",
+        "posição_inicial",
+        "quantidade",
+        "uploader",
+    ],
+    "play": [
+        "busca",
+        "opções",
+        "posição",
+        "recomendadas",
+        "selecionar_bot",
+        "selecionar_manualmente",
+        "server",
+        "tocar_agora",
+    ],
+    "play_music_file": ["arquivo", "posição", "selecionar_bot", "server", "tocar_agora"],
+    "playlists.importar": ["anexo", "arquivo", "link"],
+    "queue.clear": [
+        "duplicados",
+        "duração_inicial",
+        "duração_máxima",
+        "membro",
+        "membros_ausentes",
+        "nome",
+        "playlist",
+        "posição_final",
+        "posição_inicial",
+        "quantidade",
+        "uploader",
+    ],
+    "remove": ["nome", "nome_exato"],
+    "remove_dj": ["membro"],
+    "remove_dj_role": ["cargo"],
+    "reset": ["deletar_canal"],
+    "rotate": ["nome", "nome_exato"],
+    "search": ["busca", "opções", "posição", "selecionar_bot", "server", "tocar_agora"],
+    "seek": ["tempo"],
+    "set_voice_status": ["modelo"],
+    "setup": ["canal", "limpar_mensagens"],
+    "skip": ["nome", "nome_exato", "tocar_apenas"],
+    "skipto": ["nome", "nome_exato"],
+    "volume": ["nível"],
+}
 SUBS = (disnake.OptionType.sub_command, disnake.OptionType.sub_command_group)
 
 
@@ -125,10 +184,10 @@ def test_pt_br_sees_the_same_option_names_as_today(linked):
             continue
         shown[key] = sorted((o.name_localizations.data or {}).get("pt-BR", o.name) for o in options)
 
-    for key, names in GOLDEN.items():
+    for key, names in TODAYS_PT_BR_NAMES.items():
         if key in shown:
             assert shown[key] == names, key
-    assert set(GOLDEN) - {"language"} <= set(shown) | {"language"}
+    assert set(TODAYS_PT_BR_NAMES) - {"language"} <= set(shown) | {"language"}
 
 
 def test_every_autocomplete_points_to_an_option_base_that_exists(linked):

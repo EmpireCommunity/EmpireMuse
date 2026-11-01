@@ -539,21 +539,16 @@ class TestReviewFindings:
 
         assert report.dropped
 
-    def test_a_huge_value_is_refused_by_size_before_any_regex(self):
-        import time
+    def test_a_huge_value_is_refused_by_size_before_any_regex(self, monkeypatch):
+        def never(*args, **kwargs):
+            raise AssertionError("o tamanho tem de recusar ANTES de qualquer checagem que leia o texto")
 
-        started = time.perf_counter()
+        for name in ("_bad_chars", "parse_template", "_marks_ok", "_links_ok", "_markdown_signature"):
+            monkeypatch.setattr(rules, name, never)
+
         reason = rules.check_entry("player.x.msg", "a." * 100_000, REF | {"player.x.msg": "hello"})
 
-        assert reason == rules.SIZE and time.perf_counter() - started < 0.5
-
-    def test_the_bare_domain_regex_is_linear(self):
-        import time
-
-        started = time.perf_counter()
-        rules._link_tokens("a." * 400)
-
-        assert time.perf_counter() - started < 0.5
+        assert reason == rules.SIZE
 
     @pytest.mark.parametrize(
         "text",

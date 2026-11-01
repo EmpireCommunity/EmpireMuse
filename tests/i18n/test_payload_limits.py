@@ -1,6 +1,7 @@
 """Limites do Discord depois da expansão (item 21, I-6e): o pior caso permitido pelo validador cabe em toda skin e em todo componente."""
 
 import ast
+import logging
 from pathlib import Path
 
 import disnake
@@ -116,3 +117,61 @@ class TestFitPayload:
         odd = {"embeds": [object()], "components": [object()]}
 
         assert fit_payload(odd) is odd and fit_payload(None) is None
+
+
+class TestBudget:
+    def total(self, embeds):
+        return sum(
+            len(e.title or "")
+            + len(e.description or "")
+            + len(e.footer.text or "")
+            + sum(len(f.name) + len(f.value) for f in e.fields)
+            for e in embeds
+        )
+
+    def test_three_valid_descriptions_are_shared_without_emptying_anything(self):
+        embeds = [disnake.Embed(title="t", description=c * 4000) for c in "abc"]
+
+        fit_payload({"embeds": embeds})
+
+        assert self.total(embeds) <= 6000 and all(e.description and e.title for e in embeds)
+
+    def test_a_skin_without_description_shares_the_cut_among_the_fields_and_keeps_every_required_text(self):
+        embed = disnake.Embed(title="t" * 200)
+        embed.set_author(name="a" * 200)
+        embed.set_footer(text="f" * 2000)
+        for n in range(25):
+            embed.add_field(name=f"nome{n}" * 20, value="v" * 1000, inline=False)
+
+        fit_payload({"embeds": [embed]})
+
+        assert self.total([embed]) + len(embed.author.name) <= 6000
+        assert embed.author.name and embed.title and len(embed.fields) == 25
+        assert all(f.name and len(f.value) > 20 for f in embed.fields)  # dividido por igual, não zerado
+
+    def test_the_cut_is_even_not_taken_from_the_first_text(self):
+        embeds = [disnake.Embed(description=c * 4000) for c in "abc"]
+
+        fit_payload({"embeds": embeds})
+
+        sizes = [len(e.description) for e in embeds]
+        assert max(sizes) - min(sizes) <= 2 and min(sizes) > 1900
+
+    def test_the_first_embed_is_never_dropped_and_extra_embeds_go_last(self):
+        embeds = [disnake.Embed(title="x" * 250, description="d" * 10) for _ in range(30)]
+        data = {"embeds": embeds}
+
+        fit_payload(data)
+
+        assert data["embeds"][0] is embeds[0] and len(data["embeds"]) < 30
+
+    def test_a_failure_is_logged_with_the_type_only_and_the_data_comes_back(self, monkeypatch, caplog):
+        import empiremuse.i18n.payload as payload
+
+        monkeypatch.setattr(payload, "_fit_embed", lambda embed: (_ for _ in ()).throw(RuntimeError("segredo")))
+        data = {"embeds": [disnake.Embed(description="x")]}
+
+        with caplog.at_level(logging.WARNING):
+            assert fit_payload(data) is data
+
+        assert "RuntimeError" in caplog.text and "segredo" not in caplog.text

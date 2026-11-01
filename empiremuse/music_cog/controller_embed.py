@@ -38,6 +38,7 @@ from empiremuse.utils.others import (
 async def _pc_embed_resolve(self, req):
     """Valida o link do embed e resolve o bot, o player e o autor."""
     interaction = req.interaction
+    tr = await self.bot.pool.i18n.for_guild(interaction.guild)  # ainda não há player: o tradutor é o do servidor
 
     try:
         if not (url := interaction.message.embeds[0].author.url):
@@ -50,9 +51,7 @@ async def _pc_embed_resolve(self, req):
     try:
         await self.player_interaction_concurrency.acquire(interaction)
     except Exception:
-        raise GenericError(
-            (await interaction.bot.pool.i18n.for_guild(interaction.guild))("player.a_song_is_being_processed")
-        )
+        raise GenericError(tr("player.a_song_is_being_processed"))
 
     bot: Optional[BotCore] = None
     player: Optional[LavalinkPlayer] = None
@@ -71,7 +70,7 @@ async def _pc_embed_resolve(self, req):
 
         if p.guild.me.voice and interaction.author.id in p.guild.me.voice.channel.voice_states:
             if p.locked:
-                raise GenericError(player.tr("player.this_action_cannot_be_run"))
+                raise GenericError(tr("player.this_action_cannot_be_run"))
 
             player = p
             bot = b
@@ -80,10 +79,10 @@ async def _pc_embed_resolve(self, req):
             break
 
     if not channel:
-        raise GenericError(player.tr("player.there_are_no_bots_available"))
+        raise GenericError(tr("player.there_are_no_bots_available"))
 
     if not author.voice:
-        raise GenericError(player.tr("player.you_must_join_a_voice"))
+        raise GenericError(tr("player.you_must_join_a_voice"))
 
     try:
         node = player.node
@@ -125,7 +124,8 @@ async def _pc_embed_playlist(self, req):
     vc_id = req.vc_id
 
     if retry_after := self.bot.pool.enqueue_playlist_embed_cooldown.get_bucket(interaction).update_rate_limit():
-        raise GenericError(player.tr("player.cooldown.playlist", count=int(retry_after)))
+        tr = player.tr if player else await self.bot.pool.i18n.for_guild(interaction.guild)
+        raise GenericError(tr("player.cooldown.playlist", count=int(retry_after)))
 
     if not player:
         player = await self.create_player(inter=interaction, bot=bot, guild=channel.guild, channel=channel, node=node)
@@ -245,7 +245,8 @@ async def _pc_embed_track(self, req):
     if not seek_status:
         if not track:
             if retry_after := self.bot.pool.enqueue_track_embed_cooldown.get_bucket(interaction).update_rate_limit():
-                raise GenericError(player.tr("player.cooldown.song", count=int(retry_after)))
+                tr = player.tr if player else await self.bot.pool.i18n.for_guild(interaction.guild)
+                raise GenericError(tr("player.cooldown.song", count=int(retry_after)))
 
             if control == PlayerControls.embed_enqueue_track:
                 await self.check_player_queue(interaction.author, bot, interaction.guild_id)
