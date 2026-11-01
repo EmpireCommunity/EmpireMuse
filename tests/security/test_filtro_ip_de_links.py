@@ -215,6 +215,30 @@ class TestGuard:
         await ensure_public_url(f"{scheme}://radio.example/stream", resolve=resolving(PUBLIC))
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "query",
+        [
+            " icy://127.0.0.1:2333/x ",  # espaços ao redor
+            "<icy://10.0.0.1/>",  # entre < > (sem prévia no Discord)
+            "icy://user@good.example/",  # credencial
+            "icy://127.1/",  # forma curta
+            "icy://2130706433/",  # decimal
+            "icy://[::ffff:127.0.0.1]:2333/",
+            "icy://localhost:2333/",
+        ],
+    )
+    async def test_every_spelling_of_an_icy_link_to_an_internal_host_is_refused(
+        self, query
+    ):  # Keystone ALTO: bypass por icy://
+        with pytest.raises(UnsafeUrl):
+            await ensure_public_url(query, resolve=resolving("127.0.0.1"))
+
+    def test_the_fetched_schemes_are_exactly_the_ones_lavaplayer_turns_into_http(self):
+        from empiremuse.rules.urls import LAVALINK_FETCH_SCHEMES
+
+        assert LAVALINK_FETCH_SCHEMES == ("http://", "https://", "icy://")
+
+    @pytest.mark.asyncio
     async def test_the_system_resolver_runs_on_its_own_small_executor_not_the_default_one(self, monkeypatch):
         import socket
         import threading
