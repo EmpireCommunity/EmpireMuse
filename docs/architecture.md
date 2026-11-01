@@ -143,7 +143,7 @@ só os atributos de núcleo (`emoji`, `name`, `desc_prefix`, `providers_info`, �
 | `controller_state.py` | — | `ControllerState`: as variáveis que passam de uma etapa do `player_controller` para outra |
 | `jukebox_messages.py` | `JukeboxMessagesMixin` | mensagens do canal da Jukebox (evento `on_jukebox_message`, texto que vira pedido, modal) |
 | `jukebox_steps.py` | — | etapas `_sr_*` das mensagens da Jukebox e `_pr_*` da leitura do pedido |
-| `jukebox_state.py` | — | `JukeboxState` e `ParseRequestState` |
+| `jukebox_state.py` | — | `JukeboxState` e `JukeboxParseState` |
 | `tracks.py` | `TracksMixin` | `get_partial_tracks`, `get_lavalink_tracks`, `get_tracks` |
 | `player_lifecycle.py` | `PlayerLifecycleMixin` | `process_music`, `create_player`, `player_vc_disconnect`, relatório de erros |
 | `shared.py` | — | constantes e objetos de corpo de classe usados por mais de um mixin |
