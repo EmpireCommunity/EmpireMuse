@@ -3,6 +3,7 @@
 import disnake
 from disnake.ext import commands
 
+from empiremuse.i18n import localized
 from empiremuse.utils.music.checks import (
     check_voice,
     has_player,
@@ -25,7 +26,6 @@ from empiremuse.utils.others import (
 
 # O corpo da classe usa estes nomes, então eles precisam existir neste módulo.
 from empiremuse.music_cog.shared import (
-    DESC_PREFIX as desc_prefix,
     case_sensitive_args,
     queue_manipulation_cd,
     remove_mc,
@@ -58,7 +58,7 @@ class QueueEditMixin:
     @has_player()
     @check_voice()
     @commands.slash_command(
-        description=f"{desc_prefix}Remover uma música específica da fila.",
+        description=localized("cmd.remove.description"),
         extras={"only_voiced": True},
         max_concurrency=remove_mc,
     )
@@ -66,11 +66,13 @@ class QueueEditMixin:
     async def remove(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        query: str = commands.Param(name="nome", description="Nome da música completo."),
+        query: str = commands.Param(
+            name=localized("cmd.remove.opt.name.name"), description=localized("cmd.remove.opt.name.description")
+        ),
         case_sensitive: bool = commands.Param(
-            name="nome_exato",
+            name=localized("cmd.remove.opt.exact_name.name"),
             default=False,
-            description="Buscar por músicas com a frase exata no nome da música ao invés de buscar palavra por palavra.",
+            description=localized("cmd.remove.opt.exact_name.description"),
         ),
     ):
         try:
@@ -116,7 +118,7 @@ class QueueEditMixin:
     @has_player()
     @check_voice()
     @commands.slash_command(
-        description=f"{desc_prefix}Readicionar as músicas tocadas na fila.",
+        description=localized("cmd.readd_songs.description"),
         extras={"only_voiced": True},
         cooldown=queue_manipulation_cd,
         max_concurrency=remove_mc,
@@ -182,7 +184,7 @@ class QueueEditMixin:
     @has_player()
     @check_voice()
     @commands.slash_command(
-        description=f"{desc_prefix}Rotacionar a fila para a música especificada.",
+        description=localized("cmd.rotate.description"),
         extras={"only_voiced": True},
         cooldown=queue_manipulation_cd,
         max_concurrency=remove_mc,
@@ -191,11 +193,13 @@ class QueueEditMixin:
     async def rotate(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        query: str = commands.Param(name="nome", description="Nome da música completo."),
+        query: str = commands.Param(
+            name=localized("cmd.rotate.opt.name.name"), description=localized("cmd.rotate.opt.name.description")
+        ),
         case_sensitive: bool = commands.Param(
-            name="nome_exato",
+            name=localized("cmd.rotate.opt.exact_name.name"),
             default=False,
-            description="Buscar por músicas com a frase exata no nome da música ao invés de buscar palavra por palavra.",
+            description=localized("cmd.rotate.opt.exact_name.description"),
         ),
     ):
         try:

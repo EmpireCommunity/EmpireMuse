@@ -12,6 +12,7 @@ from typing import Optional, Union, TYPE_CHECKING
 import disnake
 
 import empiremuse.wavelink as wavelink
+from empiremuse.i18n.payload import fit_payload
 from empiremuse.rules.voice_status import DEFAULT_VOICE_TEMPLATE
 from empiremuse.utils.music.converters import time_format, md_link, md_code
 from empiremuse.utils.music.skin_utils import skin_converter
@@ -358,6 +359,8 @@ class LavalinkPlayer(
                 data = skin_converter(self.custom_skin_data[self.skin[15:]], player=self, guild=self.guild)
             else:
                 data = self.bot.pool.player_skins[self.skin].load(self)
+
+        data = fit_payload(data)
 
         if disable:
             data = self.get_skin()

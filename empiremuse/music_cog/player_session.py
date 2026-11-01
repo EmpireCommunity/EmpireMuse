@@ -3,6 +3,7 @@
 import disnake
 from disnake.ext import commands
 
+from empiremuse.i18n import localized
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.checks import (
     check_voice,
@@ -24,7 +25,6 @@ from empiremuse.utils.others import (
 
 # O corpo da classe usa estes nomes, então eles precisam existir neste módulo.
 from empiremuse.music_cog.shared import (
-    DESC_PREFIX as desc_prefix,
     queue_manipulation_cd,
     remove_mc,
 )
@@ -53,7 +53,7 @@ class PlayerSessionMixin:
     @commands.slash_command(
         extras={"only_voiced": True},
         cooldown=song_request_thread_cd,
-        description=f"{desc_prefix}Criar uma thread/conversa temporária para song-request (pedido de música)",
+        description=localized("cmd.song_request_thread.description"),
     )
     @commands.contexts(guild=True)
     async def song_request_thread(self, inter: disnake.ApplicationCommandInteraction):
@@ -146,7 +146,7 @@ class PlayerSessionMixin:
     @has_player()
     @check_voice()
     @commands.slash_command(
-        description=f"{desc_prefix}Adicionar um membro à lista de DJ's na sessão atual do player.",
+        description=localized("cmd.add_dj.description"),
         extras={"only_voiced": True},
     )
     @commands.contexts(guild=True)
@@ -154,7 +154,9 @@ class PlayerSessionMixin:
         self,
         inter: disnake.ApplicationCommandInteraction,
         *,
-        user: disnake.User = commands.Param(name="membro", description="Membro a ser adicionado."),
+        user: disnake.User = commands.Param(
+            name=localized("cmd.add_dj.opt.member.name"), description=localized("cmd.add_dj.opt.member.description")
+        ),
     ):
         error_text = None
 
@@ -203,7 +205,7 @@ class PlayerSessionMixin:
     @has_player()
     @check_voice()
     @commands.slash_command(
-        description=f"{desc_prefix}Remover um membro da lista de DJ's na sessão atual do player.",
+        description=localized("cmd.remove_dj.description"),
         extras={"only_voiced": True},
     )
     @commands.contexts(guild=True)
@@ -211,7 +213,10 @@ class PlayerSessionMixin:
         self,
         inter: disnake.ApplicationCommandInteraction,
         *,
-        user: disnake.User = commands.Param(name="membro", description="Membro a ser adicionado."),
+        user: disnake.User = commands.Param(
+            name=localized("cmd.remove_dj.opt.member.name"),
+            description=localized("cmd.remove_dj.opt.member.description"),
+        ),
     ):
         try:
             bot = inter.music_bot
@@ -263,7 +268,7 @@ class PlayerSessionMixin:
 
     @has_player(check_node=False)
     @check_voice()
-    @commands.slash_command(description=f"{desc_prefix}Ver o log de uso dos comandos.", extras={"only_voiced": True})
+    @commands.slash_command(description=localized("cmd.command_log.description"), extras={"only_voiced": True})
     @commands.contexts(guild=True)
     async def command_log(self, inter: disnake.ApplicationCommandInteraction):
         try:
@@ -302,9 +307,7 @@ class PlayerSessionMixin:
     @is_dj()
     @has_player(check_node=False)
     @check_voice()
-    @commands.slash_command(
-        description=f"{desc_prefix}Parar o player e me desconectar do canal de voz.", extras={"only_voiced": True}
-    )
+    @commands.slash_command(description=localized("cmd.stop.description"), extras={"only_voiced": True})
     @commands.contexts(guild=True)
     async def stop(self, inter: disnake.ApplicationCommandInteraction):
         try:
@@ -362,7 +365,7 @@ class PlayerSessionMixin:
     @has_player()
     @check_voice()
     @commands.slash_command(
-        description=f"{desc_prefix}Experimental: Salvar a música e fila atual pra reusá-los a qualquer momento.",
+        description=localized("cmd.save_queue.description"),
         extras={"only_voiced": True},
         cooldown=queue_manipulation_cd,
         max_concurrency=remove_mc,

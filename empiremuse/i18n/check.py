@@ -48,6 +48,12 @@ def missing_keys(used: Iterable[str], reference: dict[str, str]) -> list[str]:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m empiremuse.i18n.check", description=__doc__)
     parser.add_argument("--root", type=Path, default=None, help="pasta com os locales (padrão: empiremuse/locales)")
+    parser.add_argument(
+        "--code",
+        type=Path,
+        default=PACKAGE_DIR,
+        help="pasta do código varrida atrás de chaves usadas (padrão: o pacote)",
+    )
     args = parser.parse_args(argv)
 
     loaded = loader.load_catalogs(args.root)
@@ -57,7 +63,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"{name}: cobertura {data.coverage * 100:.1f}% ({len(data.entries)} chaves, {len(data.dropped)} descartes)\n"
         )
         problems.extend(f"{name}: arquivo {namespace} recusado ({reason})" for namespace, reason in data.fatal)
-        problems.extend(f"{name}: {namespace}.{key} descartada ({reason})" for namespace, key, reason in data.dropped)
+        problems.extend(
+            f"{name}: arquivo {namespace} ausente ou recusado"
+            for namespace in data.missing
+            if namespace in loader.REQUIRED_FILES and name in rules.REQUIRED_LOCALES
+        )
+        problems.extend(
+            f"{name}: {namespace}.{rules.loggable_key(key)} descartada ({reason})"
+            for namespace, key, reason in data.dropped
+        )
     for name in rules.REQUIRED_LOCALES:
         data = loaded.get(name)
         if data is None:
@@ -66,7 +80,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             problems.append(f"{name}: cobertura abaixo de 100%")
     reference = loaded.get(rules.REFERENCE_LOCALE)
     if reference is not None:
-        for key in missing_keys(used_keys(), reference.entries):
+        for key in missing_keys(used_keys(args.code), reference.entries):
             problems.append(f"chave usada no código e ausente no {rules.REFERENCE_LOCALE}: {key}")
     for problem in problems:
         sys.stderr.write(f"ERRO {problem}\n")

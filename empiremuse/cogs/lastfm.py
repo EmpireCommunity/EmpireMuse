@@ -11,6 +11,7 @@ from disnake.ext import commands
 from rapidfuzz import fuzz
 
 import empiremuse.wavelink as wavelink
+from empiremuse.i18n import localized
 from empiremuse.rules.text import format_int
 from empiremuse.rules.title_match import title_matches
 from empiremuse.utils.branding import asset_url
@@ -169,7 +170,7 @@ class LastFmCog(commands.Cog):
     @commands.slash_command(
         hidden=True,
         name="lastfm",
-        description=f"{desc_prefix}Vincular sua conta do last.fm para registrar as músicas via scrobble.",
+        description=localized("cmd.lastfm.description"),
         extras={"allow_private": True},
         cooldown=lastfm_cd,
         max_concurrency=lastfm_mc,

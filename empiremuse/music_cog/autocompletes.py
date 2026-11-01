@@ -23,11 +23,11 @@ from empiremuse.music_cog.skip import SkipMixin
 
 
 class AutocompletesMixin:
-    @QueueEditMixin.rotate.autocomplete("nome")
-    @QueueGroupMixin.move.autocomplete("nome")
-    @SkipMixin.skip.autocomplete("nome")
-    @SkipMixin.skipto.autocomplete("nome")
-    @QueueEditMixin.remove.autocomplete("nome")
+    @QueueEditMixin.rotate.autocomplete("name")
+    @QueueGroupMixin.move.autocomplete("name")
+    @SkipMixin.skip.autocomplete("name")
+    @SkipMixin.skipto.autocomplete("name")
+    @QueueEditMixin.remove.autocomplete("name")
     async def queue_tracks(self, inter: disnake.ApplicationCommandInteraction, query: str):
         try:
             if not inter.author.voice:
@@ -87,7 +87,7 @@ class AutocompletesMixin:
 
     @PlayEntryMixin.search.autocomplete("server")
     @PlayCommandMixin.play.autocomplete("server")
-    @NodesMixin.change_node.autocomplete("servidor")
+    @NodesMixin.change_node.autocomplete("server")
     async def node_suggestions(self, inter: disnake.Interaction, query: str):
         if not self.bot.bot_ready or not self.bot.is_ready():
             return []

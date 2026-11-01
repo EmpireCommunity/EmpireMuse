@@ -3,6 +3,7 @@ from os.path import basename
 
 import disnake
 
+from empiremuse.rules.i18n import fit
 from empiremuse.utils.branding import asset_url
 from empiremuse.utils.music.converters import get_button_style, music_source_image, md_bracketed, md_link, md_code
 from empiremuse.utils.music.models import LavalinkPlayer
@@ -48,14 +49,20 @@ class MicroController:
             except Exception:
                 embed.description += "`[Recomendada]`"
 
-        embed.set_author(name="Tocando Agora:", icon_url=music_source_image(player.current.info["sourceName"]))
+        embed.set_author(
+            name=player.tr("player.now_playing"), icon_url=music_source_image(player.current.info["sourceName"])
+        )
 
         if player.command_log:
-            embed.description += f"\n\n{player.command_log_emoji} ⠂**Última Interação:** {player.command_log}"
+            embed.description += player.tr(
+                "player.last_interaction_4",
+                command_log_emoji=str(player.command_log_emoji),
+                command_log=str(player.command_log),
+            )
 
         if player.current_hint:
             embed_hint = disnake.Embed(colour=embed_color)
-            embed_hint.set_footer(text=f"💡 Dica: {player.current_hint}")
+            embed_hint.set_footer(text=player.tr("player.tip", current_hint=str(player.current_hint)))
             data["embeds"].append(embed_hint)
 
         data["embeds"].append(embed)
@@ -63,7 +70,7 @@ class MicroController:
         data["components"] = [
             disnake.ui.Button(
                 emoji=app_emoji(player.bot, "playpause"),
-                label="Retomar" if player.paused else "Pausar",
+                label=fit("Retomar" if player.paused else player.tr("player.pause.label"), 80),
                 custom_id=PlayerControls.pause_resume,
                 style=get_button_style(player.paused),
             ),
@@ -77,13 +84,13 @@ class MicroController:
             disnake.ui.Button(emoji=app_emoji(player.bot, "skip"), label="Pular", custom_id=PlayerControls.skip),
             disnake.ui.Button(
                 emoji=app_emoji(player.bot, "music_queue"),
-                label="Fila",
+                label=fit(player.tr("player.queue.label"), 80),
                 custom_id=PlayerControls.queue,
                 disabled=not (player.queue or player.queue_autoplay),
             ),
             disnake.ui.Button(
                 emoji=app_emoji(player.bot, "loved"),
-                label="Adicionar nos seus favoritos",
+                label=fit(player.tr("player.add_to_your_favorites.label"), 80),
                 custom_id=PlayerControls.add_favorite,
             ),
         ]

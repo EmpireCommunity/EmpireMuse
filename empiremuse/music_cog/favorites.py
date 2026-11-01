@@ -3,6 +3,7 @@
 import disnake
 from disnake.ext import commands
 
+from empiremuse.i18n import localized
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.errors import (
     GenericError,
@@ -15,9 +16,6 @@ from empiremuse.cogs.server_playlists import NOT_ALLOWED, member_may_manage
 from empiremuse.utils.others import CustomContext
 
 # O corpo da classe usa estes nomes, então eles precisam existir neste módulo.
-from empiremuse.music_cog.shared import (
-    DESC_PREFIX as desc_prefix,
-)
 
 
 class FavoritesMixin:
@@ -51,7 +49,7 @@ class FavoritesMixin:
 
     @commands.max_concurrency(1, commands.BucketType.member, wait=False)
     @commands.slash_command(
-        description=f"{desc_prefix}Gerenciar seus favoritos/integrações e links do server.",
+        description=localized("cmd.fav_manager.description"),
         cooldown=fav_cd,
         extras={"allow_private": True},
     )

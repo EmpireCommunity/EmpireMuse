@@ -7,6 +7,7 @@ import disnake
 from async_timeout import timeout
 from disnake.ext import commands
 
+from empiremuse.i18n import localized
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.checks import (
     check_voice,
@@ -37,10 +38,8 @@ from empiremuse.utils.others import (
 
 # O corpo da classe usa estes nomes, então eles precisam existir neste módulo.
 from empiremuse.music_cog.shared import (
-    DESC_PREFIX as desc_prefix,
     play_cd,
     play_mc,
-    playlist_opts,
 )
 
 from empiremuse.music_cog.play_enqueue import PlayEnqueueMixin
@@ -55,7 +54,7 @@ class PlayCommandMixin(PlayMenusMixin, PlayResolveMixin, PlayEnqueueMixin):
     @can_send_message_check()
     @check_voice()
     @commands.slash_command(
-        description=f"{desc_prefix}Tocar música em um canal de voz.",
+        description=localized("cmd.play.description"),
         extras={"check_player": False},
         cooldown=play_cd,
         max_concurrency=play_mc,
@@ -64,45 +63,51 @@ class PlayCommandMixin(PlayMenusMixin, PlayResolveMixin, PlayEnqueueMixin):
     async def play(
         self,
         inter: Union[disnake.ApplicationCommandInteraction, CustomContext],
-        query: str = commands.Param(name="busca", desc="Nome ou link da música."),
+        query: str = commands.Param(
+            name=localized("cmd.play.opt.query.name"), description=localized("cmd.play.opt.query.description")
+        ),
         *,
         position: int = commands.Param(
-            name="posição", description="Colocar a música em uma posição específica", default=0
+            name=localized("cmd.play.opt.position.name"),
+            description=localized("cmd.play.opt.position.description"),
+            default=0,
         ),
         force_play: str = commands.Param(
-            name="tocar_agora",
-            description="Tocar a música imediatamente (ao invés de adicionar na fila).",
+            name=localized("cmd.play.opt.play_now.name"),
+            description=localized("cmd.play.opt.play_now.description"),
             default="no",
-            choices=[
-                disnake.OptionChoice(disnake.Localized("Yes", data={disnake.Locale.pt_BR: "Sim"}), "yes"),
-            ],
+            choices=[disnake.OptionChoice(localized("cmd.play.opt.play_now.choice.yes"), "yes")],
         ),
         mix: str = commands.Param(
-            name="recomendadas",
-            description="Tocar músicas recomendadas com base no nome do artista - música informado",
+            name=localized("cmd.play.opt.recommended.name"),
+            description=localized("cmd.play.opt.recommended.description"),
             default=False,
-            choices=[
-                disnake.OptionChoice(disnake.Localized("Yes", data={disnake.Locale.pt_BR: "Sim"}), "yes"),
-            ],
+            choices=[disnake.OptionChoice(localized("cmd.play.opt.recommended.choice.yes"), "yes")],
         ),
         manual_selection: bool = commands.Param(
-            name="selecionar_manualmente",
-            description="Escolher uma música manualmente entre os resultados encontrados",
+            name=localized("cmd.play.opt.select_manually.name"),
+            description=localized("cmd.play.opt.select_manually.description"),
             default=False,
         ),
         options: str = commands.Param(
-            name="opções", description="Opções para processar playlist", choices=playlist_opts, default=False
+            name=localized("cmd.play.opt.options.name"),
+            description=localized("cmd.play.opt.options.description"),
+            choices=[
+                disnake.OptionChoice(localized("cmd.play.opt.options.choice.shuffle"), "shuffle"),
+                disnake.OptionChoice(localized("cmd.play.opt.options.choice.reversed"), "reversed"),
+            ],
+            default=False,
         ),
         server: str = commands.Param(
-            name="server", desc="Usar um servidor de música específico na busca.", default=None
+            name=localized("cmd.play.opt.server.name"),
+            description=localized("cmd.play.opt.server.description"),
+            default=None,
         ),
         manual_bot_choice: str = commands.Param(
-            name="selecionar_bot",
-            description="Selecionar um bot disponível manualmente.",
+            name=localized("cmd.play.opt.select_bot.name"),
+            description=localized("cmd.play.opt.select_bot.description"),
             default="no",
-            choices=[
-                disnake.OptionChoice(disnake.Localized("Yes", data={disnake.Locale.pt_BR: "Sim"}), "yes"),
-            ],
+            choices=[disnake.OptionChoice(localized("cmd.play.opt.select_bot.choice.yes"), "yes")],
         ),
     ):
         req = PlayState(
@@ -199,7 +204,7 @@ class PlayCommandMixin(PlayMenusMixin, PlayResolveMixin, PlayEnqueueMixin):
 
         await self._play_connect_and_process(req)
 
-    @play.autocomplete("busca")
+    @play.autocomplete("query")
     async def fav_add_autocomplete(self, inter: disnake.Interaction, query: str):
         if not self.bot.is_ready() or URL_REG.match(query) or URL_REG.match(query):
             return [query] if len(query) < 100 else []

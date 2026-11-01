@@ -3,8 +3,8 @@
 
 Um objeto só por processo (``get_i18n()``): os comandos são declarados na importação dos módulos, antes de existir o ``BotPool``, e já
 precisam do texto base (``localized``). O ``BotPool.setup`` chama ``load()`` (estrito: ``en-US``/``pt-BR`` quebrado faz a subida
-falhar) antes dos bots. O provider devolve só descrições de comando e nomes de choice dos locales ligados, nunca nome de comando ou
-de opção nem o ``value`` de uma choice (I-6).
+falhar) antes dos bots. O provider devolve só descrições de comando, nomes de opção e nomes de choice dos locales ligados, nunca nome de
+comando nem o ``value`` de uma choice (I-6).
 """
 
 from __future__ import annotations
@@ -151,7 +151,7 @@ class I18n:
 
     def resolve(self, saved: str | None, preferred: str | None) -> str:
         """O locale que vale: ``saved`` ligado → ``preferred`` ligado → irmão → reserva (``saved`` desligado continua gravado, só é pulado)."""
-        return rules.resolve_locale(saved, preferred, self.enabled, rules.FALLBACK_LOCALE)
+        return rules.resolve_locale(_locale_value(saved), _locale_value(preferred), self.enabled, rules.FALLBACK_LOCALE)
 
     async def language_of(self, guild_id: int) -> str | None:
         """``settings.language`` do servidor (``None`` = automático); qualquer falha do store também é ``None``."""
@@ -163,6 +163,19 @@ class I18n:
         except Exception:  # noqa: BLE001 - sem o store o servidor segue o idioma do Discord
             return None
         return value if isinstance(value, str) else None
+
+    async def ack_for_guild(self, interaction: Any) -> rules.Translator:
+        """Confirma a interação (efêmera) se ainda não foi respondida e SÓ ENTÃO resolve o idioma do servidor.
+
+        Ler ``settings.language`` pode ir ao banco; a interação tem 3 s para ser confirmada. Para as mensagens de erro de um componente,
+        que respondem depois pelo ``interaction.send`` (já como resposta adicional efêmera). Nunca levanta por causa da confirmação.
+        """
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.defer(ephemeral=True)
+        except Exception as error:  # noqa: BLE001 - já respondida ou expirada: o texto sai pelo caminho de erro de sempre
+            logger.debug("Interação não confirmada antes do idioma (%s)", type(error).__name__)
+        return await self.for_guild(getattr(interaction, "guild", None))
 
     async def for_guild(self, guild: Any | None) -> rules.Translator:
         """O tradutor do servidor (cache do ``ServerStore``); DM ou servidor fora do pool usam o ``preferred_locale``."""
@@ -209,19 +222,17 @@ class I18n:
         text = self.entries(locale).get(key)
         if text is None:
             return None
-        group = self._groups.get(key)
-        if group is None or not rules.is_command_description(key):
+        group = rules.command_group(key)
+        if group is None:
             return text
         label = self.entries(locale).get(f"cmd.{group}._label") or self.reference.get(f"cmd.{group}._label", "")
         return rules.description_prefix(group, label) + text
 
-    def localized(self, key: str, group: str | None = None) -> disnake.Localized:
+    def localized(self, key: str) -> disnake.Localized:
         """``Localized`` com o texto base em ``en-US`` e a chave: o provider completa os outros idiomas.
 
-        ``group`` é o grupo da legenda (``cmd.<grupo>._label``) de uma descrição de comando; sem ele o texto vai sem legenda.
+        A descrição de um comando leva a legenda do grupo (``COMMAND_GROUPS``) montada no idioma.
         """
-        if group is not None:
-            self._groups[key] = group
         base = self.command_text(rules.REFERENCE_LOCALE, key)
         if base is None:
             raise KeyError(key)
@@ -244,6 +255,6 @@ def get_i18n() -> I18n:
     return _INSTANCE
 
 
-def localized(key: str, group: str | None = None) -> disnake.Localized:
-    """Para declarar um comando: ``description=localized("cmd.play.description", group="music")``."""
-    return get_i18n().localized(key, group)
+def localized(key: str) -> disnake.Localized:
+    """Para declarar um comando: ``description=localized("cmd.play.description")``."""
+    return get_i18n().localized(key)

@@ -8,6 +8,7 @@ import disnake
 from disnake.ext import commands
 
 import empiremuse.wavelink as wavelink
+from empiremuse.rules.i18n import fit
 from empiremuse.rules.errors import RuleError
 from empiremuse.rules.favorites import save_track
 from empiremuse.utils.client import BotCore
@@ -226,7 +227,8 @@ async def _pc_player_checks(self, req):
     try:
         player: LavalinkPlayer = self.bot.music.players[interaction.guild_id]
     except KeyError:
-        await interaction.send("Não há player ativo no servidor...", ephemeral=True)
+        tr = await self.bot.pool.i18n.ack_for_guild(interaction)  # confirma antes de ler o idioma (3 s)
+        await interaction.send(tr("player.there_is_no_active_player"), ephemeral=True)
         await send_idle_embed(interaction.message, bot=self.bot)
         return True
 
@@ -235,7 +237,7 @@ async def _pc_player_checks(self, req):
             return True
 
     if player.interaction_cooldown:
-        raise GenericError("O player está em cooldown, tente novamente em instantes.")
+        raise GenericError(player.tr("player.the_player_is_on_cooldown"))
 
     try:
         vc = player.guild.me.voice.channel
@@ -277,7 +279,7 @@ async def _pc_favorite_choices(self, req):
     player = req.player
 
     if not player.current:
-        await interaction.send("**Não há música tocando atualmente...**", ephemeral=True)
+        await interaction.send(player.tr("player.no_song_is_playing_right"), ephemeral=True)
         return True
 
     choices = {}
@@ -285,7 +287,7 @@ async def _pc_favorite_choices(self, req):
 
     if player.current.uri:
         choices["Track"] = {"name": player.current.title, "url": player.current.uri, "emoji": "🎵"}
-        msg += f"**Música:** {md_link(player.current.title, player.current.uri)}\n"
+        msg += player.tr("player.song", md_link=str(md_link(player.current.title, player.current.uri)))
 
     if player.current.album_url:
         choices["Album"] = {
@@ -311,7 +313,7 @@ async def _pc_favorite_choices(self, req):
         await interaction.send(
             embed=disnake.Embed(
                 color=self.bot.get_color(interaction.guild.me),
-                description="### Não há itens para favoritar na música atual.",
+                description=fit(player.tr("player.there_are_no_items_to.description"), 4096),
             ),
             ephemeral=True,
         )
@@ -449,7 +451,7 @@ async def _pc_lyrics(self, req):
             await self.player_interaction_concurrency.release(interaction)
         except Exception:
             pass
-        await interaction.send("**Não estou tocando algo no momento...**", ephemeral=True)
+        await interaction.send(player.tr("player.i_m_not_playing_anything"), ephemeral=True)
         return True
 
     if not player.current.ytid:
@@ -457,10 +459,10 @@ async def _pc_lyrics(self, req):
             await self.player_interaction_concurrency.release(interaction)
         except Exception:
             pass
-        await interaction.send("No momento apenas músicas do youtube são suportadas.", ephemeral=True)
+        await interaction.send(player.tr("player.only_youtube_songs_are_supported"), ephemeral=True)
         return True
 
-    not_found_msg = "Não há letras disponíveis para a música atual..."
+    not_found_msg = player.tr("player.there_are_no_lyrics_available")
 
     await interaction.response.defer(ephemeral=True, with_message=True)
 
@@ -500,7 +502,14 @@ async def _pc_lyrics(self, req):
 
     await interaction.edit_original_message(
         embed=disnake.Embed(
-            description=f"### Letras da música: {md_link(player.current.title, player.current.uri, code=False)}\n{lyrics_string}",
+            description=fit(
+                player.tr(
+                    "player.song_lyrics.body",
+                    md_link=str(md_link(player.current.title, player.current.uri, code=False)),
+                    lyrics_string=str(lyrics_string),
+                ),
+                4096,
+            ),
             color=self.bot.get_color(player.guild.me),
         )
     )

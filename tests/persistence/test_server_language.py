@@ -97,3 +97,34 @@ def test_a_new_document_is_automatic_and_one_built_from_the_old_format_is_pt_br(
 
     assert run(world.store.settings(GID))["language"] == "pt-BR"
     assert run(world.store.settings(OTHER))["language"] is None
+
+
+def test_a_patch_works_when_the_stored_settings_have_no_language_key(world):
+    world.banco.put(*SERVERS, GID, stored())  # documento antigo, já migrado em ``settings``, sem a chave
+
+    result = run(world.store.patch(GID, "settings", {"language": "en-US"}))
+
+    assert result["language"] == "en-US" and world.banco.servers_doc()["settings"]["language"] == "en-US"
+
+
+def test_the_boot_language_survives_a_settings_migration_that_was_still_pending(world):
+    """Documento existente sem a seção ``settings`` migrada e sem documento antigo: o ``_prepare`` não pode devolver ``None``."""
+    document = {**new_doc(), "_id": str(GID)}
+    document["settings"].pop("language")  # como era antes do item 21
+    assert document["migrated"]["settings"] is False
+    world.banco.put(*SERVERS, GID, document)
+
+    assert run(world.store.migrate_language()) == (1, 0)
+    assert run(world.store.settings(GID))["language"] == "pt-BR"
+    assert (
+        world.banco.servers_doc()["settings"]["language"] == "pt-BR"
+        and world.banco.servers_doc()["migrated"]["settings"]
+    )
+
+
+def test_a_server_that_chose_automatic_stays_automatic_through_the_same_sequence(world):
+    document = {**new_doc(), "_id": str(GID)}  # nasceu com ``None`` (automático) e a migração ainda não rodou
+    world.banco.put(*SERVERS, GID, document)
+
+    assert run(world.store.migrate_language()) == (0, 0)
+    assert run(world.store.settings(GID))["language"] is None

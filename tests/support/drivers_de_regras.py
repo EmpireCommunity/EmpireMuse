@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import disnake
 
 import empiremuse.cogs.legacy_cmds as legacy_cmds
+from empiremuse.i18n import get_i18n
 from empiremuse.cogs.music import Music
 from empiremuse.utils.others import PlayerControls
 from empiremuse.panel.services.account_base import AccountContext
@@ -304,6 +305,7 @@ class BotDoPlayer(BotDeComandos):
             return RequestConfig(None, None, None, 0)  # sem painel configurado: o clique segue pelo caminho normal
 
         self.pool.servers = SimpleNamespace(request=SimpleNamespace(get=sem_canal_de_pedidos))
+        self.pool.i18n = get_i18n()  # o clique que falha responde no idioma do servidor
 
     def dispatch(self, nome, *args):
         self.eventos.append(nome)
@@ -354,6 +356,7 @@ async def favoritar_pelo_seletor(bot, titulo, url=URL_DA_MUSICA):
         message=inter.message,
         interaction_cooldown=False,
         guild=guild,
+        tr=get_i18n().for_locale("pt-BR"),
         current=SimpleNamespace(
             uri=url, title=titulo, album_url=None, album_name=None, playlist_url=None, playlist_name=None
         ),
