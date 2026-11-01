@@ -3,6 +3,8 @@
 Relógio injetado (o ``now`` é argumento); o laço real roda com o ``sleep`` falso do ``Cenario`` do resumo.
 """
 
+from types import SimpleNamespace
+
 import pytest
 
 from empiremuse.logs.alarm import (
@@ -150,6 +152,30 @@ class TestQuadrosAusentesNaoSaoRecuperacao:
         assert "normalizados" in alarme.observe(3 * RESUMO, cpu_percent=None, nodes=[parado])[0]
 
 
+class TestSessaoSemDadoNaoConfirmaRecuperacao:
+    def test_a_healthy_session_does_not_recover_the_node_while_another_session_is_playing_without_data(self):
+        alarme = DegradationAlarm()
+        assert degradar(alarme, [no("N1", enviados=2700, anulados=200, deficit=100)])
+        sessoes = [no("N1"), sem_quadros("N1", tocando=1)]  # uma saudável e outra tocando sem frameStats
+
+        for passo in range(2, 8):
+            assert alarme.observe(passo * RESUMO, cpu_percent=None, nodes=sessoes) == []
+
+    def test_sessions_that_play_nothing_do_not_hold_the_recovery(self):
+        alarme = DegradationAlarm()
+        assert degradar(alarme, [no("N1", enviados=2700, anulados=200, deficit=100)])
+        sessoes = [no("N1"), sem_quadros("N1", tocando=0), sem_quadros("N1", tocando=0)]
+
+        assert alarme.observe(2 * RESUMO, cpu_percent=None, nodes=sessoes) == []
+        assert "normalizados" in alarme.observe(3 * RESUMO, cpu_percent=None, nodes=sessoes)[0]
+
+    def test_a_session_without_data_does_not_hide_a_failing_one_nor_block_the_alert(self):
+        alarme = DegradationAlarm()
+        ruim = no("N1", enviados=2700, anulados=200, deficit=100)
+
+        assert degradar(alarme, [sem_quadros("N1", tocando=1), ruim, no("N1")])
+
+
 class TestArredondamentoDoLavalink:
     def test_averages_that_add_up_to_2999_frames_still_count(self):
         # o Lavalink divide os três campos por inteiro: 2800 + 150 + 49 = 2999 e 199 quadros falharam (6,6%)
@@ -205,3 +231,31 @@ class TestNoLacoDoResumo:
         alertas = [linha for linha in cenario.console.getvalue().splitlines() if "alerta:" in linha]
 
         assert len(alertas) == 1 and "nó N-OK" in alertas[0] and "anulados 200" in alertas[0]
+
+
+class TestPlayersTocandoPorSessao:
+    def test_each_session_counts_only_its_own_unpaused_players_on_that_node(self):
+        def player(no_do_player, *, pausado=False, atual=True):
+            return SimpleNamespace(node=no_do_player, is_playing=atual, is_paused=pausado, ping=1.0)
+
+        no_a, outro_no = no_com_stats("N-OK"), no_com_stats("N-OUTRO")
+        bot_a = Bot(0.05, 1, {"N-OK": no_a, "N-OUTRO": outro_no}, {})
+        bot_a.music.players = {
+            1: player(no_a),
+            2: player(no_a, pausado=True),
+            3: player(no_a, atual=False),
+            4: player(outro_no),
+        }
+        bot_b = Bot(0.05, 1, {"N-OK": no_com_stats("N-OK")}, {})  # mesma identificação, sessão sem players
+        sem_stats = SimpleNamespace(identifier="N-IND", is_available=True, players={}, stats=None)
+        bot_a.music.nodes["N-IND"] = sem_stats
+        cenario = Cenario(bots=[bot_a, bot_b])
+        cenario.pool.get_all_bots = lambda: [bot_a, bot_b]
+
+        sessoes = {
+            (x.identifier, i): x.players_playing
+            for i, x in enumerate(cenario.pool._collect_summary_inputs()["node_sessions"])
+        }
+
+        assert sorted(sessoes.values(), key=lambda v: (v is None, v)) == [0, 1, 1, None]
+        assert [x for (nome, _), x in sessoes.items() if nome == "N-IND"] == [None]

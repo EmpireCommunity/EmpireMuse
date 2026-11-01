@@ -129,7 +129,17 @@ def _node_sample(identifier: str, node) -> NodeSample:
         round(stats.lavalink_load * 100, 1),
         round(stats.memory_used / 1048576, 1),
         *((stats.frames_sent, stats.frames_nulled, stats.frames_deficit) if stats.has_frame_stats else (None,) * 3),
-        stats.playing_players,
+    )
+
+
+def _session_players_playing(bot, node) -> int:
+    """Players deste bot tocando neste nó (com faixa e sem pausa): só eles geram os ``frameStats`` da sessão do bot."""
+    return sum(
+        1
+        for player in bot.music.players.values()
+        if getattr(player, "node", None) is node
+        and getattr(player, "is_playing", False)
+        and not getattr(player, "is_paused", False)
     )
 
 
@@ -459,7 +469,8 @@ class BotPool:
                     voice_ms.append(float(player.ping))
             for identifier, node in bot.music.nodes.items():
                 sample = _node_sample(identifier, node)
-                sessions.append(sample)
+                playing = _session_players_playing(bot, node) if sample.players is not None else None
+                sessions.append(dataclasses.replace(sample, players_playing=playing))
                 nodes.setdefault(identifier, sample)
         java_pid = getattr(getattr(self, "lavalink_instance", None), "pid", None)
         return {

@@ -8,7 +8,6 @@ from empiremuse.utils.client import _node_sample, _with_java_figures
 def _no(**quadros) -> SimpleNamespace:
     stats = SimpleNamespace(
         players=2,
-        playing_players=1,
         lavalink_load=0.5,
         memory_used=104857600,
         has_frame_stats=bool(quadros),
@@ -22,7 +21,6 @@ class TestNodeSampleQuadros:
         amostra = _node_sample("LOCAL", _no(frames_sent=2990, frames_nulled=4, frames_deficit=-10))
 
         assert (amostra.frames_sent, amostra.frames_nulled, amostra.frames_deficit) == (2990, 4, -10)
-        assert amostra.players_playing == 1
 
     def test_absent_frame_stats_are_none_not_minus_one(self):
         amostra = _node_sample("LOCAL", _no())

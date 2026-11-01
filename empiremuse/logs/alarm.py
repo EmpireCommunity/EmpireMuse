@@ -36,9 +36,9 @@ CPU_KEY = "cpu"
 def frame_failure_ratio(node: NodeSample) -> float | None:
     """Fração de quadros que falharam no último minuto numa sessão do nó; ``None`` quando não há informação (o estado não muda).
 
-    Sem ``frameStats`` a amostra só é saudável se NINGUÉM está tocando no nó (``players_playing == 0``): é assim que o Lavalink avisa
-    que não há o que medir. Nó indisponível (mesmo com CPU e memória do Java preenchidas depois) ou sessão sem dado enquanto há
-    players tocando é ``None``, nunca normalização.
+    Sem ``frameStats`` a amostra só é saudável se NINGUÉM desta sessão toca no nó (``players_playing == 0``): é assim que o Lavalink
+    avisa que não há o que medir. Nó indisponível (mesmo com CPU e memória do Java preenchidas depois) ou sessão sem dado enquanto
+    toca é ``None``, nunca normalização.
     """
     if node.frames_sent is None or node.frames_nulled is None or node.frames_deficit is None:
         return 0.0 if node.players_playing == 0 else None
@@ -49,10 +49,17 @@ def frame_failure_ratio(node: NodeSample) -> float | None:
     return failed / expected
 
 
-def _worst_session(samples: Sequence[NodeSample]) -> tuple[float, NodeSample] | None:
-    """A pior das sessões (bots) do mesmo nó que tem informação; ``None`` se nenhuma tem."""
+def node_frame_ratio(samples: Sequence[NodeSample]) -> tuple[float, NodeSample] | None:
+    """O que vale para o nó: a pior das sessões (bots) com informação, com a amostra dela; ``None`` se nenhuma tem.
+
+    Uma sessão tocando sem dado deixa o nó inconclusivo QUANDO o pior valor seria de normalidade: as outras sessões saudáveis não
+    confirmam a volta ao normal por ela. Falha de qualquer sessão com dado continua valendo (alerta) e a faixa do meio não muda nada.
+    """
     rated = [(ratio, sample) for sample in samples if (ratio := frame_failure_ratio(sample)) is not None]
-    return max(rated, key=lambda item: item[0], default=None)
+    worst = max(rated, key=lambda item: item[0], default=None)
+    if worst is None or (len(rated) < len(samples) and worst[0] < FRAMES_RECOVERED_RATIO):
+        return None
+    return worst
 
 
 @dataclasses.dataclass
@@ -107,7 +114,7 @@ class DegradationAlarm:
         for node in nodes:  # uma amostra por sessão (bot): o alarme olha a pior de cada nó
             by_node.setdefault(sanitize_value(str(node.identifier)), []).append(node)
         for name, sessions in by_node.items():
-            worst = _worst_session(sessions)
+            worst = node_frame_ratio(sessions)
             ratio, sample = worst if worst is not None else (None, None)
             event = self._step(f"frames:{name}", now, ratio, FRAMES_DEGRADED_RATIO, FRAMES_RECOVERED_RATIO)
             if event is not None and ratio is not None and sample is not None:
