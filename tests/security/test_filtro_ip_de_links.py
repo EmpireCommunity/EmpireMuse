@@ -603,3 +603,106 @@ class TestTheSentTrackIsTheOneChecked:
             await self.play(node)
 
         assert "10.9.8.7" in caplog.text and "SEGREDO" not in caplog.text and "TOKEN" not in caplog.text
+
+
+class TestLoadedTracksWithAnInternalAddress:
+    """V184-3: um link público pode resolver, no Lavalink, uma faixa ``http`` para dentro (entrada de lista, redirecionamento). Ela é descartada
+    logo depois da carga e nunca entra no cache de conferidas."""
+
+    @staticmethod
+    def track(encoded, source, uri):
+        return SimpleNamespace(id=encoded, info={"sourceName": source, "uri": uri})
+
+    def node(self, loaded):
+        from collections import OrderedDict
+
+        from cachetools import TTLCache
+
+        from empiremuse.wavelink.node import Node
+
+        node = object.__new__(Node)
+        node.players = {}
+        node.session_id = None
+        node._client = SimpleNamespace(bot=SimpleNamespace(music=SimpleNamespace(players={})))
+        node._trusted_encoded = OrderedDict()
+        node._checked_encoded = TTLCache(maxsize=64, ttl=600)
+        node._get_tracks = AsyncMock(return_value=loaded)
+        node.build_track = AsyncMock(
+            return_value=SimpleNamespace(info={"sourceName": "http", "uri": "http://127.0.0.1:2333/x"})
+        )
+        return node
+
+    @pytest.mark.asyncio
+    async def test_the_internal_http_track_leaves_the_result_and_the_others_stay(self):
+        loaded = [
+            self.track("INSIDE", "http", "http://127.0.0.1:2333/stats"),
+            self.track("PUBLIC", "http", f"https://{PUBLIC}/a.mp3"),
+            self.track("YT", "youtube", "https://www.youtube.com/watch?v=x"),
+            self.track("LIVE", "http", ""),
+        ]
+        node = self.node(loaded)
+
+        result = await type(node).get_tracks(node, f"https://{PUBLIC}/lista.pls")
+
+        assert [t.id for t in result] == ["PUBLIC", "YT", "LIVE"]
+
+    @pytest.mark.asyncio
+    async def test_a_playlist_object_is_cleaned_in_place(self):
+        playlist = SimpleNamespace(
+            tracks=[
+                self.track("INSIDE", "http", "http://10.0.0.5/a"),
+                self.track("OK", "soundcloud", "https://soundcloud.com/a"),
+            ]
+        )
+        node = self.node(playlist)
+
+        result = await type(node).get_tracks(node, f"https://{PUBLIC}/lista.m3u")
+
+        assert result is playlist and [t.id for t in playlist.tracks] == ["OK"]
+
+    @pytest.mark.asyncio
+    async def test_when_only_internal_tracks_come_back_the_load_is_a_refusal(self):
+        from empiremuse.wavelink.errors import TrackNotFound
+
+        node = self.node([self.track("INSIDE", "http", "http://169.254.169.254/latest")])
+
+        with pytest.raises(TrackNotFound):
+            await type(node).get_tracks(node, f"https://{PUBLIC}/redireciona")
+
+    @pytest.mark.asyncio
+    async def test_a_dropped_track_is_never_cached_as_checked_so_playing_it_is_refused_by_the_decode(self):
+        from empiremuse.wavelink.errors import TrackNotFound
+
+        node = self.node(
+            [
+                self.track("INSIDE", "http", "http://127.0.0.1:2333/x"),
+                self.track("OK", "youtube", "https://y.example/v"),
+            ]
+        )
+        await type(node).get_tracks(node, f"https://{PUBLIC}/lista.pls")
+
+        assert "INSIDE" not in node._checked_encoded and "OK" in node._checked_encoded
+        with pytest.raises(TrackNotFound):
+            await type(node).update_player(node, 7, {"encodedTrack": "INSIDE"}, True)
+
+    @pytest.mark.asyncio
+    async def test_the_trusted_local_load_is_not_filtered(self):
+        node = self.node([self.track("LIVE", "http", "http://127.0.0.1:2333/r/token")])
+
+        result = await type(node).get_tracks(node, "http://127.0.0.1:2333/r/token", trusted_local=True)
+
+        assert [t.id for t in result] == ["LIVE"] and "LIVE" in node._trusted_encoded
+
+    @pytest.mark.asyncio
+    async def test_the_refusal_of_a_dropped_track_logs_only_the_host(self, caplog):
+        node = self.node(
+            [
+                self.track("INSIDE", "http", "http://10.9.8.7:2333/r/TOKEN?token=SEGREDO"),
+                self.track("OK", "youtube", ""),
+            ]
+        )
+
+        with caplog.at_level(logging.WARNING):
+            await type(node).get_tracks(node, f"https://{PUBLIC}/x")
+
+        assert "10.9.8.7" in caplog.text and "SEGREDO" not in caplog.text and "TOKEN" not in caplog.text

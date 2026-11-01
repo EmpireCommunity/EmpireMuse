@@ -304,6 +304,28 @@ class Node:
         while len(self._trusted_encoded) > TRUSTED_TRACKS_MAX:
             self._trusted_encoded.popitem(last=False)
 
+    async def _drop_unsafe_http_tracks(self, result: Any) -> Any:
+        """Depois da carga, as faixas ``http`` cujo endereço (``uri``) não é público saem do resultado: um link público pode resolver, no Lavalink,
+        uma entrada de lista ou um redirecionamento para dentro, e essa faixa nunca deve entrar na fila. Só sobrou ela: ``TrackNotFound``."""
+        tracks = getattr(result, "tracks", result)
+        if not isinstance(tracks, list):
+            return result
+        kept = []
+        for track in tracks:
+            info = getattr(track, "info", None)
+            if isinstance(info, dict) and str(info.get("sourceName", "")).lower() == "http":
+                try:
+                    await ensure_public_url(info.get("uri"))
+                except UnsafeUrl as error:
+                    log_refusal(error)
+                    continue
+            kept.append(track)
+        if len(kept) != len(tracks):
+            if not kept:
+                raise TrackNotFound("link recusado")
+            tracks[:] = kept  # no lugar: a playlist e as referências a ela enxergam o resultado já limpo
+        return result
+
     def _remember_checked(self, result: Any) -> None:
         """As faixas carregadas por aqui depois da barreira de endereço já foram conferidas: tocar uma delas não decodifica de novo. Só o que vem
         de fora do carregamento (fila salva, sessão, id temporário) paga a ida ao nó."""
@@ -392,6 +414,7 @@ class Node:
         if trusted:
             self._trust_loaded(result)
         else:
+            result = await self._drop_unsafe_http_tracks(result)
             self._remember_checked(result)
         return result
 
