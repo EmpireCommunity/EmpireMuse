@@ -370,7 +370,35 @@ class StationInUse(RadioInvalid):
 
 
 STATION_KINDS = ("genre", "artists", "playlists")
-GENRES = ("lofi", "rock", "sertanejo")
+GENRE_GROUPS = (
+    (
+        "international",
+        (
+            "rock",
+            "metal",
+            "pop",
+            "kpop",
+            "jpop_anime",
+            "hiphop",
+            "trap",
+            "rnb",
+            "electronic",
+            "house",
+            "lofi",
+            "chill_ambient",
+            "jazz",
+            "blues",
+            "classical",
+            "reggae",
+            "latin_reggaeton",
+            "indie",
+            "anos_80",
+            "anos_90",
+        ),
+    ),
+    ("brazilian", ("sertanejo", "funk_br", "pagode_samba", "forro", "mpb", "gospel", "rock_nacional")),
+)
+GENRES = tuple(g for _group, ids in GENRE_GROUPS for g in ids)
 
 
 class FakeStations:
@@ -385,8 +413,8 @@ class FakeStations:
         self.fail_with = None
         self._radios = radio_store
 
-    def genre_ids(self):
-        return GENRES
+    def genre_groups(self):
+        return GENRE_GROUPS
 
     def seed(self, guild_id, name, kind="genre", source=None, *, rev=1, unknown=()):
         station = CustomStation(

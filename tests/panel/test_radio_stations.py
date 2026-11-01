@@ -76,7 +76,9 @@ class StationsPageTest(StationsBase):
         assert self.create_form(body) is not None and len(self.edit_forms(body)) == 3
         edit = next(f for f in self.edit_forms(body) if f.value("name") == "Duplas")
         assert edit.values("kind") == ["artists"] and edit.value("artists") == "Chitãozinho\nZezé"
-        assert edit.value("versao") == str(artists.rev) and edit.choices("genre") == ["", "lofi", "rock", "sertanejo"]
+        assert edit.value("versao") == str(artists.rev) and len(edit.choices("genre")) == 1 + 27
+        assert edit.choices("genre")[1:4] == ["rock", "metal", "pop"] and edit.choices("genre")[-1] == "rock_nacional"
+        assert '<optgroup label="Internacionais">' in body and '<optgroup label="Brasileiros">' in body
 
     def test_without_premium_the_section_and_the_posts_are_refused(self):
         self.radio.stations.seed(ALFA, "Madrugada")

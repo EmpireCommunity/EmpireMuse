@@ -1,6 +1,6 @@
 {# Formulário de uma estação personalizada (criar ou editar). Variável: form (Formulario: acao, versao, valores{name,
    kind, genre, artists, playlists[]}, erros, mensagem, mensagem_tipo, station_id|None, generos[(id, nome)],
-   playlists[nomes], limites). Uma só fonte: o tipo escolhido decide qual campo vale. #}
+   playlists[nomes], limites; generos = ((nome do grupo, ((id, nome), ...)), ...), o seletor em 2 níveis do R5 §1). Uma só fonte: o tipo escolhido decide qual campo vale. #}
 {% set form_id = form.form_id %}
 {% set erros = form.erros %}
 {% set valores = form.valores %}
@@ -25,8 +25,12 @@
   <label for="{{ form_id }}-genre">{{ _("panel.radio.station.genre") }}</label>
   <select id="{{ form_id }}-genre" name="genre"{% if erros.get("genre") %} aria-invalid="true" aria-describedby="{{ form_id }}-erro-genre"{% end %}>
     <option value="">{{ _("panel.radio.local.choose") }}</option>
-    {% for genero_id, genero_nome in form.generos %}
-    <option value="{{ genero_id }}"{% if valores.get("genre") == genero_id %} selected{% end %}>{{ genero_nome }}</option>
+    {% for grupo_nome, generos in form.generos %}
+    <optgroup label="{{ grupo_nome }}">
+      {% for genero_id, genero_nome in generos %}
+      <option value="{{ genero_id }}"{% if valores.get("genre") == genero_id %} selected{% end %}>{{ genero_nome }}</option>
+      {% end %}
+    </optgroup>
     {% end %}
   </select>
   {% if erros.get("genre") %}<small id="{{ form_id }}-erro-genre" class="erro-campo">{{ erros["genre"] }}</small>{% end %}

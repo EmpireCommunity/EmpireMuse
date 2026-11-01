@@ -2,7 +2,7 @@
 escolher a estação de uma rádio personalizada.
 
 Os dados vêm de ``pool.radio.stations`` (Turbine): ``list_for_guild``, ``get``, ``create``, ``update``, ``delete``,
-``radios_using`` e ``genre_ids``; a validação única (``check_station_doc``: nome de 1 a 32 único no servidor, uma só
+``radios_using`` e ``genre_groups``; a validação única (``check_station_doc``: nome de 1 a 32 único no servidor, uma só
 fonte, até 10 artistas, até 5 playlists existentes, 10 estações por servidor) roda DENTRO da store, que levanta
 ``RadioInvalid`` com o ``RuleError`` apontando o campo. Aqui: o formulário vira o documento cru ``{name, kind, source}``
 (só strings; nada vai ao log além dos ids), compare-and-set em ``rev``, estação de outro servidor é 404 e apagar uma
@@ -44,6 +44,7 @@ ARTISTS_MAX = 10
 ARTIST_MAX = 64
 PLAYLISTS_MAX = 5
 STATIONS_MAX = 10
+GENRES_PER_GROUP = 24
 STATION_ID = re.compile(r"[0-9a-f]{24}", re.ASCII)
 REV = re.compile(r"[0-9]{1,12}", re.ASCII)
 ACTION_SAVE, ACTION_DELETE = "salvar", "apagar"
@@ -127,15 +128,19 @@ class StationsPage:
         return tuple(str(item.name) for item in items)
 
     @staticmethod
-    def genre_ids(ctx: FormContext) -> tuple[str, ...]:
-        return tuple(str(g) for g in ctx.pool.radio.stations.genre_ids())
+    def genre_groups(ctx: FormContext) -> tuple[tuple[str, tuple[str, ...]], ...]:
+        """O catálogo em 2 níveis (R5 §1): ``((grupo, (ids...)), ...)`` na ordem do seletor, cada grupo com até 24."""
+        return tuple(
+            (str(group), tuple(str(g) for g in ids)[:GENRES_PER_GROUP])
+            for group, ids in ctx.pool.radio.stations.genre_groups()
+        )
 
     def form(
         self,
         action: str,
         tr: Translator,
         *,
-        genres: tuple[str, ...],
+        genres: tuple[tuple[str, tuple[str, ...]], ...],
         playlists: tuple[str, ...],
         station: Any = None,
         values: Optional[dict[str, Any]] = None,
@@ -157,7 +162,10 @@ class StationsPage:
             mensagem_tipo=kind,
             extras={
                 "station_id": str(station.id) if station is not None else None,
-                "generos": tuple((g, tr(f"panel.radio.genre.{g}")) for g in genres),
+                "generos": tuple(
+                    (tr(f"panel.radio.genre_group.{group}"), tuple((g, tr(f"panel.radio.genre.{g}")) for g in ids))
+                    for group, ids in genres
+                ),
                 "playlists": playlists,
                 "limites": {
                     "name_max": NAME_MAX,
@@ -179,7 +187,7 @@ class StationsPage:
     ) -> StationsView:
         """``action`` é ``.../radios/estacoes``; ``form`` substitui o de criar, ``edit`` o da estação com o mesmo id."""
         stations = await ctx.pool.radio.stations.list_for_guild(ctx.guild_id)
-        genres, playlists = self.genre_ids(ctx), await self.playlist_names(ctx)
+        genres, playlists = self.genre_groups(ctx), await self.playlist_names(ctx)
         rows = []
         for station in sorted(stations, key=lambda s: str(s.name).casefold()):
             if not belongs_to(station, ctx.guild_id):  # defesa em profundidade: a store já filtra pelo servidor
@@ -213,7 +221,7 @@ class StationsPage:
 
     async def create(self, ctx: FormContext, args: Args, action: str, tr: Translator) -> StationsOutcome:
         raw, echo = parse(args)
-        genres, playlists = self.genre_ids(ctx), await self.playlist_names(ctx)
+        genres, playlists = self.genre_groups(ctx), await self.playlist_names(ctx)
         try:
             saved = await ctx.pool.radio.stations.create(ctx.guild_id, raw, updated_by=ctx.user_id)
         except RadioInvalid as exc:
@@ -225,7 +233,7 @@ class StationsPage:
 
     async def update(self, ctx: FormContext, station: Any, args: Args, action: str, tr: Translator) -> StationsOutcome:
         item_action = f"{action}/{station.id}"
-        genres, playlists = self.genre_ids(ctx), await self.playlist_names(ctx)
+        genres, playlists = self.genre_groups(ctx), await self.playlist_names(ctx)
         refused = self._version(station, args)
         if refused is not None:
             form = self.form(
@@ -265,7 +273,7 @@ class StationsPage:
 
     async def delete(self, ctx: FormContext, station: Any, args: Args, action: str, tr: Translator) -> StationsOutcome:
         item_action = f"{action}/{station.id}"
-        genres, playlists = self.genre_ids(ctx), await self.playlist_names(ctx)
+        genres, playlists = self.genre_groups(ctx), await self.playlist_names(ctx)
 
         async def refuse(status: int, message: str) -> StationsOutcome:
             form = self.form(
@@ -307,7 +315,7 @@ class StationsPage:
         tr: Translator,
         exc: RadioInvalid,
         echo: dict[str, Any],
-        genres: tuple[str, ...],
+        genres: tuple[tuple[str, tuple[str, ...]], ...],
         playlists: tuple[str, ...],
         *,
         station: Any = None,
