@@ -9,6 +9,7 @@ import disnake
 from aiohttp import ClientSession
 from disnake.ext import commands
 
+from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.logs.errors import command_context
 from empiremuse.logs.redact import MAX_TRACEBACK_CHARS, sanitize_value, scrub
 from empiremuse.rules.error_code import safe_error_code
@@ -23,7 +24,6 @@ logger = logging.getLogger(__name__)
 
 # Erro inesperado: o usuário nunca vê repr, traceback, caminho de arquivo nem configuração interna; o detalhe completo
 # vai para o log do servidor e para o webhook de erro.
-UNEXPECTED_ERROR_TEXT = "Ocorreu um erro inesperado ao executar o comando. Tente novamente em instantes."
 
 
 # Limites do Discord: nome de servidor, canal e usuário até 100; descrição do embed até 4096 (sobra para as crases e o título).
@@ -177,12 +177,14 @@ class ErrorHandler(commands.Cog):
                 code = self.log_unexpected_error(error, f"interação /{getattr(inter.data, 'name', '?')}", inter)
 
             kwargs["embed"] = disnake.Embed(
-                color=color, title="Ocorreu um erro no comando:", description=UNEXPECTED_ERROR_TEXT
+                color=color,
+                title=await guild_text(self.bot, inter.guild, "legacy.error.title"),
+                description=await guild_text(self.bot, inter.guild, "legacy.error.unexpected"),
             )
 
             if self.bot.config["AUTO_ERROR_REPORT_WEBHOOK"]:
                 send_webhook = True
-                kwargs["embed"].description += " `Meu desenvolvedor será notificado sobre o problema.`"
+                kwargs["embed"].description += await guild_text(self.bot, inter.guild, "legacy.error.dev_notified")
 
             kwargs["embed"].description += error_code_text(code)
 
@@ -326,17 +328,23 @@ class ErrorHandler(commands.Cog):
 
             if ctx.channel.permissions_for(ctx.guild.me).embed_links:
                 kwargs["embed"] = disnake.Embed(
-                    color=disnake.Colour.red(), title="Ocorreu um erro no comando:", description=UNEXPECTED_ERROR_TEXT
+                    color=disnake.Colour.red(),
+                    title=await guild_text(self.bot, ctx.guild, "legacy.error.title"),
+                    description=await guild_text(self.bot, ctx.guild, "legacy.error.unexpected"),
                 )
                 if self.bot.config["AUTO_ERROR_REPORT_WEBHOOK"]:
                     send_webhook = True
-                    kwargs["embed"].description += " `Meu desenvolvedor será notificado sobre o problema.`"
+                    kwargs["embed"].description += await guild_text(self.bot, ctx.guild, "legacy.error.dev_notified")
 
                 kwargs["embed"].description += error_code_text(code)
 
             else:
                 kwargs["content"] += (
-                    f"\n**Ocorreu um erro no comando:**\n{UNEXPECTED_ERROR_TEXT}{error_code_text(code)}"
+                    "\n**"
+                    + await guild_text(self.bot, ctx.guild, "legacy.error.title")
+                    + "**\n"
+                    + await guild_text(self.bot, ctx.guild, "legacy.error.unexpected")
+                    + error_code_text(code)
                 )
 
         else:
@@ -407,7 +415,10 @@ class ErrorHandler(commands.Cog):
             return
 
         if str(inter.author.id) not in inter.message.content:
-            await inter.send(f"Apenas o usuário {inter.message.content} pode usar esse botão!", ephemeral=True)
+            await inter.send(
+                await guild_text(self.bot, inter.guild, "legacy.error.only_user_button", user=inter.message.content),
+                ephemeral=True,
+            )
             return
 
         await inter.response.send_modal(
@@ -449,7 +460,10 @@ class ErrorHandler(commands.Cog):
 
         if image_url and not URL_REG.match(image_url):
             await inter.send(
-                embed=disnake.Embed(title="Link de imagem inválida!", description=inter.text_values["error_details"]),
+                embed=disnake.Embed(
+                    title=await guild_text(self.bot, inter.guild, "legacy.error.invalid_image"),
+                    description=inter.text_values["error_details"],
+                ),
                 ephemeral=True,
             )
             return
@@ -464,7 +478,8 @@ class ErrorHandler(commands.Cog):
 
         await inter.response.edit_message(
             embed=disnake.Embed(
-                description="**Erro reportado com sucesso!**", color=self.bot.get_color(inter.guild.me)
+                description=await guild_text(self.bot, inter.guild, "legacy.error.reported"),
+                color=self.bot.get_color(inter.guild.me),
             ),
             view=None,
         )

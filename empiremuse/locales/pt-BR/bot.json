@@ -644,5 +644,11 @@
   "legacy.session.save_min": "**É necessário ter no mínimo 3 músicas pra salvar (atual e/ou na fila)**",
   "legacy.session.saved_footer": "Nota: Esse é um recurso muito experimental, a fila salva pode sofrer alterações ou ser removida em futuros updates",
   "legacy.session.skin_incompatible": "**A skin/aparência atual não é compatível com a conversa de pedidos via thread/conversa\n\nNota:** `Esse sistema requer uma skin que use botões.`",
-  "legacy.session.thread_active": "**Já há uma thread/conversa ativa no player.**"
+  "legacy.session.thread_active": "**Já há uma thread/conversa ativa no player.**",
+  "legacy.error.dev_notified": " `Meu desenvolvedor será notificado sobre o problema.`",
+  "legacy.error.invalid_image": "Link de imagem inválida!",
+  "legacy.error.only_user_button": "Apenas o usuário {user} pode usar esse botão!",
+  "legacy.error.reported": "**Erro reportado com sucesso!**",
+  "legacy.error.title": "Ocorreu um erro no comando:",
+  "legacy.error.unexpected": "Ocorreu um erro inesperado ao executar o comando. Tente novamente em instantes."
 }

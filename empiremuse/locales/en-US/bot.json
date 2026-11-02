@@ -631,5 +631,11 @@
   "legacy.session.save_min": "**You need at least 3 songs to save (current and/or in the queue)**",
   "legacy.session.saved_footer": "Note: This is a very experimental feature, the saved queue may change or be removed in future updates",
   "legacy.session.skin_incompatible": "**The current skin/appearance is not compatible with the thread/conversation request mode\n\nNote:** `This system requires a skin that uses buttons.`",
-  "legacy.session.thread_active": "**There is already an active thread/conversation on the player.**"
+  "legacy.session.thread_active": "**There is already an active thread/conversation on the player.**",
+  "legacy.error.dev_notified": " `My developer will be notified about the problem.`",
+  "legacy.error.invalid_image": "Invalid image link!",
+  "legacy.error.only_user_button": "Only the user {user} can use this button!",
+  "legacy.error.reported": "**Error reported successfully!**",
+  "legacy.error.title": "An error occurred in the command:",
+  "legacy.error.unexpected": "An unexpected error occurred while running the command. Try again in a moment."
 }
