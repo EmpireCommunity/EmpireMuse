@@ -585,5 +585,6 @@
   "radio.pick.none": "Não há rádio para essa escolha. Escolha uma da lista ou crie com /radio setup.",
   "radio.reset.ask_all": "Tem certeza que deseja redefinir TODAS as {total} rádios deste servidor? Elas serão desligadas e a configuração delas apagada.",
   "radio.reset.done_many": "📻 {total} rádios foram redefinidas e a configuração delas foi apagada.",
-  "radio.reset.ask_bot": "Tem certeza que deseja redefinir a rádio de {bot} em {channel}?"
+  "radio.reset.ask_bot": "Tem certeza que deseja redefinir a rádio de {bot} em {channel}?",
+  "radio.setup.arriving": "O bot está entrando no canal; escolha a estação no painel que aparece no chat dele."
 }

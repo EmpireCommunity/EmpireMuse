@@ -38,55 +38,61 @@ def click_of(user_id=7, values=None):
 
 class TestSetupCommand:
     @pytest.mark.asyncio
-    async def test_a_custom_radio_is_configured_and_asks_for_one_of_the_server_stations(self):
-        w, station = await world_with_station()
+    async def test_setup_turns_the_radio_on_without_a_station_and_asks_for_none(self):
+        """R1: o setup liga a rádio (o bot entra na call sozinho), sem seletor de estação; a estação é escolhida no painel."""
+        w, _ = await world_with_station()
 
         await run_setup(w)
+        await settle(w)
 
         radio = await w.hub.store.get(radio_id(2, GUILD))
-        assert radio.kind == "custom" and radio.source == {} and radio.enabled is False
+        assert radio.kind == "custom" and radio.source == {} and radio.enabled is True
         sent = w.inter.edit_original_message.await_args.kwargs
-        assert (
-            f"<#{CHANNEL}>" in sent["content"]
-            and "<@2>" in sent["content"]
-            and "/radio station create" in sent["content"]
-        )
+        assert f"<#{CHANNEL}>" in sent["content"] and "<@2>" in sent["content"] and "painel" in sent["content"]
+        assert "view" not in sent  # nenhum seletor dentro do setup
         assert sent["allowed_mentions"].everyone is False
-        options = sent["view"].children[0].options
-        assert [o.value for o in options] == [station.id]
+        assert w.hub.manager.is_running(radio_id(2, GUILD)) and w.ports.connects == 1  # entrou na call na hora
 
     @pytest.mark.asyncio
-    async def test_picking_the_station_saves_it_and_leaves_the_radio_off(self):
-        w, station = await world_with_station()
+    async def test_the_arrival_purges_the_voice_chat_once_before_the_panel(self):
+        w, _ = await world_with_station()
+
         await run_setup(w)
-        view = w.inter.edit_original_message.await_args.kwargs["view"]
-        choice = click_of(values=[station.id])
+        await settle(w)
 
-        await view.picked(choice)
-
-        radio = await w.hub.store.get(radio_id(2, GUILD))
-        assert radio.source == {"station": station.id} and radio.enabled is False
-        assert "/radio on" in choice.edit_original_message.await_args.kwargs["content"]
+        assert w.ports.purge_on_arrival is True  # o gerente marcou a chegada para limpar o chat antes do 1º painel
 
     @pytest.mark.asyncio
-    async def test_a_server_without_stations_is_told_where_to_create_one(self):
+    async def test_a_server_without_stations_still_gets_the_radio_and_the_panel_flow(self):
         w = build()
         await premium(w)
 
         await run_setup(w)
 
-        assert "/radio station create" in reply(w)
+        assert "painel" in reply(w) and (await w.hub.store.get(radio_id(2, GUILD))).enabled is True
+
+    @pytest.mark.asyncio
+    async def test_without_manage_messages_the_configuration_stays_and_the_reply_says_why_it_did_not_start(self):
+        w = build(manage_messages=False)
+        await premium(w)
+
+        await run_setup(w)
+
+        radio = await w.hub.store.get(radio_id(2, GUILD))
+        assert radio is not None and radio.enabled is False and "Gerenciar Mensagens" in reply(w)
 
     @pytest.mark.asyncio
     async def test_running_setup_again_on_the_same_channel_edits_that_radio(self):
         w, _ = await world_with_station()
         await run_setup(w)
+        await w.hub.manager.stop_radios(w.hub.manager.running_in(GUILD, CHANNEL))
+        await w.hub.store.set_enabled(radio_id(2, GUILD), False)
         radio_cog.RADIO_COOLDOWN._cache.clear()
 
         await radio_cog.Radio.radio_setup.callback(w.cog, w.inter, channel=w.channel, bot="2", kind="live")
 
         radios = await w.hub.store.list_for_guild(GUILD)
-        assert [(r.id, r.kind, r.rev) for r in radios] == [(radio_id(2, GUILD), "live", 1)]
+        assert [(r.id, r.kind) for r in radios] == [(radio_id(2, GUILD), "live")]
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -130,8 +136,10 @@ class TestStationSelectIsOnlyForWhoOpenedIt:
     @pytest.mark.asyncio
     async def test_another_user_is_refused_and_the_radio_is_untouched(self):
         w, station = await world_with_station()
-        await run_setup(w)
-        view = w.inter.edit_original_message.await_args.kwargs["view"]
+        await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2, source={})
+        view = setup_flow.StationSelect(
+            w.cog, await w.cog.bot.pool.i18n.for_guild(w.inter.guild), radio_id(2, GUILD), 7, [station]
+        )
         stranger = click_of(user_id=99)
 
         assert await view.interaction_check(stranger) is False
@@ -141,8 +149,10 @@ class TestStationSelectIsOnlyForWhoOpenedIt:
     @pytest.mark.asyncio
     async def test_a_station_deleted_meanwhile_is_not_saved(self):
         w, station = await world_with_station()
-        await run_setup(w)
-        view = w.inter.edit_original_message.await_args.kwargs["view"]
+        await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2, source={})
+        view = setup_flow.StationSelect(
+            w.cog, await w.cog.bot.pool.i18n.for_guild(w.inter.guild), radio_id(2, GUILD), 7, [station]
+        )
 
         with pytest.raises(GenericError):
             await view.picked(click_of(values=["0" * 24]))  # um id que o select nunca ofereceu
@@ -152,8 +162,10 @@ class TestStationSelectIsOnlyForWhoOpenedIt:
     @pytest.mark.asyncio
     async def test_premium_revoked_while_the_select_was_open_stops_the_save(self):
         w, station = await world_with_station()
-        await run_setup(w)
-        view = w.inter.edit_original_message.await_args.kwargs["view"]
+        await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2, source={})
+        view = setup_flow.StationSelect(
+            w.cog, await w.cog.bot.pool.i18n.for_guild(w.inter.guild), radio_id(2, GUILD), 7, [station]
+        )
         await w.hub.store.revoke_premium(GUILD)
 
         with pytest.raises(GenericError) as refused:

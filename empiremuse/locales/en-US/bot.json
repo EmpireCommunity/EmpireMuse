@@ -572,5 +572,6 @@
   "radio.pick.none": "There is no radio for that choice. Pick one from the list, or create it with /radio setup.",
   "radio.reset.ask_all": "Are you sure you want to reset ALL {total} radios of this server? They will be turned off and their configuration removed.",
   "radio.reset.done_many": "📻 {total} radios were reset and their configuration was removed.",
-  "radio.reset.ask_bot": "Are you sure you want to reset the radio of {bot} in {channel}?"
+  "radio.reset.ask_bot": "Are you sure you want to reset the radio of {bot} in {channel}?",
+  "radio.setup.arriving": "The bot is joining the channel; pick the station in the panel that appears in its chat."
 }

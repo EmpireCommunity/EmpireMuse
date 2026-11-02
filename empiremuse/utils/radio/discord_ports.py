@@ -40,6 +40,7 @@ PANEL_CLEANUP_LIMIT = 50  # mensagens do canal que se olham atrás de painéis a
 
 JOIN_WAIT_S = 8.0  # quanto o ``connect`` espera o Discord confirmar que o bot entrou na call
 JOIN_POLL_S = 0.5
+ARRIVAL_PURGE_LIMIT = 500  # mensagens do chat da call apagadas na chegada do setup (como a limpeza da Jukebox)
 
 
 class RadioBotUnavailable(Exception):
@@ -53,6 +54,7 @@ class DiscordRadioPorts:
         self._tracks: list[Any] = []
         self._stage_created = False  # o evento de palco foi criado por este bot (e só esse ele encerra)
         self._stage_noticed = False
+        self.purge_on_arrival = False  # ``/radio setup``: o chat da call é limpo UMA vez, antes do primeiro painel
 
     # ------------------------------------------------------------------ o mundo
 
@@ -109,6 +111,10 @@ class DiscordRadioPorts:
         if not (permissions.view_channel and permissions.connect):
             return Allowed.NO_PERMISSION
         return Allowed.YES
+
+    def has_source(self) -> bool:
+        """A rádio já tem estação escolhida? (sem ela o runner fica em espera, na call e com o painel)."""
+        return bool(self.radio.source)
 
     def in_channel(self) -> bool:
         """O bot está NA call da rádio agora (o Discord diz). Quem não consegue ver (sem cache do servidor) conta como "sim": só se age sobre fato."""
@@ -366,6 +372,9 @@ class DiscordRadioPorts:
                 logger.warning("Painel da rádio sem permissão para ler o chat da call")
                 return
         payload = await self._panel_payload(bot, guild, current)
+        if self.purge_on_arrival:
+            self.purge_on_arrival = False
+            await self._purge_chat(channel)
         await self._remove_old_panels(channel, bot)  # um id de painel perdido não deixa painéis se acumulando no canal
         try:
             message = await channel.send(allowed_mentions=disnake.AllowedMentions.none(), **payload)
@@ -374,6 +383,13 @@ class DiscordRadioPorts:
             return
         await hub.store.set_panel_message(self.radio.id, message.id)
         hub.manager.note_panel(self.radio.id, message.id)
+
+    async def _purge_chat(self, channel: Any) -> None:
+        """Apaga as mensagens do chat da call (até ``ARRIVAL_PURGE_LIMIT``). Sem permissão ou com o Discord falhando, só avisa: o painel sai do mesmo jeito."""
+        try:
+            await channel.purge(limit=ARRIVAL_PURGE_LIMIT)
+        except (disnake.Forbidden, disnake.HTTPException) as error:
+            logger.warning("Chat da rádio não limpo (%s)", type(error).__name__)
 
     async def stop_stream(self) -> None:
         player = self._player()
