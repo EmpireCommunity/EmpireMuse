@@ -10,6 +10,7 @@ from disnake.ext import commands
 
 from empiremuse.rules.i18n import fit
 from empiremuse.utils.hardreset import hard_reset
+from empiremuse.utils.music.errors import PoolException
 
 if TYPE_CHECKING:
     from empiremuse.utils.client import BotCore, CustomContext
@@ -65,8 +66,11 @@ class HardReset(commands.Cog):
         self.bot = bot
 
     async def cog_check(self, ctx: CustomContext) -> bool:
-        """Todo bot carrega este cog: só o principal responde (senão cada um pediria a confirmação)."""
-        return self.bot.pool.servers.main_bot() is self.bot
+        """Todo bot carrega este cog: só o principal responde (senão cada um pediria a confirmação). Os reservas saem em silêncio
+        (``PoolException`` o tratador de erros ignora): um ``False`` viraria ``CheckFailure`` e seria registrado como erro inesperado."""
+        if self.bot.pool.servers.main_bot() is not self.bot:
+            raise PoolException("hardreset: só o bot principal responde")
+        return True
 
     @commands.is_owner()
     @commands.command(name="hardreset", hidden=True, description="Apaga o banco do bot, menos o premium (só dono).")

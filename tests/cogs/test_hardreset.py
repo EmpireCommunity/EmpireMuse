@@ -93,3 +93,16 @@ async def test_premium_survives_and_everything_else_is_gone(tmp_path, monkeypatc
     w.pool.servers.forget_all.assert_called_once()
     w.pool.radio.forget_all.assert_called_once()
     assert "premium" in interaction.edit_original_message.await_args.kwargs["content"].lower()
+
+
+@pytest.mark.asyncio
+async def test_a_reserve_bot_stays_silent_instead_of_raising_an_unexpected_check_failure(tmp_path, monkeypatch):
+    """ERR-189CEF/ERR-F7D32E: o reserva recusava com CheckFailure comum, que o tratador registrava como erro inesperado."""
+    from empiremuse.utils.music.errors import PoolException
+
+    w = build(tmp_path, monkeypatch)
+    w.pool.servers.main_bot = lambda: SimpleNamespace()  # outro bot é o principal
+    with pytest.raises(PoolException):
+        await w.cog.cog_check(SimpleNamespace())
+    w.pool.servers.main_bot = lambda: w.bot
+    assert await w.cog.cog_check(SimpleNamespace()) is True
