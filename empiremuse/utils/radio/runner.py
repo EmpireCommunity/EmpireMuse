@@ -39,6 +39,9 @@ RECONNECT_CONCURRENCY = 2
 PRESENCE_CONCURRENCY = 3
 SWEEP_CONCURRENCY = 2
 STABLE_AFTER_S = 120.0  # conectada por tanto tempo, a próxima queda recomeça o recuo do início
+OUT_OF_CALL_TICKS = (
+    2  # passos seguidos fora da call até o vigia religar (a rádio volta pelo recuo, sem depender do evento do Discord)
+)
 VERDICT_EVERY_S = 30.0  # reconfere premium/canal/permissão de quem está tocando ou pausada
 
 
@@ -79,6 +82,7 @@ class RadioPorts(Protocol):
     def paused_all(self) -> bool: ...
     async def turn_off(self, reason: Allowed) -> None: ...
     def durations_ms(self) -> list[int]: ...
+    def in_channel(self) -> bool: ...
 
 
 @dataclass
@@ -124,6 +128,7 @@ class RadioRunner:
         self.admin_paused = False
         self._last_skip: float | None = None
         self._tick_lock = asyncio.Lock()
+        self._out_ticks = 0
         self._last_verdict: float | None = None
 
     @property
@@ -244,6 +249,17 @@ class RadioRunner:
 
     async def _after_failed_attempt(self) -> None:
         """Gancho: a rádio ao vivo conta o ciclo de tentativas e troca para a reserva."""
+
+    def lost_channel(self) -> bool:
+        """Pelo segundo passo seguido o bot não está na call enquanto a rádio devia estar nela (alguém o desconectou e nenhum evento chegou):
+        quem chama (o gerente) religa pelo recuo. Dois passos seguidos, para não confundir com uma mudança de canal em curso."""
+        connected = self.phase in (Phase.PLAYING, Phase.PAUSED_PRESENCE, Phase.PAUSED_OWNER, Phase.PAUSED_ADMIN)
+        in_channel = getattr(self.ports, "in_channel", None)  # portas sem a leitura (dublês) contam como "na call"
+        if self._stopped or not connected or in_channel is None or in_channel():
+            self._out_ticks = 0
+            return False
+        self._out_ticks += 1
+        return self._out_ticks >= OUT_OF_CALL_TICKS
 
     async def on_disconnect(self) -> None:
         """Queda, mudança de canal ou desconexão (inclusive por membro): sempre pelo recuo, nunca volta imediata."""

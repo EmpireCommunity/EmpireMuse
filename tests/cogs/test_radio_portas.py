@@ -187,6 +187,21 @@ class TestConnect:
         assert await w.ports.connect() is False
 
     @pytest.mark.asyncio
+    async def test_connect_is_only_true_when_discord_confirms_the_bot_is_in_the_channel(self, monkeypatch):
+        """B3: ``player.connect`` só pede a entrada (e engole a falha): sem o Discord confirmar, volta ``False`` e o recuo tenta de novo."""
+        from empiremuse.utils.radio import discord_ports
+
+        monkeypatch.setattr(discord_ports, "JOIN_WAIT_S", 0.0)
+        w = build()
+        w.ports._guild().me.voice = None  # o bot NÃO está na call
+
+        assert w.ports.in_channel() is False and await w.ports.connect() is False
+
+        w.ports._guild().me.voice = SimpleNamespace(channel=SimpleNamespace(id=CHANNEL))
+
+        assert w.ports.in_channel() is True and await w.ports.connect() is True
+
+    @pytest.mark.asyncio
     async def test_a_gone_bot_or_channel_cannot_connect(self):
         assert await build(has_channel=False).ports.connect() is False
 
