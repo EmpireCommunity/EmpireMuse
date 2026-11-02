@@ -279,9 +279,13 @@ class TestOptionNames:
 
         assert not report.dropped and len(report.entries) == 2
 
-    @pytest.mark.parametrize("name", ["", "Nome", "n" * 33, "com espaço", "nome!", "a.b", "nome@", "/nome", "nome\n"])
+    @pytest.mark.parametrize("name", ["Nome", "n" * 33, "com espaço", "nome!", "a.b", "nome@", "/nome", "nome\n"])
     def test_an_invalid_option_name_is_dropped(self, name):
         assert dict(self.run({"cmd.play.opt.query.name": name}).dropped) == {"cmd.play.opt.query.name": rules.NAME}
+
+    @pytest.mark.parametrize("name", ["", "   "])
+    def test_an_empty_option_name_is_untranslated_not_an_invalid_name(self, name):
+        assert dict(self.run({"cmd.play.opt.query.name": name}).dropped) == {"cmd.play.opt.query.name": rules.EMPTY}
 
     def test_allowed_punctuation_and_other_scripts(self):
         assert not self.run({"cmd.play.opt.query.name": "música-nova_x'y"}).dropped
