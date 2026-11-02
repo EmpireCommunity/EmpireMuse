@@ -310,7 +310,7 @@
   "cmd.radio.reset.aliases": "redefinir",
   "cmd.radio.reset.description": "Desligar e apagar a configuração de uma rádio (ou de todas).",
   "cmd.radio.reset.name": "redefinir",
-  "cmd.radio.reset.opt.bot.description": "Bot da rádio a redefinir. Sem ele, redefine TODAS as rádios do servidor.",
+  "cmd.radio.reset.opt.bot.description": "Bot da rádio a redefinir (só bots com rádio). Sem canal e bot: todas.",
   "cmd.radio.reset.opt.bot.name": "bot",
   "cmd.radio.setup.aliases": "configurar",
   "cmd.radio.setup.description": "Configurar uma rádio ao vivo ou personalizada num canal de voz ou palco.",
@@ -479,5 +479,7 @@
   "cmd.setprefix.usage": "{prefix}{cmd} [prefixo]\nEx: {prefix}{cmd} >>",
   "cmd.setuserprefix.usage": "{prefix}{cmd} [prefixo]\nEx: {prefix}{cmd} >>",
   "cmd.setguildprefix.usage": "{prefix}{cmd} [server id] {lt}prefixo{gt}\nEx: {prefix}{cmd} 1155223334455667788 >>\nNota: Use o comando sem especificar um prefix para removê-lo.",
-  "cmd.loop_mode.usage": "{prefix}{cmd} <1-10|current|queue|off>\nEx 1: {prefix}{cmd} 1\nEx 2: {prefix}{cmd} queue"
+  "cmd.loop_mode.usage": "{prefix}{cmd} <1-10|current|queue|off>\nEx 1: {prefix}{cmd} 1\nEx 2: {prefix}{cmd} queue",
+  "cmd.radio.reset.opt.channel.description": "Canal da rádio a redefinir (só canais com rádio). Sem canal e bot: todas.",
+  "cmd.radio.reset.opt.channel.name": "canal"
 }

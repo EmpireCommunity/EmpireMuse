@@ -279,12 +279,14 @@ async def prepare_reset(cog: RadioCog, tr: Any, author: Any, guild_id: int, chan
     )
 
 
-async def reset(cog: RadioCog, inter: disnake.ApplicationCommandInteraction, bot: str | None) -> None:
-    """``/radio reset [bot:]``: pede a confirmação efêmera (botão, 60 s). Com ``bot``, só a rádio dele; sem, TODAS as do servidor (sem exceção)."""
+async def reset(
+    cog: RadioCog, inter: disnake.ApplicationCommandInteraction, bot: str | None, channel: str | None = None
+) -> None:
+    """``/radio reset [canal:] [bot:]``: pede a confirmação efêmera (botão, 60 s). Com canal e/ou bot, só a rádio apontada; sem nenhum, TODAS as do servidor."""
     tr = await cog._gate(inter)
     if not inter.author.guild_permissions.manage_guild:
         raise GenericError(tr("radio.refused.no_manage_guild"))
-    radios = await radio_commands.pick(inter, tr, None, bot, all_if_empty=True)
+    radios = await radio_commands.pick(inter, tr, channel, bot, all_if_empty=True)
     if not radios:
         raise GenericError(tr("radio.pick.none"))
     if len(radios) == 1:

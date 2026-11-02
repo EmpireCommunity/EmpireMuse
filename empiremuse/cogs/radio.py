@@ -523,6 +523,12 @@ class Radio(RadioPrefixCommands, commands.Cog):
     async def radio_reset(
         self,
         inter: disnake.ApplicationCommandInteraction,
+        channel: Optional[str] = commands.Param(
+            None,
+            name=localized("cmd.radio.reset.opt.channel.name"),
+            description=localized("cmd.radio.reset.opt.channel.description"),
+            autocomplete=radio_commands.channel_autocomplete,
+        ),
         bot: Optional[str] = commands.Param(
             None,
             name=localized("cmd.radio.reset.opt.bot.name"),
@@ -530,7 +536,7 @@ class Radio(RadioPrefixCommands, commands.Cog):
             autocomplete=radio_commands.bot_autocomplete,
         ),
     ) -> None:
-        await setup_flow.reset(self, inter, bot)
+        await setup_flow.reset(self, inter, bot, channel)
 
     def _bot_state(self, radio: Any, channel: Any) -> tuple[bool, bool]:
         """O bot FIXO da rádio visto deste canal: ``(consegue entrar, está livre)``. Sem ``view_channel`` e ``connect`` no canal ele não entra; em call ou com player no servidor não está livre."""

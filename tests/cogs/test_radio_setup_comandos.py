@@ -181,7 +181,7 @@ class TestResetCommand:
         await premium(w)
         await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
 
-        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, bot=None)
+        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=None, bot=None)
 
         sent = w.inter.edit_original_message.await_args.kwargs
         assert "<@2>" in sent["content"] and [c.label for c in sent["view"].children] == ["Redefinir", "Cancelar"]
@@ -192,7 +192,7 @@ class TestResetCommand:
         w = build()
         await premium(w)
         await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
-        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, bot=None)
+        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=None, bot=None)
         view = w.inter.edit_original_message.await_args.kwargs["view"]
 
         cancel = click_of()
@@ -209,7 +209,7 @@ class TestResetCommand:
         w = build()
         await premium(w)
         radio = await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
-        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, bot=None)
+        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=None, bot=None)
         view = w.inter.edit_original_message.await_args.kwargs["view"]
         await w.hub.store.set_panel_message(radio.id, 1)  # alguém mexeu na rádio: o rev andou
 
@@ -224,7 +224,7 @@ class TestResetCommand:
         w = build()
         await premium(w)
         await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
-        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, bot=None)
+        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=None, bot=None)
         view = w.inter.edit_original_message.await_args.kwargs["view"]
 
         assert await view.interaction_check(click_of(user_id=99)) is False
@@ -233,15 +233,31 @@ class TestResetCommand:
         with pytest.raises(
             GenericError
         ) as refused:  # um bot que não serve rádio nenhuma (digitado à mão) é recusado com o motivo
-            await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, bot="555")
+            await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=None, bot="555")
         assert "/radio setup" in str(refused.value)
+
+    @pytest.mark.asyncio
+    async def test_channel_alone_points_at_that_radio_and_none_resets_all(self):
+        """Dono: /radio reset aceita canal E bot, os dois opcionais; sem nenhum, todas as rádios do servidor."""
+        w = build()
+        await premium(w)
+        await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
+        await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL + 1, bot_id=3)
+
+        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=str(CHANNEL + 1), bot=None)
+        one = w.inter.edit_original_message.await_args.kwargs
+        assert [r.channel_id for r in one["view"].radios] == [CHANNEL + 1] and f"<#{CHANNEL + 1}>" in one["content"]
+
+        radio_cog.RADIO_COOLDOWN._cache.clear()
+        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=None, bot=None)
+        assert len(w.inter.edit_original_message.await_args.kwargs["view"].radios) == 2
 
     @pytest.mark.asyncio
     async def test_a_server_without_premium_can_still_ask_and_confirm_the_reset(self):
         w = build()
         await w.hub.control.load()  # sem premium
         await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
-        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, bot=None)
+        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=None, bot=None)
         view = w.inter.edit_original_message.await_args.kwargs["view"]
 
         confirm = click_of()
@@ -256,7 +272,7 @@ class TestResetCommand:
         await premium(w)
 
         with pytest.raises(GenericError):
-            await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, bot=None)
+            await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=None, bot=None)
 
 
 class TestBotAutocomplete:
@@ -450,7 +466,7 @@ class TestPickingTheRadio:
         await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
         await configure(w.hub, guild_id=GUILD, channel_id=901, bot_id=3)
 
-        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, bot=None)
+        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=None, bot=None)
         sent = w.inter.edit_original_message.await_args.kwargs
         assert "TODAS" in sent["content"] and len(await w.hub.store.list_for_guild(GUILD)) == 2  # nada antes do botão
 
@@ -465,7 +481,7 @@ class TestPickingTheRadio:
         await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
         await configure(w.hub, guild_id=GUILD, channel_id=901, bot_id=3)
 
-        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, bot="3")
+        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=None, bot="3")
         await w.inter.edit_original_message.await_args.kwargs["view"].confirmed(click_of())
 
         assert [r.bot_id for r in await w.hub.store.list_for_guild(GUILD)] == [2]
