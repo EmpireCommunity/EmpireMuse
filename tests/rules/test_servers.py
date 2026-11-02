@@ -98,6 +98,7 @@ def test_valid_main_document_is_copied_field_by_field():
         "djroles": ["10", "20"], "default_player_volume": 40, "autoplay": True, "enable_restrict_mode": True,
         "check_other_bots_in_vc": True, "skin": "default", "static_skin": "static", "language": "pt-BR",
         "jukebox_auto_delete": False,
+        "jukebox_text_requests": True,
     }  # fmt: skip
 
 
