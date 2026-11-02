@@ -326,6 +326,8 @@ class DiscordRadioPorts:
         tr = await bot.pool.i18n.for_guild(guild)
         if self.radio.kind == "live":
             return await self._visor_payload(bot, guild, current, tr)
+        if self.radio.kind == "custom" and hasattr(self, "station"):  # só as portas da personalizada têm estação
+            return await self._custom_visor_payload(bot, guild, current, tr)
         return panel_payload(
             tr,
             playlist_name=await self._panel_name(current),
@@ -367,6 +369,36 @@ class DiscordRadioPorts:
             filter_options=options,
             color=bot.get_color(guild.me),
             emojis=lambda name: app_emoji(bot, name),
+        )
+
+    async def _custom_visor_payload(
+        self, bot: BotCore, guild: disnake.Guild, current: Radio, tr: Any
+    ) -> dict[str, Any]:
+        """O painel da rádio PERSONALIZADA no visor: estações do servidor (do filtro) e select 2 = tipo + Favoritas do membro que as escolheu."""
+        from empiremuse.utils.music.app_emojis import emoji as app_emoji  # tarde: o módulo importa o cliente
+        from empiremuse.utils.radio import custom_panel
+        from empiremuse.utils.radio.panel import type_select_options, visor_payload_async
+
+        hub, emojis = self.pool.radio, (lambda name: app_emoji(bot, name))
+        snapshot = await custom_panel.custom_snapshot(
+            hub, current, self, hub.manager.runner(current.id), locale=tr.locale, tr=tr
+        )
+        owner = custom_panel.favorites_owner(current.filter)
+        options = type_select_options(tr, current.filter, emojis=emojis)
+        if owner is not None:
+            options = [
+                disnake.SelectOption(label=o.label, value=o.value, emoji=o.emoji) for o in options
+            ]  # nenhum tipo marcado
+        options.append(
+            disnake.SelectOption(
+                label=tr("radio.panel.custom.favorites"),
+                value=custom_panel.FAVORITES_VALUE,
+                emoji=emojis("star"),
+                default=owner is not None,
+            )
+        )
+        return await visor_payload_async(
+            tr, snapshot, filter_options=options, color=bot.get_color(guild.me), emojis=emojis, custom=True
         )
 
     async def _refresh_existing(self, message: Any, bot: BotCore, guild: disnake.Guild, current: Radio) -> None:

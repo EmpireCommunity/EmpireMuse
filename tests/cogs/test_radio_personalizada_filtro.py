@@ -166,3 +166,27 @@ async def test_the_favorites_filter_uses_the_list_of_who_picked_it_and_walking_s
     assert calls == [STATIONS[3].id]  # E1 -> E4 (as únicas favoritas de 9)
     other = SimpleNamespace(author=SimpleNamespace(id=5))  # quem não tem favoritas recebe o aviso e o filtro não muda
     assert await custom_panel.pick_filter(cog, other, tr, radio, "f:fav") == "radio.panel.favorites_empty"
+
+
+@pytest.mark.asyncio
+async def test_the_custom_panel_uses_the_visor_with_types_and_the_favorites_entry(monkeypatch):
+    from empiremuse.i18n import get_i18n
+    from empiremuse.utils.radio.discord_ports import DiscordRadioPorts
+
+    radio, cog, *_ = world("f:fav:9", active=1)
+    cog.hub.custom_favorites = FakeFavs()
+    cog.hub.custom_favorites.data = {(1, 9): [STATIONS[0].id]}
+    cog.hub.manager = SimpleNamespace(runner=lambda _id: None)
+    ports = SimpleNamespace(
+        pool=SimpleNamespace(radio=cog.hub),
+        station=STATIONS[0],
+        current=None,
+        no_tracks=False,
+        wall=lambda: 1.0,
+    )
+    tr_real = await get_i18n().for_guild(None)
+    bot = SimpleNamespace(get_color=lambda me: 0)
+    payload = await DiscordRadioPorts._custom_visor_payload(ports, bot, SimpleNamespace(me=None), radio, tr_real)
+    select = payload["components"][-1].children[0]
+    assert [o.value for o in select.options][-1] == "f:fav" and select.options[-1].default
+    assert not any(o.default for o in select.options[:-1]) and payload["file"].filename.endswith(".png")
