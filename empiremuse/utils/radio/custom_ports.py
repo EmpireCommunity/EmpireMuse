@@ -19,7 +19,15 @@ import disnake
 from empiremuse.rules.radio import Radio
 from empiremuse.rules.radio_shuffle import Track
 from empiremuse.rules.radio_station import KIND_ARTISTS, KIND_GENRE, CustomStation
-from empiremuse.utils.radio.custom_source import CustomSession, load_pool
+from empiremuse.utils.radio.custom_source import (
+    REBUILD_BACKOFF_S,
+    CustomSession,
+    EmptyStation,
+    NoPlayableTracks,
+    StreakLimit,
+    load_pool,
+)
+from empiremuse.utils.radio.lastfm_feed import LastFmMissing, LastFmUnavailable
 from empiremuse.utils.radio.discord_ports import DiscordRadioPorts
 from empiremuse.utils.radio.panel import CustomView
 
@@ -31,6 +39,19 @@ logger = logging.getLogger(__name__)
 SOURCE_NAME = "last.fm"  # o ``PartialTrack`` por metadados: o nó o resolve pelos provedores de busca, como o autoplay
 
 
+def _tag(partial: Any, track: Track) -> Any:
+    """Etiqueta o ``partial`` com a faixa da rádio para a qual foi sorteado: o ``current`` do player e o cache sempre sabem de quem é."""
+    partial.info.setdefault("extra", {})["radio_track"] = [track.artist, track.title]
+    return partial
+
+
+def radio_track_of(partial: Any) -> Optional[Track]:
+    """A faixa da rádio etiquetada no ``partial`` (``None`` se não é de uma rádio personalizada)."""
+    extra = (getattr(partial, "info", None) or {}).get("extra") or {}
+    pair = extra.get("radio_track")
+    return Track(str(pair[0]), str(pair[1])) if isinstance(pair, list | tuple) and len(pair) == 2 else None
+
+
 class CustomRadioPorts(DiscordRadioPorts):
     def __init__(self, pool: BotPool, radio: Radio) -> None:
         super().__init__(pool, radio)
@@ -39,7 +60,16 @@ class CustomRadioPorts(DiscordRadioPorts):
         self.unknown: tuple[str, ...] = ()
         self.current: Optional[Track] = None
         self.no_tracks = False
+        self.searching = (
+            False  # nas 5 falhas seguidas: o recuo de 20 s antes de reconstruir o pool ("procurando faixas…")
+        )
+        self._load_failed_expected = (
+            False  # um TrackException já tratado: o LOAD_FAILED que vem atrás dele não conta de novo
+        )
         self._stocking = asyncio.Lock()
+        self._wake = (
+            asyncio.Event()
+        )  # editar ou trocar a estação acorda a espera de uma fonte quebrada (10 min) ou do recuo (20 s)
         self._panel_task: Optional[asyncio.Task] = None
 
     def _configure_player(self, player: Any) -> None:
@@ -97,7 +127,7 @@ class CustomRadioPorts(DiscordRadioPorts):
             raise RuntimeError("sem player")
         cached = await self._from_cache(player, track)
         if cached is not None:
-            return cached
+            return _tag(cached, track)
         partial = PartialTrack(
             title=track.title, author=track.artist, source_name=SOURCE_NAME, requester=self.radio.bot_id
         )
@@ -109,15 +139,16 @@ class CustomRadioPorts(DiscordRadioPorts):
         if not partial.id:
             return None
         await self.pool.radio.resolved.store(track, partial)
-        return partial
+        return _tag(partial, track)
 
     async def candidate_swapped(self, partial: Any) -> None:
         """O nó recusou o candidato da faixa que tocava ("No playable stream") e ``resolve_track`` buscou outro (``partial`` com ``id`` novo) ou não achou.
 
+        A chave do cache é a da faixa que FALHOU (a que vem etiquetada no ``partial``), nunca a do ``current`` das portas: o cache vale para todos os servidores.
         Achou: o candidato novo substitui a entrada guardada (uma entrada de 7 dias morta falharia uma vez a cada sorteio) e toca agora. Não achou: a faixa
-        entra no cache negativo, sai do ``current`` e a rádio passa à faixa adiantada (ou sorteia outra no próximo passo): nunca fica muda."""
+        entra no cache negativo e a rádio passa à faixa adiantada (ou sorteia agora): nunca fica muda."""
         player = self._player()
-        track, resolved = self.current, self.pool.radio.resolved
+        track, resolved = radio_track_of(partial), self.pool.radio.resolved
         if player is None or track is None:
             return
         if partial.id:
@@ -125,18 +156,20 @@ class CustomRadioPorts(DiscordRadioPorts):
             player.queue.appendleft(partial)
             await player.process_next()
             return
-        await resolved.mark(track)
-        self.current = None
-        if player.queue:
-            await player.process_next()  # a faixa adiantada
-            self._refresh_panel()
-        else:
-            await self.play_next()  # nada adiantado: sorteia agora (o ``current`` do player ainda é a faixa que falhou, o ``keep_playing`` não agiria)
+        await self.track_failed(partial)
 
-    async def candidate_dead(self) -> None:
+    async def candidate_dead(self, partial: Any) -> None:
         """Recusas demais: a entrada guardada desta faixa é apagada (volta a ser buscada do zero no próximo sorteio)."""
-        if self.current is not None:
-            await self.pool.radio.resolved.forget(self.current)
+        track = radio_track_of(partial)
+        if track is not None:
+            await self.pool.radio.resolved.forget(track)
+
+    def sync_current(self) -> None:
+        """A faixa que toca é a do player (a adiantada também): o painel mostra ela, não a primeira que o ``play_next`` sorteou."""
+        playing = radio_track_of(getattr(self._player(), "current", None))
+        if playing is not None and playing != self.current:
+            self.current = playing
+            self._refresh_panel()
 
     async def _from_cache(self, player: Any, track: Track) -> Any | None:
         """A faixa do cache de resolvidas, se o nó ainda decodifica o ``encoded`` guardado; senão a entrada é apagada e a busca segue."""
@@ -164,13 +197,13 @@ class CustomRadioPorts(DiscordRadioPorts):
         return partial
 
     async def play_next(self) -> None:
-        """Sorteia, resolve e toca uma faixa NOVA agora (ligar, retomar, trocar de estação). Depois adianta a seguinte."""
+        """Sorteia, resolve e toca uma faixa NOVA agora (ligar, retomar, trocar de estação, pular a que falhou). Depois adianta a seguinte."""
         player = self._player()
         if player is None or self.session is None:
             raise RuntimeError("sem player ou sem estação")
         try:
-            track, partial = await self.session.next_playable(self._resolve)
-        except Exception:
+            track, partial = await self._draw()
+        except NoPlayableTracks:
             self.no_tracks = True
             self._refresh_panel()
             raise
@@ -182,6 +215,71 @@ class CustomRadioPorts(DiscordRadioPorts):
         self._refresh_panel()
         await self._stock()
 
+    async def _draw(self, *, stocking: bool = False) -> tuple[Track, Any]:
+        """Uma faixa tocável. A cada ``FAIL_STREAK_MAX`` falhas seguidas a rádio NÃO pausa: recua ``REBUILD_BACKOFF_S``, reconstrói o pool e segue.
+        Só fonte quebrada (``NoPlayableTracks``) sobe. O recuo roda FORA do semáforo do adiantado."""
+        while True:
+            session = self.session
+            if session is None:
+                raise RuntimeError("sem estação")
+            try:
+                if stocking:
+                    async with (
+                        self.pool.radio.stock_slots
+                    ):  # no máximo 2 adiantados ao mesmo tempo em todas as rádios do processo
+                        return await session.next_playable(self._resolve)
+                return await session.next_playable(self._resolve)
+            except StreakLimit:
+                await self._rebuild()
+
+    async def _rebuild(self) -> None:
+        """Recua, relê a estação e as listas (o cache de 24 h vale) e recomeça com histórico e sequência zerados; o pool que continua tendo faixas é a
+        fonte boa. Pool vazio, ou Last.fm fora sem lista velha, é fonte quebrada: ``NoPlayableTracks``."""
+        self.searching = True
+        self._refresh_panel()
+        try:
+            await self.sleep(REBUILD_BACKOFF_S)
+            try:
+                await self.prepare()
+            except (EmptyStation, LastFmMissing, LastFmUnavailable) as error:
+                raise NoPlayableTracks from error
+            if self.session is not None:
+                self.session.rebuilt = True
+        finally:
+            self.searching = False
+            self._refresh_panel()
+
+    async def track_failed(self, partial: Any) -> None:
+        """A faixa que tocava falhou (carga, ``TrackException``, ``LOAD_FAILED``, travou): cache negativo pela chave DELA e a próxima na hora (a adiantada, ou um
+        sorteio agora). Nunca silêncio."""
+        player = self._player()
+        track = radio_track_of(partial)
+        if player is None or self.session is None:
+            return
+        if track is not None:
+            await self.session.failure(track)
+        else:
+            self.session.streak += 1
+        if player.queue:
+            await player.process_next()  # a faixa adiantada
+            self.sync_current()
+        else:
+            await self.play_next()  # nada adiantado: sorteia agora
+
+    def track_started(self) -> None:
+        """Uma faixa da rádio começou a tocar: a sequência de falhas zera e o painel mostra a que toca."""
+        if self.session is not None:
+            self.session.streak = 0
+        self.sync_current()
+
+    def expect_load_failed(self) -> None:
+        self._load_failed_expected = True
+
+    def consume_load_failed(self) -> bool:
+        """``True`` se este ``LOAD_FAILED`` é o eco de um ``TrackException`` já tratado (uma falha só conta uma vez)."""
+        expected, self._load_failed_expected = self._load_failed_expected, False
+        return expected
+
     async def _stock(self) -> None:
         """Deixa a próxima faixa resolvida na fila (uma por vez); sem estação ou com a fila cheia não faz nada."""
         player = self._player()
@@ -190,10 +288,7 @@ class CustomRadioPorts(DiscordRadioPorts):
         async with self._stocking:
             if len(player.queue) >= 1:
                 return
-            async with (
-                self.pool.radio.stock_slots
-            ):  # no máximo 2 adiantados ao mesmo tempo em todas as rádios do processo
-                _, partial = await self.session.next_playable(self._resolve)
+            _, partial = await self._draw(stocking=True)
             player.queue.append(partial)
 
     async def keep_playing(self) -> None:
@@ -204,6 +299,7 @@ class CustomRadioPorts(DiscordRadioPorts):
         if getattr(player, "current", None) is None and not player.queue:
             await self.play_next()
         else:
+            self.sync_current()  # a faixa seguinte começou sozinha: o painel acompanha
             await self._stock()
 
     async def skip_track(self) -> None:
@@ -215,12 +311,23 @@ class CustomRadioPorts(DiscordRadioPorts):
             await self.play_next()
             return
         await player.process_next()
+        self.sync_current()
         self._refresh_panel()
         await self._stock()
+
+    async def sleep(self, seconds: float) -> None:
+        """Dorme ``seconds``, ou menos se a estação for editada/trocada enquanto a fonte está quebrada ou em recuo (``apply_station``)."""
+        try:
+            await asyncio.wait_for(self._wake.wait(), seconds)
+        except TimeoutError:
+            pass
+        self._wake.clear()
 
     async def apply_station(self, radio: Radio) -> None:
         """A estação da rádio mudou (``set_custom_station``): descarta o sorteio velho; a próxima partida relê a estação."""
         self.radio = radio
+        if self.no_tracks or self.searching:
+            self._wake.set()  # a fonte estava quebrada ou em recuo: a estação nova tenta na hora, sem esperar os 10 min
         self.station, self.session, self.current, self.no_tracks = None, None, None, False
         self._refresh_panel()
 
@@ -245,6 +352,7 @@ class CustomRadioPorts(DiscordRadioPorts):
             artist=self.current.artist if self.current and not self.no_tracks else "",
             title=self.current.title if self.current and not self.no_tracks else "",
             no_tracks=self.no_tracks,
+            searching=self.searching,
             has_list=len(stations) >= 2,
             credit=bool(station and station.kind in (KIND_GENRE, KIND_ARTISTS)),
             unknown=self.unknown,

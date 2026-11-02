@@ -92,6 +92,7 @@ class CustomView(NamedTuple):
     artist: str = ""
     title: str = ""
     no_tracks: bool = False
+    searching: bool = False  # as 5 falhas seguidas: o recuo antes de reconstruir o pool
     has_list: bool = False
     credit: bool = False
     unknown: tuple[str, ...] = ()
@@ -251,6 +252,8 @@ def custom_payload(
         lines = [f"**{station}**"]
         if view.no_tracks:
             lines.append(f"-# {tr('radio.panel.custom.no_tracks')}")
+        elif view.searching:
+            lines.append(f"-# {tr('radio.panel.custom.searching')}")
         elif view.title.strip():
             song, artist = external_text(view.title, TITLE_LIMIT), external_text(view.artist, TITLE_LIMIT)
             lines.append(

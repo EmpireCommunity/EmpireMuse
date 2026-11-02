@@ -152,3 +152,151 @@ class TestCustomRunnerPause:
         await runner._start_source()
 
         assert runner.no_tracks is False
+
+
+class TestTheRadioNeverStops:
+    """Regra do dono: "A RÁDIO NÃO PODE PARAR, DEVE SIM PULAR PARA A PRÓXIMA MÚSICA"."""
+
+    @staticmethod
+    def make_ports(session, *, prepare=None):
+        from empiremuse.utils.radio.custom_source import REBUILD_BACKOFF_S  # noqa: F401
+
+        ports = object.__new__(CustomRadioPorts)
+        player = SimpleNamespace(queue=[], current=None, process_next=AsyncMock())
+        ports._player = lambda: player
+        ports.session = session
+        ports.pool = SimpleNamespace(radio=SimpleNamespace(stock_slots=asyncio.Semaphore(2), resolved=None))
+        ports._resolve = AsyncMock()
+        ports._refresh_panel = MagicMock()
+        ports.searching = False
+        ports.no_tracks = False
+        ports.sleeps = []
+        ports.shown = []
+
+        async def sleep(seconds):
+            ports.sleeps.append(seconds)
+            ports.shown.append(ports.searching)  # "procurando faixas…" está ligado durante o recuo
+
+        ports.sleep = sleep
+        ports.prepare = prepare or AsyncMock()
+        return ports, player
+
+    @pytest.mark.asyncio
+    async def test_five_failures_back_off_20_seconds_rebuild_the_pool_and_play_on(self):
+        from empiremuse.utils.radio.custom_source import StreakLimit
+
+        calls = []
+
+        class Session:
+            rebuilt = False
+
+            async def next_playable(self, resolve):
+                calls.append("draw")
+                if len(calls) == 1:
+                    raise StreakLimit
+                return Track("a", "b"), "partial"
+
+        ports, _ = self.make_ports(Session())
+
+        track, partial = await ports._draw()
+
+        assert (track, partial) == (Track("a", "b"), "partial")
+        assert ports.sleeps == [20] and ports.shown == [True] and ports.searching is False
+        ports.prepare.assert_awaited_once()  # o pool foi relido
+        assert ports.no_tracks is False  # nunca pausada
+
+    @pytest.mark.asyncio
+    async def test_an_empty_pool_after_the_rebuild_is_a_broken_source_that_stops_but_stays_on(self):
+        from empiremuse.utils.radio.custom_source import EmptyStation, StreakLimit
+
+        class Session:
+            async def next_playable(self, resolve):
+                raise StreakLimit
+
+        ports, _ = self.make_ports(Session(), prepare=AsyncMock(side_effect=EmptyStation))
+
+        with pytest.raises(NoPlayableTracks):
+            await ports._draw()
+
+        assert ports.searching is False
+
+    @pytest.mark.asyncio
+    async def test_the_slot_of_the_stock_is_free_while_the_radio_backs_off(self):
+        from empiremuse.utils.radio.custom_source import StreakLimit
+
+        holder = []
+
+        class Session:
+            rebuilt = False
+            first = True
+
+            async def next_playable(self, resolve):
+                if self.first:
+                    self.first = False
+                    raise StreakLimit
+                return Track("a", "b"), "partial"
+
+        ports, _ = self.make_ports(Session())
+        slots = ports.pool.radio.stock_slots
+        original_sleep = ports.sleep
+
+        async def sleep(seconds):
+            holder.append(slots._value)  # vagas livres durante o recuo
+            await original_sleep(seconds)
+
+        ports.sleep = sleep
+
+        await ports._draw(stocking=True)
+
+        assert holder == [2]
+
+    def test_a_track_start_zeroes_the_streak(self):
+        session = SimpleNamespace(streak=4)
+        ports, _ = self.make_ports(session)
+        ports.current = None
+
+        ports.track_started()
+
+        assert session.streak == 0
+
+    def test_the_panel_says_searching_during_the_backoff_and_the_notice_only_for_a_broken_source(self):
+        from empiremuse.utils.radio.panel import CustomView, custom_payload
+        from tests.cogs.test_radio_paineis_separados import tr_pt
+
+        base = dict(station="Rock", artist="", title="")
+        searching = custom_payload(tr_pt(), view=CustomView(**base, searching=True))
+        broken = custom_payload(tr_pt(), view=CustomView(**base, no_tracks=True))
+
+        def text(payload):
+            return " ".join(field.value for field in payload["embeds"][0].fields)
+
+        assert "Procurando faixas" in text(searching) and "Procurando faixas" not in text(broken)
+        assert "troque a estação ou edite-a" in text(broken)
+
+
+class TestEditingWakesABrokenStation:
+    @pytest.mark.asyncio
+    async def test_changing_the_station_ends_the_ten_minute_wait_at_once(self):
+        ports = object.__new__(CustomRadioPorts)
+        ports._wake = asyncio.Event()
+        ports.no_tracks, ports.searching = True, False
+        ports._refresh_panel = MagicMock()
+
+        waiting = asyncio.create_task(ports.sleep(600))
+        await asyncio.sleep(0)
+        await ports.apply_station(SimpleNamespace())
+
+        await asyncio.wait_for(waiting, 1)  # acordou sem esperar os 600 s
+
+    @pytest.mark.asyncio
+    async def test_a_healthy_radio_does_not_wake_its_reconnect_backoff(self):
+        ports = object.__new__(CustomRadioPorts)
+        ports._wake = asyncio.Event()
+        ports.no_tracks, ports.searching = False, False
+        ports._refresh_panel = MagicMock()
+
+        await ports.apply_station(SimpleNamespace())
+
+        assert not ports._wake.is_set()
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(ports.sleep(5), 0.05)
