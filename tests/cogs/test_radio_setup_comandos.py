@@ -254,25 +254,53 @@ class TestBotAutocomplete:
         inter = SimpleNamespace(
             guild_id=GUILD,
             author=SimpleNamespace(guild_permissions=SimpleNamespace(manage_guild=True)),
+            guild=w.inter.guild,
             bot=SimpleNamespace(pool=w.bots[0].pool if hasattr(w.bots[0], "pool") else w.cog.bot.pool),
         )
 
         assert await radio_cog.bot_autocomplete(inter, "") == {"Bot 2": "2", "Bot 3": "3"}
         assert await radio_cog.bot_autocomplete(inter, "3") == {"Bot 3": "3"}
         inter.author.guild_permissions.manage_guild = False
-        assert await radio_cog.bot_autocomplete(inter, "") == {}
+        assert list(await radio_cog.bot_autocomplete(inter, "")) == [
+            "Você precisa da permissão Gerenciar Servidor para configurar uma rádio."
+        ]
 
     @pytest.mark.asyncio
-    async def test_without_premium_nothing_is_offered(self):
+    async def test_without_premium_one_entry_says_why_instead_of_an_empty_list(self):
         w = build()
         await w.hub.control.load()
         inter = SimpleNamespace(
             guild_id=GUILD,
+            guild=w.inter.guild,
             author=SimpleNamespace(guild_permissions=SimpleNamespace(manage_guild=True)),
             bot=w.cog.bot,
         )
 
-        assert await radio_cog.bot_autocomplete(inter, "") == {}
+        offered = await radio_cog.bot_autocomplete(inter, "")
+
+        assert offered == {"Este servidor não tem premium: as rádios exigem.": radio_cog.NO_CHOICE}
+
+    @pytest.mark.asyncio
+    async def test_with_every_reserve_taken_the_entry_and_the_command_name_each_channel_and_point_to_reset(self):
+        w = build()
+        await premium(w)
+        await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
+        await configure(w.hub, guild_id=GUILD, channel_id=901, bot_id=3)
+        inter = SimpleNamespace(
+            guild_id=GUILD,
+            guild=w.inter.guild,
+            author=SimpleNamespace(guild_permissions=SimpleNamespace(manage_guild=True)),
+            bot=w.cog.bot,
+        )
+
+        offered = await radio_cog.bot_autocomplete(inter, "")
+        with pytest.raises(GenericError) as refused:
+            await run_setup(w, bot=radio_cog.NO_CHOICE)
+
+        assert list(offered.values()) == [radio_cog.NO_CHOICE] and "/radio reset" in next(iter(offered))
+        text = str(refused.value)
+        assert "Bot 2" in text and f"<#{CHANNEL}>" in text and "Bot 3" in text and "<#901>" in text
+        assert "/radio reset" in text
 
 
 def ctx_for(w, *, channel=None, manage_guild=True):

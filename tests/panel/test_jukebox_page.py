@@ -155,10 +155,10 @@ class JukeboxSetupValidationTest(JukeboxPageBase):
         body = self.check_422(modo="existente", canal="22")
         assert "regras" in html.unescape(body)
 
-    def test_non_admin_bot_needs_manage_permissions_on_an_existing_channel(self):
+    def test_manage_permissions_is_optional_on_an_existing_channel(self):
         self.world.text._perms = perms(**{k: v for k, v in FULL_TEXT.items() if k != "manage_permissions"})
-        body = html.unescape(self.check_422(modo="existente", canal="22")).lower()
-        assert "gerenciar permissões" in body or "administrador" in body
+        response = self.configure(self.logged_in(), modo="existente", canal="22")
+        assert response.code != 422  # o setup segue sem editar o canal (o aviso do que faltou é do /jukebox setup)
 
     def test_existing_channel_needs_purge_permissions_because_the_purge_is_always(self):
         self.world.text._perms = perms(**{k: v for k, v in FULL_TEXT.items() if k != "manage_messages"})

@@ -64,17 +64,26 @@ MAX_CHOICES = 25
 NAME_LIMIT = 80
 
 
+NO_CHOICE = "none"  # o valor da entrada que só explica (não é id de bot: o comando, ao receber, responde o motivo)
+
+
 async def bot_autocomplete(inter: disnake.ApplicationCommandInteraction, current: str) -> dict[str, str]:
-    """Os bots reserva livres do servidor como ``{nome: id}``. Só informa: quem decide é o ``configure`` em execução. Sem ``manage_guild`` ou sem premium, vazio."""
-    if inter.guild_id is None or not inter.author.guild_permissions.manage_guild:
+    """Os bots reserva livres do servidor como ``{nome: id}``. Só informa: quem decide é o ``configure`` em execução.
+    Sem ``manage_guild``, sem premium ou sem reserva livre, uma única entrada explica o motivo (nunca a lista vazia)."""
+    if inter.guild_id is None:
         return {}
+    tr = await inter.bot.pool.i18n.for_guild(inter.guild)
+    if not inter.author.guild_permissions.manage_guild:
+        return {fit(tr("radio.setup.auto.no_manage"), 100): NO_CHOICE}
     hub = inter.bot.pool.radio
     try:
         if await hub.premium.get(inter.guild_id) is None:
-            return {}
+            return {fit(tr("radio.setup.auto.no_premium"), 100): NO_CHOICE}
         options = await hub.setup.options(inter.guild_id)
     except RadioUnavailable:
         return {}
+    if not options.bots:
+        return {fit(tr("radio.setup.auto.no_reserve"), 100): NO_CHOICE}
     wanted = (current or "").strip().casefold()
     return {fit(name, 100): str(bot_id) for bot_id, name in options.bots if wanted in name.casefold()}
 

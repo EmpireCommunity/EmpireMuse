@@ -62,7 +62,12 @@ async def ensure_panel_bot(bot: BotCore, guild_id: int) -> None:
         raise GenericError("**Só o bot do painel do servidor pode configurar ou redefinir a Jukebox.**")
 
 
-channel_perms = ("send_messages", "embed_links", "read_messages")
+channel_perms = (
+    "send_messages",
+    "embed_links",
+    "read_messages",
+    "manage_messages",
+)  # manage_messages: o setup sempre limpa o canal
 
 thread_perms = ("send_messages_in_threads", "embed_links", "read_messages")
 
@@ -102,6 +107,23 @@ class MissingManagePermissions(GenericError):
 class JukeboxChannelResult(NamedTuple):
     channel: Any
     message: Any
+    not_applied: tuple[
+        str, ...
+    ] = ()  # permissões que o setup NÃO conseguiu dar ao bot no canal (faltou "gerenciar permissões"); o setup seguiu
+
+
+def can_edit_channel_permissions(guild: disnake.Guild, target: Any) -> bool:
+    """Editar as permissões do canal é opcional: o bot precisa ser administrador ou ter "gerenciar permissões" nele."""
+    return bool(guild.me.guild_permissions.administrator or target.permissions_for(guild.me).manage_permissions)
+
+
+def permissions_left_unapplied(guild: disnake.Guild, target: Any, channel_kwargs: dict) -> tuple[str, ...]:
+    """As permissões que o setup daria ao bot e que ele ainda não tem no canal (o que o aviso lista; vazio = nada a avisar)."""
+    wanted = next((o for o in channel_kwargs.get("overwrites", {}).values()), None)
+    if wanted is None:
+        return ()
+    have = target.permissions_for(guild.me)
+    return tuple(name for name, value in wanted if value and not getattr(have, name, True))
 
 
 def missing_channel_permissions(channel: TargetChannel) -> list[str]:
@@ -217,20 +239,6 @@ def validate_jukebox_target(
 
     if isinstance(target, disnake.ForumChannel):
         return
-
-    if (
-        existing_channel
-        and not guild.me.guild_permissions.administrator
-        and not target.permissions_for(guild.me).manage_permissions
-    ):
-        raise GenericError(
-            f"**{guild.me.mention} não possui permissão de administrador ou permissão de "
-            f"gerenciar permissões do canal {target.mention}** para editar as permissões "
-            f"necessárias para a Jukebox funcionar devidamente.\n\n"
-            f"Caso não queira fornecer a permissão de administrador ou editar as permissões do"
-            f" canal {target.mention} para me permitir gerenciar permissões do canal, você pode usar o comando "
-            f"sem selecionar um canal de destino para criar um novo canal."
-        )
 
     if not target.permissions_for(guild.me).read_message_history:
         raise GenericError(
@@ -429,11 +437,15 @@ async def _apply_jukebox_channel(
                     message = m
                     break
 
+    not_applied: tuple[str, ...] = ()
     if existing_channel and channel_kwargs:
-        try:
-            await target.edit(**channel_kwargs)
-        except Exception:
-            logger.exception("Falha em apply_jukebox_channel")
+        if can_edit_channel_permissions(guild, target):
+            try:
+                await target.edit(**channel_kwargs)
+            except Exception:
+                logger.exception("Falha em apply_jukebox_channel")
+        else:  # opcional: segue sem editar o canal e devolve o que ficou sem aplicar, para o aviso
+            not_applied = permissions_left_unapplied(guild, target, channel_kwargs)
 
     channel = target
 
@@ -444,7 +456,7 @@ async def _apply_jukebox_channel(
 
     await _rebind_other_players(bot, channel, message)
 
-    return JukeboxChannelResult(channel, message)
+    return JukeboxChannelResult(channel, message, not_applied)
 
 
 async def _archive_previous_message(original_message, target, actor, embed_archived):

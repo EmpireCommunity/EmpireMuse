@@ -30,7 +30,7 @@ from empiremuse.utils import playlists_commands
 from empiremuse.rules.playlists import SCOPE_JUKEBOX
 from empiremuse.utils.db import DBModel
 from empiremuse.rules.text import format_mib
-from empiremuse.utils.music.converters import time_format, md_link, md_code
+from empiremuse.utils.music.converters import time_format, md_link, md_code, perms_translations
 from empiremuse.utils.music.errors import GenericError, NoVoice
 from empiremuse.utils.music.interactions import SkinEditorMenu, EmbedPaginatorInteraction, ButtonInteraction
 from empiremuse.utils.music.skin_store import load_custom_skins
@@ -903,11 +903,15 @@ class MusicSettings(commands.Cog):
 
         reset_txt = f"{inter.prefix}jukebox reset" if isinstance(inter, CustomContext) else "/jukebox reset"
 
-        embed = disnake.Embed(
-            description=f"**{msg}**\n\nObs: Caso queira reverter essa configuração, apenas use o comando {reset_txt} ou "
-            f"delete o canal/post {channel.mention}",
-            color=bot.get_color(guild.me),
+        description = (
+            f"**{msg}**\n\nObs: Caso queira reverter essa configuração, apenas use o comando {reset_txt} ou "
+            f"delete o canal/post {channel.mention}"
         )
+        if result.not_applied:
+            tr = await bot.pool.i18n.for_guild(guild)
+            names = ", ".join(f"**{perms_translations.get(name, name)}**" for name in result.not_applied)
+            description += "\n\n" + tr("jukebox.setup.warn_permissions", channel=channel.mention, permissions=names)
+        embed = disnake.Embed(description=description, color=bot.get_color(guild.me))
 
         if not inter.response.is_done():
             try:

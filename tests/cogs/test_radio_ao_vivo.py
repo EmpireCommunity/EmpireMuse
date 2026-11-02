@@ -860,6 +860,15 @@ class TestLiveLoadsOnlyOnTheLocalNode:
         self.remote.get_tracks.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_the_boot_race_without_a_local_node_is_logged_with_its_own_type(self, caplog):
+        _, ports = await self.world_with_player(local=False)
+
+        with caplog.at_level("WARNING"):
+            assert await ports.connect() is False
+
+        assert "LocalNodeUnavailable" in caplog.text and "(RuntimeError)" not in caplog.text
+
+    @pytest.mark.asyncio
     async def test_a_stream_that_the_lavalink_requested_and_could_not_open_is_the_stations_fault(self):
         w, ports = await self.world_with_player()
 

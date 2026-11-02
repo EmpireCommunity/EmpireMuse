@@ -568,5 +568,12 @@
   "playlists.cmd.field.url": "Link da playlist",
   "playlists.cmd.field.description": "Descrição",
   "playlists.cmd.field.genres": "Gêneros (separados por vírgula)",
-  "playlists.cmd.field.icon": "Ícone (um emoji)"
+  "playlists.cmd.field.icon": "Ícone (um emoji)",
+  "radio.setup.auto.no_manage": "Você precisa da permissão Gerenciar Servidor para configurar uma rádio.",
+  "radio.setup.auto.no_premium": "Este servidor não tem premium: as rádios exigem.",
+  "radio.setup.auto.no_reserve": "Nenhum bot reserva livre: use /radio reset para liberar um.",
+  "radio.setup.error.busy_line": "• {bot} já atende {channel}",
+  "radio.setup.error.no_reserve": "Não há bot reserva livre neste servidor. Cada um já está ocupado por uma rádio:\n{busy}\nUse `/radio reset` em um canal para liberar o bot dele.",
+  "radio.setup.error.no_reserve_none": "Não há bot reserva livre neste servidor: nenhum foi adicionado aqui, está offline ou está em uma call. Adicione um, ou encerre a call dele, e tente de novo.",
+  "jukebox.setup.warn_permissions": "⚠️ A Jukebox foi configurada em {channel}, mas não consegui ajustar as permissões desse canal (falta **Gerenciar Permissões** para mim). Ainda faltam para o bot: {permissions}. Conceda-as, ou me dê Gerenciar Permissões, e use o setup de novo."
 }

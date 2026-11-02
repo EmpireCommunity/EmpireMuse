@@ -555,5 +555,12 @@
   "playlists.cmd.field.url": "Playlist link",
   "playlists.cmd.field.description": "Description",
   "playlists.cmd.field.genres": "Genres (comma separated)",
-  "playlists.cmd.field.icon": "Icon (one emoji)"
+  "playlists.cmd.field.icon": "Icon (one emoji)",
+  "radio.setup.auto.no_manage": "You need the Manage Server permission to set up a radio.",
+  "radio.setup.auto.no_premium": "This server has no premium: radios need it.",
+  "radio.setup.auto.no_reserve": "No free spare bot: see /radio reset to free one.",
+  "radio.setup.error.busy_line": "• {bot} already serves {channel}",
+  "radio.setup.error.no_reserve": "There is no free spare bot on this server. Each one is already taken by a radio:\n{busy}\nUse `/radio reset` on a channel to free its bot.",
+  "radio.setup.error.no_reserve_none": "There is no free spare bot on this server: none was added here, it is offline or it is in a call. Add one, or end its call, and try again.",
+  "jukebox.setup.warn_permissions": "⚠️ The Jukebox was set up in {channel}, but I could not adjust that channel's permissions (I lack **Manage Permissions** there). Still missing for the bot: {permissions}. Grant them, or give me Manage Permissions, and run the setup again."
 }

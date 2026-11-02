@@ -29,6 +29,10 @@ PANEL_EDIT_INTERVAL_S = 15.0
 FLOW_WAIT_S = 25.0  # o primeiro áudio tem de chegar ao Lavalink neste prazo, senão a rádio NÃO está tocando (abrir a estação leva até 20 s)
 
 
+class LocalNodeUnavailable(RuntimeError):
+    """O nó ``LOCAL`` ainda não existe (na subida a rádio tenta antes do Lavalink local registrar): o recuo tenta de novo; o log mostra este tipo, não um ``RuntimeError`` mudo."""
+
+
 class LiveRadioPorts(DiscordRadioPorts):
     def __init__(self, pool: BotPool, radio: Radio) -> None:
         super().__init__(pool, radio)
@@ -176,7 +180,7 @@ class LiveRadioPorts(DiscordRadioPorts):
     def _local_node(bot: Any) -> Any:
         node = bot.music.nodes.get("LOCAL")
         if node is None:
-            raise RuntimeError("sem nó local")  # o relay só atende o Lavalink deste host
+            raise LocalNodeUnavailable("sem nó local")  # o relay só atende o Lavalink deste host
         return node
 
     async def _pick_node(self, bot: Any) -> Any:

@@ -57,14 +57,31 @@ def refusal(tr: Any, error: Exception) -> GenericError:
     return GenericError(tr("radio.owner.unavailable"))
 
 
+async def _no_bot_reason(cog: RadioCog, inter: Any, tr: Any) -> GenericError:
+    """Sem id de bot válido: diz POR QUÊ (sem permissão, sem premium, ou nenhum reserva livre, com quem ocupa cada um), nunca um erro mudo."""
+    hub = cog.hub
+    try:
+        await hub.setup.check_actor(inter.guild_id, inter.author.id)
+        options = await hub.setup.options(inter.guild_id)
+        busy = await hub.setup.busy_reserves(inter.guild_id)
+    except (RadioForbidden, RadioUnavailable) as error:
+        return refusal(tr, error)
+    if options.bots:
+        return GenericError(tr("radio.setup.error.bot_id"))
+    if not busy:
+        return GenericError(tr("radio.setup.error.no_reserve_none"))
+    lines = "\n".join(tr("radio.setup.error.busy_line", bot=name, channel=f"<#{channel}>") for name, channel in busy)
+    return GenericError(tr("radio.setup.error.no_reserve", busy=lines))
+
+
 async def setup(cog: RadioCog, inter: disnake.ApplicationCommandInteraction, channel: Any, bot: str, kind: str) -> None:
     """Configura (cria ou muda) a rádio deste canal e segue para a escolha da estação."""
     tr = await cog._gate(inter)
+    hub = cog.hub
     try:
         bot_id = int(bot)
     except TypeError, ValueError:
-        raise GenericError(tr("radio.setup.error.bot_id")) from None
-    hub = cog.hub
+        raise await _no_bot_reason(cog, inter, tr) from None
     try:
         existing = await hub.store.list_for_guild(inter.guild_id)
         current = next((r for r in existing if r.channel_id == channel.id), None) or next(
