@@ -145,3 +145,96 @@ def test_a_station_outside_the_list_has_no_next_stations_and_still_renders():
 
     assert data.next_stations == () and data.position == 0 and data.retry_seconds == 15
     assert render_snapshot(outside, EN) != render_snapshot(snapshot(), EN)
+
+
+# ============================================================================ o payload do painel novo (embed só com o visor + 2x5 + 2 selects)
+
+
+class FakeTree:
+    """Árvore mínima: topo = regiões; 'r:sa' → países; 'c:BR' → estados; 's:SP' é final."""
+
+    def __init__(self):
+        from empiremuse.utils.radio.locations import LocNode, LocOption
+
+        self._nodes = {
+            "r:sa": LocNode("r:sa", "region", "south-america", None, False),
+            "c:BR": LocNode("c:BR", "country", "BR", "r:sa", False),
+            "s:SP": LocNode("s:SP", "state", "São Paulo", "c:BR", True),
+        }
+        self._children = {
+            None: [LocOption("r:sa", "América do Sul", "12 países", 900)],
+            "r:sa": [LocOption("c:BR", "Brasil", "", 500), LocOption("c:AR", "Argentina", "", 100)],
+            "c:BR": [LocOption("s:SP", "São Paulo", "", 80)],
+            "s:SP": [],
+        }
+
+    def node(self, node_id):
+        return self._nodes.get(node_id)
+
+    def children(self, node_id, locale, *, guild_locale=None):
+        return list(self._children.get(node_id, []))
+
+    def label(self, node, locale):
+        return {"r:sa": "América do Sul", "c:BR": "Brasil", "s:SP": "São Paulo"}[node.id]
+
+
+def ids_of(row):
+    return [child.custom_id for child in row.children]
+
+
+def test_the_visor_payload_has_only_the_image_embed_two_button_rows_and_the_two_selects():
+    from empiremuse.rules.radio import PANEL_FILTER_SELECT_ID, PANEL_MUTE_ID, PANEL_STATION_SELECT_ID, PANEL_STOP_ID
+    from empiremuse.utils.radio.panel import filter_select_options, visor_payload
+
+    snap = snapshot(skin="black")
+    options = filter_select_options(PT, FakeTree(), "c:BR", "pt-BR", favorites_total=5)
+    payload = visor_payload(PT, snap, filter_options=options, color=0x8B5CF6)
+
+    embed = payload["embeds"][0]
+    assert embed.description is None and embed.title is None and not embed.fields, "nada repetido em texto (P1)"
+    assert embed.image.url == "attachment://visor.png" and payload["file"].filename == "visor.png"
+    rows = payload["components"]
+    assert len(rows) == 4 and len(rows[0].children) == 5 and len(rows[1].children) == 5
+    assert all(child.label is None for row in rows[:2] for child in row.children), "só emoji (R6)"
+    assert PANEL_MUTE_ID in ids_of(rows[0]) and PANEL_STOP_ID in ids_of(rows[1])
+    station_select = rows[2].children[0]
+    assert station_select.custom_id == PANEL_STATION_SELECT_ID
+    assert [o.value for o in station_select.options] == [f"id{i}" for i in range(1, 6)]
+    assert [o.default for o in station_select.options] == [False, False, True, False, False]
+    assert station_select.options[2].label.startswith("3. Estação 3")
+    filter_select = rows[3].children[0]
+    assert filter_select.custom_id == PANEL_FILTER_SELECT_ID
+    assert [o.value for o in filter_select.options] == ["f:fav", "r:sa", "s:SP"]
+    assert "5" in filter_select.options[0].label and "Voltar" in filter_select.options[1].label
+
+
+def test_a_final_node_lists_its_siblings_and_an_empty_station_list_still_builds():
+    from empiremuse.utils.radio.panel import filter_select_options, visor_payload
+
+    options = filter_select_options(PT, FakeTree(), "s:SP", "pt-BR", favorites_total=0)
+    assert [o.value for o in options] == ["f:fav", "c:BR", "s:SP"]  # favoritas, voltar ao país, os irmãos do estado
+    assert options[2].default is True  # o filtro atual marcado
+
+    top = filter_select_options(PT, FakeTree(), None, "pt-BR", favorites_total=0)
+    assert [o.value for o in top] == ["f:fav", "r:sa"]
+
+    empty = snapshot(stations=(), position=0, current_index=None, total=0)
+    payload = visor_payload(PT, empty, filter_options=top, color=0)
+    station_select = payload["components"][2].children[0]
+    assert station_select.disabled and len(station_select.options) == 1
+
+
+def test_muted_shows_the_unmute_emoji_in_danger_style_and_the_mapping_of_the_buttons_is_symmetric():
+    import disnake
+
+    from empiremuse.rules.radio import PANEL_MUTE_ID
+    from empiremuse.utils.radio.panel import visor_payload
+
+    live = visor_payload(PT, snapshot(), filter_options=[], color=0)
+    muted = visor_payload(PT, snapshot(state="muted"), filter_options=[], color=0)
+    mute_live = next(c for c in live["components"][0].children if c.custom_id == PANEL_MUTE_ID)
+    mute_muted = next(c for c in muted["components"][0].children if c.custom_id == PANEL_MUTE_ID)
+    assert mute_live.style != disnake.ButtonStyle.danger and mute_muted.style == disnake.ButtonStyle.danger
+    assert str(mute_live.emoji) != str(mute_muted.emoji)
+    assert live["components"][0].children[2].custom_id == PANEL_MUTE_ID, "mudo no centro da linha 1"
+    assert live["components"][1].children[2].custom_id == "radio_panel_reconnect", "reconectar no centro da linha 2"

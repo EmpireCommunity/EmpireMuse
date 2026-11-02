@@ -72,6 +72,8 @@ APP_EMOJIS: Mapping[str, str] = MappingProxyType(
         "notification": "💡",
         "fast_backward": "⏪",
         "volume": "🔊",
+        "volume_down": "🔉",  # painel de rádio (R6): PNG do kit media-player da mnauliady a baixar
+        "volume_mute": "🔇",  # idem
         "shuffle": "🔀",
         "playlist_add": "🎶",
         "repeat_all": "🔁",

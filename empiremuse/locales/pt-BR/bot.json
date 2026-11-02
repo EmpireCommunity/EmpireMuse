@@ -1104,5 +1104,14 @@
   "visor.quality.failing": "Falhando",
   "radio.panel.reconnecting": "Tentando reconectar agora…",
   "radio.panel.reconnect_not_needed": "A rádio está no ar; não há o que reconectar.",
-  "radio.panel.filter_applied": "Filtro aplicado: {total} estações na lista."
+  "radio.panel.filter_applied": "Filtro aplicado: {total} estações na lista.",
+  "visor.select.station.placeholder": "Estações da lista",
+  "visor.select.station.description": "{bitrate} kbps · {codec}",
+  "visor.select.station.empty.label": "Nenhuma estação nesta lista",
+  "visor.select.filter.placeholder": "Trocar filtro: região › país › estado › cidade",
+  "visor.select.favorites.label": "Favoritas do servidor · {total}",
+  "visor.select.favorites.description": "Só as estações favoritas deste servidor",
+  "visor.select.back.label": "‹ Voltar: {name}",
+  "visor.select.back.description": "Um nível acima",
+  "visor.footer": "Só quem está na call da rádio usa os controles"
 }
