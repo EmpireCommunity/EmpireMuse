@@ -29,7 +29,6 @@ class FavoritesMixin:
             "favoritos",
             "itg",
         ],
-        description="Gerenciar seus favoritos e integrações.",
         cooldown=fav_cd,
     )
     async def fav_manager_legacy(self, ctx: CustomContext):

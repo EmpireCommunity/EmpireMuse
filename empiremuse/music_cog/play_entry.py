@@ -313,7 +313,6 @@ class PlayEntryMixin:
     @commands.max_concurrency(1, commands.BucketType.member)
     @pool_command(
         name="addposition",
-        description="Adicionar música em uma posição especifica da fila.",
         aliases=["adp", "addpos"],
         check_player=False,
         cooldown=play_cd,
@@ -399,7 +398,6 @@ class PlayEntryMixin:
     @commands.max_concurrency(1, commands.BucketType.member)
     @pool_command(
         name="play",
-        description="Tocar música em um canal de voz.",
         aliases=["p", "tocar"],
         check_player=False,
         cooldown=play_cd,
@@ -427,7 +425,6 @@ class PlayEntryMixin:
     @check_voice()
     @pool_command(
         name="search",
-        description="Pesquisar por músicas e escolher uma entre os resultados para tocar.",
         aliases=["sc", "buscar"],
         check_player=False,
         cooldown=play_cd,

@@ -21,6 +21,14 @@ CLEAN_PATHS = (
     "empiremuse/utils/music/interactions",
     "empiremuse/utils/music/skins",
     "empiremuse/music_cog/playback_controls.py",
+    "empiremuse/cogs/help_cog.py",
+    "empiremuse/music_cog/voice_status.py",
+    "empiremuse/utils/music/audio_sources/deezer.py",
+    "empiremuse/utils/music/command_usage.py",
+    "empiremuse/utils/music/errors.py",
+    "empiremuse/utils/music/guild_text.py",
+    "empiremuse/utils/music/models/state_steps.py",
+    "empiremuse/utils/music/saved_queue.py",
 )
 
 # Acentos ou palavras que só aparecem em português (nada que também seja inglês, como "link", "volume" ou "skin").

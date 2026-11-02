@@ -50,7 +50,6 @@ class SkipMixin:
         aliases=["n", "s", "next", "pular"],
         cooldown=skip_back_cd,
         max_concurrency=skip_back_mc,
-        description=f"Pular a música atual que está tocando.",
         extras={"flags": case_sensitive_args},
         only_voiced=True,
     )
@@ -253,7 +252,6 @@ class SkipMixin:
     @pool_command(
         name="back",
         aliases=["b", "voltar"],
-        description="Voltar para a música anterior.",
         only_voiced=True,
         cooldown=skip_back_cd,
         max_concurrency=skip_back_mc,

@@ -167,7 +167,6 @@ class LastFmCog(commands.Cog):
     @commands.command(
         name="lastfm",
         aliases=["lfm"],
-        description="Vincular sua conta do last.fm para registrar as músicas via scrobble.",
         cooldown=lastfm_cd,
         max_concurrency=lastfm_mc,
     )

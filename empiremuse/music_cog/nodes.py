@@ -86,7 +86,9 @@ class NodesMixin:
 
         await inter.edit_original_message(embed=embed)
 
-    @commands.command(aliases=["puptime"], description="Ver informações de tempo que o player está ativo no servidor.")
+    @commands.command(
+        aliases=["puptime"],
+    )
     @commands.cooldown(1, 5, commands.BucketType.guild)
     async def playeruptime(self, ctx: CustomContext):
         uptime_info = []
