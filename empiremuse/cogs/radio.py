@@ -28,12 +28,15 @@ from empiremuse.rules.radio import (
     radio_id,
     station_neighbor,
 )
+from empiremuse.rules.radio_station import normalize_name
 from empiremuse.rules.radio_stations import Station
 from empiremuse.rules.servers import is_main_identifier
 from empiremuse.rules.text import external_text
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.others import CustomContext
-from empiremuse.utils.radio import actions, migrate_r5
+from empiremuse.utils.radio import actions, migrate_r5, station_commands
+from empiremuse.utils.radio.station_ui import error_text as station_error_text
+from empiremuse.utils.radio.stations import StationInvalid
 from empiremuse.utils.radio.actions import Actor, Refused
 from empiremuse.utils.radio.control import MainBotRefused
 from empiremuse.utils.radio.custom_ports import CustomRadioPorts
@@ -67,6 +70,9 @@ def _guild_id(raw: str) -> int | None:
 
 
 RADIO_COOLDOWN = commands.CooldownMapping.from_cooldown(1, 10, commands.BucketType.guild)
+CUSTOM_ACTIONS = frozenset(
+    {"station_previous", "station_next"}
+)  # só no painel da personalizada: anterior e próxima ESTAÇÃO do servidor
 LIVE_ACTIONS = frozenset(
     {"previous", "mute", "volume_down", "volume_up"}
 )  # só no painel da rádio ao vivo (o "próxima" existe nos dois, com outro sentido)
@@ -215,8 +221,8 @@ class Radio(commands.Cog):
         try:
             radio, runner = await self._panel_radio(interaction, tr)
             live = radio.kind == KIND_LIVE
-            if (
-                action in LIVE_ACTIONS and not live
+            if (action in LIVE_ACTIONS and not live) or (
+                action in CUSTOM_ACTIONS and live
             ):  # um painel antigo na tela não faz a personalizada andar de estação nem mexer em volume
                 raise GenericError(tr("radio.panel.not_here"))
             await self._run_action(interaction, tr, radio, runner, action)
@@ -277,6 +283,10 @@ class Radio(commands.Cog):
             )  # parar o fluxo: ao voltar, a rádio entra no ponto AO VIVO, não no que ficou guardado
             await runner.set_admin_pause(muted)
             await reply(content=tr("radio.panel.muted" if muted else "radio.panel.unmuted"))
+        elif action in CUSTOM_ACTIONS:
+            await reply(
+                content=await self._walk_stations(interaction, tr, radio, 1 if action == "station_next" else -1)
+            )
         elif action == "next" and radio.kind == KIND_LIVE or action == "previous":
             await reply(content=await self._walk(interaction, tr, radio, 1 if action == "next" else -1))
         elif action == "next":
@@ -344,6 +354,25 @@ class Radio(commands.Cog):
             return tr("radio.live.not_found")
         await actions.change_station(self.hub, radio_id=radio.id, station=station, actor=self._authorized(interaction))
         return tr("radio.local.changed", station=external_text(station.name, NAME_LIMIT))
+
+    async def _walk_stations(self, interaction: Any, tr: Any, radio: Any, step: int) -> str:
+        """Anterior e próxima ESTAÇÃO do servidor (por nome) na rádio personalizada: dá a volta; uma só estação não tem por onde andar."""
+        stations = await self.hub.stations.list_for_guild(radio.guild_id)
+        neighbor = station_neighbor([s.id for s in stations], radio.source.get("station"), step)
+        if neighbor is None:
+            return tr("radio.panel.no_other_station")
+        if self._too_soon(radio.id, "station", STATION_GAP_S):
+            return tr("radio.panel.wait")
+        await actions.change_custom_station(
+            self.hub, radio_id=radio.id, station_id=neighbor, actor=self._authorized(interaction)
+        )
+        name = next(s.name for s in stations if s.id == neighbor)
+        return tr("radio.local.changed", station=external_text(name, NAME_LIMIT))
+
+    async def station_saved(self, station: Any) -> None:
+        """Uma estação foi editada: as rádios que a tocam recarregam o pool (a troca passa pelo recuo, sem prender quem editou)."""
+        for radio in await self.hub.stations.radios_using(station.guild_id, station.id):
+            await self.hub.manager.change_station(radio)
 
     async def _volume(self, interaction: Any, tr: Any, radio: Any, runner: Any, wanted: int) -> str:
         """Grava o volume (com ``rev``) e o aplica ao player. No máximo uma mudança por segundo e por rádio."""
@@ -485,15 +514,44 @@ class Radio(commands.Cog):
         if playlist is None and station is None:
             await self._open_start_picker(inter, tr, channel)  # nem playlist nem estação: escolhe a estação por local
             return
-        found = await self.bot.pool.servers.playlists.find(inter.guild_id, playlist) if playlist else None
+        found = None
         picked = None
+        custom = await self._resolve_custom_station(inter, tr, playlist) if playlist else None
         if station:  # o valor vem do autocomplete, mas o usuário pode digitar qualquer coisa: antes do diretório, o direito (manage_guild e premium)
             await self._require_station_rights(inter, tr)
             picked = await self.hub.directory.by_uuid(station)
             if picked is None:
                 raise GenericError(tr("radio.live.not_found"))
-        text = await self._start(inter, tr, channel, playlist=playlist, found=found, picked=picked)
+        text = await self._start(inter, tr, channel, playlist=None, found=found, picked=picked, custom_station=custom)
         await inter.edit_original_message(content=text, allowed_mentions=disnake.AllowedMentions.none())
+
+    async def _resolve_custom_station(self, inter: Any, tr: Any, name: str) -> Any:
+        """A estação do servidor que a rádio vai tocar. ``name`` é o nome de uma estação; se não há estação com esse nome mas há uma PLAYLIST, nasce a estação
+        de playlist (a mesma que a migração da subida faria), então nenhuma rádio nova volta a depender de playlist solta."""
+        if not inter.author.guild_permissions.manage_guild:
+            raise GenericError(tr(f"radio.refused.{actions.NO_MANAGE_GUILD}"))
+        try:
+            wanted = normalize_name(name)
+            stations = await self.hub.stations.list_for_guild(inter.guild_id)
+            found = next((s for s in stations if s.name_norm == wanted), None)
+            if found is not None:
+                return found
+            playlist = await self.bot.pool.servers.playlists.find(inter.guild_id, name)
+            if playlist is None:
+                raise GenericError(tr(f"radio.refused.{actions.NO_PLAYLIST}"))
+            return next(
+                (s for s in stations if s.kind == "playlists" and s.source.get("playlists") == [playlist.name]),
+                None,
+            ) or await self.hub.stations.create(
+                inter.guild_id,
+                {"name": playlist.name[:32], "kind": "playlists", "source": {"playlists": [playlist.name]}},
+                playlists={playlist.name},
+                updated_by=str(inter.author.id),
+            )
+        except StationInvalid as error:
+            raise GenericError(station_error_text(tr, error)) from None
+        except RadioUnavailable:
+            raise GenericError(tr("radio.owner.unavailable")) from None
 
     async def _require_station_rights(self, inter: Any, tr: Any) -> None:
         """Antes de qualquer pedido ao diretório: ``manage_guild`` e premium do servidor (como no autocomplete)."""
@@ -515,6 +573,7 @@ class Radio(commands.Cog):
         found: Any,
         picked: Optional[Station],
         station_list: tuple[str, ...] = (),
+        custom_station: Any = None,
     ) -> str:
         """Liga a rádio (personalizada com ``found`` ou ao vivo com ``picked``) e devolve o texto da resposta. Vale para o comando e para o seletor."""
         actor = Actor(
@@ -534,6 +593,7 @@ class Radio(commands.Cog):
                 playlist=found.name
                 if found
                 else playlist,  # com estação também, o turn_on recusa (choose_one): nada é ignorado em silêncio
+                custom_station=custom_station,
                 station=picked,
                 station_list=station_list or None,
                 actor=actor,
@@ -557,7 +617,9 @@ class Radio(commands.Cog):
                 station=external_text(picked.name, NAME_LIMIT),
                 bot=f"<@{radio.bot_id}>",
             )
-        name = external_text(radio.source.get("playlist"), NAME_LIMIT)
+        name = external_text(
+            custom_station.name if custom_station is not None else radio.source.get("playlist"), NAME_LIMIT
+        )
         return tr("radio.on.done", channel=channel.mention, playlist=name, bot=f"<@{radio.bot_id}>")
 
     # ------------------------------------------------------------------ seletor de estação por local (R4)
@@ -641,6 +703,56 @@ class Radio(commands.Cog):
             deny_key="radio.panel.call_only",
         )
         await interaction.edit_original_message(**await picker.render())
+
+    @radio.sub_command_group(name="station", description=localized("cmd.radio.station.description"))
+    async def radio_station(self, inter: disnake.ApplicationCommandInteraction) -> None:
+        return
+
+    @radio_station.sub_command(name="create", description=localized("cmd.radio.station.create.description"))
+    async def radio_station_create(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        name: str = commands.Param(
+            name=localized("cmd.radio.station.create.opt.name.name"),
+            description=localized("cmd.radio.station.create.opt.name.description"),
+            max_length=32,
+        ),
+        kind: Optional[str] = commands.Param(
+            default=None,
+            name=localized("cmd.radio.station.create.opt.kind.name"),
+            description=localized("cmd.radio.station.create.opt.kind.description"),
+            choices=["genre", "artists", "playlists"],
+        ),
+    ) -> None:
+        await station_commands.create(self, inter, name, kind)
+
+    @radio_station.sub_command(name="edit", description=localized("cmd.radio.station.edit.description"))
+    async def radio_station_edit(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        name: str = commands.Param(
+            name=localized("cmd.radio.station.edit.opt.name.name"),
+            description=localized("cmd.radio.station.edit.opt.name.description"),
+            autocomplete=station_commands.server_station_autocomplete,
+        ),
+    ) -> None:
+        await station_commands.edit(self, inter, name)
+
+    @radio_station.sub_command(name="delete", description=localized("cmd.radio.station.delete.description"))
+    async def radio_station_delete(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        name: str = commands.Param(
+            name=localized("cmd.radio.station.delete.opt.name.name"),
+            description=localized("cmd.radio.station.delete.opt.name.description"),
+            autocomplete=station_commands.server_station_autocomplete,
+        ),
+    ) -> None:
+        await station_commands.delete(self, inter, name)
+
+    @radio_station.sub_command(name="list", description=localized("cmd.radio.station.list.description"))
+    async def radio_station_list(self, inter: disnake.ApplicationCommandInteraction) -> None:
+        await station_commands.list_stations(self, inter)
 
     @radio.sub_command(name="desligar", description=localized("cmd.radio.desligar.description"))
     async def radio_off(
