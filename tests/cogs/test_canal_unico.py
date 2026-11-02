@@ -959,10 +959,10 @@ async def test_unloading_the_guild_log_cancels_the_roster_tasks():
 
 
 def operation_world(stored):
-    """Um bot cujo ``pool.servers.jukebox`` é o ``ServerRequest`` de verdade (só a leitura do banco é falsa)."""
-    from empiremuse.utils.server_jukebox import ServerRequest
+    """Um bot cujo ``pool.servers.jukebox`` é o ``ServerJukebox`` de verdade (só a leitura do banco é falsa)."""
+    from empiremuse.utils.server_jukebox import ServerJukebox
 
-    request = ServerRequest(SimpleNamespace(pool=None))
+    request = ServerJukebox(SimpleNamespace(pool=None))
     request.get = AsyncMock(return_value=stored)
     return SimpleNamespace(pool=SimpleNamespace(servers=SimpleNamespace(jukebox=request)))
 

@@ -8,7 +8,7 @@ import pytest
 from empiremuse.i18n import get_i18n
 from empiremuse.utils.radio import RadioHub
 from empiremuse.utils.radio.notice import refuse_radio_only
-from empiremuse.utils.server_request import ServerRequest
+from empiremuse.utils.server_request import ServerJukebox
 from tests.persistence.test_radio_store import FakeDb
 
 pytestmark = pytest.mark.critical
@@ -158,7 +158,7 @@ class TestJukeboxPanelElection:
             )
 
         pool.get_all_bots = lambda: [bot(2, "TOKEN_2"), bot(3, "TOKEN_3")]
-        request = ServerRequest(SimpleNamespace(pool=pool))
+        request = ServerJukebox(SimpleNamespace(pool=pool))
 
         assert [peer.identifier for peer in request.peers(1)] == ["TOKEN_3"]
         assert request.elected_id(1) == 3  # sem o principal, a primeira reserva que NÃO é só-rádio

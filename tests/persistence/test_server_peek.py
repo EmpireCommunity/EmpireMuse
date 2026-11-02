@@ -1,4 +1,4 @@
-"""``ServerStore.peek_section`` e ``ServerRequest.peek_message_id`` (item 8, J1): leitura do cache SEM cópia.
+"""``ServerStore.peek_section`` e ``ServerJukebox.peek_message_id`` (item 8, J1): leitura do cache SEM cópia.
 
 Quem apaga mensagem em qualquer canal de qualquer servidor dispara um evento por bot; decidir "não é o painel" não pode custar um
 ``deepcopy`` do documento inteiro (com as playlists).
@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from empiremuse.rules.servers import new_doc
-from empiremuse.utils.server_request import ServerRequest
+from empiremuse.utils.server_request import ServerJukebox
 from empiremuse.utils.servers import ServerStore
 from tests.persistence.test_servers_store import GID, MAIN_ID, RESERVE_ID, SERVERS, Banco, make_bot, run
 
@@ -22,7 +22,7 @@ def world():
     banco = Banco()
     bots = [make_bot(MAIN_ID, "TOKEN", guilds=(GID,)), make_bot(RESERVE_ID, "TOKEN_2", guilds=(GID,))]
     store = ServerStore(SimpleNamespace(database=banco, get_all_bots=lambda: bots))
-    return SimpleNamespace(banco=banco, store=store, request=ServerRequest(store))
+    return SimpleNamespace(banco=banco, store=store, request=ServerJukebox(store))
 
 
 def stored(message_id):

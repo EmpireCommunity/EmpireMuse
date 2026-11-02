@@ -42,8 +42,10 @@ async def pedir(monkeypatch, *, estrito, mencoes=(), autor_bot=False, comando=No
 
 class TestModoEstritoNoCanal:
     @pytest.mark.asyncio
-    async def test_a_typed_name_is_deleted_before_it_is_served(self, monkeypatch):
-        assert await pedir(monkeypatch, estrito=True) == ["apagou", "atendeu"]
+    async def test_a_typed_name_is_served_and_then_deleted(
+        self, monkeypatch
+    ):  # contrato §1 (A): o texto sai depois do pedido
+        assert await pedir(monkeypatch, estrito=True) == ["atendeu", "apagou"]
 
     @pytest.mark.asyncio
     async def test_a_message_with_a_mention_is_deleted_and_never_served(self, monkeypatch):
@@ -81,7 +83,7 @@ class TestModoEstritoNoCanal:
 
         await classe.on_jukebox_message(self_, ctx, mensagem)
 
-        assert ordem == ["atendeu"]  # apagar a mensagem apaga o anexo, que o Lavalink ainda vai baixar
+        assert ordem[0] == "atendeu"  # o anexo ainda vai ser baixado pelo Lavalink: a mensagem só sai depois
 
     @pytest.mark.asyncio
     async def test_an_attachment_that_is_not_audio_is_deleted_in_the_strict_mode(self, monkeypatch):
@@ -94,7 +96,7 @@ class TestModoEstritoNoCanal:
 
         await classe.on_jukebox_message(self_, ctx, mensagem)
 
-        self_.delete_message.assert_awaited_once_with(mensagem)
+        self_.delete_message.assert_awaited_once_with(mensagem, delay=60)  # contrato §1 (A): o texto solto sai em 60 s
         self_.parse_jukebox_request.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -106,7 +108,7 @@ class TestModoEstritoNoCanal:
         self_ = SimpleNamespace(bot=SimpleNamespace(pool=SimpleNamespace(servers=SimpleNamespace(settings=quebrado))))
 
         with caplog.at_level("WARNING", logger=module.logger.name):
-            assert await module._request_channel_strict(self_, mensagem) is False
+            assert await module._jukebox_options(self_, mensagem) == (False, True)
 
         texto = "\n".join(r.getMessage() for r in caplog.records)
         assert "RuntimeError" in texto and "segredo" not in texto
