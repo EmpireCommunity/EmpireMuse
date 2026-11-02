@@ -112,8 +112,9 @@ class PlayerControllerMixin:
             return
 
         try:
-            if req.control == "musicplayer_request_channel":
-                req.cmd = self.bot.get_slash_command("setup")
+            if req.control == "musicplayer_jukebox_channel":
+                jukebox_cmd = self.bot.get_slash_command("jukebox")
+                req.cmd = jukebox_cmd.children.get("setup") if jukebox_cmd else None
                 req.cmd_kwargs = {"target": req.interaction.channel}
                 await self.process_player_interaction(req.interaction, req.cmd, req.cmd_kwargs)
                 return

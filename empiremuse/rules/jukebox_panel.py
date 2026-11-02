@@ -1,6 +1,6 @@
-"""Regras puras do canal de pedidos único e do painel multi-player (item 11, P4).
+"""Regras puras da Jukebox e do painel multi-player (item 11, P4).
 
-O canal de pedidos é um por servidor, para todo o pool. Quem envia, edita e trata as mensagens dele é UM bot, o do painel: o principal se
+A Jukebox é uma por servidor, para todo o pool. Quem envia, edita e trata as mensagens dela é UM bot, o do painel: o principal se
 está no servidor, senão a primeira reserva presente. O painel mostra um bloco por player ativo; a call que ``@everyone`` não enxerga nunca
 mostra faixa nem quem pediu (S-V7). Aqui só há decisões e dados; os bots, o banco e o Discord são do ``utils``.
 """
@@ -23,8 +23,8 @@ HEAL_MIN_INTERVAL_MS = 5000  # painel apagado: no máximo um painel novo a cada 
 PROGRESS_WIDTH = 10
 QUEUE_PAGE_SIZE = 25  # o teto de opções de um select
 MAX_GENRE_OPTIONS = 25
-QUEUE_BUTTON_ID = "request_panel_queue"
-GENRE_SELECT_ID = "request_panel_genre"
+QUEUE_BUTTON_ID = "jukebox_panel_queue"
+GENRE_SELECT_ID = "jukebox_panel_genre"
 NAME_LIMIT = 40
 TITLE_LIMIT = 100
 URL_LIMIT = 250
@@ -143,26 +143,34 @@ def heal_wait_ms(last_ms: int | None, now_ms: int) -> int:
     return max(0, HEAL_MIN_INTERVAL_MS - (now_ms - last_ms))
 
 
-class StrictAction(StrEnum):
-    """O que a Jukebox estrita faz com uma mensagem escrita no canal de pedidos."""
+class JukeboxAction(StrEnum):
+    """O que a Jukebox faz com uma mensagem escrita no canal."""
 
-    IGNORE = "ignore"  # não é da conta do canal (bot, comando): fica como está
-    PROCESS = "process"  # o fluxo de sempre (pedido; o próprio fluxo apaga)
-    DELETE = "delete"  # texto que não é pedido: apagado na hora, sem resposta
-    DELETE_AND_PROCESS = "delete_and_process"  # pedido: apagado na hora e atendido (o nome digitado vale)
+    IGNORE = "ignore"  # não é da conta do canal (bot, comando, ou texto ignorado): fica como está
+    PROCESS = "process"  # o fluxo de pedido por texto sem apagar mensagens avulsas
+    DELETE = "delete"  # texto que não é pedido: apagado após o prazo, sem resposta
+    DELETE_AND_PROCESS = "delete_and_process"  # pedido por texto com limpeza ativa
 
 
-def strict_action(
-    strict: bool, *, author_is_bot: bool, is_command: bool, has_mentions: bool, is_system: bool
-) -> StrictAction:
-    """Decisão pura da Jukebox estrita. Bot e comando nunca são tocados; sem o modo estrito nada muda (menção segue ignorada)."""
+AUTO_DELETE_DELAY_SECONDS = 60
+PENDING_COMMAND_CAP_SECONDS = 600
+
+
+def jukebox_action(
+    auto_delete: bool,
+    text_requests: bool = True,
+    *,
+    author_is_bot: bool,
+    is_command: bool,
+    has_mentions: bool,
+    is_system: bool = False,
+) -> JukeboxAction:
+    """Decisão pura das opções da Jukebox (``auto_delete`` e ``text_requests``)."""
     if author_is_bot or is_command:
-        return StrictAction.IGNORE
-    if not strict:
-        return StrictAction.IGNORE if has_mentions else StrictAction.PROCESS
-    if is_system or has_mentions:
-        return StrictAction.DELETE
-    return StrictAction.DELETE_AND_PROCESS
+        return JukeboxAction.IGNORE
+    if is_system or has_mentions or not text_requests:
+        return JukeboxAction.DELETE if auto_delete else JukeboxAction.IGNORE
+    return JukeboxAction.DELETE_AND_PROCESS if auto_delete else JukeboxAction.PROCESS
 
 
 _MENTION = re.compile(r"<(@!?|@&|#)(\d{1,20})>")

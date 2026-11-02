@@ -111,9 +111,6 @@ class DefaultProgressbarStaticSkin:
         if player.current.playlist_name:
             txt += f"\n> -# {app_emoji(player.bot, 'playlists')} **⠂Playlist:** {md_link(player.current.playlist_name, player.current.playlist_url, limit=20)}"
 
-        if player.keep_connected:
-            txt += "\n> -# ♾️ **⠂Modo 24/7:** `Ativado`"
-
         txt += f"{vc_txt}\n"
 
         if player.command_log:

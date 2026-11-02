@@ -298,10 +298,10 @@ class Misc(commands.Cog):
             else []
         )
 
-        if cmd := self.bot.get_command("setup"):
+        if self.bot.get_command("jukebox"):
             cmd_text = (
-                f"Se desejar, use o comando **/{cmd.name}** para criar um canal dedicado pra pedir "
-                "músicas sem comandos e deixar o music player fixo em um canal dedicado.\n\n"
+                "Se desejar, use o comando **/jukebox setup** para criar um canal dedicado da Jukebox "
+                "e deixar o music player fixo em um canal dedicado.\n\n"
             )
         else:
             cmd_text = ""
@@ -363,7 +363,7 @@ class Misc(commands.Cog):
                                 f"use **{prefix}help** em um canal do servidor **{guild.name}**. "
                                 f"Caso queira alterar meu prefixo use o comando **{prefix}setprefix** "
                                 f"(você pode ter um prefixo pessoal usando o comando "
-                                f"**{prefix}setmyprefix**).",
+                                f"**{prefix}myprefix**).",
                             ).set_image(url=image)
                         )
 
@@ -435,7 +435,7 @@ class Misc(commands.Cog):
                 description=f"Também tenho comandos de texto por prefixo. {prefix_msg} (minha menção "
                 f"também funciona como prefixo). Pra ver todos os meus comandos de texto use "
                 f"**{prefix}help**. Caso queira alterar meu prefixo use o comando **{prefix}setprefix** "
-                f"(você pode ter um prefixo pessoal usando o comando **{prefix}setmyprefix**).",
+                f"(você pode ter um prefixo pessoal usando o comando **{prefix}myprefix**).",
             ).set_image(url=image)
         )
 
@@ -502,7 +502,10 @@ class Misc(commands.Cog):
         await self.about.callback(self=self, interaction=ctx)
 
     @commands.slash_command(
-        description=localized("cmd.about.description"), cooldown=about_cd, extras={"allow_private": True}
+        name=localized("cmd.about.name"),
+        description=localized("cmd.about.description"),
+        cooldown=about_cd,
+        extras={"allow_private": True},
     )
     @commands.contexts(guild=True)
     async def about(self, interaction: disnake.ApplicationCommandInteraction):
@@ -859,6 +862,7 @@ class Misc(commands.Cog):
         await self.invite.callback(self=self, inter=ctx)
 
     @commands.slash_command(
+        name=localized("cmd.invite.name"),
         description=localized("cmd.invite.description"),
         extras={"allow_private": True},
     )
@@ -868,7 +872,7 @@ class Misc(commands.Cog):
 
         await self.invite_button(inter, is_command=True)
 
-    @commands.user_command(name="Avatar")
+    @commands.user_command(name=localized("cmd.avatar.name"))
     async def avatar(self, inter: disnake.UserCommandInteraction):
         user = inter.target
 
@@ -1055,8 +1059,8 @@ class GuildLog(commands.Cog):
             task.cancel()
 
     def roster_changed(self, guild_id: int) -> None:
-        """Um bot entrou ou saiu do servidor: se o bot do painel do canal de pedidos mudou, o novo reenvia o painel (em segundo plano)."""
-        panel = getattr(self.bot.pool, "request_panel", None)
+        """Um bot entrou ou saiu do servidor: se o bot do painel da Jukebox mudou, o novo reenvia o painel (em segundo plano)."""
+        panel = getattr(self.bot.pool, "jukebox_panel", None)
         if panel is None:
             return
         task = self.bot.loop.create_task(self._roster_changed(panel, guild_id))
@@ -1068,7 +1072,7 @@ class GuildLog(commands.Cog):
         try:
             await panel.on_roster_change(guild_id)
         except Exception as exc:  # noqa: BLE001 - o painel é enfeite sobre uma configuração já gravada
-            logger.warning("Painel do canal de pedidos não reeleito [%s] (%s)", guild_id, type(exc).__name__)
+            logger.warning("Painel da Jukebox não reeleito [%s] (%s)", guild_id, type(exc).__name__)
 
     @commands.Cog.listener("on_ready")
     async def leave_banned_guilds(self):

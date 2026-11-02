@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Jukebox (item 8, J1): o que o painel do canal de pedidos faz além dos botões comuns.
+"""Jukebox (item 8, J1): o que o painel do canal da Jukebox faz além dos botões comuns.
 
-- Autorrecuperação: mensagem do painel apagada (uma ou em massa) volta na hora (``RequestPanel.on_messages_deleted``).
+- Autorrecuperação: mensagem do painel apagada (uma ou em massa) volta na hora (``JukeboxPanel.on_messages_deleted``).
 - Botão da fila: abre, só para quem apertou e em resposta efêmera, a fila do player da PRÓPRIA call (``resolve_player``), 25 músicas por
   página; a escolhida vira ``skipto``.
 - Select de gênero: abre, também efêmero, as playlists do servidor daquele gênero; a escolhida toca na call de quem pediu.
@@ -21,7 +21,7 @@ from disnake.ext import commands
 from empiremuse.music_cog.play_guild_menu import GuildPlaylistSelect
 from empiremuse.rules.i18n import fit
 from empiremuse.rules.playlists import filter_by_genre, genres_of
-from empiremuse.rules.request_panel import GENRE_SELECT_ID, QUEUE_BUTTON_ID, genre_for_key
+from empiremuse.rules.jukebox_panel import GENRE_SELECT_ID, QUEUE_BUTTON_ID, genre_for_key
 from empiremuse.utils.music.checks import resolve_player, update_attr
 from empiremuse.utils.music.converters import fix_characters, time_format
 from empiremuse.utils.music.interactions import SelectInteraction
@@ -75,19 +75,19 @@ class PanelInteractionsMixin:
     # ------------------------------------------------------------------ painel apagado
 
     @commands.Cog.listener("on_raw_message_delete")
-    async def request_panel_deleted(self, payload: disnake.RawMessageDeleteEvent) -> None:
-        if payload.guild_id is not None and self.bot.pool.request_panel is not None:
-            await self.bot.pool.request_panel.on_messages_deleted(payload.guild_id, (payload.message_id,))
+    async def jukebox_panel_deleted(self, payload: disnake.RawMessageDeleteEvent) -> None:
+        if payload.guild_id is not None and self.bot.pool.jukebox_panel is not None:
+            await self.bot.pool.jukebox_panel.on_messages_deleted(payload.guild_id, (payload.message_id,))
 
     @commands.Cog.listener("on_raw_bulk_message_delete")
-    async def request_panel_bulk_deleted(self, payload: disnake.RawBulkMessageDeleteEvent) -> None:
-        if payload.guild_id is not None and self.bot.pool.request_panel is not None:
-            await self.bot.pool.request_panel.on_messages_deleted(payload.guild_id, payload.message_ids)
+    async def jukebox_panel_bulk_deleted(self, payload: disnake.RawBulkMessageDeleteEvent) -> None:
+        if payload.guild_id is not None and self.bot.pool.jukebox_panel is not None:
+            await self.bot.pool.jukebox_panel.on_messages_deleted(payload.guild_id, payload.message_ids)
 
     # ------------------------------------------------------------------ fila
 
     @commands.Cog.listener("on_button_click")
-    async def request_panel_queue(self, interaction: disnake.MessageInteraction) -> None:
+    async def jukebox_panel_queue(self, interaction: disnake.MessageInteraction) -> None:
         if interaction.data.custom_id != QUEUE_BUTTON_ID:
             return
         # Numa resposta de componente só ``with_message=True`` cria uma mensagem efêmera nova; sem isso o ``edit_original_message``
@@ -128,7 +128,7 @@ class PanelInteractionsMixin:
     # ------------------------------------------------------------------ gênero
 
     @commands.Cog.listener("on_dropdown")
-    async def request_panel_genre(self, interaction: disnake.MessageInteraction) -> None:
+    async def jukebox_panel_genre(self, interaction: disnake.MessageInteraction) -> None:
         if interaction.data.custom_id != GENRE_SELECT_ID:
             return
         if not interaction.data.values:

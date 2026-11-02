@@ -102,7 +102,7 @@ from empiremuse.utils.others import (
     string_to_file,
     CommandArgparse,
     music_source_emoji_url,
-    song_request_buttons,
+    jukebox_buttons,
     select_bot_pool,
     ProgressBar,
     update_inter,
@@ -147,7 +147,7 @@ from empiremuse.music_cog.nodes import NodesMixin  # noqa: E402
 from empiremuse.music_cog.controller_dispatch import ControllerDispatchMixin  # noqa: E402
 from empiremuse.music_cog.panel_interactions import PanelInteractionsMixin  # noqa: E402
 from empiremuse.music_cog.player_controller import PlayerControllerMixin  # noqa: E402
-from empiremuse.music_cog.song_requests import SongRequestsMixin  # noqa: E402
+from empiremuse.music_cog.jukebox_messages import JukeboxMessagesMixin  # noqa: E402
 from empiremuse.music_cog.tracks import TracksMixin  # noqa: E402
 from empiremuse.music_cog.player_lifecycle import PlayerLifecycleMixin  # noqa: E402
 from empiremuse.music_cog.voice_status import VoiceStatusMixin  # noqa: E402
@@ -156,7 +156,7 @@ from empiremuse.music_cog.voice_status import VoiceStatusMixin  # noqa: E402
 class Music(
     TracksMixin,
     PlayerLifecycleMixin,
-    SongRequestsMixin,
+    JukeboxMessagesMixin,
     PlayerControllerMixin,
     ControllerDispatchMixin,
     PanelInteractionsMixin,
@@ -214,11 +214,11 @@ class Music(
 
         self.extra_hints = bot.config["EXTRA_HINTS"].split("||")
 
-        self.song_request_concurrency = commands.MaxConcurrency(1, per=commands.BucketType.member, wait=False)
+        self.jukebox_concurrency = commands.MaxConcurrency(1, per=commands.BucketType.member, wait=False)
 
         self.player_interaction_concurrency = commands.MaxConcurrency(1, per=commands.BucketType.member, wait=False)
 
-        self.song_request_cooldown = commands.CooldownMapping.from_cooldown(
+        self.jukebox_cooldown = commands.CooldownMapping.from_cooldown(
             rate=1, per=300, type=commands.BucketType.member
         )
 

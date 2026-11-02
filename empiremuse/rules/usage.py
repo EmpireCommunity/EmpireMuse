@@ -35,11 +35,12 @@ REASON_LIMIT = 200
 KIND_SLASH = "slash"
 KIND_PREFIX = "prefix"
 KIND_BUTTON = "button"
-KIND_REQUEST = "request_channel"
+KIND_JUKEBOX = "jukebox"
 KIND_PANEL = "panel"
 KIND_PLAYBACK = "playback"
 KIND_GUILD = "guild"
-COMMAND_KINDS = frozenset({KIND_SLASH, KIND_PREFIX, KIND_BUTTON, KIND_REQUEST, KIND_PANEL})
+_LEGACY_JUKEBOX_KIND = "_".join(("request", "channel"))
+COMMAND_KINDS = frozenset({KIND_SLASH, KIND_PREFIX, KIND_BUTTON, KIND_JUKEBOX, KIND_PANEL})
 KINDS = COMMAND_KINDS | {KIND_PLAYBACK, KIND_GUILD}
 
 END_REASONS = ("finished", "skipped", "stopped", "error")
@@ -173,6 +174,8 @@ def normalize_event(raw: Mapping[str, Any]) -> dict[str, Any] | None:
     event_id = raw.get("id")
     ts = _int(raw.get("ts"))
     kind = raw.get("kind")
+    if kind == _LEGACY_JUKEBOX_KIND:
+        kind = KIND_JUKEBOX
     if not isinstance(event_id, str) or not event_id or ts is None or kind not in KINDS:
         return None
 

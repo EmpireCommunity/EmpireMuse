@@ -91,8 +91,8 @@ class PlayerMessageMixin:
         self.updating = False
 
     async def _panel_takes_over(self, interaction=None) -> bool:
-        """Com 2+ players no canal de pedidos único a mensagem é o painel em lista (``RequestPanel``), não a skin deste player."""
-        panel = getattr(self.bot.pool, "request_panel", None)
+        """Com 2+ players no canal da Jukebox único a mensagem é o painel em lista (``JukeboxPanel``), não a skin deste player."""
+        panel = getattr(self.bot.pool, "jukebox_panel", None)
         if panel is None or not panel.takes_over(self.guild_id):
             return False
         if interaction is not None:

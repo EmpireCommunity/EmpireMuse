@@ -64,7 +64,8 @@ from empiremuse.utils.app_profile import sync_app_profile
 from empiremuse.utils.guild_ban import GuildBans
 from empiremuse.utils.radio import RadioHub
 from empiremuse.utils.radio.notice import refuse_radio_only
-from empiremuse.utils.request_panel import RequestPanel
+from empiremuse.utils.jukebox_panel import JukeboxPanel
+from empiremuse.utils.migrations import radios_release
 from empiremuse.utils.servers import ServerStore
 from empiremuse.rules.usage import KIND_PREFIX, KIND_SLASH
 from empiremuse.utils.usage import UsageRecorder, usage_of
@@ -204,7 +205,7 @@ class BotPool:
     usage: Optional[UsageRecorder] = None
     guild_bans: Optional[GuildBans] = None
     servers: Optional[ServerStore] = None
-    request_panel: Optional[RequestPanel] = None
+    jukebox_panel: Optional[JukeboxPanel] = None
     radio: RadioHub
     join_notices: Optional[TTLCache] = None
     logs_task: Optional[asyncio.Task] = None
@@ -278,7 +279,7 @@ class BotPool:
         self.i18n = get_i18n()
         self.i18n.pool = self
         self.servers = ServerStore(self)
-        self.request_panel = RequestPanel(self)
+        self.jukebox_panel = JukeboxPanel(self)
         self.radio = RadioHub(self)
         # servidor -> aviso de "sem o principal" já enviado; a validade de 24 h é o limitador único (um aviso por servidor no pool)
         self.join_notices = TTLCache(maxsize=5000, ttl=NOTICE_WINDOW_SECONDS)
@@ -698,8 +699,8 @@ class BotPool:
             self.playlist_icons_task.cancel()
         for task in list(self.helper_watch_tasks):
             task.cancel()
-        if self.request_panel:
-            self.request_panel.close()
+        if self.jukebox_panel:
+            self.jukebox_panel.close()
         self.i18n.close()  # leituras de idioma que ficaram pendentes
         for bot in self.get_all_bots():
             try:
@@ -1417,8 +1418,8 @@ class BotPool:
 
                 bot.bot_ready = True
 
-                if self.request_panel:
-                    self.request_panel.schedule_boot_check(bot)  # painel apagado com o bot desligado volta na subida
+                if self.jukebox_panel:
+                    self.jukebox_panel.schedule_boot_check(bot)  # painel apagado com o bot desligado volta na subida
 
                 await self.check_pool_ready()
 
@@ -1455,6 +1456,10 @@ class BotPool:
         # Catálogos de idioma: estritos (``en-US``/``pt-BR`` quebrado derruba a subida, release quebrada), e a migração do idioma dos
         # servidores que já existiam roda uma vez, DEPOIS do ``load`` e ANTES dos bots (I-12). Falha da migração fica para a próxima subida.
         self.i18n.load()
+        try:
+            self.loop.run_until_complete(radios_release.run(self))
+        except Exception:
+            logger.exception("Falha ao executar a migração radios_release")
         try:
             self.loop.run_until_complete(self.servers.migrate_language())
         except Exception:
@@ -1924,7 +1929,7 @@ class BotCore(commands.AutoShardedBot):
                     self.dispatch("command_error", ctx, e)
                 return
 
-        self.dispatch("song_request", ctx, message)
+        self.dispatch("jukebox_message", ctx, message)
 
         if not ctx.valid:
             return
@@ -1952,13 +1957,48 @@ class BotCore(commands.AutoShardedBot):
         except AttributeError:
             kwargs = {"return_first": True}
 
+        auto_delete = False
+        music_cog = self.get_cog("Music")
+        if music_cog is not None:
+            try:
+                if await music_cog.is_jukebox_channel(ctx):
+                    settings = await self.pool.servers.settings(message.guild.id)
+                    from empiremuse.rules.servers import jukebox_auto_delete
+
+                    auto_delete = jukebox_auto_delete(settings)
+            except Exception:
+                auto_delete = False
+
         try:
             await check_pool_bots(ctx, **kwargs)
         except Exception as e:
             self.dispatch("command_error", ctx, e)
+            if auto_delete and music_cog is not None:
+                from empiremuse.music_cog.jukebox_messages import cleanup_jukebox_command_messages
+                from empiremuse.rules.jukebox_panel import AUTO_DELETE_DELAY_SECONDS
+
+                await cleanup_jukebox_command_messages(music_cog, ctx, delay=AUTO_DELETE_DELAY_SECONDS)
             return
 
-        await self.invoke(ctx)
+        cap_task = None
+        if auto_delete and music_cog is not None:
+            from empiremuse.music_cog.jukebox_messages import cleanup_jukebox_command_messages
+            from empiremuse.rules.jukebox_panel import AUTO_DELETE_DELAY_SECONDS, PENDING_COMMAND_CAP_SECONDS
+
+            async def _cap_cleanup():
+                await asyncio.sleep(PENDING_COMMAND_CAP_SECONDS)
+                await cleanup_jukebox_command_messages(music_cog, ctx)
+
+            cap_task = asyncio.create_task(_cap_cleanup())
+
+        try:
+            await self.invoke(ctx)
+        finally:
+            if cap_task is not None:
+                cap_task.cancel()
+            if auto_delete and music_cog is not None:
+                delay = AUTO_DELETE_DELAY_SECONDS if getattr(ctx, "command_failed", False) else None
+                await cleanup_jukebox_command_messages(music_cog, ctx, delay=delay)
 
     def _owns_forum_post(self, channel) -> bool:
         return (
