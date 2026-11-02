@@ -1,7 +1,7 @@
 """O painel da rádio PERSONALIZADA no desenho do visor: o retrato (mesmo ``RadioPanelSnapshot`` da ao vivo) e os cliques dos dois selects.
 
 Select 1 = as estações do servidor do filtro aplicado; select 2 = filtro por TIPO da estação (``f:genre``, ``f:artists``, ``f:playlists``). O filtro
-fica gravado em ``Radio.filter`` (lembrado por rádio); sem filtro = todas as estações do servidor. "Favoritas" ainda não existe aqui (decisão do dono pendente).
+fica gravado em ``Radio.filter`` (lembrado por rádio); sem filtro (``f:all`` o esquece) = todas as estações do servidor. "Favoritas" ainda não existe aqui (decisão do dono pendente).
 O valor de um select NUNCA é confiado: a estação tem de ser do servidor e estar no filtro; o filtro tem de ser um dos tipos.
 """
 
@@ -12,7 +12,7 @@ import random
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from empiremuse.rules.radio import Radio, station_neighbor
+from empiremuse.rules.radio import VOLUME_DEFAULT, Radio, station_neighbor
 from empiremuse.rules.radio_station import KIND_ARTISTS, KIND_GENRE, KIND_PLAYLISTS, CustomStation
 from empiremuse.rules.text import external_text
 from empiremuse.utils.music.errors import GenericError
@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from empiremuse.cogs.radio import Radio as RadioCog
 
 NAME_LIMIT = 80
+ALL_FILTER = "f:all"  # 'Todas as estações': esquece o filtro
 TYPE_FILTERS = {"f:genre": KIND_GENRE, "f:artists": KIND_ARTISTS, "f:playlists": KIND_PLAYLISTS}
 QUALITY_GOOD = "good"  # a estação personalizada não tem taxa nem teste: o ponto é sempre o de "boa"
 
@@ -55,8 +56,10 @@ async def custom_snapshot(hub: Any, radio: Radio, ports: Any, runner: Any, *, lo
     label = tr(f"radio.station.kind.{kind}") if kind and tr is not None else ""
     current = ports.current
     playing = current is not None and not ports.no_tracks
-    view = ports._view
-    state = STATE_OFFLINE if ports.no_tracks else (STATE_MUTED if getattr(view, "muted", False) else STATE_LIVE)
+    muted = bool(
+        getattr(runner, "admin_paused", False)
+    )  # a personalizada não tem ``_view`` nem volume nas portas: o estado vem do runner
+    state = STATE_OFFLINE if ports.no_tracks else (STATE_MUTED if muted else STATE_LIVE)
     since = runner.on_air_since if runner is not None else None
     return RadioPanelSnapshot(
         radio_id=radio.id,
@@ -71,7 +74,7 @@ async def custom_snapshot(hub: Any, radio: Radio, ports: Any, runner: Any, *, lo
         now_artist=current.artist if playing and current.artist else None,
         state=state,
         reserve_number=None,
-        volume=ports.volume,
+        volume=radio.source.get("volume", VOLUME_DEFAULT),
         started_at=datetime.fromtimestamp(since, tz=timezone.utc) if since else None,
         on_air_minutes=max(0, math.floor((ports.wall() - since) / 60)) if since else 0,
         filter_path=(label,) if label else (),
@@ -134,14 +137,16 @@ async def pick_station(cog: RadioCog, interaction: Any, tr: Any, radio: Radio, s
 async def pick_filter(cog: RadioCog, interaction: Any, tr: Any, radio: Radio, value: object) -> str:
     """Select 2: grava o tipo como filtro da rádio SEM trocar a estação no ar. Tipo sem estações no servidor é recusado com o motivo."""
     kind = TYPE_FILTERS.get(value) if isinstance(value, str) else None
-    if kind is None:
+    if kind is None and value != ALL_FILTER:
         raise GenericError(tr("radio.panel.not_here"))
     stations = await cog.hub.stations.list_for_guild(radio.guild_id)
-    total = sum(1 for s in stations if s.kind == kind)
+    total = sum(1 for s in stations if kind is None or s.kind == kind)
     if not total:
         return tr("radio.local.no_results")
     fresh = await cog.hub.store.get(radio.id)
     if fresh is None:
         raise GenericError(tr("radio.panel.gone"))
-    await cog.hub.store.set_filter(radio.id, value, expected_rev=fresh.rev, updated_by=str(interaction.author.id))
+    await cog.hub.store.set_filter(
+        radio.id, None if kind is None else value, expected_rev=fresh.rev, updated_by=str(interaction.author.id)
+    )
     return tr("radio.panel.filter_applied", total=total)

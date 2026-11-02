@@ -91,6 +91,8 @@ async def test_the_type_filter_is_saved_without_changing_the_station_and_a_forge
     radio, cog, *_ = world()
     await custom_panel.pick_filter(cog, inter(), tr, radio, "f:artists")
     cog.hub.store.set_filter.assert_awaited_once_with("r", "f:artists", expected_rev=3, updated_by="9")
+    await custom_panel.pick_filter(cog, inter(), tr, radio, "f:all")  # volta a 'todas'
+    cog.hub.store.set_filter.assert_awaited_with("r", None, expected_rev=3, updated_by="9")
     for bad in ("f:fav", "c:BR", None):
         with pytest.raises(GenericError):
             await custom_panel.pick_filter(cog, inter(), tr, radio, bad)
@@ -103,8 +105,6 @@ async def test_the_snapshot_lists_the_filtered_stations_with_the_station_name_an
         station=STATIONS[2],
         current=SimpleNamespace(title="Faixa", artist="Cantor"),
         no_tracks=False,
-        _view=None,
-        volume=100,
         wall=lambda: 1000.0,
     )
     snap = await custom_panel.custom_snapshot(cog.hub, radio, ports, None, locale="pt-BR", tr=tr)
