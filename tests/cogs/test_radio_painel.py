@@ -401,3 +401,28 @@ class TestButtons:
         await w.cog.radio_panel_bulk_deleted(SimpleNamespace(message_ids={1, 2}))
 
         assert sorted(c.args[0] for c in w.hub.manager.panel_deleted.call_args_list) == [1, 2, 9]
+
+
+class TestStopNeedsManageGuild:
+    """Gate do Keystone (M1): estar na call libera os controles do painel, mas desligar continua exigindo ``manage_guild`` (R1 §7, R5 §5)."""
+
+    @pytest.mark.asyncio
+    async def test_a_member_in_the_call_without_manage_guild_cannot_stop_the_custom_radio(self):
+        w = build_world()
+        await running(w)
+        press = click(PANEL_STOP_ID, manage_guild=False)
+
+        await w.cog.radio_panel_click(press)
+
+        assert "Gerenciar Servidor" in said(press)
+        assert w.hub.manager.is_running(radio_id(2, GUILD)) and (await w.hub.premium.fresh(GUILD)).active == 1
+
+    @pytest.mark.asyncio
+    async def test_a_member_in_the_call_with_manage_guild_stops_it(self):
+        w = build_world()
+        await running(w)
+        press = click(PANEL_STOP_ID, manage_guild=True)
+
+        await w.cog.radio_panel_click(press)
+
+        assert not w.hub.manager.is_running(radio_id(2, GUILD)) and "desligada" in said(press)
