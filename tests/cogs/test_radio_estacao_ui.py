@@ -125,10 +125,8 @@ class TestCreatingAGenreStation:
         stations = await hub.stations.list_for_guild(GUILD)
         assert [(s.name, s.kind, s.source) for s in stations] == [("Minha", "genre", {"genre": genre.id})]
         assert stations[0].updated_by == str(AUTHOR)
-        assert (
-            "salva" in save.edit_original_message.await_args.kwargs["content"].lower()
-            or save.edit_original_message.await_args.kwargs["view"] is None
-        )
+        sent = save.edit_original_message.await_args.kwargs
+        assert "Minha" in sent["content"] and sent["view"] is None  # a tela fecha dizendo o nome salvo
 
     @pytest.mark.asyncio
     async def test_a_genre_the_select_never_offered_is_ignored_and_saving_without_a_source_writes_nothing(self):
