@@ -482,3 +482,44 @@ class TestNoBurstOnTheDirectory:
             taken += 1
 
         assert taken >= 1 and bucket.try_acquire() is True  # a ficha de reserva ainda serve ao play (reserve 0)
+
+
+class TestResumeBurst:
+    """V190-1 (Vigil), parte 2: desmudar e retomar ocupam uma vaga da fila GLOBAL de retomada e gastam uma ficha do play; pausar e mudar são baratos."""
+
+    @pytest.mark.asyncio
+    async def test_twenty_mute_toggles_in_a_second_resume_at_most_once_and_muting_is_immediate(self):
+        w = await TestWalking.live_world()
+        runner = w.hub.manager.runner(w.radio.id)
+        resumes = []
+        real = runner.set_admin_pause
+
+        async def counting(paused):
+            if not paused:
+                resumes.append(True)
+            return await real(paused)
+
+        runner.set_admin_pause = counting
+        presses = [click(PANEL_MUTE_ID) for _ in range(20)]
+        for press in presses:
+            await w.cog.radio_panel_click(press)
+
+        assert len(resumes) <= 1
+        assert (
+            sum("mudo" in said(p).lower() or "silenci" in said(p).lower() for p in presses) >= 10
+        )  # os "mudo" (pausar) passam todos
+        assert sum("Aguarde" in said(p) for p in presses) >= 9  # os "desmudar" repetidos esperam
+
+    @pytest.mark.asyncio
+    async def test_after_five_seconds_unmuting_works_again(self):
+        w = await TestWalking.live_world()
+        await w.cog.radio_panel_click(click(PANEL_MUTE_ID))  # muda
+        first = click(PANEL_MUTE_ID)
+        await w.cog.radio_panel_click(first)  # desmuda (primeira retomada)
+        await w.cog.radio_panel_click(click(PANEL_MUTE_ID))  # muda de novo, imediato
+        w.cog._gap_at.clear()  # passaram os 5 s
+
+        again = click(PANEL_MUTE_ID)
+        await w.cog.radio_panel_click(again)
+
+        assert "Aguarde" not in said(again)
