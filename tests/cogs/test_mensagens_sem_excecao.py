@@ -206,7 +206,7 @@ def montar_pedido(monkeypatch, erro: BaseException, *, webhook=False):
     )
     self_ = SimpleNamespace(
         bot=bot,
-        song_request_concurrency=SimpleNamespace(acquire=AsyncMock(), release=AsyncMock()),
+        jukebox_concurrency=SimpleNamespace(acquire=AsyncMock(), release=AsyncMock()),
         delete_message=AsyncMock(),
         parse_jukebox_request=AsyncMock(side_effect=erro),
     )
