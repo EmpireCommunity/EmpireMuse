@@ -247,8 +247,8 @@ class Radio(commands.Cog):
 
     @staticmethod
     def _authorized(interaction: Any) -> Actor:
-        """Quem passou por ``_panel_radio`` está na call da rádio: o painel vale como autorização (o botão de desligar sempre valeu assim), então o ``Actor``
-        leva ``manage_guild=True``. O premium continua sendo conferido por quem grava."""
+        """Quem passou por ``_panel_radio`` está na call da rádio: o painel vale como autorização para trocar estação, volume e favoritas, então o ``Actor``
+        leva ``manage_guild=True``. Desligar NÃO usa isto (``_turn_off`` confere ``manage_guild`` de verdade). O premium continua sendo conferido por quem grava."""
         return Actor(user_id=interaction.author.id, manage_guild=True)
 
     async def _run_action(self, interaction: Any, tr: Any, radio: Any, runner: Any, action: str) -> None:
@@ -292,12 +292,18 @@ class Radio(commands.Cog):
             await self._turn_off(interaction, tr, radio)
 
     async def _turn_off(self, interaction: Any, tr: Any, radio: Any) -> None:
+        """Desligar continua exigindo ``manage_guild`` (matriz do R1 §7): estar na call libera os outros controles, não este. Recusado, a rádio segue ligada."""
+        actor = Actor(
+            user_id=interaction.author.id, manage_guild=bool(interaction.author.guild_permissions.manage_guild)
+        )
         try:
-            await actions.turn_off(
-                self.hub, guild_id=radio.guild_id, channel_id=radio.channel_id, actor=self._authorized(interaction)
-            )
-        finally:
+            await actions.turn_off(self.hub, guild_id=radio.guild_id, channel_id=radio.channel_id, actor=actor)
+        except Refused:
+            raise  # sem permissão (ou nada ligado ali): nada é parado
+        except BaseException:
             await self.hub.manager.stop_radios(self.hub.manager.running_in(radio.guild_id, radio.channel_id))
+            raise
+        await self.hub.manager.stop_radios(self.hub.manager.running_in(radio.guild_id, radio.channel_id))
         await interaction.edit_original_message(content=tr("radio.panel.stopped"))
 
     async def _walk(self, interaction: Any, tr: Any, radio: Any, step: int) -> str:

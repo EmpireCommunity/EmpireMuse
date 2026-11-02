@@ -412,3 +412,19 @@ class TestPickerWiring:
         radio = await w.hub.store.get(radio_id(2, GUILD))
         assert radio is not None and radio.enabled and radio.source["station"] == THIRD
         assert "ligada" in said(confirm).lower() or "tocando" in said(confirm).lower()
+
+
+class TestMenuStopNeedsManageGuild:
+    @pytest.mark.asyncio
+    async def test_the_live_menu_stop_is_refused_without_manage_guild_and_works_with_it(self):
+        w = await TestWalking.live_world()
+        refused = menu("stop", manage_guild=False)
+
+        await w.cog.radio_panel_menu(refused)
+
+        assert "Gerenciar Servidor" in said(refused) and w.hub.manager.is_running(w.radio.id)
+
+        allowed = menu("stop", manage_guild=True)
+        await w.cog.radio_panel_menu(allowed)
+
+        assert not w.hub.manager.is_running(w.radio.id)
