@@ -224,6 +224,20 @@ class TestResetCommand:
         assert "<#555>" in str(refused.value)
 
     @pytest.mark.asyncio
+    async def test_a_server_without_premium_can_still_ask_and_confirm_the_reset(self):
+        w = build()
+        await w.hub.control.load()  # sem premium
+        await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
+        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=w.channel)
+        view = w.inter.edit_original_message.await_args.kwargs["view"]
+
+        confirm = click_of()
+        await view.confirmed(confirm)
+
+        assert await w.hub.store.get(radio_id(2, GUILD)) is None
+        assert "redefinida" in confirm.edit_original_message.await_args.kwargs["content"]
+
+    @pytest.mark.asyncio
     async def test_without_manage_guild_the_question_is_not_even_asked(self):
         w = build(manage_guild=False)
         await premium(w)

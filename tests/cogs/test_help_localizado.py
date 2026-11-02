@@ -119,7 +119,7 @@ class TestTheCommandPageReadsTheCatalog:
 
         assert "Comando: !play" in page and "tocar" in page
         assert "Tocar música em um canal de voz." in page
-        assert "!p | !tocar" in page
+        assert "Alternativas:" in page and "!p | !tocar" in page
 
     @pytest.mark.asyncio
     async def test_the_same_command_in_english(self):
@@ -127,7 +127,7 @@ class TestTheCommandPageReadsTheCatalog:
 
         assert "Play music in a voice channel." in page
         assert "Tocar música" not in page
-        assert "!p | !tocar" in page
+        assert "Command: !play" in page and "Aliases:" in page and "!p | !tocar" in page
 
     @pytest.mark.asyncio
     async def test_a_subcommand_alias_keeps_the_group_in_front(self):
@@ -178,4 +178,5 @@ class TestTheOverviewListsEveryCommandWithItsAliases:
         embed, _categories, _listing = await help_cog.HelpCog(ctx.bot).overview(ctx)
 
         assert "zzsecret" not in embed.description
-        assert "`?help <comando/alias>`" in embed.description
+        assert "`?help [command or alias]`" in embed.description
+        assert "(1 command)" in embed.description and embed.author.name == "Help menu - Command list (prefix)"

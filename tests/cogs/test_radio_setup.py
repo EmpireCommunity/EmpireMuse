@@ -433,3 +433,39 @@ class TestReset:
             await w.hub.setup.reset(GUILD, ACTOR, radio.id, radio.rev)
 
         assert await w.hub.store.get(radio.id) is not None
+
+
+class TestResetNeedsOnlyManageGuild:
+    """Decisão do Maestro (contrato §2): o ``/radio reset`` pede ``manage_guild`` e mais nada; quem perdeu o premium apaga a própria configuração."""
+
+    @pytest.mark.asyncio
+    async def test_a_server_that_lost_premium_can_still_reset_its_radio(self):
+        w = await setup_world()
+        radio = await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
+        await w.hub.store.revoke_premium(GUILD)
+        assert await w.hub.premium.fresh(GUILD) is None
+
+        await w.hub.setup.reset(GUILD, ACTOR, radio.id, radio.rev)
+
+        assert await w.hub.store.get(radio.id) is None
+        assert len(w.db.tables["config_backup"]) == 1  # a cópia antes de apagar continua valendo
+
+    @pytest.mark.asyncio
+    async def test_without_premium_the_reset_still_needs_manage_guild(self):
+        w = build(manage_guild=False)
+        radio = await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
+
+        with pytest.raises(RadioForbidden) as refused:
+            await w.hub.setup.reset(GUILD, ACTOR, radio.id, radio.rev)
+
+        assert refused.value.reason == "manage_guild" and await w.hub.store.get(radio.id) == radio
+
+    @pytest.mark.asyncio
+    async def test_configuring_still_needs_premium(self):
+        w = build()
+        await w.hub.control.load()
+
+        with pytest.raises(RadioForbidden) as refused:
+            await new_radio(w)
+
+        assert refused.value.reason == "premium"
