@@ -81,3 +81,67 @@ def test_favorites_mode_and_the_locale_change_the_drawing():
 
 def test_a_logo_that_is_not_an_image_does_not_break_the_visor():
     assert png(render_visor(LIVE._replace(logo=b"not a png"), PT, "white")).size[0] == WIDTH * SCALE
+
+
+# ============================================================================ adaptador do snapshot do Turbine
+
+
+def snapshot(**overrides):
+    from empiremuse.utils.radio.snapshot import RadioPanelSnapshot, StationOption
+
+    window = tuple(StationOption(i, f"id{i}", f"Estação {i}", 64 * i, "mp3", "good") for i in range(1, 6))
+    base = dict(
+        radio_id="1:100",
+        skin="white",
+        station_name="Estação 3",
+        country="Brasil",
+        codec="mp3",
+        bitrate_kbps=192,
+        logo=None,
+        quality="ok",
+        now_title="Música",
+        now_artist=None,
+        state="live",
+        reserve_number=None,
+        volume=150,
+        started_at=None,
+        on_air_minutes=7,
+        filter_path=("América do Sul", "Brasil", "SP", "Campinas"),
+        list_kind="stations",
+        position=3,
+        total=40,
+        stations=window,
+        current_index=2,
+        favorite=True,
+        favorites_full=False,
+        retry_seconds=None,
+    )
+    base.update(overrides)
+    return RadioPanelSnapshot(**base)
+
+
+def test_the_snapshot_adapter_maps_every_field_and_takes_the_two_stations_after_the_current_one():
+    from empiremuse.utils.radio.visor import from_snapshot, render_snapshot, volume_level
+
+    data = from_snapshot(snapshot())
+
+    assert (data.station_name, data.codec, data.bitrate_kbps, data.quality) == ("Estação 3", "mp3", 192, "ok")
+    assert (data.position, data.total, data.list_kind, data.favorite) == (3, 40, "stations", True)
+    assert data.filter_path == ("América do Sul", "Brasil", "SP", "Campinas") and data.reserve_number is None
+    assert (data.now_title, data.now_artist, data.retry_seconds, data.on_air_minutes) == ("Música", "", 0, 7)
+    assert [(s.position, s.name, s.bitrate_kbps) for s in data.next_stations] == [
+        (4, "Estação 4", 256),
+        (5, "Estação 5", 320),
+    ]
+    assert volume_level(150) == 1.0 and volume_level(100) == pytest.approx(100 / 150) and volume_level(-5) == 0.0
+    assert png(render_snapshot(snapshot(), PT)).size == (WIDTH * SCALE, HEIGHT * SCALE)
+
+
+def test_a_station_outside_the_list_has_no_next_stations_and_still_renders():
+    from empiremuse.utils.radio.visor import from_snapshot, render_snapshot
+
+    outside = snapshot(position=0, current_index=None, stations=(), total=0, state="offline", retry_seconds=15)
+    data = from_snapshot(outside)
+
+    assert data.next_stations == () and data.position == 0 and data.retry_seconds == 15
+    assert render_snapshot(outside, EN) != render_snapshot(snapshot(), EN)

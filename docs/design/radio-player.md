@@ -100,7 +100,8 @@ Metade direita (os "ajustes"):
 6. **Botão RESERVA** (no lugar de "STEREO"): fone + `RESERVA n` aceso quando a reserva está no ar; `SEM RESERVA` apagado.
 7. **A seguir · n** com a qualidade da estação atual à direita e as **duas próximas** estações em pílulas (ponto de qualidade,
    posição, nome, taxa).
-8. **Volume**: deslizante com o cursor e o valor (`80` ou `mudo`).
+8. **Volume**: deslizante com o cursor e o valor (`80` ou `mudo`). O valor é o volume do player (10 a 150, 100 = padrão); o
+   preenchimento do deslizante é a fração de 150 (`volume_level`).
 9. **Legenda de transporte**: os cinco ícones da primeira fileira de botões, apagados os que não valem no estado (mudo aceso só
    quando silenciada).
 10. **Botão giratório**: alto-falante (ou mudo) com `+` e `−`, como na referência.
@@ -151,7 +152,8 @@ cores e a prévia, acrescente o nome em `SKIN_NAMES`. A escolha por servidor fic
 
 ## 7. Reaproveitar em outro lugar
 
-O renderizador só depende de Pillow e dos tokens: `render_visor(VisorData(...), tr, skin)` devolve PNG. Para uma imagem de
+O renderizador só depende de Pillow e dos tokens: `render_visor(VisorData(...), tr, skin)` devolve PNG; no bot,
+`render_snapshot(snapshot, tr)` monta o `VisorData` a partir do `RadioPanelSnapshot` (`from_snapshot`) e usa a skin do documento. Para uma imagem de
 divulgação (ideia do dono para o site), monte um `VisorData` com dados de exemplo e grave o resultado; o tradutor pode ser o de
 qualquer idioma do catálogo. Para outro painel (por exemplo, um player de música em imagem), copie a estrutura: tokens por skin,
 coordenadas em 1× desenhadas em 2×, texto de fora sempre por `clean_text` + corte com reticências, e um `NamedTuple` imutável como

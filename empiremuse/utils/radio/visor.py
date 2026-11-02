@@ -15,11 +15,14 @@ import unicodedata
 from collections.abc import Callable, Mapping
 from functools import cache
 from pathlib import Path
-from typing import Literal, NamedTuple, Optional
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, Optional
 
 from PIL import Image, ImageDraw, ImageFont
 
 from empiremuse.utils.music.skins.radio_player import DEFAULT_RADIO_SKIN, RGB, load_radio_skin
+
+if TYPE_CHECKING:
+    from empiremuse.utils.radio.snapshot import RadioPanelSnapshot
 
 Translator = Callable[..., str]
 State = Literal["live", "muted", "offline"]
@@ -34,6 +37,7 @@ LCD_RIGHT = 176
 MAX_NEXT = 2
 MAX_SCALE_POSITIONS = 25  # acima disso a escala vira só a linha e o marcador (um select tem no máximo 25 opções)
 LOGO_SIZE = 24
+MAX_VOLUME = 150  # o volume do player vai de 10 a 150 (100 = padrão): o deslizante é a fração disso
 QUALITY_COLORS: Mapping[str, RGB] = {
     "good": (34, 197, 94),
     "ok": (234, 179, 8),
@@ -59,7 +63,7 @@ class VisorData(NamedTuple):
     bitrate_kbps: int = 0
     logo: Optional[bytes] = None
     state: State = "live"
-    position: int = 1  # posição da estação na lista ativa (1-based)
+    position: int = 1  # posição da estação na lista ativa (1-based); 0 = fora da lista
     total: int = 1  # tamanho da lista ativa
     list_kind: ListKind = "stations"
     favorite: bool = False  # a estação no ar está nas favoritas do servidor
@@ -68,7 +72,7 @@ class VisorData(NamedTuple):
     now_title: str = ""
     now_artist: str = ""
     on_air_minutes: int = 0
-    volume: int = 100
+    volume: int = 100  # volume do player (0..MAX_VOLUME)
     quality: Quality = "good"
     retry_seconds: int = 0  # só em ``offline``
     next_stations: tuple[NextStation, ...] = ()
@@ -215,6 +219,15 @@ def _circle_logo(logo: Optional[bytes], size: float, fallback: RGB) -> Image.Ima
     return out
 
 
+def volume_level(volume: object) -> float:
+    """A fração do deslizante (0.0 a 1.0) para o volume do player (0..MAX_VOLUME); fora da faixa é cortado."""
+    try:
+        value = int(volume)  # type: ignore[arg-type]
+    except TypeError, ValueError:
+        value = 0
+    return min(max(value, 0), MAX_VOLUME) / MAX_VOLUME
+
+
 # -------------------------------------------------------------------------------------------------------------------- desenho
 
 
@@ -235,7 +248,7 @@ def _draw_left(c: _Canvas, t: Mapping[str, RGB], tr: Translator, data: VisorData
         c.text((34, 27), label, chip_font, t["chip_dark_text"])
     else:
         c.text((22 + label_w / 2, 27), label, chip_font, t["chip_dark_text"], anchor="mm")
-    position = str(max(1, data.position))
+    position = str(data.position) if data.position >= 1 else "—"
     pos_w = max(18, c.width(position, chip_font) + 10)
     c.rrect((26 + label_w, 20, 26 + label_w + pos_w, 34), 3, fill=t["chip_light"], outline=t["chip_dark"], width=1)
     c.text((26 + label_w + pos_w / 2, 27), position, chip_font, t["chip_light_text"], anchor="mm")
@@ -298,8 +311,9 @@ def _draw_left(c: _Canvas, t: Mapping[str, RGB], tr: Translator, data: VisorData
             for k in (0.25, 0.5, 0.75):
                 xs = left + (right - left) * (i - 1 + k) / total
                 c.line(((xs, base - 3), (xs, base)), t["scale_tick"], 1)
-    xc = left + (right - left) * (current - 0.5) / total
-    c.line(((xc, base - 14), (xc, base + 2)), t["pointer"], 3)
+    if data.position >= 1:
+        xc = left + (right - left) * (current - 0.5) / total
+        c.line(((xc, base - 14), (xc, base + 2)), t["pointer"], 3)
 
     yb = 182
     c.dot(30, yb, 14, t["round_btn"])
@@ -358,7 +372,7 @@ def _draw_right(c: _Canvas, t: Mapping[str, RGB], tr: Translator, data: VisorDat
     c.line(((rx, 112), (WIDTH - 14, 112)), t["divider"], 1)
 
     muted = data.state == "muted"
-    level = 0.0 if muted else min(max(int(data.volume), 0), 100) / 100
+    level = 0.0 if muted else volume_level(data.volume)
     c.text((rx, 128), tr("visor.volume"), _font("SemiBold", 11.5), t["heading"])
     sx0, sx1 = rx + 56, rx + rw - 110
     c.rrect((sx0, 126, sx1, 130), 2, fill=t["slider"])
@@ -394,3 +408,48 @@ def render_visor(data: VisorData, tr: Translator, skin: str = DEFAULT_RADIO_SKIN
     buffer = io.BytesIO()
     c.image.convert("RGB").save(buffer, format="PNG", optimize=True)
     return buffer.getvalue()
+
+
+# ------------------------------------------------------------------------------------------------------ snapshot do bot
+
+
+def from_snapshot(snapshot: "RadioPanelSnapshot | Any") -> VisorData:
+    """``VisorData`` a partir do ``RadioPanelSnapshot`` (``utils/radio/snapshot.py``): as duas estações seguintes vêm da janela
+    ``stations`` depois de ``current_index`` (ou, sem índice, as de posição maior que a atual); fora da lista não há seguintes."""
+    stations = tuple(getattr(snapshot, "stations", ()) or ())
+    index = getattr(snapshot, "current_index", None)
+    position = int(getattr(snapshot, "position", 0) or 0)
+    if index is not None and 0 <= int(index) < len(stations):
+        following = stations[int(index) + 1 :]
+    elif position >= 1:
+        following = tuple(s for s in stations if int(s.position) > position)
+    else:
+        following = ()
+    next_stations = tuple(
+        NextStation(int(s.position), str(s.name), int(s.bitrate_kbps or 0), s.quality) for s in following[:MAX_NEXT]
+    )
+    return VisorData(
+        station_name=str(snapshot.station_name or ""),
+        codec=str(snapshot.codec or ""),
+        bitrate_kbps=int(snapshot.bitrate_kbps or 0),
+        logo=snapshot.logo,
+        state=snapshot.state if snapshot.state in ("live", "muted", "offline") else "live",
+        position=position,
+        total=int(snapshot.total or 0),
+        list_kind="favorites" if snapshot.list_kind == "favorites" else "stations",
+        favorite=bool(snapshot.favorite),
+        filter_path=tuple(str(part) for part in (snapshot.filter_path or ())),
+        reserve_number=int(snapshot.reserve_number) if snapshot.reserve_number else None,
+        now_title=str(snapshot.now_title or ""),
+        now_artist=str(snapshot.now_artist or ""),
+        on_air_minutes=int(snapshot.on_air_minutes or 0),
+        volume=int(snapshot.volume if snapshot.volume is not None else 100),
+        quality=snapshot.quality if snapshot.quality in QUALITY_COLORS else "good",
+        retry_seconds=int(snapshot.retry_seconds or 0),
+        next_stations=next_stations,
+    )
+
+
+def render_snapshot(snapshot: "RadioPanelSnapshot | Any", tr: Translator) -> bytes:
+    """O PNG do visor para um snapshot do bot, na skin gravada no documento da rádio."""
+    return render_visor(from_snapshot(snapshot), tr, str(getattr(snapshot, "skin", "") or DEFAULT_RADIO_SKIN))
