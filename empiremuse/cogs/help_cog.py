@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, NamedTuple, Optional, Union
 import disnake
 from disnake.ext import commands
 
+from empiremuse.rules.i18n import fit
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.others import CustomContext
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
@@ -38,7 +39,6 @@ PREFIX_CATALOG_IDS = {
     "setvoicestatus": "set_voice_status",
     "shuffle": "queue.shuffle",
 }
-NO_DESCRIPTION = "Sem descrição..."
 
 
 class CommandTexts(NamedTuple):
@@ -63,7 +63,7 @@ def command_texts(tr: Translator, cmd: commands.Command) -> CommandTexts:
     aliases = catalog_text(tr, cmd, "aliases")
     return CommandTexts(
         name=catalog_text(tr, cmd, "name") or cmd.name,
-        description=catalog_text(tr, cmd, "description") or cmd.description or NO_DESCRIPTION,
+        description=catalog_text(tr, cmd, "description") or cmd.description or tr("help.no_description"),
         aliases=tuple(a.strip() for a in aliases.split(",") if a.strip())
         if aliases is not None
         else tuple(cmd.aliases),
@@ -83,8 +83,9 @@ def invocation(ctx, cmd: commands.Command, word: str) -> str:
 
 
 class ViewHelp(disnake.ui.View):
-    def __init__(self, ctx, items, *, get_cmd, main_embed, cmd_list, category_cmd=None, timeout=180):
+    def __init__(self, ctx, items, *, tr, get_cmd, main_embed, cmd_list, category_cmd=None, timeout=180):
         self.message: Optional[disnake.Message] = None
+        self.tr = tr
         self.page_index = 0
         self.cmd_lst = cmd_list
         self.category = category_cmd
@@ -99,7 +100,7 @@ class ViewHelp(disnake.ui.View):
     async def interaction_check(self, interaction: disnake.Interaction):
         if interaction.user != self.ctx.author:
             await interaction.response.send_message(
-                f"Apenas o membro {self.ctx.author.mention} pode usar essas opções.", ephemeral=True
+                self.tr("help.only_the_author", member=self.ctx.author.mention), ephemeral=True
             )
             return
 
@@ -114,13 +115,13 @@ class ViewHelp(disnake.ui.View):
                 value=category,
                 emoji=emoji,
                 default=category == self.category,
-                description="Ver detalhes dos comandos desta categoria.",
+                description=fit(self.tr("help.category.option"), 100),
             )
 
             options.append(b)
 
         if options:
-            sel = disnake.ui.Select(placeholder="Escolha uma categoria para ver todos os comandos:", options=options)
+            sel = disnake.ui.Select(placeholder=fit(self.tr("help.category.placeholder"), 150), options=options)
             sel.callback = self.callback_help
             self.add_item(sel)
 
@@ -142,7 +143,7 @@ class ViewHelp(disnake.ui.View):
                 style=disnake.ButtonStyle.grey,
                 emoji=app_emoji(self.ctx.bot, "leftwards_arrow_with_hook"),
                 custom_id="back_page",
-                label="Voltar",
+                label=fit(self.tr("help.back"), 80),
             )
             back_button.callback = self.callback_back
             self.add_item(back_button)
@@ -249,19 +250,20 @@ class HelpCog(commands.Cog, name="Ajuda"):
         embed = disnake.Embed(color=self.bot.get_color(ctx.guild.me))
 
         title = f"{ctx.prefix}{cmd}" if texts.name == cmd.name else f"{ctx.prefix}{cmd} ({texts.name})"
-        txt = f"### ⌨️ ⠂Comando: {title}\n```\n{texts.description}```\n"
+        txt = f"{tr('help.command.heading', command=title)}\n```\n{texts.description}```\n"
         if texts.aliases:
             aliases = " | ".join(invocation(ctx, cmd, ali) for ali in texts.aliases)
-            txt += f"🔄 **⠂Alternativas:** ```\n{aliases}```\n"
+            txt += f"{tr('help.command.aliases')} ```\n{aliases}```\n"
         if hasattr(cmd, "commands"):
             subs = " | ".join([c.name for c in cmd.commands if (await check_perms(ctx, c))])
-            txt += f"🔢 **⠂Subcomandos:** ```{subs}``` Use o comando: `[ {ctx.prefix}help {cmd} subcomando ]` para ver mais detalhes do subcomando.\n\n"
+            hint = tr("help.command.subcommands_hint", prefix=ctx.prefix, command=str(cmd))
+            txt += f"{tr('help.command.subcommands')} ```{subs}``` {hint}\n\n"
 
         if usage_cmd:
             txt += (
-                f"📘 **⠂Como Usar:** ```\n{usage_cmd}```\n"
-                f"⚠️ **⠂Notas sobre o uso dos argumentos no comando:** ```\n"
-                f"[] = Obrigatório | <> = Opcional```\n"
+                f"{tr('help.command.usage')} ```\n{usage_cmd}```\n"
+                f"{tr('help.command.usage_notes')} ```\n"
+                f"{tr('help.command.usage_legend')}```\n"
             )
 
         flags = cmd.extras.get("flags")
@@ -291,9 +293,9 @@ class HelpCog(commands.Cog, name="Ajuda"):
                 t.append(s)
 
             if t:
-                txt += "🚩 **⠂Flags `(opções para adicionar no final do comando)`:**```ini\n" + "\n\n".join(t) + "```"
+                txt += tr("help.command.flags") + "```ini\n" + "\n\n".join(t) + "```"
 
-        embed.set_author(name="Menu de ajuda - Lista de comandos (prefix)", icon_url=self.bot.user.display_avatar.url)
+        embed.set_author(name=tr("help.menu.title"), icon_url=self.bot.user.display_avatar.url)
 
         embed.description = txt
 
@@ -305,7 +307,8 @@ class HelpCog(commands.Cog, name="Ajuda"):
 
         if (max_pages := len(cmds)) > 1:
             embed.set_footer(
-                icon_url=owner.display_avatar.replace(static_format="png"), text=f"Página: {index + 1} de {max_pages}"
+                icon_url=owner.display_avatar.replace(static_format="png"),
+                text=tr("help.page", page=index + 1, pages=max_pages),
             )
         return embed
 
@@ -318,9 +321,17 @@ class HelpCog(commands.Cog, name="Ajuda"):
             return
 
         embed, btn_id, cmd_lst_new = await self.overview(ctx)
+        tr = await self.bot.pool.i18n.for_guild(ctx.guild)
 
         view = ViewHelp(
-            ctx, btn_id, get_cmd=self.get_cmd, cmd_list=cmd_lst_new, category_cmd=None, main_embed=embed, timeout=180
+            ctx,
+            btn_id,
+            tr=tr,
+            get_cmd=self.get_cmd,
+            cmd_list=cmd_lst_new,
+            category_cmd=None,
+            main_embed=embed,
+            timeout=180,
         )
 
         view.message = await ctx.send(embed=embed, mention_author=False, view=view)
@@ -363,13 +374,13 @@ class HelpCog(commands.Cog, name="Ajuda"):
 
             elif not cmd.cog or not hasattr(cmd.cog, "name") or len(cmd.cog.get_commands()) < 2:
                 if not "🔰" in cmdlst:
-                    cmdlst["🔰"] = ("Diversos", [])
+                    cmdlst["🔰"] = (tr("help.category.misc"), [])
                 cmdlst["🔰"][1].append(cmd)
 
             else:
                 if not cmd.cog.emoji:
                     cmd.cog.emoji = "⁉"
-                    cmd.cog.name = "Sem Categoria"
+                    cmd.cog.name = tr("help.category.none")
                 if not cmd.cog.emoji in cmdlst:
                     cmdlst[cmd.cog.emoji] = (cmd.cog.name, [])
                 cmdlst[cmd.cog.emoji][1].append(cmd)
@@ -387,14 +398,10 @@ class HelpCog(commands.Cog, name="Ajuda"):
             btn_id.append([category, data["emoji"]])
 
             cmds = ", ".join(listing_entry(tr, c) for c in sorted(data["cmds"], key=lambda c: c.name))
-            n = len(data["cmds"])
-            lst.append(f"\n\n**{data['emoji']} ⠂{category} ({n} comando{'s' if n > 1 else ''}):**\n`{cmds}`")
+            count = tr("help.overview.count", count=len(data["cmds"]))
+            lst.append(f"\n\n**{data['emoji']} ⠂{category} ({count}):**\n`{cmds}`")
 
-        txt = (
-            f"{''.join(lst)}\n\n"
-            "Para obter informações de um comando diretamente, use: \n"
-            f"`{ctx.prefix}{ctx.invoked_with} <comando/alias>`"
-        )
+        txt = f"{''.join(lst)}\n\n{tr('help.overview.hint', prefix=ctx.prefix, invoked=ctx.invoked_with)}"
 
         embed = disnake.Embed(
             description=txt.replace(ctx.me.mention, f"@{ctx.me.display_name}").replace(
@@ -403,7 +410,7 @@ class HelpCog(commands.Cog, name="Ajuda"):
             color=self.bot.get_color(ctx.guild.me),
         )
         embed.set_author(
-            name=f"Menu de ajuda - Lista de comandos (prefix)",
+            name=tr("help.menu.title"),
             icon_url=self.bot.user.display_avatar.replace(static_format="png").url,
         )
 
@@ -413,7 +420,8 @@ class HelpCog(commands.Cog, name="Ajuda"):
             owner = self.bot.appinfo.owner
 
         embed.set_footer(
-            icon_url=owner.display_avatar.replace(static_format="png").url, text=f"Dono(a): {owner} [{owner.id}]"
+            icon_url=owner.display_avatar.replace(static_format="png").url,
+            text=tr("help.owner", owner=str(owner), id=owner.id),
         )
 
         return embed, btn_id, cmd_lst_new
@@ -436,9 +444,9 @@ class HelpCog(commands.Cog, name="Ajuda"):
 
         if not cmd or (not await check_perms(ctx, cmd)):
             b = "`" if len(cmd_name) > 1 else ""
-            raise GenericError(
-                f"Comando [{b}{' '.join(cmd_name[:-1])}{b}{' ' if len(cmd_name) > 1 else ''}**{cmd_name[-1]}**] não encontrado!"
-            )
+            typed = f"{b}{' '.join(cmd_name[:-1])}{b}{' ' if len(cmd_name) > 1 else ''}**{cmd_name[-1]}**"
+            tr = await self.bot.pool.i18n.for_guild(ctx.guild)
+            raise GenericError(tr("help.not_found", command=typed))
 
         if any(c for c in cmd.cog.get_commands() if check_cmd(c)):
             name = cmd.category if cmd.category else cmd.cog.name
