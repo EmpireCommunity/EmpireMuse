@@ -469,3 +469,38 @@ class TestPickingTheRadio:
         await w.inter.edit_original_message.await_args.kwargs["view"].confirmed(click_of())
 
         assert [r.bot_id for r in await w.hub.store.list_for_guild(GUILD)] == [2]
+
+
+class TestStationChosenInThePanelAfterSetup:
+    """B4: a estação escolhida no painel de uma rádio recém-configurada (ligada, sem estação) é gravada e a rádio toca."""
+
+    @pytest.mark.asyncio
+    async def test_a_live_radio_waiting_for_its_station_saves_and_plays_the_one_picked(self):
+        from empiremuse.rules.radio_stations import Station
+        from empiremuse.utils.radio import actions
+        from empiremuse.utils.radio.actions import Actor
+        from tests.cogs.radio_config import LIVE_STATION
+
+        from tests.cogs.test_radio_ao_vivo import LivePorts
+
+        w, _ = await world_with_station()
+        live_ports = LivePorts()
+        live_ports.source = False  # sem estação ainda
+        live_ports.apply_station = AsyncMock()
+        w.hub.manager.ports_factory = lambda radio: live_ports
+        await run_setup(w, kind="live")
+        await settle(w)
+        assert w.hub.manager.runner(radio_id(2, GUILD)).phase.value == "standby"
+        live_ports.source = True  # o painel grava a estação: as portas passam a ter fonte
+        wanted = Station(LIVE_STATION, "Rock FM", "http://stream.example:8000/x", "MP3", 128, "Brasil")
+
+        saved = await actions.change_station(
+            w.hub, radio_id=radio_id(2, GUILD), station=wanted, actor=Actor(user_id=7, manage_guild=True)
+        )
+        await settle(w)
+
+        assert (
+            saved.source["station"] == LIVE_STATION
+            and w.hub.manager.runner(radio_id(2, GUILD)).phase.value == "playing"
+        )
+        assert (await w.hub.store.get(radio_id(2, GUILD))).source["station"] == LIVE_STATION
