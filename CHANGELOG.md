@@ -8,6 +8,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 ## [Unreleased]
 
 ### Alterado
+- **Textos do bot no idioma do servidor**: o gerenciador de favoritos e integrações, o editor de skins, o status do canal de voz, as views de fila/volume/paginação, os comandos de reprodução (volume, pausar, retomar, avançar, repetição, nightcore) e todas as skins do player deixaram de ter texto fixo em português: cada mensagem, botão, select e modal vem do catálogo (`en-US` e `pt-BR`) pelo tradutor do servidor. Um teste de guarda (`tests/i18n/test_no_hardcoded_pt.py`) falha se um texto em português voltar a ser fixado nesses módulos.
 - **Jukebox no painel**: a categoria "Canal de pedidos" virou **Jukebox** (`/painel/servidores/<id>/jukebox`; a rota antiga `/canal` só redireciona). Configurar num canal que já existe sempre apaga as mensagens dele, com confirmação antes (fórum e canal novo não apagam nada); a chave "Jukebox estrita" deu lugar às opções **Apagar as mensagens enviadas no canal** (`settings.jukebox_auto_delete`, migrada da antiga) e **Toda mensagem é um pedido** (`settings.jukebox_text_requests`, ligada por padrão); e **Redefinir a Jukebox** (o `/jukebox reset`) apaga o painel, limpa a configuração e devolve as opções aos padrões, mantendo o canal e as mensagens de quem usa.
 
 ### Corrigido

@@ -71,9 +71,9 @@ class DefaultSkin:
             txt += f"\n> -# {app_emoji(player.bot, 'user')} **⠂** <@{player.current.requester}>"
         else:
             try:
-                mode = f" {md_link('Recomendada', player.current.info['extra']['related']['uri'])}"
+                mode = f" {md_link(player.tr('player.recommended'), player.current.info['extra']['related']['uri'])}"
             except Exception:
-                mode = "`Recomendada`"
+                mode = f"`{player.tr('player.recommended')}`"
             txt += f"\n> -# {app_emoji(player.bot, 'like')} **⠂** {mode}"
 
         if player.current.track_loops:
@@ -217,13 +217,13 @@ class DefaultSkin:
                         description=fit(player.tr("player.adjust_the_volume.description"), 100),
                     ),
                     disnake.SelectOption(
-                        label="Misturar",
+                        label=fit(player.tr("player.shuffle.label"), 100),
                         emoji=app_emoji(player.bot, "shuffle"),
                         value=PlayerControls.shuffle,
                         description=fit(player.tr("player.shuffle_the_queue_songs.description"), 100),
                     ),
                     disnake.SelectOption(
-                        label="Readicionar",
+                        label=fit(player.tr("player.readd.label"), 100),
                         emoji=app_emoji(player.bot, "playlist_add"),
                         value=PlayerControls.readd,
                         description=fit(player.tr("player.add_the_played_songs_back.description"), 100),
@@ -277,7 +277,7 @@ class DefaultSkin:
                         ),
                         emoji=app_emoji(player.bot, "lock"),
                         value=PlayerControls.restrict_mode,
-                        description="Apenas DJ's/Staff's podem usar comandos restritos.",
+                        description=fit(player.tr("player.restrict_mode.description"), 100),
                     ),
                 ],
             ),

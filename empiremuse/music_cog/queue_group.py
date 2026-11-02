@@ -160,7 +160,7 @@ class QueueGroupMixin:
         if not player.queue and not player.queue_autoplay:
             raise GenericError(await guild_text(bot, inter.guild, "legacy.queue.empty"))
 
-        view = QueueInteraction(bot, inter.author)
+        view = QueueInteraction(bot, inter.author, tr=await inter.bot.pool.i18n.for_guild(inter.guild))
         embed = view.embed
 
         try:

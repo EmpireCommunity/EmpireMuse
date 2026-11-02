@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 import disnake
 import pytest
 
+from empiremuse.i18n import get_i18n
 from empiremuse.utils.music.interactions.common import ViewMode
 from empiremuse.utils.music.interactions.fav_menu import FavMenuView
 from tests.support.marcas_md import NOME_COM_MARCAS, destinos, links_alheios, marcas_soltas
@@ -24,6 +25,7 @@ def visao(modo: str, nome: str, valor, onde: str):
     """``FavMenuView`` sem Discord: ``valor`` entra em ``data`` (usuário/integração) ou em ``guild_data`` (servidor), sob o nome ``nome``."""
     v = FavMenuView.__new__(FavMenuView)
     v.mode, v.current, v.log = modo, nome, ""
+    v.tr = get_i18n().for_locale("pt-BR")
     v.build_txt = lambda: ""
     guild = SimpleNamespace(me=SimpleNamespace())
     v.bot = SimpleNamespace(

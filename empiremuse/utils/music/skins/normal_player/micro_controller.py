@@ -44,10 +44,10 @@ class MicroController:
         else:
             try:
                 embed.description += md_bracketed(
-                    md_link("Recomendada", player.current.info["extra"]["related"]["uri"])
+                    md_link(player.tr("player.recommended"), player.current.info["extra"]["related"]["uri"])
                 )
             except Exception:
-                embed.description += "`[Recomendada]`"
+                embed.description += f"`[{player.tr('player.recommended')}]`"
 
         embed.set_author(
             name=player.tr("player.now_playing"), icon_url=music_source_image(player.current.info["sourceName"])
@@ -74,14 +74,22 @@ class MicroController:
                 custom_id=PlayerControls.pause_resume,
                 style=get_button_style(player.paused),
             ),
-            disnake.ui.Button(emoji=app_emoji(player.bot, "backward"), label="Voltar", custom_id=PlayerControls.back),
+            disnake.ui.Button(
+                emoji=app_emoji(player.bot, "backward"),
+                label=fit(player.tr("player.back.label"), 80),
+                custom_id=PlayerControls.back,
+            ),
             disnake.ui.Button(
                 emoji=app_emoji(player.bot, "stop"),
                 label="Parar",
                 custom_id=PlayerControls.stop,
                 style=disnake.ButtonStyle.red,
             ),
-            disnake.ui.Button(emoji=app_emoji(player.bot, "skip"), label="Pular", custom_id=PlayerControls.skip),
+            disnake.ui.Button(
+                emoji=app_emoji(player.bot, "skip"),
+                label=fit(player.tr("player.skip.label"), 80),
+                custom_id=PlayerControls.skip,
+            ),
             disnake.ui.Button(
                 emoji=app_emoji(player.bot, "music_queue"),
                 label=fit(player.tr("player.queue.label"), 80),

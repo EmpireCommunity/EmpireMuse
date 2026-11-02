@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import disnake
 
+from empiremuse.rules.i18n import fit
 from empiremuse.utils.others import music_source_emoji_url
 from empiremuse.utils.music.interactions.common import (
     ViewMode,
@@ -27,18 +28,18 @@ class FavMenuComponentsMixin:
         elif self.mode == ViewMode.integrations_manager:
             self._add_integration_select()
 
-        self._add_button("Adicionar", "➕", self.add_callback)
+        self._add_button(self.tr("fav.add.label"), "➕", self.add_callback)
 
         self._add_manage_buttons()
 
-        self._add_button("Importar", "📥", self.import_callback)
+        self._add_button(self.tr("fav.import.label"), "📥", self.import_callback)
 
         self._add_play_button()
 
-        self._add_button("Fechar", "❌", self.cancel_callback)
+        self._add_button(self.tr("fav.close.label"), "❌", self.cancel_callback)
 
     def _add_button(self, label: str, emoji: str, callback, **kwargs):
-        button = disnake.ui.Button(label=label, emoji=emoji, **kwargs)
+        button = disnake.ui.Button(label=fit(label, 80), emoji=emoji, **kwargs)
         button.callback = callback
         self.add_item(button)
 
@@ -46,7 +47,7 @@ class FavMenuComponentsMixin:
         mode_select = disnake.ui.Select(
             options=[
                 disnake.SelectOption(
-                    label="Gerenciador de Favoritos",
+                    label=fit(self.tr("fav.mode.favorites.label"), 100),
                     value=f"fav_view_mode_{ViewMode.fav_manager}",
                     emoji="⭐",
                     default=self.mode == ViewMode.fav_manager,
@@ -58,7 +59,7 @@ class FavMenuComponentsMixin:
 
         mode_select.append_option(
             disnake.SelectOption(
-                label="Gerenciador de Integrações",
+                label=fit(self.tr("fav.mode.integrations.label"), 100),
                 value=f"fav_view_mode_{ViewMode.integrations_manager}",
                 emoji="💠",
                 default=self.mode == ViewMode.integrations_manager,
@@ -108,28 +109,26 @@ class FavMenuComponentsMixin:
     def _add_manage_buttons(self):
         if self.mode == ViewMode.fav_manager:
             no_links = not self.data["fav_links"]
-            self._add_button("Editar", "✍️", self.edit_callback, disabled=no_links)
-            self._add_button("Remover", "♻️", self.remove_callback, disabled=no_links)
-            self._add_button("Limpar favoritos", "🚮", self.clear_callback, disabled=no_links)
-            self._add_button("Exportar", "📤", self.export_callback, disabled=no_links)
+            self._add_button(self.tr("fav.edit.label"), "✍️", self.edit_callback, disabled=no_links)
+            self._add_button(self.tr("fav.remove.label"), "♻️", self.remove_callback, disabled=no_links)
+            self._add_button(self.tr("fav.clear.label"), "🚮", self.clear_callback, disabled=no_links)
+            self._add_button(self.tr("fav.export.label"), "📤", self.export_callback, disabled=no_links)
 
         elif self.mode == ViewMode.integrations_manager:
             no_links = not self.data["integration_links"]
-            self._add_button("Remover", "♻️", self.remove_callback, disabled=no_links)
-            self._add_button("Limpar Integrações", "🚮", self.clear_callback, disabled=no_links)
-            self._add_button("Exportar", "📤", self.export_callback, disabled=no_links)
+            self._add_button(self.tr("fav.remove.label"), "♻️", self.remove_callback, disabled=no_links)
+            self._add_button(self.tr("fav.itg.clear.label"), "🚮", self.clear_callback, disabled=no_links)
+            self._add_button(self.tr("fav.export.label"), "📤", self.export_callback, disabled=no_links)
 
     def _add_play_button(self):
         if self.mode == ViewMode.fav_manager:
             if self.data["fav_links"] and not self.light_mode:
-                self._add_button(
-                    "Tocar o favorito selecionado", "▶", self.play_callback, custom_id="favmanager_play_button"
-                )
+                self._add_button(self.tr("fav.play.label"), "▶", self.play_callback, custom_id="favmanager_play_button")
 
         elif self.mode == ViewMode.integrations_manager:
             if self.data["integration_links"]:
                 self._add_button(
-                    "Tocar uma playlist da integração selecionada",
+                    self.tr("fav.itg.play.label"),
                     "▶",
                     self.play_callback,
                     custom_id="favmanager_play_button",

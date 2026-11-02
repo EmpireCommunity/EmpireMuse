@@ -72,6 +72,7 @@ class FavoritesMixin:
             ephemeral = True
 
         user_data = await bot.get_global_data(inter.author.id, db_name=DBModel.users)
+        tr = await bot.pool.i18n.for_guild(inter.guild)
 
         view = FavMenuView(
             bot=bot,
@@ -80,12 +81,17 @@ class FavoritesMixin:
             prefix=prefix,
             mode=mode,
             is_owner=await bot.is_owner(inter.author),
+            tr=tr,
         )
 
         txt = view.build_txt()
 
         if not txt:
+<<<<<<< HEAD
             raise GenericError(await guild_text(bot, inter.guild, "legacy.favorites.unsupported"))
+=======
+            raise GenericError(tr("fav.unsupported"))
+>>>>>>> origin/feat/playlists-escopo
 
         view.message = await inter.send(txt, view=view, ephemeral=ephemeral)
 

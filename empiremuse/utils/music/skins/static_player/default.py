@@ -128,7 +128,7 @@ class DefaultStaticSkin:
             )
 
         if player.current.playlist_name:
-            txt += f"\n> -# {app_emoji(player.bot, 'playlists')} **⠂Playlist:** {md_link(player.current.playlist_name, player.current.playlist_url, limit=20)}"
+            txt += f"\n> -# {app_emoji(player.bot, 'playlists')} **⠂{player.tr('player.playlist_prefix')}** {md_link(player.current.playlist_name, player.current.playlist_url, limit=20)}"
 
         txt += f"{vc_txt}\n"
 
@@ -163,7 +163,7 @@ class DefaultStaticSkin:
                     continue
 
                 if has_stream:
-                    duration = time_format(t.duration) if not t.is_stream else "🔴 Ao vivo"
+                    duration = time_format(t.duration) if not t.is_stream else player.tr("player.live_badge")
 
                     queue_txt += (
                         f"-# `┌ {n + 1})` {md_link(t.title, t.uri, limit=34)}\n"
@@ -233,13 +233,13 @@ class DefaultStaticSkin:
                     continue
 
                 if has_stream:
-                    duration = time_format(t.duration) if not t.is_stream else "🔴 Ao vivo"
+                    duration = time_format(t.duration) if not t.is_stream else player.tr("player.live_badge")
 
                     queue_txt += (
                         f"-# `┌ {n + 1})` {md_link(t.title, t.uri, limit=34)}\n"
                         f"-# `└` {app_emoji(player.bot, 'history')} `{duration}`"
                         + (player.tr("player.repeats", track_loops=str(t.track_loops)) if t.track_loops else "")
-                        + f" **|** {app_emoji(player.bot, 'like')} `Recomendada`\n"
+                        + f" **|** {app_emoji(player.bot, 'like')} `{player.tr('player.recommended')}`\n"
                     )
 
                 else:
@@ -251,7 +251,7 @@ class DefaultStaticSkin:
                         f"-# `┌ {n + 1})` {md_link(t.title, t.uri, limit=34)}\n"
                         f"-# `└` {app_emoji(player.bot, 'history')} {duration}"
                         + (player.tr("player.repeats", track_loops=str(t.track_loops)) if t.track_loops else "")
-                        + f" **|** {app_emoji(player.bot, 'like')} `Recomendada`\n"
+                        + f" **|** {app_emoji(player.bot, 'like')} `{player.tr('player.recommended')}`\n"
                     )
 
             embed_queue = disnake.Embed(
@@ -314,13 +314,13 @@ class DefaultStaticSkin:
                         description=fit(player.tr("player.adjust_the_volume.description"), 100),
                     ),
                     disnake.SelectOption(
-                        label="Misturar",
+                        label=fit(player.tr("player.shuffle.label"), 100),
                         emoji=app_emoji(player.bot, "shuffle"),
                         value=PlayerControls.shuffle,
                         description=fit(player.tr("player.shuffle_the_queue_songs.description"), 100),
                     ),
                     disnake.SelectOption(
-                        label="Readicionar",
+                        label=fit(player.tr("player.readd.label"), 100),
                         emoji=app_emoji(player.bot, "playlist_add"),
                         value=PlayerControls.readd,
                         description=fit(player.tr("player.add_the_played_songs_back.description"), 100),
@@ -374,7 +374,7 @@ class DefaultStaticSkin:
                         ),
                         emoji=app_emoji(player.bot, "lock"),
                         value=PlayerControls.restrict_mode,
-                        description="Apenas DJ's/Staff's podem usar comandos restritos.",
+                        description=fit(player.tr("player.restrict_mode.description"), 100),
                     ),
                 ],
             ),
