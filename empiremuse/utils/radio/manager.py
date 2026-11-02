@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, NamedTuple, Optional
 
 from empiremuse.rules.radio import KIND_LIVE, PANEL_RECREATE_S, Radio
 from empiremuse.utils.radio.chat import ChatPorts, ChatSweeper
+from empiremuse.utils.radio.custom import CustomRadioRunner
 from empiremuse.utils.radio.live import LiveRadioRunner
 from empiremuse.utils.radio.runner import Phase, ProcessLimits, RadioPorts, RadioRunner
 from empiremuse.utils.radio.service import RadioService
@@ -109,6 +110,24 @@ class RadioManager:
         if isinstance(runner, LiveRadioRunner):
             runner.set_title(title)
 
+    async def change_station(self, radio: Radio) -> bool:
+        """A estação principal de uma rádio ao vivo mudou na store (``set_station``): se ela está ligada neste processo, troca de estação ao vivo.
+        Desligada, ou de outra instância do bot, não faz nada (a próxima partida já lê o documento novo). ``True`` se trocou."""
+        runner = self._runners.get(radio.id)
+        if runner is None or runner.stopped or not isinstance(runner, LiveRadioRunner | CustomRadioRunner):
+            return False
+        if (radio.kind == KIND_LIVE) != isinstance(runner, LiveRadioRunner):
+            return False
+        self._radios[radio.id] = radio
+        apply = getattr(runner.ports, "apply_station", None)
+        if apply is None:
+            return False
+        await apply(radio)
+        self._spawn(
+            runner.station_changed()
+        )  # a volta pelo recuo pode demorar (estação ruim, Lavalink fora): quem clicou não espera por ela
+        return True
+
     def referenced_stations(self) -> set[str]:
         """Os uuids (principal e reserva) das rádios ao vivo LIGADAS neste processo: o health check só olha estes."""
         found: set[str] = set()
@@ -149,7 +168,13 @@ class RadioManager:
         if self.ports_factory is None:
             logger.warning("Rádio não iniciada: o adaptador do Discord não foi instalado")
             return None
-        runner_class = LiveRadioRunner if radio.kind == KIND_LIVE else RadioRunner
+        runner_class: type[RadioRunner] = (
+            LiveRadioRunner
+            if radio.kind == KIND_LIVE
+            else CustomRadioRunner
+            if "station" in radio.source  # R5: a estação do servidor; ``{playlist}`` é o legado até a migração
+            else RadioRunner
+        )
         runner = runner_class(
             radio.id,
             self.ports_factory(radio),
@@ -248,6 +273,12 @@ class RadioManager:
         self._radios.pop(radio_id, None)
         if runner is not None:
             await runner.stop()
+            end_stage = getattr(runner.ports, "end_stage", None)
+            if end_stage is not None:
+                try:
+                    await end_stage()  # a rádio desligou: o evento de palco que o bot criou acaba junto
+                except Exception as error:  # noqa: BLE001 - só o tipo vai ao log (R-12)
+                    logger.warning("Evento de palco da rádio não encerrado (%s)", type(error).__name__)
         if start is not None and not start.done() and start is not asyncio.current_task():
             start.cancel()  # a partida que chamou o deactivate (o _shutdown dela) segue até o destroy: não cancela a si mesma
         self.service.publish(radio_id, None)

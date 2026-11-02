@@ -50,7 +50,7 @@ PLAYLIST_MAX_ENTRIES = 10
 
 
 class Station(NamedTuple):
-    """Uma estação aceita; os textos já passaram pela função única da R-11. A ``homepage`` nunca é guardada."""
+    """Uma estação aceita; os textos já passaram pela função única da R-11. A ``homepage`` nunca é guardada; o ``favicon`` só se for ``https`` e limpo."""
 
     uuid: str
     name: str
@@ -58,6 +58,7 @@ class Station(NamedTuple):
     codec: str
     bitrate: int
     country: str
+    favicon: str = ""
 
 
 def valid_mirror(name: object) -> bool:
@@ -111,7 +112,7 @@ def _int(value: object) -> int | None:
 
 def check_station(raw: object) -> Station | RuleError:
     """A estação do Radio Browser aceita, ou o primeiro defeito: ``uuid`` UUID, ``url_resolved`` http(s) na porta certa, codec MP3/AAC/AAC+/OGG,
-    ``hls == 0`` e ``bitrate`` até 320. Campo desconhecido é ignorado; ``homepage`` e ``favicon`` não entram."""
+    ``hls == 0`` e ``bitrate`` até 320. Campo desconhecido é ignorado; a ``homepage`` não entra e o ``favicon`` só como ``https`` limpo."""
     if not isinstance(raw, Mapping):
         return RuleError(STATION_INVALID)
     uuid = raw.get("stationuuid", raw.get("uuid"))
@@ -138,6 +139,7 @@ def check_station(raw: object) -> Station | RuleError:
         codec=codec.strip().upper(),
         bitrate=bitrate,
         country=country,
+        favicon=favicon_thumbnail(raw.get("favicon")) or "",
     )
 
 

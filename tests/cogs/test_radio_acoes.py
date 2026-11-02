@@ -1,14 +1,15 @@
-"""As ações de `/radio ligar|desligar|status` (item 8, R1): a matriz de autorização (R-4), o premium, o teto de 3 (R-2) e a escolha do bot."""
+"""As ações de `/radio on|off|status` (item 8): a matriz de autorização (R-4), o premium, o teto de 3 (R-2) e o fato de só ligar rádio já configurada."""
 
 import asyncio
 from types import SimpleNamespace
 
 import pytest
 
-from empiremuse.rules.radio import BotCandidate, radio_id
+from empiremuse.rules.radio import radio_id
 from empiremuse.utils.radio import RadioHub, actions
 from empiremuse.utils.radio.actions import Actor, Refused
 from empiremuse.utils.radio.service import RadioState
+from tests.cogs.radio_config import CUSTOM_STATION, configure
 from tests.persistence.test_radio_store import FakeDb
 
 pytestmark = pytest.mark.critical
@@ -25,21 +26,19 @@ def world():
     return SimpleNamespace(db=db, hub=hub)
 
 
-def bots(*ids, **over):
-    base = dict(main=False, radio_only=False, ready=True, in_guild=True, busy=False, has_radio_here=False)
-    return [BotCandidate(f"TOKEN_{n}", n, **{**base, **over}) for n in ids]
-
-
 async def on(world, **over):
-    args = dict(
-        guild_id=GUILD,
-        channel_id=CHANNEL,
-        playlist="Rock",
-        actor=ADMIN,
-        candidates=bots(2, 3, 4, 5),
-        playlist_exists=True,
-        bot_can_join=True,
-    )
+    """Configura a rádio (``/radio setup``) e liga (``/radio on``). ``bot`` escolhe o bot fixo da rádio; ``source`` põe (ou tira, com ``{}``) a estação."""
+    guild_id, channel_id = over.get("guild_id", GUILD), over.get("channel_id", CHANNEL)
+    if over.pop("configured", True):
+        await configure(
+            world.hub,
+            guild_id=guild_id,
+            channel_id=channel_id,
+            bot_id=over.pop("bot", 2),
+            source=over.pop("source", None),
+        )
+    over.pop("bot", None), over.pop("source", None)
+    args = dict(guild_id=guild_id, channel_id=channel_id, actor=ADMIN, bot_can_join=True)
     return await actions.turn_on(world.hub, **{**args, **over})
 
 
@@ -50,33 +49,53 @@ async def premium(world, guild_id=GUILD):
 
 class TestTurnOn:
     @pytest.mark.asyncio
-    async def test_the_server_request_channel_is_refused_and_nothing_is_reserved(
+    async def test_the_jukebox_channel_is_refused_and_nothing_is_reserved(
         self, world
     ):  # V181-1: o chat dele é da Jukebox
         await premium(world)
 
         with pytest.raises(Refused) as refusal:
-            await on(world, request_channel_id=CHANNEL)
+            await on(world, jukebox_channel_id=CHANNEL)
 
         assert refusal.value.code == actions.JUKEBOX_CHANNEL
-        assert (await world.hub.premium.fresh(GUILD)).active == 0 and await world.hub.store.list_for_guild(GUILD) == []
+        assert (await world.hub.premium.fresh(GUILD)).active == 0
 
     @pytest.mark.asyncio
-    async def test_another_channel_is_fine_even_with_a_request_channel_set(self, world):
+    async def test_another_channel_is_fine_even_with_a_jukebox_channel_set(self, world):
         await premium(world)
 
-        radio = await on(world, request_channel_id=OTHER_CHANNEL)
+        radio = await on(world, jukebox_channel_id=OTHER_CHANNEL)
 
         assert radio.enabled and radio.channel_id == CHANNEL
 
     @pytest.mark.asyncio
-    async def test_it_creates_enables_and_counts_on_the_first_free_reserve(self, world):
+    async def test_it_turns_on_the_configured_radio_with_its_own_bot_and_counts_the_slot(self, world):
         await premium(world)
 
-        radio = await on(world)
+        radio = await on(world, bot=4)
 
-        assert radio.enabled and radio.id == radio_id(2, GUILD) and radio.channel_id == CHANNEL
-        assert radio.source == {"playlist": "Rock"} and (await world.hub.premium.fresh(GUILD)).active == 1
+        assert radio.enabled and radio.id == radio_id(4, GUILD) and radio.channel_id == CHANNEL
+        assert radio.source == {"station": CUSTOM_STATION} and (await world.hub.premium.fresh(GUILD)).active == 1
+
+    @pytest.mark.asyncio
+    async def test_without_a_configured_radio_in_the_channel_the_hint_is_to_run_setup(self, world):
+        await premium(world)
+
+        with pytest.raises(Refused) as refusal:
+            await on(world, configured=False)
+
+        assert refusal.value.code == actions.NOT_CONFIGURED and await world.hub.store.list_for_guild(GUILD) == []
+
+    @pytest.mark.asyncio
+    async def test_a_radio_configured_without_a_station_is_refused_with_the_setup_hint(self, world):
+        await premium(world)
+
+        with pytest.raises(Refused) as refusal:
+            await on(world, source={})
+
+        assert refusal.value.code == actions.NO_STATION
+        assert not (await world.hub.store.list_for_guild(GUILD))[0].enabled
+        assert (await world.hub.premium.fresh(GUILD)).active == 0
 
     @pytest.mark.asyncio
     async def test_the_whole_matrix_manage_guild_and_manage_messages_are_both_needed(self, world):
@@ -90,96 +109,79 @@ class TestTurnOn:
             await on(world, actor=Actor(7, manage_guild=True, manage_messages_in_channel=False))
 
         assert no_guild.value.code == actions.NO_MANAGE_GUILD and no_messages.value.code == actions.NO_MANAGE_MESSAGES
-        assert await world.hub.store.list_for_guild(GUILD) == []
+        assert (await world.hub.premium.fresh(GUILD)).active == 0
 
     @pytest.mark.asyncio
-    async def test_without_premium_nothing_is_written(self, world):
+    async def test_without_premium_nothing_is_turned_on(self, world):
         await world.hub.control.load()
         with pytest.raises(Refused) as refusal:
             await on(world)
 
-        assert refusal.value.code == actions.NO_PREMIUM and await world.hub.store.list_for_guild(GUILD) == []
+        assert refusal.value.code == actions.NO_PREMIUM
+        assert not any(r.enabled for r in await world.hub.store.list_for_guild(GUILD))
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
         ("over", "code"),
         [
-            ({"playlist_exists": False}, actions.NO_PLAYLIST),
             ({"bot_can_join": False}, actions.BOT_CANNOT_JOIN),
-            ({"candidates": bots(1, main=True)}, actions.NO_FREE_BOT),
-            ({"candidates": bots(2, busy=True)}, actions.NO_FREE_BOT),
-            ({"candidates": []}, actions.NO_FREE_BOT),
-            ({"playlist": ""}, actions.INVALID),
+            ({"bot_free": False}, actions.NO_FREE_BOT),
         ],
     )
-    async def test_every_refusal_has_its_code_and_leaves_no_radio_behind(self, world, over, code):
+    async def test_every_refusal_has_its_code_and_leaves_the_radio_off(self, world, over, code):
         await premium(world)
 
         with pytest.raises(Refused) as refusal:
             await on(world, **over)
 
-        assert refusal.value.code == code and await world.hub.store.list_for_guild(GUILD) == []
+        assert refusal.value.code == code
+        assert not any(r.enabled for r in await world.hub.store.list_for_guild(GUILD))
 
     @pytest.mark.asyncio
-    async def test_a_channel_that_already_has_a_radio_is_taken(self, world):
-        await premium(world)
-        await on(world)
-
-        with pytest.raises(Refused) as refusal:
-            await on(world)
-
-        assert refusal.value.code == actions.CHANNEL_TAKEN
-
-    @pytest.mark.asyncio
-    async def test_a_second_radio_goes_to_another_bot_never_to_the_one_already_running_here(self, world):
+    async def test_turning_on_a_radio_that_is_already_on_changes_nothing(self, world):
         await premium(world)
         first = await on(world)
 
-        second = await on(world, channel_id=OTHER_CHANNEL)
+        again = await on(world, configured=False)
+
+        assert again.id == first.id and (await world.hub.premium.fresh(GUILD)).active == 1
+
+    @pytest.mark.asyncio
+    async def test_a_second_radio_runs_on_its_own_bot(self, world):
+        await premium(world)
+        first = await on(world)
+
+        second = await on(world, channel_id=OTHER_CHANNEL, bot=3)
 
         assert first.bot_id == 2 and second.bot_id == 3
 
     @pytest.mark.asyncio
     async def test_the_fourth_radio_is_refused_by_the_cap_and_stays_off(self, world):
         await premium(world)
-        for channel in (900, 901, 902):
-            await on(world, channel_id=channel)
+        for channel, bot in ((900, 2), (901, 3), (902, 4)):
+            await on(world, channel_id=channel, bot=bot)
 
         with pytest.raises(Refused) as refusal:
-            await on(world, channel_id=903)
+            await on(world, channel_id=903, bot=5)
 
         assert refusal.value.code == actions.CAP_REACHED
         assert sum(r.enabled for r in await world.hub.store.list_for_guild(GUILD)) == 3
         assert (await world.hub.premium.fresh(GUILD)).active == 3
 
     @pytest.mark.asyncio
-    async def test_a_radio_the_bot_had_before_is_reused_with_the_new_channel_and_playlist(self, world):
-        await premium(world)
-        first = await on(world)
-        await actions.turn_off(world.hub, guild_id=GUILD, channel_id=CHANNEL, actor=ADMIN)
-
-        again = await on(world, channel_id=OTHER_CHANNEL, playlist="Jazz", candidates=bots(2))
-
-        assert again.id == first.id and again.channel_id == OTHER_CHANNEL and again.source == {"playlist": "Jazz"}
-        assert again.enabled and (await world.hub.premium.fresh(GUILD)).active == 1
-
-    @pytest.mark.asyncio
-    async def test_the_radio_only_reserve_is_preferred(self, world):
-        await premium(world)
-        candidates = [*bots(2, 3), *bots(9, radio_only=True)]
-
-        radio = await on(world, candidates=candidates)
-
-        assert radio.bot_id == 9
-
-    @pytest.mark.asyncio
     async def test_ten_simultaneous_turn_ons_with_two_already_on_let_exactly_one_through(self, world):
         await premium(world)
-        await on(world, channel_id=1)
-        await on(world, channel_id=2)
+        await on(world, channel_id=1, bot=2)
+        await on(world, channel_id=2, bot=3)
+        for number in range(10):  # dez rádios configuradas e desligadas (a configuração em si não tem teto de ligadas)
+            await configure(world.hub, channel_id=100 + number, bot_id=10 + number)
 
         results = await asyncio.gather(
-            *(on(world, channel_id=100 + n, candidates=bots(10 + n)) for n in range(10)), return_exceptions=True
+            *(
+                actions.turn_on(world.hub, guild_id=GUILD, channel_id=100 + n, actor=ADMIN, bot_can_join=True)
+                for n in range(10)
+            ),
+            return_exceptions=True,
         )
 
         assert sum(not isinstance(r, Exception) for r in results) == 1
@@ -265,7 +267,8 @@ class TestPausedAllBlocksTurnOn:
             await on(world)
 
         assert refusal.value.code == actions.PAUSED_ALL
-        assert await world.hub.store.list_for_guild(GUILD) == [] and (await world.hub.premium.fresh(GUILD)).active == 0
+        assert not any(r.enabled for r in await world.hub.store.list_for_guild(GUILD))
+        assert (await world.hub.premium.fresh(GUILD)).active == 0
 
     @pytest.mark.asyncio
     async def test_it_works_again_after_the_owner_resumes(self, world):

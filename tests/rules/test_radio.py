@@ -13,16 +13,15 @@ from empiremuse.rules.radio import (
     PRESENCE_RESUME_S,
     SWEEP_BATCH,
     SWEEP_MAX_AGE_S,
-    BotCandidate,
     Radio,
     backoff_s,
     belongs_to_guild,
     check_chat,
     check_radio,
+    source_chosen,
     clamp_active,
     default_chat,
     has_room,
-    pick_radio_bot,
     radio_id,
     should_pause,
     should_resume,
@@ -45,7 +44,7 @@ def doc(**over):
         "channel_id": str(CHANNEL),
         "kind": "custom",
         "source": {"playlist": "Rock"},
-        "chat": {"voice_delete_after_s": 30, "stage_max_messages": 7, "stage_max_age_s": 600},
+        "chat": {"voice_delete_after_s": 60, "stage_max_messages": 7, "stage_max_age_s": 600},
         "enabled": False,
         "rev": 3,
     }
@@ -63,9 +62,9 @@ class TestCheckRadio:
     def test_the_panel_shape_asdict_of_a_radio_is_accepted(self):
         shape = dataclasses.asdict(check_radio(doc()))
 
-        edited = check_radio({**shape, "chat": {**shape["chat"], "voice_delete_after_s": 60}})
+        edited = check_radio({**shape, "chat": {**shape["chat"], "voice_delete_after_s": 90}})
 
-        assert edited.chat["voice_delete_after_s"] == 60
+        assert edited.chat["voice_delete_after_s"] == 90
 
     @pytest.mark.parametrize("bad", ["", "1", "1:", ":2", "a:b", "1:2:3", "-1:2", None, 5, "1: 2"])
     def test_a_malformed_id_is_refused(self, bad):
@@ -88,7 +87,6 @@ class TestCheckRadio:
         "source",
         [
             None,
-            {},
             {"playlist": ""},
             {"playlist": "x" * 101},
             {"playlist": 3},
@@ -98,6 +96,13 @@ class TestCheckRadio:
     )
     def test_a_custom_source_is_exactly_one_playlist_name(self, source):
         assert check_radio(doc(source=source)).code == "radio_source_invalid"
+
+    @pytest.mark.parametrize("kind", ["custom", "live"])
+    def test_a_configured_radio_may_have_no_station_yet_and_cannot_be_turned_on(self, kind):
+        radio = check_radio(doc(kind=kind, source={}))
+
+        assert radio.source == {} and source_chosen(radio) is False
+        assert source_chosen(check_radio(doc(source={"station": "0123456789abcdef01234567"}))) is True
 
     def test_a_live_source_needs_station_uuids(self):
         ok = doc(kind="live", source={"station": UUID, "reserve": None})
@@ -131,7 +136,8 @@ class TestCheckRadio:
 
 class TestChat:
     def test_defaults_when_nothing_is_given(self):
-        assert check_chat(None) == {"voice_delete_after_s": 30, "stage_max_messages": 7, "stage_max_age_s": 600}
+        # o padrão da voz é 60 s (decisão do dono depois do teste ao vivo: ninguém perde uma mensagem); o do palco não mudou
+        assert check_chat(None) == {"voice_delete_after_s": 60, "stage_max_messages": 7, "stage_max_age_s": 600}
 
     @pytest.mark.parametrize("field", list(CHAT_LIMITS))
     def test_the_limits_are_inclusive_at_both_ends(self, field):
@@ -265,32 +271,3 @@ class TestVirtualClock:
 
     def test_zero_length_tracks_are_skipped_and_a_negative_elapsed_is_the_start(self):
         assert virtual_position([0, 1000], 500) == (1, 500) and virtual_position([1000], -5) == (0, 0)
-
-
-class TestPickRadioBot:
-    @staticmethod
-    def bot(identifier, bot_id, **over):
-        base = dict(main=False, radio_only=False, ready=True, in_guild=True, busy=False, has_radio_here=False)
-        return BotCandidate(identifier, bot_id, **{**base, **over})
-
-    def test_a_free_radio_only_reserve_comes_first_then_any_reserve_in_natural_order(self):
-        candidates = [
-            self.bot("TOKEN", 1, main=True),
-            self.bot("TOKEN_10", 10),
-            self.bot("TOKEN_2", 2),
-            self.bot("TOKEN_5", 5, radio_only=True),
-        ]
-
-        assert pick_radio_bot(candidates) == 5
-        assert pick_radio_bot(candidates[:3]) == 2  # TOKEN_2 antes de TOKEN_10 (ordem natural, não de texto)
-
-    def test_the_main_bot_is_never_picked(self):
-        assert pick_radio_bot([self.bot("TOKEN", 1, main=True, radio_only=True)]) is None
-
-    @pytest.mark.parametrize("over", [{"busy": True}, {"ready": False}, {"in_guild": False}, {"has_radio_here": True}])
-    def test_busy_unready_absent_or_already_running_a_radio_here_are_skipped(self, over):
-        assert pick_radio_bot([self.bot("TOKEN_2", 2, **over)]) is None
-        assert pick_radio_bot([self.bot("TOKEN_2", 2, **over), self.bot("TOKEN_3", 3)]) == 3
-
-    def test_no_candidates_means_nobody(self):
-        assert pick_radio_bot([]) is None

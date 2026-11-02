@@ -231,9 +231,9 @@ class EmbedLinkSkin:
         if not player.has_thread:
             data["components"][5].options.append(
                 disnake.SelectOption(
-                    label="Song-Request Thread",
+                    label="Jukebox Thread",
                     emoji=app_emoji(player.bot, "comment"),
-                    value=PlayerControls.song_request_thread,
+                    value=PlayerControls.jukebox_thread,
                     description=fit(player.tr("player.create_a_temporary_thread_to.description"), 100),
                 )
             )

@@ -28,6 +28,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+STAGE_MODERATOR_PERMISSIONS = (
+    "manage_channels",
+    "mute_members",
+    "move_members",
+)  # o que criar um evento de palco exige
+STAGE_TOPIC_LIMIT = 120
+PANEL_CLEANUP_LIMIT = 50  # mensagens do canal que se olham atrás de painéis antigos do próprio bot
+
 
 class RadioBotUnavailable(Exception):
     """O bot da rádio (ou o servidor dele) ainda não está pronto: o runner trata como "não sei agora" e tenta de novo."""
@@ -38,6 +46,8 @@ class DiscordRadioPorts:
         self.pool = pool
         self.radio = radio
         self._tracks: list[Any] = []
+        self._stage_created = False  # o evento de palco foi criado por este bot (e só esse ele encerra)
+        self._stage_noticed = False
 
     # ------------------------------------------------------------------ o mundo
 
@@ -137,14 +147,69 @@ class DiscordRadioPorts:
         player.loop = "queue"  # a playlist dá a volta; a ao vivo troca isto (``LiveRadioPorts``)
 
     async def _speak(self, guild: disnake.Guild, channel: disnake.StageChannel, player: Any) -> None:
-        """Palco: ``suppress=False`` com ``MUTE_MEMBERS``; sem isso, ``request_to_speak``. Um 403 vale UMA tentativa por conexão (R-5)."""
+        """Palco: garante o evento de palco ao vivo (sem ele o Discord recusa o pedido de fala com 403 50001), depois ``suppress=False`` com
+        ``MUTE_MEMBERS``; sem isso, ``request_to_speak``. Um 403 vale UMA tentativa por conexão (R-5)."""
         try:
+            await self._ensure_stage_instance(guild, channel, player)
             if channel.permissions_for(guild.me).mute_members:
                 await guild.me.edit(suppress=False)
             else:
                 await guild.me.request_to_speak()
         except disnake.Forbidden:
             logger.warning("Rádio sem permissão para falar no palco")
+
+    async def _stage_name(self) -> object:
+        return await self._panel_name(self.radio)
+
+    async def _ensure_stage_instance(self, guild: disnake.Guild, channel: disnake.StageChannel, player: Any) -> None:
+        """Sem evento de palco ao vivo, cria um (tópico = nome da estação ou da playlist, já limpo; só para o servidor) se o bot é moderador de palco;
+        sem a permissão, avisa UMA vez quais faltam. Só o evento que o próprio bot criou é encerrado quando a rádio desliga."""
+        if channel.instance is not None:
+            return
+        permissions = channel.permissions_for(guild.me)
+        missing = [name for name in STAGE_MODERATOR_PERMISSIONS if not getattr(permissions, name, False)]
+        if missing:
+            await self._stage_notice(channel, player, missing)
+            return
+        from empiremuse.rules.text import external_text  # tarde: só o palco usa
+
+        topic = external_text(await self._stage_name(), STAGE_TOPIC_LIMIT, markdown=False) or player.tr(
+            "radio.stage.topic"
+        )
+        try:
+            await channel.create_instance(
+                topic=topic, privacy_level=disnake.StagePrivacyLevel.guild_only, reason="Rádio 24/7"
+            )
+        except (disnake.Forbidden, disnake.HTTPException) as error:
+            logger.warning("Evento de palco da rádio não criado (%s)", type(error).__name__)
+            return
+        self._stage_created = True
+
+    async def _stage_notice(self, channel: disnake.StageChannel, player: Any, missing: list[str]) -> None:
+        """Um aviso claro e traduzido no chat do palco com as permissões que faltam (no máximo um por palco a cada minuto e um por ativação)."""
+        if self._stage_noticed or not self.pool.radio.claim_notice(("stage", channel.id)):
+            return
+        self._stage_noticed = True
+        names = ", ".join(f"**{player.tr(f'radio.stage.perm.{name}')}**" for name in missing)
+        try:
+            await channel.send(
+                player.tr("radio.stage.no_instance", permissions=names), allowed_mentions=disnake.AllowedMentions.none()
+            )
+        except (disnake.Forbidden, disnake.HTTPException) as error:
+            logger.warning("Aviso do palco não enviado (%s)", type(error).__name__)
+
+    async def end_stage(self) -> None:
+        """A rádio desligou: encerra o evento de palco SE foi o próprio bot quem o criou (o de uma pessoa nunca é tocado)."""
+        if not self._stage_created:
+            return
+        self._stage_created = False
+        instance = getattr(self._channel(), "instance", None)
+        if instance is None:
+            return
+        try:
+            await instance.delete(reason="Rádio 24/7 desligada")
+        except (disnake.Forbidden, disnake.NotFound, disnake.HTTPException) as error:
+            logger.warning("Evento de palco da rádio não encerrado (%s)", type(error).__name__)
 
     async def _load_tracks(self) -> list[Any]:
         if self._tracks:
@@ -188,6 +253,72 @@ class DiscordRadioPorts:
     def _panel_view(self) -> Any:
         return None  # a ao vivo mostra título, reserva no ar e fora do ar (``LiveRadioPorts``)
 
+    async def _custom_view(self) -> Any:
+        return None  # a personalizada por estação mostra a faixa no ar e o crédito do Last.fm (``CustomRadioPorts``)
+
+    async def _station_card(self, current: Radio) -> Any:
+        return None  # só a rádio ao vivo tem estação (``LiveRadioPorts``)
+
+    @staticmethod
+    def _avatar_url(guild: disnake.Guild) -> str | None:
+        """A foto do bot para a miniatura de reserva; sem ela (cache incompleto) o painel sai sem miniatura em vez de falhar."""
+        try:
+            return guild.me.display_avatar.replace(size=256).url
+        except AttributeError:
+            return None
+
+    async def _logo(self, current: Radio) -> Any:
+        return None  # só a rádio ao vivo tem logo de estação (``LiveRadioPorts``)
+
+    @staticmethod
+    def edit_kwargs(payload: dict[str, Any]) -> dict[str, Any]:
+        """Os argumentos de ``message.edit``: com um anexo novo (o logo), troca os anexos de antes em vez de empilhar."""
+        return {**payload, "attachments": []} if "file" in payload else dict(payload)
+
+    async def _panel_payload(self, bot: BotCore, guild: disnake.Guild, current: Radio) -> dict[str, Any]:
+        """O painel do tipo desta rádio (ao vivo ou personalizada) com o visual da Jukebox: ícones do bot, miniatura e cor."""
+        from empiremuse.utils.music.app_emojis import emoji as app_emoji  # tarde: o módulo importa o cliente
+        from empiremuse.utils.radio.panel import panel_payload
+
+        tr = await bot.pool.i18n.for_guild(guild)
+        live = self.radio.kind == "live"
+        return panel_payload(
+            tr,
+            playlist_name="" if live else await self._panel_name(current),
+            color=bot.get_color(guild.me),
+            live=live,
+            view=self._panel_view(),
+            custom=await self._custom_view(),
+            station=await self._station_card(current),
+            emojis=lambda name: app_emoji(bot, name),
+            avatar=self._avatar_url(guild),
+            logo=await self._logo(current),
+        )
+
+    async def _refresh_existing(self, message: Any, bot: BotCore, guild: disnake.Guild, current: Radio) -> None:
+        """O painel que já existia (de antes de uma atualização do bot, ou do reinício) é redesenhado uma vez com o visual de agora."""
+        try:
+            payload = await self._panel_payload(bot, guild, current)
+            await message.edit(allowed_mentions=disnake.AllowedMentions.none(), **self.edit_kwargs(payload))
+        except Exception as error:  # noqa: BLE001 - o painel é conveniência: só o tipo vai ao log (R-12)
+            logger.warning("Painel da rádio não redesenhado (%s)", type(error).__name__)
+
+    async def _remove_old_panels(self, channel: Any, bot: BotCore) -> None:
+        """Apaga os painéis de rádio que ESTE bot deixou no canal (mensagens dele com os botões do painel). Só dele: o painel da Jukebox e os avisos de
+        outros bots não têm esses botões e ficam. Falha só vai para o log (tipo)."""
+        from empiremuse.utils.radio.panel import is_radio_panel  # tarde: o painel importa a camada de texto
+
+        try:
+            old = [
+                message
+                async for message in channel.history(limit=PANEL_CLEANUP_LIMIT)
+                if message.author.id == bot.user.id and not message.pinned and is_radio_panel(message)
+            ]
+            for message in old:
+                await message.delete()
+        except Exception as error:  # noqa: BLE001 - limpar é conveniência: o painel novo sai de qualquer jeito; só o tipo vai ao log (R-12)
+            logger.warning("Painéis antigos da rádio não apagados (%s)", type(error).__name__)
+
     async def ensure_panel(self) -> None:
         """Garante a mensagem de controle no chat da call: mantém a que ainda existe, manda uma nova se sumiu. Sem permissão de enviar: só avisa."""
         bot, guild, channel = self._bot(), self._guild(), self._channel()
@@ -199,22 +330,15 @@ class DiscordRadioPorts:
             try:
                 existing = await channel.fetch_message(current.panel_message_id)
                 hub.manager.note_panel(self.radio.id, existing.id)
+                await self._refresh_existing(existing, bot, guild, current)
                 return
             except disnake.NotFound:
                 pass  # sumiu: manda outra
             except disnake.Forbidden:
                 logger.warning("Painel da rádio sem permissão para ler o chat da call")
                 return
-        from empiremuse.utils.radio.panel import panel_payload  # tarde: o painel importa a camada de texto
-
-        tr = await bot.pool.i18n.for_guild(guild)
-        payload = panel_payload(
-            tr,
-            playlist_name=await self._panel_name(current),
-            color=bot.get_color(guild.me),
-            live=self.radio.kind == "live",
-            view=self._panel_view(),
-        )
+        payload = await self._panel_payload(bot, guild, current)
+        await self._remove_old_panels(channel, bot)  # um id de painel perdido não deixa painéis se acumulando no canal
         try:
             message = await channel.send(allowed_mentions=disnake.AllowedMentions.none(), **payload)
         except disnake.Forbidden:
@@ -295,16 +419,33 @@ class DiscordChatPorts:
             messages = [m async for m in channel.history(limit=limit)]
         except disnake.Forbidden as error:
             raise PermissionLost from error
+        from empiremuse.utils.radio.panel import is_radio_panel  # tarde: o painel importa a camada de texto
+
+        def orphan(m: Any) -> bool:
+            """Painel de rádio do PRÓPRIO bot que já não é o de agora (o id se perdeu): lixo que se acumularia, não aviso a proteger."""
+            return (
+                panel_id is not None
+                and m.author.id == self.radio.bot_id
+                and m.id != panel_id
+                and not m.pinned
+                and is_radio_panel(m)
+            )
+
         return [
             (
                 m.id,
                 m.created_at.timestamp(),
                 bool(
                     m.pinned
-                    or m.id == panel_id
-                    or m.author.id == self.radio.bot_id
-                    or m.author.id in pool_bots
-                    or m.is_system()
+                    or (
+                        not orphan(m)
+                        and (
+                            m.id == panel_id
+                            or m.author.id == self.radio.bot_id
+                            or m.author.id in pool_bots
+                            or m.is_system()
+                        )
+                    )
                 ),
             )
             for m in messages

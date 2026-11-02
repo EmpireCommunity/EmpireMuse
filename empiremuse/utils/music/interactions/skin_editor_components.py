@@ -34,7 +34,7 @@ class SkinEditorComponentsMixin:
         ]
         add_skin_prefix = lambda d: [f"> css: {i}" for i in d.keys()]
         static_skins_opts = [
-            disnake.SelectOption(emoji="💠", label=f"Song-Request: {s.replace('> css: ', '', 1)}", value=s)
+            disnake.SelectOption(emoji="💠", label=f"Jukebox: {s.replace('> css: ', '', 1)}", value=s)
             for s in add_skin_prefix(self.global_data["custom_skins_static"])
         ]
 
@@ -50,7 +50,7 @@ class SkinEditorComponentsMixin:
                 min_values=1,
                 max_values=1,
                 options=static_skins_opts,
-                placeholder="Skins do modo song-request do player",
+                placeholder="Skins do modo Jukebox do player",
             )
             static_skin_select.callback = self.load_skin
             self.add_item(static_skin_select)

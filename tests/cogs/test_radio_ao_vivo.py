@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from empiremuse.rules.radio import KIND_LIVE, LIVE_BACKOFF_STEPS_S, BotCandidate, check_radio, live_backoff_s, radio_id
+from empiremuse.rules.radio import KIND_LIVE, LIVE_BACKOFF_STEPS_S, check_radio, live_backoff_s, radio_id
 from empiremuse.rules.radio_stations import Station
 from empiremuse.utils.radio import RadioHub, actions
 from empiremuse.utils.radio.actions import Actor, Refused
@@ -22,6 +22,7 @@ from empiremuse.utils.radio.health import (
 from empiremuse.utils.radio.live import LiveRadioRunner, StationFailure
 from empiremuse.utils.radio.runner import Phase, ProcessLimits
 from empiremuse.utils.radio.service import RadioState
+from tests.cogs.radio_config import configure
 from tests.cogs.test_radio_runner import FakePorts
 from tests.persistence.test_radio_store import FakeDb
 
@@ -427,7 +428,7 @@ class HubWorld:
                 collection="global",
             )
 
-    async def by_uuid(self, uuid):
+    async def by_uuid(self, uuid, **kwargs):
         self.by_uuid_calls.append(uuid)
         return Station(uuid, "n", "http://stream.example:8000/x", "MP3", 128, "BR")
 
@@ -494,10 +495,10 @@ class TestHealthChecker:
         world.good = {uuid_n(1)}
         original = world.by_uuid
 
-        async def flaky(uuid):
+        async def flaky(uuid, **kwargs):
             if uuid == uuid_n(0):
                 raise OSError("rede")
-            return await original(uuid)
+            return await original(uuid, **kwargs)
 
         world.by_uuid = flaky  # type: ignore[method-assign]
 
@@ -521,31 +522,20 @@ ADMIN = Actor(user_id=7, manage_guild=True, manage_messages_in_channel=True)
 STATION = Station(MAIN, "Boa FM", "http://stream.example:8000/x", "MP3", 128, "BR")
 
 
-def bots(*ids):
-    return [
-        BotCandidate(
-            f"TOKEN_{n}", n, main=False, radio_only=False, ready=True, in_guild=True, busy=False, has_radio_here=False
-        )
-        for n in ids
-    ]
-
-
 async def premium(world):
     await world.hub.control.load()
     await world.hub.premium.grant(GUILD, by=1)
 
 
 async def turn_on(world, **over):
-    args = dict(
-        guild_id=GUILD,
-        channel_id=CHANNEL,
-        playlist=None,
-        actor=ADMIN,
-        candidates=bots(2, 3),
-        playlist_exists=False,
-        bot_can_join=True,
-        station=STATION,
-    )
+    """``/radio setup`` (tipo ao vivo, gravado direto) e ``/radio on``. ``station`` é a estação (um ``Station``) e ``station_list`` a lista de onde veio."""
+    station = over.pop("station", STATION)
+    station_list = over.pop("station_list", None)
+    bot = over.pop("bot", 2)
+    guild_id, channel_id = over.get("guild_id", GUILD), over.get("channel_id", CHANNEL)
+    source = {"station": station.uuid, "reserve": None, **({"list": list(station_list)} if station_list else {})}
+    await configure(world.hub, guild_id=guild_id, channel_id=channel_id, bot_id=bot, kind="live", source=source)
+    args = dict(guild_id=guild_id, channel_id=channel_id, actor=ADMIN, bot_can_join=True)
     return await actions.turn_on(world.hub, **{**args, **over})
 
 
@@ -568,25 +558,6 @@ class TestTurnOnWithAStation:
             await turn_on(world)
 
         assert refusal.value.code == actions.STATION_DOWN and (await world.hub.premium.fresh(GUILD)).active == 0
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize(("playlist", "station"), [("Rock", STATION), (None, None)])
-    async def test_a_playlist_and_a_station_together_or_neither_is_refused(self, world, playlist, station):
-        await premium(world)
-
-        with pytest.raises(Refused) as refusal:
-            await turn_on(world, playlist=playlist, station=station, playlist_exists=True)
-
-        assert refusal.value.code == actions.CHOOSE_ONE
-
-    @pytest.mark.asyncio
-    async def test_a_custom_radio_still_needs_its_playlist(self, world):
-        await premium(world)
-
-        with pytest.raises(Refused) as refusal:
-            await turn_on(world, playlist="Rock", station=None, playlist_exists=False)
-
-        assert refusal.value.code == actions.NO_PLAYLIST
 
     def test_a_live_document_validates_with_station_and_optional_reserve(self):
         doc = {
@@ -770,10 +741,21 @@ class TestLiveLoadsOnlyOnTheLocalNode:
             }
         )
         ports = LiveRadioPorts(w.ports.pool, radio)
-        self.local = SimpleNamespace(
-            identifier="LOCAL",
-            get_tracks=AsyncMock(return_value=[SimpleNamespace(title="live", info={"uri": "http://127.0.0.1:9/r/x"})]),
-        )
+
+        async def load(query, **kwargs):
+            for session in w.hub.relay._sessions.values():
+                session.opened += 1  # o relay abriu a estação (o loadtracks do Lavalink)
+            return [SimpleNamespace(title="live", info={"uri": "http://127.0.0.1:9/r/x"})]
+
+        async def play(**kwargs):
+            for session in w.hub.relay._sessions.values():
+                session.served += 1
+                session.claimed_serial = session.served
+                session.flowing.set()  # ...e o primeiro áudio do PLAY chegou ao Lavalink: a rádio toca de verdade
+
+        w.player.process_next = AsyncMock(side_effect=play)
+
+        self.local = SimpleNamespace(identifier="LOCAL", get_tracks=AsyncMock(side_effect=load))
         self.remote = SimpleNamespace(
             identifier="PUBLICO", get_tracks=AsyncMock(return_value=[SimpleNamespace(title="outro")])
         )
@@ -794,9 +776,65 @@ class TestLiveLoadsOnlyOnTheLocalNode:
             query = self.local.get_tracks.await_args.args[0]
             assert re.fullmatch(r"http://127\.0\.0\.1:\d+/r/[A-Za-z0-9_-]{22}", query)
             assert "ytsearch" not in query and "source" not in self.local.get_tracks.await_args.kwargs
+            assert (
+                self.local.get_tracks.await_args.kwargs["trusted_local"] is True
+            )  # o filtro de IP do nó libera SÓ esta carga
             self.remote.get_tracks.assert_not_awaited()  # nenhum outro nó
             w.music.get_tracks.assert_not_awaited()  # nem o get_tracks genérico (provedores de busca, Deezer, Spotify)
             assert w.player.process_next.await_count == 1
+        finally:
+            await w.hub.relay.close()
+
+    @pytest.mark.asyncio
+    async def test_with_the_real_node_guard_the_relay_load_and_play_are_not_refused_and_the_same_address_from_a_user_is(
+        self,
+    ):
+        """Contra o filtro de IP REAL do nó (#184): a carga do relay passa e a faixa toca sem decodificar; o mesmo endereço pedido por um usuário é recusado."""
+        from collections import OrderedDict
+        from unittest.mock import AsyncMock
+
+        from cachetools import TTLCache
+
+        from empiremuse.wavelink.errors import MissingSessionID, TrackNotFound
+        from empiremuse.wavelink.node import Node
+
+        w, ports = await self.world_with_player()
+        real = object.__new__(Node)
+        real.players = {}
+        real.session_id = None
+        real._client = SimpleNamespace(bot=SimpleNamespace(music=SimpleNamespace(players={})))
+        real._trusted_encoded = OrderedDict()
+        real._checked_encoded = TTLCache(maxsize=64, ttl=600)
+        track = SimpleNamespace(id="LIVE-ENCODED", title="live", info={"uri": "http://127.0.0.1:9/r/x"})
+
+        async def flowing_load(*args, **kwargs):
+            for session in w.hub.relay._sessions.values():
+                session.opened += 1
+            return [track]
+
+        async def play(**kwargs):
+            for session in w.hub.relay._sessions.values():
+                session.flowing.set()
+
+        w.player.process_next = AsyncMock(side_effect=play)
+
+        real._get_tracks = AsyncMock(side_effect=flowing_load)
+        real.build_track = AsyncMock(side_effect=AssertionError("a faixa do relay não deveria ser decodificada"))
+        real.identifier = "LOCAL"
+        w.bot.music.nodes = {"LOCAL": real}
+        try:
+            await ports.connect()
+            await ports.play_live()  # a carga do relay NÃO é recusada pela barreira de IP do nó
+
+            with pytest.raises(
+                MissingSessionID
+            ):  # e o play da faixa passa sem decodificar (chegou ao nó falso, sem sessão)
+                await Node.update_player(real, 7, {"encodedTrack": "LIVE-ENCODED"}, True)
+            real.build_track.assert_not_awaited()
+            with pytest.raises(
+                TrackNotFound
+            ):  # o mesmo endereço, pedido por um usuário (sem trusted_local), é recusado
+                await Node.get_tracks(real, "http://127.0.0.1:9/r/x")
         finally:
             await w.hub.relay.close()
 
@@ -827,7 +865,7 @@ class TestLiveLoadsOnlyOnTheLocalNode:
 
         async def fail_after_touching(query, **kwargs):
             for session in w.hub.relay._sessions.values():
-                session.hits += 1  # o Lavalink chegou ao relay
+                session.opened += 1  # o relay chegou a abrir a estação
             raise OSError("fluxo sem áudio")
 
         self.local.get_tracks.side_effect = fail_after_touching
@@ -836,6 +874,106 @@ class TestLiveLoadsOnlyOnTheLocalNode:
             with pytest.raises(StationFailure):
                 await ports.play_live()
             assert w.hub.relay._sessions == {}  # o token foi revogado
+        finally:
+            await w.hub.relay.close()
+
+    @pytest.mark.asyncio
+    async def test_the_play_asks_to_expect_its_own_audio_right_before_starting_the_player(self):
+        """Revisão do R4: ``expect_flow`` no ponto de chamada. O áudio do ``loadtracks`` não pode valer como "o play abriu" (tocando com player mudo)."""
+        w, ports = await self.world_with_player()
+        events = []
+        real_expect = w.hub.relay.expect_flow
+
+        def expect(token):
+            events.append("expect_flow")
+            return real_expect(token)
+
+        w.hub.relay.expect_flow = expect
+        real_play = w.player.process_next
+
+        async def play(**kwargs):
+            events.append("process_next")
+            return await real_play(**kwargs)
+
+        w.player.process_next = play
+        try:
+            await ports.connect()
+            await ports.play_live()
+        finally:
+            await w.hub.relay.close()
+
+        assert events == ["expect_flow", "process_next"]
+
+    @pytest.mark.asyncio
+    async def test_audio_read_by_the_load_does_not_make_a_silent_play_look_like_playing(self, monkeypatch):
+        from unittest.mock import AsyncMock
+
+        from empiremuse.utils.radio import live_ports
+
+        monkeypatch.setattr(live_ports, "FLOW_WAIT_S", 0.05)
+        w, ports = await self.world_with_player()
+
+        async def load_that_flowed(query, **kwargs):
+            for session in w.hub.relay._sessions.values():
+                session.opened += 1
+                session.flowing.set()  # o loadtracks do Lavalink leu áudio...
+            return [SimpleNamespace(title="live", info={"uri": "x"})]
+
+        self.local.get_tracks.side_effect = load_that_flowed
+        w.player.process_next = AsyncMock()  # ...mas o play nunca abriu a estação
+        try:
+            await ports.connect()
+            with pytest.raises((StationFailure, RuntimeError)):
+                await ports.play_live()
+        finally:
+            await w.hub.relay.close()
+
+    @pytest.mark.asyncio
+    async def test_a_stream_that_never_delivers_audio_is_not_playing_and_the_station_is_to_blame(self, monkeypatch):
+        """Litmus: a rádio que falhou ficava muda enquanto o contador dizia "tocando". Sem o primeiro áudio no prazo, ``play_live`` FALHA."""
+        from empiremuse.utils.radio import live_ports
+
+        monkeypatch.setattr(live_ports, "FLOW_WAIT_S", 0.05)
+        w, ports = await self.world_with_player()
+
+        async def opened_but_silent(query, **kwargs):
+            for session in w.hub.relay._sessions.values():
+                session.opened += 1  # o relay abriu a estação, mas nenhum áudio chegou ao Lavalink
+            return [SimpleNamespace(title="live", info={"uri": "x"})]
+
+        from unittest.mock import AsyncMock
+
+        w.player.process_next = AsyncMock()  # o play não entrega áudio nenhum
+        self.local.get_tracks.side_effect = opened_but_silent
+        try:
+            await ports.connect()
+            with pytest.raises(StationFailure):
+                await ports.play_live()
+            w.player.stop.assert_awaited()  # nada de faixa velha esperando
+            assert w.hub.relay._sessions == {}
+        finally:
+            await w.hub.relay.close()
+
+    @pytest.mark.asyncio
+    async def test_a_stream_the_lavalink_never_fetched_is_silent_but_not_the_stations_fault(self, monkeypatch):
+        from empiremuse.utils.radio import live_ports
+
+        monkeypatch.setattr(live_ports, "FLOW_WAIT_S", 0.05)
+        w, ports = await self.world_with_player()
+        from unittest.mock import AsyncMock
+
+        w.player.process_next = AsyncMock()  # o play não entrega áudio nenhum
+        self.local.get_tracks.side_effect = None
+        self.local.get_tracks.return_value = [
+            SimpleNamespace(title="live", info={"uri": "x"})
+        ]  # carregou, mas nunca pediu o áudio
+        try:
+            await ports.connect()
+            with pytest.raises(RuntimeError) as failure:
+                await ports.play_live()
+            assert not isinstance(
+                failure.value, StationFailure
+            )  # o relay nem tentou a estação: não é falha dela, e o runner tenta de novo
         finally:
             await w.hub.relay.close()
 
@@ -880,13 +1018,13 @@ class TestLivePanel:
         def text(view):
             return panel_payload(tr, playlist_name="Boa FM", live=True, view=view)["embeds"][0].description
 
-        assert "panel_now|title=Artista - Faixa" in text(LiveView(title="Artista - Faixa"))
-        assert "panel_live" in text(LiveView()) and "panel_reserve" not in text(LiveView())
-        assert "panel_reserve" in text(LiveView(on_reserve=True))
-        assert "panel_offline" in text(LiveView(offline=True)) and "panel_now" not in text(
+        assert "radio.panel.live.now|artist=Artista|song=Faixa" in text(LiveView(title="Artista - Faixa"))
+        assert "radio.panel.live.now" not in text(LiveView())  # sem título do fluxo não há "Tocando agora"
+        assert "panel_reserve" in text(LiveView(on_reserve=True)) and "panel_reserve" not in text(LiveView())
+        assert "panel_offline" in text(LiveView(offline=True)) and "radio.panel.live.now" not in text(
             LiveView(offline=True, title="x")
         )
-        assert len(text(LiveView(title="z" * 1000))) < 400  # o título tem teto
+        assert len(text(LiveView(title="z" * 1000))) < 500  # o título tem teto
 
     @pytest.mark.asyncio
     async def test_a_title_every_100_ms_edits_the_panel_at_most_once_per_15_seconds_with_the_latest(self):

@@ -52,6 +52,8 @@ from empiremuse.utils.music.models.step_state import AutoqueueState, ResolveTrac
 
 class PlayerAutoqueueMixin:
     async def get_autoqueue_tracks(self):
+        if getattr(self, "radio_id", None) is not None:
+            return None  # rádio nunca toca por sugestão: só o que o runner mandou (nem por outro caminho que chame o autoplay)
         req = AutoqueueState()
         try:
             return self.queue_autoplay.popleft()

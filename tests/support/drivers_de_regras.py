@@ -300,11 +300,11 @@ class BotDoPlayer(BotDeComandos):
         self.documento("global", "users", AUTOR)["fav_links"].update(favoritos or {})
 
         async def sem_canal_de_pedidos(gid):
-            from empiremuse.utils.server_request import RequestConfig
+            from empiremuse.utils.server_jukebox import JukeboxConfig
 
-            return RequestConfig(None, None, None, 0)  # sem painel configurado: o clique segue pelo caminho normal
+            return JukeboxConfig(None, None, None, 0)  # sem painel configurado: o clique segue pelo caminho normal
 
-        self.pool.servers = SimpleNamespace(request=SimpleNamespace(get=sem_canal_de_pedidos))
+        self.pool.servers = SimpleNamespace(jukebox=SimpleNamespace(get=sem_canal_de_pedidos))
         self.pool.i18n = get_i18n()  # o clique que falha responde no idioma do servidor
 
     def dispatch(self, nome, *args):

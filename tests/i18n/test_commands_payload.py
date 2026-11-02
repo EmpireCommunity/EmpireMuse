@@ -70,12 +70,11 @@ TODAYS_PT_BR_NAMES = {
     "remove": ["nome", "nome_exato"],
     "remove_dj": ["membro"],
     "remove_dj_role": ["cargo"],
-    "reset": ["deletar_canal"],
     "rotate": ["nome", "nome_exato"],
     "search": ["busca", "opções", "posição", "selecionar_bot", "server", "tocar_agora"],
     "seek": ["tempo"],
     "set_voice_status": ["modelo"],
-    "setup": ["canal", "limpar_mensagens"],
+    "jukebox.setup": ["auto_delete", "canal", "pedidos_texto"],
     "skip": ["nome", "nome_exato", "tocar_apenas"],
     "skipto": ["nome", "nome_exato"],
     "volume": ["nível"],
@@ -130,7 +129,7 @@ def levels(linked):
 
 
 def test_every_slash_command_was_found(linked):
-    assert len(linked) >= 40 and {"play", "queue", "language", "playlists", "setup"} <= set(linked)
+    assert len(linked) >= 40 and {"play", "queue", "language", "playlists", "jukebox", "radio"} <= set(linked)
 
 
 def test_descriptions_fit_in_every_enabled_locale(linked):
@@ -141,9 +140,13 @@ def test_descriptions_fit_in_every_enabled_locale(linked):
             assert locale in locales() and 1 <= rules.utf16_length(text) <= 100, (name, locale)
 
 
-def test_command_names_are_never_localized(linked):
+def test_command_names_come_from_the_catalog_and_are_valid_in_every_locale(linked):
+    """Contrato §5: o comando público tem ``cmd.<id>.name`` (pt-BR); o nome base é o inglês e o localizado precisa ser um nome válido do Discord."""
     for name, command in linked.items():
-        assert not command.body.name_localizations.data, name
+        for locale, text in (command.body.name_localizations.data or {}).items():
+            assert locale in locales() and rules.option_name_ok(text), (name, locale, text)
+    assert linked["language"].body.name_localizations.data == {"pt-BR": "idioma"}
+    assert linked["jukebox"].body.name == "jukebox"
 
 
 def test_option_bases_and_localized_names_are_valid_and_unique_per_level(linked):

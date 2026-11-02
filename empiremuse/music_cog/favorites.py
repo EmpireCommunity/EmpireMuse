@@ -28,18 +28,8 @@ class FavoritesMixin:
         aliases=[
             "favs",
             "favoritos",
-            "fvmgr",
-            "favlist",
-            "integrations",
-            "integrationmanager",
             "itg",
-            "itgmgr",
-            "itglist",
-            "integrationlist",
-            "serverplaylist",
             "spl",
-            "svp",
-            "svpl",
         ],
         description="Gerenciar seus favoritos/integrações e links do server.",
         cooldown=fav_cd,
@@ -64,21 +54,14 @@ class FavoritesMixin:
         if isinstance(inter, CustomContext):
             prefix = inter.clean_prefix
 
-            if inter.invoked_with in ("serverplaylist", "spl", "svp", "svpl"):
+            if inter.invoked_with == "spl":
                 # as playlists são do servidor (não de um bot): sem escolher bot; só dono, Administrador ou Gerenciar Servidor
                 if not member_may_manage(inter.author, inter.guild):
                     raise GenericError(NOT_ALLOWED)
 
                 mode = ViewMode.guild_fav_manager
 
-            elif inter.invoked_with in (
-                "integrations",
-                "integrationmanager",
-                "itg",
-                "itgmgr",
-                "itglist",
-                "integrationlist",
-            ):
+            elif inter.invoked_with == "itg":
                 mode = ViewMode.integrations_manager
 
         else:
@@ -91,7 +74,7 @@ class FavoritesMixin:
         cog = self.bot.get_cog("Music")
 
         if cog:
-            ephemeral = await cog.is_request_channel(inter, ignore_thread=True)
+            ephemeral = await cog.is_jukebox_channel(inter, ignore_thread=True)
             await inter.response.defer(ephemeral=ephemeral)
         else:
             ephemeral = True

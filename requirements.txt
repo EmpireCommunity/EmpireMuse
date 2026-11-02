@@ -21,3 +21,4 @@ setuptools>=84.1.0; python_version>='3.12'
 audioop-lts; python_version>='3.13'
 uvloop; sys_platform != 'win32'
 babel
+pillow>=13.0.0

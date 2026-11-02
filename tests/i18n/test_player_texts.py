@@ -11,8 +11,8 @@ import pytest
 
 from empiremuse.i18n import get_i18n
 from empiremuse.rules import i18n as rules
-from empiremuse.rules.request_panel import PAUSED, PanelEntry
-from empiremuse.utils.music.interactions.request_panel import render_panel
+from empiremuse.rules.jukebox_panel import PAUSED, PanelEntry
+from empiremuse.utils.music.interactions.jukebox_panel import render_panel
 from empiremuse.utils.music.models.player import LavalinkPlayer
 from tests.i18n.skins_harness import make_player
 
@@ -92,7 +92,7 @@ ENTRIES = (
 )
 
 
-class TestRequestPanel:
+class TestJukeboxPanel:
     def test_pt_br_is_todays_text(self):
         embed = panel(PT, *ENTRIES, last_action="alguém fez algo")["embeds"][0]
 
