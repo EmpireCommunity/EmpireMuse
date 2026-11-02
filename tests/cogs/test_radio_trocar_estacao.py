@@ -505,10 +505,10 @@ class TestResumeBurst:
             await w.cog.radio_panel_click(press)
 
         assert len(resumes) <= 1
+        assert "Aguarde" not in said(presses[0])  # o primeiro clique (silenciar) é imediato
         assert (
-            sum("mudo" in said(p).lower() or "silenci" in said(p).lower() for p in presses) >= 10
-        )  # os "mudo" (pausar) passam todos
-        assert sum("Aguarde" in said(p) for p in presses) >= 9  # os "desmudar" repetidos esperam
+            sum("Aguarde" in said(p) for p in presses) >= 15
+        )  # depois do primeiro desmudar, os seguintes esperam os 5 s
 
     @pytest.mark.asyncio
     async def test_after_five_seconds_unmuting_works_again(self):
