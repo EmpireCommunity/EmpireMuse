@@ -35,7 +35,7 @@ from urllib.parse import quote
 from cachetools import TTLCache
 from rapidfuzz import fuzz
 
-from empiremuse.rules.title_match import title_matches
+from empiremuse.rules.title_match import search_text, title_matches
 from empiremuse.utils.safe_error import HTTPStatusError, safe_error
 from empiremuse.utils.url_guard import UnsafeUrl, ensure_public_url, log_refusal
 from .backoff import ExponentialBackoff
@@ -625,7 +625,7 @@ class Node:
                 for track in tracks
             ]
 
-            search = "".join(query.split(":", 1)[1]).strip().lower()
+            search = search_text(query)
 
             if tracks_[0].info["sourceName"] in ("youtube", "soundcloud"):
 
