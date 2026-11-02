@@ -79,13 +79,14 @@ class Scenario:
     def command_inter(self):
         return CommandInter(self.j, self.bot, self.guild, self.lobby)
 
-    def setup(self, target=None, purge="no", inter=None):
+    def setup(self, target=None, inter=None, **options):
         self.inter = inter or self.command_inter()
-        return asyncio.run(self.cog.setup.callback(self.cog, self.inter, target=target, purge_messages=purge))
+        options = {"auto_delete": None, "text_requests": None, **options}
+        return asyncio.run(self.cog.jukebox_setup.callback(self.cog, self.inter, target=target, **options))
 
-    def reset(self, delete="não", inter=None):
+    def reset(self, inter=None):
         self.inter = inter or self.command_inter()
-        return asyncio.run(self.cog.reset.callback(self.cog, self.inter, delete_channel=delete))
+        return asyncio.run(self.cog.jukebox_reset.callback(self.cog, self.inter))
 
     # ---- consultas
     @property
@@ -122,7 +123,6 @@ class TestResetTextChannel:
             in ("db.update", "inter.edit_original_message", "player.process_hint", "player.invoke_np", "message.edit")
         ]
         assert names == [
-            "message.edit",
             "db.update",
             "inter.edit_original_message",
             "player.process_hint",

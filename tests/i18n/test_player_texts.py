@@ -96,7 +96,7 @@ class TestJukeboxPanel:
     def test_pt_br_is_todays_text(self):
         embed = panel(PT, *ENTRIES, last_action="alguém fez algo")["embeds"][0]
 
-        assert embed.title == "🎶 Pedidos de música"
+        assert embed.title == "🎶 Jukebox"
         assert embed.description == (
             "Entre em um canal de voz e peça uma música aqui no canal (ou pelo botão abaixo). "
             "**2 players ativos** neste servidor:"
@@ -114,7 +114,7 @@ class TestJukeboxPanel:
         data = panel(EN, *ENTRIES)
         embed = data["embeds"][0]
 
-        assert embed.title == "🎶 Music requests" and "active players" in embed.description
+        assert embed.title == "🎶 Jukebox" and "active players" in embed.description
         assert embed.fields[0].value.startswith("-# Playing: ") and "in the queue" in embed.fields[0].value
         assert embed.fields[1].name.endswith("private channel")
         assert data["components"][0].children[0].label == "Request a song"

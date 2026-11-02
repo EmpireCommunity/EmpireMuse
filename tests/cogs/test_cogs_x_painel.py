@@ -9,7 +9,7 @@ interações são dublês (``tests/support/canal_de_pedidos.py``) e os valores f
 import pytest
 
 from empiremuse.utils.music.interactions import ViewMode
-from tests.cogs.test_canal_de_pedidos_setup_reset import Scenario, configured
+from tests.cogs.test_jukebox_setup_reset import Scenario, configured
 from tests.support.modais import (
     URL_BASE,
     ModalBot,

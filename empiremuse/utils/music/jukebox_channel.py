@@ -81,7 +81,7 @@ def check_channel_perm(channel: TargetChannel):
         raise GenericError(
             f"**{channel.guild.me.mention} não possui a{'s'[: len(missing_perms) ^ 1]} seguinte{'s'[: len(missing_perms) ^ 1]} "
             f"permiss{'ão' if len(missing_perms) == 1 else 'ões'} necessária{'s'[: len(missing_perms) ^ 1]} no canal {channel.mention}** ```ansi\n"
-            + "\n".join(f" [0;33m▪ [0;31m{perms_translations.get(p, p)} [0m" for p in missing_perms)
+            + "\n".join(f" \x1b[0;33m▪ \x1b[0;31m{perms_translations.get(p, p)} \x1b[0m" for p in missing_perms)
             + "```"
         )
 
@@ -91,7 +91,7 @@ class MissingManagePermissions(GenericError):
 
     def __init__(self, bot_mention: str, missing: list[str]) -> None:
         self.missing = list(missing)
-        lines = "\n".join(f" [0;33m▪ [0;31m{perms_translations.get(p, p)} [0m" for p in missing)
+        lines = "\n".join(f" \x1b[0;33m▪ \x1b[0;31m{perms_translations.get(p, p)} \x1b[0m" for p in missing)
         super().__init__(
             f"**{bot_mention} precisa da{'s'[: len(missing) ^ 1]} permissão{'ões'[: len(missing) ^ 1]} abaixo "
             f"ativada{'s'[: len(missing) ^ 1]} na função/cargo dele para essa função funcionar corretamente:**```ansi\n"
