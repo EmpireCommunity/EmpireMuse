@@ -53,7 +53,7 @@ TODAYS_PT_BR_NAMES = {
         "tocar_agora",
     ],
     "play_music_file": ["arquivo", "posição", "selecionar_bot", "server", "tocar_agora"],
-    "playlists.importar": ["anexo", "arquivo", "link"],
+    "playlists.import": ["anexo", "arquivo", "link"],
     "queue.clear": [
         "duplicados",
         "duração_inicial",
@@ -204,15 +204,16 @@ def test_every_autocomplete_points_to_an_option_base_that_exists(linked):
 
 
 def test_the_playlist_link_stays_masked_by_its_base_in_every_language(linked):
-    bases = {option.name for option in dict(levels(linked))["playlists.importar"]}
+    bases = {option.name for option in dict(levels(linked))["playlists.import"]}
 
     assert "link" in bases and "link" in log_errors._SECRET_PARAMS
     assert rules.SECRET_OPTION_NAMES == log_errors._SECRET_PARAMS
     assert log_errors._summarize("link", "https://x/y?token=1", reveal=True, budget=100) == log_errors.MASKED
 
 
-def test_the_provider_never_serves_command_names_or_choice_values(provider):
-    assert provider.get("cmd.play.name") is None and provider.get("cmd.play.opt.play_now.choice.value") is None
+def test_the_provider_serves_command_names_but_never_choice_values(provider):
+    assert provider.get("cmd.play.name") == {"pt-BR": "tocar"}  # §5: o comando tem nome pt
+    assert provider.get("cmd.play.opt.play_now.choice.value") is None
     assert provider.get("cmd.play.opt.play_now.choice.yes") == {"pt-BR": "Sim"}
     assert provider.get("cmd.play.opt.query.name") == {"pt-BR": "busca"}
 

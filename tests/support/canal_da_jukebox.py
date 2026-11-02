@@ -78,6 +78,7 @@ class FakeMessage:
         self.journal, self.id, self.channel, self.author, self.thread = journal, id_, channel, author, thread
         self.guild = channel.guild
         self.fail_edit = None
+        self.fail_delete = None
 
     async def edit(self, **kwargs):
         self.journal.add("message.edit", self.id, kwargs)
@@ -86,6 +87,8 @@ class FakeMessage:
 
     async def delete(self):
         self.journal.add("message.delete", self.id)
+        if self.fail_delete:
+            raise self.fail_delete
 
     async def create_thread(self, *, name, auto_archive_duration=None):
         self.journal.add("message.create_thread", self.id, name, auto_archive_duration)

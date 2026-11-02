@@ -1005,7 +1005,7 @@ class BotPool:
     async def migrate_playlist_icons(self):
         """Migração de boot das playlists já gravadas: o emoji do início do nome vira ``icon`` (idempotente; falha só vai ao log).
 
-        Os servidores alterados têm o painel do canal de pedidos redesenhado quando os bots ficam prontos (a mensagem montada antes
+        Os servidores alterados têm o painel da Jukebox redesenhado quando os bots ficam prontos (a mensagem montada antes
         da migração guarda o nome antigo no valor do select); antes disso não há bot do painel, e o redesenho seria perdido.
         """
         try:

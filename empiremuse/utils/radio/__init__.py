@@ -1,4 +1,4 @@
-"""Rádio 24/7 (item 8, R1): o ``pool.radio`` reúne a store de rádios, o premium, os controles do dono e o estado em memória."""
+"""Rádios (item 8, R1): o ``pool.radio`` reúne a store de rádios, o premium, os controles do dono e o estado em memória."""
 
 from __future__ import annotations
 

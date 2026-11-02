@@ -1,4 +1,4 @@
-"""Regras puras da rádio 24/7 (item 8, R1): o modelo, a validação, o teto por servidor, a presença, o recuo da reconexão e o relógio virtual.
+"""Regras puras da rádio (item 8, R1): o modelo, a validação, o teto por servidor, a presença, o recuo da reconexão e o relógio virtual.
 
 Uma rádio é um bot reserva fixo numa call (voz ou palco), com a fonte (uma playlist do servidor; na R3 uma estação ao vivo) e as regras do
 chat da própria call. Aqui só há dados e decisões: o banco, o Discord e o Lavalink são de ``utils/radio``. Toda validação devolve o valor
