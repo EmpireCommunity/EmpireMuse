@@ -145,9 +145,9 @@ O painel organiza as opções em abas temáticas:
 3. **Aparência**:
    - Seleção de skins do player (skin normal e estática do bot) e skins globais compartilhadas do servidor.
 4. **Links Fixos**:
-   - Cadastro, edição, remoção, importação e exportação de botões de links rápidos no player (`fav_links`). Requer que o canal de pedidos já esteja configurado.
-5. **Canal de Pedidos**:
-   - Configuração assistida de canal de texto ou fórum de pedidos com controlador fixo (`/setup`), ou redefinição total (`/reset`) com confirmação em duas etapas e acompanhamento de tarefas assíncronas em tempo real.
+   - Cadastro, edição, remoção, importação e exportação de botões de links rápidos no player (`fav_links`). Requer que a Jukebox já esteja configurada.
+5. **Jukebox**:
+   - Configuração assistida do canal de texto ou fórum da Jukebox com controlador fixo (`/jukebox setup`, que sempre limpa o canal depois de uma confirmação), as chaves "Apagar mensagens" e "Texto vira pedido", ou desligamento total (`/jukebox off`) com confirmação em duas etapas e acompanhamento de tarefas assíncronas em tempo real. O endereço antigo `/canal` redireciona para `/jukebox`.
 6. **Geral**:
    - Prefixo personalizado do servidor, modelo de status automático no canal de voz e remoção de convites de "ouvir junto" ativos (a remoção de convites de ouvir junto exige adicionalmente a permissão de `Gerenciar Canais`).
 

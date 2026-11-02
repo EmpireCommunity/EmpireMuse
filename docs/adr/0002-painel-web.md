@@ -49,10 +49,10 @@ Principais pilares da arquitetura adotada:
 
 6. **Controle Otimista de Concorrência e Camada de Serviços**:
    - Cada formulário inclui um campo oculto `versao` calculado a partir do hash SHA-256 canônico dos campos relevantes. Modificações concorrentes (via comando do Discord ou múltiplos administradores) retornam status HTTP 409 (*Conflict*).
-   - As regras de negócio do painel foram isoladas em serviços puros (`panel/services/`), que espelham com precisão as regras e limites dos comandos no Discord, com equivalência validada por testes de caracterização. Apenas a lógica de configuração e redefinição de canais de pedidos foi de fato unificada e extraída para `utils/music/request_channel.py`, compartilhada entre os comandos `/setup`, `/reset` e as tarefas assíncronas do painel (`TaskRunner`). A migração dos cogs para consumirem diretamente os demais serviços de `panel/services/` permanece como débito técnico mapeado para a fase de saneamento (ver KI-42 em `docs/known-issues.md`).
+   - As regras de negócio do painel foram isoladas em serviços puros (`panel/services/`), que espelham com precisão as regras e limites dos comandos no Discord, com equivalência validada por testes de caracterização. Apenas a lógica de configuração e desligamento da Jukebox foi de fato unificada e extraída para `utils/music/jukebox_channel.py`, compartilhada entre os comandos `/jukebox setup`, `/jukebox off` e as tarefas assíncronas do painel (`TaskRunner`). A migração dos cogs para consumirem diretamente os demais serviços de `panel/services/` permanece como débito técnico mapeado para a fase de saneamento (ver KI-42 em `docs/known-issues.md`).
 
 7. **Escopo Delimitado da v1**:
-   - A versão 1.0 foca em configurações de servidores (Player, DJ, Aparência, Geral, Links fixos, Canal de pedidos) e conta de usuário (prefixo pessoal, favoritos, integrações, scrobble Last.fm e token de RPC).
+   - A versão 1.0 foca em configurações de servidores (Player, DJ, Aparência, Geral, Links fixos, Jukebox) e conta de usuário (prefixo pessoal, favoritos, integrações, scrobble Last.fm e token de RPC).
    - Recursos de risco elevado de segurança ou que demandam reestruturação prévia (skins personalizadas com serialização binária legada `G-14`, adição de convites de "ouvir junto" `G-15` e adição de integrações por URL `U-03`) foram postergados para a fase de saneamento.
 
 ## Alternativas Consideradas
@@ -84,7 +84,7 @@ Principais pilares da arquitetura adotada:
 - **Segurança Reforçada contra Exfiltração de Dados**: A revogação imediata de tokens OAuth do Discord e o uso exclusivo de IDs de sessão efêmeros em cookies `__Host-` impedem que o comprometimento de um banco ou cookie exponha tokens permanentes de usuários do Discord;
 - **Defesa Robusta contra CSRF e Clickjacking**: Proteção nativa XSRF em todos os formulários e cabeçalhos estritos (`frame-ancestors 'none'`, `X-Frame-Options: DENY`, CSP sem eval/inline);
 - **Auditoria Transparente**: Todas as alterações de configuração são registradas estruturadamente em log com escopo, servidor e nomes dos campos alterados, sem jamais imprimir segredos ou tokens;
-- **Consistência Operacional**: O compartilhamento real da lógica de canais de pedidos (`utils/music/request_channel.py`) unifica o comportamento do `/setup` e `/reset`, enquanto testes de caracterização asseguram paridade entre os comandos existentes e os serviços do painel (`panel/services/`) até a refatoração completa planejada no saneamento (KI-42).
+- **Consistência Operacional**: O compartilhamento real da lógica da Jukebox (`utils/music/jukebox_channel.py`) unifica o comportamento do `/jukebox setup` e `/jukebox off`, enquanto testes de caracterização asseguram paridade entre os comandos existentes e os serviços do painel (`panel/services/`) até a refatoração completa planejada no saneamento (KI-42).
 
 ### Negativas
 - **Sessões em Memória**: O reinício do processo do bot invalida as sessões ativas dos administradores no painel web, exigindo uma nova autenticação via Discord;
@@ -98,3 +98,5 @@ Principais pilares da arquitetura adotada:
   - **Mitigação**: Limitação de taxa em memória por IP nas rotas de login/callback (`panel/ratelimit.py`), minimização das chamadas à API do Discord (apenas no login e sob demanda estrita) e verificação de autorizações ancorada na memória interna dos bots do pool.
 - **Risco**: Envenenamento de cabeçalhos de proxy (*Host Header / IP Spoofing*).
   - **Mitigação**: O parâmetro `PANEL_BASE_URL` é validado e fixado na configuração; cabeçalhos `X-Forwarded-*` só são aceitos quando a flag `PANEL_TRUST_PROXY=true` estiver explicitamente ativa atrás de proxies confiáveis.
+
+> **Nota (2026-11):** Canal de pedidos → Jukebox; modo 24/7 → Radios. Os nomes e caminhos acima já seguem a nomenclatura nova.

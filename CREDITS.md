@@ -16,6 +16,12 @@ intacto). Como obra derivada, o EmpireMuse também é distribuído sob a GPL-2.0
 Nosso agradecimento a **zRitsu** e a todas as pessoas que contribuíram com o
 MuseHeart-MusicBot upstream. Sem esse trabalho, o EmpireMuse não existiria.
 
+## Dados e serviços das Radios
+
+- **Last.fm**: os gêneros e os artistas das estações personalizadas vêm da API do [Last.fm](https://www.last.fm/). As telas das rádios mostram "Powered by Last.fm", com link.
+- **Dados geográficos**: as cidades e os estados do seletor de local das rádios ao vivo vêm do [GeoNames](https://www.geonames.org/), licença [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Dados de localização: GeoNames, CC BY 4.0.
+- **Radio Browser**: o diretório das estações ao vivo é o [Radio Browser](https://www.radio-browser.info/), de domínio público.
+
 ## Ícones
 
 Só 48 dos emojis de aplicação em `assets/emojis/` usam ícones da [Flaticon](https://www.flaticon.com/), licença gratuita com
