@@ -5,6 +5,7 @@ from typing import Union
 import disnake
 from disnake.ext import commands
 
+from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.i18n import localized
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.checks import (
@@ -45,37 +46,37 @@ class PlayerSessionMixin:
             guild = inter.guild
 
         if not self.bot.intents.message_content:
-            raise GenericError(
-                "**Atualmente não tenho a intent de message-content para conferir o conteúdo de mensagens**"
-            )
+            raise GenericError(await guild_text(bot, guild, "legacy.session.no_message_content"))
 
         player: LavalinkPlayer = bot.music.players[guild.id]
 
         if player.static:
-            raise GenericError("**Você não pode usar esse comando com um canal da Jukebox configurado.**")
+            raise GenericError(await guild_text(bot, guild, "legacy.session.jukebox_configured"))
 
         if player.has_thread:
-            raise GenericError("**Já há uma thread/conversa ativa no player.**")
+            raise GenericError(await guild_text(bot, guild, "legacy.session.thread_active"))
 
         if not isinstance(player.text_channel, disnake.TextChannel):
-            raise GenericError(
-                "**O player-controller está ativo em um canal incompatível com criação de thread/conversa.**"
-            )
+            raise GenericError(await guild_text(bot, guild, "legacy.session.channel_incompatible"))
 
         if not player.controller_mode:
-            raise GenericError(
-                "**A skin/aparência atual não é compatível com a conversa de pedidos "
-                "via thread/conversa\n\n"
-                "Nota:** `Esse sistema requer uma skin que use botões.`"
-            )
+            raise GenericError(await guild_text(bot, guild, "legacy.session.skin_incompatible"))
 
         if not player.text_channel.permissions_for(guild.me).send_messages:
             raise GenericError(
-                f"**{bot.user.mention} não possui permissão enviar mensagens no canal {player.text_channel.mention}.**"
+                await guild_text(
+                    bot,
+                    guild,
+                    "legacy.session.no_send_permission",
+                    bot=bot.user.mention,
+                    channel=player.text_channel.mention,
+                )
             )
 
         if not player.text_channel.permissions_for(guild.me).create_public_threads:
-            raise GenericError(f"**{bot.user.mention} não possui permissão de criar tópicos públicos.**")
+            raise GenericError(
+                await guild_text(bot, guild, "legacy.session.no_thread_permission", bot=bot.user.mention)
+            )
 
         if not [
             m
@@ -83,8 +84,13 @@ class PlayerSessionMixin:
             if not m.bot and player.text_channel.permissions_for(m).send_messages_in_threads
         ]:
             raise GenericError(
-                f"**Não há membros no canal <#{player.channel_id}> com permissão de enviar mensagens "
-                f"em tópicos no canal {player.text_channel.mention}"
+                await guild_text(
+                    bot,
+                    guild,
+                    "legacy.session.no_thread_members",
+                    voice=player.channel_id,
+                    channel=player.text_channel.mention,
+                )
             )
 
         await inter.response.defer(ephemeral=True)
@@ -213,10 +219,12 @@ class PlayerSessionMixin:
             if inter.author.guild_permissions.manage_guild:
                 player.player_creator = None
             else:
-                raise GenericError(f"**O membro {user.mention} é o criador do player.**")
+                raise GenericError(
+                    await guild_text(bot, inter.guild, "legacy.session.member_is_creator", user=user.mention)
+                )
 
         elif user.id not in player.dj:
-            GenericError(f"O membro {user.mention} não está na lista de DJ's")
+            GenericError(await guild_text(bot, inter.guild, "legacy.session.member_not_dj", user=user.mention))
 
         else:
             player.dj.remove(user.id)
@@ -257,7 +265,7 @@ class PlayerSessionMixin:
         player: LavalinkPlayer = bot.music.players[inter.guild_id]
 
         if not player.command_log_list:
-            raise GenericError("**O Log de comandos está vazio...**")
+            raise GenericError(await guild_text(bot, inter.guild, "legacy.session.log_empty"))
 
         embed = disnake.Embed(
             description="### Log de comandos:\n"
@@ -377,7 +385,7 @@ class PlayerSessionMixin:
             tracks.append(t.info)
 
         if len(tracks) < 3:
-            raise GenericError(f"**É necessário ter no mínimo 3 músicas pra salvar (atual e/ou na fila)**")
+            raise GenericError(await guild_text(bot, guild, "legacy.session.save_min"))
 
         await store_saved_queue(inter.author.id, tracks, inter.guild_id, disnake.utils.utcnow())
 
@@ -396,19 +404,19 @@ class PlayerSessionMixin:
 
         embed = disnake.Embed(
             color=bot.get_color(guild.me),
-            description=f"### {inter.author.mention}: A fila foi salva com sucesso!!\n"
-            f"**Músicas salvas:** `{len(tracks)}`\n"
-            "### Como usar?\n"
-            f"* Usando o comando {slashcmd} (selecionando no preenchimento automático da busca)\n"
-            "* Clicando no botão/select de tocar favorito/integração do player.\n"
-            f"* Usando o comando {global_data['prefix'] or self.bot.default_prefix}{self.play_legacy.name} "
-            "sem incluir um nome ou link de uma música/vídeo.",
+            description=await guild_text(
+                bot,
+                guild,
+                "legacy.session.queue_saved",
+                user=inter.author.mention,
+                count=len(tracks),
+                command=slashcmd,
+                prefix=global_data["prefix"] or self.bot.default_prefix,
+                legacy=self.play_legacy.name,
+            ),
         )
 
-        embed.set_footer(
-            text="Nota: Esse é um recurso muito experimental, a fila salva pode sofrer alterações ou ser "
-            "removida em futuros updates"
-        )
+        embed.set_footer(text=await guild_text(bot, guild, "legacy.session.saved_footer"))
 
         if isinstance(inter, CustomContext):
             await inter.reply(embed=embed)

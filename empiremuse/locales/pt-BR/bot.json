@@ -630,5 +630,19 @@
   "legacy.jukebox.no_content_intent": "Infelizmente não posso conferir o conteúdo de sua mensagem...\nTente adicionar música usando **/play** ou clique em um dos botões abaixo:",
   "legacy.jukebox.playlist_link": "**O link contém vídeo com playlist.**\nSelecione uma opção em até <t:{ts}:R> para prosseguir.\n-# Nota: Caso o link seja de uma playlist privada, apenas o vídeo do link atual será carregado.",
   "legacy.jukebox.send_link_or_name": "{user} você deve enviar um link/nome da música.",
-  "legacy.jukebox.wait_previous": "{user} você deve aguardar seu pedido de música anterior carregar..."
+  "legacy.jukebox.wait_previous": "{user} você deve aguardar seu pedido de música anterior carregar...",
+  "legacy.session.channel_incompatible": "**O player-controller está ativo em um canal incompatível com criação de thread/conversa.**",
+  "legacy.session.jukebox_configured": "**Você não pode usar esse comando com um canal da Jukebox configurado.**",
+  "legacy.session.log_empty": "**O Log de comandos está vazio...**",
+  "legacy.session.member_is_creator": "**O membro {user} é o criador do player.**",
+  "legacy.session.member_not_dj": "O membro {user} não está na lista de DJ's",
+  "legacy.session.no_message_content": "**Atualmente não tenho a intent de message-content para conferir o conteúdo de mensagens**",
+  "legacy.session.no_send_permission": "**{bot} não possui permissão enviar mensagens no canal {channel}.**",
+  "legacy.session.no_thread_members": "**Não há membros no canal <#{voice}> com permissão de enviar mensagens em tópicos no canal {channel}**",
+  "legacy.session.no_thread_permission": "**{bot} não possui permissão de criar tópicos públicos.**",
+  "legacy.session.queue_saved": "### {user}: A fila foi salva com sucesso!!\n**Músicas salvas:** `{count}`\n### Como usar?\n* Usando o comando {command} (selecionando no preenchimento automático da busca)\n* Clicando no botão/select de tocar favorito/integração do player.\n* Usando o comando {prefix}{legacy} sem incluir um nome ou link de uma música/vídeo.",
+  "legacy.session.save_min": "**É necessário ter no mínimo 3 músicas pra salvar (atual e/ou na fila)**",
+  "legacy.session.saved_footer": "Nota: Esse é um recurso muito experimental, a fila salva pode sofrer alterações ou ser removida em futuros updates",
+  "legacy.session.skin_incompatible": "**A skin/aparência atual não é compatível com a conversa de pedidos via thread/conversa\n\nNota:** `Esse sistema requer uma skin que use botões.`",
+  "legacy.session.thread_active": "**Já há uma thread/conversa ativa no player.**"
 }

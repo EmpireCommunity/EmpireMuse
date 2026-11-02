@@ -617,5 +617,19 @@
   "legacy.jukebox.no_content_intent": "Unfortunately I can't read the content of your message...\nTry adding a song using **/play** or click one of the buttons below:",
   "legacy.jukebox.playlist_link": "**The link contains a video with a playlist.**\nSelect an option within <t:{ts}:R> to continue.\n-# Note: If the link is from a private playlist, only the video of the current link will be loaded.",
   "legacy.jukebox.send_link_or_name": "{user} you must send a link/song name.",
-  "legacy.jukebox.wait_previous": "{user} you must wait for your previous song request to load..."
+  "legacy.jukebox.wait_previous": "{user} you must wait for your previous song request to load...",
+  "legacy.session.channel_incompatible": "**The player-controller is active in a channel that is incompatible with creating a thread/conversation.**",
+  "legacy.session.jukebox_configured": "**You can't use this command with a configured Jukebox channel.**",
+  "legacy.session.log_empty": "**The command log is empty...**",
+  "legacy.session.member_is_creator": "**The member {user} is the player creator.**",
+  "legacy.session.member_not_dj": "The member {user} is not in the DJ list",
+  "legacy.session.no_message_content": "**I currently don't have the message-content intent to read message content.**",
+  "legacy.session.no_send_permission": "**{bot} does not have permission to send messages in the channel {channel}.**",
+  "legacy.session.no_thread_members": "**There are no members in the channel <#{voice}> with permission to send messages in threads in the channel {channel}**",
+  "legacy.session.no_thread_permission": "**{bot} does not have permission to create public threads.**",
+  "legacy.session.queue_saved": "### {user}: The queue was saved successfully!!\n**Saved songs:** `{count}`\n### How to use?\n* Using the command {command} (selecting from the search autocomplete)\n* Clicking the play favorite/integration button/select on the player.\n* Using the command {prefix}{legacy} without including a song/video name or link.",
+  "legacy.session.save_min": "**You need at least 3 songs to save (current and/or in the queue)**",
+  "legacy.session.saved_footer": "Note: This is a very experimental feature, the saved queue may change or be removed in future updates",
+  "legacy.session.skin_incompatible": "**The current skin/appearance is not compatible with the thread/conversation request mode\n\nNote:** `This system requires a skin that uses buttons.`",
+  "legacy.session.thread_active": "**There is already an active thread/conversation on the player.**"
 }
