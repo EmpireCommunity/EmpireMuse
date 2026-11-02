@@ -56,6 +56,8 @@ class TestPayload:
             "volume_down",
             "mute",
             "volume_up",
+            "station_previous",
+            "station_next",
         ]
         for forged in (
             "radio_panel_pause:1:2",

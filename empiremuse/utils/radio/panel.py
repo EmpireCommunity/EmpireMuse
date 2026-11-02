@@ -233,7 +233,10 @@ def custom_payload(
             title=tr("radio.panel.custom.title"), description=tr("radio.panel.custom.intro"), color=color
         )
         name = external_text(playlist_name, NAME_LIMIT)
-        lines = [f"-# {emojis('playlists')} {tr('radio.panel.custom.playlist', playlist=name)}"]
+        lines = [
+            f"-# {emojis('playlists')} {tr('radio.panel.custom.playlist', playlist=name)}",
+            f"-# {emojis('history')} {tr('radio.panel.custom.schedule')}",
+        ]
         embed.add_field(name=fit(f"▶️ {name}", 256), value="\n".join(lines), inline=False)
         buttons = [
             _button(tr, emojis, "radio.panel.pause", "playpause", PANEL_PAUSE_ID),
