@@ -1,6 +1,8 @@
-{# Playlists do servidor (fragmento htmx). Variáveis: estado (acao, versao, valores, erros, mensagem, mensagem_tipo, acao_erro, alvo_erro), itens (ordem, nome, icone, url, descricao, generos), total, maximo, pode_adicionar, relatorio (adicionadas, ignoradas[(nome, motivo)]) ou None, limites, exportar_url. Campos: acao, versao; alvo = nome da playlist alvo (editar/remover); icone (opcional, um emoji Unicode; inválido = salvo sem ícone), nome, url, descricao, generos (separados por vírgula), ordem; dados (importar). #}
+{# Playlists do servidor (fragmento htmx), nos dois escopos. Variáveis: estado (acao, versao, valores, erros, mensagem, mensagem_tipo, acao_erro, alvo_erro, escopo_erro), escopos [(escopo, itens, total, maximo, pode_adicionar)], escopo_atual, escopo_url (?escopo= da página ou None), relatorio (adicionadas, ignoradas[(nome, motivo)]) ou None, limites, exportar_url. Campos: acao, versao, escopo; alvo = nome da playlist alvo (editar/remover); icone (opcional, um emoji Unicode; inválido = salvo sem ícone), nome, url, descricao, generos (separados por vírgula), ordem; dados (importar). O filtro Jukebox | Rádio é só visual (CSS :has): os dois blocos estão na página e cada formulário leva o seu escopo. #}
 {% set erros = estado.erros %}
 {% set valores = estado.valores %}
+{% set escopo_ativo = valores.get("escopo_erro") or escopo_url or escopo_atual %}
+{% set rotulos = {"jukebox": _("panel.playlists.scope.jukebox.label"), "radio": _("panel.playlists.scope.radio.label")} %}
 <section id="bloco-links" class="bloco-config bloco-largo" aria-labelledby="titulo-lista-links">
   {% set form = estado %}
   {% set form_id = "bloco-links" %}
@@ -22,116 +24,139 @@
 
   <div class="links-cabecalho">
     <h2 class="subtitulo" id="titulo-lista-links">Playlists do servidor</h2>
-    <p class="contagem-links"><strong>{{ total }} de {{ maximo }}</strong> playlists</p>
+    <fieldset class="filtro-escopo">
+      <legend class="visually-hidden">{{ _("panel.playlists.filter.legend") }}</legend>
+      {% for bloco in escopos %}
+      <input class="filtro-escopo-opcao" type="radio" id="filtro-escopo-{{ bloco.escopo }}" name="filtro-escopo" value="{{ bloco.escopo }}"{% if bloco.escopo == escopo_ativo %} checked{% end %}>
+      <label for="filtro-escopo-{{ bloco.escopo }}">{{ rotulos[bloco.escopo] }} <span class="contagem-escopo">{{ bloco.total }}/{{ bloco.maximo }}</span></label>
+      {% end %}
+    </fieldset>
   </div>
-  <p class="nota">A mesma lista vale para todos os bots deste servidor: aparece no player em espera e no menu de favoritos do servidor do comando /play, com filtro por gênero.</p>
 
-  {% if itens %}
-  <ul class="lista-links" role="list">
-    {% for indice, item in enumerate(itens) %}
-    {% set editando = estado.acao_erro == "editar" and estado.alvo_erro == item.nome %}
-    <li class="item-link">
-      <div class="item-link-texto">
-        <strong class="item-link-nome"><span class="item-link-ordem" aria-label="ordem {{ item.ordem }}">{{ "%02d" % item.ordem }}</span> {% if item.icone %}<span class="item-link-icone" aria-hidden="true">{{ item.icone }}</span> {% end %}{{ item.nome }}</strong>
-        {% if item.url.startswith(("http://", "https://")) %}
-        <a class="item-link-url" href="{{ item.url }}" rel="noopener noreferrer" target="_blank">{{ item.url }}<span class="visually-hidden"> (abre em outra aba)</span></a>
-        {% else %}
-        <span class="item-link-url">{{ item.url }}</span>
-        {% end %}
-        {% if item.descricao %}<span class="item-link-descricao">{{ item.descricao }}</span>{% end %}
-        {% if item.generos %}
-        <ul class="lista-generos" aria-label="gêneros">
-          {% for genero in item.generos %}<li class="chip-genero">{{ genero }}</li>{% end %}
-        </ul>
-        {% end %}
-      </div>
-      <div class="item-link-acoes">
-        <details{% if editando %} open{% end %}>
-          <summary role="button" class="secondary outline">Editar<span class="visually-hidden"> {{ item.nome }}</span></summary>
-          <form id="form-links-editar-{{ indice }}" class="form-config" method="post" action="{{ estado.acao }}" hx-post="{{ estado.acao }}" hx-target="#bloco-links" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]">
+  {% for bloco in escopos %}
+  {% set escopo = bloco.escopo %}
+  {% set rotulo = rotulos[escopo] %}
+  {% set itens = bloco.itens %}
+  {% set neste = valores.get("escopo_erro") == escopo %}
+  <section class="escopo-bloco" id="playlists-{{ escopo }}" data-escopo="{{ escopo }}" aria-labelledby="titulo-playlists-{{ escopo }}">
+    <div class="links-cabecalho">
+      <h3 class="subtitulo" id="titulo-playlists-{{ escopo }}">{{ rotulo }}</h3>
+      <p class="contagem-links"><strong>{{ bloco.total }} de {{ bloco.maximo }}</strong> playlists</p>
+    </div>
+    <p class="nota">{{ _("panel.playlists.scope." + escopo + ".note") }}</p>
+
+    {% if itens %}
+    <ul class="lista-links" role="list">
+      {% for indice, item in enumerate(itens) %}
+      {% set editando = neste and estado.acao_erro == "editar" and estado.alvo_erro == item.nome %}
+      <li class="item-link">
+        <div class="item-link-texto">
+          <strong class="item-link-nome"><span class="item-link-ordem" aria-label="ordem {{ item.ordem }}">{{ "%02d" % item.ordem }}</span> {% if item.icone %}<span class="item-link-icone" aria-hidden="true">{{ item.icone }}</span> {% end %}{{ item.nome }}</strong>
+          {% if item.url.startswith(("http://", "https://")) %}
+          <a class="item-link-url" href="{{ item.url }}" rel="noopener noreferrer" target="_blank">{{ item.url }}<span class="visually-hidden"> (abre em outra aba)</span></a>
+          {% else %}
+          <span class="item-link-url">{{ item.url }}</span>
+          {% end %}
+          {% if item.descricao %}<span class="item-link-descricao">{{ item.descricao }}</span>{% end %}
+          {% if item.generos %}
+          <ul class="lista-generos" aria-label="gêneros">
+            {% for genero in item.generos %}<li class="chip-genero">{{ genero }}</li>{% end %}
+          </ul>
+          {% end %}
+        </div>
+        <div class="item-link-acoes">
+          <details{% if editando %} open{% end %}>
+            <summary role="button" class="secondary outline">Editar<span class="visually-hidden"> {{ item.nome }} ({{ rotulo }})</span></summary>
+            <form id="form-links-editar-{{ escopo }}-{{ indice }}" class="form-config" method="post" action="{{ estado.acao }}" hx-post="{{ estado.acao }}" hx-target="#bloco-links" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]">
+              {% module xsrf_form_html() %}
+              <input type="hidden" name="versao" value="{{ estado.versao }}">
+              <input type="hidden" name="acao" value="editar">
+              <input type="hidden" name="escopo" value="{{ escopo }}">
+              <input type="hidden" name="alvo" value="{{ item.nome }}">
+              <label for="editar-icone-{{ escopo }}-{{ indice }}">Ícone (opcional, um emoji)</label>
+              <input id="editar-icone-{{ escopo }}-{{ indice }}" class="campo-icone" type="text" name="icone" value="{{ valores.get('icone') if editando else (item.icone or '') }}" maxlength="{{ limites['icone_max'] }}" autocomplete="off" aria-describedby="editar-ajuda-icone-{{ escopo }}-{{ indice }}">
+              <small id="editar-ajuda-icone-{{ escopo }}-{{ indice }}">Um emoji do teclado; texto ou emoji de servidor é ignorado e a playlist fica sem ícone. Vazio apaga o ícone.</small>
+              <label for="editar-nome-{{ escopo }}-{{ indice }}">Nome (de {{ limites["nome_min"] }} a {{ limites["nome_max"] }} caracteres)</label>
+              <input id="editar-nome-{{ escopo }}-{{ indice }}" type="text" name="nome" value="{{ valores.get('nome') if editando else item.nome }}" maxlength="{{ limites['nome_max'] }}" autocomplete="off" required{% if editando and erros.get("nome") %} aria-invalid="true" aria-describedby="editar-erro-nome-{{ escopo }}-{{ indice }}"{% end %}>
+              {% if editando and erros.get("nome") %}<small id="editar-erro-nome-{{ escopo }}-{{ indice }}" class="erro-campo">{{ erros["nome"] }}</small>{% end %}
+              <label for="editar-url-{{ escopo }}-{{ indice }}">Endereço (URL)</label>
+              <input id="editar-url-{{ escopo }}-{{ indice }}" type="url" name="url" value="{{ valores.get('url') if editando else item.url }}" maxlength="{{ limites['url_max'] }}" autocomplete="off" required{% if editando and erros.get("url") %} aria-invalid="true" aria-describedby="editar-erro-url-{{ escopo }}-{{ indice }}"{% end %}>
+              {% if editando and erros.get("url") %}<small id="editar-erro-url-{{ escopo }}-{{ indice }}" class="erro-campo">{{ erros["url"] }}</small>{% end %}
+              <label for="editar-descricao-{{ escopo }}-{{ indice }}">Descrição (opcional, de {{ limites["descricao_min"] }} a {{ limites["descricao_max"] }} caracteres)</label>
+              <input id="editar-descricao-{{ escopo }}-{{ indice }}" type="text" name="descricao" value="{{ valores.get('descricao') if editando else item.descricao }}" maxlength="{{ limites['descricao_max'] }}" autocomplete="off"{% if editando and erros.get("descricao") %} aria-invalid="true" aria-describedby="editar-erro-descricao-{{ escopo }}-{{ indice }}"{% end %}>
+              {% if editando and erros.get("descricao") %}<small id="editar-erro-descricao-{{ escopo }}-{{ indice }}" class="erro-campo">{{ erros["descricao"] }}</small>{% end %}
+              <label for="editar-generos-{{ escopo }}-{{ indice }}">Gêneros (opcional, até {{ limites["generos_max"] }}, separados por vírgula)</label>
+              <input id="editar-generos-{{ escopo }}-{{ indice }}" type="text" name="generos" value="{{ valores.get('generos') if editando else ', '.join(item.generos) }}" autocomplete="off"{% if editando and erros.get("generos") %} aria-invalid="true" aria-describedby="editar-erro-generos-{{ escopo }}-{{ indice }}"{% end %}>
+              {% if editando and erros.get("generos") %}<small id="editar-erro-generos-{{ escopo }}-{{ indice }}" class="erro-campo">{{ erros["generos"] }}</small>{% end %}
+              <label for="editar-ordem-{{ escopo }}-{{ indice }}">Ordem (1 = primeira)</label>
+              <input id="editar-ordem-{{ escopo }}-{{ indice }}" type="text" inputmode="numeric" pattern="[0-9]*" name="ordem" value="{{ valores.get('ordem') if editando else item.ordem }}" maxlength="{{ limites['ordem_digitos'] }}" autocomplete="off"{% if editando and erros.get("ordem") %} aria-invalid="true" aria-describedby="editar-erro-ordem-{{ escopo }}-{{ indice }}"{% end %}>
+              {% if editando and erros.get("ordem") %}<small id="editar-erro-ordem-{{ escopo }}-{{ indice }}" class="erro-campo">{{ erros["ordem"] }}</small>{% end %}
+              <button type="submit">Salvar alterações</button>
+            </form>
+          </details>
+          <form id="form-links-remover-{{ escopo }}-{{ indice }}" method="post" action="{{ estado.acao }}" hx-post="{{ estado.acao }}" hx-target="#bloco-links" hx-swap="outerHTML" hx-confirm="Remover a playlist {{ item.nome }} ({{ rotulo }})?" hx-disabled-elt="find button[type=submit]">
             {% module xsrf_form_html() %}
             <input type="hidden" name="versao" value="{{ estado.versao }}">
-            <input type="hidden" name="acao" value="editar">
+            <input type="hidden" name="acao" value="remover">
+            <input type="hidden" name="escopo" value="{{ escopo }}">
             <input type="hidden" name="alvo" value="{{ item.nome }}">
-            <label for="editar-icone-{{ indice }}">Ícone (opcional, um emoji)</label>
-            <input id="editar-icone-{{ indice }}" class="campo-icone" type="text" name="icone" value="{{ valores.get('icone') if editando else (item.icone or '') }}" maxlength="{{ limites['icone_max'] }}" autocomplete="off" aria-describedby="editar-ajuda-icone-{{ indice }}">
-            <small id="editar-ajuda-icone-{{ indice }}">Um emoji do teclado; texto ou emoji de servidor é ignorado e a playlist fica sem ícone. Vazio apaga o ícone.</small>
-            <label for="editar-nome-{{ indice }}">Nome (de {{ limites["nome_min"] }} a {{ limites["nome_max"] }} caracteres)</label>
-            <input id="editar-nome-{{ indice }}" type="text" name="nome" value="{{ valores.get('nome') if editando else item.nome }}" maxlength="{{ limites['nome_max'] }}" autocomplete="off" required{% if editando and erros.get("nome") %} aria-invalid="true" aria-describedby="editar-erro-nome-{{ indice }}"{% end %}>
-            {% if editando and erros.get("nome") %}<small id="editar-erro-nome-{{ indice }}" class="erro-campo">{{ erros["nome"] }}</small>{% end %}
-            <label for="editar-url-{{ indice }}">Endereço (URL)</label>
-            <input id="editar-url-{{ indice }}" type="url" name="url" value="{{ valores.get('url') if editando else item.url }}" maxlength="{{ limites['url_max'] }}" autocomplete="off" required{% if editando and erros.get("url") %} aria-invalid="true" aria-describedby="editar-erro-url-{{ indice }}"{% end %}>
-            {% if editando and erros.get("url") %}<small id="editar-erro-url-{{ indice }}" class="erro-campo">{{ erros["url"] }}</small>{% end %}
-            <label for="editar-descricao-{{ indice }}">Descrição (opcional, de {{ limites["descricao_min"] }} a {{ limites["descricao_max"] }} caracteres)</label>
-            <input id="editar-descricao-{{ indice }}" type="text" name="descricao" value="{{ valores.get('descricao') if editando else item.descricao }}" maxlength="{{ limites['descricao_max'] }}" autocomplete="off"{% if editando and erros.get("descricao") %} aria-invalid="true" aria-describedby="editar-erro-descricao-{{ indice }}"{% end %}>
-            {% if editando and erros.get("descricao") %}<small id="editar-erro-descricao-{{ indice }}" class="erro-campo">{{ erros["descricao"] }}</small>{% end %}
-            <label for="editar-generos-{{ indice }}">Gêneros (opcional, até {{ limites["generos_max"] }}, separados por vírgula)</label>
-            <input id="editar-generos-{{ indice }}" type="text" name="generos" value="{{ valores.get('generos') if editando else ', '.join(item.generos) }}" autocomplete="off"{% if editando and erros.get("generos") %} aria-invalid="true" aria-describedby="editar-erro-generos-{{ indice }}"{% end %}>
-            {% if editando and erros.get("generos") %}<small id="editar-erro-generos-{{ indice }}" class="erro-campo">{{ erros["generos"] }}</small>{% end %}
-            <label for="editar-ordem-{{ indice }}">Ordem (1 = primeira)</label>
-            <input id="editar-ordem-{{ indice }}" type="text" inputmode="numeric" pattern="[0-9]*" name="ordem" value="{{ valores.get('ordem') if editando else item.ordem }}" maxlength="{{ limites['ordem_digitos'] }}" autocomplete="off"{% if editando and erros.get("ordem") %} aria-invalid="true" aria-describedby="editar-erro-ordem-{{ indice }}"{% end %}>
-            {% if editando and erros.get("ordem") %}<small id="editar-erro-ordem-{{ indice }}" class="erro-campo">{{ erros["ordem"] }}</small>{% end %}
-            <button type="submit">Salvar alterações</button>
+            <button type="submit" class="secondary outline botao-perigo">Remover<span class="visually-hidden"> {{ item.nome }} ({{ rotulo }})</span></button>
           </form>
-        </details>
-        <form id="form-links-remover-{{ indice }}" method="post" action="{{ estado.acao }}" hx-post="{{ estado.acao }}" hx-target="#bloco-links" hx-swap="outerHTML" hx-confirm="Remover a playlist {{ item.nome }}?" hx-disabled-elt="find button[type=submit]">
-          {% module xsrf_form_html() %}
-          <input type="hidden" name="versao" value="{{ estado.versao }}">
-          <input type="hidden" name="acao" value="remover">
-          <input type="hidden" name="alvo" value="{{ item.nome }}">
-          <button type="submit" class="secondary outline botao-perigo">Remover<span class="visually-hidden"> {{ item.nome }}</span></button>
-        </form>
-      </div>
-    </li>
+        </div>
+      </li>
+      {% end %}
+    </ul>
+    {% else %}
+    <p class="nota">Ainda não há playlists de {{ rotulo }} neste servidor.</p>
     {% end %}
-  </ul>
-  {% else %}
-  <p class="nota">Este servidor ainda não tem playlists fixadas.</p>
-  {% end %}
 
-  <p><a class="botao-acao secondary outline" role="button" href="{{ exportar_url }}" download>Exportar playlists (JSON)</a></p>
+    <p><a class="botao-acao secondary outline" role="button" href="{{ exportar_url }}?escopo={{ escopo }}" download>Exportar playlists (JSON)<span class="visually-hidden"> de {{ rotulo }}</span></a></p>
 
-  {% set adicionando = estado.acao_erro == "adicionar" %}
-  <h2 class="subtitulo" id="titulo-adicionar-playlist">Adicionar playlist</h2>
-  {% if not pode_adicionar %}
-  <p class="aviso aviso-info" role="note">A lista está no limite de {{ maximo }} playlists. Remova alguma para adicionar ou importar outra.</p>
-  {% else %}
-  <form id="form-links-adicionar" class="form-config" method="post" action="{{ estado.acao }}" hx-post="{{ estado.acao }}" hx-target="#bloco-links" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]" aria-labelledby="titulo-adicionar-playlist">
-    {% module xsrf_form_html() %}
-    <input type="hidden" name="versao" value="{{ estado.versao }}">
-    <input type="hidden" name="acao" value="adicionar">
-    <label for="adicionar-icone">Ícone (opcional, um emoji)</label>
-    <input id="adicionar-icone" class="campo-icone" type="text" name="icone" value="{{ (valores.get('icone') or '') if adicionando else '' }}" maxlength="{{ limites['icone_max'] }}" autocomplete="off" placeholder="🎵" aria-describedby="adicionar-ajuda-icone">
-    <small id="adicionar-ajuda-icone">Um emoji do teclado; texto ou emoji de servidor é ignorado e a playlist fica sem ícone.</small>
-    <label for="adicionar-nome">Nome (de {{ limites["nome_min"] }} a {{ limites["nome_max"] }} caracteres)</label>
-    <input id="adicionar-nome" type="text" name="nome" value="{{ (valores.get('nome') or '') if adicionando else '' }}" maxlength="{{ limites['nome_max'] }}" autocomplete="off" required{% if adicionando and erros.get("nome") %} aria-invalid="true" aria-describedby="adicionar-erro-nome"{% end %}>
-    {% if adicionando and erros.get("nome") %}<small id="adicionar-erro-nome" class="erro-campo">{{ erros["nome"] }}</small>{% end %}
-    <label for="adicionar-url">Endereço (URL)</label>
-    <input id="adicionar-url" type="url" name="url" value="{{ (valores.get('url') or '') if adicionando else '' }}" maxlength="{{ limites['url_max'] }}" autocomplete="off" required{% if adicionando and erros.get("url") %} aria-invalid="true" aria-describedby="adicionar-erro-url"{% end %}>
-    {% if adicionando and erros.get("url") %}<small id="adicionar-erro-url" class="erro-campo">{{ erros["url"] }}</small>{% end %}
-    <label for="adicionar-descricao">Descrição (opcional, de {{ limites["descricao_min"] }} a {{ limites["descricao_max"] }} caracteres)</label>
-    <input id="adicionar-descricao" type="text" name="descricao" value="{{ (valores.get('descricao') or '') if adicionando else '' }}" maxlength="{{ limites['descricao_max'] }}" autocomplete="off"{% if adicionando and erros.get("descricao") %} aria-invalid="true" aria-describedby="adicionar-erro-descricao"{% end %}>
-    {% if adicionando and erros.get("descricao") %}<small id="adicionar-erro-descricao" class="erro-campo">{{ erros["descricao"] }}</small>{% end %}
-    <label for="adicionar-generos">Gêneros (opcional, até {{ limites["generos_max"] }}, separados por vírgula)</label>
-    <input id="adicionar-generos" type="text" name="generos" value="{{ (valores.get('generos') or '') if adicionando else '' }}" autocomplete="off" placeholder="rock, pop, lo-fi"{% if adicionando and erros.get("generos") %} aria-invalid="true" aria-describedby="adicionar-erro-generos"{% end %}>
-    {% if adicionando and erros.get("generos") %}<small id="adicionar-erro-generos" class="erro-campo">{{ erros["generos"] }}</small>{% end %}
-    <label for="adicionar-ordem">Ordem (opcional, 1 = primeira; vazio = no fim)</label>
-    <input id="adicionar-ordem" type="text" inputmode="numeric" pattern="[0-9]*" name="ordem" value="{{ (valores.get('ordem') or '') if adicionando else '' }}" maxlength="{{ limites['ordem_digitos'] }}" autocomplete="off"{% if adicionando and erros.get("ordem") %} aria-invalid="true" aria-describedby="adicionar-erro-ordem"{% end %}>
-    {% if adicionando and erros.get("ordem") %}<small id="adicionar-erro-ordem" class="erro-campo">{{ erros["ordem"] }}</small>{% end %}
-    <button type="submit">Adicionar</button>
-  </form>
+    {% set adicionando = neste and estado.acao_erro == "adicionar" %}
+    <h3 class="subtitulo" id="titulo-adicionar-playlist-{{ escopo }}">Adicionar playlist<span class="visually-hidden"> de {{ rotulo }}</span></h3>
+    {% if not bloco.pode_adicionar %}
+    <p class="aviso aviso-info" role="note">A lista de {{ rotulo }} está no limite de {{ bloco.maximo }} playlists. Remova alguma para adicionar ou importar outra.</p>
+    {% else %}
+    <form id="form-links-adicionar-{{ escopo }}" class="form-config" method="post" action="{{ estado.acao }}" hx-post="{{ estado.acao }}" hx-target="#bloco-links" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]" aria-labelledby="titulo-adicionar-playlist-{{ escopo }}">
+      {% module xsrf_form_html() %}
+      <input type="hidden" name="versao" value="{{ estado.versao }}">
+      <input type="hidden" name="acao" value="adicionar">
+      <input type="hidden" name="escopo" value="{{ escopo }}">
+      <label for="adicionar-icone-{{ escopo }}">Ícone (opcional, um emoji)</label>
+      <input id="adicionar-icone-{{ escopo }}" class="campo-icone" type="text" name="icone" value="{{ (valores.get('icone') or '') if adicionando else '' }}" maxlength="{{ limites['icone_max'] }}" autocomplete="off" placeholder="🎵" aria-describedby="adicionar-ajuda-icone-{{ escopo }}">
+      <small id="adicionar-ajuda-icone-{{ escopo }}">Um emoji do teclado; texto ou emoji de servidor é ignorado e a playlist fica sem ícone.</small>
+      <label for="adicionar-nome-{{ escopo }}">Nome (de {{ limites["nome_min"] }} a {{ limites["nome_max"] }} caracteres)</label>
+      <input id="adicionar-nome-{{ escopo }}" type="text" name="nome" value="{{ (valores.get('nome') or '') if adicionando else '' }}" maxlength="{{ limites['nome_max'] }}" autocomplete="off" required{% if adicionando and erros.get("nome") %} aria-invalid="true" aria-describedby="adicionar-erro-nome-{{ escopo }}"{% end %}>
+      {% if adicionando and erros.get("nome") %}<small id="adicionar-erro-nome-{{ escopo }}" class="erro-campo">{{ erros["nome"] }}</small>{% end %}
+      <label for="adicionar-url-{{ escopo }}">Endereço (URL)</label>
+      <input id="adicionar-url-{{ escopo }}" type="url" name="url" value="{{ (valores.get('url') or '') if adicionando else '' }}" maxlength="{{ limites['url_max'] }}" autocomplete="off" required{% if adicionando and erros.get("url") %} aria-invalid="true" aria-describedby="adicionar-erro-url-{{ escopo }}"{% end %}>
+      {% if adicionando and erros.get("url") %}<small id="adicionar-erro-url-{{ escopo }}" class="erro-campo">{{ erros["url"] }}</small>{% end %}
+      <label for="adicionar-descricao-{{ escopo }}">Descrição (opcional, de {{ limites["descricao_min"] }} a {{ limites["descricao_max"] }} caracteres)</label>
+      <input id="adicionar-descricao-{{ escopo }}" type="text" name="descricao" value="{{ (valores.get('descricao') or '') if adicionando else '' }}" maxlength="{{ limites['descricao_max'] }}" autocomplete="off"{% if adicionando and erros.get("descricao") %} aria-invalid="true" aria-describedby="adicionar-erro-descricao-{{ escopo }}"{% end %}>
+      {% if adicionando and erros.get("descricao") %}<small id="adicionar-erro-descricao-{{ escopo }}" class="erro-campo">{{ erros["descricao"] }}</small>{% end %}
+      <label for="adicionar-generos-{{ escopo }}">Gêneros (opcional, até {{ limites["generos_max"] }}, separados por vírgula)</label>
+      <input id="adicionar-generos-{{ escopo }}" type="text" name="generos" value="{{ (valores.get('generos') or '') if adicionando else '' }}" autocomplete="off" placeholder="rock, pop, lo-fi"{% if adicionando and erros.get("generos") %} aria-invalid="true" aria-describedby="adicionar-erro-generos-{{ escopo }}"{% end %}>
+      {% if adicionando and erros.get("generos") %}<small id="adicionar-erro-generos-{{ escopo }}" class="erro-campo">{{ erros["generos"] }}</small>{% end %}
+      <label for="adicionar-ordem-{{ escopo }}">Ordem (opcional, 1 = primeira; vazio = no fim)</label>
+      <input id="adicionar-ordem-{{ escopo }}" type="text" inputmode="numeric" pattern="[0-9]*" name="ordem" value="{{ (valores.get('ordem') or '') if adicionando else '' }}" maxlength="{{ limites['ordem_digitos'] }}" autocomplete="off"{% if adicionando and erros.get("ordem") %} aria-invalid="true" aria-describedby="adicionar-erro-ordem-{{ escopo }}"{% end %}>
+      {% if adicionando and erros.get("ordem") %}<small id="adicionar-erro-ordem-{{ escopo }}" class="erro-campo">{{ erros["ordem"] }}</small>{% end %}
+      <button type="submit">Adicionar</button>
+    </form>
 
-  {% set importando = estado.acao_erro == "importar" %}
-  <h2 class="subtitulo" id="titulo-importar-playlists">Importar playlists</h2>
-  <form id="form-links-importar" class="form-config" method="post" action="{{ estado.acao }}" hx-post="{{ estado.acao }}" hx-target="#bloco-links" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]" aria-labelledby="titulo-importar-playlists">
-    {% module xsrf_form_html() %}
-    <input type="hidden" name="versao" value="{{ estado.versao }}">
-    <input type="hidden" name="acao" value="importar">
-    <label for="importar-dados">Conteúdo JSON</label>
-    <textarea id="importar-dados" name="dados" rows="6" spellcheck="false" autocomplete="off"{% if importando and erros.get("dados") %} aria-invalid="true" aria-describedby="importar-erro-dados importar-ajuda"{% else %} aria-describedby="importar-ajuda"{% end %}>{{ (valores.get("dados") or "") if importando else "" }}</textarea>
-    {% if importando and erros.get("dados") %}<small id="importar-erro-dados" class="erro-campo">{{ erros["dados"] }}</small>{% end %}
-    <small id="importar-ajuda">Cole o conteúdo de um arquivo exportado por este painel ou pelo bot (o formato antigo também vale). A importação só acrescenta: playlists com nome ou link já existente são ignoradas e aparecem no relatório.</small>
-    <button type="submit">Importar</button>
-  </form>
+    {% set importando = neste and estado.acao_erro == "importar" %}
+    <h3 class="subtitulo" id="titulo-importar-playlists-{{ escopo }}">Importar playlists<span class="visually-hidden"> de {{ rotulo }}</span></h3>
+    <form id="form-links-importar-{{ escopo }}" class="form-config" method="post" action="{{ estado.acao }}" hx-post="{{ estado.acao }}" hx-target="#bloco-links" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]" aria-labelledby="titulo-importar-playlists-{{ escopo }}">
+      {% module xsrf_form_html() %}
+      <input type="hidden" name="versao" value="{{ estado.versao }}">
+      <input type="hidden" name="acao" value="importar">
+      <input type="hidden" name="escopo" value="{{ escopo }}">
+      <label for="importar-dados-{{ escopo }}">Conteúdo JSON</label>
+      <textarea id="importar-dados-{{ escopo }}" name="dados" rows="6" spellcheck="false" autocomplete="off"{% if importando and erros.get("dados") %} aria-invalid="true" aria-describedby="importar-erro-dados-{{ escopo }} importar-ajuda-{{ escopo }}"{% else %} aria-describedby="importar-ajuda-{{ escopo }}"{% end %}>{{ (valores.get("dados") or "") if importando else "" }}</textarea>
+      {% if importando and erros.get("dados") %}<small id="importar-erro-dados-{{ escopo }}" class="erro-campo">{{ erros["dados"] }}</small>{% end %}
+      <small id="importar-ajuda-{{ escopo }}">Cole o conteúdo de um arquivo exportado por este painel ou pelo bot (o formato antigo também vale). As playlists entram em {{ rotulo }}, qualquer que seja o escopo no arquivo. A importação só acrescenta: playlists com nome ou link já existente em {{ rotulo }} são ignoradas e aparecem no relatório.</small>
+      <button type="submit">Importar</button>
+    </form>
+    {% end %}
+  </section>
   {% end %}
 </section>

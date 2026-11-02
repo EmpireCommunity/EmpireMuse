@@ -8,12 +8,9 @@ from typing import Union, TYPE_CHECKING
 
 import disnake
 
-from empiremuse.rules.errors import RuleError
-from empiremuse.rules.playlists import display_name
 from empiremuse.utils.db import DBModel
-from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.music.checks import check_pool_bots
-from empiremuse.utils.music.converters import time_format, md_code, md_link
+from empiremuse.utils.music.converters import time_format, md_link
 from empiremuse.utils.others import (
     CustomContext,
     PlayerControls,
@@ -35,7 +32,6 @@ from empiremuse.utils.music.interactions.fav_menu_components import (
 from empiremuse.utils.music.interactions.fav_menu_text import (
     FavMenuTextMixin,
 )
-from empiremuse.utils.music.interactions import fav_menu_playlists as playlists_ui
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +54,6 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, disnake.ui.View):
         self.guild = ctx.guild
         self.current = None
         self.data = data
-        self.playlists: tuple = ()
         self.message = None
         self.log = log
         self.prefix = prefix
@@ -121,23 +116,7 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, disnake.ui.View):
 
         self.stop()
 
-    async def load_playlists(self, guild_id: int) -> None:
-        self.playlists = await self.bot.pool.servers.playlists.list(guild_id)
-
-    async def finish_write(self, inter: disnake.ModalInteraction, log: str) -> None:
-        """Depois de gravar no store: responde ao modal e redesenha o menu com a lista que o store tem agora."""
-        await self.load_playlists(inter.guild_id)
-        await inter.edit_original_message(content=log, allowed_mentions=disnake.AllowedMentions.none())
-        self.log = log.split("\n", 1)[0]  # o relatório completo já foi para o modal; o menu leva só o resumo
-        await self._redraw()
-
     async def add_callback(self, inter: disnake.MessageInteraction):
-        if self.mode == ViewMode.guild_fav_manager:
-            if not playlists_ui.can_manage(inter):
-                await inter.send(playlists_ui.MSG_DENIED, ephemeral=True)
-                return
-            await inter.response.send_modal(playlists_ui.PlaylistModal(self))
-            return
         await inter.response.send_modal(FavModalAdd(name=None, url=None, view=self))
 
     async def edit_callback(self, inter: disnake.MessageInteraction):
@@ -153,24 +132,9 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, disnake.ui.View):
             except KeyError:
                 await inter.send(f"**Não há favorito com o nome:** {self.current}", ephemeral=True)
 
-        elif self.mode == ViewMode.guild_fav_manager:
-            if not playlists_ui.can_manage(inter):
-                await inter.send(playlists_ui.MSG_DENIED, ephemeral=True)
-                return
-            await self.load_playlists(inter.guild_id)
-            item = playlists_ui.find_by_name(self.playlists, self.current)
-            if item is None:
-                await inter.send(f"**Não há playlist com o nome:** {md_code(self.current)}", ephemeral=True)
-                return
-            await inter.response.send_modal(playlists_ui.PlaylistModal(self, item))
-
     async def remove_callback(self, inter: disnake.MessageInteraction):
         if not self.current:
             await inter.send("Você deve selecionar um item!", ephemeral=True)
-            return
-
-        if self.mode == ViewMode.guild_fav_manager:
-            await self._remove_playlist(inter)
             return
 
         await inter.response.defer(ephemeral=True)
@@ -209,15 +173,6 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, disnake.ui.View):
         await inter.edit_original_message(content=self.build_txt(), view=self)
 
     async def clear_callback(self, inter: disnake.MessageInteraction):
-        if self.mode == ViewMode.guild_fav_manager:
-            if not await playlists_ui.clear_all(self, inter):
-                return
-            self.log = "Lista de playlists do servidor foi limpa com sucesso!"
-            await self.load_playlists(inter.guild_id)
-            self.current = None
-            await self._redraw()
-            return
-
         await inter.response.defer(ephemeral=True)
 
         self.data = await self.bot.get_global_data(inter.author.id, db_name=DBModel.users)
@@ -276,33 +231,7 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, disnake.ui.View):
         elif self.message:
             await self.message.edit(**kwargs)
 
-    async def _remove_playlist(self, inter: disnake.MessageInteraction) -> None:
-        """Remove a playlist selecionada (o nome é re-resolvido no store); erros vão numa resposta efêmera à parte."""
-        if not playlists_ui.can_manage(inter):
-            await inter.send(playlists_ui.MSG_DENIED, ephemeral=True)
-            return
-        await inter.response.defer()
-        try:
-            removed = await self.bot.pool.servers.playlists.remove(inter.guild_id, self.current)
-            await self.load_playlists(inter.guild_id)
-        except GenericError as exc:
-            await inter.send(exc.text, ephemeral=True)
-            return
-        self.current = None
-        if isinstance(removed, RuleError):
-            await inter.send(playlists_ui.error_text(removed), ephemeral=True)
-            await self._redraw()
-            return
-        self.log = f"Playlist {md_link(display_name(removed), removed.url)} foi removida da lista do servidor!"
-        await self._redraw()
-
     async def import_callback(self, inter: disnake.MessageInteraction):
-        if self.mode == ViewMode.guild_fav_manager:
-            if not playlists_ui.can_manage(inter):
-                await inter.send(playlists_ui.MSG_DENIED, ephemeral=True)
-                return
-            await inter.response.send_modal(playlists_ui.PlaylistImportModal(self))
-            return
         await inter.response.send_modal(FavModalImport(view=self))
 
     async def play_callback(self, inter: disnake.MessageInteraction):
@@ -314,10 +243,6 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, disnake.ui.View):
         )
 
     async def export_callback(self, inter: disnake.MessageInteraction):
-        if self.mode == ViewMode.guild_fav_manager:
-            await playlists_ui.export_file(self, inter)
-            return
-
         cog = self.bot.get_cog("Music")
 
         if retry_after := cog.fav_import_export_cd.get_bucket(inter).update_rate_limit():
@@ -400,10 +325,6 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, disnake.ui.View):
 
         if self.mode == ViewMode.fav_manager:
             self.components_updater_task = self.bot.loop.create_task(self.auto_update())
-
-        elif self.mode == ViewMode.guild_fav_manager:
-            await inter.response.defer()
-            await self.load_playlists(inter.guild_id)
 
         if inter.response.is_done():
             await inter.edit_original_message(content=self.build_txt(), view=self)

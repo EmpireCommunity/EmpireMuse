@@ -22,7 +22,10 @@ from empiremuse.rules.limits import (
     FAV_URL_MAX,
     ITG_TITLE_MAX,
     ITG_URL_MAX,
+    PLAYLIST_FILE_MAX_BYTES,
+    PLAYLIST_PASTE_MAX,
 )
+from empiremuse.rules.playlists import ParsedFile, check_attachment, check_paste, parse_file
 from empiremuse.rules.text import clean_import_name
 from empiremuse.rules.urls import check_url, clean_url
 from empiremuse.utils.db import DBModel
@@ -58,21 +61,50 @@ from empiremuse.utils.music.interactions.favorites_texts import (
 )
 
 
+FAV_FILE_FIELD = "json_file"
+FAV_TEXT_FIELD = "json_data"
+_FAV_BOTH_SOURCES = "**Envie o arquivo OU cole o conteúdo, não os dois.**"
+_FAV_NO_SOURCE = "**Envie um arquivo .json ou cole o conteúdo exportado.**"
+_FAV_DOWNLOAD_FAILED = "**Não consegui baixar o anexo. Tente enviar o arquivo de novo.**"
+_FAV_NOTHING_VALID = "**O arquivo não tem nenhum favorito válido** (cada item precisa de nome e link https)."
+
+
+def playlists_error_text(error: RuleError) -> str:
+    """O texto do ``/playlists import`` para um arquivo recusado (mesmos limites e mensagens de ``rules/playlists``)."""
+    from empiremuse.cogs.server_playlists import error_message  # tarde: o cog importa o resto do bot
+
+    return error_message(error)
+
+
 class FavModalImport(disnake.ui.Modal):
+    """Importar favoritos do membro (anexo ``.json`` ou texto colado, lidos por ``rules/playlists``) ou integrações (JSON colado).
+
+    Favoritos: o arquivo pode ser o exportado por este menu (``{nome: url}``), pelo painel ou pelo ``/playlists export``
+    (formato de playlists; só nome e link contam). Os limites por usuário (cota, nome e link) são os de sempre e nada
+    aqui toca as playlists do servidor.
+    """
+
     def __init__(self, view):
         self.view = view
 
         if self.view.mode == ViewMode.fav_manager:
             super().__init__(
-                title="Importar Favoritos",
+                title="Importar favoritos",
                 components=[
-                    disnake.ui.TextInput(
-                        style=disnake.TextInputStyle.long,
-                        label="Inserir dados (em formato json)",
-                        custom_id="json_data",
-                        min_length=20,
-                        required=True,
-                    )
+                    disnake.ui.Label(
+                        "Arquivo .json (opcional)",
+                        disnake.ui.FileUpload(custom_id=FAV_FILE_FIELD, required=False, max_values=1),
+                        description=f"Exportado por este menu, pelo painel ou pelo bot (até {PLAYLIST_FILE_MAX_BYTES // 1024} KiB).",
+                    ),
+                    disnake.ui.Label(
+                        "Ou cole o conteúdo (JSON)",
+                        disnake.ui.TextInput(
+                            style=disnake.TextInputStyle.long,
+                            custom_id=FAV_TEXT_FIELD,
+                            required=False,
+                            max_length=PLAYLIST_PASTE_MAX,
+                        ),
+                    ),
                 ],
             )
             return
@@ -98,6 +130,11 @@ class FavModalImport(disnake.ui.Modal):
         await inter.send(_wait_text(retry_after), ephemeral=True)
 
     async def callback(self, inter: disnake.ModalInteraction, /) -> None:
+        if self.view.mode == ViewMode.fav_manager:
+            if await self._import_favorites_file(inter):
+                await self._redraw()
+            return
+
         try:
             json_data = json.loads(inter.text_values["json_data"])
         except ValueError, RecursionError:
@@ -116,45 +153,88 @@ class FavModalImport(disnake.ui.Modal):
             )
             return
 
-        importers = {
-            ViewMode.fav_manager: self._import_favorites,
-            ViewMode.integrations_manager: self._import_integrations,
-        }
-
-        if (importer := importers.get(self.view.mode)) is None:
+        if self.view.mode != ViewMode.integrations_manager:
             raise GenericError(f"**Modo ainda não implementado: {self.view.mode} | {type(self.view.mode)}**")
 
-        if retry_after := self.view.bot.get_cog("Music").fav_import_export_cd.get_bucket(inter).update_rate_limit():
+        if retry_after := self._rate_limited(inter):
             await self._reject_rate_limited(inter, retry_after)
             return
 
-        if not await importer(inter, json_data):
+        if not await self._import_integrations(inter, json_data):
             return
 
+        await self._redraw()
+
+    def _rate_limited(self, inter: disnake.ModalInteraction) -> float:
+        """Segundos até poder importar de novo (``0`` = pode agora); a chamada já conta esta tentativa."""
+        return self.view.bot.get_cog("Music").fav_import_export_cd.get_bucket(inter).update_rate_limit() or 0.0
+
+    async def _redraw(self) -> None:
         if not isinstance(self.view.ctx, CustomContext):
             await self.view.ctx.edit_original_message(content=self.view.build_txt(), view=self.view)
         elif self.view.message:
             await self.view.message.edit(content=self.view.build_txt(), view=self.view)
 
-    async def _import_favorites(self, inter: disnake.ModalInteraction, json_data: dict) -> bool:
-        clean_data = {}
+    # ------------------------------------------------------------------ favoritos (anexo ou texto, por rules/playlists)
 
-        for name, url in json_data.items():
-            url = check_url(url, self.view.bot.config["USER_FAV_MAX_URL_LENGTH"])
-
-            if isinstance(url, RuleError):
-                await inter.send(_url_error_text(url), ephemeral=True)
-                return False
-
-            clean_name = check_import_name(name, clean_data, self.view.bot.config["USER_FAV_MAX_NAME_LENGTH"])
-
-            if isinstance(clean_name, RuleError):
-                await inter.send(_name_error_text(clean_name, FAV_NAME_MIN, FAV_NAME_MAX), ephemeral=True)
-                return False
-
-            clean_data[clean_name] = url
-
+    async def _read_favorites_file(self, inter: disnake.ModalInteraction) -> ParsedFile | None:
+        """O arquivo lido (anexo ou texto colado), já validado pelas regras das playlists; ``None`` = já respondeu o motivo."""
+        files = tuple(inter.resolved_values.get(FAV_FILE_FIELD) or ())
+        text = inter.text_values.get(FAV_TEXT_FIELD) or ""
+        if files and text.strip():
+            await inter.send(_FAV_BOTH_SOURCES, ephemeral=True)
+            return None
+        if not files and not text.strip():
+            await inter.send(_FAV_NO_SOURCE, ephemeral=True)
+            return None
+        if files:
+            attachment = files[0]
+            refused = check_attachment(attachment.filename, attachment.size)  # antes de baixar
+            if refused is not None:
+                await inter.send(playlists_error_text(refused), ephemeral=True)
+                return None
+        else:
+            pasted = check_paste(text)
+            if isinstance(pasted, RuleError):
+                await inter.send(playlists_error_text(pasted), ephemeral=True)
+                return None
+        if retry_after := self._rate_limited(inter):
+            await self._reject_rate_limited(inter, retry_after)
+            return None
         await inter.response.defer(ephemeral=True)
+        if files:
+            try:
+                data: str | bytes = await files[0].read()
+            except disnake.HTTPException:  # inclui NotFound: o anexo sumiu ou o Discord falhou
+                await inter.edit_original_message(_FAV_DOWNLOAD_FAILED)
+                return None
+        else:
+            data = pasted
+        parsed = parse_file(data, max_bytes=PLAYLIST_FILE_MAX_BYTES)
+        if isinstance(parsed, RuleError):
+            await inter.edit_original_message(playlists_error_text(parsed))
+            return None
+        if not parsed.items:
+            await inter.edit_original_message(_FAV_NOTHING_VALID)
+            return None
+        return parsed
+
+    async def _import_favorites_file(self, inter: disnake.ModalInteraction) -> bool:
+        parsed = await self._read_favorites_file(inter)
+        if parsed is None:
+            return False
+
+        clean_data = {}
+        for item in parsed.items:  # só nome e link contam; descrição, gêneros e ícone do arquivo são ignorados
+            url = check_url(item.url, self.view.bot.config["USER_FAV_MAX_URL_LENGTH"])
+            if isinstance(url, RuleError):
+                await inter.edit_original_message(_url_error_text(url))
+                return False
+            clean_name = check_import_name(item.name, clean_data, self.view.bot.config["USER_FAV_MAX_NAME_LENGTH"])
+            if isinstance(clean_name, RuleError):
+                await inter.edit_original_message(_name_error_text(clean_name, FAV_NAME_MIN, FAV_NAME_MAX))
+                return False
+            clean_data[clean_name] = url
 
         work = deepcopy(await self.view.bot.get_global_data(inter.author.id, db_name=DBModel.users))
 
@@ -171,7 +251,12 @@ class FavModalImport(disnake.ui.Modal):
 
         await self.view.bot.update_global_data(inter.author.id, self.view.data, db_name=DBModel.users)
 
-        await inter.edit_original_message(content="**Favoritos importados com sucesso!**")
+        skipped = (
+            f"\n`{len(parsed.invalid)} item(ns) do arquivo ignorado(s) por não ter nome e link válidos.`"
+            if parsed.invalid
+            else ""
+        )
+        await inter.edit_original_message(content=f"**Favoritos importados com sucesso!**{skipped}")
 
         if (s := len(clean_data)) > 1:
             self.view.log = f"{s} favoritos foram importados com sucesso."

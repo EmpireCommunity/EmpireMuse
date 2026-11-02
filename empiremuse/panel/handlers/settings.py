@@ -34,6 +34,7 @@ from empiremuse.panel.services.links import LinksForm
 from empiremuse.panel.services.listen_along import ListenAlongForm
 from empiremuse.panel.services.player import DjForm, PlayerForm
 from empiremuse.panel.services.service import Outcome, SettingsService
+from empiremuse.rules.playlists import SCOPES
 from empiremuse.utils.servers import ServerConfigConflict, ServerConfigUnavailable
 from empiremuse.utils.usage import record_panel_action
 
@@ -214,6 +215,8 @@ class SettingsHandler(AuthenticatedHandler):
         }
         if "links" in states:
             namespace["exportar_url"] = f"{SERVERS_PATH}/{access.guild_id}/links/exportar"
+            requested = self.get_query_argument("escopo", None, strip=False)  # ?escopo= abre a página nesse bloco
+            namespace["escopo_url"] = requested if requested in SCOPES else None
         return namespace
 
     @staticmethod
@@ -241,21 +244,36 @@ class SettingsHandler(AuthenticatedHandler):
         )
 
 
+def scope_argument(raw: Optional[str]) -> Optional[str]:
+    """``?escopo=`` da página e da exportação: um escopo conhecido, ou ``None`` quando ausente; outro valor é inválido."""
+    if raw is None:
+        return None
+    return raw if raw in SCOPES else INVALID_SCOPE
+
+
+INVALID_SCOPE = "?"
+
+
 class LinksExportHandler(SettingsHandler):
-    """``GET /painel/servidores/<gid>/links/exportar``: as playlists do servidor no formato de importação, como anexo."""
+    """``GET /painel/servidores/<gid>/links/exportar[?escopo=jukebox|radio]``: as playlists do servidor no formato de
+    importação, como anexo; sem ``escopo``, os dois escopos (cada item leva o seu); escopo desconhecido é 404."""
 
     async def get(self, guild_id: str) -> None:  # type: ignore[override]
+        scope = scope_argument(self.get_query_argument("escopo", None, strip=False))
         try:
+            if scope == INVALID_SCOPE:
+                raise GuildAccessDenied
             ctx, _, _ = await self._resolve(guild_id, "links", fresh=False)
         except GuildAccessDenied:
             self._not_found()
             return
         try:
-            content = await ctx.pool.servers.playlists.export_bytes(ctx.guild_id)
+            content = await ctx.pool.servers.playlists.export_bytes(ctx.guild_id, scope=scope)
         except ServerConfigUnavailable as exc:
             self.render_error(503, UNAVAILABLE_TITLE, exc.text)
             return
+        filename = f"playlists-{guild_id}.json" if scope is None else f"playlists-{guild_id}-{scope}.json"
         self.set_header("Content-Type", "application/json; charset=UTF-8")
-        self.set_header("Content-Disposition", f'attachment; filename="playlists-{guild_id}.json"')
+        self.set_header("Content-Disposition", f'attachment; filename="{filename}"')
         self.set_header("Cache-Control", "no-store")
         self.finish(content)

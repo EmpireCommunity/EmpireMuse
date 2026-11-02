@@ -4,6 +4,11 @@ Escopo servidor (``pool.servers.playlists``), não bot. O formulário leva o ``r
 velha é recusada pelo serviço (409) e, na janela entre ler e gravar, pelo ``expected_rev`` do store. A validação por
 campo acontece antes, com as mesmas regras puras do comando (``rules/playlists``); a importação só acrescenta e mostra
 o relatório do que entrou e do que foi pulado.
+
+Playlists por escopo (item 10): a página mostra os dois escopos (``jukebox`` e ``radio``) com um filtro; cada formulário
+leva o campo ``escopo`` e toda ação roda SÓ dentro dele (nome único, cota e ordem são por escopo, no store). O ``rev`` é
+um só (documento único), então a versão do formulário cobre os dois escopos. Permissão: a mesma da página (quem gerencia
+o servidor), sem premium.
 """
 
 from __future__ import annotations
@@ -36,6 +41,9 @@ from empiremuse.rules.playlists import (
     DUP_NAME,
     DUP_URL,
     INVALID,
+    SCOPE_JUKEBOX,
+    SCOPE_RADIO,
+    SCOPES,
     ImportReport,
     ParsedFile,
     Playlist,
@@ -57,6 +65,7 @@ ACTIONS = ("adicionar", "editar", "remover", "importar")
 GENRE_SPLIT = re.compile(r"[,;]")
 
 MSG_ACTION = "Ação desconhecida."
+MSG_SCOPE = "Escopo desconhecido. Recarregue a página."
 MSG_NAME = f"O nome deve ter de {limits.PLAYLIST_NAME_MIN} a {limits.PLAYLIST_NAME_MAX} caracteres, sem caracteres de controle."
 MSG_NAME_TAKEN = "Já existe uma playlist com esse nome."
 MSG_NAME_UNKNOWN = "Playlist não encontrada. Recarregue a página para ver a lista atual."
@@ -134,6 +143,17 @@ class PlaylistView(NamedTuple):
     descricao: str
     generos: tuple[str, ...]
     icone: str | None = None
+    escopo: str = SCOPE_JUKEBOX
+
+
+class ScopeView(NamedTuple):
+    """Um escopo na página: os itens dele, a contagem e se ainda cabe mais um (a cota é por escopo)."""
+
+    escopo: str
+    itens: tuple[PlaylistView, ...]
+    total: int
+    maximo: int
+    pode_adicionar: bool
 
 
 class RelatorioView(NamedTuple):
@@ -188,16 +208,34 @@ def _item_from(echo: dict[str, Any], default_order: int) -> Playlist | RuleError
     return check_playlist(raw)
 
 
-def _docs(playlists: tuple[Playlist, ...]) -> list[dict[str, Any]]:
-    return [to_doc(p) for p in playlists]
-
-
 def _nothing_added_text(report: ImportReport) -> str:
     counts: dict[str, int] = {}
     for skip in report.skipped:
         counts[skip.reason] = counts.get(skip.reason, 0) + 1
     parts = ", ".join(f"{n} com {_REASON_TEXT.get(reason, reason)}" for reason, n in counts.items())
     return f"{MSG_IMPORT_NOTHING}: {parts}." if parts else f"{MSG_IMPORT_NOTHING}."
+
+
+class _Scoped(NamedTuple):
+    """As listas lidas, o escopo do formulário enviado e o ``rev``: o que uma ação precisa para rodar só no seu escopo."""
+
+    by_scope: dict[str, tuple[Playlist, ...]]
+    scope: str
+    rev: int
+
+    @property
+    def items(self) -> tuple[Playlist, ...]:
+        return self.by_scope.get(self.scope, ())
+
+
+def _docs_by_scope(by_scope: dict[str, tuple[Playlist, ...]]) -> list[dict[str, Any]]:
+    """Os documentos dos dois escopos numa lista só, na ordem dos escopos (a versão do formulário é calculada disto)."""
+    return [to_doc(p._replace(scope=scope)) for scope in SCOPES for p in by_scope.get(scope, ())]
+
+
+def _scope_view(scope: str, items: tuple[Playlist, ...]) -> ScopeView:
+    views = tuple(PlaylistView(p.order, p.name, p.url, p.description, p.genres, p.icon, scope) for p in items)
+    return ScopeView(scope, views, len(views), limits.MAX_SERVER_PLAYLISTS, len(views) < limits.MAX_SERVER_PLAYLISTS)
 
 
 class LinksForm(SettingsForm):
@@ -221,38 +259,43 @@ class LinksForm(SettingsForm):
     # ------------------------------------------------------------------ dados
 
     async def load(self, ctx: FormContext) -> dict:
-        items, rev = await ctx.pool.servers.playlists.snapshot(ctx.guild_id)
-        return {"playlists": items, "rev": rev}
+        """As listas dos dois escopos e o ``rev`` (um só: o documento é único)."""
+        store, gid = ctx.pool.servers.playlists, ctx.guild_id
+        jukebox, rev = await store.snapshot(gid, scope=SCOPE_JUKEBOX)
+        radio, _rev = await store.snapshot(gid, scope=SCOPE_RADIO)
+        return {"playlists": {SCOPE_JUKEBOX: jukebox, SCOPE_RADIO: radio}, "rev": rev}
 
     def extract(self, doc: dict) -> dict[str, Any]:
         # ``rev`` entra na versão do formulário: qualquer gravação no servidor (comando, outro bot) invalida a página aberta.
-        return {"playlists": _docs(doc["playlists"]), "rev": doc["rev"]}
+        return {"playlists": _docs_by_scope(doc["playlists"]), "rev": doc["rev"]}
 
     def aux(self, ctx: FormContext, doc: dict) -> dict[str, Any]:
-        return {"itens": doc["playlists"], "relatorio": doc.get("relatorio")}
+        return {"itens": doc["playlists"], "relatorio": doc.get("relatorio"), "escopo": doc.get("escopo")}
 
     def apply(self, doc: dict, new: dict[str, Any]) -> None:
         doc["acao"] = new["acao"]
+        doc["escopo"] = new["escopo"]
 
     async def store(self, ctx: FormContext, doc: dict, before: dict) -> None:
-        """Executa a ação no store com o ``rev`` lido; depois relê a lista e o ``rev`` para a resposta."""
+        """Executa a ação no store, no escopo do formulário e com o ``rev`` lido; depois relê as listas e o ``rev``."""
         store = ctx.pool.servers.playlists
-        gid, rev = ctx.guild_id, before["rev"]
+        gid, rev, scope = ctx.guild_id, before["rev"], doc["escopo"]
         kind, payload = doc["acao"]
         if kind == "adicionar":
-            result: Any = await store.add(gid, payload, expected_rev=rev)
+            result: Any = await store.add(gid, payload, expected_rev=rev, scope=scope)
         elif kind == "editar":
-            result = await store.edit(gid, payload[0], payload[1], expected_rev=rev)
+            result = await store.edit(gid, payload[0], payload[1], expected_rev=rev, scope=scope)
         elif kind == "remover":
-            result = await store.remove(gid, payload, expected_rev=rev)
+            result = await store.remove(gid, payload, expected_rev=rev, scope=scope)
         else:
-            result = await store.import_file(gid, payload, expected_rev=rev)
+            result = await store.import_file(gid, payload, expected_rev=rev, scope=scope)
             doc["relatorio"] = _report_view(result)
         if isinstance(result, RuleError):
             # A lista é a mesma que ``parse`` validou (o ``rev`` conferiu): só regras divergentes chegariam aqui.
-            logger.warning("Playlists do servidor [%s]: o store recusou %s (%s)", gid, kind, result.code)
+            logger.warning("Playlists do servidor [%s]: o store recusou %s em %s (%s)", gid, kind, scope, result.code)
             raise ServerConfigConflict
-        doc["playlists"], doc["rev"] = await store.snapshot(gid)
+        reloaded = await self.load(ctx)
+        doc["playlists"], doc["rev"] = reloaded["playlists"], reloaded["rev"]
 
     # ------------------------------------------------------------------ exibição
 
@@ -260,6 +303,7 @@ class LinksForm(SettingsForm):
         return {
             "acao_erro": None,
             "alvo_erro": None,
+            "escopo_erro": None,
             "alvo": "",
             "nome": "",
             "url": "",
@@ -271,12 +315,11 @@ class LinksForm(SettingsForm):
         }
 
     def extras(self, ctx: FormContext, current: dict[str, Any]) -> dict[str, Any]:
-        items = tuple(PlaylistView(p.order, p.name, p.url, p.description, p.genres, p.icon) for p in current["itens"])
+        by_scope = current["itens"]
+        escopos = tuple(_scope_view(scope, by_scope.get(scope, ())) for scope in SCOPES)
         return {
-            "itens": items,
-            "total": len(items),
-            "maximo": limits.MAX_SERVER_PLAYLISTS,
-            "pode_adicionar": len(items) < limits.MAX_SERVER_PLAYLISTS,
+            "escopos": escopos,
+            "escopo_atual": current.get("escopo") or SCOPE_JUKEBOX,
             "relatorio": current.get("relatorio"),
             "limites": LIMITES,
         }
@@ -286,9 +329,11 @@ class LinksForm(SettingsForm):
     def parse(self, ctx: FormContext, current: dict[str, Any], args: Args) -> ParseResult:
         action = first(args, "acao") or ""
         target = (first(args, "alvo") or "").strip()
+        scope = first(args, "escopo") or SCOPE_JUKEBOX
         echo = {
             "acao_erro": action,
             "alvo_erro": target if action == "editar" else None,
+            "escopo_erro": scope if scope in SCOPES else None,  # o bloco do escopo em que o erro aconteceu
             "alvo": target,
             "nome": (first(args, "nome") or "").strip(),
             "url": (first(args, "url") or "").strip(),
@@ -299,26 +344,31 @@ class LinksForm(SettingsForm):
             "ordem": (first(args, "ordem") or "").strip(),
             "dados": first(args, "dados") or "",
         }
+        if scope not in SCOPES:
+            return _error("acao", MSG_SCOPE, echo)
         if action not in ACTIONS:
             return _error("acao", MSG_ACTION, echo)
         handler = {"adicionar": self._add, "editar": self._edit, "remover": self._remove, "importar": self._import}
-        return handler[action](current["itens"], current["rev"], echo)
+        return handler[action](_Scoped(current["itens"], scope, current["rev"]), echo)
 
     @staticmethod
-    def _result(playlists: tuple[Playlist, ...], rev: int, action: tuple[str, Any], echo: dict) -> ParseResult:
-        return ParseResult({"playlists": _docs(playlists), "rev": rev, "acao": action}, {}, echo)
+    def _result(scoped: _Scoped, playlists: tuple[Playlist, ...], action: tuple[str, Any], echo: dict) -> ParseResult:
+        """O novo estado: as listas dos outros escopos como estavam e a deste escopo trocada pela calculada."""
+        by_scope = {**scoped.by_scope, scoped.scope: playlists}
+        new = {"playlists": _docs_by_scope(by_scope), "rev": scoped.rev, "acao": action, "escopo": scoped.scope}
+        return ParseResult(new, {}, echo)
 
-    def _add(self, items: tuple[Playlist, ...], rev: int, echo: dict) -> ParseResult:
+    def _add(self, scoped: _Scoped, echo: dict) -> ParseResult:
         item = _item_from(echo, default_order=0)
         if isinstance(item, RuleError):
             return _rule_error(item, echo)
-        result = add_item(items, item)
+        result = add_item(scoped.items, item)
         if isinstance(result, RuleError):
             return _rule_error(result, echo)
-        return self._result(result, rev, ("adicionar", item), echo)
+        return self._result(scoped, result, ("adicionar", item), echo)
 
-    def _edit(self, items: tuple[Playlist, ...], rev: int, echo: dict) -> ParseResult:
-        existing = find_item(items, echo["alvo"])
+    def _edit(self, scoped: _Scoped, echo: dict) -> ParseResult:
+        existing = find_item(scoped.items, echo["alvo"])
         if existing is None:
             return _error("acao", MSG_NAME_UNKNOWN, echo)
         item = _item_from(echo, default_order=existing.order)
@@ -326,25 +376,25 @@ class LinksForm(SettingsForm):
             return _rule_error(item, echo)
         if not echo.get("icone_enviado", True):
             item = item._replace(icon=existing.icon)
-        result = edit_item(items, existing.name, item)
+        result = edit_item(scoped.items, existing.name, item)
         if isinstance(result, RuleError):
             return _rule_error(result, echo)
-        return self._result(result, rev, ("editar", (existing.name, item)), echo)
+        return self._result(scoped, result, ("editar", (existing.name, item)), echo)
 
-    def _remove(self, items: tuple[Playlist, ...], rev: int, echo: dict) -> ParseResult:
-        result = remove_item(items, echo["alvo"])
+    def _remove(self, scoped: _Scoped, echo: dict) -> ParseResult:
+        result = remove_item(scoped.items, echo["alvo"])
         if isinstance(result, RuleError):
             return _rule_error(result, echo)
-        return self._result(result, rev, ("remover", echo["alvo"]), echo)
+        return self._result(scoped, result, ("remover", echo["alvo"]), echo)
 
-    def _import(self, items: tuple[Playlist, ...], rev: int, echo: dict) -> ParseResult:
+    def _import(self, scoped: _Scoped, echo: dict) -> ParseResult:
         parsed = self._parse_import(echo["dados"])
         if isinstance(parsed, str):
             return _error("dados", parsed, echo)
-        planned = plan_import(items, parsed.items)
+        planned = plan_import(scoped.items, parsed.items)
         if not planned.added:
             return _error("dados", _nothing_added_text(ImportReport((), (*parsed.invalid, *planned.skipped))), echo)
-        return self._result((*items, *planned.added), rev, ("importar", parsed), echo)
+        return self._result(scoped, (*scoped.items, *planned.added), ("importar", parsed), echo)
 
     @staticmethod
     def _parse_import(raw: str) -> ParsedFile | str:

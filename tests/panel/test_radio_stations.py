@@ -24,10 +24,16 @@ from tests.panel.test_settings_links import doc as playlist_doc
 HOSTILE = "<script>alert(1)</script>"
 
 
+def radio_playlist(name, order):
+    """Uma playlist de escopo rádio com URL ASCII (``playlist_doc`` deriva a URL do nome, e "Café" não vira URL válida)."""
+    return {**playlist_doc(name, order, f"https://example.com/radio-{order}"), "scope": "radio"}
+
+
 class StationsBase(RadioBase):
     def seed_premium(self, gid=ALFA):
         self.radio.premium.grant(gid)
-        self.world.set_playlists(gid, [playlist_doc("Rock", 1), playlist_doc("Café", 2)])
+        # as fontes de estação são SÓ as playlists de escopo rádio (playlists por escopo, item 10)
+        self.world.set_playlists(gid, [radio_playlist("Rock", 1), radio_playlist("Café", 2)])
         self.radio.stations.playlists[gid] = ("Rock", "Café")
 
     def stations_url(self, gid=ALFA, station_id=None):
@@ -88,6 +94,13 @@ class StationsPageTest(StationsBase):
         pairs = [("name", "Nova"), ("kind", "genre"), ("genre", "rock")]
         assert self.post_raw(browser, self.stations_url(), pairs, htmx=True).code == 403
         assert self.radio.stations.updates == []
+
+    def test_the_station_editor_offers_only_radio_scoped_playlists(self):
+        self.radio.premium.grant(ALFA)
+        self.world.set_playlists(ALFA, [playlist_doc("Rock", 1), radio_playlist("Café", 2)])  # Rock é da Jukebox
+        self.radio.stations.playlists[ALFA] = ("Café",)
+        body = self.page(self.logged_in())
+        assert self.create_form(body).choices("playlists") == ["Café"]
 
     def test_hostile_names_and_artists_are_escaped(self):
         self.seed_premium()

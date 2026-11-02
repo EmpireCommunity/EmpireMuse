@@ -92,21 +92,20 @@ def _sem_idle_embed(monkeypatch):
 
 
 class TestImportadoresRecusamJsonQueNaoEObjetoOuEVazio:
-    """Lista, texto, número, ``null`` e ``{}`` são recusados com mensagem, nos três modos, sem gravar nada."""
+    """Lista, texto, número, ``null`` e ``{}`` são recusados com mensagem, sem gravar nada. Favoritos passam por
+    ``rules/playlists.parse_file`` (texto do ``/playlists import``); integrações pelo importador próprio."""
 
-    MODOS = [ViewMode.fav_manager, ViewMode.guild_fav_manager, ViewMode.integrations_manager]
+    MODOS = [ViewMode.fav_manager, ViewMode.integrations_manager]
     CONTEUDOS = ["[]", '"texto"', "5", "null", "{}", '[{"url": "https://exemplo.invalid/a"}]']
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        "modo", list(MODOS)[:1]
-    )  # o do servidor é o PlaylistImportModal (tests/cogs/test_playlists_comando.py)
+    @pytest.mark.parametrize("modo", list(MODOS)[:1])
     @pytest.mark.parametrize("conteudo", CONTEUDOS)
     async def test_recusa_com_mensagem_e_sem_gravar(self, modo, conteudo):
         bot = ModalBot()
         inter = await importar(bot, modo, conteudo, estrito=True)
         assert bot.salvos_usuario == [] and bot.salvos_servidor == []
-        assert "objeto json" in inter.texto, f"o usuário precisa receber o motivo: {inter.texto!r}"
+        assert "válido" in inter.texto, f"o usuário precisa receber o motivo: {inter.texto!r}"
 
 
 # ============================================================================ endurecimento dos importadores (KI-49 … KI-54)
@@ -126,19 +125,6 @@ class TestKI52TrechoEcoadoNasMensagensDeErro:
             "favorito_com_crases": (ViewMode.fav_manager, {"Item": "nao```@everyone"}),
             "favorito_nome_gigante": (ViewMode.fav_manager, {"n" * self.GIGANTE: f"{URL_BASE}/a"}),
             "favorito_nao_texto_gigante": (ViewMode.fav_manager, {"Item": ["a" * self.GIGANTE]}),
-            "servidor_url_longa": (ViewMode.guild_fav_manager, {"Item": {"url": url_gigante, "description": "ddd"}}),
-            "servidor_descricao_gigante": (
-                ViewMode.guild_fav_manager,
-                {"Item": {"url": f"{URL_BASE}/a", "description": "d" * self.GIGANTE}},
-            ),
-            "servidor_url_com_crases": (
-                ViewMode.guild_fav_manager,
-                {"Item": {"url": "nao```@everyone", "description": "ddd"}},
-            ),
-            "servidor_nome_gigante": (
-                ViewMode.guild_fav_manager,
-                {"n" * self.GIGANTE: {"url": f"{URL_BASE}/a", "description": "ddd"}},
-            ),
             "integracao_url_longa": (ViewMode.integrations_manager, {"Canal": url_gigante}),
             "integracao_com_crases": (ViewMode.integrations_manager, {"Canal": "nao```@everyone"}),
             "integracao_url_objeto_gigante": (

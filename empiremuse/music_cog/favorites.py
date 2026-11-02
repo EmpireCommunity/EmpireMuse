@@ -12,7 +12,6 @@ from empiremuse.utils.music.interactions import (
     FavMenuView,
     ViewMode,
 )
-from empiremuse.cogs.server_playlists import NOT_ALLOWED, member_may_manage
 from empiremuse.utils.others import CustomContext
 
 # O corpo da classe usa estes nomes, então eles precisam existir neste módulo.
@@ -29,9 +28,8 @@ class FavoritesMixin:
             "favs",
             "favoritos",
             "itg",
-            "spl",
         ],
-        description="Gerenciar seus favoritos/integrações e links do server.",
+        description="Gerenciar seus favoritos e integrações.",
         cooldown=fav_cd,
     )
     async def fav_manager_legacy(self, ctx: CustomContext):
@@ -54,14 +52,7 @@ class FavoritesMixin:
         if isinstance(inter, CustomContext):
             prefix = inter.clean_prefix
 
-            if inter.invoked_with == "spl":
-                # as playlists são do servidor (não de um bot): sem escolher bot; só dono, Administrador ou Gerenciar Servidor
-                if not member_may_manage(inter.author, inter.guild):
-                    raise GenericError(NOT_ALLOWED)
-
-                mode = ViewMode.guild_fav_manager
-
-            elif inter.invoked_with == "itg":
+            if inter.invoked_with == "itg":
                 mode = ViewMode.integrations_manager
 
         else:
@@ -89,9 +80,6 @@ class FavoritesMixin:
             mode=mode,
             is_owner=await bot.is_owner(inter.author),
         )
-
-        if mode == ViewMode.guild_fav_manager:
-            await view.load_playlists(inter.guild_id)
 
         txt = view.build_txt()
 

@@ -142,6 +142,7 @@ class ModalInteraction:
     def __init__(self, *, estrito=False, **text_values):
         self.estrito, self.respondida, self.arquivos, self.nomes_de_arquivo = estrito, False, [], []
         self.text_values = text_values
+        self.resolved_values = {}  # ``FileUpload`` do modal de favoritos: {custom_id: [Attachment]}; vazio = sem anexo
         self.author = SimpleNamespace(id=900)
         self.guild = None
         self.guild_id = SERVIDOR
