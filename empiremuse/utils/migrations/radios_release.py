@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from copy import deepcopy
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 from empiremuse.rules.servers import SECTION_JUKEBOX, SECTION_SETTINGS
@@ -97,25 +97,24 @@ def _with_new_fields(doc: dict[str, Any]) -> dict[str, Any]:
     return updated
 
 
-def _without_old_fields(doc: dict[str, Any]) -> dict[str, Any]:
-    """Remove os campos antigos (equivalente ao ``$unset`` de ``request``, ``migrated.request`` e ``settings.request_channel_strict``)."""
-    cleaned = deepcopy(doc)
-    cleaned.pop(OLD_SECTION, None)
-    if isinstance(cleaned.get("migrated"), dict):
-        cleaned["migrated"].pop(OLD_SECTION, None)
-    if isinstance(cleaned.get(SECTION_SETTINGS), dict):
-        cleaned[SECTION_SETTINGS].pop(OLD_STRICT_KEY, None)
-    return cleaned
+def _old_fields_present(doc: dict[str, Any]) -> list[str]:
+    """Os caminhos antigos que o ``$unset`` apaga: ``request``, ``migrated.request`` e ``settings.request_channel_strict``."""
+    fields = []
+    if OLD_SECTION in doc:
+        fields.append(OLD_SECTION)
+    if isinstance(doc.get("migrated"), dict) and OLD_SECTION in doc["migrated"]:
+        fields.append(f"migrated.{OLD_SECTION}")
+    if isinstance(doc.get(SECTION_SETTINGS), dict) and OLD_STRICT_KEY in doc[SECTION_SETTINGS]:
+        fields.append(f"{SECTION_SETTINGS}.{OLD_STRICT_KEY}")
+    return fields
 
 
 async def _ensure_backup_ttl_index(database: Any) -> None:
-    mongo = getattr(database, "_mongo", None)
-    if mongo is None:
-        return
+    """O índice TTL de ``expire_at`` (o mesmo das coleções de eventos): sem ele a cópia ficaria para sempre."""
     try:
-        await mongo[GLOBAL_COLLECTION][BACKUP_DB].create_index("at", expireAfterSeconds=BACKUP_TTL_SECONDS)
-    except Exception as exc:  # noqa: BLE001 - índice TTL é melhor esforço
-        logger.debug("Índice TTL de migration_backup não criado (%s)", type(exc).__name__)
+        await database.ensure_event_indexes(db_name=BACKUP_DB, collection=GLOBAL_COLLECTION)
+    except Exception as exc:  # noqa: BLE001 - índice TTL é melhor esforço; só o tipo vai ao log
+        logger.warning("Índice TTL de migration_backup não criado (%s)", type(exc).__name__)
 
 
 async def _save_backup(database: Any, doc_id: str, original: dict[str, Any]) -> None:
@@ -125,9 +124,11 @@ async def _save_backup(database: Any, doc_id: str, original: dict[str, Any]) -> 
         return
     snapshot = deepcopy(original)
     snapshot.pop("_id", None)
+    now = datetime.now(timezone.utc)
     payload = {
         "old": snapshot,
-        "at": datetime.now(timezone.utc),
+        "at": now,
+        "expire_at": now + timedelta(seconds=BACKUP_TTL_SECONDS),
         "rev": 1,
     }
     saved = await database.save_doc_cas(
@@ -163,12 +164,9 @@ async def _migrate_one(database: Any, doc_id: str, doc: dict[str, Any]) -> bool:
 
     await _save_backup(database, doc_id, doc)
 
-    step2_doc = _without_old_fields(step1_doc)
-    step2_doc.pop("_id", None)
-    step2_doc["rev"] = rev1 + 1
-    return await database.save_doc_cas(
+    return await database.unset_fields_cas(
         doc_id,
-        step2_doc,
+        _old_fields_present(step1_doc),
         expected_rev=rev1,
         db_name=SERVERS_COLLECTION,
         collection=GLOBAL_COLLECTION,

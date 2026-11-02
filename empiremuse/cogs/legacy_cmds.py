@@ -452,7 +452,7 @@ class Owner(commands.Cog):
 
     @commands.is_owner()
     @panel_command(
-        aliases=["rd", "recarregar"],
+        aliases=["recarregar"],
         description="Recarregar módulos.",
         emoji="🔄",
         alt_name="Carregar/Recarregar os módulos.",

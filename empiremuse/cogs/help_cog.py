@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Union, Optional
+from typing import TYPE_CHECKING, NamedTuple, Optional, Union
 
 import disnake
 from disnake.ext import commands
@@ -10,9 +10,76 @@ from empiremuse.utils.others import CustomContext
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
 
 if TYPE_CHECKING:
+    from empiremuse.rules.i18n import Translator
     from empiremuse.utils.client import BotCore
 
 category_icons = {}
+
+# O id do catálogo (``cmd.<id>.{name,description,aliases}``, contrato-nomes-radios §5) de cada comando de prefixo cujo nome difere
+# dele. Os outros usam o próprio nome qualificado com ``.`` no lugar do espaço (``jukebox setup`` → ``jukebox.setup``).
+PREFIX_CATALOG_IDS = {
+    "adddj": "add_dj",
+    "adddjrole": "add_dj_role",
+    "changeskin": "change_skin",
+    "clear": "queue.clear",
+    "commandlog": "command_log",
+    "customskin": "custom_skin",
+    "favmanager": "fav_manager",
+    "loop": "loop_mode",
+    "nowplaying": "now_playing",
+    "playersettings": "player_settings",
+    "queue": "queue.display",
+    "readd": "readd_songs",
+    "removedjrole": "remove_dj_role",
+    "restrictmode": "restrict_mode",
+    "reverse": "queue.reverse",
+    "richpresence": "rich_presence",
+    "savequeue": "save_queue",
+    "setvoicestatus": "set_voice_status",
+    "shuffle": "queue.shuffle",
+}
+NO_DESCRIPTION = "Sem descrição..."
+
+
+class CommandTexts(NamedTuple):
+    name: str
+    description: str
+    aliases: tuple[str, ...]
+
+
+def catalog_id(cmd: commands.Command) -> str:
+    return PREFIX_CATALOG_IDS.get(cmd.qualified_name, cmd.qualified_name.replace(" ", "."))
+
+
+def catalog_text(tr: Translator, cmd: commands.Command, field: str) -> Optional[str]:
+    """O texto do catálogo no idioma do tradutor; ``None`` quando a chave não existe (o ``Translator`` devolve a própria chave)."""
+    key = f"cmd.{catalog_id(cmd)}.{field}"
+    text = tr(key)
+    return None if text == key else text
+
+
+def command_texts(tr: Translator, cmd: commands.Command) -> CommandTexts:
+    """Nome, descrição e aliases do comando no idioma do servidor; um comando fora do catálogo cai no texto do decorador."""
+    aliases = catalog_text(tr, cmd, "aliases")
+    return CommandTexts(
+        name=catalog_text(tr, cmd, "name") or cmd.name,
+        description=catalog_text(tr, cmd, "description") or cmd.description or NO_DESCRIPTION,
+        aliases=tuple(a.strip() for a in aliases.split(",") if a.strip())
+        if aliases is not None
+        else tuple(cmd.aliases),
+    )
+
+
+def listing_entry(tr: Translator, cmd: commands.Command) -> str:
+    """``nome (alias, alias)`` na lista de uma categoria: o nome é o que se digita; os aliases vêm do catálogo."""
+    aliases = command_texts(tr, cmd).aliases
+    return f"{cmd.name} ({', '.join(aliases)})" if aliases else cmd.name
+
+
+def invocation(ctx, cmd: commands.Command, word: str) -> str:
+    """Como se digita ``word`` (o nome ou um alias) do comando: um subcomando leva o grupo na frente."""
+    parent = f"{cmd.full_parent_name} " if cmd.full_parent_name else ""
+    return f"{ctx.prefix}{parent}{word}"
 
 
 class ViewHelp(disnake.ui.View):
@@ -163,10 +230,8 @@ class HelpCog(commands.Cog, name="Ajuda"):
     async def get_cmd(self, ctx, cmds, index=0, category=None, emoji=None):
         cmd = cmds[index]
 
-        if cmd.description:
-            help_cmd = cmd.description
-        else:
-            help_cmd = "Sem descrição..."
+        tr = await self.bot.pool.i18n.for_guild(ctx.guild)
+        texts = command_texts(tr, cmd)
 
         prefix = ctx.prefix if str(ctx.me.id) not in ctx.prefix else f"@{ctx.me.display_name} "
 
@@ -183,9 +248,10 @@ class HelpCog(commands.Cog, name="Ajuda"):
 
         embed = disnake.Embed(color=self.bot.get_color(ctx.guild.me))
 
-        txt = f"### ⌨️ ⠂Comando: {ctx.prefix}{cmd}\n```\n{help_cmd}```\n"
-        if cmd.aliases:
-            aliases = " | ".join([f"{ctx.prefix}{ali}" for ali in cmd.aliases])
+        title = f"{ctx.prefix}{cmd}" if texts.name == cmd.name else f"{ctx.prefix}{cmd} ({texts.name})"
+        txt = f"### ⌨️ ⠂Comando: {title}\n```\n{texts.description}```\n"
+        if texts.aliases:
+            aliases = " | ".join(invocation(ctx, cmd, ali) for ali in texts.aliases)
             txt += f"🔄 **⠂Alternativas:** ```\n{aliases}```\n"
         if hasattr(cmd, "commands"):
             subs = " | ".join([c.name for c in cmd.commands if (await check_perms(ctx, c))])
@@ -251,6 +317,34 @@ class HelpCog(commands.Cog, name="Ajuda"):
             await self.parse_direct(ctx, list(cmd_name))
             return
 
+        embed, btn_id, cmd_lst_new = await self.overview(ctx)
+
+        view = ViewHelp(
+            ctx, btn_id, get_cmd=self.get_cmd, cmd_list=cmd_lst_new, category_cmd=None, main_embed=embed, timeout=180
+        )
+
+        view.message = await ctx.send(embed=embed, mention_author=False, view=view)
+
+        await view.wait()
+
+        eb = view.main_embed
+        eb.clear_fields()
+
+        for item in view.children:
+            if isinstance(item, (disnake.ui.Button, disnake.ui.Select)):
+                item.disabled = True
+
+        try:
+            await view.message.edit(embed=eb, view=view)
+        except disnake.NotFound:
+            pass
+
+    async def overview(self, ctx):
+        """A primeira página do ``help``: cada categoria com os comandos visíveis e seus aliases (catálogo, no idioma do servidor).
+
+        Devolve o embed, a lista ``[categoria, emoji]`` do select e o dicionário ``{categoria: {"emoji", "cmds"}}`` das páginas.
+        """
+        tr = await self.bot.pool.i18n.for_guild(ctx.guild)
         cmdlst = {}
 
         for cmd in sorted(ctx.bot.commands, key=lambda c: c.name):
@@ -292,7 +386,7 @@ class HelpCog(commands.Cog, name="Ajuda"):
         for category, data in sorted(cmd_lst_new.items()):
             btn_id.append([category, data["emoji"]])
 
-            cmds = ", ".join([c.name for c in sorted(data["cmds"], key=lambda c: c.name)])
+            cmds = ", ".join(listing_entry(tr, c) for c in sorted(data["cmds"], key=lambda c: c.name))
             n = len(data["cmds"])
             lst.append(f"\n\n**{data['emoji']} ⠂{category} ({n} comando{'s' if n > 1 else ''}):**\n`{cmds}`")
 
@@ -322,25 +416,7 @@ class HelpCog(commands.Cog, name="Ajuda"):
             icon_url=owner.display_avatar.replace(static_format="png").url, text=f"Dono(a): {owner} [{owner.id}]"
         )
 
-        view = ViewHelp(
-            ctx, btn_id, get_cmd=self.get_cmd, cmd_list=cmd_lst_new, category_cmd=None, main_embed=embed, timeout=180
-        )
-
-        view.message = await ctx.send(embed=embed, mention_author=False, view=view)
-
-        await view.wait()
-
-        eb = view.main_embed
-        eb.clear_fields()
-
-        for item in view.children:
-            if isinstance(item, (disnake.ui.Button, disnake.ui.Select)):
-                item.disabled = True
-
-        try:
-            await view.message.edit(embed=eb, view=view)
-        except disnake.NotFound:
-            pass
+        return embed, btn_id, cmd_lst_new
 
     async def parse_direct(self, ctx: CustomContext, cmd_name: list):
         # TODO: corrigir modo recursivo de subcommands

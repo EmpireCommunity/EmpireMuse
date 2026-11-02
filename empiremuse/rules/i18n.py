@@ -63,6 +63,7 @@ GROUP_EMOJI: dict[str, str] = {"music": "🎶", "settings": "🔧", "lastfm": "�
 # O grupo (``cmd.<grupo>._label``) da legenda de cada comando: a descrição é medida com a legenda do PRÓPRIO grupo.
 COMMAND_GROUPS: Mapping[str, str] = {
     "about": "misc",
+    "updatelog": "misc",
     "add_dj": "music",
     "add_dj_role": "settings",
     "addposition": "music",
