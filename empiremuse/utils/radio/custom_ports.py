@@ -111,6 +111,33 @@ class CustomRadioPorts(DiscordRadioPorts):
         await self.pool.radio.resolved.store(track, partial)
         return partial
 
+    async def candidate_swapped(self, partial: Any) -> None:
+        """O nó recusou o candidato da faixa que tocava ("No playable stream") e ``resolve_track`` buscou outro (``partial`` com ``id`` novo) ou não achou.
+
+        Achou: o candidato novo substitui a entrada guardada (uma entrada de 7 dias morta falharia uma vez a cada sorteio) e toca agora. Não achou: a faixa
+        entra no cache negativo, sai do ``current`` e a rádio passa à faixa adiantada (ou sorteia outra no próximo passo): nunca fica muda."""
+        player = self._player()
+        track, resolved = self.current, self.pool.radio.resolved
+        if player is None or track is None:
+            return
+        if partial.id:
+            await resolved.store(track, partial)
+            player.queue.appendleft(partial)
+            await player.process_next()
+            return
+        await resolved.mark(track)
+        self.current = None
+        if player.queue:
+            await player.process_next()  # a faixa adiantada
+            self._refresh_panel()
+        else:
+            await self.play_next()  # nada adiantado: sorteia agora (o ``current`` do player ainda é a faixa que falhou, o ``keep_playing`` não agiria)
+
+    async def candidate_dead(self) -> None:
+        """Recusas demais: a entrada guardada desta faixa é apagada (volta a ser buscada do zero no próximo sorteio)."""
+        if self.current is not None:
+            await self.pool.radio.resolved.forget(self.current)
+
     async def _from_cache(self, player: Any, track: Track) -> Any | None:
         """A faixa do cache de resolvidas, se o nó ainda decodifica o ``encoded`` guardado; senão a entrada é apagada e a busca segue."""
         from empiremuse.utils.music.models import PartialTrack
