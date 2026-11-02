@@ -50,10 +50,8 @@ class SkipMixin:
         aliases=["n", "s", "next", "pular"],
         cooldown=skip_back_cd,
         max_concurrency=skip_back_mc,
-        description=f"Pular a música atual que está tocando.",
         extras={"flags": case_sensitive_args},
         only_voiced=True,
-        usage="{prefix}{cmd} <termo>\nEx: {prefix}{cmd} sekai",
     )
     async def skip_legacy(self, ctx: CustomContext, *, flags: str = ""):
         args, unknown = ctx.command.extras["flags"].parse_known_args(flags.split())
@@ -254,7 +252,6 @@ class SkipMixin:
     @pool_command(
         name="back",
         aliases=["b", "voltar"],
-        description="Voltar para a música anterior.",
         only_voiced=True,
         cooldown=skip_back_cd,
         max_concurrency=skip_back_mc,

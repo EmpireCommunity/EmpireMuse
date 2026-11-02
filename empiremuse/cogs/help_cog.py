@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, NamedTuple, Optional, Union
 import disnake
 from disnake.ext import commands
 
+from empiremuse.utils.music.command_usage import command_usage
 from empiremuse.rules.i18n import fit
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.others import CustomContext
@@ -236,16 +237,7 @@ class HelpCog(commands.Cog, name="Ajuda"):
 
         prefix = ctx.prefix if str(ctx.me.id) not in ctx.prefix else f"@{ctx.me.display_name} "
 
-        if cmd.usage:
-            usage_cmd = (
-                cmd.usage.replace("{prefix}", prefix)
-                .replace("{cmd}", cmd.name)
-                .replace("{parent}", cmd.full_parent_name)
-                .replace(f"<@!{ctx.bot.user.id}>", f"@{ctx.me.name}")
-                .replace(f"<@{ctx.bot.user.id}>", f"@{ctx.me.name}")
-            )
-        else:
-            usage_cmd = ""
+        usage_cmd = command_usage(tr, cmd, prefix, bot_id=ctx.bot.user.id, bot_name=ctx.me.name) or ""
 
         embed = disnake.Embed(color=self.bot.get_color(ctx.guild.me))
 

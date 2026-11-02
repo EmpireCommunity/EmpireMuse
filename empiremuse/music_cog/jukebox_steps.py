@@ -386,7 +386,7 @@ async def _sr_empty_content(self, req):
             if attachment.content_type not in self.audio_formats:
                 await message.channel.send(
                     await guild_text(
-                        self.bot, message.guild, "legacy.jukebox.file_too_big", user=message.author.mention
+                        self.bot, message.guild, "legacy.jukebox.file_format", user=message.author.mention
                     ),
                     delete_after=8,
                 )

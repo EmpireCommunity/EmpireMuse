@@ -39,7 +39,6 @@ class VoiceStatusMixin:
             "voicestatus",
             "statusvoz",
         ],
-        description="Ativar o sistema de anuncio/status automático do canal com o nome da música.",
         cooldown=stage_cd,
         max_concurrency=stage_mc,
         extras={"exclusive_cooldown": True},

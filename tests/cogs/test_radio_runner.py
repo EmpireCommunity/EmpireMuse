@@ -38,9 +38,13 @@ class FakePorts:
         self.panels = 0
         self.panel_error: Exception | None = None
         self.in_call = True
+        self.source = True
 
     def in_channel(self):
         return self.in_call
+
+    def has_source(self):
+        return self.source
 
     def now(self):
         return self.t
@@ -145,6 +149,59 @@ class TestStart:
         await runner.stop()
 
         assert runner.phase is Phase.OFF and states[-1] is None and ports.stops == 1
+
+
+class TestStandby:
+    """R1: a rádio recém-configurada entra na call e espera a estação (o painel escolhe), sem tocar nem recuar."""
+
+    @pytest.mark.asyncio
+    async def test_without_a_station_it_connects_posts_the_panel_and_waits(self):
+        ports = FakePorts()
+        ports.source = False
+        runner, ports, states = make(ports)
+
+        await runner.start()
+
+        assert runner.phase is Phase.STANDBY and ports.connects == 1 and ports.panels == 1
+        assert ports.played == [] and states[-1] == RadioState()
+
+    @pytest.mark.asyncio
+    async def test_the_tick_does_not_pause_resume_or_play_while_waiting(self):
+        ports = FakePorts(listeners=0)
+        ports.source = False
+        runner, ports, _ = make(ports)
+        await runner.start()
+
+        for _ in range(3):
+            ports.t += 60
+            await runner.tick()
+
+        assert runner.phase is Phase.STANDBY and ports.played == []
+
+    @pytest.mark.asyncio
+    async def test_choosing_the_station_plays_at_once_without_the_backoff(self):
+        ports = FakePorts()
+        ports.source = False
+        runner, ports, _ = make(ports)
+        await runner.start()
+        ports.source = True
+        sleeps = len(ports.sleeps)
+
+        await runner.leave_standby()
+
+        assert runner.phase is Phase.PLAYING and ports.played == [(0, 0)] and len(ports.sleeps) == sleeps
+
+    @pytest.mark.asyncio
+    async def test_kicked_while_waiting_it_comes_back_too(self):
+        ports = FakePorts()
+        ports.source = False
+        runner, ports, _ = make(ports)
+        await runner.start()
+
+        ports.in_call = False
+        runner.lost_channel()
+
+        assert runner.lost_channel() is True
 
 
 class TestPresence:

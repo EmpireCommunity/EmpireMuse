@@ -65,6 +65,7 @@ async def turn_on(
     bot_can_join: bool,
     bot_free: bool = True,
     jukebox_channel_id: int | None = None,
+    allow_no_station: bool = False,
 ) -> Radio:
     """Liga a rádio JÁ CONFIGURADA neste canal (``/radio setup``): o bot, o tipo e a estação são os dela, nada se escolhe aqui. Devolve a rádio ligada
     (já gravada, ainda sem runner). Sem rádio no canal é ``NOT_CONFIGURED`` e sem estação escolhida é ``NO_STATION``; as duas apontam para o ``setup``."""
@@ -81,18 +82,20 @@ async def turn_on(
     radio = next((r for r in await hub.store.list_for_guild(guild_id) if r.channel_id == channel_id), None)
     if radio is None:
         raise Refused(NOT_CONFIGURED)
-    if not source_chosen(radio):
+    if not allow_no_station and not source_chosen(radio):
         raise Refused(NO_STATION)
     if jukebox_channel_id is not None and jukebox_channel_id == channel_id:
         raise Refused(JUKEBOX_CHANNEL)  # o chat da Jukebox é dela: a varredura da rádio apagaria o painel (V181-1)
-    if radio.kind == KIND_LIVE and hub.health.unavailable(radio.source.get("station")):
+    if radio.kind == KIND_LIVE and radio.source and hub.health.unavailable(radio.source.get("station")):
         raise Refused(STATION_DOWN)
     if not bot_can_join:
         raise Refused(BOT_CANNOT_JOIN)
     if not bot_free:
         raise Refused(NO_FREE_BOT)  # o bot da rádio está em call aqui tocando música
     try:
-        return await hub.store.set_enabled(radio.id, True, updated_by=str(actor.user_id))
+        return await hub.store.set_enabled(
+            radio.id, True, updated_by=str(actor.user_id), allow_no_source=allow_no_station
+        )
     except NoPremium as error:
         raise Refused(NO_PREMIUM) from error
     except NoRoom as error:

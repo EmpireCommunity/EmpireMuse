@@ -46,7 +46,6 @@ class PlaybackControlsMixin:
         only_voiced=True,
         cooldown=volume_cd,
         max_concurrency=volume_mc,
-        usage="{prefix}{cmd} [nivel]\nEx: {prefix}{cmd} 50",
     )
     async def volume_legacy(self, ctx: CustomContext, level: int):
         if not 4 < level < 151:
@@ -222,7 +221,6 @@ class PlaybackControlsMixin:
         only_voiced=True,
         cooldown=seek_cd,
         max_concurrency=seek_mc,
-        usage="{prefix}{cmd} [tempo]\nEx 1: {prefix}{cmd} 10 (tempo 0:10)\nEx 2: {prefix}{cmd} 1:45 (tempo 1:45)",
     )
     async def seek_legacy(self, ctx: CustomContext, *, position: str):
         await self.seek.callback(self=self, inter=ctx, position=position)
@@ -356,7 +354,6 @@ class PlaybackControlsMixin:
         only_voiced=True,
         cooldown=loop_cd,
         max_concurrency=loop_mc,
-        usage="{prefix}{cmd} <1-10|current|queue|off>\nEx 1: {prefix}{cmd} 1\nEx 2: {prefix}{cmd} queue",
     )
     async def loop(self, ctx: CustomContext, mode: str = None):
         tr = await self.bot.pool.i18n.for_guild(ctx.guild)

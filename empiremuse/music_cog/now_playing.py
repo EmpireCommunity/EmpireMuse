@@ -38,7 +38,6 @@ class NowPlayingMixin:
     @commands.command(
         name="nowplaying",
         aliases=["np", "tocando"],
-        description="Exibir informações da música que você está ouvindo no momento.",
         cooldown=np_cd,
     )
     async def now_playing_legacy(self, ctx: CustomContext):
@@ -280,7 +279,6 @@ class NowPlayingMixin:
         only_voiced=True,
         cooldown=controller_cd,
         max_concurrency=controller_mc,
-        description="Enviar player controller para um canal específico/atual.",
     )
     async def controller_legacy(self, ctx: CustomContext):
         await self.controller.callback(self=self, inter=ctx)

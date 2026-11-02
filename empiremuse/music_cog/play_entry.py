@@ -313,12 +313,10 @@ class PlayEntryMixin:
     @commands.max_concurrency(1, commands.BucketType.member)
     @pool_command(
         name="addposition",
-        description="Adicionar música em uma posição especifica da fila.",
         aliases=["adp", "addpos"],
         check_player=False,
         cooldown=play_cd,
         max_concurrency=play_mc,
-        usage="{prefix}{cmd} [posição(Nº)] [nome|link]\nEx: {prefix}{cmd} 2 sekai - burn me down",
     )
     async def addpos_legacy(self, ctx: CustomContext, position: int, *, query: str):
         if position < 1:
@@ -400,13 +398,11 @@ class PlayEntryMixin:
     @commands.max_concurrency(1, commands.BucketType.member)
     @pool_command(
         name="play",
-        description="Tocar música em um canal de voz.",
         aliases=["p", "tocar"],
         check_player=False,
         cooldown=play_cd,
         max_concurrency=play_mc,
         extras={"flags": stage_flags},
-        usage="{prefix}{cmd} [nome|link]\nEx: {prefix}{cmd} sekai - burn me down",
     )
     async def play_legacy(self, ctx: CustomContext, *, flags: str = ""):
         args, unknown = ctx.command.extras["flags"].parse_known_args(flags.split())
@@ -429,12 +425,10 @@ class PlayEntryMixin:
     @check_voice()
     @pool_command(
         name="search",
-        description="Pesquisar por músicas e escolher uma entre os resultados para tocar.",
         aliases=["sc", "buscar"],
         check_player=False,
         cooldown=play_cd,
         max_concurrency=play_mc,
-        usage="{prefix}{cmd} [nome]\nEx: {prefix}{cmd} sekai - burn me down",
     )
     async def search_legacy(self, ctx: CustomContext, *, query):
         await self.play.callback(

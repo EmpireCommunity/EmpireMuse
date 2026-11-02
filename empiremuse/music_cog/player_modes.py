@@ -34,7 +34,6 @@ class PlayerModesMixin:
         only_voiced=True,
         cooldown=restrict_cd,
         max_concurrency=restrict_mc,
-        description="Ativar/Desativar o modo restrito de comandos que requer DJ/Staff.",
     )
     async def restrict_mode_legacy(self, ctx: CustomContext):
         await self.restrict_mode.callback(self=self, inter=ctx)
@@ -80,7 +79,6 @@ class PlayerModesMixin:
         only_voiced=True,
         cooldown=autoplay_cd,
         max_concurrency=autoplay_mc,
-        description="Ativar/Desativar a reprodução automática ao acabar as músicas da fila.",
     )
     async def autoplay_legacy(self, ctx: CustomContext):
         await self.autoplay.callback(self=self, inter=ctx)

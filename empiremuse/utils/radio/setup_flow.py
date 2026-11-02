@@ -18,9 +18,10 @@ from empiremuse.rules.radio_stations import Station
 from empiremuse.rules.text import external_text
 from empiremuse.utils.ephemeral import CONFIRMATION_TTL_S, ERROR_TTL_S, cleanup_later
 from empiremuse.utils.music.errors import GenericError
-from empiremuse.utils.radio import radio_commands
+from empiremuse.utils.radio import actions, radio_commands
+from empiremuse.utils.radio.actions import Actor, Refused
 from empiremuse.utils.radio.premium import RadioUnavailable
-from empiremuse.utils.radio.setup import REASON_PREMIUM, RadioForbidden
+from empiremuse.utils.radio.setup import REASON_PREMIUM, RadioForbidden, jukebox_channel_of
 from empiremuse.utils.radio.store import RadioConflict, RadioInvalid, RadioNotFound
 
 if TYPE_CHECKING:
@@ -100,7 +101,48 @@ async def setup(cog: RadioCog, inter: disnake.ApplicationCommandInteraction, cha
         )
     except (RadioForbidden, RadioNotFound, RadioConflict, RadioInvalid, RadioUnavailable) as error:
         raise refusal(tr, error) from None
-    await choose_station(cog, inter, tr, radio, channel)
+    await arrive(cog, inter, tr, radio, channel)
+
+
+async def arrive(cog: RadioCog, inter: Any, tr: Any, radio: Radio, channel: Any) -> None:
+    """Depois de configurar (R1): o bot ENTRA na call já, o chat dela é limpo e o painel é posto; a estação se escolhe no painel (nada de seletor aqui).
+    Se algo impede de entrar (sem permissão, bot em call), a configuração fica e a resposta diz o motivo."""
+    kind = tr("radio.setup.kind.live" if radio.kind == KIND_LIVE else "radio.setup.kind.custom")
+    lines = [tr("radio.setup.done", channel=channel.mention, bot=f"<@{radio.bot_id}>", kind=kind)]
+    if radio.kind == KIND_CUSTOM and not cog.hub.lastfm.configured:
+        lines.append(tr("radio.setup.lastfm_missing"))
+    try:
+        await _start_waiting(cog, inter, radio, channel)
+    except Refused as refused:
+        lines.append(tr(f"radio.refused.{refused.code}"))
+    except RadioUnavailable:
+        lines.append(tr("radio.owner.unavailable"))
+    else:
+        lines.append(tr("radio.setup.arriving"))
+    await inter.edit_original_message(content="\n".join(lines), allowed_mentions=disnake.AllowedMentions.none())
+    cleanup_later(inter, CONFIRMATION_TTL_S)
+
+
+async def _start_waiting(cog: RadioCog, inter: Any, radio: Radio, channel: Any) -> None:
+    """Liga a rádio recém-configurada SEM estação: o runner entra na call e fica em espera (``Phase.STANDBY``) com o painel no chat."""
+    actor = Actor(
+        user_id=inter.author.id,
+        manage_guild=bool(inter.author.guild_permissions.manage_guild),
+        manage_messages_in_channel=bool(channel.permissions_for(inter.author).manage_messages),
+    )
+    can_join, free = cog._bot_state(radio, channel)
+    jukebox = await jukebox_channel_of(cog.bot.pool, inter.guild_id)
+    enabled = await actions.turn_on(
+        cog.hub,
+        guild_id=inter.guild_id,
+        channel_id=channel.id,
+        actor=actor,
+        bot_can_join=can_join,
+        bot_free=free,
+        jukebox_channel_id=jukebox,
+        allow_no_station=True,
+    )
+    await cog.hub.manager.activate(enabled, wait=False, fresh=True)
 
 
 async def choose_station(cog: RadioCog, inter: Any, tr: Any, radio: Radio, channel: Any) -> None:

@@ -57,7 +57,6 @@ class QueueGroupMixin:
         name="shuffle",
         aliases=["sf", "misturar"],
         only_voiced=True,
-        description="Misturar as músicas da fila",
         cooldown=queue_manipulation_cd,
         max_concurrency=remove_mc,
     )
@@ -98,7 +97,6 @@ class QueueGroupMixin:
         name="reverse",
         aliases=["rv", "inverter"],
         only_voiced=True,
-        description="Inverter a ordem das músicas na fila",
         cooldown=queue_manipulation_cd,
         max_concurrency=remove_mc,
     )
@@ -140,7 +138,6 @@ class QueueGroupMixin:
     @pool_command(
         name="queue",
         aliases=["q", "fila"],
-        description="Exibir as músicas que estão na fila.",
         only_voiced=True,
         max_concurrency=queue_show_mc,
     )
@@ -292,7 +289,6 @@ class QueueGroupMixin:
     @pool_command(
         name="clear",
         aliases=["limpar"],
-        description="Limpar a fila de música.",
         only_voiced=True,
         extras={"flags": clear_flags},
         cooldown=queue_manipulation_cd,
@@ -448,7 +444,6 @@ class QueueGroupMixin:
     @pool_command(
         name="move",
         aliases=["mv", "mover"],
-        description="Mover músicas da fila.",
         only_voiced=True,
         extras={"flags": move_queue_flags},
         cooldown=queue_manipulation_cd,

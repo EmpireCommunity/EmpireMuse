@@ -382,11 +382,11 @@ async def _aq_report_failure(self, req):
             error_msg = (
                 f"**Mensagem:** {lavalink_text(exception.message)}\n"
                 f"**Nível:** {md_code(exception.severity)}\n"
-                f"**Servidor de música:** {md_code(self.node.identifier)}{code_suffix(error_code)}"
+                f"**Servidor de música:** {md_code(self.node.identifier)}{code_suffix(error_code, self.tr)}"
             )
         else:
             error_code = log_unexpected_error(logger, exception, "autoplay")
-            error_msg = f"**Ocorreu um erro inesperado.**{code_suffix(error_code)}"
+            error_msg = f"**Ocorreu um erro inesperado.**{code_suffix(error_code, self.tr)}"
     else:
         error_msg = "Não houve resultados relacionados as músicas tocadas..."
 
@@ -648,7 +648,7 @@ async def _rt_report_failure(self, track, e):
     )
     embed = disnake.Embed(
         description=f"**Falha ao obter informação de PartialTrack:\n{md_link(track.title, track.uri or track.search_uri, code=False)}**"
-        f"{error_code_text(error_code)}\n"
+        f"{error_code_text(error_code, self.tr)}\n"
         f"**Servidor de música:** {md_code(self.node.identifier)}",
         color=disnake.Colour.red(),
     )

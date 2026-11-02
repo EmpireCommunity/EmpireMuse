@@ -294,6 +294,31 @@ class RadioStore:
             raise RadioConflict
         return checked
 
+    async def _set_field(
+        self, radio_id: str, field_name: str, value: object, *, expected_rev: int, updated_by: str
+    ) -> Radio:
+        """Muda UM campo de cabeçalho (``skin``, ``filter``) com compare-and-set no ``rev``; o valor passa pela mesma validação do documento."""
+        current = self._radio(await self._find(radio_id))
+        if current is None:
+            raise RadioNotFound
+        if current.rev != expected_rev:
+            raise RadioConflict
+        updated = dataclasses.replace(current, **{field_name: value}, rev=current.rev + 1)
+        checked = check_radio(to_document(updated))
+        if isinstance(checked, RuleError):
+            raise RadioInvalid(checked)
+        if not await self._save(radio_id, to_document(checked, updated_by=updated_by), expected_rev):
+            raise RadioConflict
+        return checked
+
+    async def set_skin(self, radio_id: str, skin: object, *, expected_rev: int, updated_by: str = "") -> Radio:
+        """O visual do painel (``black`` ou ``white``). ``RadioInvalid`` para qualquer outro valor."""
+        return await self._set_field(radio_id, "skin", skin, expected_rev=expected_rev, updated_by=updated_by)
+
+    async def set_filter(self, radio_id: str, node_id: object, *, expected_rev: int, updated_by: str = "") -> Radio:
+        """Lembra o último filtro de local aplicado (id do nó da árvore; ``None`` o esquece). Vale para as duas espécies de rádio."""
+        return await self._set_field(radio_id, "filter", node_id, expected_rev=expected_rev, updated_by=updated_by)
+
     async def save_config(self, radio: Radio, *, expected_rev: int, updated_by: str = "") -> Radio:
         """Grava canal, tipo e fonte de uma rádio já configurada (``/radio setup`` e a página Rádios). Chat, ``enabled`` e ``rev`` são os do banco:
         quem pede só leva o que o compare-and-set em ``expected_rev`` confirma. ``RadioConflict`` se o ``rev`` mudou; ligada e com outro canal ou
@@ -358,7 +383,9 @@ class RadioStore:
 
     # ------------------------------------------------------------------ transições (R-2)
 
-    async def set_enabled(self, radio_id: str, enabled: bool, *, updated_by: str = "") -> Radio:
+    async def set_enabled(
+        self, radio_id: str, enabled: bool, *, updated_by: str = "", allow_no_source: bool = False
+    ) -> Radio:
         """Liga ou desliga. Idempotente: pedir o estado em que já está não muda nada, nem o contador.
 
         **Ligar reserva a vaga ANTES de gravar ``enabled``**, então o contador nunca fica abaixo do número de rádios ligadas (um desligamento
@@ -372,7 +399,7 @@ class RadioStore:
                 raise RadioNotFound
             if current.enabled == enabled:
                 return current
-            if enabled and not source_chosen(current):
+            if enabled and not allow_no_source and not source_chosen(current):
                 raise RadioInvalid(RuleError(SOURCE_INVALID, "source"))  # configurada, mas sem estação: não liga
             changed = dataclasses.replace(current, enabled=enabled, rev=current.rev + 1)
             if enabled:  # ligar de verdade começa a programação virtual agora; o reinício do bot a continua dessa época

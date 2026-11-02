@@ -361,7 +361,7 @@ def _he_exception_embed(self, event, track):
             reason=lavalink_text(event.message),
             severity=md_code(event.severity),
             node=node_info,
-            code=code_suffix(error_code),
+            code=code_suffix(error_code, self.tr),
         ),
         color=disnake.Colour.red(),
     )
@@ -370,7 +370,7 @@ def _he_exception_embed(self, event, track):
 
 def _he_log_retry_while_locked(self, event, track, error_code) -> None:
     self.set_command_log(
-        text=f"A reprodução da música falhou (tentando tocar novamente): {md_link(track.title, track.uri or track.search_uri, limit=15)}. **Motivo:** `{plain_snippet(event.message, 50)}`{code_suffix(error_code)}",
+        text=f"A reprodução da música falhou (tentando tocar novamente): {md_link(track.title, track.uri or track.search_uri, limit=15)}. **Motivo:** `{plain_snippet(event.message, 50)}`{code_suffix(error_code, self.tr)}",
         controller=True,
     )
     self.update = True

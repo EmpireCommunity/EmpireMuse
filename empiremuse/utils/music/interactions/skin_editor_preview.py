@@ -49,4 +49,4 @@ class SkinEditorPreviewMixin:
                 await inter.edit_original_message(view=self, **self.build_embeds())
         except Exception as e:
             code = log_unexpected_error(logger, e, "skin_editor.update_message")
-            await inter.send(self.tr("skin_editor.preview.error") + error_code_text(code), ephemeral=True)
+            await inter.send(self.tr("skin_editor.preview.error") + error_code_text(code, self.tr), ephemeral=True)
