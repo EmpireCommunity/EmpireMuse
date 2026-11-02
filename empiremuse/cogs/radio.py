@@ -1,4 +1,4 @@
-"""Rádio 24/7 (item 8, R1): os comandos de dono. ``/radio ligar|desligar|status`` entram nesta mesma classe.
+"""Rádios (item 8): o grupo ``/radio`` (setup, on, off, status, reset, station), o painel na call e, no mixin do prefixo, os comandos de dono.
 
 R-1: premium, bots só-rádio e "pausar todas" são só de quem está em ``OWNER_IDS`` (``bot.env_owner_ids``). Nada de ``is_owner()``, porque ele
 também aceita o dono e a equipe da aplicação; nem ``manage_guild`` nem administrador do servidor valem. Lista vazia = ninguém. Como todo bot
