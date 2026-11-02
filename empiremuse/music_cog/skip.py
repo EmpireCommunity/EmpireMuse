@@ -53,7 +53,6 @@ class SkipMixin:
         description=f"Pular a música atual que está tocando.",
         extras={"flags": case_sensitive_args},
         only_voiced=True,
-        usage="{prefix}{cmd} <termo>\nEx: {prefix}{cmd} sekai",
     )
     async def skip_legacy(self, ctx: CustomContext, *, flags: str = ""):
         args, unknown = ctx.command.extras["flags"].parse_known_args(flags.split())

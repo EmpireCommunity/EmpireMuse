@@ -9,7 +9,9 @@ from disnake.ext import commands
 from disnake.utils import escape_mentions
 
 from empiremuse.rules.error_code import safe_error_code
+from empiremuse.utils.music.command_usage import command_usage
 from empiremuse.utils.music.converters import time_format, perms_translations
+from empiremuse.utils.music.guild_text import guild_text_sync
 from empiremuse.wavelink import WavelinkException, TrackNotFound, MissingSessionID
 
 logger = logging.getLogger("empiremuse.errors")
@@ -116,6 +118,15 @@ class YoutubeSourceDisabled(commands.CheckFailure):
     pass
 
 
+def _usage_text(translate, ctx) -> Optional[str]:
+    """O ``Como usar`` do comando de prefixo (catálogo ``cmd.<id>.usage``), ou ``None`` se ele não tem uso."""
+    command = getattr(ctx, "command", None)
+    if command is None:
+        return None
+    prefix = ctx.prefix if str(ctx.me.id) not in ctx.prefix else f"@{ctx.me.display_name} "
+    return command_usage(translate, command, prefix)
+
+
 def parse_error(
     ctx: Union[disnake.ApplicationCommandInteraction, commands.Context, disnake.MessageInteraction],
     error: Exception,
@@ -133,23 +144,29 @@ def parse_error(
 
     error = getattr(error, "original", error)
 
+    guild = getattr(ctx, "guild", None)
+    translate = kwargs.get("tr") or (lambda key, **values: guild_text_sync(guild, key, **values))
+    t = lambda key, **values: translate(f"legacy.errors.{key}", **values)  # noqa: E731
+
     if isinstance(error, NotDJorStaff):
-        error_txt = "**Você deve estar na lista de DJ ou ter a permissão de **Mover Membros** para usar este comando.**"
+        error_txt = t("not_dj_or_staff")
 
     elif isinstance(error, MissingVoicePerms):
-        error_txt = f"**Não tenho permissão para conectar/falar no canal:** {error.voice_channel.mention}"
+        error_txt = t("missing_voice_perms", channel=error.voice_channel.mention)
 
     elif isinstance(error, commands.NotOwner):
-        error_txt = "**Apenas meu(s) desenvolvedor(es) pode(m) usar esse comando.**"
+        error_txt = t("not_owner")
 
     elif isinstance(error, commands.BotMissingPermissions):
-        error_txt = "Não tenho as seguintes permissões para executar esse comando: ```\n{}```".format(
-            ", ".join(perms_translations.get(perm, perm) for perm in error.missing_permissions)
+        error_txt = t(
+            "bot_missing_permissions",
+            perms=", ".join(perms_translations.get(perm, perm) for perm in error.missing_permissions),
         )
 
     elif isinstance(error, commands.MissingPermissions):
-        error_txt = "Você não possui as seguintes permissões para executar esse comando: ```\n{}```".format(
-            ", ".join(perms_translations.get(perm, perm) for perm in error.missing_permissions)
+        error_txt = t(
+            "missing_permissions",
+            perms=", ".join(perms_translations.get(perm, perm) for perm in error.missing_permissions),
         )
 
     elif isinstance(error, GenericError):
@@ -159,120 +176,93 @@ def parse_error(
             send_error = True
 
     elif isinstance(error, NotRequester):
-        error_txt = (
-            "**Você deve ter pedido a música atual ou estar na lista de DJ ou ter a permissão de "
-            "**Gerenciar canais** para pular músicas.**"
-        )
+        error_txt = t("not_requester")
 
     elif isinstance(error, DiffVoiceChannel):
-        error_txt = "**Você deve estar no meu canal de voz atual para usar esse comando.**"
+        error_txt = t("diff_voice_channel")
 
     elif isinstance(error, NoSource):
-        error_txt = "**Não há músicas no player atualmente.**"
+        error_txt = t("no_source")
 
     elif isinstance(error, NoVoice):
-        error_txt = "**Você deve entrar em um canal de voz para usar esse comando.**"
+        error_txt = t("no_voice")
 
     elif isinstance(error, NoPlayer):
         try:
-            error_txt = f"**Não há player ativo no canal {ctx.author.voice.channel.mention}.**"
+            error_txt = t("no_player_in_channel", channel=ctx.author.voice.channel.mention)
         except AttributeError:
-            error_txt = "**Não há player inicializado no servidor.**"
+            error_txt = t("no_player")
 
-    elif isinstance(error, (commands.UserInputError, commands.MissingRequiredArgument)) and ctx.command.usage:
-        error_txt = "### Você usou o comando de forma incorreta.\n"
-
-        if ctx.command.usage:
-            prefix = ctx.prefix if str(ctx.me.id) not in ctx.prefix else f"@{ctx.me.display_name} "
-
-            error_txt += (
-                f"📘 **⠂Como Usar:** ```\n{ctx.command.usage.replace('{prefix}', prefix).replace('{cmd}', ctx.command.name).replace('{parent}', ctx.command.full_parent_name)}```\n"
-                f"⚠️ **⠂Notas sobre o uso dos argumentos no comando:** ```\n"
-                f"[] = Obrigatório | <> = Opcional```\n"
-            )
+    elif isinstance(error, (commands.UserInputError, commands.MissingRequiredArgument)) and (
+        usage := _usage_text(translate, ctx)
+    ):
+        error_txt = t("wrong_usage") + t("how_to_use", usage=str(usage))
 
     elif isinstance(error, MissingSpotifyClient):
-        error_txt = "**Não há suporte a links do spotify no momento.**"
+        error_txt = t("no_spotify")
 
     elif isinstance(error, commands.NoPrivateMessage):
-        error_txt = "Esse comando não pode ser executado em mensagens privadas."
+        error_txt = t("no_private_message")
 
     elif isinstance(error, MissingSessionID):
-        error_txt = f"**O servidor de música {error.node.identifier} está desconectado, por favor aguarde alguns segundos e tente novamente.**"
+        error_txt = t("node_disconnected", node=error.node.identifier)
 
     elif isinstance(error, commands.CommandOnCooldown):
-        remaing = int(error.retry_after)
-        if remaing < 1:
-            remaing = 1
-        error_txt = "**Você deve aguardar {} para usar esse comando.**".format(
-            time_format(int(remaing) * 1000, use_names=True)
-        )
+        remaing = max(int(error.retry_after), 1)
+        error_txt = t("cooldown", time=time_format(remaing * 1000, use_names=True))
 
     elif isinstance(error, EmptyFavIntegration):
-        if isinstance(ctx, disnake.MessageInteraction):
-            error_txt = (
-                "**Você não possui favorito/integração**\n\n"
-                "`Caso queira, você pode adicionar um favorito ou integração para usar esse "
-                "esse botão da próxima vez. Pra isso você pode clicar em um dos botões abaixo.`"
-            )
-        else:
-            error_txt = (
-                "**Você usou o comando sem incluir um nome ou link de uma músisca ou vídeo e você não possui "
-                "favoritos ou integrações para usar esse comando dessa forma diretamente...**\n\n"
-                "`Caso queira, você pode adicionar um favorito ou integração para usar esse "
-                "comando sem incluir um nome ou link. Pra isso você pode clicar em um dos botões abaixo.`"
-            )
+        error_txt = t("empty_fav_button") if isinstance(ctx, disnake.MessageInteraction) else t("empty_fav_command")
 
         mention_author = True
 
         components = [
-            disnake.ui.Button(
-                label="Abrir o gerenciador de favoritos e integrações", custom_id="musicplayer_fav_manager", emoji="⭐"
-            ),
+            disnake.ui.Button(label=t("open_fav_manager"), custom_id="musicplayer_fav_manager", emoji="⭐"),
         ]
 
     elif isinstance(error, commands.MaxConcurrencyReached):
-        txt = f"{error.number} vezes " if error.number > 1 else ""
-        txt = {
-            commands.BucketType.member: f"você já usou esse comando {txt}no servidor",
-            commands.BucketType.guild: f"esse comando já foi usado {txt}no servidor",
-            commands.BucketType.user: f"você já usou esse comando {txt}",
-            commands.BucketType.channel: f"esse comando já foi usado {txt}no canal atual",
-            commands.BucketType.category: f"esse comando já foi usado {txt}na categoria do canal atual",
-            commands.BucketType.role: f"esse comando já foi usado {txt}por um membro que possui o cargo permitido",
-            commands.BucketType.default: f"esse comando já foi usado {txt}por alguém",
+        times = t("times_prefix", number=error.number) if error.number > 1 else ""
+        buckets = {
+            commands.BucketType.member: "bucket_member",
+            commands.BucketType.guild: "bucket_guild",
+            commands.BucketType.user: "bucket_user",
+            commands.BucketType.channel: "bucket_channel",
+            commands.BucketType.category: "bucket_category",
+            commands.BucketType.role: "bucket_role",
+            commands.BucketType.default: "bucket_default",
         }
-
-        error_txt = (
-            f"{ctx.author.mention} **{txt[error.per]} e ainda não teve seu{'s' if error.number > 1 else ''} "
-            f"uso{'s' if error.number > 1 else ''} finalizado{'s' if error.number > 1 else ''}!**"
+        error_txt = translate(
+            "legacy.errors.concurrency",
+            count=error.number,
+            user=ctx.author.mention,
+            what=t(buckets[error.per], times=times),
         )
 
     elif isinstance(error, TrackNotFound):
-        error_txt = "**Não houve resultados para sua busca...**"
+        error_txt = t("track_not_found")
 
     elif isinstance(error, YoutubeSourceDisabled):
-        error_txt = (
-            "O suporte a links/buscas do youtube está desativado devido a medidas reforçadas do próprio youtube "
-            "que impede o funcionamento nativo de links do yt. Caso queira conferir a postagem do youtube sobre isso você pode [clicar aqui](<https://support.google.com/youtube/thread/269521462/enforcement-on-third-party-apps?hl=en>)."
-        )
+        link = f"[{t('click_here')}](<https://support.google.com/youtube/thread/269521462/enforcement-on-third-party-apps?hl=en>)"
+        error_txt = t("youtube_disabled", link=link)
 
     elif isinstance(error, WavelinkException):
-        if "Unknown file format" in (wave_error := str(error)):
-            error_txt = "**Não há suporte para o link especificado...**"
+        wave_error = str(error)
+        lowered = wave_error.lower()
+        if "Unknown file format" in wave_error:
+            error_txt = t("unsupported_link")
         elif "No supported audio format" in wave_error:
-            error_txt = "**Não há suporte para o link informado.**"
+            error_txt = t("unsupported_format")
         elif "This video is not available" in wave_error:
-            error_txt = "**Este vídeo está indisponível ou privado...**"
+            error_txt = t("video_unavailable")
         elif "This playlist type is unviewable" in wave_error:
-            error_txt = "**Oo link da playlist contém um parâmetro/id não suportado...**"
+            error_txt = t("playlist_bad_param")
         elif "The playlist does not exist" in wave_error:
-            error_txt = "**A playlist não existe (ou está privada).**"
+            error_txt = t("playlist_missing")
         elif (
-            "not made this video available in your country" in wave_error.lower()
-            or "who has blocked it in your country on copyright grounds" in wave_error.lower()
+            "not made this video available in your country" in lowered
+            or "who has blocked it in your country on copyright grounds" in lowered
         ):
-            error_txt = "**O conteúdo deste link não está disponível na região no qual estou funcionando...**"
+            error_txt = t("region_blocked")
 
     full_error_txt = ""
 

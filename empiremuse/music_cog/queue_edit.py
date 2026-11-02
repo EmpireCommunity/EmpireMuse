@@ -45,7 +45,6 @@ class QueueEditMixin:
         only_voiced=True,
         max_concurrency=remove_mc,
         extras={"flags": case_sensitive_args},
-        usage="{prefix}{cmd} [nome]\nEx: {prefix}{cmd} sekai",
     )
     async def remove_legacy(self, ctx: CustomContext, *, flags: str = ""):
         args, unknown = ctx.command.extras["flags"].parse_known_args(flags.split())
@@ -170,7 +169,6 @@ class QueueEditMixin:
         cooldown=queue_manipulation_cd,
         max_concurrency=remove_mc,
         extras={"flags": case_sensitive_args},
-        usage="{prefix}{cmd} [nome]\nEx: {prefix}{cmd} sekai",
     )
     async def rotate_legacy(self, ctx: CustomContext, *, flags: str = ""):
         args, unknown = ctx.command.extras["flags"].parse_known_args(flags.split())

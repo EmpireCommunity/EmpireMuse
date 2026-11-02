@@ -121,7 +121,6 @@ class PlayerSessionMixin:
         aliases=["adj"],
         only_voiced=True,
         description="Adicionar um membro à lista de DJ's na sessão atual do player.",
-        usage="{prefix}{cmd} [id|nome|@user]\nEx: {prefix}{cmd} @membro",
     )
     async def add_dj_legacy(self, ctx: CustomContext, user: disnake.Member):
         await self.add_dj.callback(self=self, inter=ctx, user=user)

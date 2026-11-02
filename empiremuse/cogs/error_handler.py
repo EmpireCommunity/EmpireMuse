@@ -155,7 +155,9 @@ class ErrorHandler(commands.Cog):
 
         no_log = kwargs.get("no_log", False)
         error_msg, full_error_msg, kill_process, components, mention_author = parse_error(
-            inter, error, **{**kwargs, "no_log": True}
+            inter,
+            error,
+            **{**kwargs, "no_log": True, "tr": await self.bot.pool.i18n.for_guild(getattr(inter, "guild", None))},
         )
 
         if isinstance(error, disnake.NotFound) and str(error).endswith("Unknown Interaction"):
@@ -319,7 +321,9 @@ class ErrorHandler(commands.Cog):
                     await self.on_legacy_command_error(ctx, e)
             return
 
-        error_msg, full_error_msg, kill_process, components, mention_author = parse_error(ctx, error, no_log=True)
+        error_msg, full_error_msg, kill_process, components, mention_author = parse_error(
+            ctx, error, no_log=True, tr=await self.bot.pool.i18n.for_guild(ctx.guild)
+        )
         kwargs = {"content": ""}
         send_webhook = False
         code = ""

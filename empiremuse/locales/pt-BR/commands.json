@@ -466,5 +466,18 @@
   "cmd.volume.opt.level.name": "nível",
   "cmd.voteskip.aliases": "",
   "cmd.voteskip.description": "Votar para pular a música atual.",
-  "cmd.voteskip.name": "votar_pular"
+  "cmd.voteskip.name": "votar_pular",
+  "cmd.addposition.usage": "{prefix}{cmd} [posição(Nº)] [nome|link]\nEx: {prefix}{cmd} 2 sekai - burn me down",
+  "cmd.play.usage": "{prefix}{cmd} [nome|link]\nEx: {prefix}{cmd} sekai - burn me down",
+  "cmd.search.usage": "{prefix}{cmd} [nome]\nEx: {prefix}{cmd} sekai - burn me down",
+  "cmd.volume.usage": "{prefix}{cmd} [nivel]\nEx: {prefix}{cmd} 50",
+  "cmd.seek.usage": "{prefix}{cmd} [tempo]\nEx 1: {prefix}{cmd} 10 (tempo 0:10)\nEx 2: {prefix}{cmd} 1:45 (tempo 1:45)",
+  "cmd.add_dj.usage": "{prefix}{cmd} [id|nome|@user]\nEx: {prefix}{cmd} @membro",
+  "cmd.remove.usage": "{prefix}{cmd} [nome]\nEx: {prefix}{cmd} sekai",
+  "cmd.rotate.usage": "{prefix}{cmd} [nome]\nEx: {prefix}{cmd} sekai",
+  "cmd.skip.usage": "{prefix}{cmd} {lt}termo{gt}\nEx: {prefix}{cmd} sekai",
+  "cmd.setprefix.usage": "{prefix}{cmd} [prefixo]\nEx: {prefix}{cmd} >>",
+  "cmd.setuserprefix.usage": "{prefix}{cmd} [prefixo]\nEx: {prefix}{cmd} >>",
+  "cmd.setguildprefix.usage": "{prefix}{cmd} [server id] {lt}prefixo{gt}\nEx: {prefix}{cmd} 1155223334455667788 >>\nNota: Use o comando sem especificar um prefix para removê-lo.",
+  "cmd.loop_mode.usage": "{prefix}{cmd} <1-10|current|queue|off>\nEx 1: {prefix}{cmd} 1\nEx 2: {prefix}{cmd} queue"
 }

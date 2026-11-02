@@ -873,7 +873,6 @@ class Owner(commands.Cog):
     @commands.command(
         aliases=["prefix", "mudarprefixo"],
         description="Alterar o prefixo do servidor",
-        usage="{prefix}{cmd} [prefixo]\nEx: {prefix}{cmd} >>",
     )
     async def setprefix(self, ctx: CustomContext, prefix: str):
         prefix = validate_prefix(prefix)
@@ -924,7 +923,6 @@ class Owner(commands.Cog):
         aliases=["myprefix", "uprefix", "meuprefixo"],
         description="Alterar seu prefixo de usuário (prefixo que irei responder a você independente "
         "do prefixo configurado no servidor).",
-        usage="{prefix}{cmd} [prefixo]\nEx: {prefix}{cmd} >>",
     )
     async def setuserprefix(self, ctx: CustomContext, prefix: str):
         prefix = validate_prefix(prefix)
@@ -972,7 +970,6 @@ class Owner(commands.Cog):
         aliases=["guildprefix", "sgp", "gp"],
         hidden=True,
         description="Setar um prefixo manualmente pra um server com o id informado (útil para botlists)",
-        usage="{prefix}{cmd} [server id] <prefixo>\nEx: {prefix}{cmd} 1155223334455667788 >>\nNota: Use o comando sem especificar um prefix para removê-lo.",
     )
     async def setguildprefix(self, ctx: CustomContext, server_id: int, prefix: str = None):
         if not 17 < len(str(server_id)) < 24:

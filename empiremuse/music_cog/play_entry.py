@@ -318,7 +318,6 @@ class PlayEntryMixin:
         check_player=False,
         cooldown=play_cd,
         max_concurrency=play_mc,
-        usage="{prefix}{cmd} [posição(Nº)] [nome|link]\nEx: {prefix}{cmd} 2 sekai - burn me down",
     )
     async def addpos_legacy(self, ctx: CustomContext, position: int, *, query: str):
         if position < 1:
@@ -406,7 +405,6 @@ class PlayEntryMixin:
         cooldown=play_cd,
         max_concurrency=play_mc,
         extras={"flags": stage_flags},
-        usage="{prefix}{cmd} [nome|link]\nEx: {prefix}{cmd} sekai - burn me down",
     )
     async def play_legacy(self, ctx: CustomContext, *, flags: str = ""):
         args, unknown = ctx.command.extras["flags"].parse_known_args(flags.split())
@@ -434,7 +432,6 @@ class PlayEntryMixin:
         check_player=False,
         cooldown=play_cd,
         max_concurrency=play_mc,
-        usage="{prefix}{cmd} [nome]\nEx: {prefix}{cmd} sekai - burn me down",
     )
     async def search_legacy(self, ctx: CustomContext, *, query):
         await self.play.callback(

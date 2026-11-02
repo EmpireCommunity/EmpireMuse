@@ -358,7 +358,9 @@ class JukeboxMessagesMixin:
             failure = e
 
             try:
-                error_msg = parse_error(req.ctx, e, no_log=True)[0]
+                error_msg = parse_error(req.ctx, e, no_log=True, tr=await self.bot.pool.i18n.for_guild(req.ctx.guild))[
+                    0
+                ]
             except Exception:
                 error_msg = None
 
