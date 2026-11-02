@@ -1,4 +1,4 @@
-"""Token assinado da confirmação do reset do canal de pedidos (HMAC, 2 min, uso único)."""
+"""Token assinado das confirmações da Jukebox (configurar e desligar): HMAC, 60 s como no Discord, uso único."""
 
 from __future__ import annotations
 
@@ -8,12 +8,12 @@ import secrets
 import time
 from typing import Callable, Optional
 
-TOKEN_TTL_SECONDS = 120
+TOKEN_TTL_SECONDS = 60
 MAX_USED_TOKENS = 10_000
 
 
-class ResetTokens:
-    """Token assinado (HMAC) ligado a usuário+servidor+bot+canal, com validade de 2 min e uso único."""
+class JukeboxTokens:
+    """Token assinado (HMAC) ligado a usuário+servidor+escopo+alvo, com validade de 60 s e uso único."""
 
     def __init__(self, secret: str, clock: Callable[[], float] = time.monotonic) -> None:
         self._secret, self._clock = secret.encode("utf-8"), clock
@@ -22,12 +22,12 @@ class ResetTokens:
     def _sign(self, payload: str) -> str:
         return hmac.new(self._secret, payload.encode("utf-8"), hashlib.sha256).hexdigest()[:32]
 
-    def issue(self, user_id: str, guild_id: int, bot_id: str, channel_id: str) -> str:
+    def issue(self, user_id: str, guild_id: int, scope: str, target: str) -> str:
         expires = int(self._clock()) + TOKEN_TTL_SECONDS
-        payload = ".".join((user_id, str(guild_id), bot_id, channel_id, str(expires), secrets.token_hex(8)))
+        payload = ".".join((user_id, str(guild_id), scope, target, str(expires), secrets.token_hex(8)))
         return f"{payload}~{self._sign(payload)}"
 
-    def check(self, token: str, user_id: str, guild_id: int, bot_id: str, channel_id: str) -> Optional[str]:
+    def check(self, token: str, user_id: str, guild_id: int, scope: str, target: str) -> Optional[str]:
         """``None`` se vale; ``"invalido"`` (assinatura/validade/uso) ou ``"outro"`` (ligado a outro contexto)."""
         payload, _, signature = token.partition("~")
         if not signature or not hmac.compare_digest(signature, self._sign(payload)):
@@ -38,7 +38,7 @@ class ResetTokens:
         self._forget_expired()
         if int(fields[4]) <= self._clock() or fields[5] in self._used:
             return "invalido"
-        if fields[:4] != [user_id, str(guild_id), bot_id, channel_id]:
+        if fields[:4] != [user_id, str(guild_id), scope, target]:
             return "outro"
         return None
 

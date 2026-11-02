@@ -7,6 +7,9 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Alterado
+- **Jukebox no painel**: a categoria "Canal de pedidos" virou **Jukebox** (`/painel/servidores/<id>/jukebox`; a rota antiga `/canal` só redireciona). Configurar num canal que já existe sempre apaga as mensagens dele, com confirmação antes (fórum e canal novo não apagam nada); a chave "Jukebox estrita" deu lugar às opções **Apagar as mensagens enviadas no canal** (`settings.jukebox_auto_delete`, migrada da antiga) e **Toda mensagem é um pedido** (`settings.jukebox_text_requests`, ligada por padrão); e **Redefinir a Jukebox** (o `/jukebox reset`) apaga o painel, limpa a configuração e devolve as opções aos padrões, mantendo o canal e as mensagens de quem usa.
+
 ### Corrigido
 - **Presença na call**: a checagem de ouvintes ao silenciar/ensurdecer alguém no mesmo canal sempre dava "tem gente" (um gerador é sempre verdadeiro), então o tempo de espera por call sem ouvintes não começava quando só restavam bots ou membros surdos.
 

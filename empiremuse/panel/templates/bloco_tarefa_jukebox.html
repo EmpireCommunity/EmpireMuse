@@ -1,11 +1,11 @@
 {# Acompanhamento de uma tarefa. Variável: tarefa (url, estado pendente|executando|ok|erro, final, titulo, mensagem). #}
-<div id="tarefa-canal" class="tarefa tarefa-{{ tarefa.estado }}" data-estado="{{ tarefa.estado }}" role="{% if tarefa.estado == 'erro' %}alert{% else %}status{% end %}" tabindex="-1"{% if not tarefa.final %} hx-get="{{ tarefa.url }}" hx-trigger="every 2s" hx-target="this" hx-swap="outerHTML"{% end %}>
+<div id="tarefa-jukebox" class="tarefa tarefa-{{ tarefa.estado }}" data-estado="{{ tarefa.estado }}" role="{% if tarefa.estado == 'erro' %}alert{% else %}status{% end %}" tabindex="-1"{% if not tarefa.final %} hx-get="{{ tarefa.url }}" hx-trigger="every 2s" hx-target="this" hx-swap="outerHTML"{% end %}>
   <h3 class="tarefa-titulo">{{ tarefa.titulo }}</h3>
   <p class="tarefa-mensagem">{{ tarefa.mensagem }}</p>
   {% if not tarefa.final %}
   <progress aria-label="Em andamento"></progress>
   <p class="nota"><a href="{{ tarefa.url }}">Atualizar status</a></p>
   {% else %}
-  <p class="nota"><a href="{{ tarefa.url.rsplit('/tarefas/', 1)[0] }}">Voltar ao canal de pedidos</a></p>
+  <p class="nota"><a href="{{ tarefa.url.rsplit('/tarefas/', 1)[0] }}">Voltar à Jukebox</a></p>
   {% end %}
 </div>

@@ -21,7 +21,7 @@ from empiremuse.panel.handlers.base import NotFoundHandler, PanelStaticHandler
 from empiremuse.panel.handlers.brand import BRAND_ROUTE, BrandHandler
 from empiremuse.panel.handlers.pages import HealthHandler, IndexHandler, RedirectToIndexHandler
 from empiremuse.panel.handlers.servers import ServerDetailHandler, ServersHandler
-from empiremuse.panel.handlers.channel import ChannelHandler, ChannelTaskHandler
+from empiremuse.panel.handlers.jukebox import JukeboxHandler, JukeboxTaskHandler, LegacyChannelHandler
 from empiremuse.panel.handlers.radio_logo import LOGO_ROUTE, RadioLogoHandler
 from empiremuse.panel.handlers.radio import (
     RadioChatHandler,
@@ -37,7 +37,7 @@ from empiremuse.panel.handlers.settings import WRITE_LIMIT_PER_MINUTE, LinksExpo
 from empiremuse.panel.oauth import DiscordOAuthClient, make_client_provider
 from empiremuse.panel.ratelimit import RateLimiter
 from empiremuse.panel.services.account import AccountService
-from empiremuse.panel.services.channel import ChannelService
+from empiremuse.panel.services.jukebox import JukeboxService
 from empiremuse.panel.services.service import SettingsService
 from empiremuse.panel.services.tasks import TaskRunner
 from empiremuse.panel.sessions import LoginAttemptStore, SessionStore
@@ -90,8 +90,9 @@ def build_panel_app(
             (PANEL_PREFIX + "/servidores", ServersHandler),
             (PANEL_PREFIX + r"/servidores/([^/]+)", ServerDetailHandler),
             (PANEL_PREFIX + r"/servidores/([^/]+)/links/exportar", LinksExportHandler),
-            (PANEL_PREFIX + r"/servidores/([^/]+)/canal/tarefas/(.*)", ChannelTaskHandler),
-            (PANEL_PREFIX + r"/servidores/([^/]+)/canal", ChannelHandler),
+            (PANEL_PREFIX + r"/servidores/([^/]+)/jukebox/tarefas/(.*)", JukeboxTaskHandler),
+            (PANEL_PREFIX + r"/servidores/([^/]+)/jukebox", JukeboxHandler),
+            (PANEL_PREFIX + r"/servidores/([0-9]{1,20})/canal((?:/tarefas/[A-Za-z0-9_-]{32})?)", LegacyChannelHandler),
             (PANEL_PREFIX + r"/servidores/([^/]+)/radios/estacoes", RadioStationsHandler),
             (PANEL_PREFIX + r"/servidores/([^/]+)/radios/estacoes/([0-9a-f]{24})", RadioStationItemHandler),
             (PANEL_PREFIX + r"/servidores/([^/]+)/radios/([^/]+)/estacoes", RadioStationSearchHandler),
@@ -125,7 +126,7 @@ def build_panel_app(
         settings_service=settings_service,
         account_service=AccountService(settings_service),
         task_runner=task_runner,
-        channel_service=ChannelService(task_runner, settings_service, settings.cookie_secret, clock),
+        jukebox_service=JukeboxService(task_runner, settings_service, settings.cookie_secret, clock),
         write_limiter=RateLimiter(limit=WRITE_LIMIT_PER_MINUTE, clock=clock),
     )
 

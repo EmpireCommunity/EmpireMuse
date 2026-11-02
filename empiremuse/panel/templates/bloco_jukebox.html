@@ -1,0 +1,154 @@
+{# Conteúdo da categoria Jukebox (fragmento htmx, id=jukebox-conteudo).
+   Variáveis: jukebox_atual (configurado, nome|None, removido, bot_painel), formulario (acao, versao, valores, erros, mensagem,
+   mensagem_tipo), canais (grupos: .categoria|None, .canais[.id .nome .tipo texto|voz|palco|forum]), tipos (.value .label),
+   categorias_discord (.id .nome), permissoes_faltando (tupla de str), tarefa (ou None), confirmacao (ou None: token,
+   nome_canal), confirmacao_configurar (ou None: token, nome_canal, campos), opcoes (Formulario das opções A e B). #}
+{% set erros = formulario.erros %}
+{% set valores = formulario.valores %}
+{% set rotulo_tipo = {"texto": "texto", "voz": "voz", "palco": "palco", "forum": "fórum"} %}
+<div id="jukebox-conteudo">
+  {% set form = formulario %}
+  {% set form_id = "jukebox-conteudo" %}
+  {% include "_mensagem_form.html" %}
+
+  <section class="bloco-config bloco-largo" aria-labelledby="titulo-jukebox-atual">
+    <h2 class="subtitulo" id="titulo-jukebox-atual">Jukebox atual</h2>
+    {% if jukebox_atual.configurado and jukebox_atual.nome %}
+    <p>A Jukebox deste servidor fica em <strong>{{ jukebox_atual.nome }}</strong>.</p>
+    {% elif jukebox_atual.configurado %}
+    <p>O canal da Jukebox foi removido do Discord. Configure um novo canal abaixo.</p>
+    {% else %}
+    <p>A Jukebox não está configurada neste servidor.</p>
+    {% end %}
+    <p class="nota">Um canal só, para todos os bots do servidor: o painel lista cada player ativo e os botões agem na call de quem os usa.{% if jukebox_atual.bot_painel %} Quem envia o painel e atende o canal é o <strong>{{ jukebox_atual.bot_painel }}</strong>.{% end %}</p>
+  </section>
+
+  {% if tarefa %}
+  {% include "bloco_tarefa_jukebox.html" %}
+  {% end %}
+
+  {% if confirmacao_configurar %}
+  <section class="bloco-config bloco-largo bloco-perigo" aria-labelledby="titulo-confirmar-configurar">
+    <h2 class="subtitulo" id="titulo-confirmar-configurar">Confirmar a configuração</h2>
+    <p>A Jukebox vai ficar em <strong>{{ confirmacao_configurar.nome_canal }}</strong>.</p>
+    <p class="aviso aviso-erro" role="note">Todas as mensagens desse canal serão apagadas, inclusive as fixadas. Isso não pode ser desfeito.</p>
+    <form id="form-jukebox-confirmar-configurar" class="form-config" method="post" action="{{ formulario.acao }}" hx-post="{{ formulario.acao }}" hx-target="#jukebox-conteudo" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]">
+      {% module xsrf_form_html() %}
+      <input type="hidden" name="versao" value="{{ formulario.versao }}">
+      <input type="hidden" name="acao" value="confirmar_configurar">
+      <input type="hidden" name="token" value="{{ confirmacao_configurar.token }}">
+      {% for nome_campo, valor_campo in confirmacao_configurar.campos %}
+      <input type="hidden" name="{{ nome_campo }}" value="{{ valor_campo }}">
+      {% end %}
+      <button type="submit" class="botao-perigo-cheio">Sim, apagar as mensagens e configurar</button>
+    </form>
+  </section>
+  {% end %}
+
+  {% if confirmacao %}
+  <section class="bloco-config bloco-largo bloco-perigo" aria-labelledby="titulo-confirmar-reiniciar">
+    <h2 class="subtitulo" id="titulo-confirmar-reiniciar">Confirmar a redefinição</h2>
+    <p>Isto apaga o painel da Jukebox em <strong>{{ confirmacao.nome_canal }}</strong>, remove a configuração e devolve as opções aos padrões. O canal, as mensagens de quem usa e as playlists ficam.</p>
+    <form id="form-jukebox-confirmar-reiniciar" class="form-config" method="post" action="{{ formulario.acao }}" hx-post="{{ formulario.acao }}" hx-target="#jukebox-conteudo" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]">
+      {% module xsrf_form_html() %}
+      <input type="hidden" name="versao" value="{{ formulario.versao }}">
+      <input type="hidden" name="acao" value="confirmar_reiniciar">
+      <input type="hidden" name="token" value="{{ confirmacao.token }}">
+      <button type="submit" class="botao-perigo-cheio">Sim, redefinir</button>
+    </form>
+  </section>
+  {% end %}
+
+  <section class="bloco-config bloco-largo" aria-labelledby="titulo-configurar-jukebox">
+    <h2 class="subtitulo" id="titulo-configurar-jukebox">Configurar a Jukebox</h2>
+    {% if permissoes_faltando %}
+    <div class="mensagem-form mensagem-erro" role="alert" id="permissoes-faltando" tabindex="-1">
+      <p>O bot não tem as permissões necessárias neste canal:</p>
+      <ul>
+        {% for permissao in permissoes_faltando %}<li>{{ permissao }}</li>{% end %}
+      </ul>
+    </div>
+    {% end %}
+    <form id="form-jukebox-configurar" class="form-config" method="post" action="{{ formulario.acao }}" hx-post="{{ formulario.acao }}" hx-target="#jukebox-conteudo" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]">
+      {% module xsrf_form_html() %}
+      <input type="hidden" name="versao" value="{{ formulario.versao }}">
+      <input type="hidden" name="acao" value="configurar">
+
+      <fieldset class="opcoes">
+        <legend>Como configurar</legend>
+        <label>
+          <input type="radio" name="modo" value="existente"{% if valores.get("modo", "existente") != "criar" %} checked{% end %}{% if erros.get("modo") %} aria-invalid="true" aria-describedby="erro-modo"{% end %}>
+          Usar um canal que já existe
+        </label>
+        <label>
+          <input type="radio" name="modo" value="criar"{% if valores.get("modo") == "criar" %} checked{% end %}{% if erros.get("modo") %} aria-invalid="true" aria-describedby="erro-modo"{% end %}>
+          Criar um canal novo
+        </label>
+        {% if erros.get("modo") %}<small id="erro-modo" class="erro-campo">{{ erros["modo"] }}</small>{% end %}
+        <small>Preencha apenas a parte da opção escolhida.</small>
+      </fieldset>
+
+      <fieldset class="opcoes">
+        <legend>Usar um canal que já existe</legend>
+        {% if canais %}
+        <label for="campo-canal">Canal</label>
+        <select id="campo-canal" name="canal" aria-describedby="ajuda-canal{% if erros.get('canal') %} erro-canal{% end %}"{% if erros.get("canal") %} aria-invalid="true"{% end %}>
+          {% for grupo in canais %}
+          {% if grupo.categoria %}<optgroup label="{{ grupo.categoria }}">{% end %}
+          {% for item in grupo.canais %}
+          <option value="{{ item.id }}"{% if str(valores.get("canal") or "") == str(item.id) %} selected{% end %}>{{ item.nome }} ({{ rotulo_tipo.get(item.tipo, item.tipo) }})</option>
+          {% end %}
+          {% if grupo.categoria %}</optgroup>{% end %}
+          {% end %}
+        </select>
+        {% if erros.get("canal") %}<small id="erro-canal" class="erro-campo">{{ erros["canal"] }}</small>{% end %}
+        <small id="ajuda-canal">A Jukebox apaga todas as mensagens do canal escolhido antes de publicar o painel (você confirma antes). Em fóruns ela cria um post e não apaga nada.</small>
+        {% else %}
+        <p class="nota">O bot não encontrou nenhum canal compatível neste servidor.</p>
+        {% end %}
+        <label for="campo-titulo-forum">Título do post (somente para canais de fórum, de 4 a 30 caracteres)</label>
+        <input id="campo-titulo-forum" type="text" name="titulo_forum" value="{{ valores.get('titulo_forum') or '' }}" maxlength="30" autocomplete="off"{% if erros.get("titulo_forum") %} aria-invalid="true" aria-describedby="erro-titulo-forum"{% end %}>
+        {% if erros.get("titulo_forum") %}<small id="erro-titulo-forum" class="erro-campo">{{ erros["titulo_forum"] }}</small>{% end %}
+      </fieldset>
+
+      <fieldset class="opcoes">
+        <legend>Criar um canal novo</legend>
+        <label for="campo-tipo">Tipo de canal</label>
+        <select id="campo-tipo" name="tipo"{% if erros.get("tipo") %} aria-invalid="true" aria-describedby="erro-tipo"{% end %}>
+          {% for tipo in tipos %}
+          <option value="{{ tipo.value }}"{% if valores.get("tipo") == tipo.value %} selected{% end %}>{{ tipo.label }}</option>
+          {% end %}
+        </select>
+        {% if erros.get("tipo") %}<small id="erro-tipo" class="erro-campo">{{ erros["tipo"] }}</small>{% end %}
+        <label for="campo-categoria">Categoria</label>
+        <select id="campo-categoria" name="categoria"{% if erros.get("categoria") %} aria-invalid="true" aria-describedby="erro-categoria"{% end %}>
+          <option value=""{% if not valores.get("categoria") %} selected{% end %}>Sem categoria</option>
+          {% for categoria_discord in categorias_discord %}
+          <option value="{{ categoria_discord.id }}"{% if str(valores.get("categoria") or "") == str(categoria_discord.id) %} selected{% end %}>{{ categoria_discord.nome }}</option>
+          {% end %}
+        </select>
+        {% if erros.get("categoria") %}<small id="erro-categoria" class="erro-campo">{{ erros["categoria"] }}</small>{% end %}
+      </fieldset>
+
+      <button type="submit">Configurar</button>
+    </form>
+  </section>
+
+  <section class="bloco-config bloco-largo" aria-labelledby="titulo-jukebox-opcoes">
+    {% set form = opcoes %}
+    {% include "form_jukebox_opcoes.html" %}
+  </section>
+
+  {% if jukebox_atual.configurado %}
+  <section class="bloco-config bloco-largo" aria-labelledby="titulo-reiniciar">
+    <h2 class="subtitulo" id="titulo-reiniciar">Redefinir a Jukebox</h2>
+    <p class="nota">Apaga o painel, remove a configuração e devolve as opções aos padrões. O canal e as mensagens ficam. Você ainda vai confirmar antes de qualquer alteração.</p>
+    <form id="form-jukebox-reiniciar" class="form-config" method="post" action="{{ formulario.acao }}" hx-post="{{ formulario.acao }}" hx-target="#jukebox-conteudo" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]">
+      {% module xsrf_form_html() %}
+      <input type="hidden" name="versao" value="{{ formulario.versao }}">
+      <input type="hidden" name="acao" value="reiniciar">
+      <button type="submit" class="secondary outline botao-perigo">Redefinir…</button>
+    </form>
+  </section>
+  {% end %}
+</div>

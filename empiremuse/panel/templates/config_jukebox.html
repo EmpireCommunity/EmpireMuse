@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block titulo %}Jukebox · {{ acesso.name }}{% end %}
+
+{% block conteudo %}
+{% set titulo_categoria = "Jukebox" %}
+{% set slug_atual = "jukebox" %}
+{% set caminho_categoria = "/painel/servidores/" + acesso.guild_id + "/jukebox" %}
+{% include "_topo_config.html" %}
+{% include "_nav_categorias.html" %}
+{% include "bloco_jukebox.html" %}
+{% end %}

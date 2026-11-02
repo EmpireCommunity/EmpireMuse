@@ -743,7 +743,7 @@ main:focus {
   overflow-wrap: anywhere;
 }
 
-/* Etapa 4c — canal de pedidos */
+/* Etapa 4c — Jukebox (configurar, redefinir, tarefas) */
 .tarefa {
   background: var(--nb-superficie);
   border: 1px solid var(--nb-borda);
