@@ -527,6 +527,25 @@ class TestCommunityLocalesOnlyWarn:
         i18n.load()
         assert i18n.for_locale("de")("player.paused", user="Ana") == "Paused by Ana."  # o en-US, nunca o pt-BR
 
+    def test_an_empty_option_name_is_untranslated_not_an_invalid_name(self, root, capsys):
+        write(
+            root,
+            "de",
+            {"cmd.music._label": "Musik", "cmd.play.description": "Spiele.", "cmd.play.opt.query.name": ""},
+            None,
+        )
+
+        assert self.run(root) == 0
+        err = capsys.readouterr().err
+        assert "descartada" not in err and "ERRO" not in err
+        assert ("commands", "cmd.play.opt.query.name", "empty") in loader.load_catalogs(root)["de"].dropped
+
+    def test_a_bad_non_empty_option_name_is_still_a_name_error(self, root, capsys):
+        write(root, "de", {"cmd.music._label": "Musik", "cmd.play.opt.query.name": "Nome Inválido!"}, None)
+
+        assert self.run(root) == 0
+        assert "AVISO de: commands.cmd.play.opt.query.name descartada (name)" in capsys.readouterr().err
+
     def test_other_drops_and_a_refused_file_in_a_community_locale_are_warnings_with_exit_zero(self, root, capsys):
         write(root, "de", {"cmd.music._label": "Musik"}, {"player.paused": "Pausiert @everyone"})
         write(root, "fr", {"cmd.music._label": "Musique"}, None)
