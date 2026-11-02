@@ -139,6 +139,7 @@ class TestTheCommandPageReadsTheCatalog:
     @pytest.mark.asyncio
     async def test_the_decorator_text_never_shows_when_the_catalog_has_the_command(self):
         """``adddj`` tem ``cmd.add_dj.*``: o texto é o do catálogo, mesmo que o decorador tenha outra descrição."""
+
         async def nothing(ctx):
             return None
 
