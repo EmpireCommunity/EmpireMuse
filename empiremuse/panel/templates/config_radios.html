@@ -2,6 +2,11 @@
 
 {% block titulo %}{{ _("panel.radio.title") }} · {{ acesso.name }}{% end %}
 
+{% block rodape_creditos %}
+{# Atribuição dos dados do filtro de local (GeoNames, CC BY 4.0; contrato R4 §2). #}
+<p class="rodape-creditos">{{ _("panel.radio.local.credit") }}</p>
+{% end %}
+
 {% block conteudo %}
 {# Rádios do servidor (item 8). Variáveis: premium (None ou .active), pode_escrever, radios (RadioRow: id, slug, bot_nome,
    canal_nome|None, tipo, estado, titulo|None, form|None), max_radios. Textos pelo ``_`` (panel.json); nada em href/src. #}

@@ -22,7 +22,15 @@ from empiremuse.panel.handlers.brand import BRAND_ROUTE, BrandHandler
 from empiremuse.panel.handlers.pages import HealthHandler, IndexHandler, RedirectToIndexHandler
 from empiremuse.panel.handlers.servers import ServerDetailHandler, ServersHandler
 from empiremuse.panel.handlers.channel import ChannelHandler, ChannelTaskHandler
-from empiremuse.panel.handlers.radio import RadioChatHandler, RadioReserveHandler, RadiosHandler, RadioStationsHandler
+from empiremuse.panel.handlers.radio_logo import LOGO_ROUTE, RadioLogoHandler
+from empiremuse.panel.handlers.radio import (
+    RadioChatHandler,
+    RadioLocalHandler,
+    RadioReserveHandler,
+    RadiosHandler,
+    RadioStationHandler,
+    RadioStationsHandler,
+)
 from empiremuse.panel.handlers.settings import WRITE_LIMIT_PER_MINUTE, LinksExportHandler, SettingsHandler
 from empiremuse.panel.oauth import DiscordOAuthClient, make_client_provider
 from empiremuse.panel.ratelimit import RateLimiter
@@ -83,11 +91,14 @@ def build_panel_app(
             (PANEL_PREFIX + r"/servidores/([^/]+)/canal/tarefas/(.*)", ChannelTaskHandler),
             (PANEL_PREFIX + r"/servidores/([^/]+)/canal", ChannelHandler),
             (PANEL_PREFIX + r"/servidores/([^/]+)/radios/([^/]+)/estacoes", RadioStationsHandler),
+            (PANEL_PREFIX + r"/servidores/([^/]+)/radios/([^/]+)/estacao", RadioStationHandler),
+            (PANEL_PREFIX + r"/servidores/([^/]+)/radios/([^/]+)/local", RadioLocalHandler),
             (PANEL_PREFIX + r"/servidores/([^/]+)/radios/([^/]+)/reserva", RadioReserveHandler),
             (PANEL_PREFIX + r"/servidores/([^/]+)/radios/([^/]+)", RadioChatHandler),
             (PANEL_PREFIX + r"/servidores/([^/]+)/radios", RadiosHandler),
             (PANEL_PREFIX + r"/servidores/([^/]+)/([^/]+)", SettingsHandler),
             (BRAND_ROUTE, BrandHandler),
+            (LOGO_ROUTE, RadioLogoHandler),
             (PANEL_PREFIX + "/.*", NotFoundHandler),
         ],
         debug=False,

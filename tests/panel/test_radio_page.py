@@ -11,6 +11,7 @@ from empiremuse.panel.handlers.settings import MAX_BODY_BYTES, WRITE_LIMIT_PER_M
 from empiremuse.panel.handlers.radio import RadiosHandler
 from empiremuse.panel.services.base import CONFLICT_TEXT, SAVED_TEXT
 from empiremuse.panel.services.radio_live import StationNames
+from empiremuse.rules.radio import default_chat
 from tests.panel.helpers_radio import UNAVAILABLE, install, make_channel, radio_state
 from tests.panel.helpers_settings import parse_forms
 from tests.panel.test_settings_http import Each, HttpBase
@@ -81,7 +82,9 @@ class RadioPageTest(RadioBase):
         assert "Pausada pelo dono" in body and "Tocando" in body
         forms = self.chat_forms(body)
         assert [f.action for f in forms] == [self.url(OMEGA, editable.id)]
-        assert forms[0].value("voice_delete_after_s") == "30"
+        assert forms[0].value("voice_delete_after_s") == str(
+            default_chat()["voice_delete_after_s"]
+        )  # o padrão é da regra
         assert "Gerenciar Mensagens" in body  # a rádio do bot 2 fica só para ler
 
     def test_navigation_offers_the_radios_category(self):

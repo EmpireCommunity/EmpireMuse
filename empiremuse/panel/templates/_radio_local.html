@@ -1,0 +1,18 @@
+{# Os selects da cascata de local (R4 §5), do topo até o nível abaixo do nó escolhido. Variáveis: vivo (slug, local:
+   LocalView com levels[LocalLevel: depth, key, parent, options[id, label, description, count], selected]), form
+   (acao_local). Cada select manda só o próprio ``node`` por htmx; a opção vazia volta ao nível de cima. #}
+{% set local = vivo.local %}
+{% for nivel in local.levels %}
+{% set id_nivel = "local-" + vivo.slug + "-" + str(nivel.depth) %}
+{% set escolhida = next((o for o in nivel.options if o.id == nivel.selected), None) %}
+<div class="cascata-nivel">
+  <label for="{{ id_nivel }}">{{ _("panel.radio.local." + nivel.key) }}</label>
+  <select id="{{ id_nivel }}" name="node" hx-get="{{ form.acao_local }}" hx-trigger="change" hx-target="#local-{{ vivo.slug }}" hx-swap="innerHTML"{% if escolhida and escolhida.description %} aria-describedby="{{ id_nivel }}-desc"{% end %}>
+    <option value="{{ nivel.parent or '' }}"{% if nivel.selected is None %} selected{% end %}>{{ _("panel.radio.local.choose") }}</option>
+    {% for opcao in nivel.options %}
+    <option value="{{ opcao.id }}"{% if opcao.id == nivel.selected %} selected{% end %}>{{ opcao.label }}</option>
+    {% end %}
+  </select>
+  {% if escolhida and escolhida.description %}<small id="{{ id_nivel }}-desc" class="cascata-descricao">{{ escolhida.description }}</small>{% end %}
+</div>
+{% end %}
