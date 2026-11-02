@@ -490,7 +490,7 @@ class TestCliquesDoPainel:
         monkeypatch.setattr(panel_interactions, "resolve_player", lambda *a: None)
         classe, eu, interacao = clique()
 
-        await classe.request_panel_queue(eu, interacao)
+        await classe.jukebox_panel_queue(eu, interacao)
 
         interacao.response.defer.assert_awaited_once_with(ephemeral=True, with_message=True)
         interacao.edit_original_message.assert_awaited_once()
@@ -503,7 +503,7 @@ class TestCliquesDoPainel:
     async def test_the_queue_button_of_somebody_elses_component_is_ignored(self):
         classe, eu, interacao = clique(custom_id="outro")
 
-        await classe.request_panel_queue(eu, interacao)
+        await classe.jukebox_panel_queue(eu, interacao)
 
         interacao.response.defer.assert_not_awaited()
 
@@ -513,7 +513,7 @@ class TestCliquesDoPainel:
         monkeypatch.setattr(panel_interactions, "resolve_player", lambda *a: (MagicMock(), player))
         classe, eu, interacao = clique()
 
-        await classe.request_panel_queue(eu, interacao)
+        await classe.jukebox_panel_queue(eu, interacao)
 
         assert "vazia" in interacao.edit_original_message.await_args.kwargs["content"]
 
@@ -521,7 +521,7 @@ class TestCliquesDoPainel:
     async def test_the_genre_select_with_nothing_chosen_only_acknowledges_the_panel_update(self):
         classe, eu, interacao = clique(custom_id=GENRE_SELECT_ID, valores=[])
 
-        await classe.request_panel_genre(eu, interacao)
+        await classe.jukebox_panel_genre(eu, interacao)
 
         interacao.response.defer.assert_awaited_once_with()
 
@@ -529,7 +529,7 @@ class TestCliquesDoPainel:
     async def test_the_genre_select_opens_an_ephemeral_message_and_asks_to_join_a_call(self):
         classe, eu, interacao = clique(custom_id=GENRE_SELECT_ID, valores=["0"], em_call=False)
 
-        await classe.request_panel_genre(eu, interacao)
+        await classe.jukebox_panel_genre(eu, interacao)
 
         interacao.response.defer.assert_awaited_once_with(ephemeral=True, with_message=True)
         assert "canal de voz" in interacao.edit_original_message.await_args.kwargs["content"]
@@ -600,7 +600,7 @@ class TestFilaDePontaAPonta:
         pulou, _ = self.preparar(monkeypatch, fila=[faixa_com_id("a"), faixa_com_id("b", "Hello")], escolha="b")
         classe, eu, interacao = clique()
 
-        await classe.request_panel_queue(eu, interacao)
+        await classe.jukebox_panel_queue(eu, interacao)
 
         pulou.assert_awaited_once()
         assert pulou.await_args.kwargs["kwargs"] == {"query": "Hello || ID > b", "case_sensitive": True}
@@ -612,7 +612,7 @@ class TestFilaDePontaAPonta:
         pulou, _ = self.preparar(monkeypatch, fila=[faixa_com_id("a")], escolha=False)
         classe, eu, interacao = clique()
 
-        await classe.request_panel_queue(eu, interacao)
+        await classe.jukebox_panel_queue(eu, interacao)
 
         pulou.assert_not_awaited()
         FakeView.clique.response.edit_message.assert_awaited_once()
@@ -623,7 +623,7 @@ class TestFilaDePontaAPonta:
         pulou, player = self.preparar(monkeypatch, fila=[faixa_com_id("a")], escolha="b")
         classe, eu, interacao = clique()
 
-        await classe.request_panel_queue(eu, interacao)
+        await classe.jukebox_panel_queue(eu, interacao)
 
         pulou.assert_not_awaited()
         FakeView.clique.response.edit_message.assert_awaited_once()
@@ -634,7 +634,7 @@ class TestFilaDePontaAPonta:
         pulou, _ = self.preparar(monkeypatch, fila=[faixa_com_id("a")], escolha=None, clicou=False)
         classe, eu, interacao = clique()
 
-        await classe.request_panel_queue(eu, interacao)
+        await classe.jukebox_panel_queue(eu, interacao)
 
         pulou.assert_not_awaited()
         assert interacao.edit_original_message.await_count == 2  # o prompt com a view e o aviso de cancelado
@@ -662,7 +662,7 @@ class TestGeneroContraTodosOsGeneros:
         FakeView.escolha, FakeView.clique = None, None
         classe, eu, interacao = clique(custom_id=GENRE_SELECT_ID, valores=[genre_key(escolhido)])
 
-        await classe.request_panel_genre(eu, interacao)
+        await classe.jukebox_panel_genre(eu, interacao)
 
         assert vistos == [["P27"]]  # abriu as playlists daquele gênero, não a mensagem de "não há mais"
 
@@ -674,6 +674,6 @@ class TestGeneroContraTodosOsGeneros:
         monkeypatch.setattr(panel_interactions, "safe_list", lista)
         classe, eu, interacao = clique(custom_id=GENRE_SELECT_ID, valores=[genre_key("Jazz")])
 
-        await classe.request_panel_genre(eu, interacao)
+        await classe.jukebox_panel_genre(eu, interacao)
 
         assert "mais" in interacao.edit_original_message.await_args.kwargs["content"]

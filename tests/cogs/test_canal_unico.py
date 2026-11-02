@@ -968,9 +968,9 @@ def operation_world(stored):
 
 
 def config_of(message):
-    from empiremuse.utils.server_jukebox import RequestConfig
+    from empiremuse.utils.server_jukebox import JukeboxConfig
 
-    return RequestConfig(PANEL_CHANNEL, message, None, 1)
+    return JukeboxConfig(PANEL_CHANNEL, message, None, 1)
 
 
 @pytest.mark.asyncio

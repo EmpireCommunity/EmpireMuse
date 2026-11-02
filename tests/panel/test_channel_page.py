@@ -12,7 +12,7 @@ import re
 from tests.panel.helpers_channel import ChannelBase, GID
 from tests.panel.helpers_settings import NOT_FOUND_TEXT, UID, acao_form
 from tests.panel.test_settings_http import Each, HttpBase
-from tests.support.canal_de_pedidos import perms, FULL_TEXT
+from tests.support.jukebox import perms, FULL_TEXT
 
 TASK_PATH = re.compile(r"/painel/servidores/\d+/canal/tarefas/")
 

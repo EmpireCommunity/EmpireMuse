@@ -351,11 +351,11 @@ class FakeRequestStore:
         return True
 
     async def get(self, gid):
-        from empiremuse.utils.server_request import RequestConfig
+        from empiremuse.utils.server_request import JukeboxConfig
 
         controller = self.bot.db.doc["player_controller"]
         ident = lambda value: int(value) if value else None
-        return RequestConfig(ident(controller["channel"]), ident(controller["message_id"]), self.bot.user.id, 1)
+        return JukeboxConfig(ident(controller["channel"]), ident(controller["message_id"]), self.bot.user.id, 1)
 
     async def set(self, gid, channel_id, message_id, *, expected_rev=None, expected=None):
         doc = copy.deepcopy(self.bot.db.doc)

@@ -15,7 +15,7 @@ import html
 import re
 from urllib.parse import urlencode
 
-from tests.support.canal_de_pedidos import FakePlayer
+from tests.support.jukebox import FakePlayer
 from tests.panel.helpers import COOKIE_SECRET, OAUTH_SECRET
 from tests.panel.helpers_channel import GID, PANEL_USER, TASK_ID
 from tests.panel.helpers_login import DEFAULT_USER
