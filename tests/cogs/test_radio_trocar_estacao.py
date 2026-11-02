@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from empiremuse.i18n import get_i18n
 from empiremuse.rules.radio import (
     KIND_LIVE,
     PANEL_MENU_ID,
@@ -28,8 +27,6 @@ from tests.cogs.test_radio_ao_vivo import (
     MAIN,
     RESERVE,
     LivePorts,
-    bots,
-    make_live,
     premium,
     turn_on,
 )
@@ -180,18 +177,7 @@ class TestWalking:
             return station(uuid, f"Rádio {uuid[:2]}")
 
         w.hub.directory = SimpleNamespace(by_uuid=by_uuid, logo_png=AsyncMock(), favicon_of=lambda u: None)
-        radio = await actions.turn_on(
-            w.hub,
-            guild_id=GUILD,
-            channel_id=CHANNEL,
-            playlist=None,
-            actor=Actor(7, True, True),
-            candidates=bots(2, 3),
-            playlist_exists=False,
-            bot_can_join=True,
-            station=station(MAIN, "Rádio 11"),
-            station_list=list_,
-        )
+        radio = await turn_on(w, station=station(MAIN, "Rádio 11"), station_list=list_)
         if volume:
             radio = await w.hub.store.set_volume(radio.id, volume, expected_rev=radio.rev)
         await w.hub.manager.activate(radio, wait=True)
@@ -393,27 +379,49 @@ class TestPickerWiring:
         assert "agora tocando" in said(confirm).lower()
 
     @pytest.mark.asyncio
-    async def test_the_command_picker_turns_the_radio_on_with_the_chosen_station_and_list(self):
-        from tests.cogs.test_radio_comandos import settle
+    async def test_the_setup_picker_saves_the_chosen_station_and_list_without_turning_the_radio_on(self):
+        from empiremuse.utils.radio import setup_flow
+        from tests.cogs.radio_config import configure
 
         w = build_world()
         await w.hub.control.load()
         await w.hub.premium.grant(GUILD, by=1)
-        w.cog.bot.user = SimpleNamespace(id=2)
-        w.hub.manager.ports_factory = lambda radio: SwitchingPorts()
         w.hub.directory = SimpleNamespace(by_uuid=AsyncMock(), logo_png=AsyncMock(), favicon_of=lambda u: None)
         tr = await w.cog.bot.pool.i18n.for_guild(w.inter.guild)
+        radio = await configure(w.hub, guild_id=GUILD, channel_id=w.channel.id, kind="live", source={})
 
-        await w.cog._open_start_picker(w.inter, tr, w.channel)
+        await setup_flow.choose_station(w.cog, w.inter, tr, radio, w.channel)
         view = w.inter.edit_original_message.await_args.kwargs["view"]
         view.chosen = station(THIRD, "Rádio 33")
+        view.hits = (
+            SimpleNamespace(station=station(MAIN, "Rádio 11")),
+            SimpleNamespace(station=station(THIRD, "Rádio 33")),
+        )
         confirm = click(PANEL_MENU_ID)
         await view._on_confirm(confirm)
-        await settle(w)
 
-        radio = await w.hub.store.get(radio_id(2, GUILD))
-        assert radio is not None and radio.enabled and radio.source["station"] == THIRD
-        assert "ligada" in said(confirm).lower() or "tocando" in said(confirm).lower()
+        saved = await w.hub.store.get(radio_id(2, GUILD))
+        assert saved.source["station"] == THIRD and saved.source["list"] == [MAIN, THIRD] and not saved.enabled
+        assert "/radio on" in said(confirm)
+
+    @pytest.mark.asyncio
+    async def test_a_station_chosen_for_a_running_radio_switches_it_live(self):
+        from empiremuse.utils.radio import setup_flow
+
+        w = await TestWalking.live_world()
+        tr = await w.cog.bot.pool.i18n.for_guild(w.inter.guild)
+        switched = []
+
+        async def change_station(updated):
+            switched.append(updated.source["station"])
+            return True
+
+        w.hub.manager.change_station = change_station
+        confirm = click(PANEL_MENU_ID)
+
+        text = await setup_flow.apply_live(w.cog, confirm, tr, w.radio.id, station(THIRD, "Rádio 33"), ())
+
+        assert switched == [THIRD] and "Rádio 33" in text
 
 
 class TestMenuStopNeedsManageGuild:

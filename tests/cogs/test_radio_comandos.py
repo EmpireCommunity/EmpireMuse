@@ -15,6 +15,7 @@ from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.music.models.player_voice import PlayerVoiceMixin
 from empiremuse.utils.radio import RadioHub
 from empiremuse.utils.radio.runner import Phase
+from tests.cogs.radio_config import configure
 from tests.cogs.test_radio_runner import FakePorts
 from tests.persistence.test_radio_store import FakeDb
 
@@ -34,20 +35,28 @@ def make_channel(*, manage_messages=True):
     channel = MagicMock(spec=disnake.VoiceChannel)
     channel.id = CHANNEL
     channel.mention = f"<#{CHANNEL}>"
+    channel.name = "Música"
     channel.permissions_for.side_effect = lambda who: SimpleNamespace(
-        view_channel=True, connect=True, manage_messages=manage_messages
+        view_channel=True, connect=True, speak=True, manage_messages=manage_messages
     )
     return channel
 
 
-def make_bot(bot_id, identifier, channel, *, ready=True, in_voice=False):
+def make_bot(bot_id, identifier, channel, *, ready=True, in_voice=False, manage_guild=True):
+    member = SimpleNamespace(guild_permissions=SimpleNamespace(manage_guild=manage_guild, administrator=False))
     guild = SimpleNamespace(
-        id=GUILD, me=SimpleNamespace(voice=object() if in_voice else None), get_channel=lambda cid: channel
+        id=GUILD,
+        me=SimpleNamespace(voice=object() if in_voice else None),
+        get_channel=lambda cid: channel,
+        get_member=lambda uid: member,
+        owner_id=0,
+        voice_channels=[channel],
+        stage_channels=[],
     )
     player_calls = AsyncMock()
     return SimpleNamespace(
         identifier=identifier,
-        user=SimpleNamespace(id=bot_id),
+        user=SimpleNamespace(id=bot_id, name=f"Bot {bot_id}"),
         bot_ready=ready,
         exclusive_guild_id=None,
         music=SimpleNamespace(players={}),
@@ -61,7 +70,10 @@ def build(
 ):
     db = FakeDb()
     channel = make_channel(manage_messages=manage_messages)
-    bots = [make_bot(1, "TOKEN", channel), *(make_bot(n, f"TOKEN_{n}", channel) for n in free_bots)]
+    bots = [
+        make_bot(1, "TOKEN", channel, manage_guild=manage_guild),
+        *(make_bot(n, f"TOKEN_{n}", channel, manage_guild=manage_guild) for n in free_bots),
+    ]
     pool = SimpleNamespace(database=db, i18n=get_i18n(), get_all_bots=lambda: bots)
     pool.radio = RadioHub(pool)
     ports = FakePorts()
@@ -100,9 +112,20 @@ async def premium(w):
 
 
 async def run_on(w, **kwargs):
-    kwargs.setdefault("station", None)  # o callback direto não passa pelo default do commands.Param
-    kwargs.setdefault("playlist", None)
-    await radio_cog.Radio.radio_on.callback(w.cog, w.inter, **kwargs)
+    """``/radio setup`` (gravado direto) seguido de ``/radio on``. ``playlist=`` põe uma estação do servidor, ``station=`` uma estação ao vivo, ``bot=`` o bot fixo
+    (o 2 por padrão) e ``configured=False`` pula o setup (rádio nunca configurada)."""
+    channel = kwargs["channel"]
+    live = kwargs.get("station")
+    if kwargs.get("configured", True):
+        await configure(
+            w.hub,
+            guild_id=GUILD,
+            channel_id=channel.id,
+            bot_id=kwargs.get("bot", 2),
+            kind="live" if live else "custom",
+            source={"station": live, "reserve": None} if live else kwargs.get("source"),
+        )
+    await radio_cog.Radio.radio_on.callback(w.cog, w.inter, channel=channel)
     await settle(w)
 
 
@@ -169,66 +192,49 @@ class TestBootFromCogLoad:
 
 class TestLigar:
     @pytest.mark.asyncio
-    async def test_it_turns_the_radio_on_in_the_first_free_reserve_and_starts_it(self):
+    async def test_it_turns_on_the_configured_radio_with_its_fixed_bot_and_starts_it(self):
         w = build()
         await premium(w)
 
-        await run_on(w, channel=w.channel, playlist="rock")
+        await run_on(w, channel=w.channel, playlist="rock", bot=3)
 
-        assert w.hub.manager.is_running(radio_id(2, GUILD)) and w.ports.connects == 1
-        assert f"<#{CHANNEL}>" in reply(w) and "<@2>" in reply(w) and "Rock" in reply(w)
+        assert w.hub.manager.is_running(radio_id(3, GUILD)) and w.ports.connects == 1
+        assert f"<#{CHANNEL}>" in reply(w) and "<@3>" in reply(w)
         assert w.inter.edit_original_message.await_args.kwargs["allowed_mentions"].everyone is False
         assert w.inter.response.defer.await_args.kwargs == {
             "ephemeral": True
         }  # confirma em 3 s, resposta só de quem pediu
 
     @pytest.mark.asyncio
-    async def test_a_playlist_and_a_station_together_are_refused_not_silently_resolved(self):
+    async def test_a_channel_without_a_configured_radio_points_to_setup(self):
         w = build()
         await premium(w)
-        w.hub.directory.by_uuid = AsyncMock(
-            return_value=SimpleNamespace(uuid="11111111-1111-1111-1111-111111111111", name="Boa FM")
-        )
 
         with pytest.raises(GenericError) as refusal:
-            await run_on(w, channel=w.channel, playlist="rock", station="11111111-1111-1111-1111-111111111111")
+            await run_on(w, channel=w.channel, configured=False)
 
-        assert "playlist" in str(refusal.value).lower() and not w.hub.manager.is_running(radio_id(2, GUILD))
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("granted", [False, True])
-    async def test_the_station_lookup_runs_only_after_manage_guild_and_premium_are_checked(self, granted):
-        w = build(manage_guild=granted)
-        if granted:
-            await w.hub.control.load()  # com manage_guild mas sem premium
-        w.hub.directory.by_uuid = AsyncMock()
-
-        with pytest.raises(GenericError):
-            await run_on(w, channel=w.channel, station="11111111-1111-1111-1111-111111111111")
-
-        w.hub.directory.by_uuid.assert_not_awaited()  # o diretório (e o balde dele) só para quem tem o direito
+        assert "/radio setup" in str(refusal.value) and not w.hub.manager.is_running(radio_id(2, GUILD))
 
     @pytest.mark.asyncio
-    async def test_the_servers_request_channel_is_refused_in_the_command(
-        self,
-    ):  # V181-1: o chat do canal de pedidos é da Jukebox
+    async def test_a_radio_without_a_station_points_to_setup_and_stays_off(self):
+        w = build()
+        await premium(w)
+
+        with pytest.raises(GenericError) as refusal:
+            await run_on(w, channel=w.channel, source={})
+
+        assert "/radio setup" in str(refusal.value)
+        assert not (await w.hub.store.list_for_guild(GUILD))[0].enabled
+
+    @pytest.mark.asyncio
+    async def test_the_jukebox_channel_is_refused_in_the_command(self):  # V181-1: o chat do canal da Jukebox é dela
         w = build(request_channel=CHANNEL)
         await premium(w)
 
-        with pytest.raises(GenericError) as refusal:
+        with pytest.raises(GenericError):
             await run_on(w, channel=w.channel, playlist="rock")
 
-        assert "pedidos" in str(refusal.value) and not w.hub.manager.is_running(radio_id(2, GUILD))
-
-    @pytest.mark.asyncio
-    async def test_the_main_bot_is_never_the_one_that_plays(self):
-        w = build(free_bots=())
-        await premium(w)
-
-        with pytest.raises(GenericError) as refusal:
-            await run_on(w, channel=w.channel, playlist="Rock")
-
-        assert "bot livre" in str(refusal.value) and not w.hub.manager.is_running(radio_id(1, GUILD))
+        assert not w.hub.manager.is_running(radio_id(2, GUILD))
 
     @pytest.mark.asyncio
     async def test_manage_guild_alone_is_not_enough_because_the_radio_deletes_messages_there(self):
@@ -238,7 +244,8 @@ class TestLigar:
         with pytest.raises(GenericError) as refusal:
             await run_on(w, channel=w.channel, playlist="Rock")
 
-        assert "Gerenciar Mensagens" in str(refusal.value) and await w.hub.store.list_for_guild(GUILD) == []
+        assert "Gerenciar Mensagens" in str(refusal.value)
+        assert not (await w.hub.store.list_for_guild(GUILD))[0].enabled
 
     @pytest.mark.asyncio
     async def test_without_manage_guild_nothing_happens(self):
@@ -248,46 +255,29 @@ class TestLigar:
         with pytest.raises(GenericError):
             await run_on(w, channel=w.channel, playlist="Rock")
 
-        assert await w.hub.store.list_for_guild(GUILD) == [] and w.ports.connects == 0
+        assert not (await w.hub.store.list_for_guild(GUILD))[0].enabled and w.ports.connects == 0
 
     @pytest.mark.asyncio
-    async def test_without_premium_or_with_an_unknown_playlist_it_says_why(self):
-        no_premium = build()
-        await no_premium.hub.control.load()
-        no_playlist = build(playlist=False)
-        await premium(no_playlist)
-
-        with pytest.raises(GenericError) as first:
-            await radio_cog.Radio.radio_on.callback(
-                no_premium.cog, no_premium.inter, channel=no_premium.channel, playlist="x", station=None
-            )
-        radio_cog.RADIO_COOLDOWN._cache.clear()
-        with pytest.raises(GenericError) as second:
-            await radio_cog.Radio.radio_on.callback(
-                no_playlist.cog, no_playlist.inter, channel=no_playlist.channel, playlist="x", station=None
-            )
-
-        assert "premium" in str(first.value) and "playlist" in str(second.value)
-
-    @pytest.mark.asyncio
-    async def test_a_bot_already_in_a_call_is_skipped(self):
+    async def test_without_premium_it_says_why(self):
         w = build()
-        w.bots[1].get_guild(GUILD).me.voice = object()  # TOKEN_2 ocupado
+        await w.hub.control.load()
+
+        with pytest.raises(GenericError) as refusal:
+            await run_on(w, channel=w.channel, playlist="x")
+
+        assert "premium" in str(refusal.value)
+
+    @pytest.mark.asyncio
+    async def test_the_fixed_bot_already_in_a_call_is_not_swapped_for_another(self):
+        w = build()
+        w.bots[1].get_guild(GUILD).me.voice = object()  # TOKEN_2, o bot da rádio, ocupado
         await premium(w)
 
-        await run_on(w, channel=w.channel, playlist="Rock")
+        with pytest.raises(GenericError) as refusal:
+            await run_on(w, channel=w.channel, playlist="Rock")
 
-        assert w.hub.manager.is_running(radio_id(3, GUILD))
-
-    @pytest.mark.asyncio
-    async def test_a_radio_only_bot_comes_first(self):
-        w = build()
-        await premium(w)
-        await w.hub.roles.add("TOKEN_3")
-
-        await run_on(w, channel=w.channel, playlist="Rock")
-
-        assert w.hub.manager.is_running(radio_id(3, GUILD))
+        assert "bot" in str(refusal.value).lower()
+        assert not w.hub.manager.is_running(radio_id(2, GUILD)) and not w.hub.manager.is_running(radio_id(3, GUILD))
 
     @pytest.mark.asyncio
     async def test_a_second_use_inside_ten_seconds_is_told_to_wait(self):
@@ -304,10 +294,11 @@ class TestLigar:
     async def test_the_database_going_down_is_a_friendly_error(self):
         w = build()
         await premium(w)
+        await configure(w.hub, guild_id=GUILD, channel_id=w.channel.id)
         w.db.fail = True
 
         with pytest.raises(GenericError):
-            await run_on(w, channel=w.channel, playlist="Rock")
+            await radio_cog.Radio.radio_on.callback(w.cog, w.inter, channel=w.channel)
 
 
 class TestDesligarEStatus:

@@ -301,7 +301,9 @@ class TestChatRules:
         await world.store.create(make_radio())
         await world.store.update_chat(radio_id(1, GUILD), {"voice_delete_after_s": 90}, expected_rev=0)
 
-        updated = await world.store.reconfigure(make_radio(channel_id="777", source={"playlist": "Jazz"}))
+        updated = await world.store.save_config(
+            make_radio(channel_id="777", source={"playlist": "Jazz"}), expected_rev=1
+        )
 
         assert updated.chat["voice_delete_after_s"] == 90  # as regras não voltam aos padrões
         assert (updated.channel_id, updated.source) == (777, {"playlist": "Jazz"})
@@ -404,32 +406,40 @@ class TestBootReconcile:
         assert not (await world.store.get(radio_id(1, OTHER_GUILD))).enabled
 
 
-class TestReconfigure:
+class TestSaveConfig:
     @pytest.mark.asyncio
     async def test_a_disabled_radio_takes_the_new_channel_and_source_and_loses_the_old_panel(self, world):
         await world.store.create(make_radio())
         await world.store.set_panel_message(radio_id(1, GUILD), 4242)
 
-        updated = await world.store.reconfigure(
-            make_radio(source={"playlist": "Jazz"}, channel_id="777"),
-            updated_by="9",
+        updated = await world.store.save_config(
+            make_radio(source={"playlist": "Jazz"}, channel_id="777"), expected_rev=1, updated_by="9"
         )
 
         assert (updated.channel_id, updated.source, updated.panel_message_id) == (777, {"playlist": "Jazz"}, None)
 
     @pytest.mark.asyncio
-    async def test_an_enabled_radio_cannot_be_reconfigured(self, world):
+    async def test_an_enabled_radio_cannot_change_channel_or_kind(self, world):
         await with_premium(world)
         await world.store.create(make_radio())
         await world.store.set_enabled(radio_id(1, GUILD), True)
 
         with pytest.raises(RadioConflict):
-            await world.store.reconfigure(make_radio(channel_id="777"))
+            await world.store.save_config(make_radio(channel_id="777"), expected_rev=1)
+
+    @pytest.mark.asyncio
+    async def test_a_stale_rev_is_a_conflict_and_writes_nothing(self, world):
+        await world.store.create(make_radio())
+
+        with pytest.raises(RadioConflict):
+            await world.store.save_config(make_radio(channel_id="777"), expected_rev=5)
+
+        assert (await world.store.get(radio_id(1, GUILD))).channel_id == 900
 
     @pytest.mark.asyncio
     async def test_a_missing_radio_is_not_found(self, world):
         with pytest.raises(RadioNotFound):
-            await world.store.reconfigure(make_radio(7))
+            await world.store.save_config(make_radio(7), expected_rev=0)
 
 
 class TestReserveFirst:
@@ -593,7 +603,7 @@ class TestClockPersistence:
         await world.store.create(make_radio())
         world.db.tables["radios"][radio_id(1, GUILD)]["clock_started_at"] = 123.0
 
-        updated = await world.store.reconfigure(make_radio(source={"playlist": "Jazz"}))
+        updated = await world.store.save_config(make_radio(source={"playlist": "Jazz"}), expected_rev=0)
 
         assert updated.clock_started_at is None
 

@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from empiremuse.rules.radio import KIND_LIVE, LIVE_BACKOFF_STEPS_S, BotCandidate, check_radio, live_backoff_s, radio_id
+from empiremuse.rules.radio import KIND_LIVE, LIVE_BACKOFF_STEPS_S, check_radio, live_backoff_s, radio_id
 from empiremuse.rules.radio_stations import Station
 from empiremuse.utils.radio import RadioHub, actions
 from empiremuse.utils.radio.actions import Actor, Refused
@@ -22,6 +22,7 @@ from empiremuse.utils.radio.health import (
 from empiremuse.utils.radio.live import LiveRadioRunner, StationFailure
 from empiremuse.utils.radio.runner import Phase, ProcessLimits
 from empiremuse.utils.radio.service import RadioState
+from tests.cogs.radio_config import configure
 from tests.cogs.test_radio_runner import FakePorts
 from tests.persistence.test_radio_store import FakeDb
 
@@ -521,31 +522,20 @@ ADMIN = Actor(user_id=7, manage_guild=True, manage_messages_in_channel=True)
 STATION = Station(MAIN, "Boa FM", "http://stream.example:8000/x", "MP3", 128, "BR")
 
 
-def bots(*ids):
-    return [
-        BotCandidate(
-            f"TOKEN_{n}", n, main=False, radio_only=False, ready=True, in_guild=True, busy=False, has_radio_here=False
-        )
-        for n in ids
-    ]
-
-
 async def premium(world):
     await world.hub.control.load()
     await world.hub.premium.grant(GUILD, by=1)
 
 
 async def turn_on(world, **over):
-    args = dict(
-        guild_id=GUILD,
-        channel_id=CHANNEL,
-        playlist=None,
-        actor=ADMIN,
-        candidates=bots(2, 3),
-        playlist_exists=False,
-        bot_can_join=True,
-        station=STATION,
-    )
+    """``/radio setup`` (tipo ao vivo, gravado direto) e ``/radio on``. ``station`` é a estação (um ``Station``) e ``station_list`` a lista de onde veio."""
+    station = over.pop("station", STATION)
+    station_list = over.pop("station_list", None)
+    bot = over.pop("bot", 2)
+    guild_id, channel_id = over.get("guild_id", GUILD), over.get("channel_id", CHANNEL)
+    source = {"station": station.uuid, "reserve": None, **({"list": list(station_list)} if station_list else {})}
+    await configure(world.hub, guild_id=guild_id, channel_id=channel_id, bot_id=bot, kind="live", source=source)
+    args = dict(guild_id=guild_id, channel_id=channel_id, actor=ADMIN, bot_can_join=True)
     return await actions.turn_on(world.hub, **{**args, **over})
 
 
@@ -568,25 +558,6 @@ class TestTurnOnWithAStation:
             await turn_on(world)
 
         assert refusal.value.code == actions.STATION_DOWN and (await world.hub.premium.fresh(GUILD)).active == 0
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize(("playlist", "station"), [("Rock", STATION), (None, None)])
-    async def test_a_playlist_and_a_station_together_or_neither_is_refused(self, world, playlist, station):
-        await premium(world)
-
-        with pytest.raises(Refused) as refusal:
-            await turn_on(world, playlist=playlist, station=station, playlist_exists=True)
-
-        assert refusal.value.code == actions.CHOOSE_ONE
-
-    @pytest.mark.asyncio
-    async def test_a_custom_radio_still_needs_its_playlist(self, world):
-        await premium(world)
-
-        with pytest.raises(Refused) as refusal:
-            await turn_on(world, playlist="Rock", station=None, playlist_exists=False)
-
-        assert refusal.value.code == actions.NO_PLAYLIST
 
     def test_a_live_document_validates_with_station_and_optional_reserve(self):
         doc = {

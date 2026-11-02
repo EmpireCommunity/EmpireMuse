@@ -37,7 +37,7 @@ from empiremuse.utils.radio.panel import (
     panel_payload,
     split_stream_title,
 )
-from tests.cogs.test_radio_ao_vivo import MAIN, RESERVE, LivePorts, make_live
+from tests.cogs.test_radio_ao_vivo import MAIN, RESERVE, make_live
 
 pytestmark = pytest.mark.critical
 

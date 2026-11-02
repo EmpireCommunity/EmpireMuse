@@ -58,6 +58,7 @@ CHANNEL_KIND = "channel_kind"
 JUKEBOX_CHANNEL = "jukebox_channel"
 CANNOT_CONNECT = "cannot_connect"
 RADIO_ON = "radio_on"
+CHANNEL_TAKEN = "channel_taken"
 
 CONFIG_BACKUP_DB = "config_backup"  # ``global.config_backup``: o documento da rádio que o reset apagou
 CONFIG_BACKUP_TTL_S = 30 * 24 * 3600
@@ -139,7 +140,7 @@ class RadioSetup:
 
     # ------------------------------------------------------------------ as checagens
 
-    async def _check_actor(self, guild_id: int, actor_id: int) -> None:
+    async def check_actor(self, guild_id: int, actor_id: int) -> None:
         if await self.hub.premium.fresh(guild_id) is None:
             raise RadioForbidden(REASON_PREMIUM)
         if not await self._can_manage(guild_id, actor_id):
@@ -210,9 +211,9 @@ class RadioSetup:
         """Cria (``radio_id`` ``None``) ou muda uma rádio: canal, bot e tipo. Devolve a rádio gravada (desligada se é nova; sem estação até alguém escolher)."""
         try:
             guild_id, actor_id, channel_id, bot_id = int(guild_id), int(actor_id), int(channel_id), int(bot_id)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             raise RadioInvalid(RuleError(CHANNEL_INVALID, "channel_id")) from None
-        await self._check_actor(guild_id, actor_id)
+        await self.check_actor(guild_id, actor_id)
         current = await self._current(guild_id, radio_id, rev)
         kind = self._check_kind(kind)
         existing = await self.hub.store.list_for_guild(guild_id)
@@ -220,16 +221,16 @@ class RadioSetup:
         wanted = (channel_id, bot_id, kind)
         if current is not None and current.enabled and (current.channel_id, current.bot_id, current.kind) != wanted:
             field = (
-                "channel_id"
-                if current.channel_id != channel_id
-                else "bot_id"
-                if current.bot_id != bot_id
-                else "kind"
+                "channel_id" if current.channel_id != channel_id else "bot_id" if current.bot_id != bot_id else "kind"
             )
             raise RadioInvalid(RuleError(RADIO_ON, field))  # ligada: desligar antes de trocar canal, bot ou tipo
         bot = self._check_bot(guild_id, bot_id, current=current)
         if any(r.bot_id == bot_id for r in others):
             raise RadioInvalid(RuleError(ONE_PER_BOT, "bot_id"))
+        if any(r.channel_id == channel_id for r in others):
+            raise RadioInvalid(
+                RuleError(CHANNEL_TAKEN, "channel_id")
+            )  # uma rádio por canal: o ``on`` e o ``off`` acham a rádio pelo canal
         if current is None and len(existing) >= MAX_PER_GUILD:
             raise RadioInvalid(RuleError(MAX_RADIOS, "bot_id"))
         await self._check_channel(guild_id, channel_id, bot)
@@ -289,12 +290,14 @@ class RadioSetup:
         Ficam as estações do servidor, o premium, o ``radio_only`` do bot, a saúde das estações e as outras rádios.
         """
         guild_id, actor_id = int(guild_id), int(actor_id)
-        await self._check_actor(guild_id, actor_id)
+        await self.check_actor(guild_id, actor_id)
         current = await self._current(guild_id, radio_id, rev)
         if current is None:
             raise RadioNotFound
         if current.enabled:
-            await self.hub.store.set_enabled(current.id, False, updated_by=str(actor_id))  # devolve a vaga (transição da R1)
+            await self.hub.store.set_enabled(
+                current.id, False, updated_by=str(actor_id)
+            )  # devolve a vaga (transição da R1)
         await self.hub.manager.stop_radios(self.hub.manager.running_in(guild_id, current.channel_id))
         await self._delete_panel(current)
         await self._backup(current, actor_id)

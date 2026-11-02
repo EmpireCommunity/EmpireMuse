@@ -46,9 +46,9 @@ class TestWhoMayUseTheOwnerCommands:
     async def test_only_the_env_owner_passes(self):
         w = build()
 
-        assert await w.cog.cog_check(ctx_of(OWNER)) is True
-        assert await w.cog.cog_check(ctx_of(TEAM_MEMBER)) is False
-        assert await w.cog.cog_check(ctx_of(ADMIN)) is False
+        assert await w.cog.owner_check(ctx_of(OWNER)) is True
+        assert await w.cog.owner_check(ctx_of(TEAM_MEMBER)) is False
+        assert await w.cog.owner_check(ctx_of(ADMIN)) is False
 
     @pytest.mark.asyncio
     async def test_the_app_team_is_refused_even_though_bot_is_owner_says_yes(self):
@@ -56,19 +56,19 @@ class TestWhoMayUseTheOwnerCommands:
         w = build()
 
         assert await w.bot.is_owner(ctx_of(TEAM_MEMBER).author) is True
-        assert await w.cog.cog_check(ctx_of(TEAM_MEMBER)) is False
+        assert await w.cog.owner_check(ctx_of(TEAM_MEMBER)) is False
 
     @pytest.mark.asyncio
     async def test_an_empty_owner_list_means_nobody(self):
         w = build(owner_ids=())
 
-        assert await w.cog.cog_check(ctx_of(OWNER)) is False
+        assert await w.cog.owner_check(ctx_of(OWNER)) is False
 
     @pytest.mark.asyncio
     async def test_a_reserve_bot_never_answers_the_owner_commands(self):
         w = build(is_main=False)
 
-        assert await w.cog.cog_check(ctx_of(OWNER)) is False
+        assert await w.cog.owner_check(ctx_of(OWNER)) is False
 
     def test_the_cog_never_calls_is_owner_nor_the_decorator(self):
         tree = ast.parse(pathlib.Path(radio_cog.__file__).read_text(encoding="utf-8"))
@@ -78,10 +78,53 @@ class TestWhoMayUseTheOwnerCommands:
 
         assert "is_owner" not in names
 
-    def test_every_command_in_the_cog_is_hidden(self):
+    def test_the_owner_subcommands_are_hidden_and_the_public_ones_are_not(self):
         w = build()
+        group = w.cog.radio_prefix
+        by_name = {command.name: command for command in group.commands}
 
-        assert w.cog.get_commands() and all(command.hidden for command in w.cog.get_commands())
+        assert {n for n, c in by_name.items() if c.hidden} == {"premium", "bot", "pauseall", "resumeall"}
+        assert {"setup", "on", "off", "status", "reset"} <= set(by_name) and not group.hidden
+        assert [c for c in w.cog.get_commands()] == [group]  # nenhum comando de topo além do grupo
+
+    def test_the_prefix_group_and_its_aliases_follow_the_contract(self):
+        w = build()
+        group = w.cog.radio_prefix
+        by_name = {command.name: command for command in group.commands}
+
+        assert group.name == "radio" and set(group.aliases) == {"rd", "247"}
+        assert set(by_name["pauseall"].aliases) == {"pausartodas"} and set(by_name["resumeall"].aliases) == {
+            "retomartodas"
+        }
+        assert set(by_name["setup"].aliases) == {"configurar"} and set(by_name["reset"].aliases) == {"redefinir"}
+        assert set(by_name["on"].aliases) == {"ligar"} and set(by_name["off"].aliases) == {"desligar"}
+
+    @pytest.mark.asyncio
+    async def test_a_server_manager_uses_the_public_subcommands_but_never_the_owner_ones(self):
+        w = build()
+        manager = ctx_of(ADMIN)
+        manager.author.guild_permissions = SimpleNamespace(manage_guild=True)
+        plain = ctx_of(ADMIN)
+        plain.author.guild_permissions = SimpleNamespace(manage_guild=False)
+
+        assert await w.cog.manager_check(manager) is True and await w.cog.manager_check(plain) is False
+        assert await w.cog.owner_check(manager) is False  # gerenciar o servidor não abre premium, bot nem pause
+
+    @pytest.mark.asyncio
+    async def test_the_owner_passes_the_group_check_even_without_manage_guild(self):
+        w = build()
+        owner = ctx_of(OWNER)
+        owner.author.guild_permissions = SimpleNamespace(manage_guild=False)
+
+        assert await w.cog.group_check(owner) is True
+
+    @pytest.mark.asyncio
+    async def test_a_reserve_bot_answers_no_prefix_command(self):
+        w = build(is_main=False)
+        manager = ctx_of(ADMIN)
+        manager.author.guild_permissions = SimpleNamespace(manage_guild=True)
+
+        assert await w.cog.manager_check(manager) is False and await w.cog.group_check(ctx_of(OWNER)) is False
 
 
 class TestPremiumCommand:

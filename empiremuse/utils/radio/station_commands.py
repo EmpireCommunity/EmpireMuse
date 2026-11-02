@@ -21,7 +21,7 @@ from empiremuse.rules.radio_station import (
 from empiremuse.rules.text import external_text
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.radio.premium import RadioUnavailable
-from empiremuse.utils.radio.station_ui import ConfirmDelete, StationEditor, summary
+from empiremuse.utils.radio.station_ui import ConfirmDelete, StationEditor, premium_ok, summary
 
 if TYPE_CHECKING:
     from empiremuse.cogs.radio import Radio
@@ -41,6 +41,8 @@ async def gate(cog: Radio, inter: disnake.ApplicationCommandInteraction):
     tr = await cog.bot.pool.i18n.for_guild(inter.guild)
     if not can_manage(inter):
         raise GenericError(tr("radio.refused.no_manage_guild"))
+    if not await premium_ok(cog.hub, inter.guild_id):  # a mesma regra da página web: estação do servidor é do premium
+        raise GenericError(tr("radio.refused.no_premium"))
     bucket = STATION_COOLDOWN.get_bucket(inter)
     if bucket is not None and (retry := bucket.update_rate_limit()):
         raise GenericError(tr("radio.cooldown", seconds=int(retry) + 1))
@@ -54,8 +56,10 @@ async def playlist_names(inter: Any) -> list[str]:
 
 
 async def server_station_autocomplete(inter: disnake.ApplicationCommandInteraction, current: str) -> list[str]:
-    """Até 25 nomes de estação DESTE servidor (filtrados pelo que foi digitado); sem ``manage_guild`` ou sem banco, vazio."""
+    """Até 25 nomes de estação DESTE servidor (filtrados pelo que foi digitado); sem ``manage_guild``, sem premium ou sem banco, vazio."""
     if inter.guild_id is None or not can_manage(inter):
+        return []
+    if not await premium_ok(inter.bot.pool.radio, inter.guild_id):
         return []
     try:
         stations = await inter.bot.pool.radio.stations.list_for_guild(inter.guild_id)

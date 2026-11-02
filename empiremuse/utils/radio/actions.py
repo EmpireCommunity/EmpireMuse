@@ -7,14 +7,12 @@ motivo da recusa é um código estável (``Refused.code``) que o comando traduz.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from empiremuse.rules.errors import RuleError
-from empiremuse.rules.radio_station import CustomStation
 from empiremuse.rules.radio_stations import Station
-from empiremuse.rules.radio import KIND_CUSTOM, KIND_LIVE, BotCandidate, Radio, check_radio, pick_radio_bot, radio_id
+from empiremuse.rules.radio import KIND_CUSTOM, KIND_LIVE, Radio, source_chosen
 from empiremuse.utils.radio.premium import Premium
 from empiremuse.utils.radio.service import RadioState
 from empiremuse.utils.radio.store import KEEP, NoPremium, NoRoom, RadioConflict, RadioInvalid, RadioNotFound
@@ -37,6 +35,8 @@ CAP_REACHED = "cap_reached"
 INVALID = "invalid"
 CHANGED = "changed"
 NOT_FOUND = "not_found"
+NOT_CONFIGURED = "not_configured"  # nenhuma rádio configurada neste canal: o ``/radio setup`` vem antes
+NO_STATION = "no_station"  # configurada, mas sem estação escolhida
 
 
 class Refused(Exception):
@@ -61,17 +61,13 @@ async def turn_on(
     *,
     guild_id: int,
     channel_id: int,
-    playlist: str | None,
     actor: Actor,
-    candidates: Iterable[BotCandidate],
-    playlist_exists: bool,
     bot_can_join: bool,
-    request_channel_id: int | None = None,
-    station: Station | None = None,
-    station_list: Sequence[str] | None = None,
-    custom_station: CustomStation | None = None,
+    bot_free: bool = True,
+    jukebox_channel_id: int | None = None,
 ) -> Radio:
-    """Liga uma rádio personalizada neste canal, no bot reserva escolhido. Devolve a rádio ligada (já gravada, ainda sem runner)."""
+    """Liga a rádio JÁ CONFIGURADA neste canal (``/radio setup``): o bot, o tipo e a estação são os dela, nada se escolhe aqui. Devolve a rádio ligada
+    (já gravada, ainda sem runner). Sem rádio no canal é ``NOT_CONFIGURED`` e sem estação escolhida é ``NO_STATION``; as duas apontam para o ``setup``."""
     if not actor.manage_guild:
         raise Refused(NO_MANAGE_GUILD)
     if not actor.manage_messages_in_channel:
@@ -80,62 +76,31 @@ async def turn_on(
         hub.control.paused_all
     ):  # a válvula de segurança do dono: nenhuma rádio liga (nem ocupa vaga) enquanto ela está fechada
         raise Refused(PAUSED_ALL)
-    premium = await hub.premium.fresh(guild_id)
-    if premium is None:
+    if await hub.premium.fresh(guild_id) is None:
         raise Refused(NO_PREMIUM)
-    if sum(x is not None for x in (station, playlist, custom_station)) != 1:
-        raise Refused(
-            CHOOSE_ONE
-        )  # ou uma estação do servidor (ou playlist, legado) ou uma estação ao vivo, nunca duas nem nenhuma
-    if custom_station is not None and custom_station.guild_id != int(guild_id):
-        raise Refused(NOT_FOUND)  # a estação de outro servidor nunca vale (R-6)
-    if playlist is not None and not playlist_exists:
-        raise Refused(NO_PLAYLIST)
-    if station is not None and hub.health.unavailable(station.uuid):
+    radio = next((r for r in await hub.store.list_for_guild(guild_id) if r.channel_id == channel_id), None)
+    if radio is None:
+        raise Refused(NOT_CONFIGURED)
+    if not source_chosen(radio):
+        raise Refused(NO_STATION)
+    if jukebox_channel_id is not None and jukebox_channel_id == channel_id:
+        raise Refused(JUKEBOX_CHANNEL)  # o chat da Jukebox é dela: a varredura da rádio apagaria o painel (V181-1)
+    if radio.kind == KIND_LIVE and hub.health.unavailable(radio.source.get("station")):
         raise Refused(STATION_DOWN)
     if not bot_can_join:
         raise Refused(BOT_CANNOT_JOIN)
-    if request_channel_id is not None and request_channel_id == channel_id:
-        raise Refused(
-            JUKEBOX_CHANNEL
-        )  # o chat do canal de pedidos é da Jukebox: a varredura da rádio apagaria o painel dela (V181-1)
-    existing = await hub.store.list_for_guild(guild_id)
-    if any(radio.enabled and radio.channel_id == channel_id for radio in existing):
-        raise Refused(CHANNEL_TAKEN)
-    running_here = {radio.bot_id for radio in existing if radio.enabled}
-    picked = pick_radio_bot(c._replace(has_radio_here=c.has_radio_here or c.bot_id in running_here) for c in candidates)
-    if picked is None:
-        raise Refused(NO_FREE_BOT)
-    wanted = check_radio(
-        {
-            "_id": radio_id(picked, guild_id),
-            "channel_id": str(channel_id),
-            "kind": KIND_LIVE if station is not None else KIND_CUSTOM,
-            "source": {
-                "station": station.uuid,
-                "reserve": None,
-                **({"list": list(station_list)} if station_list else {}),
-            }
-            if station is not None
-            else {"station": custom_station.id}
-            if custom_station is not None
-            else {"playlist": playlist},
-        }
-    )
-    if isinstance(wanted, RuleError):
-        raise Refused(INVALID)
+    if not bot_free:
+        raise Refused(NO_FREE_BOT)  # o bot da rádio está em call aqui tocando música
     try:
-        if any(radio.id == wanted.id for radio in existing):
-            await hub.store.reconfigure(wanted, updated_by=str(actor.user_id))
-        else:
-            await hub.store.create(wanted, updated_by=str(actor.user_id))
-        return await hub.store.set_enabled(wanted.id, True, updated_by=str(actor.user_id))
+        return await hub.store.set_enabled(radio.id, True, updated_by=str(actor.user_id))
     except NoPremium as error:
         raise Refused(NO_PREMIUM) from error
     except NoRoom as error:
         raise Refused(CAP_REACHED) from error
-    except (RadioConflict, RadioInvalid) as error:
-        raise Refused(CHANGED if isinstance(error, RadioConflict) else INVALID) from error
+    except RadioConflict as error:
+        raise Refused(CHANGED) from error
+    except RadioInvalid as error:
+        raise Refused(INVALID) from error
 
 
 async def change_station(
