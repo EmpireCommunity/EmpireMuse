@@ -1127,6 +1127,31 @@ class TestFlowOfThePlayNotTheLoad:
             assert await r.wait_flowing(token, 1) is True
 
     @pytest.mark.asyncio
+    async def test_a_slow_close_of_the_old_output_does_not_make_the_play_take_a_409(self, monkeypatch):
+        """B1 com ouvinte (log do Lavalink do Litmus): o play que toma a saída do loadtracks levava 409 exatos 2 s depois, porque a tarefa cancelada
+        ainda esperava o fecho (lento) da conexão com a estação. O relay agora derruba a conexão na hora."""
+        from empiremuse.utils.radio.stream_client import StreamResponse
+
+        async def slow_close(self):
+            await asyncio.sleep(30)
+
+        monkeypatch.setattr(StreamResponse, "close", slow_close)
+        head = b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n"
+        async with Station(sends(head, MP3 + b"A" * 100, keep_open=True)) as station, relay() as r:
+            token = r.register(station.url, codec="MP3", bitrate=128)
+            load = await asyncio.open_connection("127.0.0.1", r.port)
+            load[1].write(f"GET /r/{token} HTTP/1.0\r\nHost: x\r\n\r\n".encode())
+            await load[1].drain()
+            await asyncio.wait_for(load[0].read(12), 3)  # o loadtracks está lendo: a saída está aberta
+            r.expect_flow(token)
+
+            started = asyncio.get_running_loop().time()
+            reply, _ = await fetch(r, token)  # o play toma a saída
+
+            assert reply.startswith(b"HTTP/1.0 200") and asyncio.get_running_loop().time() - started < 2
+            load[1].close()
+
+    @pytest.mark.asyncio
     async def test_a_revoke_wakes_the_wait_at_once(self):
         async with relay() as r:
             token = r.register("http://radio.example:8000/live", codec="MP3", bitrate=128)

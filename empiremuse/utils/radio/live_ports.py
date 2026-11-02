@@ -36,7 +36,9 @@ class LocalNodeUnavailable(RuntimeError):
 class LiveRadioPorts(DiscordRadioPorts):
     def __init__(self, pool: BotPool, radio: Radio) -> None:
         super().__init__(pool, radio)
-        self.primary: str = radio.source["station"]
+        self.primary: str = radio.source.get(
+            "station", ""
+        )  # vazia: a rádio espera a estação (``/radio setup`` não pede)
         self.reserve: Optional[str] = radio.source.get("reserve")
         self.active: str = self.primary
         self._token: Optional[str] = None
@@ -221,6 +223,7 @@ class LiveRadioPorts(DiscordRadioPorts):
 
     async def apply_station(self, radio: Radio) -> None:
         """A estação principal mudou (``RadioStore.set_station``): as portas passam a tocar a nova, sem título velho, e o painel é refeito já."""
+        self.radio = radio
         self.primary = radio.source["station"]
         self.reserve = radio.source.get("reserve")
         self.station_list = tuple(radio.source.get("list") or ())

@@ -56,6 +56,7 @@ OPEN_CONCURRENCY = (
 PROBE_CONCURRENCY = 2
 BURST_ON_CONNECT_S = 20.0  # crédito inicial do limite de taxa: estações como a laut.fm despejam ~15 s de áudio ao conectar (``Burst-On-Connect``)
 MAX_REDIRECTS = 3
+TAKE_OVER_WAIT_S = 5.0  # quanto o novo consumidor espera a saída antiga terminar de ser cancelada
 REQUEST_LINE_LIMIT = 2048
 REQUEST_TIMEOUT_S = 5.0
 IDLE_TIMEOUT_S = 15.0
@@ -365,7 +366,7 @@ class RadioRelay:
             output.close()
         if previous is not None and previous is not asyncio.current_task():
             previous.cancel()
-            await asyncio.wait({previous}, timeout=2)
+            await asyncio.wait({previous}, timeout=TAKE_OVER_WAIT_S)
         return not session.busy
 
     @staticmethod
@@ -589,4 +590,4 @@ class RadioRelay:
             return
         finally:
             logger.info("Relay: saída encerrada [%s]", reason)  # só o código do motivo: nunca a URL da estação (R-12)
-            await response.close()
+            response.abort()  # sem esperar o fecho do TLS: o próximo consumidor (take-over) espera esta tarefa terminar, e um fecho lento dava 409 no play

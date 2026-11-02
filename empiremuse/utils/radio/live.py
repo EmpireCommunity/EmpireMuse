@@ -154,6 +154,9 @@ class LiveRadioRunner(RadioRunner):
         tentativa já usa a estação nova."""
         if self._stopped:
             return
+        if self.phase is Phase.STANDBY:
+            await self.leave_standby()  # a rádio só esperava a estação: toca na hora
+            return
         self.failures = 0
         self.outage = False
         self.title = None

@@ -988,6 +988,7 @@
   "legacy.saved_queue.save_failed": "**Could not save the queue right now. Try again in a moment.**",
   "legacy.saved_queue.save_incompatible": "**Could not save the queue: some song has data that is incompatible with the storage format.**",
   "legacy.session.thread_ended": "**The music request session of the current conversation has ended.**",
+  "radio.setup.arriving": "The bot is joining the channel; pick the station in the panel that appears in its chat.",
   "legacy.jukebox.file_format": "{user} the file you sent must be an audio file (mp3, ogg, m4a or aac).",
   "legacy.errors.bot_missing_permissions": "I do not have the following permissions to run this command: ```\n{perms}```",
   "legacy.errors.bucket_category": "this command was already used {times}in the channel category",

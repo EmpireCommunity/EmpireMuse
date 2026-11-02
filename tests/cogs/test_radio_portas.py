@@ -519,6 +519,42 @@ class TestOrphanPanels:
 
         assert (await w.hub.store.get(w.ports.radio.id)).panel_message_id == 777 and "Forbidden" in caplog.text
 
+    @pytest.mark.asyncio
+    async def test_on_arrival_the_chat_is_purged_once_before_the_panel_and_a_failure_does_not_stop_it(self, caplog):
+        w = build()
+        await grant(w)
+        order = []
+
+        async def purge(limit):
+            order.append("purge")
+            raise disnake.Forbidden(MagicMock(status=403), "x")
+
+        async def send(**kwargs):
+            order.append("send")
+            return SimpleNamespace(id=888)
+
+        async def history(limit):
+            return
+            yield
+
+        w.channel.history, w.channel.purge, w.channel.send = history, purge, send
+        w.channel.fetch_message = AsyncMock()
+        w.bot.get_color = lambda me: 0
+        w.bot.user = SimpleNamespace(id=BOT_ID)
+        w.ports.purge_on_arrival = True
+
+        with caplog.at_level("WARNING"):
+            await w.ports.ensure_panel()
+
+        assert order == ["purge", "send"] and w.ports.purge_on_arrival is False and "não limpo" in caplog.text
+
+    def test_the_source_is_chosen_only_when_the_radio_has_one(self):
+        w = build()
+
+        assert w.ports.has_source() is True
+        w.ports.radio = dataclasses.replace(w.ports.radio, source={})
+        assert w.ports.has_source() is False
+
 
 STAGE_MODERATOR = dict(view_channel=True, connect=True, mute_members=True, manage_channels=True, move_members=True)
 

@@ -80,6 +80,15 @@ Fetcher = Callable[[str, str, dict[str, str]], Awaitable[Any]]
 MirrorSource = Callable[[], Awaitable[list[str]]]
 
 
+def _check_ok(raw: object) -> bool | None:
+    """``lastcheckok`` do Radio Browser (1 ou 0, às vezes booleano): qualquer outra coisa é "não informada"."""
+    if raw is True or raw == 1:
+        return True
+    if raw is False or raw == 0:
+        return False
+    return None
+
+
 class Hit(NamedTuple):
     """Uma estação de uma escolha de local: ``clickcount`` limitado a 0..10⁹, se tem coordenada válida e por onde casou (``geo``, ``name``, ``state``, ``country``)."""
 
@@ -87,6 +96,7 @@ class Hit(NamedTuple):
     clickcount: int
     has_geo: bool
     matched: str
+    check_ok: bool | None = None  # a última checagem do Radio Browser (``lastcheckok``); ``None`` = não informada
 
 
 class RegionResult(NamedTuple):
@@ -416,7 +426,9 @@ class Directory:
             if source == "state" and not self._in_state(item, node):
                 continue
             self._remember(station)
-            found.append(Hit(station, clamp_clicks(item.get("clickcount")), has_geo, source))
+            found.append(
+                Hit(station, clamp_clicks(item.get("clickcount")), has_geo, source, _check_ok(item.get("lastcheckok")))
+            )
         return found
 
     def _in_state(self, item: Mapping[str, Any], node: LocNode) -> bool:

@@ -53,6 +53,9 @@ class Phase(StrEnum):
     PAUSED_OWNER = "paused_owner"  # pausa geral do dono
     PAUSED_ADMIN = "paused_admin"  # botão "pausar" do painel da call: nada retoma sozinho
     RECONNECTING = "reconnecting"
+    STANDBY = (
+        "standby"  # na call, com o painel, esperando alguém escolher a estação (o ``/radio setup`` não pede estação)
+    )
 
 
 class Allowed(StrEnum):
@@ -83,6 +86,7 @@ class RadioPorts(Protocol):
     async def turn_off(self, reason: Allowed) -> None: ...
     def durations_ms(self) -> list[int]: ...
     def in_channel(self) -> bool: ...
+    def has_source(self) -> bool: ...
 
 
 @dataclass
@@ -253,7 +257,13 @@ class RadioRunner:
     def lost_channel(self) -> bool:
         """Pelo segundo passo seguido o bot não está na call enquanto a rádio devia estar nela (alguém o desconectou e nenhum evento chegou):
         quem chama (o gerente) religa pelo recuo. Dois passos seguidos, para não confundir com uma mudança de canal em curso."""
-        connected = self.phase in (Phase.PLAYING, Phase.PAUSED_PRESENCE, Phase.PAUSED_OWNER, Phase.PAUSED_ADMIN)
+        connected = self.phase in (
+            Phase.PLAYING,
+            Phase.PAUSED_PRESENCE,
+            Phase.PAUSED_OWNER,
+            Phase.PAUSED_ADMIN,
+            Phase.STANDBY,
+        )
         in_channel = getattr(self.ports, "in_channel", None)  # portas sem a leitura (dublês) contam como "na call"
         if self._stopped or not connected or in_channel is None or in_channel():
             self._out_ticks = 0
@@ -274,7 +284,23 @@ class RadioRunner:
 
     # ------------------------------------------------------------------ depois de conectar
 
+    def _has_source(self) -> bool:
+        has_source = getattr(self.ports, "has_source", None)  # portas sem a leitura (dublês) contam como "tem estação"
+        return True if has_source is None else bool(has_source())
+
+    async def leave_standby(self) -> None:
+        """Escolheram a estação enquanto a rádio esperava: toca já (o bot está na call), sem esperar o recuo."""
+        if self._stopped or self.phase is not Phase.STANDBY:
+            return
+        self.attempt = 0
+        self._set(Phase.CONNECTING)
+        if not await self._attempt():
+            await self.retry()
+
     async def _after_connected(self) -> None:
+        if not self._has_source():
+            self._set(Phase.STANDBY)
+            return
         if self.ports.paused_all():
             self._set(Phase.PAUSED_OWNER)
             return
@@ -350,6 +376,8 @@ class RadioRunner:
             if verdict is not None and verdict is not Allowed.YES:
                 await self._shutdown(verdict)
                 return
+        if self.phase is Phase.STANDBY:
+            return  # esperando a estação: nada a pausar nem retomar
         if self.ports.paused_all():
             if self.phase is not Phase.PAUSED_OWNER:
                 await self.ports.stop_stream()

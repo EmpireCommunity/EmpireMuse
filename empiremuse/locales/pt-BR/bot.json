@@ -1001,6 +1001,7 @@
   "legacy.saved_queue.save_failed": "**Não foi possível salvar a fila agora. Tente novamente em instantes.**",
   "legacy.saved_queue.save_incompatible": "**Não foi possível salvar a fila: alguma música tem dados incompatíveis com o formato de armazenamento.**",
   "legacy.session.thread_ended": "**A sessão de pedido de música da conversa atual foi encerrada.**",
+  "radio.setup.arriving": "O bot está entrando no canal; escolha a estação no painel que aparece no chat dele.",
   "legacy.jukebox.file_format": "{user} o arquivo que você enviou deve ser um áudio nos formatos mp3, ogg, m4a ou aac.",
   "legacy.errors.bot_missing_permissions": "Não tenho as seguintes permissões para executar esse comando: ```\n{perms}```",
   "legacy.errors.bucket_category": "esse comando já foi usado {times}na categoria do canal atual",

@@ -358,7 +358,9 @@ class RadioStore:
 
     # ------------------------------------------------------------------ transições (R-2)
 
-    async def set_enabled(self, radio_id: str, enabled: bool, *, updated_by: str = "") -> Radio:
+    async def set_enabled(
+        self, radio_id: str, enabled: bool, *, updated_by: str = "", allow_no_source: bool = False
+    ) -> Radio:
         """Liga ou desliga. Idempotente: pedir o estado em que já está não muda nada, nem o contador.
 
         **Ligar reserva a vaga ANTES de gravar ``enabled``**, então o contador nunca fica abaixo do número de rádios ligadas (um desligamento
@@ -372,7 +374,7 @@ class RadioStore:
                 raise RadioNotFound
             if current.enabled == enabled:
                 return current
-            if enabled and not source_chosen(current):
+            if enabled and not allow_no_source and not source_chosen(current):
                 raise RadioInvalid(RuleError(SOURCE_INVALID, "source"))  # configurada, mas sem estação: não liga
             changed = dataclasses.replace(current, enabled=enabled, rev=current.rev + 1)
             if enabled:  # ligar de verdade começa a programação virtual agora; o reinício do bot a continua dessa época

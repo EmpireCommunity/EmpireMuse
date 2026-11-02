@@ -95,6 +95,23 @@ async def run_until(runner, ports, done, *, rounds=3000):
     await task
 
 
+class TestLiveStandby:
+    """B4 + R1: escolher a estação no painel de uma rádio que só esperava (recém-configurada) a faz tocar na hora."""
+
+    @pytest.mark.asyncio
+    async def test_choosing_the_station_while_waiting_starts_it_at_once(self):
+        ports = LivePorts()
+        ports.source = False
+        runner, ports, _ = make_live(ports)
+        await runner.start()
+        assert runner.phase is Phase.STANDBY and ports.live_plays == []
+
+        ports.source = True  # o painel gravou a estação e o gerente avisa o runner
+        await runner.station_changed()
+
+        assert runner.phase is Phase.PLAYING and len(ports.live_plays) == 1
+
+
 class TestLiveRunner:
     @pytest.mark.asyncio
     async def test_it_plays_the_live_source_and_never_the_virtual_clock(self):

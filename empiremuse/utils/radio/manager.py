@@ -172,7 +172,8 @@ class RadioManager:
             LiveRadioRunner
             if radio.kind == KIND_LIVE
             else CustomRadioRunner
-            if "station" in radio.source  # R5: a estação do servidor; ``{playlist}`` é o legado até a migração
+            if "playlist"
+            not in radio.source  # R5: a estação do servidor (ou nenhuma ainda); ``{playlist}`` é o legado até a migração
             else RadioRunner
         )
         runner = runner_class(
@@ -190,7 +191,7 @@ class RadioManager:
         runner = self._runners.get(radio_id)
         return runner is not None and not runner.stopped
 
-    async def activate(self, radio: Radio, *, queued: bool = False, wait: bool = True) -> None:
+    async def activate(self, radio: Radio, *, queued: bool = False, wait: bool = True, fresh: bool = False) -> None:
         """Liga o runner da rádio. ``queued`` (subida): entra na fila global de retomadas; ``wait=False`` (comando): devolve na hora e a
         partida segue em segundo plano (um canal sem permissão não prende a resposta do comando até o token expirar)."""
         if self.is_running(radio.id):
@@ -202,6 +203,8 @@ class RadioManager:
         runner = self._runner_for(radio)
         if runner is None:
             return
+        if fresh:  # recém-configurada (``/radio setup``): ao chegar na call, limpa o chat uma vez antes de pôr o painel
+            runner.ports.purge_on_arrival = True
         self._start_sweeper(radio)
         if queued:
             self._starts[radio.id] = self._spawn(self._boot(runner))
