@@ -2,13 +2,11 @@
 # Sem token neste arquivo: a integração com o GitHub não precisa dele. Se um dia o CI precisar da CLI, o token e o id do
 # projeto vão em segredo do repositório e são lidos por `api_token_env` e `project_id_env`, nunca escritos aqui.
 # O mapeamento leva o idioma do Crowdin ao código do `disnake.Locale` (nome da pasta em empiremuse/locales/).
-# O pt-BR é destino escrito pelo time no repo e importado como aprovado; os outros idiomas vêm da comunidade.
+# O pt-BR NÃO está no Crowdin: o time o escreve só no repo (tem `_many`, que o en-US não tem, e o Crowdin apagaria).
 #
 # Tipo `json` (não `i18next_json`): nossas chaves são planas e o plural é por sufixo (`_one`/`_other`/`_many`), cada sufixo é uma
 # string própria. O `i18next_json` regenera os plurais por idioma (descartou os `_many` do pt-BR e reordenou o en-US no PR #194).
-# Atenção: o pt-BR tem `_many` que o en-US (origem) não tem; o Crowdin não exporta chave sem origem, então o PR da l10n pode
-# apagá-las do pt-BR. O `i18n.check` do CI reprova (pt-BR abaixo de 100%): não mesclar essa parte do PR da l10n.
-# Idiomas: `export_languages` limita o que vai ao repo aos locales do Discord, nunca o en-US (idioma de origem).
+# Idiomas: `export_languages` limita o que vai ao repo aos locales do Discord, nunca o en-US (origem) nem o pt-BR (só no repo).
 # Texto não traduzido: o Crowdin enche com o texto de ORIGEM (en-US) por padrão. Quem manda é a opção do projeto
 # (Settings > Export > Skip untranslated strings), não a chave do arquivo; ver docs/guides/i18n.md. Nunca ligar
 # "Skip untranslated files": ele anula a anterior e só exporta idioma 100% traduzido.
@@ -35,7 +33,6 @@ export_languages:
   - "nl"
   - "no"
   - "pl"
-  - "pt-BR"
   - "ro"
   - "ru"
   - "sv-SE"
@@ -73,7 +70,6 @@ files:
         "nl": "nl"
         "no": "no"
         "pl": "pl"
-        "pt-BR": "pt-BR"
         "ro": "ro"
         "ru": "ru"
         "sv-SE": "sv-SE"
@@ -109,7 +105,6 @@ files:
         "nl": "nl"
         "no": "no"
         "pl": "pl"
-        "pt-BR": "pt-BR"
         "ro": "ro"
         "ru": "ru"
         "sv-SE": "sv-SE"
@@ -145,7 +140,6 @@ files:
         "nl": "nl"
         "no": "no"
         "pl": "pl"
-        "pt-BR": "pt-BR"
         "ro": "ro"
         "ru": "ru"
         "sv-SE": "sv-SE"
