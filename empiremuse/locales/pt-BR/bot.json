@@ -607,5 +607,19 @@
   "legacy.menu.cancelled": "**Seleção cancelada!**",
   "legacy.menu.no_history": "**Você não possui músicas registradas no seu histórico...**\nElas vão aparecer a medida que for adicionando músicas via busca ou link.",
   "legacy.menu.no_pinned_links": "**O servidor não possui links fixos/favoritos.**",
-  "legacy.menu.pick_option": "{txt}## Selecione uma opção abaixo:\n-# Nota: Essa solicitação será cancelada automaticamente <t:{ts}:R> caso não seja selecionado uma opção abaixo."
+  "legacy.menu.pick_option": "{txt}## Selecione uma opção abaixo:\n-# Nota: Essa solicitação será cancelada automaticamente <t:{ts}:R> caso não seja selecionado uma opção abaixo.",
+  "legacy.common.message_word": "mensagem",
+  "legacy.common.warning": "Aviso:",
+  "legacy.now_playing.join_voice": "**Você deve estar conectado em um canal de voz com player ativo...**",
+  "legacy.now_playing.join_voice_server": "**Você deve estar conectado em um canal de voz do servidor atual onde há player ativo...**\n`Nota: Caso esteja ouvindo em outro servidor você pode usar o comando` {command}",
+  "legacy.now_playing.moved_controller": "💠 **⠂{user} moveu o player-controller para o canal:** {channel}",
+  "legacy.now_playing.not_your_button": "Você não pode clicar nesse botão...",
+  "legacy.now_playing.nothing_playing": "**No momento não estou tocando algo no canal {channel}**",
+  "legacy.now_playing.static_mode": "Esse comando não pode ser usado no modo fixo do player.",
+  "legacy.now_playing.thread_active": "**Esse comando não pode ser usado com uma conversa ativa na {link} do player.**",
+  "legacy.play.no_message_text": "Não há texto na {link} selecionada...",
+  "legacy.play.player_finished": "**O player do bot {bot} foi finalizado antes de conectar no canal de voz (ou o player não foi inicializado)...\nPor via das dúvidas tente novamente.**",
+  "legacy.play.position_min": "**Número da posição da fila tem que ser 1 ou superior.**",
+  "legacy.play.privacy_deafen": "Para manter sua privacidade e me ajudar a economizar recursos, recomendo desativar meu áudio do canal clicando com botão direito sobre mim e em seguida marcar: desativar áudio no servidor.",
+  "legacy.play.queue_full": "**A fila está cheia ({count} músicas).**"
 }

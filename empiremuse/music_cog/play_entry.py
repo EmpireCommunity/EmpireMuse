@@ -6,6 +6,7 @@ from typing import Union
 import disnake
 from disnake.ext import commands
 
+from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.i18n import localized
 from empiremuse.utils.branding import asset_url
 from empiremuse.utils.client import BotCore
@@ -54,7 +55,16 @@ class PlayEntryMixin:
     async def message_play(self, inter: disnake.MessageCommandInteraction):
         if not inter.target.content:
             emb = disnake.Embed(
-                description=f"Não há texto na {md_link('mensagem', inter.target.jump_url, code=False)} selecionada...",
+                description=await guild_text(
+                    self.bot,
+                    inter.guild,
+                    "legacy.play.no_message_text",
+                    link=md_link(
+                        await guild_text(self.bot, inter.guild, "legacy.common.message_word"),
+                        inter.target.jump_url,
+                        code=False,
+                    ),
+                ),
                 color=disnake.Colour.red(),
             )
             await inter.send(embed=emb, ephemeral=True)
@@ -218,8 +228,7 @@ class PlayEntryMixin:
         except KeyError:
             logger.debug("Player debug test 20: %s | %s", bot.user, self.bot.user)
             raise GenericError(
-                f"**O player do bot {bot.user.mention} foi finalizado antes de conectar no canal de voz "
-                f"(ou o player não foi inicializado)...\nPor via das dúvidas tente novamente.**"
+                await guild_text(self.bot, me.guild, "legacy.play.player_finished", bot=bot.user.mention)
             )
 
         can_connect(channel, me.guild, check_other_bots_in_vc=check_other_bots_in_vc, bot=bot)
@@ -265,11 +274,8 @@ class PlayEntryMixin:
             if not await check_deafen(me):
                 await text_channel.send(
                     embed=disnake.Embed(
-                        title="Aviso:",
-                        description="Para manter sua privacidade e me ajudar a economizar "
-                        "recursos, recomendo desativar meu áudio do canal clicando "
-                        "com botão direito sobre mim e em seguida marcar: desativar "
-                        "áudio no servidor.",
+                        title=await guild_text(self.bot, me.guild, "legacy.common.warning"),
+                        description=await guild_text(self.bot, me.guild, "legacy.play.privacy_deafen"),
                         color=self.bot.get_color(me),
                     ).set_image(url=asset_url("tutorial_server_deafen_guide.png")),
                     delete_after=20,
@@ -316,7 +322,7 @@ class PlayEntryMixin:
     )
     async def addpos_legacy(self, ctx: CustomContext, position: int, *, query: str):
         if position < 1:
-            raise GenericError("**Número da posição da fila tem que ser 1 ou superior.**")
+            raise GenericError(await guild_text(self.bot, ctx.guild, "legacy.play.position_min"))
 
         await self.play.callback(
             self=self,
@@ -519,7 +525,14 @@ class PlayEntryMixin:
             if count < 1:
                 return tracks
             if len(player.queue) >= count and not (await bot.is_owner(user)):
-                raise GenericError(f"**A fila está cheia ({self.bot.config['QUEUE_MAX_ENTRIES']} músicas).**")
+                raise GenericError(
+                    await guild_text(
+                        bot,
+                        bot.get_guild(guild_id),
+                        "legacy.play.queue_full",
+                        count=self.bot.config["QUEUE_MAX_ENTRIES"],
+                    )
+                )
 
         if tracks:
             if isinstance(tracks, list):

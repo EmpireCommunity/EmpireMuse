@@ -594,5 +594,19 @@
   "legacy.menu.cancelled": "**Selection cancelled!**",
   "legacy.menu.no_history": "**You have no songs registered in your history...**\nThey will appear as you add songs via search or link.",
   "legacy.menu.no_pinned_links": "**The server has no pinned links/favorites.**",
-  "legacy.menu.pick_option": "{txt}## Select an option below:\n-# Note: This request will be cancelled automatically <t:{ts}:R> if no option is selected below."
+  "legacy.menu.pick_option": "{txt}## Select an option below:\n-# Note: This request will be cancelled automatically <t:{ts}:R> if no option is selected below.",
+  "legacy.common.message_word": "message",
+  "legacy.common.warning": "Warning:",
+  "legacy.now_playing.join_voice": "**You must be connected to a voice channel with an active player...**",
+  "legacy.now_playing.join_voice_server": "**You must be connected to a voice channel on the current server with an active player...**\n`Note: If you are listening on another server you can use the command` {command}",
+  "legacy.now_playing.moved_controller": "💠 **⠂{user} moved the player-controller to the channel:** {channel}",
+  "legacy.now_playing.not_your_button": "You can't click this button...",
+  "legacy.now_playing.nothing_playing": "**I'm not playing anything in the channel {channel} right now.**",
+  "legacy.now_playing.static_mode": "This command can't be used in the player's fixed mode.",
+  "legacy.now_playing.thread_active": "**This command can't be used while a conversation is active on the player {link}.**",
+  "legacy.play.no_message_text": "There is no text in the selected {link}...",
+  "legacy.play.player_finished": "**The bot {bot} player was finished before connecting to the voice channel (or the player was not initialized)...\nJust in case, try again.**",
+  "legacy.play.position_min": "**The queue position number must be 1 or higher.**",
+  "legacy.play.privacy_deafen": "To protect your privacy and help me save resources, I recommend deafening my audio in the channel by right-clicking me and then selecting: deafen on server.",
+  "legacy.play.queue_full": "**The queue is full ({count} songs).**"
 }
