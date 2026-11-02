@@ -86,7 +86,7 @@ class Scenario:
 
     def reset(self, inter=None):
         self.inter = inter or self.command_inter()
-        return asyncio.run(self.cog.jukebox_reset.callback(self.cog, self.inter))
+        return asyncio.run(self.cog._run_jukebox_reset(self.inter))
 
     # ---- consultas
     @property

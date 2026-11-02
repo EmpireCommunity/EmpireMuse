@@ -49,3 +49,60 @@ def test_purging_needs_manage_messages_so_its_absence_is_refused_up_front(world)
 
     with pytest.raises(GenericError):
         jukebox_channel.validate_jukebox_target(world.bot, world.guild, world.text, existing_channel=True)
+
+
+class TestJukeboxResetAsksFirst:
+    """R3: ``/jukebox reset`` não tem opção e só redefine depois da confirmação de quem pediu."""
+
+    @staticmethod
+    def click(user_id):
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        return SimpleNamespace(
+            author=SimpleNamespace(id=user_id),
+            response=SimpleNamespace(defer=AsyncMock(), send_message=AsyncMock(), edit_message=AsyncMock()),
+        )
+
+    async def ask(self, world):
+        from unittest.mock import AsyncMock
+
+        inter = world.command_inter()
+        inter.guild = world.guild
+        inter.response.send_message = AsyncMock()
+        world.cog._run_jukebox_reset = AsyncMock()
+        await world.cog.jukebox_reset.callback(world.cog, inter)
+        return inter, inter.response.send_message.await_args.kwargs["view"]
+
+    @pytest.mark.asyncio
+    async def test_it_has_no_options_and_nothing_runs_before_the_confirmation(self, world):
+        import inspect
+
+        assert list(inspect.signature(world.cog.jukebox_reset.callback).parameters) == ["self", "interaction"]
+        inter, view = await self.ask(world)
+
+        world.cog._run_jukebox_reset.assert_not_awaited()
+        assert inter.response.send_message.await_args.kwargs["ephemeral"] is True and len(view.children) == 2
+
+    @pytest.mark.asyncio
+    async def test_only_the_author_can_confirm_and_confirming_runs_the_reset_once(self, world):
+        inter, view = await self.ask(world)
+        stranger = self.click(user_id=1)
+
+        assert await view.interaction_check(stranger) is False
+        stranger.response.send_message.assert_awaited_once()
+        author = self.click(inter.author.id)
+        assert await view.interaction_check(author) is True
+        await view._confirmed(author)
+
+        world.cog._run_jukebox_reset.assert_awaited_once_with(author)
+
+    @pytest.mark.asyncio
+    async def test_cancelling_does_not_reset(self, world):
+        inter, view = await self.ask(world)
+        author = self.click(inter.author.id)
+
+        await view._cancelled(author)
+
+        world.cog._run_jukebox_reset.assert_not_awaited()
+        author.response.edit_message.assert_awaited_once()

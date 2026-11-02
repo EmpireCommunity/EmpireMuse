@@ -14,6 +14,8 @@ import disnake
 from disnake.ext import commands
 
 from empiremuse.i18n import localized
+from empiremuse.utils.confirm_view import ConfirmView
+from empiremuse.utils.ephemeral import CONFIRMATION_TTL_S, cleanup_later
 from empiremuse.rules.errors import ROLE_DUPLICATE, RuleError
 from empiremuse.rules.limits import (
     CUSTOM_SKIN_PREFIX,
@@ -457,7 +459,7 @@ class MusicSettings(commands.Cog):
         max_concurrency=setup_mc,
     )
     async def jukebox_reset_legacy(self, ctx: CustomContext):
-        await self.jukebox_reset.callback(self=self, interaction=ctx)
+        await self._run_jukebox_reset(ctx)
 
     @is_dj()
     @has_player()
@@ -938,23 +940,43 @@ class MusicSettings(commands.Cog):
         self,
         interaction: disnake.ApplicationCommandInteraction,
     ):
-        await self._run_jukebox_reset(interaction)
+        """Sem opção nenhuma (R3): redefine a Jukebox DO SERVIDOR, depois de uma confirmação só de quem pediu."""
+        tr = await self.bot.pool.i18n.for_guild(interaction.guild)
+
+        async def run(click: disnake.MessageInteraction) -> None:
+            await click.response.defer()
+            await self._run_jukebox_reset(click)
+
+        view = ConfirmView(
+            tr,
+            interaction.author.id,
+            run,
+            confirm_key="jukebox.reset.confirm",
+            cancel_key="jukebox.reset.cancel",
+            cancelled_key="jukebox.reset.cancelled",
+            not_yours_key="jukebox.reset.not_yours",
+        )
+        await interaction.response.send_message(tr("jukebox.reset.ask"), view=view, ephemeral=True)
+        view.message_interaction = interaction
 
     async def _run_jukebox_reset(
         self,
         interaction: disnake.ApplicationCommandInteraction,
         delete_channel: Optional[str] = None,
     ):
-        inter, bot = await select_bot_pool(interaction)
-
-        if not bot:
-            return
+        if isinstance(interaction, CustomContext):
+            inter, bot = await select_bot_pool(interaction)
+            if not bot:
+                return
+        else:  # slash: nenhum seletor de bot, a Jukebox é uma por servidor e quem a reseta é o bot do painel
+            inter, bot = interaction, interaction.bot
 
         bot = (
             await bot.pool.servers.jukebox.panel_bot(inter.guild_id)
         ) or bot  # o canal é único: quem reseta é o bot do painel
 
-        await inter.response.defer(ephemeral=True)
+        if not inter.response.is_done():
+            await inter.response.defer(ephemeral=True)
 
         guild = bot.get_guild(inter.guild_id) or inter.guild
 
@@ -989,7 +1011,10 @@ class MusicSettings(commands.Cog):
                     description="**A Jukebox foi redefinida com sucesso.**",
                 ),
                 components=[],
+                **({} if isinstance(inter, CustomContext) else {"content": None}),
             )
+            if not isinstance(inter, CustomContext):
+                cleanup_later(inter, CONFIRMATION_TTL_S)
 
         await run_jukebox_reset(
             bot,
