@@ -71,6 +71,7 @@ class FavoritesMixin:
             ephemeral = True
 
         user_data = await bot.get_global_data(inter.author.id, db_name=DBModel.users)
+        tr = await bot.pool.i18n.for_guild(inter.guild)
 
         view = FavMenuView(
             bot=bot,
@@ -79,14 +80,13 @@ class FavoritesMixin:
             prefix=prefix,
             mode=mode,
             is_owner=await bot.is_owner(inter.author),
+            tr=tr,
         )
 
         txt = view.build_txt()
 
         if not txt:
-            raise GenericError(
-                "**Não há suporte a esse recurso no momento...**\n\n`Suporte ao spotify e YTDL não estão ativados.`"
-            )
+            raise GenericError(tr("fav.unsupported"))
 
         view.message = await inter.send(txt, view=view, ephemeral=ephemeral)
 

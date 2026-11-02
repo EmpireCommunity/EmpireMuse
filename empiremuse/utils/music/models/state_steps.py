@@ -132,7 +132,7 @@ async def _cu_archive_jukebox_thread(self) -> None:
             await channel.send(
                 embed=disnake.Embed(
                     color=self.bot.get_color(self.guild.me),
-                    description="**A sessão de pedido de música da conversa atual foi encerrada.**",
+                    description=self.tr("legacy.session.thread_ended"),
                 )
             )
         except Exception:

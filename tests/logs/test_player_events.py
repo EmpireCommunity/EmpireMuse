@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 import empiremuse.wavelink as wavelink
+from empiremuse.i18n.service import get_i18n
 from empiremuse.logs.context import log_context
 from empiremuse.logs.metrics import MetricsCollector
 from empiremuse.logs.setup import configure_logging, flush_logging, tick_logging
@@ -85,6 +86,7 @@ def jogador(guild_id: int, *, metrics=None, titulo=TITULO):
             me=SimpleNamespace(voice=SimpleNamespace(channel=SimpleNamespace(id=CANAL_VOZ))),
         ),
         channel_id=CANAL_VOZ,
+        tr=get_i18n().for_locale("pt-BR"),
         node=no(),
         bot=SimpleNamespace(
             dispatch=MagicMock(),

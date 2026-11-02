@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from empiremuse.i18n import get_i18n
 from empiremuse.rules.limits import PLAYLIST_FILE_MAX_BYTES
 from empiremuse.rules.playlists import parse_file
 from empiremuse.utils.music.interactions import ViewMode
@@ -33,7 +34,7 @@ def view(*, wait=0.0, favorites=None):
         ),  # se tocar o store do servidor, o AsyncMock registra
     )
     data = {"fav_links": MEUS if favorites is None else favorites, "integration_links": {}}
-    return SimpleNamespace(bot=bot, data=data, mode=ViewMode.fav_manager)
+    return SimpleNamespace(bot=bot, data=data, mode=ViewMode.fav_manager, tr=get_i18n().for_locale("pt-BR"))
 
 
 def click():

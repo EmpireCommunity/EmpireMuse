@@ -19,6 +19,7 @@ from empiremuse import paths
 from empiremuse.serialization.files import write_private_atomic
 from empiremuse.serialization.queue import MAX_BYTES, decode_saved_queue, encode_saved_queue
 from empiremuse.serialization.schema import SchemaError
+from empiremuse.utils.music.guild_text import guild_text_sync
 from empiremuse.utils.music.errors import GenericError
 
 logger = logging.getLogger(__name__)
@@ -36,11 +37,8 @@ def has_saved_queue(user_id: Union[int, str]) -> bool:
     return saved_queue_path(user_id).is_file()
 
 
-def _incompatible() -> GenericError:
-    return GenericError(
-        "**A sua fila salva está em um formato incompatível e não pôde ser carregada.**\n"
-        "O arquivo foi mantido; salve a fila de novo para substituí-la."
-    )
+def _incompatible(guild=None) -> GenericError:
+    return GenericError(guild_text_sync(guild, "legacy.saved_queue.incompatible"))
 
 
 async def _read_limited(path: Path, limit: int) -> Optional[bytes]:
@@ -52,7 +50,7 @@ async def _read_limited(path: Path, limit: int) -> Optional[bytes]:
         return None
 
 
-async def load_saved_queue(user_id: Union[int, str], guild_id: Union[int, str]) -> dict:
+async def load_saved_queue(user_id: Union[int, str], guild_id: Union[int, str], guild=None) -> dict:
     """``{"tracks": [info...], "created_at", "guild_id"}`` da fila salva do usuário, ou ``GenericError``."""
     loop = asyncio.get_running_loop()
     raw = await _read_limited(saved_queue_path(user_id), MAX_BYTES)
@@ -61,12 +59,14 @@ async def load_saved_queue(user_id: Union[int, str], guild_id: Union[int, str]) 
             return await loop.run_in_executor(None, decode_saved_queue, raw)
         except SchemaError as error:
             logger.warning("Fila salva ignorada (formato incompatível): servidor %s, motivo %s", guild_id, error.code)
-            raise _incompatible() from None
+            raise _incompatible(guild) from None
 
-    raise GenericError("**A sua fila salva já foi excluída...**")
+    raise GenericError(guild_text_sync(guild, "legacy.saved_queue.deleted"))
 
 
-async def store_saved_queue(user_id: Union[int, str], tracks: list, guild_id: int, created_at: datetime) -> None:
+async def store_saved_queue(
+    user_id: Union[int, str], tracks: list, guild_id: int, created_at: datetime, guild=None
+) -> None:
     """Grava a fila em JSON (atômico, 0600)."""
     try:
         raw = encode_saved_queue(tracks, created_at, guild_id)
@@ -74,11 +74,9 @@ async def store_saved_queue(user_id: Union[int, str], tracks: list, guild_id: in
         logger.warning(
             "Fila não salva (dados incompatíveis): servidor %s, campo %s, motivo %s", guild_id, error.path, error.code
         )
-        raise GenericError(
-            "**Não foi possível salvar a fila: alguma música tem dados incompatíveis com o formato de armazenamento.**"
-        ) from None
+        raise GenericError(guild_text_sync(guild, "legacy.saved_queue.save_incompatible")) from None
     try:
         await asyncio.get_running_loop().run_in_executor(None, write_private_atomic, saved_queue_path(user_id), raw)
     except OSError as error:
         logger.warning("Fila não salva (falha ao gravar): servidor %s, motivo %s", guild_id, type(error).__name__)
-        raise GenericError("**Não foi possível salvar a fila agora. Tente novamente em instantes.**") from None
+        raise GenericError(guild_text_sync(guild, "legacy.saved_queue.save_failed")) from None

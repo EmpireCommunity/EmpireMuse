@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 import empiremuse.wavelink as wavelink
+from empiremuse.i18n.service import get_i18n
 from empiremuse.utils.music import models
 from empiremuse.utils.music.models import PartialTrack
 
@@ -35,6 +36,7 @@ def jogador(monkeypatch, **extra):
     )
     p.guild = SimpleNamespace(id=9, name="Servidor", me=SimpleNamespace(voice=object()), icon=None)
     p.text_channel = canal
+    p.tr = get_i18n().for_locale("pt-BR")
     p.node = SimpleNamespace(identifier="no-1", info={"sourceManagers": []}, search_providers=[], partial_providers=[])
     p.locked = False
     p.is_closing = False

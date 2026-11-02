@@ -5,6 +5,7 @@ import disnake
 from disnake.ext import commands
 
 from empiremuse.i18n import localized
+from empiremuse.rules.i18n import fit
 from empiremuse.utils.music.checks import (
     check_voice,
     has_source,
@@ -41,7 +42,6 @@ class PlaybackControlsMixin:
     @check_voice()
     @pool_command(
         name="volume",
-        description="Ajustar volume da música.",
         aliases=["vol", "v"],
         only_voiced=True,
         cooldown=volume_cd,
@@ -50,7 +50,8 @@ class PlaybackControlsMixin:
     )
     async def volume_legacy(self, ctx: CustomContext, level: int):
         if not 4 < level < 151:
-            raise GenericError("**Volume inválido! escolha entre 5 a 150**", self_delete=7)
+            tr = await self.bot.pool.i18n.for_guild(ctx.guild)
+            raise GenericError(tr("playback.volume.invalid_range"), self_delete=7)
 
         await self.volume.callback(self=self, inter=ctx, value=int(level))
 
@@ -83,19 +84,20 @@ class PlaybackControlsMixin:
             guild = inter.guild
 
         player: LavalinkPlayer = bot.music.players[inter.guild_id]
+        tr = await self.bot.pool.i18n.for_guild(inter.guild)
 
         embed = disnake.Embed(color=disnake.Colour.red())
 
         if value is None:
-            view = VolumeInteraction(inter)
+            view = VolumeInteraction(inter, tr=tr)
 
             embed.colour = self.bot.get_color(guild.me)
-            embed.description = "**Selecione o nível do volume abaixo:**"
+            embed.description = tr("playback.volume.pick")
 
             try:
                 if bot.user.id != self.bot.user.id:
                     embed.set_footer(
-                        text=f"Bot selecionado: {bot.user.display_name}", icon_url=bot.user.display_avatar.url
+                        text=tr("player.selected_bot", bot=bot.user.display_name), icon_url=bot.user.display_avatar.url
                     )
             except AttributeError:
                 pass
@@ -108,11 +110,14 @@ class PlaybackControlsMixin:
             value = view.volume
 
         elif not 4 < value < 151:
-            raise GenericError("O volume deve estar entre **5** a **150**.")
+            raise GenericError(tr("playback.volume.out_of_range"))
 
         await player.set_volume(value)
 
-        txt = [f"ajustou o volume para **{value}%**", f"🔊 **⠂{inter.author.mention} ajustou o volume para {value}%**"]
+        txt = [
+            tr("playback.volume.log", value=value),
+            tr("playback.volume.done", mention=inter.author.mention, value=value),
+        ]
         await self.interaction_message(inter, txt, emoji="🔊")
 
     pause_resume_cd = commands.CooldownMapping.from_cooldown(2, 7, commands.BucketType.member)
@@ -125,7 +130,6 @@ class PlaybackControlsMixin:
     @pool_command(
         name="pause",
         aliases=["pausar"],
-        description="Pausar a música.",
         only_voiced=True,
         cooldown=pause_resume_cd,
         max_concurrency=pause_resume_mc,
@@ -150,13 +154,14 @@ class PlaybackControlsMixin:
             bot = inter.bot
 
         player: LavalinkPlayer = bot.music.players[inter.guild_id]
+        tr = await self.bot.pool.i18n.for_guild(inter.guild)
 
         if player.paused:
-            raise GenericError("**A música já está pausada.**")
+            raise GenericError(tr("playback.pause.already"))
 
         await player.set_pause(True)
 
-        txt = ["pausou a música.", f"⏸️ **⠂{inter.author.mention} pausou a musica.**"]
+        txt = [tr("playback.pause.log"), tr("playback.pause.done", mention=inter.author.mention)]
 
         await self.interaction_message(inter, txt, rpc_update=True, emoji="⏸️")
         await player.update_stage_topic()
@@ -167,7 +172,6 @@ class PlaybackControlsMixin:
     @pool_command(
         name="resume",
         aliases=["unpause", "retomar"],
-        description="Retomar/Despausar a música.",
         only_voiced=True,
         cooldown=pause_resume_cd,
         max_concurrency=pause_resume_mc,
@@ -192,13 +196,14 @@ class PlaybackControlsMixin:
             bot = inter.bot
 
         player: LavalinkPlayer = bot.music.players[inter.guild_id]
+        tr = await self.bot.pool.i18n.for_guild(inter.guild)
 
         if not player.paused:
-            raise GenericError("**A música não está pausada.**")
+            raise GenericError(tr("playback.resume.not_paused"))
 
         await player.set_pause(False)
 
-        txt = ["retomou a música.", f"▶️ **⠂{inter.author.mention} despausou a música.**"]
+        txt = [tr("playback.resume.log"), tr("playback.resume.done", mention=inter.author.mention)]
         await self.interaction_message(inter, txt, rpc_update=True, emoji="▶️")
         await player.update_stage_topic()
 
@@ -214,7 +219,6 @@ class PlaybackControlsMixin:
     @pool_command(
         name="seek",
         aliases=["sk"],
-        description="Avançar/Retomar a música para um tempo específico.",
         only_voiced=True,
         cooldown=seek_cd,
         max_concurrency=seek_mc,
@@ -248,18 +252,17 @@ class PlaybackControlsMixin:
             bot = inter.bot
 
         player: LavalinkPlayer = bot.music.players[inter.guild_id]
+        tr = await self.bot.pool.i18n.for_guild(inter.guild)
 
         if player.current.is_stream:
-            raise GenericError("**Você não pode usar esse comando em uma livestream.**")
+            raise GenericError(tr("playback.seek.livestream"))
 
         position = position.split(" | ")[0].replace(" ", ":")
 
         seconds = string_to_seconds(position)
 
         if seconds is None:
-            raise GenericError(
-                "**Você usou um tempo inválido! Use segundos (1 ou 2 digitos) ou no formato (minutos):(segundos)**"
-            )
+            raise GenericError(tr("playback.seek.invalid_time"))
 
         milliseconds = seconds * 1000
 
@@ -270,16 +273,23 @@ class PlaybackControlsMixin:
             emoji = "⏩"
 
             txt = [
-                f"avançou o tempo da música para: `{time_format(milliseconds)}`",
-                f"{emoji} **⠂{inter.author.mention} avançou o tempo da música para:** `{time_format(milliseconds)}`",
+                tr("playback.seek.forward_log", time=time_format(milliseconds)),
+                tr(
+                    "playback.seek.forward_done",
+                    emoji=emoji,
+                    mention=inter.author.mention,
+                    time=time_format(milliseconds),
+                ),
             ]
 
         else:
             emoji = "⏪"
 
             txt = [
-                f"voltou o tempo da música para: `{time_format(milliseconds)}`",
-                f"{emoji} **⠂{inter.author.mention} voltou o tempo da música para:** `{time_format(milliseconds)}`",
+                tr("playback.seek.back_log", time=time_format(milliseconds)),
+                tr(
+                    "playback.seek.back_done", emoji=emoji, mention=inter.author.mention, time=time_format(milliseconds)
+                ),
             ]
 
         await player.seek(milliseconds)
@@ -343,29 +353,27 @@ class PlaybackControlsMixin:
     @check_voice()
     @pool_command(
         aliases=["repetir"],
-        description=f"Selecionar modo de repetição entre: música atual / fila / desativar / quantidade (usando números).",
         only_voiced=True,
         cooldown=loop_cd,
         max_concurrency=loop_mc,
-        usage="{prefix}{cmd} <quantidade|modo>\nEx 1: {prefix}{cmd} 1\nEx 2: {prefix}{cmd} queue",
+        usage="{prefix}{cmd} <1-10|current|queue|off>\nEx 1: {prefix}{cmd} 1\nEx 2: {prefix}{cmd} queue",
     )
     async def loop(self, ctx: CustomContext, mode: str = None):
+        tr = await self.bot.pool.i18n.for_guild(ctx.guild)
         if not mode:
-            embed = disnake.Embed(
-                description="**Selecione um modo de repetição:**", color=self.bot.get_color(ctx.guild.me)
-            )
+            embed = disnake.Embed(description=tr("playback.loop.pick"), color=self.bot.get_color(ctx.guild.me))
 
             msg = await ctx.send(
                 ctx.author.mention,
                 embed=embed,
                 components=[
                     disnake.ui.Select(
-                        placeholder="Selecione uma opção:",
+                        placeholder=fit(tr("playback.loop.placeholder"), 150),
                         custom_id="loop_mode_legacy",
                         options=[
-                            disnake.SelectOption(label="Música Atual", value="current"),
-                            disnake.SelectOption(label="Fila do player", value="queue"),
-                            disnake.SelectOption(label="Desativar repetição", value="off"),
+                            disnake.SelectOption(label=fit(tr("playback.loop.current.label"), 100), value="current"),
+                            disnake.SelectOption(label=fit(tr("playback.loop.queue.label"), 100), value="queue"),
+                            disnake.SelectOption(label=fit(tr("playback.loop.off.label"), 100), value="off"),
                         ],
                     )
                 ],
@@ -376,7 +384,7 @@ class PlaybackControlsMixin:
                     "dropdown", timeout=30, check=lambda i: i.message.id == msg.id and i.author == ctx.author
                 )
             except asyncio.TimeoutError:
-                embed.description = "Tempo de seleção esgotado!"
+                embed.description = tr("playback.loop.timeout")
                 try:
                     await msg.edit(embed=embed, view=None)
                 except Exception:
@@ -388,13 +396,13 @@ class PlaybackControlsMixin:
 
         if mode.isdigit():
             if len(mode) > 2 or int(mode) > 10:
-                raise GenericError(f"**Quantidade inválida: {mode}**\n`Quantidade máxima permitida: 10`")
+                raise GenericError(tr("playback.loop.invalid_amount", mode=mode))
 
             await self.loop_amount.callback(self=self, inter=ctx, value=int(mode))
             return
 
         if mode not in ("current", "queue", "off"):
-            raise GenericError("Modo inválido! escolha entre: current/queue/off")
+            raise GenericError(tr("playback.loop.invalid_mode"))
 
         await self.loop_mode.callback(self=self, inter=ctx, mode=mode)
 
@@ -426,27 +434,31 @@ class PlaybackControlsMixin:
             bot = inter.bot
 
         player: LavalinkPlayer = bot.music.players[inter.guild_id]
+        tr = await self.bot.pool.i18n.for_guild(inter.guild)
 
         if mode == player.loop:
-            raise GenericError("**O modo de repetição selecionado já está ativo...**")
+            raise GenericError(tr("playback.loop.already_active"))
 
         if mode == "off":
             mode = False
             player.current.info["extra"]["track_loops"] = 0
             emoji = "⭕"
-            txt = ["desativou a repetição.", f"{emoji} **⠂{inter.author.mention}desativou a repetição.**"]
+            txt = [tr("playback.loop.off_log"), tr("playback.loop.off_done", emoji=emoji, mention=inter.author.mention)]
 
         elif mode == "current":
             player.current.info["extra"]["track_loops"] = 0
             emoji = "🔂"
             txt = [
-                "ativou a repetição da música atual.",
-                f"{emoji} **⠂{inter.author.mention} ativou a repetição da música atual.**",
+                tr("playback.loop.current_log"),
+                tr("playback.loop.current_done", emoji=emoji, mention=inter.author.mention),
             ]
 
         else:  # queue
             emoji = "🔁"
-            txt = ["ativou a repetição da fila.", f"{emoji} **⠂{inter.author.mention} ativou a repetição da fila.**"]
+            txt = [
+                tr("playback.loop.queue_log"),
+                tr("playback.loop.queue_done", emoji=emoji, mention=inter.author.mention),
+            ]
 
         player.loop = mode
 
@@ -478,14 +490,22 @@ class PlaybackControlsMixin:
             bot = inter.bot
 
         player: LavalinkPlayer = bot.music.players[inter.guild_id]
+        tr = await self.bot.pool.i18n.for_guild(inter.guild)
 
         player.current.info["extra"]["track_loops"] = value
 
         txt = [
-            f"definiu a quantidade de repetições da música "
-            f"{md_link(player.current.title, player.current.uri or player.current.search_uri, limit=25)} para **{value}**.",
-            f"🔄 **⠂{inter.author.mention} definiu a quantidade de repetições da música para [{value}]:**\n"
-            f"╰{md_link(player.current.title, player.current.uri or player.current.search_uri)}",
+            tr(
+                "playback.loop_amount.log",
+                track=md_link(player.current.title, player.current.uri or player.current.search_uri, limit=25),
+                value=value,
+            ),
+            tr(
+                "playback.loop_amount.done",
+                mention=inter.author.mention,
+                value=value,
+                track=md_link(player.current.title, player.current.uri or player.current.search_uri),
+            ),
         ]
 
         await self.interaction_message(inter, txt, rpc_update=True, emoji="🔄")
@@ -503,7 +523,6 @@ class PlaybackControlsMixin:
         only_voiced=True,
         cooldown=nightcore_cd,
         max_concurrency=nightcore_mc,
-        description="Ativar/Desativar o efeito nightcore (Música acelerada com tom mais agudo).",
     )
     async def nightcore_legacy(self, ctx: CustomContext):
         await self.nightcore.callback(self=self, inter=ctx)
@@ -525,17 +544,21 @@ class PlaybackControlsMixin:
             bot = inter.bot
 
         player: LavalinkPlayer = bot.music.players[inter.guild_id]
+        tr = await self.bot.pool.i18n.for_guild(inter.guild)
 
         player.nightcore = not player.nightcore
 
         if player.nightcore:
             await player.set_timescale(pitch=1.2, speed=1.1)
-            txt = "ativou"
+            state = "on"
         else:
             await player.set_timescale(enabled=False)
             await player.update_filters()
-            txt = "desativou"
+            state = "off"
 
-        txt = [f"{txt} o efeito nightcore.", f"🇳 **⠂{inter.author.mention} {txt} o efeito nightcore.**"]
+        txt = [
+            tr(f"playback.nightcore.{state}_log"),
+            tr(f"playback.nightcore.{state}_done", mention=inter.author.mention),
+        ]
 
         await self.interaction_message(inter, txt, emoji="🇳")

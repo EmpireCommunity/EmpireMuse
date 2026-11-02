@@ -31,96 +31,66 @@ def _echo(value, limit: int = IMPORT_ECHO_LIMIT) -> str:
     return text if len(text) <= limit else f"{text[:limit]}…"
 
 
-def _invalid_link_text(value) -> str:
-    return f"O seu arquivo contém link inválido: ```ldif\n{_echo(value)}```"
+def _invalid_link_text(tr, value) -> str:
+    return tr("fav.file.invalid_link", value=_echo(value))
 
 
-def _invalid_name_text(name, low: int, high: int) -> str:
-    return (
-        f"**O nome `{_echo(name, 40)}` do seu arquivo é inválido ou está repetido:** use de {low} a {high} "
-        "caracteres, sem caracteres de controle e sem repetir nomes (maiúsculas e minúsculas contam como iguais)."
-    )
+def _invalid_name_text(tr, name, low: int, high: int) -> str:
+    return tr("fav.file.invalid_name", name=_echo(name, 40), low=low, high=high)
 
 
-def _url_error_text(error: RuleError, *, with_label: bool = False) -> str:
+def _url_error_text(tr, error: RuleError, *, with_label: bool = False) -> str:
     """Mensagem de uma URL de arquivo recusada: longa demais (cita o limite) ou inválida."""
     if error.code == URL_TOO_LONG:
-        if with_label:
-            return (
-                f"**Um item de seu arquivo ultrapassa a quantidade de caracteres permitido:{error.limit}\n"
-                f"URL:** {_echo(error.value)}"
-            )
-        return (
-            f"**Um item de seu arquivo {_echo(error.value)} ultrapassa a quantidade de caracteres "
-            f"permitido:{error.limit}**"
-        )
-    return _invalid_link_text(error.value)
+        key = "fav.file.url_too_long_labeled" if with_label else "fav.file.url_too_long"
+        return tr(key, value=_echo(error.value), limit=error.limit)
+    return _invalid_link_text(tr, error.value)
 
 
-def _name_error_text(error: RuleError, low: int, high: int) -> str:
+def _name_error_text(tr, error: RuleError, low: int, high: int) -> str:
     """Mensagem de um nome de arquivo recusado: acima do teto da configuração ou inválido/repetido."""
     if error.code == NAME_TOO_LONG:
-        return (
-            f"**Um item de seu arquivo ({_echo(error.value)}) ultrapassa a quantidade de caracteres "
-            f"permitido:{error.limit}**"
-        )
-    return _invalid_name_text(error.value, low, high)
+        return tr("fav.file.name_too_long", value=_echo(error.value), limit=error.limit)
+    return _invalid_name_text(tr, error.value, low, high)
 
 
-def _save_error_text(error: RuleError, low: int, high: int, taken: str) -> str:
+def _save_error_text(tr, error: RuleError, low: int, high: int, taken: str) -> str:
     """Mensagem de uma recusa ao salvar um favorito/link pelo modal (``taken``: texto do nome repetido)."""
     if error.code == NAME_TAKEN:
         return f"**{taken}**"
     if error.code == QUOTA_FULL:
-        return "**Não há espaço disponível para adicionar novos favorito (remova algum e tente novamente).**"
-    return f"**O nome informado é inválido: use de {low} a {high} caracteres, sem caracteres de controle.**"
+        return tr("fav.save.quota_full")
+    return tr("fav.save.invalid_name", low=low, high=high)
 
 
-_IMPORT_QUOTA_TEXTS = {
-    "favoritos": (
-        "A quantidade de itens no seu arquivo de favorito excede a quantidade máxima permitida ({limit}).",
-        "Você não possui espaço suficiente para adicionar todos os favoritos de seu arquivo...",
-        "Quantidade de favoritos salvos",
-    ),
-    "integrações": (
-        "A quantidade de itens no seu arquivo de integrações excede a quantidade máxima permitida ({limit}).",
-        "Você não possui espaço suficiente para adicionar todos as integrações de seu arquivo...",
-        "Quantidade de integrações salvas",
-    ),
-    "links": (
-        "A quantidade de itens no arquivo excede a quantidade máxima permitida ({limit}).",
-        "A lista de músicas/playlist do servidor não possui espaço suficiente para adicionar todos os itens de seu arquivo...",
-        "Quantidade de links salvos",
-    ),
+# chaves (arquivo grande demais, sem espaço) por tipo de importação: favoritos do membro e integrações
+_IMPORT_QUOTA_KEYS = {  # ``_IMPORT_QUOTA_TEXTS`` abaixo é o nome antigo, reexportado pelo pacote
+    "fav": ("fav.import.quota.too_large", "fav.import.quota.no_space"),
+    "itg": ("fav.itg.import.quota.too_large", "fav.itg.import.quota.no_space"),
 }
+_IMPORT_QUOTA_TEXTS = _IMPORT_QUOTA_KEYS
 
 
-def _import_quota_text(error: RuleError, kind: str) -> str:
-    """Mensagem de cota de uma importação (``kind``: favoritos, integrações ou links)."""
-    too_large, no_space, saved = _IMPORT_QUOTA_TEXTS[kind]
+def _import_quota_text(tr, error: RuleError, kind: str) -> str:
+    """Mensagem de cota de uma importação (``kind``: ``fav`` ou ``itg``)."""
+    too_large, no_space = _IMPORT_QUOTA_KEYS[kind]
     if error.code == FILE_TOO_LARGE:
-        return too_large.format(limit=error.limit)
+        return tr(too_large, limit=error.limit)
     kept, incoming = error.value
-    return f"{no_space}\nLimite atual: {error.limit}\n{saved}: {kept}\nVocê precisa de: {kept + incoming - error.limit}"
+    return tr(no_space, limit=error.limit, kept=kept, need=kept + incoming - error.limit)
 
 
-_NO_ROOM_INTEGRATION_TEXT = (
-    "**Não há espaço disponível para adicionar novas integrações (remova alguma e tente novamente).**"
-)
+_NO_ROOM_INTEGRATION_TEXT = "fav.itg.quota_full"  # a chave: o texto sai de ``tr(_NO_ROOM_INTEGRATION_TEXT)``
 
 
-def _retry_text(retry_after: float) -> str:
+def _retry_text(tr, retry_after: float) -> str:
     """Mensagem neutra do cooldown ao adicionar uma integração (o balde é o do importador, mas não é uma importação)."""
-    return "**Aguarde {} antes de tentar novamente.**".format(
-        time_format(int(max(retry_after, 1)) * 1000, use_names=True)
-    )
+    return tr("fav.itg.retry", time=time_format(int(max(retry_after, 1)) * 1000, use_names=True))
 
 
-def _wait_text(retry_after: float) -> str:
+def _wait_text(tr, retry_after: float) -> str:
     """Mensagem do cooldown por membro do importador (a do exportador e a do modal de integração são outras)."""
-    return "**Você deve aguardar {} para importar.**".format(
-        time_format(int(max(retry_after, 1)) * 1000, use_names=True)
-    )
+    return tr("fav.import.wait", time=time_format(int(max(retry_after, 1)) * 1000, use_names=True))
 
 
 def _profile_source(url: str) -> Optional[str]:

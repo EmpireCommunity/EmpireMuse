@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 import empiremuse.wavelink as wavelink
+from empiremuse.i18n.service import get_i18n
 from empiremuse.utils.music.models import event_steps
 from empiremuse.utils.music.models.event_steps import _he_dispatch
 
@@ -48,6 +49,7 @@ def make_track(source="spotify", uri="https://open.spotify.com/track/abc"):
 def make_player(track, nodes=()):
     node = SimpleNamespace(identifier="N1", version=4, is_available=True, search_providers=["ytsearch"])
     return SimpleNamespace(
+        tr=get_i18n().for_locale("pt-BR"),
         guild=SimpleNamespace(id=1, name="S", me=SimpleNamespace(voice=SimpleNamespace(channel=SimpleNamespace(id=9)))),
         channel_id=9,
         node=node,

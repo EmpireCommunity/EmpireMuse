@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-from copy import deepcopy
-
 import disnake
 
 from empiremuse.utils.db import DBModel
@@ -19,7 +17,7 @@ from empiremuse.utils.music.interactions.skin_editor_data import (
     SKIN_LIMIT_REFUSED,
     SKIN_NAME_REFUSED,
     SKIN_REFUSED,
-    base_skin,
+    base_skin_for,
 )
 
 
@@ -29,12 +27,12 @@ def _skin_name_from_selection(selected: str) -> str:
 
 
 class SkinEditorPersistMixin:
-    """Leitura, gravação e exclusão das skins do servidor feitas pelo editor."""
+    """Leitura, gravação e exclusão das skins do servidor feitas pelo editor; textos pelo ``self.tr``."""
 
-    async def _refuse_skin(self, reply, guild_id: int, error: SchemaError, text: str):
-        """Não grava nada: avisa o dono e deixa no log só o servidor e o código da falha."""
+    async def _refuse_skin(self, reply, guild_id: int, error: SchemaError, key: str):
+        """Não grava nada: avisa o dono (``key`` do catálogo) e deixa no log só o servidor e o código da falha."""
         logger.warning("Skin do editor não salva: servidor %s, motivo %s", guild_id, error.code)
-        await reply.edit_original_message(text, view=None)
+        await reply.edit_original_message(self.tr(key), view=None)
 
     async def load_skin(self, inter: disnake.MessageInteraction):
         self.ctx = inter
@@ -47,7 +45,7 @@ class SkinEditorPersistMixin:
         else:
             mode = name = None
 
-        message_data = deepcopy(base_skin)
+        message_data = base_skin_for(self.tr)
 
         if mode:
             skins = await load_custom_skins(self.bot, self.guild.id, self.global_data)
@@ -55,7 +53,7 @@ class SkinEditorPersistMixin:
             if name in readable:
                 message_data = readable[name]
             elif self.global_data[mode][name]:
-                await inter.send("**Esta skin está em um formato incompatível e não pôde ser aberta.**", ephemeral=True)
+                await inter.send(self.tr("skin_editor.persist.incompatible"), ephemeral=True)
                 return
 
         self.skin_selected = selected
@@ -75,14 +73,14 @@ class SkinEditorPersistMixin:
             try:
                 del self.global_data["custom_skins"][self.skin_selected[6:]]
             except KeyError:
-                await inter.send(f"**A skin {self.skin_selected[6:]} não existe mais na database...**", ephemeral=True)
+                await inter.send(self.tr("skin_editor.persist.gone", name=self.skin_selected[6:]), ephemeral=True)
                 return
 
         elif self.skin_selected.startswith("> css:"):
             try:
                 del self.global_data["custom_skins_static"][self.skin_selected[7:]]
             except KeyError:
-                await inter.send(f"**A skin {self.skin_selected[7:]} não existe mais na database...**", ephemeral=True)
+                await inter.send(self.tr("skin_editor.persist.gone", name=self.skin_selected[7:]), ephemeral=True)
                 return
 
         await self.bot.update_global_data(id_=inter.guild_id, data=self.global_data, db_name=DBModel.guilds)
@@ -97,7 +95,7 @@ class SkinEditorPersistMixin:
         view = await self._ask_skin_mode(inter)
 
         if view.mode is None:
-            await inter.edit_original_message("Tempo esgotado!", components=[])
+            await inter.edit_original_message(self.tr("skin_editor.persist.timeout"), components=[])
             return
 
         self.message_data["controller_enabled"] = view.controller_enabled
@@ -205,7 +203,4 @@ class SkinEditorPersistMixin:
         if not guild_prefix:
             guild_prefix = self.bot.config.get("DEFAULT_PREFIX") or "!!"
 
-        return (
-            "**A skin foi salva/editada com sucesso!**\n"
-            f"Você pode aplicá-la usando o comando {cmd} ou {guild_prefix}skin"
-        )
+        return self.tr("skin_editor.persist.saved", command=cmd, prefix=guild_prefix)

@@ -8,6 +8,7 @@ from typing import Union, Optional
 import disnake
 from disnake.ext import commands
 
+from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.utils.music.checks import (
     check_voice,
     has_player,
@@ -41,7 +42,7 @@ from empiremuse.music_cog.shared import (
 )
 
 
-def _qc_filters(self, req):
+async def _qc_filters(self, req):
     """Valida os argumentos e monta a lista de filtros."""
     absent_members = req.absent_members
     amount = req.amount
@@ -55,7 +56,15 @@ def _qc_filters(self, req):
     user = req.user
 
     if min_duration and max_duration:
-        raise GenericError("Você deve escolher apenas uma das opções: **duração_abaixo_de** ou **duração_acima_de**.")
+        raise GenericError(
+            await guild_text(
+                req.inter.bot,
+                req.inter.guild,
+                "legacy.queue.one_duration_option",
+                below="duração_abaixo_de",
+                above="duração_acima_de",
+            )
+        )
 
     try:
         bot = inter.music_bot
@@ -65,7 +74,7 @@ def _qc_filters(self, req):
     player: LavalinkPlayer = bot.music.players[inter.guild_id]
 
     if not player.queue:
-        raise GenericError("**Não há musicas na fila.**")
+        raise GenericError(await guild_text(bot, inter.guild, "legacy.queue.empty"))
 
     if amount is None:
         amount = 0
@@ -114,7 +123,7 @@ def _qc_filters(self, req):
     req.txt = txt
 
 
-def _qc_range(self, req):
+async def _qc_range(self, req):
     """Resolve o intervalo de posições da fila."""
     amount = req.amount
     player = req.player
@@ -124,7 +133,7 @@ def _qc_range(self, req):
 
     if range_start > 0 and range_end > 0:
         if range_start >= range_end:
-            raise GenericError("**A posição final deve ser maior que a posição inicial!**")
+            raise GenericError(await guild_text(req.inter.bot, req.inter.guild, "legacy.queue.range_end_after_start"))
 
         song_list = list(player.queue)[range_start - 1 : -(range_end - 1)]
         txt.append(f"**Posição inicial da fila:** `{range_start}`\n**Posição final da fila:** `{range_end}`")
@@ -263,7 +272,7 @@ async def _qc_report(self, req):
     duplicated_titles.clear()
 
     if not deleted_tracks:
-        await inter.send("Nenhuma música encontrada!", ephemeral=True)
+        await inter.send(await guild_text(req.inter.bot, inter.guild, "legacy.queue.none_found"), ephemeral=True)
         return True
 
     try:

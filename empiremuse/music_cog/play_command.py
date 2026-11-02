@@ -151,7 +151,7 @@ class PlayCommandMixin(PlayMenusMixin, PlayResolveMixin, PlayEnqueueMixin):
             return
 
         if req.query.startswith(">> [💾 Fila Salva 💾] <<"):
-            data = await load_saved_queue(req.inter.author.id, req.inter.guild_id)
+            data = await load_saved_queue(req.inter.author.id, req.inter.guild_id, req.inter.guild)
 
             req.tracks = await self.check_player_queue(
                 req.inter.author, req.bot, req.guild.id, self.bot.pool.process_track_cls(data["tracks"])[0]

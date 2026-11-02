@@ -91,7 +91,7 @@ class EmbedLinkStaticSkin:
             pass
 
         if player.current.playlist_name:
-            txt += f"> -# {app_emoji(player.bot, 'playlists')} **⠂Playlist:** {md_link(player.current.playlist_name or 'Visualizar', player.current.playlist_url)}\n"
+            txt += f"> -# {app_emoji(player.bot, 'playlists')} **⠂{player.tr('player.playlist_prefix')}** {md_link(player.current.playlist_name or player.tr('player.view_playlist'), player.current.playlist_url)}\n"
 
         if player.current.track_loops:
             txt += player.tr(
@@ -184,13 +184,13 @@ class EmbedLinkStaticSkin:
                             description=fit(player.tr("player.adjust_the_volume.description"), 100),
                         ),
                         disnake.SelectOption(
-                            label="Misturar",
+                            label=fit(player.tr("player.shuffle.label"), 100),
                             emoji=app_emoji(player.bot, "shuffle"),
                             value=PlayerControls.shuffle,
                             description=fit(player.tr("player.shuffle_the_queue_songs.description"), 100),
                         ),
                         disnake.SelectOption(
-                            label="Readicionar",
+                            label=fit(player.tr("player.readd.label"), 100),
                             emoji=app_emoji(player.bot, "playlist_add"),
                             value=PlayerControls.readd,
                             description=fit(player.tr("player.add_the_played_songs_back.description"), 100),
@@ -244,7 +244,7 @@ class EmbedLinkStaticSkin:
                             ),
                             emoji=app_emoji(player.bot, "lock"),
                             value=PlayerControls.restrict_mode,
-                            description="Apenas DJ's/Staff's podem usar comandos restritos.",
+                            description=fit(player.tr("player.restrict_mode.description"), 100),
                         ),
                     ],
                 ),

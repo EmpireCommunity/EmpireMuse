@@ -5,6 +5,7 @@ from typing import Optional
 import disnake
 from disnake.ext import commands
 
+from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.i18n import localized
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.checks import (
@@ -81,8 +82,7 @@ class NowPlayingMixin:
                     slashcmd = "/now_playing"
 
                 raise GenericError(
-                    "**Você deve estar conectado em um canal de voz do servidor atual onde há player ativo...**\n"
-                    f"`Nota: Caso esteja ouvindo em outro servidor você pode usar o comando` {slashcmd}"
+                    await guild_text(self.bot, inter.guild, "legacy.now_playing.join_voice_server", command=slashcmd)
                 )
 
             for bot in self.bot.pool.get_guild_bots(inter.guild_id):
@@ -95,10 +95,14 @@ class NowPlayingMixin:
                         break
 
         if not player:
-            raise GenericError("**Você deve estar conectado em um canal de voz com player ativo...**")
+            raise GenericError(await guild_text(self.bot, inter.guild, "legacy.now_playing.join_voice"))
 
         if not player.current:
-            raise GenericError(f"**No momento não estou tocando algo no canal {player.last_channel.mention}**")
+            raise GenericError(
+                await guild_text(
+                    self.bot, inter.guild, "legacy.now_playing.nothing_playing", channel=player.last_channel.mention
+                )
+            )
 
         guild_data = await player.bot.get_data(inter.guild_id, db_name=DBModel.guilds)
 
@@ -252,7 +256,9 @@ class NowPlayingMixin:
             return
 
         if inter.data.custom_id != f"np_{inter.author.id}":
-            await inter.send("Você não pode clicar nesse botão...", ephemeral=True)
+            await inter.send(
+                await guild_text(self.bot, inter.guild, "legacy.now_playing.not_your_button"), ephemeral=True
+            )
             return
 
         try:
@@ -301,12 +307,20 @@ class NowPlayingMixin:
         player: LavalinkPlayer = bot.music.players[guild.id]
 
         if player.static:
-            raise GenericError("Esse comando não pode ser usado no modo fixo do player.")
+            raise GenericError(await guild_text(bot, guild, "legacy.now_playing.static_mode"))
 
         if player.has_thread:
             raise GenericError(
-                "**Esse comando não pode ser usado com uma conversa ativa na "
-                f"{md_link('mensagem', player.message.jump_url, code=False)} do player.**"
+                await guild_text(
+                    bot,
+                    guild,
+                    "legacy.now_playing.thread_active",
+                    link=md_link(
+                        await guild_text(bot, guild, "legacy.common.message_word"),
+                        player.message.jump_url,
+                        code=False,
+                    ),
+                )
             )
 
         if not inter.response.is_done():
@@ -322,7 +336,13 @@ class NowPlayingMixin:
                 )
 
                 embed = disnake.Embed(
-                    description=f"💠 **⠂{inter.author.mention} moveu o player-controller para o canal:** {channel.mention}",
+                    description=await guild_text(
+                        self.bot,
+                        guild,
+                        "legacy.now_playing.moved_controller",
+                        user=inter.author.mention,
+                        channel=channel.mention,
+                    ),
                     color=self.bot.get_color(guild.me),
                 )
 

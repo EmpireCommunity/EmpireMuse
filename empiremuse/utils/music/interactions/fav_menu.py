@@ -46,6 +46,7 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, disnake.ui.View):
         prefix="",
         mode: str = ViewMode.fav_manager,
         is_owner=False,
+        tr=None,
     ):
         super().__init__(timeout=180)
         self.mode = mode
@@ -71,6 +72,12 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, disnake.ui.View):
             if not self.guild:
                 self.light_mode = True
 
+        # o tradutor do servidor vem de quem cria o menu; sem ele, vale o idioma do Discord do servidor
+        i18n = bot.pool.i18n
+        self.tr = (
+            tr if tr is not None else i18n.for_locale(i18n.resolve(None, getattr(self.guild, "preferred_locale", None)))
+        )
+
     async def auto_update(self):
         while True:
             if self.mode != ViewMode.fav_manager:
@@ -80,7 +87,7 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, disnake.ui.View):
                 "fav_add", check=lambda user, data, url: user.id == self.ctx.author.id
             )
 
-            self.log = f"<{url}> foi adicionado nos seus favoritos."
+            self.log = self.tr("fav.log.added", url=str(url))
 
             if not isinstance(self.ctx, CustomContext):
                 await self.ctx.edit_original_message(content=self.build_txt(), view=self)
@@ -121,7 +128,7 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, disnake.ui.View):
 
     async def edit_callback(self, inter: disnake.MessageInteraction):
         if not self.current:
-            await inter.send("Você deve selecionar um item!", ephemeral=True)
+            await inter.send(self.tr("fav.select_item"), ephemeral=True)
             return
 
         if self.mode == ViewMode.fav_manager:
@@ -130,11 +137,11 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, disnake.ui.View):
                     FavModalAdd(name=self.current, url=self.data["fav_links"][self.current], view=self)
                 )
             except KeyError:
-                await inter.send(f"**Não há favorito com o nome:** {self.current}", ephemeral=True)
+                await inter.send(self.tr("fav.not_found", name=str(self.current)), ephemeral=True)
 
     async def remove_callback(self, inter: disnake.MessageInteraction):
         if not self.current:
-            await inter.send("Você deve selecionar um item!", ephemeral=True)
+            await inter.send(self.tr("fav.select_item"), ephemeral=True)
             return
 
         await inter.response.defer(ephemeral=True)
@@ -146,12 +153,12 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, disnake.ui.View):
                 url = md_link(self.current, self.data["fav_links"][self.current])
                 del self.data["fav_links"][self.current]
             except Exception:
-                await inter.edit_original_message(f"**Não há favorito na lista com o nome:** {self.current}")
+                await inter.edit_original_message(self.tr("fav.not_in_list", name=str(self.current)))
                 return
 
             await self.bot.update_global_data(inter.author.id, self.data, db_name=DBModel.users)
 
-            self.log = f"Favorito {url} foi removido com sucesso!"
+            self.log = self.tr("fav.log.removed", link=url)
 
         elif self.mode == ViewMode.integrations_manager:
             item = self.data["integration_links"][self.current]
@@ -163,12 +170,12 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, disnake.ui.View):
                 url = md_link(self.current, item)
                 del self.data["integration_links"][self.current]
             except Exception:
-                await inter.send(f"**Não há integração na lista com o nome:** {self.current}", ephemeral=True)
+                await inter.send(self.tr("fav.itg.not_in_list", name=str(self.current)), ephemeral=True)
                 return
 
             await self.bot.update_global_data(inter.author.id, self.data, db_name=DBModel.users)
 
-            self.log = f"Integração {url} foi removida com sucesso!"
+            self.log = self.tr("fav.itg.log.removed", link=url)
 
         await inter.edit_original_message(content=self.build_txt(), view=self)
 
@@ -179,7 +186,7 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, disnake.ui.View):
 
         if self.mode == ViewMode.fav_manager:
             if not self.data["fav_links"]:
-                await inter.send("**Você não possui links favoritos!**", ephemeral=True)
+                await inter.send(self.tr("fav.no_favorites"), ephemeral=True)
                 return
 
             fp = BytesIO(bytes(json.dumps(self.data["fav_links"], indent=4), "utf-8"))
@@ -188,19 +195,17 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, disnake.ui.View):
 
             await self.bot.update_global_data(inter.author.id, self.data, db_name=DBModel.users)
 
-            self.log = "Sua lista de favoritos foi limpa com sucesso!"
+            self.log = self.tr("fav.log.cleared")
 
             await inter.send(
-                "### Seus favoritos foram excluídos com sucesso!\n"
-                "`Um arquivo de backup foi gerado e caso queira reverter essa exclusão, copie o "
-                'conteúdo do arquivo e clique no botão "importar" e cole o conteudo no campo indicado.`',
+                self.tr("fav.cleared"),
                 ephemeral=True,
                 file=disnake.File(fp, filename="favs.json"),
             )
 
         elif self.mode == ViewMode.integrations_manager:
             if not self.data["integration_links"]:
-                await inter.response.edit_message(content="**Você não possui integrações salvas!**", view=None)
+                await inter.response.edit_message(content=self.tr("fav.itg.none_saved"), view=None)
                 return
 
             fp = BytesIO(bytes(json.dumps(self.data["integration_links"], indent=4), "utf-8"))
@@ -209,12 +214,10 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, disnake.ui.View):
 
             await self.bot.update_global_data(inter.author.id, self.data, db_name=DBModel.users)
 
-            self.log = "Sua lista de integrações foi limpa com sucesso!"
+            self.log = self.tr("fav.itg.log.cleared")
 
             await inter.send(
-                "### Suas integrações foram excluídas com sucesso!\n"
-                "`um arquivo de backup foi gerado e caso queira reverter essa exclusão, copie o "
-                'conteúdo do arquivo e clique no botão "importar" e cole o conteudo no campo indicado.`',
+                self.tr("fav.itg.cleared"),
                 ephemeral=True,
                 file=disnake.File(fp, filename="integrations.json"),
             )
@@ -249,7 +252,7 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, disnake.ui.View):
             if retry_after < 1:
                 retry_after = 1
             await inter.send(
-                "**Você deve aguardar {} para exportar.**".format(time_format(int(retry_after) * 1000, use_names=True)),
+                self.tr("fav.export.wait", time=time_format(int(retry_after) * 1000, use_names=True)),
                 ephemeral=True,
             )
             return
@@ -272,7 +275,7 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, disnake.ui.View):
         if self.mode == ViewMode.fav_manager:
             if not self.data["fav_links"]:
                 await inter.send(
-                    f"**Você não possui links favoritos..\nVocê pode adicionar usando o comando: {cmd}**",
+                    self.tr("fav.export.none", cmd=cmd),
                     ephemeral=True,
                 )
                 return
@@ -281,7 +284,7 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, disnake.ui.View):
 
             await inter.send(
                 embed=disnake.Embed(
-                    description=f"Seus favoritos estão aqui.\nVocê pode importar usando o comando: {cmd}",
+                    description=self.tr("fav.export.here", cmd=cmd),
                     color=self.bot.get_color(),
                 ),
                 file=disnake.File(fp=fp, filename="favoritos.json"),
@@ -290,16 +293,14 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, disnake.ui.View):
 
         elif self.mode == ViewMode.integrations_manager:
             if not self.data["integration_links"]:
-                await inter.edit_original_message(
-                    f"**Você não possui integrações adicionadas...\nVocê pode adicionar usando o comando: {cmd}**"
-                )
+                await inter.edit_original_message(self.tr("fav.itg.export.none", cmd=cmd))
                 return
 
             fp = BytesIO(bytes(json.dumps(self.data["integration_links"], indent=4), "utf-8"))
 
             await inter.send(
                 embed=disnake.Embed(
-                    description=f"Suas integrações estão aqui.\nVocê pode importar usando o comando: {cmd}",
+                    description=self.tr("fav.itg.export.here", cmd=cmd),
                     color=self.bot.get_color(),
                 ),
                 file=disnake.File(fp=fp, filename="integrations.json"),
@@ -312,7 +313,7 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, disnake.ui.View):
         except Exception:
             pass
 
-        await inter.response.edit_message(content="**Gerenciador fechado.**", view=None)
+        await inter.response.edit_message(content=self.tr("fav.closed"), view=None)
         self.stop()
 
     async def mode_callback(self, inter: disnake.MessageInteraction):
@@ -339,4 +340,4 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, disnake.ui.View):
         if inter.author.id == self.ctx.author.id:
             return True
 
-        await inter.send(f"Apenas o membro {self.ctx.author.mention} pode interagir nessa mensagem.", ephemeral=True)
+        await inter.send(self.tr("fav.only_member", mention=self.ctx.author.mention), ephemeral=True)

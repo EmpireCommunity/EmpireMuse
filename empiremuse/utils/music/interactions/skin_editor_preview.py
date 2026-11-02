@@ -48,5 +48,5 @@ class SkinEditorPreviewMixin:
             else:
                 await inter.edit_original_message(view=self, **self.build_embeds())
         except Exception as e:
-            code = log_unexpected_error(logger, e, "editor de skin: atualização da mensagem")
-            await inter.send("**Ocorreu um erro ao processar a mensagem.**" + error_code_text(code), ephemeral=True)
+            code = log_unexpected_error(logger, e, "skin_editor.update_message")
+            await inter.send(self.tr("skin_editor.preview.error") + error_code_text(code), ephemeral=True)

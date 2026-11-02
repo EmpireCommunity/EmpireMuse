@@ -18,6 +18,7 @@ import disnake
 import pytest
 
 from empiremuse.cogs.music import Music
+from empiremuse.i18n.service import get_i18n
 from empiremuse.music_cog import play_command  # depois de ``Music``: importar a Cog recarrega os mixins
 from empiremuse.utils.client import BotPool
 from tests.support.formatos_reais import (
@@ -79,7 +80,9 @@ class Interacao:
 
 def montar_cenario(faixas_atual, faixas_fila):
     """Cog ``Music`` real (sem ``__init__``) com um bot e um player mínimos; devolve ``(cog, interação)``."""
-    guild = SimpleNamespace(id=SERVIDOR, me=SimpleNamespace(voice=SimpleNamespace(channel=None)))
+    guild = SimpleNamespace(
+        id=SERVIDOR, preferred_locale="pt-BR", me=SimpleNamespace(voice=SimpleNamespace(channel=None))
+    )
     player = SimpleNamespace(current=faixas_atual, queue=list(faixas_fila), node=SimpleNamespace())
     bot = SimpleNamespace(
         music=SimpleNamespace(players={SERVIDOR: player}),
@@ -90,7 +93,7 @@ def montar_cenario(faixas_atual, faixas_fila):
         default_prefix="!!",
         config={"ENABLE_DISCORD_URLS_PLAYBACK": False},
         pool=SimpleNamespace(
-            process_track_cls=lambda *args, **kwargs: BotPool.process_track_cls(None, *args, **kwargs)
+            i18n=get_i18n(), process_track_cls=lambda *args, **kwargs: BotPool.process_track_cls(None, *args, **kwargs)
         ),
     )
 

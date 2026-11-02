@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from empiremuse.cogs.music import Music
+from empiremuse.i18n.service import get_i18n
 from empiremuse.utils.music.errors import GenericError
 
 GUILD = 700
@@ -51,10 +52,11 @@ def cenario(*faixas: Faixa) -> tuple[Any, Any, Any]:
     voz = SimpleNamespace(voice_states={1: None, 2: None})  # só os pedidos 1 e 2 ainda estão no canal
     guild = SimpleNamespace(me=SimpleNamespace(voice=SimpleNamespace(channel=voz)))
     player = SimpleNamespace(queue=deque(faixas), queue_autoplay=deque(), guild=guild)
-    bot = SimpleNamespace(music=SimpleNamespace(players={GUILD: player}))
+    bot = SimpleNamespace(music=SimpleNamespace(players={GUILD: player}), pool=SimpleNamespace(i18n=get_i18n()))
     inter = SimpleNamespace(
         music_bot=bot,
-        bot=SimpleNamespace(),
+        bot=SimpleNamespace(pool=SimpleNamespace(i18n=get_i18n())),
+        guild=None,
         guild_id=GUILD,
         author=SimpleNamespace(id=9, mention="<@9>"),
         send=AsyncMock(),
@@ -128,7 +130,7 @@ class TestClear:
         ("fila", "filtros", "trecho"),
         [
             (quatro_faixas, dict(min_duration="1:00", max_duration="2:00"), "apenas uma das opções"),
-            (lambda: (), dict(), "Não há musicas na fila"),
+            (lambda: (), dict(), "Não há músicas na fila"),
         ],
         ids=["duracoes-juntas", "fila-vazia"],
     )

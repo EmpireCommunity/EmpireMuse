@@ -6,6 +6,7 @@ from typing import Union, Optional
 import disnake
 from disnake.ext import commands
 
+from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.i18n import localized
 from empiremuse.utils.music.checks import (
     check_voice,
@@ -80,7 +81,7 @@ class QueueGroupMixin:
         player: LavalinkPlayer = bot.music.players[inter.guild_id]
 
         if len(player.queue) < 3:
-            raise GenericError("**A fila tem que ter no mínimo 3 músicas para ser misturada.**")
+            raise GenericError(await guild_text(bot, inter.guild, "legacy.queue.shuffle_min"))
 
         shuffle(player.queue)
 
@@ -120,7 +121,7 @@ class QueueGroupMixin:
         player: LavalinkPlayer = bot.music.players[inter.guild_id]
 
         if len(player.queue) < 2:
-            raise GenericError("**A fila tem que ter no mínimo 2 músicas para inverter a ordem.**")
+            raise GenericError(await guild_text(bot, inter.guild, "legacy.queue.reverse_min"))
 
         player.queue.reverse()
         await self.interaction_message(
@@ -157,9 +158,9 @@ class QueueGroupMixin:
         player: LavalinkPlayer = bot.music.players[inter.guild_id]
 
         if not player.queue and not player.queue_autoplay:
-            raise GenericError("**Não há músicas na fila.**")
+            raise GenericError(await guild_text(bot, inter.guild, "legacy.queue.empty"))
 
-        view = QueueInteraction(bot, inter.author)
+        view = QueueInteraction(bot, inter.author, tr=await inter.bot.pool.i18n.for_guild(inter.guild))
         embed = view.embed
 
         try:
@@ -406,14 +407,14 @@ class QueueGroupMixin:
             range_end=range_end,
             absent_members=absent_members,
         )
-        _qc_filters(self, req)
+        await _qc_filters(self, req)
 
         if not req.filters and not req.range_start and not req.range_end:
             req.player.queue.clear()
             req.txt = ["limpou a fila de música.", f"♻️ **⠂{req.inter.author.mention} limpou a fila de música.**"]
 
         else:
-            _qc_range(self, req)
+            await _qc_range(self, req)
 
             _qc_remove(self, req)
 
@@ -613,15 +614,15 @@ class QueueGroupMixin:
             absent_members=absent_members,
             case_sensitive=case_sensitive,
         )
-        _qm_filters(self, req)
+        await _qm_filters(self, req)
 
-        _qm_range(self, req)
+        await _qm_range(self, req)
 
         if not req.tracklist:
             _qm_select(self, req)
 
         if not req.tracklist:
-            raise GenericError("Nenhuma música encontrada com os filtros selecionados!")
+            raise GenericError(await guild_text(inter.bot, inter.guild, "legacy.queue.no_filter_match"))
 
         for req.t in reversed(req.tracklist):
             req.insert_func(req.position - 1, req.t)

@@ -83,19 +83,19 @@ class VoiceStatusMixin:
         if not template:
             await inter.response.defer(ephemeral=True, with_message=True)
             global_data = await self.bot.get_global_data(inter.guild_id, db_name=DBModel.guilds)
-            view = SetStageTitle(ctx=inter, bot=bot, data=global_data, guild=guild)
+            tr = await inter.bot.pool.i18n.for_guild(inter.guild)
+            view = SetStageTitle(ctx=inter, bot=bot, data=global_data, guild=guild, tr=tr)
             view.message = await inter.send(view=view, embeds=view.build_embeds(), ephemeral=True)
             await view.wait()
         else:
             status = validate_voice_status(template)
 
             if isinstance(status, RuleError) or not status:
+                tr = await inter.bot.pool.i18n.for_guild(inter.guild)
                 raise GenericError(
-                    voice_status_error_text(status)
+                    voice_status_error_text(tr, status)
                     if isinstance(status, RuleError)
-                    else (await inter.bot.pool.i18n.for_guild(inter.guild))(
-                        "player.you_must_use_at_least", placeholder_text=str(SetStageTitle.placeholder_text)
-                    )
+                    else tr("player.you_must_use_at_least", placeholder_text=str(SetStageTitle.placeholder_text(tr)))
                 )
 
             template = status

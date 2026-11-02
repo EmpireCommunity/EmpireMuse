@@ -15,6 +15,7 @@ import pytest
 
 from empiremuse.cogs import error_handler
 from empiremuse.cogs.error_handler import ErrorHandler
+from empiremuse.i18n.service import get_i18n
 
 TOKEN_FALSO = "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAx.GabcDE.abcdefghijklmnopqrstuvwxyz1"
 CAMINHO = "/data/local_database/guilds.json"
@@ -42,7 +43,7 @@ def handler(monkeypatch) -> ErrorHandler:
     h.bot = SimpleNamespace(
         config={"AUTO_ERROR_REPORT_WEBHOOK": "", "ERROR_REPORT_WEBHOOK": "", "SUPPORT_SERVER": ""},
         http=SimpleNamespace(token=TOKEN_FALSO),
-        pool=SimpleNamespace(shutdown=AsyncMock()),
+        pool=SimpleNamespace(shutdown=AsyncMock(), i18n=get_i18n()),
         user=SimpleNamespace(mention="<@1>"),
     )
     h.components = []
@@ -91,7 +92,7 @@ class _Contexto:
         self.command = SimpleNamespace(name="play", usage=None, full_parent_name="")
         self.channel = MagicMock()
         self.channel.permissions_for.return_value.embed_links = embed_links
-        self.guild = SimpleNamespace(me=object())
+        self.guild = SimpleNamespace(me=object(), id=1)
         self.message = SimpleNamespace(content="!play x", delete=AsyncMock())
         self.send = AsyncMock()
 

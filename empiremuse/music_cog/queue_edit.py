@@ -3,6 +3,7 @@
 import disnake
 from disnake.ext import commands
 
+from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.i18n import localized
 from empiremuse.utils.music.checks import (
     check_voice,
@@ -50,7 +51,7 @@ class QueueEditMixin:
         args, unknown = ctx.command.extras["flags"].parse_known_args(flags.split())
 
         if not unknown:
-            raise GenericError("**Você não adicionou o nome da música.**")
+            raise GenericError(await guild_text(self.bot, ctx.guild, "legacy.queue.no_song_name"))
 
         await self.remove.callback(self=self, inter=ctx, query=" ".join(unknown), case_sensitive=args.casesensitive)
 
@@ -83,7 +84,7 @@ class QueueEditMixin:
         try:
             index = queue_track_index(inter, bot, query, case_sensitive=case_sensitive)[0][0]
         except IndexError:
-            raise GenericError(f"**Não há músicas na fila com o nome: {query}**")
+            raise GenericError(await guild_text(bot, inter.guild, "legacy.queue.no_match_name", query=query))
 
         player: LavalinkPlayer = bot.music.players[inter.guild_id]
 
@@ -133,7 +134,7 @@ class QueueEditMixin:
         player: LavalinkPlayer = bot.music.players[inter.guild_id]
 
         if not player.played and not player.failed_tracks:
-            raise GenericError("**Não há músicas tocadas.**")
+            raise GenericError(await guild_text(bot, inter.guild, "legacy.queue.no_played"))
 
         qsize = len(player.played) + len(player.failed_tracks)
 
@@ -175,7 +176,7 @@ class QueueEditMixin:
         args, unknown = ctx.command.extras["flags"].parse_known_args(flags.split())
 
         if not unknown:
-            raise GenericError("**Você não adicionou o nome da música.**")
+            raise GenericError(await guild_text(self.bot, ctx.guild, "legacy.queue.no_song_name"))
 
         await self.rotate.callback(self=self, inter=ctx, query=" ".join(unknown), case_sensitive=args.casesensitive)
 
@@ -210,7 +211,7 @@ class QueueEditMixin:
         index = queue_track_index(inter, bot, query, case_sensitive=case_sensitive)
 
         if not index:
-            raise GenericError(f"**Não há músicas na fila com o nome: {query}**")
+            raise GenericError(await guild_text(bot, inter.guild, "legacy.queue.no_match_name", query=query))
 
         index = index[0][0]
 
@@ -220,7 +221,12 @@ class QueueEditMixin:
 
         if index <= 0:
             raise GenericError(
-                f"**A música **{md_link(track.title, track.uri or track.search_uri)} já é a próxima da fila."
+                await guild_text(
+                    bot,
+                    inter.guild,
+                    "legacy.queue.already_next",
+                    link=md_link(track.title, track.uri or track.search_uri),
+                )
             )
 
         if track.autoplay:

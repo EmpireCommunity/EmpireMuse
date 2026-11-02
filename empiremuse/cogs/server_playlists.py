@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Optional, Union
 import disnake
 from disnake.ext import commands
 
+from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.i18n import localized
 from empiremuse.rules.errors import (
     FILE_FORMAT,
@@ -113,7 +114,11 @@ class PasteModal(disnake.ui.Modal):
 
     async def on_error(self, error: Exception, inter: disnake.ModalInteraction) -> None:
         """Sem isto o disnake só loga: o usuário ficaria sem resposta (negado, store indisponível, conflito)."""
-        text = error.text if isinstance(error, GenericError) else "**Não foi possível importar as playlists agora.**"
+        text = (
+            error.text
+            if isinstance(error, GenericError)
+            else await guild_text(inter.bot, inter.guild, "legacy.playlists.import_failed")
+        )
         if not isinstance(error, GenericError):
             logger.error("Falha ao importar playlists coladas (%s)", type(error).__name__)
         try:
@@ -204,7 +209,7 @@ class ServerPlaylistsCog(commands.Cog):
             scope = SCOPE_JUKEBOX
 
         if sum(source is not None for source in (file, attachment, link)) > 1:
-            raise GenericError("**Escolha só uma origem: o arquivo, o anexo ou o link.**")
+            raise GenericError(await guild_text(self.bot, inter.guild, "legacy.playlists.one_source"))
 
         if file is None and attachment is None and link is None:
             await inter.response.send_modal(PasteModal(self, scope))
@@ -228,7 +233,8 @@ class ServerPlaylistsCog(commands.Cog):
                 data = await attachment.read()
             except disnake.HTTPException:  # inclui NotFound: o anexo sumiu ou o Discord falhou
                 await inter.edit_original_message(
-                    "**Não consegui baixar o anexo. Tente enviar o arquivo de novo.**", allowed_mentions=NO_MENTIONS
+                    await guild_text(self.bot, inter.guild, "legacy.playlists.attachment_failed"),
+                    allowed_mentions=NO_MENTIONS,
                 )
                 return
         elif link is not None:
@@ -252,11 +258,11 @@ class ServerPlaylistsCog(commands.Cog):
         await inter.response.defer(ephemeral=True)
         playlists = self.bot.pool.servers.playlists
         if not any([await playlists.list(inter.guild_id, scope=scope) for scope in SCOPES]):
-            await inter.edit_original_message("**O servidor ainda não tem playlists.**")
+            await inter.edit_original_message(await guild_text(self.bot, inter.guild, "legacy.playlists.none_yet"))
             return
         data = await playlists.export_bytes(inter.guild_id)
         await inter.edit_original_message(
-            "**Playlists exportadas.** Você pode importar este arquivo em outro servidor.",
+            await guild_text(self.bot, inter.guild, "legacy.playlists.exported"),
             file=disnake.File(fp=io.BytesIO(data), filename=f"playlists-{inter.guild_id}.json"),
             allowed_mentions=NO_MENTIONS,
         )

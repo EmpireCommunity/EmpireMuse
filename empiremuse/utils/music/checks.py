@@ -14,6 +14,7 @@ from empiremuse.rules.jukebox_panel import choose_player
 from empiremuse.rules.voice_status import control_lock_seconds
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.converters import time_format
+from empiremuse.utils.music.guild_text import guild_text, guild_text_sync
 from empiremuse.utils.music.errors import (
     NoVoice,
     NoPlayer,
@@ -97,10 +98,16 @@ def can_send_message(
         send_message_perm = channel.permissions_for(channel.guild.me).send_messages
 
     if not send_message_perm:
-        raise GenericError(f"**{bot.mention} não possui permissão de enviar mensagens no canal:** {channel.mention}")
+        raise GenericError(
+            guild_text_sync(channel.guild, "legacy.checks.no_send_permission", bot=bot.mention, channel=channel.mention)
+        )
 
     if not channel.permissions_for(channel.guild.me).embed_links:
-        raise GenericError(f"**{bot.mention} não possui permissão de inserir links no canal: {channel.mention}**")
+        raise GenericError(
+            guild_text_sync(
+                channel.guild, "legacy.checks.no_embed_permission", bot=bot.mention, channel=channel.mention
+            )
+        )
 
     return True
 
@@ -189,7 +196,7 @@ async def check_pool_bots(
         return update_attr(inter, inter.bot, inter.guild)
 
     if not inter.guild_id:
-        raise GenericError("**Esse comando não pode ser usado nas mensagens privada.**")
+        raise GenericError(await guild_text(inter.bot, None, "legacy.checks.no_dm"))
 
     try:
         if inter.bot.user.id in inter.author.voice.channel.voice_states:
@@ -461,7 +468,7 @@ def can_send_message_check():
             if inter.guild_id:
                 return True
 
-            raise GenericError("**Este comando deve ser usado em um servidor...**")
+            raise GenericError(await guild_text(inter.bot, None, "legacy.checks.guild_only"))
 
         try:
             bot = inter.music_bot
@@ -582,10 +589,7 @@ def check_queue_loading():
             raise NoPlayer()
 
         if player.locked:
-            raise GenericError(
-                "**Não é possível executar essa ação com o processamento da música em andamento "
-                "(por favor aguarde mais alguns segundos e tente novamente).**"
-            )
+            raise GenericError(await guild_text(bot, inter.guild, "legacy.checks.queue_loading"))
 
         return True
 
@@ -621,8 +625,12 @@ def check_stage_topic():
 
         if (remaining := voice_status_lock_remaining(player)) > 0 and not (await bot.is_owner(inter.author)):
             raise GenericError(
-                f"**Você terá que aguardar {time_format(remaining * 1000, use_names=True)} para usar essa função "
-                f"com o status automático do canal ligado...**"
+                await guild_text(
+                    bot,
+                    inter.guild,
+                    "legacy.checks.status_lock",
+                    time=time_format(remaining * 1000, use_names=True),
+                )
             )
 
         return True
@@ -650,10 +658,14 @@ def check_yt_cooldown():
         ):
             if not await bot.is_owner(inter.author):
                 raise GenericError(
-                    "**{}, você só pode pular a música atual do youtube em {}**.\n"
-                    "-# Isso é uma forma de ajudar a evitar possíveis bloqueios do youtube na reprodução da música".format(
-                        inter.author.mention,
-                        time_format((bot.config["YOUTUBE_TRACK_COOLDOWN"] - int(remaining)) * 1000, use_names=True),
+                    await guild_text(
+                        bot,
+                        inter.guild,
+                        "legacy.checks.youtube_cooldown",
+                        user=inter.author.mention,
+                        time=time_format(
+                            (bot.config["YOUTUBE_TRACK_COOLDOWN"] - int(remaining)) * 1000, use_names=True
+                        ),
                     )
                 )
 
@@ -779,8 +791,7 @@ async def check_player_perm(inter, bot: BotCore, channel, guild_data: dict = Non
         txt, components = get_available_bots_info(bot.pool, player.guild_id, inter.author)
 
         raise GenericError(
-            "Apenas DJ's ou membros com a permissão de **mover membros** "
-            "podem usar este comando/botão com o **modo restrito ativo**...\n\n" + txt,
+            await guild_text(bot, inter.guild, "legacy.checks.restrict_mode") + txt,
             components=components,
         )
 
@@ -795,7 +806,9 @@ async def check_player_perm(inter, bot: BotCore, channel, guild_data: dict = Non
         player.dj.add(inter.author.id)
         await channel.send(
             embed=disnake.Embed(
-                description=f"{inter.author.mention} foi adicionado à lista de DJ's por não haver um no canal <#{vc.id}>.",
+                description=await guild_text(
+                    bot, inter.guild, "legacy.checks.dj_added", user=inter.author.mention, channel=vc.id
+                ),
                 color=player.bot.get_color(),
             ),
             delete_after=10,
@@ -840,14 +853,14 @@ def can_connect(
     perms = channel.permissions_for(guild.me)
 
     if not perms.connect:
-        raise GenericError(f"**Não tenho permissão para conectar no canal {channel.mention}**")
+        raise GenericError(guild_text_sync(guild, "legacy.checks.no_connect", channel=channel.mention))
 
     if not isinstance(channel, disnake.StageChannel):
         if not perms.speak:
-            raise GenericError(f"**Não tenho permissão para falar no canal {channel.mention}**")
+            raise GenericError(guild_text_sync(guild, "legacy.checks.no_speak", channel=channel.mention))
 
         if not guild.voice_client and not check_channel_limit(guild.me, channel):
-            raise GenericError(f"**O canal {channel.mention} está lotado!**")
+            raise GenericError(guild_text_sync(guild, "legacy.checks.channel_full", channel=channel.mention))
 
     if bot:
         for b in bot.pool.get_guild_bots(channel.guild.id):
@@ -859,7 +872,7 @@ def can_connect(
                 #                   f"Bot:** {b.user.mention}")
 
     if check_other_bots_in_vc and any(m for m in channel.members if m.bot and m.id != guild.me.id):
-        raise GenericError(f"**Há outro bot conectado no canal:** <#{channel.id}>")
+        raise GenericError(guild_text_sync(guild, "legacy.checks.other_bot", channel=channel.id))
 
 
 # O disnake 2.12 não tem o flag nomeado de "Definir status do canal de voz".
