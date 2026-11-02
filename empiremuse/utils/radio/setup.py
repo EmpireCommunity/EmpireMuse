@@ -141,8 +141,13 @@ class RadioSetup:
     # ------------------------------------------------------------------ as checagens
 
     async def check_actor(self, guild_id: int, actor_id: int) -> None:
+        """Configurar e escolher estação: servidor premium e ``manage_guild`` de quem pede."""
         if await self.hub.premium.fresh(guild_id) is None:
             raise RadioForbidden(REASON_PREMIUM)
+        await self.check_manager(guild_id, actor_id)
+
+    async def check_manager(self, guild_id: int, actor_id: int) -> None:
+        """Só ``manage_guild``: o redefinir não pede premium (um servidor que o perdeu apaga a própria configuração; contrato §2)."""
         if not await self._can_manage(guild_id, actor_id):
             raise RadioForbidden(REASON_MANAGE_GUILD)
 
@@ -285,12 +290,12 @@ class RadioSetup:
     # ------------------------------------------------------------------ redefinir
 
     async def reset(self, guild_id: int, actor_id: int, radio_id: str, rev: Optional[int]) -> None:
-        """Desliga (se ligada), apaga o painel da call, guarda uma cópia em ``global.config_backup`` (30 dias) e apaga o documento da rádio.
+        """Pede só ``manage_guild`` (não o premium). Desliga (se ligada), apaga o painel da call, guarda uma cópia em ``global.config_backup`` (30 dias) e apaga o documento da rádio.
 
         Ficam as estações do servidor, o premium, o ``radio_only`` do bot, a saúde das estações e as outras rádios.
         """
         guild_id, actor_id = int(guild_id), int(actor_id)
-        await self.check_actor(guild_id, actor_id)
+        await self.check_manager(guild_id, actor_id)
         current = await self._current(guild_id, radio_id, rev)
         if current is None:
             raise RadioNotFound
