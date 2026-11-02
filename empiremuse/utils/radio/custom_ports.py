@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import disnake
 
+from empiremuse.rules.playlists import SCOPE_RADIO
 from empiremuse.rules.radio import Radio
 from empiremuse.rules.radio_shuffle import Track
 from empiremuse.rules.radio_station import KIND_ARTISTS, KIND_GENRE, CustomStation
@@ -103,7 +104,7 @@ class CustomRadioPorts(DiscordRadioPorts):
         player = self._player()
         found: list[Track] = []
         for name in names:
-            playlist = await self.pool.servers.playlists.find(self.radio.guild_id, name)
+            playlist = await self.pool.servers.playlists.find(self.radio.guild_id, name, scope=SCOPE_RADIO)
             if playlist is None:
                 continue
             # source=False: a URL exata, sem "ytsearch:" nem Deezer/Spotify (como o controlador); no nó do player quando há

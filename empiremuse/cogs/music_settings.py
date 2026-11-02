@@ -26,6 +26,8 @@ from empiremuse.rules.servers import SettingError
 from empiremuse.rules.settings import add_dj_role as add_role, allowed_names
 from empiremuse.utils import branding
 from empiremuse.utils.branding import asset_url
+from empiremuse.utils import playlists_commands
+from empiremuse.rules.playlists import SCOPE_JUKEBOX
 from empiremuse.utils.db import DBModel
 from empiremuse.rules.text import format_mib
 from empiremuse.utils.music.converters import time_format, md_link, md_code
@@ -477,6 +479,56 @@ class MusicSettings(commands.Cog):
     @commands.contexts(guild=True)
     async def jukebox(self, interaction: disnake.ApplicationCommandInteraction):
         pass
+
+    @jukebox.sub_command_group(
+        name=localized("cmd.jukebox.playlists.name"), description=localized("cmd.jukebox.playlists.description")
+    )
+    async def jukebox_playlists(self, inter: disnake.ApplicationCommandInteraction) -> None:
+        return
+
+    @jukebox_playlists.sub_command(
+        name=localized("cmd.jukebox.playlists.list.name"),
+        description=localized("cmd.jukebox.playlists.list.description"),
+    )
+    async def jukebox_playlists_list(self, inter: disnake.ApplicationCommandInteraction) -> None:
+        await playlists_commands.list_(self.bot, inter, SCOPE_JUKEBOX)
+
+    @jukebox_playlists.sub_command(
+        name=localized("cmd.jukebox.playlists.create.name"),
+        description=localized("cmd.jukebox.playlists.create.description"),
+    )
+    async def jukebox_playlists_create(self, inter: disnake.ApplicationCommandInteraction) -> None:
+        await playlists_commands.create(self.bot, inter, SCOPE_JUKEBOX)
+
+    @jukebox_playlists.sub_command(
+        name=localized("cmd.jukebox.playlists.edit.name"),
+        description=localized("cmd.jukebox.playlists.edit.description"),
+    )
+    async def jukebox_playlists_edit(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        name: str = commands.Param(
+            name=localized("cmd.jukebox.playlists.edit.opt.name.name"),
+            description=localized("cmd.jukebox.playlists.edit.opt.name.description"),
+            autocomplete=playlists_commands.jukebox_names,
+        ),
+    ) -> None:
+        await playlists_commands.edit(self.bot, inter, SCOPE_JUKEBOX, name)
+
+    @jukebox_playlists.sub_command(
+        name=localized("cmd.jukebox.playlists.remove.name"),
+        description=localized("cmd.jukebox.playlists.remove.description"),
+    )
+    async def jukebox_playlists_remove(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        name: str = commands.Param(
+            name=localized("cmd.jukebox.playlists.remove.opt.name.name"),
+            description=localized("cmd.jukebox.playlists.remove.opt.name.description"),
+            autocomplete=playlists_commands.jukebox_names,
+        ),
+    ) -> None:
+        await playlists_commands.remove(self.bot, inter, SCOPE_JUKEBOX, name)
 
     @commands.has_guild_permissions(manage_guild=True)
     @jukebox.sub_command(

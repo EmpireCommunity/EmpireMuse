@@ -29,6 +29,8 @@ from empiremuse.rules.errors import (
 )
 from empiremuse.rules.limits import PLAYLIST_FILE_MAX_BYTES, PLAYLIST_PASTE_MAX
 from empiremuse.rules.playlists import (
+    SCOPE_JUKEBOX,
+    SCOPES,
     ParsedFile,
     check_attachment,
     check_import_url,
@@ -91,8 +93,9 @@ async def _file_autocomplete(inter: disnake.ApplicationCommandInteraction, text:
 class PasteModal(disnake.ui.Modal):
     """Colar o JSON de playlists. O servidor vem de ``inter.guild_id`` do envio, nunca do que foi guardado antes."""
 
-    def __init__(self, cog: ServerPlaylistsCog) -> None:
+    def __init__(self, cog: ServerPlaylistsCog, scope: str = SCOPE_JUKEBOX) -> None:
         self.cog = cog
+        self.scope = scope
         super().__init__(
             title="Importar playlists",
             custom_id="server_playlists_paste",
@@ -128,7 +131,7 @@ class PasteModal(disnake.ui.Modal):
         if isinstance(text, RuleError):
             await inter.edit_original_message(error_message(text), allowed_mentions=NO_MENTIONS)
             return
-        await self.cog.run_import(inter, parse_file(text, max_bytes=PLAYLIST_FILE_MAX_BYTES))
+        await self.cog.run_import(inter, parse_file(text, max_bytes=PLAYLIST_FILE_MAX_BYTES), self.scope)
 
 
 class ServerPlaylistsCog(commands.Cog):
@@ -145,12 +148,13 @@ class ServerPlaylistsCog(commands.Cog):
         self,
         inter: Union[disnake.ApplicationCommandInteraction, disnake.ModalInteraction],
         parsed: ParsedFile | RuleError,
+        scope: str = SCOPE_JUKEBOX,
     ) -> None:
-        """Grava o arquivo já lido (só acrescenta) e responde com o relatório."""
+        """Grava o arquivo já lido no ``scope`` (só acrescenta) e responde com o relatório."""
         if isinstance(parsed, RuleError):
             await inter.edit_original_message(error_message(parsed), allowed_mentions=NO_MENTIONS)
             return
-        report = await self.bot.pool.servers.playlists.import_file(inter.guild_id, parsed)
+        report = await self.bot.pool.servers.playlists.import_file(inter.guild_id, parsed, scope=scope)
         await inter.edit_original_message(format_report(report), allowed_mentions=NO_MENTIONS)
 
     @commands.slash_command(
@@ -188,14 +192,22 @@ class ServerPlaylistsCog(commands.Cog):
             default=None,
             max_length=2000,
         ),
+        scope: str = commands.Param(
+            name=localized("cmd.playlists.import.opt.scope.name"),
+            description=localized("cmd.playlists.import.opt.scope.description"),
+            default=SCOPE_JUKEBOX,
+            choices=list(SCOPES),
+        ),
     ) -> None:
         ensure_manage(inter)
+        if scope not in SCOPES:  # o select do Discord já limita; o valor é conferido de novo
+            scope = SCOPE_JUKEBOX
 
         if sum(source is not None for source in (file, attachment, link)) > 1:
             raise GenericError("**Escolha só uma origem: o arquivo, o anexo ou o link.**")
 
         if file is None and attachment is None and link is None:
-            await inter.response.send_modal(PasteModal(self))
+            await inter.response.send_modal(PasteModal(self, scope))
             return
 
         if link is not None:
@@ -227,7 +239,7 @@ class ServerPlaylistsCog(commands.Cog):
             await inter.edit_original_message(error_message(data), allowed_mentions=NO_MENTIONS)
             return
 
-        await self.run_import(inter, parse_file(data, max_bytes=PLAYLIST_FILE_MAX_BYTES))
+        await self.run_import(inter, parse_file(data, max_bytes=PLAYLIST_FILE_MAX_BYTES), scope)
 
     @playlists.sub_command(
         name=localized("cmd.playlists.export.name"),
@@ -239,7 +251,7 @@ class ServerPlaylistsCog(commands.Cog):
         ensure_manage(inter)
         await inter.response.defer(ephemeral=True)
         playlists = self.bot.pool.servers.playlists
-        if not await playlists.list(inter.guild_id):
+        if not any([await playlists.list(inter.guild_id, scope=scope) for scope in SCOPES]):
             await inter.edit_original_message("**O servidor ainda não tem playlists.**")
             return
         data = await playlists.export_bytes(inter.guild_id)

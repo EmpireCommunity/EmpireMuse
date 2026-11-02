@@ -53,7 +53,7 @@ TODAYS_PT_BR_NAMES = {
         "tocar_agora",
     ],
     "play_music_file": ["arquivo", "posição", "selecionar_bot", "server", "tocar_agora"],
-    "playlists.import": ["anexo", "arquivo", "link"],
+    "playlists.import": ["anexo", "arquivo", "escopo", "link"],
     "queue.clear": [
         "duplicados",
         "duração_inicial",

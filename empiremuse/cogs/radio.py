@@ -31,6 +31,8 @@ from empiremuse.rules.radio import (
 from empiremuse.rules.radio_stations import Station
 from empiremuse.rules.text import external_text
 from empiremuse.utils.music.errors import GenericError
+from empiremuse.utils import playlists_commands
+from empiremuse.rules.playlists import SCOPE_RADIO
 from empiremuse.utils.others import CustomContext
 from empiremuse.utils.radio import actions, migrate_r5, setup_flow, station_commands
 from empiremuse.utils.radio.actions import Actor, Refused
@@ -575,6 +577,54 @@ class Radio(RadioPrefixCommands, commands.Cog):
             deny_key="radio.panel.call_only",
         )
         await interaction.edit_original_message(**await picker.render())
+
+    @radio.sub_command_group(
+        name=localized("cmd.radio.playlists.name"), description=localized("cmd.radio.playlists.description")
+    )
+    async def radio_playlists(self, inter: disnake.ApplicationCommandInteraction) -> None:
+        return
+
+    @radio_playlists.sub_command(
+        name=localized("cmd.radio.playlists.list.name"), description=localized("cmd.radio.playlists.list.description")
+    )
+    async def radio_playlists_list(self, inter: disnake.ApplicationCommandInteraction) -> None:
+        await playlists_commands.list_(self.bot, inter, SCOPE_RADIO)
+
+    @radio_playlists.sub_command(
+        name=localized("cmd.radio.playlists.create.name"),
+        description=localized("cmd.radio.playlists.create.description"),
+    )
+    async def radio_playlists_create(self, inter: disnake.ApplicationCommandInteraction) -> None:
+        await playlists_commands.create(self.bot, inter, SCOPE_RADIO)
+
+    @radio_playlists.sub_command(
+        name=localized("cmd.radio.playlists.edit.name"), description=localized("cmd.radio.playlists.edit.description")
+    )
+    async def radio_playlists_edit(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        name: str = commands.Param(
+            name=localized("cmd.radio.playlists.edit.opt.name.name"),
+            description=localized("cmd.radio.playlists.edit.opt.name.description"),
+            autocomplete=playlists_commands.radio_names,
+        ),
+    ) -> None:
+        await playlists_commands.edit(self.bot, inter, SCOPE_RADIO, name)
+
+    @radio_playlists.sub_command(
+        name=localized("cmd.radio.playlists.remove.name"),
+        description=localized("cmd.radio.playlists.remove.description"),
+    )
+    async def radio_playlists_remove(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        name: str = commands.Param(
+            name=localized("cmd.radio.playlists.remove.opt.name.name"),
+            description=localized("cmd.radio.playlists.remove.opt.name.description"),
+            autocomplete=playlists_commands.radio_names,
+        ),
+    ) -> None:
+        await playlists_commands.remove(self.bot, inter, SCOPE_RADIO, name)
 
     @radio.sub_command_group(name="station", description=localized("cmd.radio.station.description"))
     async def radio_station(self, inter: disnake.ApplicationCommandInteraction) -> None:
