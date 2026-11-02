@@ -71,11 +71,9 @@ class MiniStaticSkin:
             embed.description += f" {md_bracketed(f'<@{player.current.requester}>')}"
         else:
             try:
-                embed.description += (
-                    f" {md_bracketed(md_link('Recomendada', player.current.info['extra']['related']['uri']))}"
-                )
+                embed.description += f" {md_bracketed(md_link(player.tr('player.recommended'), player.current.info['extra']['related']['uri']))}"
             except Exception:
-                embed.description += "` [Recomendada]`"
+                embed.description += f"` [{player.tr('player.recommended')}]`"
 
         duration = "🔴 Livestream" if player.current.is_stream else time_format(player.current.duration)
 
@@ -123,7 +121,7 @@ class MiniStaticSkin:
                     continue
 
                 if has_stream:
-                    duration = time_format(t.duration) if not t.is_stream else "🔴 Ao vivo"
+                    duration = time_format(t.duration) if not t.is_stream else player.tr("player.live_badge")
 
                     queue_txt += (
                         f"`┌ {n + 1})` {md_link(t.title, t.uri, limit=34)}\n"
@@ -195,13 +193,13 @@ class MiniStaticSkin:
                     continue
 
                 if has_stream:
-                    duration = time_format(t.duration) if not t.is_stream else "🔴 Ao vivo"
+                    duration = time_format(t.duration) if not t.is_stream else player.tr("player.live_badge")
 
                     queue_txt += (
                         f"`┌ {n + 1})` {md_link(t.title, t.uri, limit=34)}\n"
                         f"`└` {app_emoji(player.bot, 'history')} `{duration}`"
                         + (player.tr("player.repeats", track_loops=str(t.track_loops)) if t.track_loops else "")
-                        + f" **|** {app_emoji(player.bot, 'like')} `Recomendada`\n"
+                        + f" **|** {app_emoji(player.bot, 'like')} `{player.tr('player.recommended')}`\n"
                     )
 
                 else:
@@ -213,7 +211,7 @@ class MiniStaticSkin:
                         f"-# `┌ {n + 1})` {md_link(t.title, t.uri, limit=34)}\n"
                         f"-# `└` {app_emoji(player.bot, 'history')} {duration}"
                         + (player.tr("player.repeats", track_loops=str(t.track_loops)) if t.track_loops else "")
-                        + f" **|** {app_emoji(player.bot, 'like')} `Recomendada`\n"
+                        + f" **|** {app_emoji(player.bot, 'like')} `{player.tr('player.recommended')}`\n"
                     )
 
             embed_queue = disnake.Embed(
@@ -273,13 +271,13 @@ class MiniStaticSkin:
                         description=fit(player.tr("player.adjust_the_volume.description"), 100),
                     ),
                     disnake.SelectOption(
-                        label="Misturar",
+                        label=fit(player.tr("player.shuffle.label"), 100),
                         emoji=app_emoji(player.bot, "shuffle"),
                         value=PlayerControls.shuffle,
                         description=fit(player.tr("player.shuffle_the_queue_songs.description"), 100),
                     ),
                     disnake.SelectOption(
-                        label="Readicionar",
+                        label=fit(player.tr("player.readd.label"), 100),
                         emoji=app_emoji(player.bot, "playlist_add"),
                         value=PlayerControls.readd,
                         description=fit(player.tr("player.add_the_played_songs_back.description"), 100),
@@ -333,7 +331,7 @@ class MiniStaticSkin:
                         ),
                         emoji=app_emoji(player.bot, "lock"),
                         value=PlayerControls.restrict_mode,
-                        description="Apenas DJ's/Staff's podem usar comandos restritos.",
+                        description=fit(player.tr("player.restrict_mode.description"), 100),
                     ),
                 ],
             ),

@@ -6,6 +6,7 @@ from typing import List, Union, Optional, TYPE_CHECKING
 import disnake
 from disnake.ext import commands
 
+from empiremuse.rules.i18n import Translator, fit
 from empiremuse.utils.music.converters import time_format, fix_characters, md_link
 from empiremuse.utils.music.models import LavalinkPlayer, LavalinkTrack
 from empiremuse.utils.others import (
@@ -16,14 +17,16 @@ from empiremuse.utils.others import (
 if TYPE_CHECKING:
     from empiremuse.utils.client import BotCore
 
+from empiremuse.utils.music.interactions.i18n_views import guild_translator, sync_translator
 from empiremuse.utils.music.interactions.view_modal import ViewModal
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
 
 
 class VolumeInteraction(disnake.ui.View):
-    def __init__(self, inter):
+    def __init__(self, inter, tr: Optional[Translator] = None):
         self.inter = inter
         self.volume = None
+        self.tr = tr or sync_translator(getattr(inter, "bot", None), getattr(inter, "guild", None))
         super().__init__(timeout=30)
         self.process_buttons()
 
@@ -32,25 +35,26 @@ class VolumeInteraction(disnake.ui.View):
 
         for l in [5, 20, 40, 60, 80, 100, 120, 150]:
             if l > 100:
-                description = "Acima de 100% o audio pode ficar bem ruim."
+                description = fit(self.tr("views.volume.high.description"), 100)
             else:
                 description = None
             opts.append(disnake.SelectOption(label=f"{l}%", value=f"vol_{l}", description=description))
 
-        select = disnake.ui.Select(placeholder="Nível:", options=opts)
+        select = disnake.ui.Select(placeholder=fit(self.tr("views.volume.placeholder"), 150), options=opts)
         select.callback = self.callback
         self.add_item(select)
 
     async def callback(self, interaction: disnake.MessageInteraction):
-        await interaction.response.edit_message(content=f"Volume alterado!", embed=None, view=None)
+        await interaction.response.edit_message(content=self.tr("views.volume.changed"), embed=None, view=None)
         self.volume = int(interaction.data.values[0][4:])
         self.stop()
 
 
 class QueueInteraction(disnake.ui.View):
-    def __init__(self, bot: BotCore, user: disnake.Member, timeout=120):
+    def __init__(self, bot: BotCore, user: disnake.Member, timeout=120, tr: Optional[Translator] = None):
         self.bot = bot
         self.user = user
+        self.tr = tr or sync_translator(bot, user.guild)
         self.track_pages = []
         self.select_options = []
         self.current_page = 0
@@ -79,7 +83,7 @@ class QueueInteraction(disnake.ui.View):
         if not self.message:
             return
 
-        self.embed.set_footer(text="Tempo para interagir esgotado!")
+        self.embed.set_footer(text=self.tr("views.queue.timeout"))
 
         for c in self.children:
             c.disabled = True
@@ -93,7 +97,7 @@ class QueueInteraction(disnake.ui.View):
         self.clear_items()
 
         track_select = disnake.ui.Select(
-            placeholder="Tocar uma música específica da página:",
+            placeholder=fit(self.tr("views.queue.select.placeholder"), 150),
             options=self.select_options,
             custom_id="queue_track_selection",
             max_values=1,
@@ -124,20 +128,26 @@ class QueueInteraction(disnake.ui.View):
         self.add_item(stop_interaction)
 
         play = disnake.ui.Button(
-            emoji=app_emoji(self.bot, "play"), label="Tocar", style=disnake.ButtonStyle.grey, custom_id="queue_skip"
+            emoji=app_emoji(self.bot, "play"),
+            label=fit(self.tr("views.queue.play.label"), 80),
+            style=disnake.ButtonStyle.grey,
+            custom_id="queue_skip",
         )
         play.callback = self.invoke_command
         self.add_item(play)
 
         move = disnake.ui.Button(
-            emoji=app_emoji(self.bot, "drag"), label="Mover", style=disnake.ButtonStyle.grey, custom_id="queue_move"
+            emoji=app_emoji(self.bot, "drag"),
+            label=fit(self.tr("views.queue.move.label"), 80),
+            style=disnake.ButtonStyle.grey,
+            custom_id="queue_move",
         )
         move.callback = self.move_callback
         self.add_item(move)
 
         rotate_q = disnake.ui.Button(
             emoji=app_emoji(self.bot, "repeat_all"),
-            label="Rotacionar Fila",
+            label=fit(self.tr("views.queue.rotate.label"), 80),
             style=disnake.ButtonStyle.grey,
             custom_id="queue_rotate",
         )
@@ -145,7 +155,9 @@ class QueueInteraction(disnake.ui.View):
         self.add_item(rotate_q)
 
         update_q = disnake.ui.Button(
-            emoji=app_emoji(self.bot, "refresh"), label="Recarregar", style=disnake.ButtonStyle.grey
+            emoji=app_emoji(self.bot, "refresh"),
+            label=fit(self.tr("views.queue.reload.label"), 80),
+            style=disnake.ButtonStyle.grey,
         )
         update_q.callback = self.update_q
         self.add_item(update_q)
@@ -160,12 +172,12 @@ class QueueInteraction(disnake.ui.View):
         await inter.response.send_modal(
             ViewModal(
                 view=self,
-                title="Mover música selecionada",
+                title=self.tr("views.queue.move.modal_title"),
                 custom_id="queue_move_modal",
                 components=[
                     disnake.ui.TextInput(
                         style=disnake.TextInputStyle.short,
-                        label="Posição da fila:",
+                        label=fit(self.tr("views.queue.move.position.label"), 80),
                         custom_id="queue_move_position",
                         max_length=4,
                         required=True,
@@ -176,9 +188,10 @@ class QueueInteraction(disnake.ui.View):
 
     async def modal_handler(self, inter: disnake.ModalInteraction):
         try:
+            tr = await guild_translator(self.bot, self.user.guild)
             if inter.data.custom_id == "queue_move_modal":
                 if not inter.text_values["queue_move_position"].isdigit():
-                    await inter.send("Você deve usar um número válido...", ephemeral=True)
+                    await inter.send(tr("views.queue.move.invalid"), ephemeral=True)
                     return
 
                 try:
@@ -217,47 +230,42 @@ class QueueInteraction(disnake.ui.View):
                     await inter.edit_original_message(embed=self.embed, view=self)
 
             else:
-                await inter.send(f"Método ainda não implementado: {inter.data.custom_id}", ephemeral=True)
+                await inter.send(tr("views.queue.not_implemented", custom_id=str(inter.data.custom_id)), ephemeral=True)
 
         except Exception as e:
             self.bot.dispatch("interaction_player_error", inter, e)
 
     def update_embed(self):
-        self.embed.title = f"**Músicas da fila [Página: {self.current_page + 1} / {self.max_page + 1}]**"
+        tr = self.tr
+        self.embed.title = tr("views.queue.title", page=self.current_page + 1, pages=self.max_page + 1)
 
         opts = []
 
         txt = ""
 
         for n, t in enumerate(self.track_pages[self.current_page]):
-            duration = time_format(t.duration) if not t.is_stream else "🔴 Livestream"
+            duration = time_format(t.duration) if not t.is_stream else tr("views.queue.livestream")
 
             index = (self.max_items * self.current_page) + n + 1
+            repeats = tr("player.repeats", track_loops=t.track_loops) if t.track_loops else ""
+            recommended = f"{app_emoji(self.bot, 'like')} {tr('views.queue.recommended')}"
 
             if self.current_track == t:
                 txt += (
                     f"`╔{'=' * 50}`\n`║` **{index}º) {md_link(t.title, t.uri, code=False, limit=37)}**\n"
                     f"`║` {app_emoji(self.bot, 'history')}  **{duration}**"
-                    + (f" - `Repetições: {t.track_loops}`" if t.track_loops else "")
+                    + repeats
                     + " **|** "
-                    + (
-                        f"{app_emoji(self.bot, 'user')} <@{t.requester}>"
-                        if not t.autoplay
-                        else f"{app_emoji(self.bot, 'like')} `Recomendada`"
-                    )
+                    + (f"{app_emoji(self.bot, 'user')} <@{t.requester}>" if not t.autoplay else recommended)
                     + f"\n`╚{'=' * 50}`\n"
                 )
             else:
                 txt += (
                     f"`┌ {index})` {md_link(t.title, t.uri, limit=45)}\n"
                     f"`└` {app_emoji(self.bot, 'history')} `{duration}`"
-                    + (f" - `Repetições: {t.track_loops}`" if t.track_loops else "")
-                    + f" **|** "
-                    + (
-                        f"{app_emoji(self.bot, 'user')} <@{t.requester}>"
-                        if not t.autoplay
-                        else f"{app_emoji(self.bot, 'like')} `Recomendada`"
-                    )
+                    + repeats
+                    + " **|** "
+                    + (f"{app_emoji(self.bot, 'user')} <@{t.requester}>" if not t.autoplay else recommended)
                     + "\n"
                 )
 
@@ -292,7 +300,8 @@ class QueueInteraction(disnake.ui.View):
                 break
 
         if not track:
-            await interaction.send(f'Música com id "{track_id}" não encontrada na fila do player...', ephemeral=True)
+            tr = await guild_translator(self.bot, self.user.guild)
+            await interaction.send(tr("views.queue.track_not_found", track_id=str(track_id)), ephemeral=True)
             return
 
         self.current_track = track
@@ -304,10 +313,11 @@ class QueueInteraction(disnake.ui.View):
             await interaction.edit_original_message(embed=self.embed, view=self)
 
     async def invoke_command(self, interaction: disnake.MessageInteraction):
+        tr = await guild_translator(self.bot, self.user.guild)
         try:
             player = self.bot.music.players[self.user.guild.id]
         except KeyError:
-            await interaction.send("O player já foi finalizado...", ephemeral=True)
+            await interaction.send(tr("views.queue.player_finished"), ephemeral=True)
             self.stop()
             return
 
@@ -315,7 +325,7 @@ class QueueInteraction(disnake.ui.View):
 
         try:
             if self.current_track is None:
-                await interaction.send("Nenhuma música selecionada...", ephemeral=True)
+                await interaction.send(tr("views.queue.none_selected"), ephemeral=True)
                 return
 
             if interaction.data.custom_id == "queue_skip":
@@ -323,7 +333,7 @@ class QueueInteraction(disnake.ui.View):
                     await check_cmd(self.bot.get_slash_command("seek"), interaction)
                     await player.seek(0)
                     player.set_command_log(
-                        emoji="⏪", text=f"{interaction.author.mention} retrocedeu da música para: `0:00`"
+                        emoji="⏪", text=tr("views.queue.log.restart", mention=str(interaction.author.mention))
                     )
                     player.update = True
                     await interaction.response.defer()
@@ -338,7 +348,9 @@ class QueueInteraction(disnake.ui.View):
                 update_inter = True
 
             else:
-                await interaction.send(f"Comando não implementado: {interaction.data.custom_id}", ephemeral=True)
+                await interaction.send(
+                    tr("views.queue.command_not_implemented", custom_id=str(interaction.data.custom_id)), ephemeral=True
+                )
                 return
 
             interaction.music_bot = self.bot
@@ -389,7 +401,7 @@ class QueueInteraction(disnake.ui.View):
         await interaction.response.edit_message(embed=self.embed, view=self)
 
     async def stop_interaction(self, interaction: disnake.MessageInteraction):
-        await interaction.response.edit_message(content="Queue fechada", embed=None, view=None)
+        await interaction.response.edit_message(content=self.tr("views.queue.closed"), embed=None, view=None)
         self.stop()
 
     async def update_q(self, interaction: disnake.MessageInteraction):
@@ -400,24 +412,40 @@ class QueueInteraction(disnake.ui.View):
         await interaction.response.edit_message(embed=self.embed, view=self)
 
     async def interaction_check(self, interaction: disnake.MessageInteraction):
+        tr = await guild_translator(self.bot, self.user.guild)
         if interaction.author != self.user:
-            await interaction.send(f"Apenas o membro {self.user.mention} pode interagir aqui.", ephemeral=True)
+            await interaction.send(tr("views.queue.only_member", mention=str(self.user.mention)), ephemeral=True)
             return
 
         try:
             self.bot.music.players[self.user.guild.id]
         except KeyError:
-            await interaction.response.edit_message(content="O player foi finalizado...", embed=None, view=None)
+            await interaction.response.edit_message(content=tr("views.queue.player_gone"), embed=None, view=None)
             self.stop()
             return
 
         return True
 
 
+async def _only_user_reply(view: disnake.ui.View, interaction: disnake.MessageInteraction) -> None:
+    """A resposta efêmera das views genéricas a quem não é o dono delas (idioma do servidor da interação)."""
+    tr = await guild_translator(getattr(interaction, "bot", None), getattr(interaction, "guild", None))
+    await interaction.send(tr("views.only_user", mention=str(view.user.mention)), ephemeral=True)
+
+
 class EmbedPaginatorInteraction(disnake.ui.View):
-    def __init__(self, user: disnake.Member, embeds: List[disnake.Embed], *, timeout=180, max_itens=25):
+    def __init__(
+        self,
+        user: disnake.Member,
+        embeds: List[disnake.Embed],
+        *,
+        timeout=180,
+        max_itens=25,
+        tr: Optional[Translator] = None,
+    ):
         super().__init__(timeout=timeout)
         self.user = user
+        self.tr = tr or sync_translator(None, getattr(user, "guild", None))
         self.current_page = 0
         self.max_page = len(embeds) - 1
         self.inter: Optional[disnake.MessageInteraction] = None
@@ -428,7 +456,7 @@ class EmbedPaginatorInteraction(disnake.ui.View):
         if interaction.user.id == self.user.id:
             return True
 
-        await interaction.send(f"Apenas {self.user.mention} pode interagir aqui.", ephemeral=True)
+        await _only_user_reply(self, interaction)
 
     def load_components(self):
         self.clear_items()
@@ -450,7 +478,7 @@ class EmbedPaginatorInteraction(disnake.ui.View):
         next_button.callback = self.next_callback
         self.add_item(next_button)
 
-        button = disnake.ui.Button(label="Fechar", emoji="❌")
+        button = disnake.ui.Button(label=fit(self.tr("views.close.label"), 80), emoji="❌")
         button.callback = self.cancel_callback
         self.add_item(button)
 
@@ -491,9 +519,12 @@ class EmbedPaginatorInteraction(disnake.ui.View):
 
 
 class ButtonInteraction(disnake.ui.View):
-    def __init__(self, user: disnake.Member, buttons: List[disnake.ui.Button], *, timeout=180):
+    def __init__(
+        self, user: disnake.Member, buttons: List[disnake.ui.Button], *, timeout=180, tr: Optional[Translator] = None
+    ):
         super().__init__(timeout=timeout)
         self.user = user
+        self.tr = tr or sync_translator(None, getattr(user, "guild", None))
         self.selected = None
         self.current_page = 0
         self.inter = None
@@ -506,7 +537,7 @@ class ButtonInteraction(disnake.ui.View):
             b.callback = self.callback
             self.add_item(b)
 
-        button = disnake.ui.Button(label="Cancelar", emoji="❌")
+        button = disnake.ui.Button(label=fit(self.tr("views.cancel.label"), 80), emoji="❌")
         button.callback = self.cancel_callback
         self.add_item(button)
 
@@ -522,9 +553,18 @@ class ButtonInteraction(disnake.ui.View):
 
 
 class SelectInteraction(disnake.ui.View):
-    def __init__(self, user: disnake.Member, opts: List[disnake.SelectOption], *, timeout=180, max_itens=25):
+    def __init__(
+        self,
+        user: disnake.Member,
+        opts: List[disnake.SelectOption],
+        *,
+        timeout=180,
+        max_itens=25,
+        tr: Optional[Translator] = None,
+    ):
         super().__init__(timeout=timeout)
         self.user = user
+        self.tr = tr or sync_translator(None, getattr(user, "guild", None))
         self.selected = None
         self.item_pages = list(disnake.utils.as_chunks(opts, max_itens))
         self.current_page = 0
@@ -537,7 +577,9 @@ class SelectInteraction(disnake.ui.View):
     def load_components(self):
         self.clear_items()
 
-        select_menu = disnake.ui.Select(placeholder="Selecione uma opção:", options=self.item_pages[self.current_page])
+        select_menu = disnake.ui.Select(
+            placeholder=fit(self.tr("views.select.placeholder"), 150), options=self.item_pages[self.current_page]
+        )
         select_menu.callback = self.callback
         self.add_item(select_menu)
         self.selected = self.item_pages[self.current_page][0].value
@@ -560,7 +602,7 @@ class SelectInteraction(disnake.ui.View):
             next_button.callback = self.next_callback
             self.add_item(next_button)
 
-        button = disnake.ui.Button(label="Cancelar", emoji="❌")
+        button = disnake.ui.Button(label=fit(self.tr("views.cancel.label"), 80), emoji="❌")
         button.callback = self.cancel_callback
         self.add_item(button)
 
@@ -568,7 +610,7 @@ class SelectInteraction(disnake.ui.View):
         if interaction.user.id == self.user.id:
             return True
 
-        await interaction.send(f"Apenas {self.user.mention} pode interagir aqui.", ephemeral=True)
+        await _only_user_reply(self, interaction)
 
     async def back_callback(self, interaction: disnake.MessageInteraction):
         if self.current_page == 0:
@@ -604,26 +646,32 @@ class SelectInteraction(disnake.ui.View):
 
 
 class AskView(disnake.ui.View):
-    def __init__(self, *, ctx: Union[commands.Context, disnake.Interaction], timeout=None):
+    def __init__(
+        self, *, ctx: Union[commands.Context, disnake.Interaction], timeout=None, tr: Optional[Translator] = None
+    ):
         super().__init__(timeout=timeout)
         self.selected = None
         self.ctx = ctx
+        self.tr = tr or sync_translator(getattr(ctx, "bot", None), getattr(ctx, "guild", None))
         self.interaction_resp: Optional[disnake.MessageInteraction] = None
+        self.allow.label = fit(self.tr("views.ask.yes.label"), 80)
+        self.deny.label = fit(self.tr("views.ask.no.label"), 80)
 
     async def interaction_check(self, interaction: disnake.MessageInteraction) -> bool:
         if interaction.user != self.ctx.author:
-            await interaction.send("Você não pode usar este botão!", ephemeral=True)
+            tr = await guild_translator(getattr(interaction, "bot", None), getattr(interaction, "guild", None))
+            await interaction.send(tr("views.ask.not_yours"), ephemeral=True)
             return False
 
         return True
 
-    @disnake.ui.button(label="Sim", emoji="✅")
+    @disnake.ui.button(label="yes", emoji="✅")  # o rótulo real vem do catálogo no __init__
     async def allow(self, button, interaction: disnake.MessageInteraction):
         self.selected = True
         self.interaction_resp = interaction
         self.stop()
 
-    @disnake.ui.button(label="Não", emoji="❌")
+    @disnake.ui.button(label="no", emoji="❌")
     async def deny(self, button, interaction: disnake.MessageInteraction):
         self.selected = False
         self.interaction_resp = interaction
@@ -644,6 +692,7 @@ class SelectBotVoice(disnake.ui.View):
         self.message: Optional[disnake.Message] = None
         self.voice_channel = inter.author.voice.channel
         self.guild = guild
+        self.tr = sync_translator(getattr(inter, "bot", None), guild)
         self.build_interactions(freebots)
         self.bot: Optional[BotCore] = None
         self.status = None
@@ -684,11 +733,13 @@ class SelectBotVoice(disnake.ui.View):
         bot_select.callback = self.bot_select_callback
         self.add_item(bot_select)
 
-        refresh_btn = disnake.ui.Button(label="Atualizar lista", emoji="🔄", style=disnake.ButtonStyle.blurple)
+        refresh_btn = disnake.ui.Button(
+            label=fit(self.tr("views.bot_voice.refresh.label"), 80), emoji="🔄", style=disnake.ButtonStyle.blurple
+        )
         refresh_btn.callback = self.reload_callback
         self.add_item(refresh_btn)
 
-        cancel_btn = disnake.ui.Button(label="Cancelar", emoji="❌")
+        cancel_btn = disnake.ui.Button(label=fit(self.tr("views.cancel.label"), 80), emoji="❌")
         cancel_btn.callback = self.cancel_callback
         self.add_item(cancel_btn)
 
@@ -710,20 +761,21 @@ class SelectBotVoice(disnake.ui.View):
 
     async def bot_select_callback(self, inter: disnake.MessageInteraction):
         bot_id = int(inter.values[0][10:])
+        tr = await guild_translator(getattr(self.inter, "bot", None), self.guild)
 
         try:
             bot = [
                 b for b in self.inter.bot.pool.get_guild_bots(inter.guild_id) if b.bot_ready and b.user.id == bot_id
             ][0]
         except IndexError:
-            await inter.send(f"<@{bot_id}> não está mais presente no servidor...", ephemeral=True)
+            await inter.send(tr("views.bot_voice.gone", mention=f"<@{bot_id}>"), ephemeral=True)
             await self.update_message()
             return
 
         guild = bot.get_guild(inter.guild_id)
 
         if not guild:
-            await inter.send(f"{bot.user.mention} não está mais no servidor...", ephemeral=True)
+            await inter.send(tr("views.bot_voice.left", mention=str(bot.user.mention)), ephemeral=True)
             await self.update_message()
             return
 
@@ -736,15 +788,15 @@ class SelectBotVoice(disnake.ui.View):
                 vc = player.last_channel
 
             if not vc:
-                await inter.send(
-                    f"{bot.user.mention} está com player ativo mas não está conectado em um canal de voz...",
-                    ephemeral=True,
-                )
+                await inter.send(tr("views.bot_voice.no_voice", mention=str(bot.user.mention)), ephemeral=True)
                 await self.update_message()
                 return
 
             if inter.author.id not in vc.voice_states:
-                await inter.send(f"{bot.user.mention} já está em uso no canal {vc.mention}", ephemeral=True)
+                await inter.send(
+                    tr("views.bot_voice.in_use", mention=str(bot.user.mention), channel=str(vc.mention)),
+                    ephemeral=True,
+                )
                 await self.update_message()
                 return
 

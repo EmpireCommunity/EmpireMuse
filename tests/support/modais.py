@@ -8,6 +8,7 @@ import copy
 import json
 from types import SimpleNamespace
 
+from empiremuse.i18n import get_i18n
 from empiremuse.utils.music import interactions
 from empiremuse.utils.music.interactions import FavMenuView, FavModalAdd, FavModalImport, ViewMode
 from empiremuse.utils.music.interactions import fav_menu, fav_modals
@@ -57,6 +58,7 @@ class ModalBot:
         self.salvos_usuario, self.salvos_servidor = [], []
         self.spotify = None
         self.deezer = SimpleNamespace(get_user_info=self._deezer_user)
+        self.pool = SimpleNamespace(i18n=get_i18n())  # o tradutor da guilda (pt-BR nos testes)
 
     async def _deezer_user(self, user_id):
         return {"name": "Ana", "link": f"https://www.deezer.com/br/profile/{user_id}", "picture": f"{URL_BASE}/ana.png"}
@@ -131,7 +133,7 @@ class ViewDoMenu(SimpleNamespace):
 
 def modal_view(bot, mode, *, real=True, prefixo=False):
     ctx = ContextoDePrefixo() if prefixo else ModalContext()
-    campos = dict(mode=mode, bot=bot, data=None, guild_data=None, ctx=ctx, log="")
+    campos = dict(mode=mode, bot=bot, data=None, guild_data=None, ctx=ctx, log="", tr=get_i18n().for_locale("pt-BR"))
     campos["message"] = MensagemDoMenu() if prefixo else None
     if real:
         return ViewDoMenu(**campos)

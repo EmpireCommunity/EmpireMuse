@@ -159,7 +159,7 @@ class QueueGroupMixin:
         if not player.queue and not player.queue_autoplay:
             raise GenericError("**Não há músicas na fila.**")
 
-        view = QueueInteraction(bot, inter.author)
+        view = QueueInteraction(bot, inter.author, tr=await inter.bot.pool.i18n.for_guild(inter.guild))
         embed = view.embed
 
         try:

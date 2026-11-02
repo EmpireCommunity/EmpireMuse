@@ -62,13 +62,13 @@ class FavMenuTextMixin:
             txt = self._integrations_manager_txt(cmd)
 
         else:
-            raise GenericError(f"**Modo não implementado:** {self.mode} | {type(self.mode)}")
+            raise GenericError(self.tr("fav.mode.unknown", mode=f"{self.mode} | {type(self.mode)}"))
 
         if self.log:
-            txt += f"\n**Última interação:**\n{self.log}\n"
+            txt += self.tr("fav.last_interaction", log=self.log)
 
         if self.mode == ViewMode.integrations_manager:
-            txt += f"\n**Links de perfis/canais suportados:**\n{', '.join(supported_platforms)}"
+            txt += self.tr("fav.itg.supported", platforms=", ".join(supported_platforms))
 
         return txt
 
@@ -89,19 +89,15 @@ class FavMenuTextMixin:
         return supported_platforms
 
     def _how_to_use_txt(self, cmd: str) -> str:
-        return (
-            "\n\n**Como usá-los?**\n"
-            f"* Usando o comando {cmd} (selecionando o favorito no preenchimento automático da busca)\n"
-            "* Clicando no botão/select de tocar favorito/integração do player.\n"
-            f"* Usando o comando {self.prefix}{self.bot.get_cog('Music').play_legacy.name} sem incluir um nome ou link de uma música/vídeo.\n"
-            "* Usando o botão de tocar favorito abaixo.\n"
+        return self.tr(
+            "fav.how_to_use", cmd=cmd, prefix=str(self.prefix), command=self.bot.get_cog("Music").play_legacy.name
         )
 
     def _fav_manager_txt(self, cmd: str) -> str:
-        txt = "### Gerenciador de favoritos.\n"
+        txt = self.tr("fav.manager.heading")
 
         if not self.data["fav_links"]:
-            txt += "Você não possui favoritos (clique no botão de adicionar abaixo).\n"
+            txt += self.tr("fav.manager.empty")
 
         else:
             txt += paginator(
@@ -118,14 +114,14 @@ class FavMenuTextMixin:
         return txt
 
     def _integrations_manager_txt(self, cmd: str) -> str:
-        txt = "### Gerenciador de integrações de canais/perfis com playlists públicas.\n"
+        txt = self.tr("fav.itg.manager.heading")
 
         if not self.data["integration_links"]:
-            txt += "**Você não possui integrações no momento (clique no botão de adicionar abaixo).**\n"
+            txt += self.tr("fav.itg.manager.empty")
             return txt
 
         txt += (
-            f"### Suas integrações atuais:\n"
+            self.tr("fav.itg.manager.current")
             + paginator(
                 "\n".join(
                     f"> {_format_itg(self.bot, n + 1, d)}"

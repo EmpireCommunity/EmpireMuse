@@ -16,14 +16,21 @@ import pytest
 from empiremuse.cogs import music_settings
 from empiremuse.cogs.music import Music
 from empiremuse.cogs.music_settings import MusicSettings
+from empiremuse.i18n import get_i18n
 from empiremuse.utils.music.interactions import skin_editor
-from empiremuse.utils.music.interactions import SkinEditorMenu, base_skin
+from empiremuse.utils.music.interactions import SkinEditorMenu
+from empiremuse.utils.music.interactions.skin_editor_data import base_skin_for
 from tests.support.formatos_reais import SERVIDOR
+
+
+def skin_padrao() -> dict:
+    """A skin base do editor no idioma dos testes (pt-BR), como ``new_skin``/``load_skin`` a montam."""
+    return base_skin_for(get_i18n().for_locale("pt-BR"))
 
 
 def skin_realista(**mudancas) -> dict:
     """A skin padrão do editor mais um embed montado pelo editor (campos, autor, rodapé, imagem, miniatura, cor)."""
-    skin = copy.deepcopy(base_skin)
+    skin = skin_padrao()
     skin["content"] = "Tocando agora: {track.title}"
     skin["controller_enabled"] = False
     skin["embeds"].append(
@@ -86,7 +93,7 @@ class BotDeSkins:
         self.escritas = []  # ``(id_, db_name)`` de cada gravação
         self.banco = None  # o que foi persistido na última gravação (cópia): é o que sobrevive a um reinício
         self.music = SimpleNamespace(players={SERVIDOR: jogador for jogador in list(jogadores)[:1]})
-        self.pool = SimpleNamespace(get_guild_bots=lambda guild_id: [self], guild_prefix_cache={})
+        self.pool = SimpleNamespace(get_guild_bots=lambda guild_id: [self], guild_prefix_cache={}, i18n=get_i18n())
         self.config = {"DEFAULT_PREFIX": "!!", "IGNORE_SKINS": "", "IGNORE_STATIC_SKINS": ""}
         self.user = SimpleNamespace(
             id=1,
@@ -193,7 +200,7 @@ class TestLeitores:
     async def test_load_skin_sem_prefixo_conhecido_comeca_da_skin_padrao(self, editor_sem_tela):
         menu, _, _ = editor_sem_tela(dados_globais())
         await menu.load_skin(SimpleNamespace(values=["default"]))
-        assert menu.message_data == base_skin
+        assert menu.message_data == skin_padrao()
 
     @pytest.mark.asyncio
     async def test_change_skin_nao_mexe_no_player_que_ja_usa_a_skin_escolhida(self, monkeypatch):
