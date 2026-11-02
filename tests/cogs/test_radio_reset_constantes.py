@@ -36,7 +36,7 @@ async def test_the_reset_confirmation_buttons_time_out_after_60_seconds():
     w = build()
     await premium(w)
     await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
-    await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=w.channel)
+    await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, bot=None)
 
     view = w.inter.edit_original_message.await_args.kwargs["view"]
 
