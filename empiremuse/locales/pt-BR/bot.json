@@ -650,5 +650,13 @@
   "legacy.error.only_user_button": "Apenas o usuário {user} pode usar esse botão!",
   "legacy.error.reported": "**Erro reportado com sucesso!**",
   "legacy.error.title": "Ocorreu um erro no comando:",
-  "legacy.error.unexpected": "Ocorreu um erro inesperado ao executar o comando. Tente novamente em instantes."
+  "legacy.error.unexpected": "Ocorreu um erro inesperado ao executar o comando. Tente novamente em instantes.",
+  "legacy.lastfm.auth_prompt": "### {link} para vincular sua conta do last.fm (na página clique em \"allow\")\n\n`O link expira em` <t:{ts}:R> `(Caso esteja expirado, clique no botão novamente).`\n\n`Atenção: Não mostre o link do \"clique aqui\" pra ninguem e nem envie em locais públicos, pois esse link pode conceder acesso a sua conta do last.fm`\n\n`Caso já tenha autorizado a aplicação você deve aguardar até 20 segundos para a mensagem acima atualizar confirmando o processo.`",
+  "legacy.lastfm.click_here": "Clique aqui",
+  "legacy.lastfm.cooldown_many": "**Você terá que aguardar {count} segundos para ativar/desativar o scrobble/registro.**",
+  "legacy.lastfm.cooldown_one": "**Você terá que aguardar {count} segundo para ativar/desativar o scrobble/registro.**",
+  "legacy.lastfm.cooldown_other": "**Você terá que aguardar {count} segundos para ativar/desativar o scrobble/registro.**",
+  "legacy.lastfm.link_account": "**Vincule (ou crie) uma conta no {link} para registrar todas as músicas que você ouvir por aqui no seu perfil do last.fm para obter sugestões de músicas/artistas/álbuns e ter uma estatística geral das músicas que você ouviu alem de ter acesso a uma comunidade incrível da plataforma.**",
+  "legacy.lastfm.no_embed_permission": "**Você não possui permissão de inserir links/anexos no canal <#{channel}>**",
+  "legacy.lastfm.not_your_button": "Você não pode usar esse botão"
 }

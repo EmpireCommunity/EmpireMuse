@@ -637,5 +637,13 @@
   "legacy.error.only_user_button": "Only the user {user} can use this button!",
   "legacy.error.reported": "**Error reported successfully!**",
   "legacy.error.title": "An error occurred in the command:",
-  "legacy.error.unexpected": "An unexpected error occurred while running the command. Try again in a moment."
+  "legacy.error.unexpected": "An unexpected error occurred while running the command. Try again in a moment.",
+  "legacy.lastfm.auth_prompt": "### {link} to link your last.fm account (on the page click \"allow\")\n\n`The link expires` <t:{ts}:R> `(If it has expired, click the button again).`\n\n`Warning: Do not show the \"click here\" link to anyone or send it in public places, as this link can grant access to your last.fm account`\n\n`If you have already authorized the application, you must wait up to 20 seconds for the message above to update confirming the process.`",
+  "legacy.lastfm.click_here": "Click here",
+  "legacy.lastfm.cooldown_many": "**You will have to wait {count} seconds to enable/disable scrobbling.**",
+  "legacy.lastfm.cooldown_one": "**You will have to wait {count} second to enable/disable scrobbling.**",
+  "legacy.lastfm.cooldown_other": "**You will have to wait {count} seconds to enable/disable scrobbling.**",
+  "legacy.lastfm.link_account": "**Link (or create) an account on {link} to record every song you listen to here on your last.fm profile, get song/artist/album suggestions, have overall statistics of the songs you listened to, and access an amazing community on the platform.**",
+  "legacy.lastfm.no_embed_permission": "**You don't have permission to embed links/attachments in the channel <#{channel}>**",
+  "legacy.lastfm.not_your_button": "You can't use this button"
 }
