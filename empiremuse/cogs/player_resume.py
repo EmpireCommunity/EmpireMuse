@@ -3,6 +3,7 @@
 # nota: este sistema é totalmente experimental.
 import asyncio
 import logging
+import time
 from contextlib import suppress
 from typing import Union
 
@@ -25,6 +26,7 @@ from empiremuse.utils.others import send_idle_embed, CustomContext
 
 from empiremuse.logs.context import guild_extra
 
+ROLES_RELOAD_S = 30.0  # a lista de bots só-rádio é relida no máximo a cada 30 s na retomada
 logger = logging.getLogger("empiremuse.player")
 
 
@@ -229,10 +231,14 @@ class PlayerSession(commands.Cog):
         hub = getattr(getattr(self.bot, "pool", None), "radio", None)
         if hub is None:
             return False, False
-        try:
-            await hub.roles.load()
-        except Exception:  # noqa: BLE001 - sem a lista de bots só-rádio vale a lista que já estava em memória
-            logger.debug("Lista de bots só-rádio não relida na retomada")
+        if (
+            time.monotonic() - getattr(self, "_roles_loaded_at", -ROLES_RELOAD_S) >= ROLES_RELOAD_S
+        ):  # uma leitura por retomada, não uma por sessão
+            self._roles_loaded_at = time.monotonic()
+            try:
+                await hub.roles.load()
+            except Exception:  # noqa: BLE001 - sem a lista de bots só-rádio vale a lista que já estava em memória
+                logger.debug("Lista de bots só-rádio não relida na retomada")
         if hub.roles.is_radio_only(getattr(self.bot, "identifier", None)):
             return True, True
         try:

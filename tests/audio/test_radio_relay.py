@@ -1079,3 +1079,31 @@ class TestRunnerWhenTheRelayRefuses:
         await runner.on_stream_lost()
 
         assert runner.failures == 1
+
+
+class TestFlowOfThePlayNotTheLoad:
+    """Revisão do R4: o áudio lido pelo ``loadtracks`` não pode valer como "o play abriu a estação"."""
+
+    @pytest.mark.asyncio
+    async def test_audio_read_before_expect_flow_does_not_count_and_the_play_audio_does(self):
+        head = b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n"
+        async with Station(sends(head, MP3 + b"A" * 100)) as station, relay() as r:
+            token = r.register(station.url, codec="MP3", bitrate=128)
+            await fetch(r, token)  # o loadtracks: lê e fecha
+
+            r.expect_flow(token)
+            assert await r.wait_flowing(token, 0.05) is False
+
+            await fetch(r, token)  # o play
+            assert await r.wait_flowing(token, 1) is True
+
+    @pytest.mark.asyncio
+    async def test_a_revoke_wakes_the_wait_at_once(self):
+        async with relay() as r:
+            token = r.register("http://radio.example:8000/live", codec="MP3", bitrate=128)
+            waiter = asyncio.ensure_future(r.wait_flowing(token, 30))
+            await asyncio.sleep(0)
+
+            await r.revoke(token)
+
+            assert await asyncio.wait_for(waiter, 1) is False

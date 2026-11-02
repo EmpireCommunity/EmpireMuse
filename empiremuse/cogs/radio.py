@@ -478,6 +478,7 @@ class Radio(commands.Cog):
         playlist: Optional[str],
         found: Any,
         picked: Optional[Station],
+        station_list: tuple[str, ...] = (),
     ) -> str:
         """Liga a rádio (personalizada com ``found`` ou ao vivo com ``picked``) e devolve o texto da resposta. Vale para o comando e para o seletor."""
         actor = Actor(
@@ -498,6 +499,7 @@ class Radio(commands.Cog):
                 if found
                 else playlist,  # com estação também, o turn_on recusa (choose_one): nada é ignorado em silêncio
                 station=picked,
+                station_list=station_list or None,
                 actor=actor,
                 candidates=candidates,
                 playlist_exists=found is not None,
@@ -528,7 +530,16 @@ class Radio(commands.Cog):
     def _can_manage(interaction: Any) -> bool:
         return bool(interaction.author.guild_permissions.manage_guild)
 
-    def _picker(self, interaction: Any, tr: Any, apply: Any, confirm_label: str) -> RadioPicker:
+    def _picker(
+        self,
+        interaction: Any,
+        tr: Any,
+        apply: Any,
+        confirm_label: str,
+        *,
+        check: Any = None,
+        deny_key: str = "radio.refused.no_manage_guild",
+    ) -> RadioPicker:
         tree = self.hub.locations
         if tree is None:  # o arquivo de dados não carregou: o filtro some e a busca por nome (``estacao:``) segue
             raise GenericError(tr("radio.local.unavailable"))
@@ -543,14 +554,17 @@ class Radio(commands.Cog):
             guild_locale=str(getattr(guild_locale, "value", guild_locale)) if guild_locale else None,
             apply=apply,
             confirm_label=confirm_label,
-            check=self._can_manage,
+            check=check or self._can_manage,
+            deny_key=deny_key,
         )
 
     async def _open_start_picker(self, inter: Any, tr: Any, channel: Any) -> None:
         await self._require_station_rights(inter, tr)
 
-        async def apply(click: disnake.MessageInteraction, station: Station) -> str:
-            return await self._start(click, tr, channel, playlist=None, found=None, picked=station)
+        async def apply(click: disnake.MessageInteraction, station: Station, station_list: tuple[str, ...]) -> str:
+            return await self._start(
+                click, tr, channel, playlist=None, found=None, picked=station, station_list=station_list
+            )
 
         picker = self._picker(inter, tr, apply, tr("radio.local.confirm_start", channel=channel.name))
         await inter.edit_original_message(**await picker.render())

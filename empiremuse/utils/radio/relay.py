@@ -125,6 +125,9 @@ class RelaySession:
     accepts: deque = field(default_factory=deque, repr=False)  # quando as reconexões aceitas chegaram (janela móvel)
     last_accept: float | None = None
     last_write: float = 0.0  # a última vez que o ``_pump`` escreveu áudio para o Lavalink
+    claimed_serial: int = 0  # o número (``served``) da conexão que é a saída agora
+    flow_after: int = 0  # só o áudio de uma conexão DEPOIS desta conta como "chegou" (o loadtracks do Lavalink não prova que o play abriu)
+    closed: asyncio.Event = field(default_factory=asyncio.Event, repr=False)  # o token foi revogado
     exhausted: bool = False  # a 7ª reconexão: o token não aceita mais nada
     limited: bool = False  # o relay recusou o Lavalink por política: não é falha da estação
     last_refusal_log: float | None = None
@@ -209,6 +212,7 @@ class RadioRelay:
         session = self._sessions.pop(token, None)
         if session is None:
             return
+        session.closed.set()  # acorda quem espera o áudio
         if session.task is not None:
             session.task.cancel()
         if session.output is not None:
@@ -263,6 +267,8 @@ class RadioRelay:
         ):  # a reconexão do Lavalink no mesmo token: aceita só dentro da política (nunca com 2 saídas abertas)
             async with session.gate:
                 refusal = await self._admit_reconnect(session)
+                if refusal is None and session.closed.is_set():
+                    return  # o token foi revogado enquanto esta conexão esperava a vez: ela não assume nada
                 if refusal is None:
                     self._claim(session, writer)
             if refusal is not None:
@@ -279,6 +285,8 @@ class RadioRelay:
             if session.busy and not await self._take_over(session):
                 await self._reply(writer, "409 Conflict")
                 return
+            if session.closed.is_set():
+                return  # revogado enquanto esperava
             self._claim(session, writer)
         try:
             async with self._open:
@@ -302,6 +310,7 @@ class RadioRelay:
         session.busy = True
         session.output = writer
         session.task = asyncio.current_task()
+        session.claimed_serial = session.served
         session.free.clear()
         session.last_write = self._clock()
 
@@ -391,16 +400,27 @@ class RadioRelay:
         session = self._sessions.get(token)
         return session is not None and session.opened > 0
 
+    def expect_flow(self, token: str) -> None:
+        """Chamado antes de mandar o Lavalink TOCAR: o áudio das conexões de antes (o ``loadtracks``) não prova que o play abriu a estação."""
+        session = self._sessions.get(token)
+        if session is not None:
+            session.flow_after = session.served
+            session.flowing.clear()
+
     async def wait_flowing(self, token: str, timeout: float) -> bool:
-        """Espera o primeiro áudio chegar ao Lavalink por este token. ``False`` se o prazo esgotou ou o token foi revogado: a rádio NÃO está tocando."""
+        """Espera o primeiro áudio do PLAY chegar ao Lavalink por este token. ``False`` se o prazo esgotou ou o token foi revogado (acorda na hora):
+        a rádio NÃO está tocando."""
         session = self._sessions.get(token)
         if session is None:
             return False
+        flowing = asyncio.ensure_future(session.flowing.wait())
+        closed = asyncio.ensure_future(session.closed.wait())
         try:
-            await asyncio.wait_for(session.flowing.wait(), timeout)
-        except TimeoutError:
-            return False
-        return token in self._sessions
+            await asyncio.wait({flowing, closed}, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            flowing.cancel()
+            closed.cancel()
+        return session.flowing.is_set() and not session.closed.is_set() and token in self._sessions
 
     def refused(self, token: str) -> bool:
         session = self._sessions.get(token)
@@ -512,6 +532,7 @@ class RadioRelay:
         throttle = TitleThrottle()
         response = upstream.response
         last_audio = self._clock()
+        serial = session.claimed_serial
         reason = "cancelled"  # o que ficar assim é o cancelamento (take-over ou revogação)
         waiting = "upstream"  # onde está esperando: a estação ou o consumidor
         try:
@@ -544,7 +565,8 @@ class RadioRelay:
                     writer.write(audio)
                     await asyncio.wait_for(writer.drain(), DRAIN_TIMEOUT_S)
                     session.last_write = self._clock()
-                    session.flowing.set()  # o primeiro áudio já está com o Lavalink: a rádio está tocando de verdade
+                    if serial > session.flow_after:
+                        session.flowing.set()  # o primeiro áudio já está com o Lavalink: a rádio está tocando de verdade
                 elif now - last_audio > self._idle:
                     reason = "metadata_only"
                     return  # só metadado há tempo demais: não é um fluxo de áudio

@@ -8,6 +8,8 @@ import socket
 import struct
 import zlib
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -681,3 +683,28 @@ class TestWorker:
 
             with pytest.raises(LogoError):
                 await decode_in_worker("PNG", png_bytes())
+
+
+class TestSharedFlightCancel:
+    """Revisão do R4: o cancelamento de quem busca o logo não pode virar cancelamento de quem só esperava o mesmo voo."""
+
+    @pytest.mark.asyncio
+    async def test_a_waiter_gets_no_logo_when_the_owner_of_the_flight_is_cancelled(self):
+        gate = asyncio.Event()
+        source = SimpleNamespace(favicon_of=lambda uuid: LOGO_URL, learn=AsyncMock())
+        service = LogoService(source)
+
+        async def hang(uuid, configured):
+            await gate.wait()
+            return LogoResult(b"x")
+
+        service._load = hang
+        owner = asyncio.ensure_future(service.png(UUID))
+        await asyncio.sleep(0)
+        waiter = asyncio.ensure_future(service.png(UUID))
+        await asyncio.sleep(0)
+
+        owner.cancel()
+        result = await asyncio.wait_for(waiter, 1)
+
+        assert result == LogoResult()

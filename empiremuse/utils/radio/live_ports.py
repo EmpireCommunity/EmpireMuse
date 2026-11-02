@@ -98,14 +98,15 @@ class LiveRadioPorts(DiscordRadioPorts):
         """Abre a estação ativa pelo relay e manda o Lavalink tocá-la. Qualquer falha propaga e o runner recua."""
         hub = self.pool.radio
         await self._release()
+        wanted = self.active
         try:
-            station = await hub.directory.fresh_for_play(self.active)
+            station = await hub.directory.fresh_for_play(wanted)
         except DirectoryError as error:  # diretório fora do ar ou sem fichas: não é culpa da estação
             raise RuntimeError("diretório indisponível") from error
         if station is None:
             raise StationFailure  # o diretório respondeu e a estação não existe mais ou deixou de passar nas regras
-        self._names[self.active] = station.name
-        self._cards[self.active] = self._card_of(station)
+        self._names[station.uuid] = station.name
+        self._cards[station.uuid] = self._card_of(station)
         bot, guild, player = self._bot(), self._guild(), self._player()
         if bot is None or guild is None or player is None:
             raise RuntimeError("sem player")
@@ -116,6 +117,10 @@ class LiveRadioPorts(DiscordRadioPorts):
 
         self._local_node(bot)  # sem nó local nada é aberto (e isso não é falha da estação)
         await hub.relay.ensure_started()
+        if (
+            self.active != wanted
+        ):  # a estação mudou enquanto o diretório respondia: nada desta tentativa vale, o recuo já pega a nova
+            raise RuntimeError("estação trocada durante a partida")
         token = hub.relay.register(
             station.url_resolved, codec=station.codec, bitrate=station.bitrate, on_title=self._on_title
         )
@@ -147,6 +152,7 @@ class LiveRadioPorts(DiscordRadioPorts):
             player.queue.clear()
             player.queue.append(track)
             player.volume = self.volume  # o volume da rádio vale para cada fluxo novo (o player começa a faixa com ele)
+            hub.relay.expect_flow(token)  # o que o loadtracks leu não conta: só o áudio do play
             await player.process_next()
             if not await hub.relay.wait_flowing(token, FLOW_WAIT_S):
                 # a rádio só "toca" quando o áudio chegou: fluxo mudo é falha, não estado. Se o relay chegou a abrir a estação, a culpa é dela

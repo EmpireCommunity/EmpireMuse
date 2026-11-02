@@ -773,9 +773,16 @@ class TestLiveLoadsOnlyOnTheLocalNode:
 
         async def load(query, **kwargs):
             for session in w.hub.relay._sessions.values():
-                session.opened += 1  # o relay abriu a estação...
-                session.flowing.set()  # ...e o primeiro áudio chegou ao Lavalink: a rádio toca de verdade
+                session.opened += 1  # o relay abriu a estação (o loadtracks do Lavalink)
             return [SimpleNamespace(title="live", info={"uri": "http://127.0.0.1:9/r/x"})]
+
+        async def play(**kwargs):
+            for session in w.hub.relay._sessions.values():
+                session.served += 1
+                session.claimed_serial = session.served
+                session.flowing.set()  # ...e o primeiro áudio do PLAY chegou ao Lavalink: a rádio toca de verdade
+
+        w.player.process_next = AsyncMock(side_effect=play)
 
         self.local = SimpleNamespace(identifier="LOCAL", get_tracks=AsyncMock(side_effect=load))
         self.remote = SimpleNamespace(
@@ -832,8 +839,13 @@ class TestLiveLoadsOnlyOnTheLocalNode:
         async def flowing_load(*args, **kwargs):
             for session in w.hub.relay._sessions.values():
                 session.opened += 1
-                session.flowing.set()
             return [track]
+
+        async def play(**kwargs):
+            for session in w.hub.relay._sessions.values():
+                session.flowing.set()
+
+        w.player.process_next = AsyncMock(side_effect=play)
 
         real._get_tracks = AsyncMock(side_effect=flowing_load)
         real.build_track = AsyncMock(side_effect=AssertionError("a faixa do relay não deveria ser decodificada"))
@@ -907,6 +919,9 @@ class TestLiveLoadsOnlyOnTheLocalNode:
                 session.opened += 1  # o relay abriu a estação, mas nenhum áudio chegou ao Lavalink
             return [SimpleNamespace(title="live", info={"uri": "x"})]
 
+        from unittest.mock import AsyncMock
+
+        w.player.process_next = AsyncMock()  # o play não entrega áudio nenhum
         self.local.get_tracks.side_effect = opened_but_silent
         try:
             await ports.connect()
@@ -923,6 +938,9 @@ class TestLiveLoadsOnlyOnTheLocalNode:
 
         monkeypatch.setattr(live_ports, "FLOW_WAIT_S", 0.05)
         w, ports = await self.world_with_player()
+        from unittest.mock import AsyncMock
+
+        w.player.process_next = AsyncMock()  # o play não entrega áudio nenhum
         self.local.get_tracks.side_effect = None
         self.local.get_tracks.return_value = [
             SimpleNamespace(title="live", info={"uri": "x"})

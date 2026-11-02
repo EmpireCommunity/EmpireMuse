@@ -192,3 +192,10 @@ class TestNumbersFromTheDirectory:
     def test_distance_between_two_known_points(self):
         assert 168 < distance_km(-16.68, -49.25, -15.78, -47.93) < 178  # Goiânia–Brasília
         assert distance_km(1, 1, 1, 1) == pytest.approx(0)
+
+
+def test_a_giant_decimal_click_count_is_zero_not_an_exception():
+    from empiremuse.rules.radio_geo import clamp_clicks
+
+    assert clamp_clicks("9" * 5000) == 0
+    assert clamp_clicks("123") == 123

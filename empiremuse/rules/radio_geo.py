@@ -211,7 +211,9 @@ def clamp_clicks(value: object) -> int:
     """``clickcount`` do diretório limitado a 0..10⁹; o que não é número vira 0."""
     if isinstance(value, bool):
         return 0
-    if isinstance(value, str) and value.strip().isdecimal():
+    if (
+        isinstance(value, str) and value.strip().isdecimal() and len(value.strip()) <= 12
+    ):  # sem ``int()`` de texto gigante (ValueError)
         value = int(value.strip())
     if not isinstance(value, int | float) or not math.isfinite(value):
         return 0

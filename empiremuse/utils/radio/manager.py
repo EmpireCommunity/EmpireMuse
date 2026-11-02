@@ -120,7 +120,9 @@ class RadioManager:
         if apply is None:
             return False
         await apply(radio)
-        await runner.station_changed()
+        self._spawn(
+            runner.station_changed()
+        )  # a volta pelo recuo pode demorar (estação ruim, Lavalink fora): quem clicou não espera por ela
         return True
 
     def referenced_stations(self) -> set[str]:

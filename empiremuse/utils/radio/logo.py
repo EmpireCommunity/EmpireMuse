@@ -299,7 +299,7 @@ class LogoService:
         try:
             result = await self._load(uuid, configured)
         except asyncio.CancelledError:
-            flight.cancel()
+            flight.set_result(LogoResult())  # quem esperava o voo do outro não herda o cancelamento: recebe "sem logo"
             raise
         except Exception as error:  # noqa: BLE001 - quem chama nunca vê exceção; só o tipo vai ao log (F-7)
             logger.warning("Logo da estação não carregado (%s)", type(error).__name__)

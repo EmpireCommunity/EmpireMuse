@@ -1,6 +1,7 @@
 """Trocar a estação principal de uma rádio ao vivo LIGADA (item 8): a ação confere direito, premium e saúde, grava com ``rev`` e a rádio troca ao vivo; o
 anterior e o próxima andam pela lista de onde a estação foi escolhida; o volume e as favoritas passam pelo painel só para quem está na call."""
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -85,6 +86,7 @@ class TestChangeStationAction:
             actor=Actor(7, True),
             station_list=[RESERVE, THIRD],
         )
+        await asyncio.gather(*list(world.hub.manager._tasks))  # a volta pelo recuo segue em segundo plano
 
         assert updated.source["station"] == RESERVE and updated.source["list"] == [RESERVE, THIRD]
         assert (await world.hub.store.get(radio.id)).source["station"] == RESERVE
@@ -365,3 +367,48 @@ class TestMenu:
         await w.cog.radio_panel_menu(press)
 
         assert "outro tipo de rádio" in said(press) and w.hub.manager.is_running(radio_id(2, GUILD))
+
+
+class TestPickerWiring:
+    """O seletor de estação aberto pelo cog (comando e painel) até o Confirmar: a ligação entre ``_picker``, o seletor e a ação (CodeRabbit/revisão: antes quebrava com TypeError)."""
+
+    @pytest.mark.asyncio
+    async def test_the_menu_option_opens_a_picker_for_members_in_the_call_that_changes_the_station(self):
+        w = await TestWalking.live_world(list_=[MAIN, RESERVE])
+        press = menu("stations")
+
+        await w.cog.radio_panel_menu(press)
+        view = press.edit_original_message.await_args.kwargs["view"]
+        view.chosen = station(THIRD, "Rádio 33")
+        confirm = click(PANEL_MENU_ID)
+        await view._on_confirm(confirm)
+
+        assert view._deny_key == "radio.panel.call_only"
+        assert view._check(click(PANEL_MENU_ID, manage_guild=False)) and not view._check(
+            click(PANEL_MENU_ID, in_call=None)
+        )
+        assert (await w.hub.store.get(w.radio.id)).source["station"] == THIRD
+        assert "agora tocando" in said(confirm).lower()
+
+    @pytest.mark.asyncio
+    async def test_the_command_picker_turns_the_radio_on_with_the_chosen_station_and_list(self):
+        from tests.cogs.test_radio_comandos import settle
+
+        w = build_world()
+        await w.hub.control.load()
+        await w.hub.premium.grant(GUILD, by=1)
+        w.cog.bot.user = SimpleNamespace(id=2)
+        w.hub.manager.ports_factory = lambda radio: SwitchingPorts()
+        w.hub.directory = SimpleNamespace(by_uuid=AsyncMock(), logo_png=AsyncMock(), favicon_of=lambda u: None)
+        tr = await w.cog.bot.pool.i18n.for_guild(w.inter.guild)
+
+        await w.cog._open_start_picker(w.inter, tr, w.channel)
+        view = w.inter.edit_original_message.await_args.kwargs["view"]
+        view.chosen = station(THIRD, "Rádio 33")
+        confirm = click(PANEL_MENU_ID)
+        await view._on_confirm(confirm)
+        await settle(w)
+
+        radio = await w.hub.store.get(radio_id(2, GUILD))
+        assert radio is not None and radio.enabled and radio.source["station"] == THIRD
+        assert "ligada" in said(confirm).lower() or "tocando" in said(confirm).lower()
