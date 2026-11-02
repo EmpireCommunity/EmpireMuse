@@ -16,7 +16,7 @@ from empiremuse.panel.handlers.settings import MAX_BODY_BYTES, WRITE_LIMIT_PER_M
 from empiremuse.panel.services.base import CONFLICT_TEXT, SAVED_TEXT
 from empiremuse.panel.services.radio_stations import STATIONS_MAX
 from tests.panel.helpers_radio import make_channel
-from tests.panel.helpers_settings import parse_forms
+from tests.panel.helpers_settings import UID, parse_forms
 from tests.panel.test_radio_page import ALFA, OMEGA, CHANNEL, RadioBase
 from tests.panel.test_settings_http import Each
 from tests.panel.test_settings_links import doc as playlist_doc
@@ -88,6 +88,20 @@ class StationsPageTest(StationsBase):
         pairs = [("name", "Nova"), ("kind", "genre"), ("genre", "rock")]
         assert self.post_raw(browser, self.stations_url(), pairs, htmx=True).code == 403
         assert self.radio.stations.updates == []
+
+    def test_member_of_the_same_server_without_manage_guild_gets_404_on_every_station_post(self):
+        self.seed_premium()
+        station = self.radio.stations.seed(ALFA, "Madrugada")
+        member = self.world.g100.members[UID]
+        member.guild_permissions.administrator = member.guild_permissions.manage_guild = False
+        browser = self.logged_in()
+        assert browser.get(self.url()).code == 404
+        create = [("name", "Nova"), ("kind", "genre"), ("genre", "rock")]
+        assert self.post_raw(browser, self.stations_url(), create, htmx=True).code == 404
+        assert self.post_item(browser, station, "salvar", name="Manhã", kind="genre", genre="rock").code == 404
+        assert self.post_item(browser, station, "apagar").code == 404
+        assert self.radio.stations.updates == [] and list(self.radio.stations.docs) == [station.id]
+        assert self.radio.stations.docs[station.id].name == "Madrugada"
 
     def test_hostile_names_and_artists_are_escaped(self):
         self.seed_premium()
