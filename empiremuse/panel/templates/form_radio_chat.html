@@ -1,0 +1,20 @@
+{# Regras do chat da call de uma rádio (contrato R1 §1, chat.*). Variável: form (Formulario; form.faixas = {campo: (min, max)},
+   form.bot_id). Textos pelo ``_`` (panel.json), só em texto ou atributo entre aspas. #}
+{% set form_id = form.form_id %}
+{% set erros = form.erros %}
+<form id="{{ form.form_id }}" class="form-config" method="post" action="{{ form.acao }}" hx-post="{{ form.acao }}" hx-target="this" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]">
+  {% module xsrf_form_html() %}
+  <input type="hidden" name="versao" value="{{ form.versao }}">
+  <h3 class="subtitulo">{{ _("panel.radio.chat.title") }}</h3>
+  {% include "_mensagem_form.html" %}
+  <p class="nota">{{ _("panel.radio.chat.help") }}</p>
+  {% for campo in ("voice_delete_after_s", "stage_max_messages", "stage_max_age_s") %}
+  {% set faixa = form.faixas[campo] %}
+  {% set id_campo = "campo-radio-" + form.bot_id + "-" + campo.replace("_", "-") %}
+  {% set valor = form.valores.get(campo) %}
+  <label for="{{ id_campo }}">{{ _("panel.radio.chat." + campo) }}</label>
+  <input id="{{ id_campo }}" type="number" inputmode="numeric" name="{{ campo }}" value="{{ '' if valor is None else valor }}" min="{{ faixa[0] }}" max="{{ faixa[1] }}" step="1" required{% if erros.get(campo) %} aria-invalid="true" aria-describedby="erro-{{ id_campo }}"{% end %}>
+  {% if erros.get(campo) %}<small id="erro-{{ id_campo }}" class="erro-campo">{{ erros[campo] }}</small>{% end %}
+  {% end %}
+  <button type="submit">{{ _("panel.radio.chat.save") }}</button>
+</form>

@@ -1,0 +1,23 @@
+{# A estação de uma rádio personalizada (R5 §5; fragmento htmx). Variável: personalizada (CustomView: radio_id, slug,
+   form: Formulario com acao, versao, valores{estacao}, opcoes[(id, nome)], atual, mensagem). #}
+{% set form = personalizada.form %}
+{% set form_id = form.form_id %}
+<form id="{{ form.form_id }}" class="form-config form-estacao-radio" method="post" action="{{ form.acao }}" hx-post="{{ form.acao }}" hx-target="this" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]">
+  {% module xsrf_form_html() %}
+  <input type="hidden" name="versao" value="{{ form.versao }}">
+  <h3 class="subtitulo">{{ _("panel.radio.station.pick_title") }}</h3>
+  {% include "_mensagem_form.html" %}
+  <p class="nota">{{ _("panel.radio.station.pick_help") }}</p>
+  {% if form.opcoes %}
+  <label for="{{ form_id }}-estacao">{{ _("panel.radio.station.pick_label") }}</label>
+  <select id="{{ form_id }}-estacao" name="estacao" required>
+    {% if not form.atual %}<option value="" selected>{{ _("panel.radio.local.choose") }}</option>{% end %}
+    {% for id_, nome in form.opcoes %}
+    <option value="{{ id_ }}"{% if id_ == form.valores.get("estacao") %} selected{% end %}>{{ nome }}</option>
+    {% end %}
+  </select>
+  <button type="submit">{{ _("panel.radio.station.pick_button") }}</button>
+  {% else %}
+  <p class="nota">{{ _("panel.radio.station.pick_none") }}</p>
+  {% end %}
+</form>

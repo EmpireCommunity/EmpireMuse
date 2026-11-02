@@ -50,7 +50,10 @@ CATEGORY_FORMS: dict[str, tuple[SettingsForm, ...]] = {
 PER_BOT_CATEGORIES: frozenset[str] = (
     frozenset()
 )  # tudo é do servidor (doc único): sem seletor de bot em categoria alguma
-CHANNEL_CATEGORY = "canal"  # tem handler próprio (panel/handlers/channel.py); quem executa no Discord é o bot do painel
+JUKEBOX_CATEGORY = (
+    "jukebox"  # tem handler próprio (panel/handlers/jukebox.py); quem executa no Discord é o bot do painel
+)
+RADIOS_CATEGORY = "radios"  # idem (panel/handlers/radio.py): lista e regras do chat das rádios do servidor
 _MSG_TOO_LARGE = ("Envio grande demais", "Os dados enviados excedem o limite permitido.")
 _MSG_RATE = "Muitas alterações em pouco tempo. Aguarde um minuto e tente novamente."
 _MSG_NO_FORM = ("Dados inválidos", "Não foi possível identificar o formulário enviado.")
@@ -124,7 +127,7 @@ class SettingsHandler(AuthenticatedHandler):
     async def _resolve(
         self, guild_id: str, category: str, *, fresh: bool, bot_id: Optional[str] = None
     ) -> tuple[FormContext, GuildAccess, str]:
-        if category not in CATEGORY_FORMS and category != CHANNEL_CATEGORY:
+        if category not in CATEGORY_FORMS and category not in (JUKEBOX_CATEGORY, RADIOS_CATEGORY):
             raise GuildAccessDenied
         pool = self.application.settings["pool"]
         access = await self.application.settings["authorizer"].authorize(self.session, guild_id, fresh=fresh)
@@ -134,7 +137,7 @@ class SettingsHandler(AuthenticatedHandler):
                 raise GuildAccessDenied
         elif per_bot:
             bot_id = self._chosen_bot_id(access)
-        elif category == CHANNEL_CATEGORY:
+        elif category == JUKEBOX_CATEGORY:
             bot_id = await self._panel_bot_id(pool, guild_id, access)
         else:
             bot_id = access.bots[0].id
@@ -149,9 +152,9 @@ class SettingsHandler(AuthenticatedHandler):
 
     @staticmethod
     async def _panel_bot_id(pool: Any, guild_id: str, access: GuildAccess) -> str:
-        """O bot do painel executa setup/reset do canal de pedidos; sem eleição válida, o 1º bot autorizado."""
+        """O bot do painel executa configurar/reiniciar da Jukebox; sem eleição válida, o 1º bot autorizado."""
         try:
-            panel_bot = await pool.servers.request.panel_bot(int(guild_id))
+            panel_bot = await pool.servers.jukebox.panel_bot(int(guild_id))
         except ServerConfigUnavailable:
             panel_bot = None
         allowed = {bot.id for bot in access.bots}

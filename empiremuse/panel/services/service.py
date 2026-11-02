@@ -43,7 +43,7 @@ class SettingsService:
         self._locks: "weakref.WeakValueDictionary[tuple[str, int], Lock]" = weakref.WeakValueDictionary()
 
     def lock(self, scope: str, guild_id: int) -> Lock:
-        """Lock do escopo ``(id do bot | \"global\", servidor)``, compartilhado com as tarefas do canal de pedidos."""
+        """Lock do escopo ``(id do bot | \"global\", servidor)``, compartilhado com as tarefas da Jukebox."""
         return self._lock(scope, guild_id)
 
     def _lock(self, scope: str, guild_id: int) -> Lock:

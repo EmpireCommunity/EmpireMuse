@@ -75,8 +75,8 @@
       return;
     }
     // Acompanhamento de tarefa: ao chegar ao estado final, leva o foco para o resultado (uma única vez).
-    if (origem.id === "tarefa-canal") {
-      var bloco = document.getElementById("tarefa-canal");
+    if (origem.id === "tarefa-jukebox") {
+      var bloco = document.getElementById("tarefa-jukebox");
       var estado = bloco ? bloco.getAttribute("data-estado") : "";
       if (bloco && (estado === "ok" || estado === "erro")) {
         bloco.focus();
