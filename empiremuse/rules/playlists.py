@@ -85,6 +85,10 @@ _REASON_TEXT = {
 }
 _ITEM_KEYS = frozenset({"order", "name", "description", "genres", "url", "icon"})
 
+SCOPE_JUKEBOX = "jukebox"  # /play, Jukebox e menus
+SCOPE_RADIO = "radio"  # só como fonte de estação de rádio personalizada
+SCOPES = (SCOPE_JUKEBOX, SCOPE_RADIO)
+
 
 class Playlist(NamedTuple):
     order: int
@@ -93,6 +97,7 @@ class Playlist(NamedTuple):
     genres: tuple[str, ...]
     url: str
     icon: str | None = None
+    scope: str = SCOPE_JUKEBOX
 
 
 class Skip(NamedTuple):
@@ -580,13 +585,17 @@ def to_doc(playlist: Playlist) -> dict[str, Any]:
     }
     if playlist.icon:
         doc["icon"] = playlist.icon
+    doc["scope"] = playlist.scope
     return doc
 
 
 def from_doc(doc: Any) -> Playlist | None:
     """O item gravado, relido com as mesmas regras (``icon`` gravado que não seja um emoji vira ``None``); ``None`` se o dado gravado estiver ruim."""
+    scope = doc.get("scope", SCOPE_JUKEBOX) if isinstance(doc, Mapping) else SCOPE_JUKEBOX  # sem o campo = antes do escopo
+    if scope not in SCOPES:
+        return None
     checked = check_playlist(doc)
-    return None if isinstance(checked, RuleError) else checked
+    return None if isinstance(checked, RuleError) else checked._replace(scope=scope)
 
 
 def move_leading_icons(stored: Sequence[Any]) -> tuple[list[Any], int]:

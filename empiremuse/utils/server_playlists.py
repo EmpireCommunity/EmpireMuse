@@ -20,6 +20,8 @@ from empiremuse.rules.errors import RuleError
 from empiremuse.rules.limits import MAX_SERVER_PLAYLISTS
 from empiremuse.rules.playlists import (
     ImportReport,
+    SCOPE_JUKEBOX,
+    SCOPES,
     ParsedFile,
     Playlist,
     add_item,
@@ -47,15 +49,25 @@ logger = logging.getLogger(__name__)
 SECTIONS = (SECTION_PLAYLISTS,)
 
 
-def _items(doc: dict) -> tuple[Playlist, ...]:
-    """As playlists gravadas, relidas com as mesmas regras e por ``order`` (dado gravado ruim é ignorado, nunca levanta)."""
-    return sorted_by_order(item for raw in doc.get("playlists", []) if (item := from_doc(raw)) is not None)
+def _items(doc: dict, scope: str | None = None) -> tuple[Playlist, ...]:
+    """As playlists gravadas, relidas com as mesmas regras e por ``order`` (dado gravado ruim é ignorado, nunca levanta).
+
+    ``scope`` filtra por escopo (``None`` = os dois). Cada escopo tem sua própria lista, nome, cota e ordem.
+    """
+    items = (item for raw in doc.get("playlists", []) if (item := from_doc(raw)) is not None)
+    return sorted_by_order(item for item in items if scope is None or item.scope == scope)
 
 
-def _validated(item: Playlist) -> Playlist | RuleError:
-    """O item revalidado: nada chega ao banco sem passar pelas regras, venha de onde vier (``icon`` inválido vira ``None``)."""
+def _check_scope(scope: str) -> str:
+    if scope not in SCOPES:
+        raise ValueError("escopo de playlist desconhecido")
+    return scope
+
+
+def _validated(item: Playlist, scope: str) -> Playlist | RuleError:
+    """O item revalidado: nada chega ao banco sem passar pelas regras, venha de onde vier (``icon`` inválido vira ``None``). O escopo é o pedido, nunca o do item."""
     checked = check_playlist(item._asdict(), default_order=item.order)
-    return checked if isinstance(checked, RuleError) else checked._replace(order=item.order)
+    return checked if isinstance(checked, RuleError) else checked._replace(order=item.order, scope=scope)
 
 
 def select_options(
@@ -78,7 +90,7 @@ def select_options(
     ]
 
 
-async def safe_list(bot, gid: int) -> tuple[Playlist, ...]:
+async def safe_list(bot, gid: int, scope: str = SCOPE_JUKEBOX) -> tuple[Playlist, ...]:
     """As playlists do servidor para EXIBIR (embed ocioso, select, menu): store indisponível ou servidor desconhecido = lista vazia."""
     from empiremuse.utils.servers import (  # tarde: servers cria o ServerPlaylists
         ServerConfigConflict,
@@ -87,14 +99,14 @@ async def safe_list(bot, gid: int) -> tuple[Playlist, ...]:
     )
 
     try:
-        return await bot.pool.servers.playlists.list(gid)
+        return await bot.pool.servers.playlists.list(gid, scope=scope)
     except ServerConfigUnavailable, ServerConfigConflict, UnknownGuild:
         return ()
 
 
-async def load_select_options(bot, gid: int) -> list[disnake.SelectOption]:
+async def load_select_options(bot, gid: int, scope: str = SCOPE_JUKEBOX) -> list[disnake.SelectOption]:
     """As opções do select de playlists do servidor; sem playlists, ou com o store indisponível, a lista vazia (o select some)."""
-    return select_options(bot, await safe_list(bot, gid))
+    return select_options(bot, await safe_list(bot, gid, scope))
 
 
 class ServerPlaylists:
@@ -104,100 +116,115 @@ class ServerPlaylists:
 
     # ------------------------------------------------------------------ leitura
 
-    async def snapshot(self, gid: int) -> tuple[tuple[Playlist, ...], int]:
-        """As playlists por ``order`` e o ``rev`` do documento (o painel leva o ``rev`` no formulário e o devolve ao gravar)."""
+    async def snapshot(self, gid: int, scope: str = SCOPE_JUKEBOX) -> tuple[tuple[Playlist, ...], int]:
+        """As playlists do ``scope`` por ``order`` e o ``rev`` do documento (um só para os dois escopos; o painel o leva no formulário e o devolve ao gravar)."""
         doc = await self.store.get_sections(gid, *SECTIONS)
-        return _items(doc), int(doc["rev"])
+        return _items(doc, _check_scope(scope)), int(doc["rev"])
 
-    async def list(self, gid: int) -> tuple[Playlist, ...]:
-        return (await self.snapshot(gid))[0]
+    async def list(self, gid: int, scope: str = SCOPE_JUKEBOX) -> tuple[Playlist, ...]:
+        return (await self.snapshot(gid, scope))[0]
 
     async def ver(self, gid: int) -> int:
         return (await self.snapshot(gid))[1]
 
-    async def find(self, gid: int, name: str) -> Playlist | None:
-        """A playlist escolhida num select pelo nome (``casefold``), ou ``None``; ver ``find_selected`` (valor de antes da migração)."""
-        return find_selected(await self.list(gid), name)
+    async def find(self, gid: int, name: str, scope: str = SCOPE_JUKEBOX) -> Playlist | None:
+        """A playlist do ``scope`` escolhida pelo nome (``casefold``), ou ``None``; ver ``find_selected`` (valor de antes da migração). Nunca acha a do outro escopo."""
+        return find_selected(await self.list(gid, scope), name)
 
-    async def export_bytes(self, gid: int) -> bytes:
-        """O formato novo (com ``icon`` quando houver): ``ensure_ascii=False``, indentação 2."""
-        return json.dumps(to_export(await self.list(gid)), ensure_ascii=False, indent=2).encode("utf-8")
+    async def export_bytes(self, gid: int, scope: str | None = None) -> bytes:
+        """O formato novo (com ``icon`` e ``scope``): ``ensure_ascii=False``, indentação 2. ``scope=None`` exporta os dois."""
+        doc = await self.store.get_sections(gid, *SECTIONS)
+        items = _items(doc, None if scope is None else _check_scope(scope))
+        return json.dumps(to_export(items), ensure_ascii=False, indent=2).encode("utf-8")
 
     # ------------------------------------------------------------------ escrita
 
     async def _write(
         self,
         gid: int,
+        scope: str,
         change: Callable[[tuple[Playlist, ...]], tuple[Playlist, ...] | RuleError],
         expected_rev: Optional[int],
     ) -> tuple[Any, tuple[Playlist, ...]]:
-        """Roda ``change(lista) -> nova lista | RuleError`` sob a trava; grava só se a lista mudou e então atualiza o embed ocioso."""
+        """Roda ``change(lista do escopo) -> nova lista | RuleError`` sob a trava; a lista do outro escopo passa intacta.
+
+        Grava só se a lista do escopo mudou e então atualiza o embed ocioso (só o escopo ``jukebox`` aparece nele).
+        """
+        _check_scope(scope)
         outcome: dict[str, Any] = {"result": None, "changed": False}
 
         def apply(doc: dict) -> bool:
-            current = _items(doc)
+            current = _items(doc, scope)
             result = change(current)
             outcome["result"] = result
             if isinstance(result, RuleError) or tuple(result) == current:
                 return False
             outcome["changed"] = True
-            doc["playlists"] = [to_doc(p) for p in result]
+            others = [p for p in _items(doc) if p.scope != scope]
+            doc["playlists"] = [to_doc(p) for p in (*others, *(p._replace(scope=scope) for p in result))]
             return True
 
         written = await self.store.mutate_doc(gid, SECTIONS, apply, expected_rev=expected_rev)
-        if outcome["changed"]:
+        if outcome["changed"] and scope == SCOPE_JUKEBOX:
             self.refresh_idle(gid)  # só depois de gravar
         result = outcome["result"]
-        return result, (() if isinstance(result, RuleError) else _items(written))
+        return result, (() if isinstance(result, RuleError) else _items(written, scope))
 
-    async def add(self, gid: int, item: Playlist, expected_rev: Optional[int] = None) -> Playlist | RuleError:
-        checked = _validated(item)
+    async def add(
+        self, gid: int, item: Playlist, expected_rev: Optional[int] = None, scope: str = SCOPE_JUKEBOX
+    ) -> Playlist | RuleError:
+        checked = _validated(item, _check_scope(scope))
         if isinstance(checked, RuleError):
             return checked
-        result, items = await self._write(gid, lambda current: add_item(current, checked), expected_rev)
+        result, items = await self._write(gid, scope, lambda current: add_item(current, checked), expected_rev)
         return result if isinstance(result, RuleError) else find_item(items, checked.name)  # type: ignore[return-value]
 
     async def edit(
-        self, gid: int, name: str, item: Playlist, expected_rev: Optional[int] = None
+        self, gid: int, name: str, item: Playlist, expected_rev: Optional[int] = None, scope: str = SCOPE_JUKEBOX
     ) -> Playlist | RuleError:
-        checked = _validated(item)
+        checked = _validated(item, _check_scope(scope))
         if isinstance(checked, RuleError):
             return checked
-        result, items = await self._write(gid, lambda current: edit_item(current, name, checked), expected_rev)
+        result, items = await self._write(gid, scope, lambda current: edit_item(current, name, checked), expected_rev)
         return result if isinstance(result, RuleError) else find_item(items, checked.name)  # type: ignore[return-value]
 
-    async def remove(self, gid: int, name: str, expected_rev: Optional[int] = None) -> Playlist | RuleError:
-        """Remove a playlist e devolve a removida."""
+    async def remove(
+        self, gid: int, name: str, expected_rev: Optional[int] = None, scope: str = SCOPE_JUKEBOX
+    ) -> Playlist | RuleError:
+        """Remove a playlist do ``scope`` e devolve a removida."""
         removed: dict[str, Optional[Playlist]] = {}
 
         def change(current: tuple[Playlist, ...]):
             removed["item"] = find_item(current, name)
             return remove_item(current, name)
 
-        result, _ = await self._write(gid, change, expected_rev)
+        result, _ = await self._write(gid, scope, change, expected_rev)
         return result if isinstance(result, RuleError) else removed["item"]  # type: ignore[return-value]
 
-    async def clear(self, gid: int, expected_rev: Optional[int] = None) -> int:
-        """Apaga todas e devolve quantas eram (o chamador exporta antes)."""
+    async def clear(self, gid: int, expected_rev: Optional[int] = None, scope: str = SCOPE_JUKEBOX) -> int:
+        """Apaga todas as do ``scope`` e devolve quantas eram (o chamador exporta antes)."""
         count: dict[str, int] = {}
 
         def change(current: tuple[Playlist, ...]):
             count["n"] = len(current)
             return ()
 
-        await self._write(gid, change, expected_rev)
+        await self._write(gid, scope, change, expected_rev)
         return count["n"]
 
-    async def import_file(self, gid: int, parsed: ParsedFile, expected_rev: Optional[int] = None) -> ImportReport:
-        """Só acrescenta (nunca altera nem remove). O relatório só existe depois de gravar."""
+    async def import_file(
+        self, gid: int, parsed: ParsedFile, expected_rev: Optional[int] = None, scope: str = SCOPE_JUKEBOX
+    ) -> ImportReport:
+        """Só acrescenta ao ``scope`` (nunca altera nem remove; o ``scope`` do arquivo é ignorado). O relatório só existe depois de gravar."""
         report: dict[str, ImportReport] = {}
+        incoming = tuple(item._replace(scope=_check_scope(scope)) for item in parsed.items)
 
         def change(current: tuple[Playlist, ...]):
-            planned = plan_import(current, parsed.items)
+            planned = plan_import(current, incoming)
             report["value"] = planned
             return (*current, *planned.added)
 
-        await self._write(gid, change, expected_rev)
+        await self._write(gid, scope, change, expected_rev)
         planned = report["value"]
         return ImportReport(planned.added, (*parsed.invalid, *planned.skipped))
 
