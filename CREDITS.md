@@ -30,6 +30,12 @@ atribuição obrigatória (kits `media-player-icons` e `web-ui-icons`, de mnauli
 Os demais emojis (logotipos de plataformas como YouTube, Spotify, Deezer, SoundCloud, Twitch e Tidal, e os outros que não foram
 trocados) não vêm desse kit e não fazem parte dessa licença.
 
+## Fontes
+
+- **Inter** (`assets/fonts/Inter-{Regular,Medium,SemiBold,Bold}.ttf`), de The Inter Project Authors, sob a SIL Open Font License 1.1
+  (`assets/fonts/LICENSE-Inter.txt`): a tipografia do visor do painel de rádio (imagem gerada pelo bot). A fonte não é vendida
+  sozinha nem renomeada, como a licença exige.
+
 ## Dados geográficos
 
 O filtro de local das rádios (região, país, estado e cidade) usa uma lista FIXA, gerada uma vez por `tools/radio_geo/build.py` e distribuída em
