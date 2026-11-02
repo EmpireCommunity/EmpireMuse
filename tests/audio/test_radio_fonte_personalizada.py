@@ -12,7 +12,7 @@ from empiremuse.utils.radio.custom_source import (
     FAIL_TTL_S,
     CustomSession,
     EmptyStation,
-    FailedTracks,
+    ResolvedTracks,
     NoPlayableTracks,
     load_pool,
 )
@@ -93,7 +93,7 @@ class TestSession:
 
     @pytest.mark.asyncio
     async def test_it_returns_a_playable_track_and_remembers_it(self):
-        session = CustomSession(self.pool(), FailedTracks(FakeDb()), random.Random(1))
+        session = CustomSession(self.pool(), ResolvedTracks(FakeDb()), random.Random(1))
 
         async def resolve(track):
             return f"encoded:{track.title}"
@@ -104,7 +104,7 @@ class TestSession:
 
     @pytest.mark.asyncio
     async def test_unresolvable_tracks_are_skipped_marked_and_not_picked_again(self):
-        failed = FailedTracks(FakeDb())
+        failed = ResolvedTracks(FakeDb())
         session = CustomSession(self.pool(), failed, random.Random(2))
         tried = []
 
@@ -120,7 +120,7 @@ class TestSession:
 
     @pytest.mark.asyncio
     async def test_five_failures_in_a_row_pause_and_the_streak_resets(self):
-        session = CustomSession(self.pool(), FailedTracks(FakeDb()), random.Random(3))
+        session = CustomSession(self.pool(), ResolvedTracks(FakeDb()), random.Random(3))
         calls = []
 
         async def resolve(track):
@@ -135,8 +135,10 @@ class TestSession:
     @pytest.mark.asyncio
     async def test_a_failed_track_from_another_server_is_also_skipped_through_the_database(self):
         db = FakeDb()
-        await FailedTracks(db).mark(Track("Artista 0", "Faixa 0-0"))
-        session = CustomSession([Track("Artista 0", "Faixa 0-0"), Track("B", "2")], FailedTracks(db), random.Random(4))
+        await ResolvedTracks(db).mark(Track("Artista 0", "Faixa 0-0"))
+        session = CustomSession(
+            [Track("Artista 0", "Faixa 0-0"), Track("B", "2")], ResolvedTracks(db), random.Random(4)
+        )
         seen = []
 
         async def resolve(track):
@@ -149,11 +151,11 @@ class TestSession:
         assert Track("Artista 0", "Faixa 0-0") not in seen
 
 
-class TestFailedTracks:
+class TestResolvedTracks:
     @pytest.mark.asyncio
     async def test_a_failure_expires_after_24_hours(self):
         now = [1000.0]
-        failed = FailedTracks(FakeDb(), clock=lambda: now[0])
+        failed = ResolvedTracks(FakeDb(), clock=lambda: now[0])
         track = Track("A", "1")
         await failed.mark(track)
         assert await failed.failed(track) is True
@@ -165,8 +167,8 @@ class TestFailedTracks:
     @pytest.mark.asyncio
     async def test_the_key_ignores_case_and_spacing_and_a_broken_database_means_not_failed(self):
         db = FakeDb()
-        await FailedTracks(db).mark(Track("Djavan", "Oceano"))
-        assert await FailedTracks(db).failed(Track("  DJAVAN", "oceano ")) is True
+        await ResolvedTracks(db).mark(Track("Djavan", "Oceano"))
+        assert await ResolvedTracks(db).failed(Track("  DJAVAN", "oceano ")) is True
 
         db.fail = True
-        assert await FailedTracks(db).failed(Track("Outro", "x")) is False
+        assert await ResolvedTracks(db).failed(Track("Outro", "x")) is False

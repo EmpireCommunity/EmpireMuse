@@ -197,3 +197,56 @@ class TestAssignToARadio:
 
         with pytest.raises(RadioInvalid):
             await world.store.set_custom_station(radio.id, station.id, expected_rev=radio.rev)
+
+
+class TestEditingReloadsTheRadiosThatPlayTheStation:
+    """Editar pelo chat e pelo painel web chama o mesmo ``StationStore.update``: o recarregamento mora no backend, não no cog (gate do #196, item 5)."""
+
+    @pytest.mark.asyncio
+    async def test_an_update_reloads_the_radios_that_use_the_station(self, world):
+        station = await world.stations.create(GUILD, ROCK)
+        radio = make_radio(source={"station": station.id})
+        await world.store.create(radio)
+        reloaded = []
+
+        async def change_station(radio_):
+            reloaded.append(radio_.id)
+            return True
+
+        world.hub.manager.change_station = change_station
+
+        await world.stations.update(
+            GUILD, station.id, {**ROCK, "name": "Rock 2"}, expected_rev=station.rev, updated_by="7"
+        )
+
+        assert reloaded == [radio.id]
+
+    @pytest.mark.asyncio
+    async def test_a_radio_on_another_station_is_left_alone(self, world):
+        station = await world.stations.create(GUILD, ROCK)
+        other = await world.stations.create(GUILD, {**ROCK, "name": "Outra"})
+        await world.store.create(make_radio(source={"station": other.id}))
+        reloaded = []
+
+        async def change_station(radio_):
+            reloaded.append(radio_.id)
+
+        world.hub.manager.change_station = change_station
+
+        await world.stations.update(GUILD, station.id, {**ROCK, "name": "Rock 2"}, expected_rev=station.rev)
+
+        assert reloaded == []
+
+    @pytest.mark.asyncio
+    async def test_a_failing_reload_never_undoes_the_saved_edit(self, world):
+        station = await world.stations.create(GUILD, ROCK)
+        await world.store.create(make_radio(source={"station": station.id}))
+
+        async def change_station(radio_):
+            raise RuntimeError("boom")
+
+        world.hub.manager.change_station = change_station
+
+        saved = await world.stations.update(GUILD, station.id, {**ROCK, "name": "Rock 2"}, expected_rev=station.rev)
+
+        assert saved.name == "Rock 2" and (await world.stations.get(GUILD, station.id)).name == "Rock 2"

@@ -3,7 +3,7 @@
 - **Pool:** gênero e artistas vêm do Last.fm (``hub.lastfm``); playlists vêm do ``playlist_tracks`` que as portas fornecem (a mesma leitura da R1). Tudo é unido,
   deduplicado e cortado em 300 faixas com até 30 por artista (``rules.radio_shuffle.build_pool``).
 - **Sorteio:** ``next_pick`` com o histórico só na memória. A faixa que NÃO resolve (nenhum stream tocável) entra no cache negativo de 24 h
-  (``global.radio_resolved``) e sai do sorteio; cinco falhas seguidas pausam a estação ("sem faixas tocáveis") e a nova tentativa fica por conta de quem chama.
+  (``global.radio_resolved``) e sai do sorteio; a que resolve é guardada ali por 7 dias; cinco falhas seguidas pausam a estação ("sem faixas tocáveis") e a nova tentativa fica por conta de quem chama.
 - Nada aqui toca o Discord nem o Lavalink: a resolução da faixa chega como função (``resolve``).
 """
 
@@ -29,6 +29,11 @@ logger = logging.getLogger(__name__)
 
 RESOLVED_DB = "radio_resolved"  # nome da coleção do cache negativo
 FAIL_TTL_S = 24 * 3600
+RESOLVED_TTL_S = 7 * 24 * 3600  # a faixa resolvida vale 7 dias
+ABSENT_TTL_S = (
+    300  # "não há nada guardado para esta faixa" é lembrado por 5 min (sem uma consulta por faixa a cada sorteio)
+)
+STOCK_SLOTS = 2  # adiantados ao mesmo tempo em todas as rádios do processo
 FAIL_STREAK_MAX = 5  # falhas seguidas que pausam a estação
 RETRY_AFTER_S = 600  # a nova tentativa de uma estação sem faixas tocáveis
 PLAYLIST_NAMES_MAX = 5
@@ -81,47 +86,91 @@ def failure_id(track: Track) -> str:
     return hashlib.sha1(f"{artist}\x1f{title}".encode()).hexdigest()  # noqa: S324 - só uma chave de cache, sem papel de segurança
 
 
-class FailedTracks:
-    """O cache negativo de faixas sem stream (24 h), em memória e em ``global.radio_resolved`` (vale para todos os servidores e reinícios)."""
+class ResolvedTracks:
+    """O cache de faixas resolvidas, em memória e em ``global.radio_resolved`` (vale para todos os servidores e reinícios; ``_id`` = ``failure_id``).
+
+    Um documento por faixa, de um de dois tipos: **resolvida** ``{encoded, uri, source, length_ms, at}`` (7 dias) ou **falha** ``{fail: true, at}`` (24 h).
+    A leitura do banco é feita no máximo uma vez por faixa (a AUSÊNCIA também é lembrada por ``ABSENT_TTL_S``): o sorteio olha o pool inteiro e não pode
+    custar uma consulta por faixa a cada sorteio.
+    """
 
     def __init__(self, database: Any, *, clock: Callable[[], float] = time.time) -> None:
         self._database = database
         self._clock = clock
-        self._memory: dict[str, float] = {}
+        self._memory: dict[str, tuple[dict[str, Any] | None, float]] = {}  # chave: (documento ou None, quando foi lido)
+
+    async def _entry(self, track: Track) -> dict[str, Any] | None:
+        key, now = failure_id(track), self._clock()
+        known = self._memory.get(key)
+        if known is not None and (known[0] is not None or now - known[1] <= ABSENT_TTL_S):
+            return known[0]
+        try:
+            doc = await self._database.find_doc(key, db_name=RESOLVED_DB, collection=GLOBAL_DB)
+        except Exception as error:  # noqa: BLE001 - o cache é conveniência: só o tipo vai ao log (R-12)
+            logger.warning("Cache de faixas resolvidas não lido (%s)", type(error).__name__)
+            return None
+        entry = doc if isinstance(doc, dict) and isinstance(doc.get("at"), int | float) else None
+        self._memory[key] = (entry, now)
+        return entry
 
     async def failed(self, track: Track) -> bool:
-        key = failure_id(track)
-        at = self._memory.get(key)
-        if at is None:
-            try:
-                doc = await self._database.find_doc(key, db_name=RESOLVED_DB, collection=GLOBAL_DB)
-            except Exception as error:  # noqa: BLE001 - o cache é conveniência: só o tipo vai ao log (R-12)
-                logger.warning("Cache de faixas sem stream não lido (%s)", type(error).__name__)
-                return False
-            at = doc.get("at") if isinstance(doc, dict) and doc.get("fail") else None
-            if not isinstance(at, int | float) or isinstance(at, bool):
-                return False
-            self._memory[key] = float(at)
-        if self._clock() - self._memory[key] > FAIL_TTL_S:
-            self._memory.pop(key, None)
-            return False
-        return True
+        entry = await self._entry(track)
+        return bool(entry and entry.get("fail") and self._clock() - entry["at"] <= FAIL_TTL_S)
 
-    async def mark(self, track: Track) -> None:
+    async def get(self, track: Track) -> dict[str, Any] | None:
+        """A faixa já resolvida (``encoded``, ``uri``, ``source``, ``length_ms``) com menos de 7 dias, ou ``None``."""
+        entry = await self._entry(track)
+        if not entry or entry.get("fail") or self._clock() - entry["at"] > RESOLVED_TTL_S:
+            return None
+        encoded = entry.get("encoded")
+        return entry if isinstance(encoded, str) and encoded else None
+
+    async def _write(self, track: Track, body: dict[str, Any]) -> None:
         key, now = failure_id(track), self._clock()
-        self._memory[key] = now
+        document = {**body, "at": now}
+        self._memory[key] = (document, now)
         try:
             stored = await self._database.find_doc(key, db_name=RESOLVED_DB, collection=GLOBAL_DB)
             rev = stored.get("rev") if isinstance(stored, dict) else None
             await self._database.save_doc_cas(
                 key,
-                {"fail": True, "at": now, "rev": (rev if isinstance(rev, int) else 0) + 1},
+                {**document, "rev": (rev if isinstance(rev, int) else 0) + 1},
                 expected_rev=rev if isinstance(rev, int) else None,
                 db_name=RESOLVED_DB,
                 collection=GLOBAL_DB,
             )
         except Exception as error:  # noqa: BLE001
-            logger.warning("Cache de faixas sem stream não gravado (%s)", type(error).__name__)
+            logger.warning("Cache de faixas resolvidas não gravado (%s)", type(error).__name__)
+
+    async def mark(self, track: Track) -> None:
+        """A faixa não resolveu: fora do sorteio por 24 h."""
+        await self._write(track, {"fail": True})
+
+    async def store(self, track: Track, partial: Any) -> None:
+        """A faixa resolvida pelo nó: o próximo sorteio dela (inclusive depois de um reinício) não busca no Lavalink."""
+        encoded = getattr(partial, "id", None)
+        if not isinstance(encoded, str) or not encoded:
+            return
+        info = getattr(partial, "info", {}) or {}
+        await self._write(
+            track,
+            {
+                "fail": False,  # o ``$set`` mescla campos: sem isto uma falha antiga continuaria valendo por cima da faixa resolvida
+                "encoded": encoded,
+                "uri": str(info.get("uri") or "")[:2000],
+                "source": str(info.get("sourceName") or "")[:60],
+                "length_ms": int(info.get("length") or 0),
+            },
+        )
+
+    async def forget(self, track: Track) -> None:
+        """O ``encoded`` guardado não decodifica mais: a entrada é apagada e a faixa volta a ser buscada."""
+        key = failure_id(track)
+        self._memory[key] = (None, self._clock())
+        try:
+            await self._database.delete_data(key, RESOLVED_DB, GLOBAL_DB)
+        except Exception as error:  # noqa: BLE001
+            logger.warning("Cache de faixas resolvidas não apagado (%s)", type(error).__name__)
 
 
 @dataclass
@@ -129,7 +178,7 @@ class CustomSession:
     """O sorteio de UMA rádio: o pool, o histórico (só em memória) e a sequência de falhas."""
 
     pool: list[Track]
-    failed: FailedTracks
+    failed: ResolvedTracks
     rng: random.Random = field(default_factory=random.Random)
     history: list[Track] = field(default_factory=list)
     streak: int = 0

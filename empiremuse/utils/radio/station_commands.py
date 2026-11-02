@@ -110,7 +110,6 @@ async def edit(cog: Radio, inter: disnake.ApplicationCommandInteraction, name: s
         name=station.name,
         kind=station.kind,
         can_manage=can_manage,
-        on_saved=lambda saved: cog.station_saved(saved),
     )
     await inter.edit_original_message(**editor.render())
 

@@ -115,7 +115,6 @@ class StationEditor(disnake.ui.View):
         name: str,
         kind: str,
         can_manage: Callable[[disnake.Interaction], bool],
-        on_saved: Optional[Callable[[CustomStation], Awaitable[None]]] = None,
     ) -> None:
         super().__init__(timeout=TIMEOUT_S)
         self.hub, self.tr, self.author_id, self.guild_id = hub, tr, author_id, guild_id
@@ -128,7 +127,7 @@ class StationEditor(disnake.ui.View):
         self.chosen_playlists: list[str] = []
         if station is not None:
             self._load(station)
-        self._can_manage, self._on_saved = can_manage, on_saved
+        self._can_manage = can_manage
 
     def _load(self, station: CustomStation) -> None:
         self.kind = station.kind
@@ -356,8 +355,6 @@ class StationEditor(disnake.ui.View):
             await interaction.edit_original_message(content=error_text(self.tr, error), view=self)
             return
         self.stop()
-        if self._on_saved is not None:
-            await self._on_saved(saved)
         await interaction.edit_original_message(
             content=self.tr("radio.station.ui.saved", name=external_text(saved.name, NAME_MAX)), view=None
         )
