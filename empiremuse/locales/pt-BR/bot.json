@@ -621,5 +621,14 @@
   "legacy.play.player_finished": "**O player do bot {bot} foi finalizado antes de conectar no canal de voz (ou o player não foi inicializado)...\nPor via das dúvidas tente novamente.**",
   "legacy.play.position_min": "**Número da posição da fila tem que ser 1 ou superior.**",
   "legacy.play.privacy_deafen": "Para manter sua privacidade e me ajudar a economizar recursos, recomendo desativar meu áudio do canal clicando com botão direito sobre mim e em seguida marcar: desativar áudio no servidor.",
-  "legacy.play.queue_full": "**A fila está cheia ({count} músicas).**"
+  "legacy.play.queue_full": "**A fila está cheia ({count} músicas).**",
+  "legacy.jukebox.file_too_big": "{user} o arquivo que você enviou deve ter o tamanho inferior a 18mb.",
+  "legacy.jukebox.join_channel": "Você deve entrar no canal <#{channel}> para pedir uma música.",
+  "legacy.jukebox.join_voice": "Você deve entrar em um canal de voz para pedir uma música.",
+  "legacy.jukebox.load_only_song": "Carregar apenas a música",
+  "legacy.jukebox.load_playlist": "Carregar playlist",
+  "legacy.jukebox.no_content_intent": "Infelizmente não posso conferir o conteúdo de sua mensagem...\nTente adicionar música usando **/play** ou clique em um dos botões abaixo:",
+  "legacy.jukebox.playlist_link": "**O link contém vídeo com playlist.**\nSelecione uma opção em até <t:{ts}:R> para prosseguir.\n-# Nota: Caso o link seja de uma playlist privada, apenas o vídeo do link atual será carregado.",
+  "legacy.jukebox.send_link_or_name": "{user} você deve enviar um link/nome da música.",
+  "legacy.jukebox.wait_previous": "{user} você deve aguardar seu pedido de música anterior carregar..."
 }

@@ -608,5 +608,14 @@
   "legacy.play.player_finished": "**The bot {bot} player was finished before connecting to the voice channel (or the player was not initialized)...\nJust in case, try again.**",
   "legacy.play.position_min": "**The queue position number must be 1 or higher.**",
   "legacy.play.privacy_deafen": "To protect your privacy and help me save resources, I recommend deafening my audio in the channel by right-clicking me and then selecting: deafen on server.",
-  "legacy.play.queue_full": "**The queue is full ({count} songs).**"
+  "legacy.play.queue_full": "**The queue is full ({count} songs).**",
+  "legacy.jukebox.file_too_big": "{user} the file you sent must be smaller than 18mb.",
+  "legacy.jukebox.join_channel": "You must join the channel <#{channel}> to request a song.",
+  "legacy.jukebox.join_voice": "You must join a voice channel to request a song.",
+  "legacy.jukebox.load_only_song": "Load only the song",
+  "legacy.jukebox.load_playlist": "Load playlist",
+  "legacy.jukebox.no_content_intent": "Unfortunately I can't read the content of your message...\nTry adding a song using **/play** or click one of the buttons below:",
+  "legacy.jukebox.playlist_link": "**The link contains a video with a playlist.**\nSelect an option within <t:{ts}:R> to continue.\n-# Note: If the link is from a private playlist, only the video of the current link will be loaded.",
+  "legacy.jukebox.send_link_or_name": "{user} you must send a link/song name.",
+  "legacy.jukebox.wait_previous": "{user} you must wait for your previous song request to load..."
 }
