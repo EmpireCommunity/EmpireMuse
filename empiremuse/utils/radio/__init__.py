@@ -54,7 +54,7 @@ class RadioHub:
         self.stations = StationStore(pool, self.store)  # estações do servidor para a rádio personalizada (R5)
         self.stations.on_updated = self.reload_station
         self.resolved = ResolvedTracks(
-            pool.database
+            database_of=lambda: pool.database
         )  # faixas resolvidas e sem stream, em memória e em ``global.radio_resolved`` (R5)
         self.stock_slots = asyncio.Semaphore(
             STOCK_SLOTS

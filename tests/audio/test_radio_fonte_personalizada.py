@@ -104,6 +104,22 @@ class TestSession:
         assert resolved == f"encoded:{track.title}" and session.history == [track]
 
     @pytest.mark.asyncio
+    async def test_the_cache_reads_the_pool_database_when_used_not_when_the_hub_was_built(self, caplog):
+        """B2: o hub nasce no ``__init__`` do pool e o banco só depois; guardar ``pool.database`` ali deixava ``None`` (AttributeError a cada faixa)."""
+        pool = SimpleNamespace(database=None)
+        cache = ResolvedTracks(database_of=lambda: pool.database)
+        pool.database = FakeDb()  # o banco nasce depois
+        track = Track("Artista", "Faixa")
+
+        with caplog.at_level("WARNING"):
+            await cache.mark(track)
+            cache._memory.clear()  # força a leitura do banco
+
+            assert await cache.failed(track) is True
+
+        assert "AttributeError" not in caplog.text
+
+    @pytest.mark.asyncio
     async def test_unresolvable_tracks_are_skipped_marked_and_not_picked_again(self):
         failed = ResolvedTracks(FakeDb())
         session = CustomSession(self.pool(), failed, random.Random(2))
