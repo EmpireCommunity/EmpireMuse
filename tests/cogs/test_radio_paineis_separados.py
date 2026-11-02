@@ -68,7 +68,7 @@ class TestLivePanel:
         payload = live_payload(tr_pt(), station=CARD, view=LiveView(has_list=True))
 
         embed = payload["embeds"][0]
-        assert embed.title == "Rádio ao Vivo 24/7" and "**Rádio Boa FM – Brasil**" in embed.description
+        assert embed.title == "Rádio ao vivo" and "**Rádio Boa FM – Brasil**" in embed.description
         assert ids(payload) == [
             PANEL_PREVIOUS_ID,
             PANEL_VOLUME_DOWN_ID,
