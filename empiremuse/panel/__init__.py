@@ -25,6 +25,9 @@ from empiremuse.panel.handlers.jukebox import JukeboxHandler, JukeboxTaskHandler
 from empiremuse.panel.handlers.radio_logo import LOGO_ROUTE, RadioLogoHandler
 from empiremuse.panel.handlers.radio import (
     RadioChatHandler,
+    RadioConfigHandler,
+    RadioNewHandler,
+    RadioResetHandler,
     RadioLocalHandler,
     RadioReserveHandler,
     RadiosHandler,
@@ -38,6 +41,7 @@ from empiremuse.panel.oauth import DiscordOAuthClient, make_client_provider
 from empiremuse.panel.ratelimit import RateLimiter
 from empiremuse.panel.services.account import AccountService
 from empiremuse.panel.services.jukebox import JukeboxService
+from empiremuse.panel.services.radio_setup import RadioSetupService
 from empiremuse.panel.services.service import SettingsService
 from empiremuse.panel.services.tasks import TaskRunner
 from empiremuse.panel.sessions import LoginAttemptStore, SessionStore
@@ -93,6 +97,9 @@ def build_panel_app(
             (PANEL_PREFIX + r"/servidores/([^/]+)/jukebox/tarefas/(.*)", JukeboxTaskHandler),
             (PANEL_PREFIX + r"/servidores/([^/]+)/jukebox", JukeboxHandler),
             (PANEL_PREFIX + r"/servidores/([0-9]{1,20})/canal((?:/tarefas/[A-Za-z0-9_-]{32})?)", LegacyChannelHandler),
+            (PANEL_PREFIX + r"/servidores/([^/]+)/radios/nova", RadioNewHandler),
+            (PANEL_PREFIX + r"/servidores/([^/]+)/radios/([^/]+)/config", RadioConfigHandler),
+            (PANEL_PREFIX + r"/servidores/([^/]+)/radios/([^/]+)/reset", RadioResetHandler),
             (PANEL_PREFIX + r"/servidores/([^/]+)/radios/estacoes", RadioStationsHandler),
             (PANEL_PREFIX + r"/servidores/([^/]+)/radios/estacoes/([0-9a-f]{24})", RadioStationItemHandler),
             (PANEL_PREFIX + r"/servidores/([^/]+)/radios/([^/]+)/estacoes", RadioStationSearchHandler),
@@ -127,6 +134,7 @@ def build_panel_app(
         account_service=AccountService(settings_service),
         task_runner=task_runner,
         jukebox_service=JukeboxService(task_runner, settings_service, settings.cookie_secret, clock),
+        radio_setup_service=RadioSetupService(settings.cookie_secret, clock),
         write_limiter=RateLimiter(limit=WRITE_LIMIT_PER_MINUTE, clock=clock),
     )
 

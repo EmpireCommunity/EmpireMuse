@@ -18,9 +18,11 @@ import disnake
 
 from empiremuse.rules.errors import RuleError
 from empiremuse.rules.radio import KIND_LIVE, Radio, check_chat, check_radio, default_chat, radio_id
+from empiremuse.rules.radio import radio_id as radio_id_of
 from empiremuse.rules.errors import RuleError as _RuleError  # noqa: F401 - reexport para os testes
 from empiremuse.rules.radio_stations import valid_uuid
 from empiremuse.utils.radio.premium import Premium, RadioUnavailable
+from empiremuse.utils.radio.setup import RadioForbidden, SetupOptions
 from empiremuse.utils.radio.store import RadioConflict, RadioInvalid, RadioNotFound
 
 
@@ -513,6 +515,91 @@ class FakeStations:
         self.updates.append((station_id, "delete", ""))
 
 
+class FakeSetup:
+    """``utils/radio/setup.py`` de mentira (§4.3): as listas vêm de ``bots``/``channels`` por servidor; ``configure`` e
+    ``reset`` aplicam as regras do contrato sobre a ``FakeStore`` (uma por bot, máximo 3, CAS em ``rev``, rádio ligada
+    não troca) e registram as chamadas; ``fail_with`` simula uma recusa do bot (ex.: ``RadioForbidden``)."""
+
+    def __init__(self, api):
+        self.api = api
+        self.bots = {}  # guild_id -> ((bot_id, nome), ...)
+        self.channels = {}  # guild_id -> ((channel_id, nome, "voice"|"stage"), ...)
+        self.calls = []  # ("configure"|"reset", guild_id, actor_id, kwargs)
+        self.fail_with = None
+
+    async def options(self, guild_id):
+        return SetupOptions(tuple(self.bots.get(int(guild_id), ())), tuple(self.channels.get(int(guild_id), ())))
+
+    def _refuse(self, code, key):
+        raise RadioInvalid(RuleError(code, key))
+
+    async def configure(self, guild_id, actor_id, *, radio_id, channel_id, bot_id, kind, rev):
+        self.calls.append(
+            (
+                "configure",
+                guild_id,
+                actor_id,
+                dict(radio_id=radio_id, channel_id=channel_id, bot_id=bot_id, kind=kind, rev=rev),
+            )
+        )
+        if self.fail_with is not None:
+            raise self.fail_with
+        assert isinstance(actor_id, int) and isinstance(channel_id, int) and isinstance(bot_id, int)
+        current = None
+        if radio_id is not None:
+            current = self.api.store.docs.get(radio_id)
+            if current is None:
+                raise RadioNotFound
+            if current.rev != rev:
+                raise RadioConflict
+        if kind not in ("live", "custom"):
+            self._refuse("kind", "kind")
+        if channel_id not in {c[0] for c in self.channels.get(int(guild_id), ())}:
+            self._refuse("channel_kind", "channel_id")
+        free = {b[0] for b in self.bots.get(int(guild_id), ())}
+        if bot_id not in free and (current is None or bot_id != current.bot_id):
+            self._refuse("reserve_only", "bot_id")
+        mine = [r for r in self.api.store.docs.values() if r.guild_id == int(guild_id)]
+        if current is None and len(mine) >= 3:
+            self._refuse("max_radios", "bot_id")
+        if current is None and radio_id_of(bot_id, guild_id) in self.api.store.docs:
+            self._refuse("one_per_bot", "bot_id")
+        if (
+            current is not None
+            and current.enabled
+            and (channel_id, bot_id, kind) != (current.channel_id, current.bot_id, current.kind)
+        ):
+            self._refuse("radio_on", "channel_id")
+        if current is not None and bot_id != current.bot_id:
+            del self.api.store.docs[current.id]
+        source = {"playlist": "Rock"} if kind == "custom" else {"station": "0" * 8 + "-0000-0000-0000-" + "0" * 12}
+        radio = check_radio(
+            {
+                "id": radio_id_of(bot_id, guild_id),
+                "channel_id": channel_id,
+                "kind": kind,
+                "source": source if current is None or current.kind != kind else dict(current.source),
+                "chat": default_chat() if current is None else dict(current.chat),
+                "enabled": False if current is None else current.enabled,
+                "rev": 1 if current is None else current.rev + 1,
+            }
+        )
+        assert isinstance(radio, Radio), radio
+        self.api.store.docs[radio.id] = radio
+        return radio
+
+    async def reset(self, guild_id, actor_id, radio_id, rev):
+        self.calls.append(("reset", guild_id, actor_id, dict(radio_id=radio_id, rev=rev)))
+        if self.fail_with is not None:
+            raise self.fail_with
+        current = self.api.store.docs.get(radio_id)
+        if current is None or current.guild_id != int(guild_id):
+            raise RadioNotFound
+        if current.rev != rev:
+            raise RadioConflict
+        del self.api.store.docs[radio_id]
+
+
 class FakeRadioApi:
     def __init__(self):
         self.store, self.premium, self.service = FakeStore(), FakePremium(), FakeService()
@@ -521,6 +608,7 @@ class FakeRadioApi:
         self.locations = build_tree()  # ``None`` = o arquivo não carregou: a página fica sem o filtro
         self.stations = FakeStations(self.store)
         self.store.stations = self.stations
+        self.setup = FakeSetup(self)
 
 
 def radio_state(*, playing=True, paused_by_owner=False, on_reserve=False, offline=False, title=None):
@@ -543,3 +631,4 @@ def install(pool):
 
 
 UNAVAILABLE = RadioUnavailable
+FORBIDDEN = RadioForbidden

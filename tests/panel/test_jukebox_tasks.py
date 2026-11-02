@@ -22,7 +22,7 @@ from tests.panel.helpers_jukebox import GID, PANEL_USER, TASK_ID
 from tests.panel.helpers_login import DEFAULT_USER
 from tests.panel.helpers_settings import NOT_FOUND_TEXT, UID, acao_form
 from tests.panel.test_jukebox_page import JukeboxPageBase
-from tests.support.canal_de_pedidos import FakePlayer
+from tests.support.canal_da_jukebox import FakePlayer
 
 TASK_URL = re.compile(r"/painel/servidores/(\d+)/jukebox/tarefas/([A-Za-z0-9_-]{32})")
 FINAL = ("ok", "erro")

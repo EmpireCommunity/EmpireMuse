@@ -14,7 +14,7 @@ from urllib.parse import urlencode
 from tests.panel.helpers_jukebox import GID, JukeboxBase
 from tests.panel.helpers_settings import NOT_FOUND_TEXT, UID, acao_form
 from tests.panel.test_settings_http import Each, HttpBase
-from tests.support.canal_de_pedidos import FULL_TEXT, perms
+from tests.support.canal_da_jukebox import FULL_TEXT, perms
 
 TASK_PATH = re.compile(r"/painel/servidores/\d+/jukebox/tarefas/")
 

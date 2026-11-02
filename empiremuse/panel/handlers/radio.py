@@ -3,7 +3,8 @@
 ``/reserva`` e ``/estacao`` (POST) trocam a reserva e a principal de uma rádio ao vivo (ou a estação de uma rádio
 personalizada); ``/estacoes?q=`` (busca) e ``/local?node=&pagina=`` (cascata de local, R4) devolvem a lista de estações
 para o seletor; ``POST /radios/estacoes`` e ``/radios/estacoes/<id>`` criam, editam e apagam as estações
-personalizadas do servidor (R5).
+personalizadas do servidor (R5); ``POST /radios/nova``, ``/radios/<bot:guild>/config`` e ``/radios/<bot:guild>/reset``
+criam, configuram (tipo, canal, bot reserva) e redefinem uma rádio pela função única do bot (contrato-nomes-radios §4.3).
 
 Só HTTP: autorização da R-6, allowlist, validação e compare-and-set ficam em ``panel/services/radio.py``. Banco das
 rádios fora do ar (``RadioUnavailable``) responde 503 com mensagem própria, como as outras páginas.
@@ -50,6 +51,14 @@ from empiremuse.panel.services.radio_stations import (
     StationsView,
     station_id_of,
 )
+from empiremuse.panel.services.radio_setup import (
+    CONFIG_PATH,
+    NEW_PATH,
+    RESET_PATH,
+    RadioSetupService,
+    ResetView,
+    SetupOutcome,
+)
 from empiremuse.panel.services.radio_stations import belongs_to as station_belongs_to
 from empiremuse.panel.services.service import Outcome
 from empiremuse.rules.radio import KIND_CUSTOM, KIND_LIVE, MAX_PER_GUILD
@@ -63,6 +72,8 @@ STATIONS_TEMPLATE = "_radio_estacoes.html"
 LOCAL_TEMPLATE = "_radio_local_fragmento.html"
 STATIONS_SECTION_TEMPLATE = "config_radio_stations.html"
 CUSTOM_TEMPLATE = "form_radio_estacao.html"
+NEW_TEMPLATE = "_radio_nova.html"
+CONFIG_TEMPLATE = "_radio_config.html"
 STATIONS_PATH = "estacoes"
 UNAVAILABLE_KEY = "panel.radio.unavailable"
 _MSG_RATE = "Muitas alterações em pouco tempo. Aguarde um minuto e tente novamente."
@@ -109,11 +120,16 @@ class RadiosHandler(SettingsHandler):
         live: Optional[LiveView] = None,
         stations: Optional[StationsView] = None,
         custom: Any = None,
+        nova: Optional[Formulario] = None,
+        config: Optional[Formulario] = None,
+        redefinir: Optional[ResetView] = None,
     ) -> None:
         tr = panel_translator(ctx.pool)
         premium = await ctx.pool.radio.premium.get(ctx.guild_id)
         editable = can_write(premium)
         rows = await self.page.rows(ctx, action, editable, tr)
+        if redefinir is not None and redefinir.removida:  # a rádio acabou de ser redefinida: já não está na lista
+            rows = rows + (self._removed_row(redefinir),) if not any(r.id == redefinir.radio_id for r in rows) else rows
         if form is not None:  # o resultado do POST entra no lugar do formulário daquela rádio
             rows = tuple(row._replace(form=form) if row.id == form.radio_id else row for row in rows)
         if live is not None:
@@ -122,6 +138,7 @@ class RadiosHandler(SettingsHandler):
             if stations is None:
                 stations = await self.stations.view(ctx, f"{action}/{STATIONS_PATH}", tr)
             rows = await self._with_custom(ctx, action, rows, tr, custom)
+            rows, nova = await self._with_setup(ctx, action, rows, nova, config, redefinir)
         self.set_status(status)
         self.render_page(
             PAGE_TEMPLATE,
@@ -132,7 +149,65 @@ class RadiosHandler(SettingsHandler):
             radios=rows,
             max_radios=MAX_PER_GUILD,
             estacoes=stations,
+            nova=nova,
+            mostrar_nova=editable,
         )
+
+    @property
+    def setup(self) -> RadioSetupService:
+        return self.application.settings["radio_setup_service"]
+
+    @staticmethod
+    def names_of(row: Any) -> tuple[str, str]:
+        return str(row.bot_nome), str(row.canal_nome or "—")
+
+    @staticmethod
+    def _removed_row(view: ResetView) -> Any:
+        """Só o bloco "Rádio redefinida." no lugar da rádio que saiu (página inteira, sem htmx)."""
+        from empiremuse.panel.services.radio import RadioRow
+
+        return RadioRow(
+            id=view.radio_id,
+            slug=view.slug,
+            bot_nome=view.bot_nome,
+            canal_nome=view.canal_nome,
+            tipo="",
+            estado="",
+            titulo=None,
+            form=None,
+            config=Formulario(key="radio_setup", form_id="", template="", acao="", versao="", valores={}),
+            redefinir=view,
+        )
+
+    async def _with_setup(
+        self,
+        ctx: FormContext,
+        action: str,
+        rows: tuple,
+        nova: Optional[Formulario],
+        config: Optional[Formulario],
+        redefinir: Optional[ResetView],
+    ) -> tuple[tuple, Optional[Formulario]]:
+        """Com premium: o formulário de criar (ou o aviso de máximo) e, em cada rádio, configurar + redefinir (§4.3);
+        o resultado de um POST entra no lugar do bloco daquela rádio."""
+        options = await self.setup.options(ctx)
+        done = []
+        for row in rows:
+            if row.redefinir is not None:  # a linha sintética da rádio redefinida
+                done.append(row)
+                continue
+            radio = row.radio
+            form = config if config is not None and config.radio_id == row.id else None
+            if form is None:
+                current = (int(radio.bot_id), str(row.bot_nome))
+                form = self.setup.form(radio, f"{action}/{row.id}/{CONFIG_PATH}", options, current_bot=current)
+            view = redefinir if redefinir is not None and redefinir.radio_id == row.id else None
+            if view is None:
+                view = self.setup.reset_view(radio, f"{action}/{row.id}/{RESET_PATH}", self.names_of(row))
+            done.append(row._replace(config=form, redefinir=view))
+        if nova is None and len([r for r in done if r.redefinir is None or not r.redefinir.removida]) < MAX_PER_GUILD:
+            nova = self.setup.form(None, f"{action}/{NEW_PATH}", options)
+        return tuple(done), nova
 
     async def _with_custom(self, ctx: FormContext, action: str, rows: tuple, tr: Any, custom: Any) -> tuple:
         """O seletor de estação em cada rádio personalizada editável (o resultado do POST entra na rádio dele)."""
@@ -494,3 +569,142 @@ class RadioStationItemHandler(RadioStationsHandler):
             return
         record_panel_action(ctx, f"{RADIOS_CATEGORY}/{STATIONS_PATH}/{what}", outcome.status)
         await self._respond(outcome, access, ctx, action)
+
+
+class RadioSetupHandler(RadiosHandler):
+    """Base dos POSTs do §4.3: 413, 429, 404 (servidor ou rádio de outro servidor) e 403 sem premium antes de qualquer
+    chamada ao bot; ``manage_guild`` de quem faz é conferido pelo ``GuildAccess`` e de novo pelo bot."""
+
+    async def get(self, guild_id: str, *rest: str) -> None:  # type: ignore[override]
+        self.redirect(f"{SERVERS_PATH}/{guild_id}/{RADIOS_CATEGORY}")
+
+    async def post(self, guild_id: str, *rest: str) -> None:  # type: ignore[override]
+        try:
+            await self._post(guild_id, *rest)
+        except RadioUnavailable:
+            self._unavailable()
+
+    async def _post(self, guild_id: str, *rest: str) -> None:
+        raise NotImplementedError
+
+    async def _gate(self, guild_id: str) -> Optional[tuple]:
+        if len(self.request.body) > MAX_BODY_BYTES:
+            self._reject_plain(413, *_MSG_TOO_LARGE)
+            return None
+        if not self._write_allowed():
+            self.set_header("Retry-After", "60")
+            self._reject_plain(429, _RATE_TITLE, _MSG_RATE)
+            return None
+        try:
+            ctx, access, action = await self._resolve(guild_id, RADIOS_CATEGORY, fresh=True)
+        except GuildAccessDenied:
+            self._not_found()
+            return None
+        if not can_write(await ctx.pool.radio.premium.get(ctx.guild_id)):
+            tr = panel_translator(ctx.pool)
+            self._reject_plain(STATUS_FORBIDDEN, UNAVAILABLE_TITLE, tr("panel.radio.setup.forbidden.premium"))
+            return None
+        return ctx, access, action
+
+    async def _radio_of(self, ctx: FormContext, radio_id: str) -> Any:
+        """A rádio do id da rota, só se é deste servidor (R-6); ``None`` depois de responder 404."""
+        wanted = radio_id_of(ctx.guild_id, radio_id)
+        radio = await ctx.pool.radio.store.get(wanted) if wanted is not None else None
+        if radio is None or not belongs_to(radio, ctx.guild_id):
+            self._not_found()
+            return None
+        return radio
+
+    async def _row_of(self, ctx: FormContext, action: str, radio: Any) -> Any:
+        tr = panel_translator(ctx.pool)
+        rows = await self.page.rows(ctx, action, True, tr)
+        return next((row for row in rows if row.id == str(radio.id)), None)
+
+
+class RadioNewHandler(RadioSetupHandler):
+    """``POST /painel/servidores/<gid>/radios/nova``: cria uma rádio (tipo, canal, bot reserva)."""
+
+    async def _post(self, guild_id: str, *rest: str) -> None:
+        gated = await self._gate(guild_id)
+        if gated is None:
+            return
+        ctx, access, action = gated
+        tr = panel_translator(ctx.pool)
+        outcome = await self.setup.configure(ctx, None, decode_args(self), f"{action}/{NEW_PATH}", tr)
+        record_panel_action(ctx, f"{RADIOS_CATEGORY}/{NEW_PATH}", outcome.status)
+        if outcome.form is None:
+            self._not_found()
+            return
+        if self._is_htmx():
+            self.set_status(outcome.status)
+            self.render_page(NEW_TEMPLATE, nova=outcome.form, max_radios=MAX_PER_GUILD, **self._common(access))
+            return
+        await self._render_page(outcome.status, access, ctx, action, nova=outcome.form)
+
+
+class RadioConfigHandler(RadioSetupHandler):
+    """``POST /painel/servidores/<gid>/radios/<bot:guild>/config``: tipo, canal e bot reserva de uma rádio (CAS em rev)."""
+
+    async def _post(self, guild_id: str, *rest: str) -> None:
+        gated = await self._gate(guild_id)
+        if gated is None:
+            return
+        ctx, access, action = gated
+        radio = await self._radio_of(ctx, rest[0])
+        if radio is None:
+            return
+        row = await self._row_of(ctx, action, radio)
+        if row is None:
+            self._not_found()
+            return
+        tr = panel_translator(ctx.pool)
+        current = (int(radio.bot_id), str(row.bot_nome))
+        outcome: SetupOutcome = await self.setup.configure(
+            ctx, radio, decode_args(self), f"{action}/{radio.id}/{CONFIG_PATH}", tr, current_bot=current
+        )
+        record_panel_action(ctx, f"{RADIOS_CATEGORY}/{CONFIG_PATH}", outcome.status)
+        if outcome.form is None:
+            self._not_found()
+            return
+        saved = outcome.radio if outcome.radio is not None else radio
+        if self._is_htmx():
+            row = await self._row_of(ctx, action, saved) or row
+            view = self.setup.reset_view(saved, f"{action}/{saved.id}/{RESET_PATH}", self.names_of(row))
+            self.set_status(outcome.status)
+            self.render_page(CONFIG_TEMPLATE, config=outcome.form, redefinir=view, **self._common(access))
+            return
+        await self._render_page(outcome.status, access, ctx, action, config=outcome.form)
+
+
+class RadioResetHandler(RadioSetupHandler):
+    """``POST /painel/servidores/<gid>/radios/<bot:guild>/reset``: redefinir em dois passos (token assinado, 60 s)."""
+
+    async def _post(self, guild_id: str, *rest: str) -> None:
+        gated = await self._gate(guild_id)
+        if gated is None:
+            return
+        ctx, access, action = gated
+        radio = await self._radio_of(ctx, rest[0])
+        if radio is None:
+            return
+        row = await self._row_of(ctx, action, radio)
+        if row is None:
+            self._not_found()
+            return
+        tr = panel_translator(ctx.pool)
+        names = self.names_of(row)
+        status, view = await self.setup.reset(
+            ctx, radio, decode_args(self), f"{action}/{radio.id}/{RESET_PATH}", names, tr
+        )
+        record_panel_action(ctx, f"{RADIOS_CATEGORY}/{RESET_PATH}", status)
+        if view is None:
+            self._not_found()
+            return
+        if self._is_htmx():
+            options = await self.setup.options(ctx)
+            current = (int(radio.bot_id), str(row.bot_nome))
+            form = self.setup.form(radio, f"{action}/{radio.id}/{CONFIG_PATH}", options, current_bot=current)
+            self.set_status(status)
+            self.render_page(CONFIG_TEMPLATE, config=form, redefinir=view, **self._common(access))
+            return
+        await self._render_page(status, access, ctx, action, redefinir=view)

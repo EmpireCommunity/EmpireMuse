@@ -9,8 +9,9 @@
 
 {% block conteudo %}
 {# Rádios do servidor (item 8). Variáveis: premium (None ou .active), pode_escrever, radios (RadioRow: id, slug, bot_nome,
-   canal_nome|None, tipo, estado, titulo|None, form|None, ao_vivo|None, personalizada|None), max_radios, estacoes
-   (StationsView|None, R5). Textos pelo ``_`` (panel.json); nada em href/src. #}
+   canal_nome|None, tipo, estado, titulo|None, form|None, ao_vivo|None, personalizada|None, config|None, redefinir|None),
+   max_radios, estacoes (StationsView|None, R5), nova (Formulario|None, §4.3), mostrar_nova (bool). Textos pelo ``_``
+   (panel.json); nada em href/src. #}
 {% set titulo_categoria = _("panel.radio.title") %}
 {% set slug_atual = "radios" %}
 {% set caminho_categoria = "/painel/servidores/" + acesso.guild_id + "/radios" %}
@@ -25,6 +26,9 @@
   {% end %}
   <p class="nota">{{ _("panel.radio.premium.help") }}</p>
 </section>
+{% if mostrar_nova %}
+{% include "_radio_nova.html" %}
+{% end %}
 {% if estacoes %}
 {% include "config_radio_stations.html" %}
 {% end %}
@@ -40,6 +44,11 @@
   <p>{{ radio.tipo }} · {{ radio.estado }}{% if radio.titulo %} · {{ radio.titulo }}{% end %}</p>
   {% if radio.canal_nome is None %}
   <p class="aviso aviso-erro" role="note">{{ _("panel.radio.channel_removed") }}</p>
+  {% end %}
+  {% if radio.config and radio.redefinir %}
+  {% set config = radio.config %}
+  {% set redefinir = radio.redefinir %}
+  {% include "_radio_config.html" %}
   {% end %}
   {% if radio.ao_vivo %}
   {% set vivo = radio.ao_vivo %}

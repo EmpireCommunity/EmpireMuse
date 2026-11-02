@@ -67,6 +67,8 @@ class RadioRow(NamedTuple):
     ao_vivo: Optional[LiveView] = None  # só nas rádios ao vivo (R3): principal, reserva e o seletor
     personalizada: Any = None  # só nas rádios personalizadas (R5): o seletor de estação (CustomView)
     radio: Any = None  # a rádio crua, para a página montar o seletor da personalizada (não vai ao template)
+    config: Any = None  # §4.3: o formulário de tipo/canal/bot (Formulario), só com premium
+    redefinir: Any = None  # §4.3: o bloco de redefinir (ResetView), só com premium
 
 
 def radio_id_of(guild_id: int, raw: str) -> Optional[str]:

@@ -1,6 +1,6 @@
 """Dublês da E4c (categoria `jukebox`): um servidor 100 com um bot (7000) e canais REAIS de disnake.
 
-Reaproveita os dublês de Discord de tests/support/canal_de_pedidos.py (os mesmos da caracterização) e o FakeDB do
+Reaproveita os dublês de Discord de tests/support/canal_da_jukebox.py (os mesmos da caracterização) e o FakeDB do
 painel (tests/panel/helpers_settings.py), que registra mutação do cache, gravação do próprio dict e ids não-int.
 """
 
@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import tornado.web
 
-from tests.support.canal_de_pedidos import (
+from tests.support.canal_da_jukebox import (
     BOT_ID,
     BOT_MENTION,
     FakeBot,
