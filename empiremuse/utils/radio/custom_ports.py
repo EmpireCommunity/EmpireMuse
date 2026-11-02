@@ -31,6 +31,19 @@ logger = logging.getLogger(__name__)
 SOURCE_NAME = "last.fm"  # o ``PartialTrack`` por metadados: o nó o resolve pelos provedores de busca, como o autoplay
 
 
+def _tag(partial: Any, track: Track) -> Any:
+    """Etiqueta o ``partial`` com a faixa da rádio para a qual foi sorteado: o ``current`` do player e o cache sempre sabem de quem é."""
+    partial.info.setdefault("extra", {})["radio_track"] = [track.artist, track.title]
+    return partial
+
+
+def radio_track_of(partial: Any) -> Optional[Track]:
+    """A faixa da rádio etiquetada no ``partial`` (``None`` se não é de uma rádio personalizada)."""
+    extra = (getattr(partial, "info", None) or {}).get("extra") or {}
+    pair = extra.get("radio_track")
+    return Track(str(pair[0]), str(pair[1])) if isinstance(pair, list | tuple) and len(pair) == 2 else None
+
+
 class CustomRadioPorts(DiscordRadioPorts):
     def __init__(self, pool: BotPool, radio: Radio) -> None:
         super().__init__(pool, radio)
@@ -97,7 +110,7 @@ class CustomRadioPorts(DiscordRadioPorts):
             raise RuntimeError("sem player")
         cached = await self._from_cache(player, track)
         if cached is not None:
-            return cached
+            return _tag(cached, track)
         partial = PartialTrack(
             title=track.title, author=track.artist, source_name=SOURCE_NAME, requester=self.radio.bot_id
         )
@@ -109,15 +122,16 @@ class CustomRadioPorts(DiscordRadioPorts):
         if not partial.id:
             return None
         await self.pool.radio.resolved.store(track, partial)
-        return partial
+        return _tag(partial, track)
 
     async def candidate_swapped(self, partial: Any) -> None:
         """O nó recusou o candidato da faixa que tocava ("No playable stream") e ``resolve_track`` buscou outro (``partial`` com ``id`` novo) ou não achou.
 
+        A chave do cache é a da faixa que FALHOU (a que vem etiquetada no ``partial``), nunca a do ``current`` das portas: o cache vale para todos os servidores.
         Achou: o candidato novo substitui a entrada guardada (uma entrada de 7 dias morta falharia uma vez a cada sorteio) e toca agora. Não achou: a faixa
-        entra no cache negativo, sai do ``current`` e a rádio passa à faixa adiantada (ou sorteia outra no próximo passo): nunca fica muda."""
+        entra no cache negativo e a rádio passa à faixa adiantada (ou sorteia agora): nunca fica muda."""
         player = self._player()
-        track, resolved = self.current, self.pool.radio.resolved
+        track, resolved = radio_track_of(partial), self.pool.radio.resolved
         if player is None or track is None:
             return
         if partial.id:
@@ -126,17 +140,24 @@ class CustomRadioPorts(DiscordRadioPorts):
             await player.process_next()
             return
         await resolved.mark(track)
-        self.current = None
         if player.queue:
             await player.process_next()  # a faixa adiantada
-            self._refresh_panel()
+            self.sync_current()
         else:
             await self.play_next()  # nada adiantado: sorteia agora (o ``current`` do player ainda é a faixa que falhou, o ``keep_playing`` não agiria)
 
-    async def candidate_dead(self) -> None:
+    async def candidate_dead(self, partial: Any) -> None:
         """Recusas demais: a entrada guardada desta faixa é apagada (volta a ser buscada do zero no próximo sorteio)."""
-        if self.current is not None:
-            await self.pool.radio.resolved.forget(self.current)
+        track = radio_track_of(partial)
+        if track is not None:
+            await self.pool.radio.resolved.forget(track)
+
+    def sync_current(self) -> None:
+        """A faixa que toca é a do player (a adiantada também): o painel mostra ela, não a primeira que o ``play_next`` sorteou."""
+        playing = radio_track_of(getattr(self._player(), "current", None))
+        if playing is not None and playing != self.current:
+            self.current = playing
+            self._refresh_panel()
 
     async def _from_cache(self, player: Any, track: Track) -> Any | None:
         """A faixa do cache de resolvidas, se o nó ainda decodifica o ``encoded`` guardado; senão a entrada é apagada e a busca segue."""
@@ -204,6 +225,7 @@ class CustomRadioPorts(DiscordRadioPorts):
         if getattr(player, "current", None) is None and not player.queue:
             await self.play_next()
         else:
+            self.sync_current()  # a faixa seguinte começou sozinha: o painel acompanha
             await self._stock()
 
     async def skip_track(self) -> None:
@@ -215,6 +237,7 @@ class CustomRadioPorts(DiscordRadioPorts):
             await self.play_next()
             return
         await player.process_next()
+        self.sync_current()
         self._refresh_panel()
         await self._stock()
 

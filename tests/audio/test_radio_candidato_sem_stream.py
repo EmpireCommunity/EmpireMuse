@@ -77,6 +77,7 @@ class TestTheRadioPlayerSwapsTheCandidate:
         current = partial()
         current.id = "a"
         radio_track = Track("Artista", "Faixa")
+        current.info["extra"]["radio_track"] = ["Artista", "Faixa"]
         db = FakeDb()
 
         async def resolve(track):
@@ -97,7 +98,9 @@ class TestTheRadioPlayerSwapsTheCandidate:
         )
         ports = object.__new__(CustomRadioPorts)
         ports._player = lambda: player
-        ports.current = radio_track
+        ports.current = Track(
+            "Primeira", "Faixa antiga"
+        )  # o current das portas ficou na primeira: a chave NUNCA vem dele
         ports.pool = SimpleNamespace(radio=SimpleNamespace(resolved=ResolvedTracks(db)))
         ports.play_next = AsyncMock()
         ports._refresh_panel = MagicMock()
@@ -142,7 +145,7 @@ class TestTheRadioPlayerSwapsTheCandidate:
 
         assert consumed is True
         w.player.process_next.assert_awaited_once()  # a faixa adiantada toca
-        assert w.player.queue == ["stocked"] and w.ports.current is None
+        assert w.player.queue == ["stocked"]
         assert await ResolvedTracks(w.db).failed(w.track) is True  # a falha ficou marcada: sai do sorteio por 24 h
 
     @pytest.mark.asyncio
@@ -178,3 +181,32 @@ class TestTheRadioPlayerSwapsTheCandidate:
         assert await event_steps._he_custom_radio_no_stream(w.player, self.make_event("boom")) is False
         w.player.radio_custom = False
         assert await event_steps._he_custom_radio_no_stream(w.player, self.make_event()) is False
+
+    @pytest.mark.asyncio
+    async def test_the_cache_entry_and_the_failure_belong_to_the_track_that_failed_not_the_first_one(self):
+        from empiremuse.rules.radio_shuffle import Track
+        from empiremuse.utils.music.models import event_steps
+        from empiremuse.utils.radio.custom_source import ResolvedTracks
+
+        w = self.make_world("b")
+        first = Track("Primeira", "Faixa antiga")
+
+        await event_steps._he_custom_radio_no_stream(w.player, self.make_event())
+
+        assert (await ResolvedTracks(w.db).get(w.track))["encoded"] == "b"
+        assert await ResolvedTracks(w.db).get(first) is None  # a primeira faixa não ganhou o encoded de outra
+
+        w2 = self.make_world(None)
+        await event_steps._he_custom_radio_no_stream(w2.player, self.make_event())
+        assert await ResolvedTracks(w2.db).failed(w2.track) is True
+        assert await ResolvedTracks(w2.db).failed(first) is False  # nem ficou 24 h fora do sorteio sem ter falhado
+
+    @pytest.mark.asyncio
+    async def test_the_panel_follows_the_track_that_is_playing_even_when_it_came_from_the_stock(self):
+        w = self.make_world("b")
+        w.ports._refresh_panel.reset_mock()
+
+        w.ports.sync_current()
+
+        assert w.ports.current == w.track  # o player toca a faixa etiquetada, o painel passa a mostrar ela
+        w.ports._refresh_panel.assert_called_once()

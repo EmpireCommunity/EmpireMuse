@@ -130,8 +130,8 @@ async def _he_custom_radio_no_stream(self, event) -> bool:
         await ports.candidate_swapped(track)
         return True
     if NO_STREAM_ERROR in str(message or ""):
-        await (
-            ports.candidate_dead()
+        await ports.candidate_dead(
+            track
         )  # o teto de 3 foi atingido: a entrada guardada não presta mais; o caminho normal segue
     return False
 
