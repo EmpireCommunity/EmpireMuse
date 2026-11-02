@@ -291,7 +291,7 @@ class TestLacunasDaMutacao:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("gera", [True, False], ids=["com_codigo", "sem_codigo"])
-    async def test_song_request_webhook_nome_do_anexo_e_token_mascarado(self, monkeypatch, gera):
+    async def test_jukebox_webhook_nome_do_anexo_e_token_mascarado(self, monkeypatch, gera):
         if gera:
             fixar_codigo(monkeypatch)
         else:
@@ -311,5 +311,5 @@ class TestLacunasDaMutacao:
         await classe.on_jukebox_message(self_, ctx, mensagem)
 
         [(texto, nome)] = anexos
-        assert nome == (f"error_traceback_songrequest_{CODIGO}.txt" if gera else "error_traceback_songrequest.txt")
+        assert nome == (f"error_traceback_jukebox_{CODIGO}.txt" if gera else "error_traceback_jukebox.txt")
         assert TOKEN_FALSO not in texto and "mytoken" in texto
