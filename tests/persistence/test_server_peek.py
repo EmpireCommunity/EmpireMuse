@@ -44,7 +44,7 @@ def test_after_one_real_read_the_panel_message_id_comes_from_the_cache_without_c
 
     assert world.jukebox.peek_message_id(GID) == 500
     assert (
-        world.store.peek_section(GID, "request") is world.store._docs[str(GID)]["jukebox"]
+        world.store.peek_section(GID, "jukebox") is world.store._docs[str(GID)]["jukebox"]
     )  # a mesma seção, não uma cópia
 
 
@@ -60,4 +60,4 @@ def test_a_section_that_was_not_migrated_yet_is_unknown(world):
     doc["migrated"]["jukebox"] = False
     world.store._docs[str(GID)] = doc
 
-    assert world.store.peek_section(GID, "request") is None
+    assert world.store.peek_section(GID, "jukebox") is None
