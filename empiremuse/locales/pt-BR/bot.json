@@ -676,5 +676,17 @@
   "legacy.checks.queue_loading": "**Não é possível executar essa ação com o processamento da música em andamento (por favor aguarde mais alguns segundos e tente novamente).**",
   "legacy.checks.restrict_mode": "Apenas DJ's ou membros com a permissão de **mover membros** podem usar este comando/botão com o **modo restrito ativo**...\n\n",
   "legacy.checks.status_lock": "**Você terá que aguardar {time} para usar essa função com o status automático do canal ligado...**",
-  "legacy.checks.youtube_cooldown": "**{user}, você só pode pular a música atual do youtube em {time}**.\n-# Isso é uma forma de ajudar a evitar possíveis bloqueios do youtube na reprodução da música"
+  "legacy.checks.youtube_cooldown": "**{user}, você só pode pular a música atual do youtube em {time}**.\n-# Isso é uma forma de ajudar a evitar possíveis bloqueios do youtube na reprodução da música",
+  "legacy.deezer.no_results": "**Não houve resultados no link do deezer informado...**",
+  "legacy.deezer.unsupported_link": "**Link do deezer não reconhecido/suportado:**\n{url}",
+  "legacy.playback.failure": "**Falha ao reproduzir música{partial}:\n{link}**\n**Motivo:** {reason}\n**Nível:** {severity}\n**Servidor de música:** {node}{code}",
+  "legacy.playback.mirror_not_found": "`Ignorando a música` {link}`. Pois não houve resultados em outras plataformas de música.`",
+  "legacy.playback.partial": " (parcial)",
+  "legacy.playback.process_problem": "Houve um problema ao tentar processar a música {link}...{code}",
+  "legacy.playback.unavailable_skip": "A música {link} não está disponível...\nPulando para a próxima música...",
+  "legacy.saved_queue.deleted": "**A sua fila salva já foi excluída...**",
+  "legacy.saved_queue.incompatible": "**A sua fila salva está em um formato incompatível e não pôde ser carregada.**\nO arquivo foi mantido; salve a fila de novo para substituí-la.",
+  "legacy.saved_queue.save_failed": "**Não foi possível salvar a fila agora. Tente novamente em instantes.**",
+  "legacy.saved_queue.save_incompatible": "**Não foi possível salvar a fila: alguma música tem dados incompatíveis com o formato de armazenamento.**",
+  "legacy.session.thread_ended": "**A sessão de pedido de música da conversa atual foi encerrada.**"
 }

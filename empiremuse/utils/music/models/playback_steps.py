@@ -131,8 +131,11 @@ async def _pn_sources(self, req):
                 try:
                     await self.text_channel.send(
                         embed=disnake.Embed(
-                            description=f"Houve um problema ao tentar processar a música {md_link(track.title, track.uri, code=False)}..."
-                            f"{error_code_text(error_code)}",
+                            description=self.tr(
+                                "legacy.playback.process_problem",
+                                link=md_link(track.title, track.uri, code=False),
+                                code=error_code_text(error_code),
+                            ),
                             color=self.bot.get_color(),
                         )
                     )
@@ -149,8 +152,9 @@ async def _pn_sources(self, req):
                 try:
                     await self.text_channel.send(
                         embed=disnake.Embed(
-                            description=f"A música {md_link(track.title, track.uri, code=False)} não está disponível...\n"
-                            f"Pulando para a próxima música...",
+                            description=self.tr(
+                                "legacy.playback.unavailable_skip", link=md_link(track.title, track.uri, code=False)
+                            ),
                             color=self.bot.get_color(),
                         ),
                         delete_after=10,
@@ -306,8 +310,9 @@ async def _pn_encoded(self, req):
             try:
                 await self.text_channel.send(
                     embed=disnake.Embed(
-                        description=f"A música {md_link(track.title, track.uri, code=False)} não está disponível...\n"
-                        "Pulando para a próxima música...",
+                        description=self.tr(
+                            "legacy.playback.unavailable_skip", link=md_link(track.title, track.uri, code=False)
+                        ),
                         color=self.bot.get_color(),
                     ),
                     delete_after=10,

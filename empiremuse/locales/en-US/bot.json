@@ -663,5 +663,17 @@
   "legacy.checks.queue_loading": "**This action cannot be performed while the song is being processed (please wait a few seconds and try again).**",
   "legacy.checks.restrict_mode": "Only DJs or members with the **move members** permission can use this command/button with **restricted mode on**...\n\n",
   "legacy.checks.status_lock": "**You will have to wait {time} to use this function with the automatic channel status turned on...**",
-  "legacy.checks.youtube_cooldown": "**{user}, you can only skip the current youtube song in {time}**.\n-# This helps avoid possible youtube blocks when playing the song"
+  "legacy.checks.youtube_cooldown": "**{user}, you can only skip the current youtube song in {time}**.\n-# This helps avoid possible youtube blocks when playing the song",
+  "legacy.deezer.no_results": "**There were no results for the Deezer link provided...**",
+  "legacy.deezer.unsupported_link": "**Deezer link not recognized/supported:**\n{url}",
+  "legacy.playback.failure": "**Failed to play song{partial}:\n{link}**\n**Reason:** {reason}\n**Level:** {severity}\n**Music server:** {node}{code}",
+  "legacy.playback.mirror_not_found": "`Ignoring the song` {link}`. No results were found on other music platforms.`",
+  "legacy.playback.partial": " (partial)",
+  "legacy.playback.process_problem": "There was a problem trying to process the song {link}...{code}",
+  "legacy.playback.unavailable_skip": "The song {link} is not available...\nSkipping to the next song...",
+  "legacy.saved_queue.deleted": "**Your saved queue has already been deleted...**",
+  "legacy.saved_queue.incompatible": "**Your saved queue is in an incompatible format and could not be loaded.**\nThe file was kept; save the queue again to replace it.",
+  "legacy.saved_queue.save_failed": "**Could not save the queue right now. Try again in a moment.**",
+  "legacy.saved_queue.save_incompatible": "**Could not save the queue: some song has data that is incompatible with the storage format.**",
+  "legacy.session.thread_ended": "**The music request session of the current conversation has ended.**"
 }

@@ -9,6 +9,7 @@ from aiohttp import ClientSession
 from cachetools import TTLCache
 from rapidfuzz import fuzz
 
+from empiremuse.utils.music.guild_text import guild_text_sync
 from empiremuse.rules.title_match import title_matches
 from empiremuse.utils.music.converters import URL_REG, md_link
 from empiremuse.utils.music.errors import GenericError
@@ -252,10 +253,10 @@ class DeezerClient:
             tracks_data = result["tracks"]["data"]
 
         else:
-            raise GenericError(f"**Link do deezer não reconhecido/suportado:**\n{url}")
+            raise GenericError(guild_text_sync(None, "legacy.deezer.unsupported_link", url=url))
 
         if not tracks_data:
-            raise GenericError("**Não houve resultados no link do deezer informado...**")
+            raise GenericError(guild_text_sync(None, "legacy.deezer.no_results"))
 
         data["playlistInfo"]["selectedTrack"] = -1
         data["playlistInfo"]["type"] = url_type

@@ -387,7 +387,7 @@ class PlayerSessionMixin:
         if len(tracks) < 3:
             raise GenericError(await guild_text(bot, guild, "legacy.session.save_min"))
 
-        await store_saved_queue(inter.author.id, tracks, inter.guild_id, disnake.utils.utcnow())
+        await store_saved_queue(inter.author.id, tracks, inter.guild_id, disnake.utils.utcnow(), inter.guild)
 
         await inter.response.defer(ephemeral=True)
 
