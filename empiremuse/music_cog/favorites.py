@@ -3,7 +3,6 @@
 import disnake
 from disnake.ext import commands
 
-from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.i18n import localized
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.errors import (
@@ -87,11 +86,7 @@ class FavoritesMixin:
         txt = view.build_txt()
 
         if not txt:
-<<<<<<< HEAD
-            raise GenericError(await guild_text(bot, inter.guild, "legacy.favorites.unsupported"))
-=======
             raise GenericError(tr("fav.unsupported"))
->>>>>>> origin/feat/playlists-escopo
 
         view.message = await inter.send(txt, view=view, ephemeral=ephemeral)
 

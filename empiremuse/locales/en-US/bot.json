@@ -888,7 +888,6 @@
   "legacy.queue.range_end_after_start": "**The end position must be greater than the start position!**",
   "legacy.queue.reverse_min": "**The queue needs at least 2 songs to reverse the order.**",
   "legacy.queue.shuffle_min": "**The queue needs at least 3 songs to be shuffled.**",
-  "legacy.favorites.unsupported": "**This feature is not supported right now...**\n\n`Spotify and YTDL support are not enabled.`",
   "legacy.skip.already_voted": "**You have already voted to skip the current song.**",
   "legacy.skip.song": "⏭️ **⠂{user} skipped the song:\n╰{link}**{controller}",
   "legacy.skip.to_song": "⤵️ **⠂{user} skipped to the song:**\n╰{link}{controller}",

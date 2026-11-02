@@ -901,7 +901,6 @@
   "legacy.queue.range_end_after_start": "**A posição final deve ser maior que a posição inicial!**",
   "legacy.queue.reverse_min": "**A fila tem que ter no mínimo 2 músicas para inverter a ordem.**",
   "legacy.queue.shuffle_min": "**A fila tem que ter no mínimo 3 músicas para ser misturada.**",
-  "legacy.favorites.unsupported": "**Não há suporte a esse recurso no momento...**\n\n`Suporte ao spotify e YTDL não estão ativados.`",
   "legacy.skip.already_voted": "**Você já votou para pular a música atual.**",
   "legacy.skip.song": "⏭️ **⠂{user} pulou a música:\n╰{link}**{controller}",
   "legacy.skip.to_song": "⤵️ **⠂{user} pulou para a música:**\n╰{link}{controller}",
