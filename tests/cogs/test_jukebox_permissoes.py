@@ -1,4 +1,4 @@
-"""E4c — `check_channel_perm` (utils/music/request_channel.py) deve enxergar os nomes CANÔNICOS das permissões.
+"""E4c — `check_channel_perm` (utils/music/jukebox_channel.py) deve enxergar os nomes CANÔNICOS das permissões.
 
 Hoje `Permissions` itera por `view_channel`/`send_messages` e a lista da função usa os aliases `read_messages`/
 `create_forum_threads`, que nunca casam: falta de ler mensagens (e de postar em fórum) passa batido (RED).
@@ -6,7 +6,7 @@ Hoje `Permissions` itera por `view_channel`/`send_messages` e a lista da funçã
 
 import pytest
 
-from empiremuse.utils.music import request_channel
+from empiremuse.utils.music import jukebox_channel
 from empiremuse.utils.music.errors import GenericError
 from tests.support.canal_de_pedidos import (
     BOT_MENTION,
@@ -45,7 +45,7 @@ def without(*names):
 
 def message_of(channel):
     with pytest.raises(GenericError) as raised:
-        request_channel.check_channel_perm(channel)
+        jukebox_channel.check_channel_perm(channel)
     return raised.value.text
 
 

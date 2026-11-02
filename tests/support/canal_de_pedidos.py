@@ -335,7 +335,7 @@ class FakePlayer:
 
 
 class FakeRequestStore:
-    """O ``pool.servers.request`` do canal de pedidos sobre o ``FakeDB`` (o bot é o único e portanto o bot do painel)."""
+    """O ``pool.servers.jukebox`` do canal de pedidos sobre o ``FakeDB`` (o bot é o único e portanto o bot do painel)."""
 
     def __init__(self, bot):
         self.bot = bot
@@ -380,7 +380,7 @@ class FakeBot:
         self.script = {}  # evento -> lista de interações entregues por wait_for (exceção = levantar)
         self.waits = []
         self.pool = SimpleNamespace(
-            get_guild_bots=lambda gid: [self], servers=SimpleNamespace(request=FakeRequestStore(self))
+            get_guild_bots=lambda gid: [self], servers=SimpleNamespace(jukebox=FakeRequestStore(self))
         )
 
     @property

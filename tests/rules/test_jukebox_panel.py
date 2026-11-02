@@ -3,13 +3,13 @@ o botão age só no player da call de quem apertou (S7) e a migração copia só
 
 import pytest
 
-from empiremuse.rules.request_panel import (
+from empiremuse.rules.jukebox_panel import (
     HEAL_MIN_INTERVAL_MS,
     PANEL_REFRESH_MS,
     PAUSED,
     PLAYING,
     PanelPeer,
-    StrictAction,
+    JukeboxAction,
     choose_player,
     clock,
     elect_panel_bot,
@@ -18,9 +18,9 @@ from empiremuse.rules.request_panel import (
     make_entry,
     progress_text,
     refresh_wait_ms,
-    strict_action,
+    jukebox_action,
 )
-from empiremuse.rules.servers import SettingError, changed_request, migrate_request
+from empiremuse.rules.servers import SettingError, changed_jukebox, migrate_jukebox
 
 pytestmark = pytest.mark.critical
 
@@ -143,16 +143,16 @@ def test_the_panel_is_edited_at_most_once_every_three_seconds(last, now, wait):
     ],
 )
 def test_migration_keeps_only_valid_ids_and_leaves_the_panel_bot_to_the_election(legacy, request_section):
-    assert migrate_request(legacy) == {**request_section, "panel_bot_id": None}
+    assert migrate_jukebox(legacy) == {**request_section, "panel_bot_id": None}
 
 
 def test_a_writer_that_sets_the_request_channel_to_garbage_is_refused_and_unchanged_fields_are_ignored():
     seen = {"channel": "12", "message_id": "34"}
-    assert changed_request({"player_controller": {"channel": "12", "message_id": "34"}}, seen) == {}
-    assert changed_request({"player_controller": {"channel": "99"}}, seen) == {"channel": "99"}
-    assert changed_request({"player_controller": {"message_id": None}}, seen) == {"message_id": None}
+    assert changed_jukebox({"player_controller": {"channel": "12", "message_id": "34"}}, seen) == {}
+    assert changed_jukebox({"player_controller": {"channel": "99"}}, seen) == {"channel": "99"}
+    assert changed_jukebox({"player_controller": {"message_id": None}}, seen) == {"message_id": None}
     with pytest.raises(SettingError):
-        changed_request({"player_controller": {"channel": "não é id"}}, seen)
+        changed_jukebox({"player_controller": {"channel": "não é id"}}, seen)
 
 
 # ---------------------------------------------------------------------- Jukebox estrita (item 8, J1)
@@ -206,27 +206,35 @@ class TestPainelApagado:
         assert heal_wait_ms(10_000, 5_000) == 0
 
 
-class TestModoEstrito:
+class TestJukeboxAction:
     @staticmethod
-    def action(strict, **over):
+    def action(auto_delete, text_requests=True, **over):
         facts = dict(author_is_bot=False, is_command=False, has_mentions=False, is_system=False)
-        return strict_action(strict, **{**facts, **over})
+        return jukebox_action(auto_delete, text_requests, **{**facts, **over})
 
-    @pytest.mark.parametrize("strict", [True, False])
-    def test_bots_and_commands_are_never_touched(self, strict):
-        assert self.action(strict, author_is_bot=True) is StrictAction.IGNORE
-        assert self.action(strict, is_command=True) is StrictAction.IGNORE
+    @pytest.mark.parametrize("auto_delete", [True, False])
+    @pytest.mark.parametrize("text_requests", [True, False])
+    def test_bots_and_commands_are_never_touched(self, auto_delete, text_requests):
+        assert self.action(auto_delete, text_requests, author_is_bot=True) is JukeboxAction.IGNORE
+        assert self.action(auto_delete, text_requests, is_command=True) is JukeboxAction.IGNORE
 
-    def test_off_keeps_todays_flow(self):
-        assert self.action(False) is StrictAction.PROCESS
-        assert self.action(False, has_mentions=True) is StrictAction.IGNORE
+    def test_off_keeps_the_plain_flow(self):
+        assert self.action(False) is JukeboxAction.PROCESS
+        assert self.action(False, has_mentions=True) is JukeboxAction.IGNORE
 
-    def test_on_a_typed_name_is_deleted_at_once_and_still_served(self):
-        assert self.action(True) is StrictAction.DELETE_AND_PROCESS
+    def test_auto_delete_removes_a_typed_name_at_once_and_still_serves_it(self):
+        assert self.action(True) is JukeboxAction.DELETE_AND_PROCESS
 
-    def test_on_mentions_and_system_messages_are_deleted_without_a_request(self):
-        assert self.action(True, has_mentions=True) is StrictAction.DELETE
-        assert self.action(True, is_system=True) is StrictAction.DELETE
+    def test_auto_delete_removes_mentions_and_system_messages_without_a_request(self):
+        assert self.action(True, has_mentions=True) is JukeboxAction.DELETE
+        assert self.action(True, is_system=True) is JukeboxAction.DELETE
+
+    def test_without_text_requests_a_plain_message_is_not_a_request(self):
+        assert self.action(False, False) is JukeboxAction.IGNORE  # nada a fazer: não pede e não apaga
+        assert self.action(True, False) is JukeboxAction.DELETE  # a Jukebox só aceita comando: o texto solto sai
+
+    def test_text_requests_default_to_on(self):
+        assert jukebox_action(False, author_is_bot=False, is_command=False, has_mentions=False) is JukeboxAction.PROCESS
 
 
 class TestUltimaAcao:

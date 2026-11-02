@@ -58,3 +58,6 @@ CUSTOM_SKIN_PREFIX = "> custom_skin: "
 
 # Jukebox: título do post de fórum.
 FORUM_TITLE_MIN, FORUM_TITLE_MAX = 4, 30
+
+# Discord: tamanho máximo do nome de um canal / título de post de fórum.
+FORUM_POST_TITLE_MAX_LENGTH = 100

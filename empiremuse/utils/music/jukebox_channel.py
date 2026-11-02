@@ -27,7 +27,8 @@ from empiremuse.rules.limits import FORUM_POST_TITLE_MAX_LENGTH
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.music.models import LavalinkPlayer
-from empiremuse.utils.others import CustomContext, perms_translations, send_idle_embed
+from empiremuse.utils.music.converters import perms_translations
+from empiremuse.utils.others import CustomContext, send_idle_embed
 from empiremuse.utils.server_jukebox import JukeboxConfig
 from empiremuse.utils.servers import ServerConfigConflict
 

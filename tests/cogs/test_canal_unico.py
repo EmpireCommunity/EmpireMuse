@@ -9,12 +9,12 @@ import disnake
 import pytest
 
 from empiremuse.i18n import get_i18n
-from empiremuse.music_cog import controller_buttons, song_request_steps
+from empiremuse.music_cog import controller_buttons, jukebox_steps
 from empiremuse.music_cog.controller_dispatch import ControllerDispatchMixin
-from empiremuse.utils import request_panel as panel_module
+from empiremuse.utils import jukebox_panel as panel_module
 from empiremuse.utils.music.checks import pick_request_bot, resolve_player
 from empiremuse.utils.music.errors import GenericError
-from empiremuse.utils.request_panel import RequestPanel, entry_for, is_private
+from empiremuse.utils.jukebox_panel import JukeboxPanel, entry_for, is_private
 
 pytestmark = pytest.mark.critical
 
@@ -114,7 +114,7 @@ class Sentinel(Exception):
 def typed_request(*, panel_bot):
     request = SimpleNamespace(is_panel_bot=AsyncMock(return_value=panel_bot))
     bot = SimpleNamespace(
-        pool=SimpleNamespace(servers=SimpleNamespace(request=request)),
+        pool=SimpleNamespace(servers=SimpleNamespace(jukebox=request)),
         get_channel=MagicMock(side_effect=Sentinel),  # só chega aqui quem passou do portão
     )
     channel = MagicMock(spec=disnake.TextChannel)
@@ -131,19 +131,19 @@ def typed_request(*, panel_bot):
 @pytest.mark.asyncio
 async def test_a_message_typed_in_the_shared_channel_is_ignored_by_every_bot_but_the_panel_bot():
     self_, req, request = typed_request(panel_bot=False)
-    assert await song_request_steps._sr_validate_channel(self_, req) is True  # ignora
+    assert await jukebox_steps._sr_validate_channel(self_, req) is True  # ignora
     request.is_panel_bot.assert_awaited_once_with(GID, self_.bot)
 
     self_, req, _ = typed_request(panel_bot=True)
     with pytest.raises(Sentinel):  # o bot do painel passa do portão e segue o fluxo de sempre
-        await song_request_steps._sr_validate_channel(self_, req)
+        await jukebox_steps._sr_validate_channel(self_, req)
 
 
 @pytest.mark.asyncio
 async def test_a_store_that_fails_means_not_the_panel_bot_better_to_ignore_than_to_answer_twice():
     self_, req, request = typed_request(panel_bot=True)
     request.is_panel_bot.side_effect = GenericError("indisponível")
-    assert await song_request_steps._sr_validate_channel(self_, req) is True
+    assert await jukebox_steps._sr_validate_channel(self_, req) is True
 
 
 # ---------------------------------------------------------------------- S7/S-V8: clique no painel
@@ -158,7 +158,7 @@ def click(*, call, panel_bot=True, message_id=PANEL_MESSAGE):
         is_panel_bot=AsyncMock(return_value=panel_bot),
     )
     me.pool = make_pool(me, other)
-    me.pool.servers = SimpleNamespace(request=request)
+    me.pool.servers = SimpleNamespace(jukebox=request)
     me.pool.i18n = get_i18n()
     interaction = SimpleNamespace(
         guild_id=GID,
@@ -235,7 +235,7 @@ def executor_world(me=None, other=None):
     other = other or make_bot(2, "TOKEN_2", call=200)
     me.pool = make_pool(me, other)
     request = SimpleNamespace(get=AsyncMock(return_value=SimpleNamespace(channel=PANEL_CHANNEL)))
-    me.pool.servers = SimpleNamespace(request=request)
+    me.pool.servers = SimpleNamespace(jukebox=request)
     me.pool.i18n = get_i18n()
     dispatch = ControllerDispatchMixin.__new__(ControllerDispatchMixin)
     dispatch.bot = me
@@ -300,15 +300,15 @@ def test_the_panel_entry_of_a_private_call_has_no_track_link_or_requester():
     assert entry_for(bot, player) is None  # player sem call não vira bloco
 
 
-# ---------------------------------------------------------------------- RequestPanel: quem conta, edição agrupada, reenvio
+# ---------------------------------------------------------------------- JukeboxPanel: quem conta, edição agrupada, reenvio
 
 
 def panel_world(*bots):
     pool = make_pool(*bots)
     request = SimpleNamespace(get=AsyncMock(), elect=AsyncMock(), set=AsyncMock(), panel_bot=AsyncMock())
-    pool.servers = SimpleNamespace(request=request)
+    pool.servers = SimpleNamespace(jukebox=request)
     pool.i18n = get_i18n()
-    return RequestPanel(pool), pool
+    return JukeboxPanel(pool), pool
 
 
 def test_only_static_players_that_are_not_closing_count_and_the_list_takes_over_with_two_or_more():
@@ -365,8 +365,8 @@ async def test_resending_is_done_by_the_panel_bot_and_the_new_message_id_is_save
     channel = SimpleNamespace(get_partial_message=lambda mid: old)
     panel_bot.get_channel = lambda cid: channel
     panel, pool = panel_world(panel_bot)
-    pool.servers.request.get.return_value = SimpleNamespace(channel=PANEL_CHANNEL, message_id=PANEL_MESSAGE, current=3)
-    pool.servers.request.panel_bot.return_value = panel_bot
+    pool.servers.jukebox.get.return_value = SimpleNamespace(channel=PANEL_CHANNEL, message_id=PANEL_MESSAGE, current=3)
+    pool.servers.jukebox.panel_bot.return_value = panel_bot
     idle = AsyncMock(return_value=sent)
     import empiremuse.utils.others as others
 
@@ -375,7 +375,7 @@ async def test_resending_is_done_by_the_panel_bot_and_the_new_message_id_is_save
     assert await panel.resend(GID, replace_message_id=PANEL_MESSAGE) is sent
 
     assert idle.await_args.args[0] is channel and idle.await_args.kwargs["bot"] is panel_bot
-    assert pool.servers.request.set.await_args.args[:3] == (GID, PANEL_CHANNEL, 777)
+    assert pool.servers.jukebox.set.await_args.args[:3] == (GID, PANEL_CHANNEL, 777)
     old.delete.assert_awaited_once()  # a mensagem do bot que saiu
 
 
@@ -386,7 +386,7 @@ async def test_a_roster_change_only_re_elects_the_handoff_is_scheduled_by_the_el
 
     await panel.on_roster_change(GID)
 
-    pool.servers.request.elect.assert_awaited_once_with(GID)
+    pool.servers.jukebox.elect.assert_awaited_once_with(GID)
     panel.resend.assert_not_awaited()  # não depende de "a eleição mudou" depois de uma espera (outra rotina pode ter gravado antes)
 
 
@@ -475,8 +475,8 @@ async def test_two_simultaneous_resends_send_one_panel_and_the_second_gets_the_e
     panel_bot = make_bot(2, "TOKEN_2")
     panel_bot.get_channel = lambda cid: SimpleNamespace(id=cid)
     panel, pool = panel_world(panel_bot)
-    pool.servers.request.get.return_value = SimpleNamespace(channel=PANEL_CHANNEL, message_id=None, current=1)
-    pool.servers.request.panel_bot.return_value = panel_bot
+    pool.servers.jukebox.get.return_value = SimpleNamespace(channel=PANEL_CHANNEL, message_id=None, current=1)
+    pool.servers.jukebox.panel_bot.return_value = panel_bot
     sent = SimpleNamespace(id=777, author=SimpleNamespace(id=2))  # do bot do painel (id 2)
     state = {"message": None}
 
@@ -507,8 +507,8 @@ async def test_a_panel_message_from_a_different_author_is_replaced_not_reused(mo
     channel = SimpleNamespace(id=PANEL_CHANNEL, get_partial_message=lambda mid: SimpleNamespace(delete=deleted))
     panel_bot.get_channel = lambda cid: channel
     panel, pool = panel_world(panel_bot)
-    pool.servers.request.get.return_value = SimpleNamespace(channel=PANEL_CHANNEL, message_id=444, current=1)
-    pool.servers.request.panel_bot.return_value = panel_bot
+    pool.servers.jukebox.get.return_value = SimpleNamespace(channel=PANEL_CHANNEL, message_id=444, current=1)
+    pool.servers.jukebox.panel_bot.return_value = panel_bot
     new = SimpleNamespace(id=999, author=SimpleNamespace(id=2))
     import empiremuse.utils.others as others
 
@@ -520,7 +520,7 @@ async def test_a_panel_message_from_a_different_author_is_replaced_not_reused(mo
 
     idle.assert_awaited_once()  # uma mensagem de outro bot não pode ser editada por este: manda uma nova
     deleted.assert_awaited_once()  # e a antiga sai
-    assert pool.servers.request.set.await_args.args[:3] == (GID, PANEL_CHANNEL, 999)
+    assert pool.servers.jukebox.set.await_args.args[:3] == (GID, PANEL_CHANNEL, 999)
 
 
 @pytest.mark.asyncio
@@ -530,9 +530,9 @@ async def test_a_config_conflict_while_resending_deletes_the_new_message_and_rai
     panel_bot = make_bot(2, "TOKEN_2")
     panel_bot.get_channel = lambda cid: SimpleNamespace(id=cid)
     panel, pool = panel_world(panel_bot)
-    pool.servers.request.get.return_value = SimpleNamespace(channel=PANEL_CHANNEL, message_id=None, current=1)
-    pool.servers.request.panel_bot.return_value = panel_bot
-    pool.servers.request.set.side_effect = ServerConfigConflict
+    pool.servers.jukebox.get.return_value = SimpleNamespace(channel=PANEL_CHANNEL, message_id=None, current=1)
+    pool.servers.jukebox.panel_bot.return_value = panel_bot
+    pool.servers.jukebox.set.side_effect = ServerConfigConflict
     sent = SimpleNamespace(id=777, delete=AsyncMock())
     import empiremuse.utils.others as others
 
@@ -608,7 +608,7 @@ def channel_check(*, panel_bot, channel_db):
     request = SimpleNamespace(is_panel_bot=AsyncMock(return_value=panel_bot))
     bot = SimpleNamespace(
         user=SimpleNamespace(id=1),
-        pool=SimpleNamespace(servers=SimpleNamespace(request=request)),
+        pool=SimpleNamespace(servers=SimpleNamespace(jukebox=request)),
         get_channel=lambda cid: channel_db,
         fetch_channel=AsyncMock(),
     )
@@ -696,7 +696,7 @@ async def test_a_routed_click_is_marked_so_the_other_bot_does_not_drop_it_for_no
     me = SimpleNamespace(
         bot=SimpleNamespace(
             music=SimpleNamespace(players={GID: player}),
-            pool=SimpleNamespace(servers=SimpleNamespace(request=request)),
+            pool=SimpleNamespace(servers=SimpleNamespace(jukebox=request)),
         ),
     )
     req.control = controller_buttons.PlayerControls.pause_resume
@@ -726,7 +726,7 @@ def players_with_two_bots():
 
 @pytest.mark.asyncio
 async def test_setup_rebinds_the_players_of_the_other_bots_to_the_new_channel_and_refreshes_the_panel():
-    from empiremuse.utils.music import request_channel
+    from empiremuse.utils.music import jukebox_channel
 
     me, other, panel = players_with_two_bots()
     channel = SimpleNamespace(id=22, guild=SimpleNamespace(id=GID))
@@ -735,7 +735,7 @@ async def test_setup_rebinds_the_players_of_the_other_bots_to_the_new_channel_an
     other.music.players[GID].last_data = {"skin": "antiga"}
     message = SimpleNamespace(id=555)
 
-    await request_channel._rebind_other_players(me, channel, message)
+    await jukebox_channel._rebind_other_players(me, channel, message)
 
     other_player, own_player = other.music.players[GID], me.music.players[GID]
     assert other_player.text_channel is other_view_of_channel and other_player.message is message
@@ -748,14 +748,14 @@ async def test_setup_rebinds_the_players_of_the_other_bots_to_the_new_channel_an
 
 @pytest.mark.asyncio
 async def test_reset_turns_the_players_of_the_other_bots_back_into_normal_ones():
-    from empiremuse.utils.music import request_channel
+    from empiremuse.utils.music import jukebox_channel
 
     me, other, panel = players_with_two_bots()
     other.music.players[GID].static = me.music.players[GID].static = True
     other.get_channel = lambda cid: None
     inter_channel = SimpleNamespace(id=33)
 
-    await request_channel._reset_other_players(me, GID, inter_channel)
+    await jukebox_channel._reset_other_players(me, GID, inter_channel)
 
     other_player = other.music.players[GID]
     assert other_player.static is False and other_player.message is None and other_player.text_channel is inter_channel
@@ -765,7 +765,7 @@ async def test_reset_turns_the_players_of_the_other_bots_back_into_normal_ones()
 
 @pytest.mark.asyncio
 async def test_one_failing_player_does_not_stop_the_others_from_being_rebound(caplog):
-    from empiremuse.utils.music import request_channel
+    from empiremuse.utils.music import jukebox_channel
 
     me, other, panel = players_with_two_bots()
     third = make_bot(3, "TOKEN_3", call=300)
@@ -779,7 +779,7 @@ async def test_one_failing_player_does_not_stop_the_others_from_being_rebound(ca
     channel = SimpleNamespace(id=22, guild=SimpleNamespace(id=GID))
     third.get_channel = other.get_channel = lambda cid: channel
 
-    await request_channel._rebind_other_players(me, channel, SimpleNamespace(id=1))
+    await jukebox_channel._rebind_other_players(me, channel, SimpleNamespace(id=1))
 
     other.music.players[GID].setup_features.assert_called_once()  # o 2º segue mesmo com o 1º falhando
     panel.refresh.assert_awaited_once_with(GID, now=True)
@@ -795,8 +795,8 @@ def static_players_world(*, resent, newest=None):
         bot.music.players[GID].last_data = {"skin": "antiga"}
     panel, pool = panel_world(one, two)
     after = SimpleNamespace(channel=PANEL_CHANNEL, message_id=getattr(newest or resent, "id", PANEL_MESSAGE))
-    pool.servers.request.get.side_effect = [after]  # depois do reenvio: o que ficou gravado
-    pool.servers.request.elect.return_value = SimpleNamespace(bot=object(), changed=True)
+    pool.servers.jukebox.get.side_effect = [after]  # depois do reenvio: o que ficou gravado
+    pool.servers.jukebox.elect.return_value = SimpleNamespace(bot=object(), changed=True)
     panel.resend = AsyncMock(return_value=resent)
     panel.refresh = AsyncMock()
     return panel, one, two
@@ -851,7 +851,7 @@ async def test_drawing_the_list_resets_each_players_cache_so_going_back_to_one_p
     for bot in (one, two):
         bot.music.players[GID].last_data = {"skin": "antiga"}
     panel, pool = panel_world(one, two)
-    pool.servers.request.panel_bot = AsyncMock(return_value=one)
+    pool.servers.jukebox.panel_bot = AsyncMock(return_value=one)
     message = SimpleNamespace(guild=SimpleNamespace(id=GID, preferred_locale="pt-BR"), edit=AsyncMock())
     monkeypatch.setattr(panel_module, "fetch_panel_message", AsyncMock(return_value=message))
     monkeypatch.setattr(ui, "render_panel", lambda *args, **kwargs: {"content": "lista"})
@@ -881,7 +881,7 @@ async def test_one_player_in_a_private_call_is_drawn_as_the_list_with_no_track_o
     one.music.players[GID].current = track
     one.music.players[GID].invoke_np = AsyncMock()
     panel, pool = panel_world(one)
-    pool.servers.request.panel_bot = AsyncMock(return_value=one)
+    pool.servers.jukebox.panel_bot = AsyncMock(return_value=one)
     message = SimpleNamespace(guild=SimpleNamespace(id=GID, preferred_locale="pt-BR"), edit=AsyncMock())
     drawn = []
     monkeypatch.setattr(panel_module, "fetch_panel_message", AsyncMock(return_value=message))
@@ -959,23 +959,23 @@ async def test_unloading_the_guild_log_cancels_the_roster_tasks():
 
 
 def operation_world(stored):
-    """Um bot cujo ``pool.servers.request`` é o ``ServerRequest`` de verdade (só a leitura do banco é falsa)."""
-    from empiremuse.utils.server_request import ServerRequest
+    """Um bot cujo ``pool.servers.jukebox`` é o ``ServerRequest`` de verdade (só a leitura do banco é falsa)."""
+    from empiremuse.utils.server_jukebox import ServerRequest
 
     request = ServerRequest(SimpleNamespace(pool=None))
     request.get = AsyncMock(return_value=stored)
-    return SimpleNamespace(pool=SimpleNamespace(servers=SimpleNamespace(request=request)))
+    return SimpleNamespace(pool=SimpleNamespace(servers=SimpleNamespace(jukebox=request)))
 
 
 def config_of(message):
-    from empiremuse.utils.server_request import RequestConfig
+    from empiremuse.utils.server_jukebox import RequestConfig
 
     return RequestConfig(PANEL_CHANNEL, message, None, 1)
 
 
 @pytest.mark.asyncio
 async def test_setup_and_reset_never_run_at_the_same_time_on_the_same_server():
-    from empiremuse.utils.music import request_channel as rc
+    from empiremuse.utils.music import jukebox_channel as rc
 
     bot = operation_world(config_of(PANEL_MESSAGE))
     first_in, release, order = asyncio.Event(), asyncio.Event(), []
@@ -1007,7 +1007,7 @@ async def test_setup_and_reset_never_run_at_the_same_time_on_the_same_server():
 
 @pytest.mark.asyncio
 async def test_a_stale_config_is_refused_inside_the_lock_before_any_effect_on_discord():
-    from empiremuse.utils.music import request_channel as rc
+    from empiremuse.utils.music import jukebox_channel as rc
     from empiremuse.utils.servers import ServerConfigConflict
 
     bot = operation_world(config_of(999))  # um setup concorrente já gravou outra mensagem
@@ -1018,24 +1018,24 @@ async def test_a_stale_config_is_refused_inside_the_lock_before_any_effect_on_di
             effects.append("apagou o canal")
 
     assert effects == []
-    assert not bot.pool.servers.request.operation(GID).locked()  # e a trava foi solta
+    assert not bot.pool.servers.jukebox.operation(GID).locked()  # e a trava foi solta
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("existing", "deleted"), [(False, True), (True, False)], ids=["created_here", "pre_existing"])
 async def test_a_setup_that_loses_the_race_deletes_only_the_channel_it_created(monkeypatch, existing, deleted):
-    from empiremuse.utils.music import request_channel as rc
+    from empiremuse.utils.music import jukebox_channel as rc
     from empiremuse.utils.servers import ServerConfigConflict
 
     bot = operation_world(config_of(999))
     inner = AsyncMock()
-    monkeypatch.setattr(rc, "_apply_request_channel", inner)
+    monkeypatch.setattr(rc, "_apply_jukebox_channel", inner)
     target = SimpleNamespace(
         id=PANEL_CHANNEL + 1, delete=AsyncMock()
     )  # o canal configurado agora é outro (PANEL_CHANNEL)
 
     with pytest.raises(ServerConfigConflict):
-        await rc.apply_request_channel(
+        await rc.apply_jukebox_channel(
             bot, SimpleNamespace(id=GID), object(), target, existing_channel=existing, config=config_of(PANEL_MESSAGE)
         )
 
@@ -1045,37 +1045,37 @@ async def test_a_setup_that_loses_the_race_deletes_only_the_channel_it_created(m
 
 @pytest.mark.asyncio
 async def test_a_created_channel_that_another_operation_meanwhile_configured_is_not_deleted():  # CodeRabbit #159
-    from empiremuse.utils.music import request_channel as rc
+    from empiremuse.utils.music import jukebox_channel as rc
     from empiremuse.utils.servers import ServerConfigConflict
 
     bot = operation_world(config_of(999))  # a outra operação já configurou o canal PANEL_CHANNEL
     target = SimpleNamespace(id=PANEL_CHANNEL, delete=AsyncMock())  # o mesmo canal que este /setup tinha criado
 
     with pytest.raises(ServerConfigConflict):
-        await rc.apply_request_channel(
+        await rc.apply_jukebox_channel(
             bot, SimpleNamespace(id=GID), object(), target, existing_channel=False, config=config_of(PANEL_MESSAGE)
         )
 
     target.delete.assert_not_awaited()
-    assert not bot.pool.servers.request.operation(GID).locked()
+    assert not bot.pool.servers.jukebox.operation(GID).locked()
 
 
 @pytest.mark.asyncio
 async def test_the_operation_lock_is_one_per_server_and_the_same_for_the_same_server():
-    request = operation_world(config_of(PANEL_MESSAGE)).pool.servers.request
+    request = operation_world(config_of(PANEL_MESSAGE)).pool.servers.jukebox
     assert request.operation(GID) is request.operation(GID)
     assert request.operation(GID) is not request.operation(GID + 1)  # um servidor não segura o outro
 
 
 @pytest.mark.asyncio
 async def test_setup_and_reset_run_their_steps_holding_the_servers_operation_lock(monkeypatch):
-    from empiremuse.utils.music import request_channel as rc
+    from empiremuse.utils.music import jukebox_channel as rc
 
     bot = operation_world(config_of(PANEL_MESSAGE))
     held = {}
 
     async def spy(name, *args, **kwargs):
-        held[name] = bot.pool.servers.request.operation(GID).locked()
+        held[name] = bot.pool.servers.jukebox.operation(GID).locked()
 
     async def setup_step(*args, **kwargs):
         await spy("setup")
@@ -1083,14 +1083,14 @@ async def test_setup_and_reset_run_their_steps_holding_the_servers_operation_loc
     async def reset_step(*args, **kwargs):
         await spy("reset")
 
-    monkeypatch.setattr(rc, "_apply_request_channel", setup_step)
-    monkeypatch.setattr(rc, "_reset_request_channel", reset_step)
+    monkeypatch.setattr(rc, "_apply_jukebox_channel", setup_step)
+    monkeypatch.setattr(rc, "_jukebox_reset", reset_step)
     guild = SimpleNamespace(id=GID)
 
-    await rc.apply_request_channel(
+    await rc.apply_jukebox_channel(
         bot, guild, object(), object(), existing_channel=True, config=config_of(PANEL_MESSAGE)
     )
-    await rc.reset_request_channel(
+    await rc.jukebox_reset(
         bot,
         guild,
         object(),
@@ -1102,20 +1102,20 @@ async def test_setup_and_reset_run_their_steps_holding_the_servers_operation_loc
     )
 
     assert held == {"setup": True, "reset": True}
-    assert not bot.pool.servers.request.operation(GID).locked()  # e soltou no fim
+    assert not bot.pool.servers.jukebox.operation(GID).locked()  # e soltou no fim
 
 
 @pytest.mark.asyncio
 async def test_a_reset_with_a_stale_config_is_refused_before_touching_discord(monkeypatch):
-    from empiremuse.utils.music import request_channel as rc
+    from empiremuse.utils.music import jukebox_channel as rc
     from empiremuse.utils.servers import ServerConfigConflict
 
     bot = operation_world(config_of(999))
     inner = AsyncMock()
-    monkeypatch.setattr(rc, "_reset_request_channel", inner)
+    monkeypatch.setattr(rc, "_jukebox_reset", inner)
 
     with pytest.raises(ServerConfigConflict):
-        await rc.reset_request_channel(
+        await rc.jukebox_reset(
             bot,
             SimpleNamespace(id=GID),
             object(),

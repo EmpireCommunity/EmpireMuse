@@ -1,7 +1,7 @@
 """Jukebox (item 8, J1): modo estrito, painel apagado volta na hora, fila e gênero do painel, volume e progresso.
 
-A decisão do modo estrito é pura (``tests/rules/test_request_panel.py``); aqui está a ligação: o ``song_requests`` real apaga antes de
-atender, o ``RequestPanel`` real recupera uma vez só e o painel mostra o que deve sem vazar nada de call privada.
+A decisão do modo estrito é pura (``tests/rules/test_jukebox_panel.py``); aqui está a ligação: o ``on_jukebox_message`` real apaga antes de
+atender, o ``JukeboxPanel`` real recupera uma vez só e o painel mostra o que deve sem vazar nada de call privada.
 """
 
 import ast
@@ -15,28 +15,28 @@ import pytest
 
 from empiremuse.cogs import music
 from empiremuse.music_cog import panel_interactions
-from empiremuse.rules.request_panel import GENRE_SELECT_ID, QUEUE_BUTTON_ID, PanelEntry, genre_for_key, genre_key
-from empiremuse.utils import request_panel as panel_module
+from empiremuse.rules.jukebox_panel import GENRE_SELECT_ID, QUEUE_BUTTON_ID, PanelEntry, genre_for_key, genre_key
+from empiremuse.utils import jukebox_panel as panel_module
 from empiremuse.utils.music.interactions import SelectInteraction
-from empiremuse.utils.music.interactions.request_panel import render_panel
+from empiremuse.utils.music.interactions.jukebox_panel import render_panel
 from tests.cogs.test_canal_unico import GID, make_bot, panel_world
 from tests.cogs.test_mensagens_sem_excecao import montar_pedido
 from tests.i18n.test_player_texts import EN, PT
 
-# ---------------------------------------------------------------------- modo estrito no song_requests real
+# ---------------------------------------------------------------------- modo estrito no on_jukebox_message real
 
 
 async def pedir(monkeypatch, *, estrito, mencoes=(), autor_bot=False, comando=None, store=None):
     classe, self_, ctx, mensagem, _envios, _ = montar_pedido(monkeypatch, RuntimeError("não deve chegar aqui"))
     ordem: list[str] = []
     self_.delete_message = AsyncMock(side_effect=lambda *a, **k: ordem.append("apagou"))
-    self_.parse_song_request = AsyncMock(side_effect=lambda *a, **k: ordem.append("atendeu"))
-    settings = AsyncMock(return_value={"request_channel_strict": estrito}) if store is None else store
+    self_.parse_jukebox_request = AsyncMock(side_effect=lambda *a, **k: ordem.append("atendeu"))
+    settings = AsyncMock(return_value={"jukebox_auto_delete": estrito}) if store is None else store
     self_.bot.pool.servers.settings = settings
     mensagem.mentions = list(mencoes)
     mensagem.author.bot = autor_bot
     ctx.command = comando
-    await classe.song_requests(self_, ctx, mensagem)
+    await classe.on_jukebox_message(self_, ctx, mensagem)
     return ordem
 
 
@@ -62,9 +62,9 @@ class TestModoEstritoNoCanal:
         """Este listener roda em toda mensagem de todo servidor: a configuração só é lida no canal de pedidos."""
         classe, self_, ctx, mensagem, _envios, _ = montar_pedido(monkeypatch, RuntimeError("não deve chegar aqui"))
         mensagem.channel.id = 999  # o canal de pedidos do harness é o 55
-        self_.bot.pool.servers.settings = AsyncMock(return_value={"request_channel_strict": True})
+        self_.bot.pool.servers.settings = AsyncMock(return_value={"jukebox_auto_delete": True})
 
-        await classe.song_requests(self_, ctx, mensagem)
+        await classe.on_jukebox_message(self_, ctx, mensagem)
 
         self_.bot.pool.servers.settings.assert_not_awaited()
 
@@ -72,34 +72,34 @@ class TestModoEstritoNoCanal:
     async def test_an_audio_file_without_text_is_not_deleted_ahead_of_the_download(self, monkeypatch):
         classe, self_, ctx, mensagem, _envios, _ = montar_pedido(monkeypatch, RuntimeError("não deve chegar aqui"))
         ordem: list[str] = []
-        self_.bot.pool.servers.settings = AsyncMock(return_value={"request_channel_strict": True})
+        self_.bot.pool.servers.settings = AsyncMock(return_value={"jukebox_auto_delete": True})
         self_.delete_message = AsyncMock(side_effect=lambda *a, **k: ordem.append("apagou"))
-        self_.parse_song_request = AsyncMock(side_effect=lambda *a, **k: ordem.append("atendeu"))
+        self_.parse_jukebox_request = AsyncMock(side_effect=lambda *a, **k: ordem.append("atendeu"))
         mensagem.content = ""
         mensagem.attachments = [SimpleNamespace(size=10, content_type="audio/mpeg", url="https://cdn.invalid/a.mp3")]
         self_.audio_formats = ("audio/mpeg",)
 
-        await classe.song_requests(self_, ctx, mensagem)
+        await classe.on_jukebox_message(self_, ctx, mensagem)
 
         assert ordem == ["atendeu"]  # apagar a mensagem apaga o anexo, que o Lavalink ainda vai baixar
 
     @pytest.mark.asyncio
     async def test_an_attachment_that_is_not_audio_is_deleted_in_the_strict_mode(self, monkeypatch):
         classe, self_, ctx, mensagem, _envios, _ = montar_pedido(monkeypatch, RuntimeError("não deve chegar aqui"))
-        self_.bot.pool.servers.settings = AsyncMock(return_value={"request_channel_strict": True})
+        self_.bot.pool.servers.settings = AsyncMock(return_value={"jukebox_auto_delete": True})
         self_.delete_message = AsyncMock()
         mensagem.content = ""
         mensagem.attachments = [SimpleNamespace(size=10, content_type="image/png", url="https://cdn.invalid/a.png")]
         self_.audio_formats = ("audio/mpeg",)
 
-        await classe.song_requests(self_, ctx, mensagem)
+        await classe.on_jukebox_message(self_, ctx, mensagem)
 
         self_.delete_message.assert_awaited_once_with(mensagem)
-        self_.parse_song_request.assert_not_awaited()
+        self_.parse_jukebox_request.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_an_unreadable_configuration_is_logged_with_the_error_type_only(self, monkeypatch, caplog):
-        from empiremuse.music_cog import song_requests as module
+        from empiremuse.music_cog import jukebox_messages as module
 
         quebrado = AsyncMock(side_effect=RuntimeError("segredo na mensagem"))
         mensagem = SimpleNamespace(guild=SimpleNamespace(id=1))
@@ -141,8 +141,8 @@ class TestModoEstritoNoCanal:
 
 def mundo_do_painel(monkeypatch, *, mensagem_gravada=500):
     panel, pool = panel_world()
-    pool.servers.request.get = AsyncMock(return_value=SimpleNamespace(message_id=mensagem_gravada, channel=7))
-    pool.servers.request.peek_message_id = lambda gid: None  # documento fora do cache: lê de verdade
+    pool.servers.jukebox.get = AsyncMock(return_value=SimpleNamespace(message_id=mensagem_gravada, channel=7))
+    pool.servers.jukebox.peek_message_id = lambda gid: None  # documento fora do cache: lê de verdade
     now = [10_000.0]
     monkeypatch.setattr(panel_module.time, "monotonic", lambda: now[0])
     sleeps: list[float] = []
@@ -164,12 +164,12 @@ class TestPainelApagado:
     @pytest.mark.asyncio
     async def test_a_deletion_that_cannot_be_the_panel_never_copies_the_document(self, monkeypatch):
         panel, _, _ = mundo_do_painel(monkeypatch)
-        panel.pool.servers.request.peek_message_id = lambda gid: 500  # em cache: o painel é a 500
+        panel.pool.servers.jukebox.peek_message_id = lambda gid: 500  # em cache: o painel é a 500
 
         await panel.on_messages_deleted(GID, [1, 2, 3])
         await esperar(panel)
 
-        panel.pool.servers.request.get.assert_not_awaited()
+        panel.pool.servers.jukebox.get.assert_not_awaited()
         assert panel.handoff.await_count == 0
 
     @pytest.mark.asyncio
@@ -234,7 +234,7 @@ class TestPainelApagado:
     @pytest.mark.asyncio
     async def test_a_panel_already_replaced_by_another_path_is_not_sent_again(self, monkeypatch):
         panel, _, _ = mundo_do_painel(monkeypatch)
-        panel.pool.servers.request.get = AsyncMock(
+        panel.pool.servers.jukebox.get = AsyncMock(
             side_effect=[SimpleNamespace(message_id=500, channel=7), SimpleNamespace(message_id=777, channel=7)]
         )
 
@@ -263,8 +263,8 @@ def painel_na_subida(monkeypatch, *, busca, eh_bot_do_painel=True):
     panel, pool = panel_world()
     bot = make_bot(1, "TOKEN", call=100)
     bot.guilds = [SimpleNamespace(id=GID)]
-    pool.servers.request.get = AsyncMock(return_value=SimpleNamespace(message_id=500, channel=7))
-    pool.servers.request.is_panel_bot = AsyncMock(return_value=eh_bot_do_painel)
+    pool.servers.jukebox.get = AsyncMock(return_value=SimpleNamespace(message_id=500, channel=7))
+    pool.servers.jukebox.is_panel_bot = AsyncMock(return_value=eh_bot_do_painel)
     monkeypatch.setattr(panel_module, "fetch_panel_message", busca)
     panel.handoff = AsyncMock()
     return panel, bot

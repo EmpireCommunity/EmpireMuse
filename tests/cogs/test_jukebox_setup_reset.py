@@ -1,6 +1,6 @@
 """Caracterização (VERDE contra o código ATUAL) de /setup e /reset — modules/music_settings.py:375-1010.
 
-Objetivo: congelar o comportamento antes de extrair a lógica para `utils/music/request_channel.py` (E4c, opção A).
+Objetivo: congelar o comportamento antes de extrair a lógica para `utils/music/jukebox_channel.py` (E4c, opção A).
 Mede efeitos no Discord e no banco, a ORDEM entre eles, mensagens de erro e limites. Nada aqui corrige defeitos:
 comportamentos ruins estão registrados de propósito e marcados `INVERTER_APOS_E4C` quando a E4c vai corrigi-los.
 """

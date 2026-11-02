@@ -80,7 +80,7 @@ def build(
     pool.radio.manager.ports_factory = lambda radio: ports
     pool.servers = SimpleNamespace(
         main_bot=lambda: bots[0],
-        request=SimpleNamespace(get=AsyncMock(return_value=SimpleNamespace(channel=request_channel))),
+        jukebox=SimpleNamespace(get=AsyncMock(return_value=SimpleNamespace(channel=request_channel))),
         playlists=SimpleNamespace(
             find=AsyncMock(return_value=SimpleNamespace(name="Rock", url="u") if playlist else None)
         ),

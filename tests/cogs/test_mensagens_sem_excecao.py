@@ -8,7 +8,7 @@ Regra: onde o texto da exceção ia para a tela, entra uma mensagem genérica em
 * ``start_bot``/``failed_bots``: a página pública mostra um texto genérico por bot; a instrução do PrivilegedIntentsRequired
   (e a do token inválido) continua;
 * ``ll_yt_oauth``/``owner_panel``: mesmo para o dono, genérico + log; o texto do HTTP do Lavalink não vai para a mensagem;
-* ``song_requests``: nunca mais aparece "None" num bloco de código.
+* ``on_jukebox_message``: nunca mais aparece "None" num bloco de código.
 
 Sem rede, sem Discord e sem ``.env``; o aleatório do código é fixado trocando ``secrets.token_hex``.
 """
@@ -158,7 +158,7 @@ class TestOauthDoDono:
         assert registros(caplog, "empiremuse.cogs.ll_yt_oauth")
 
 
-# ============================================================================ Music.song_requests (usuário e webhook)
+# ============================================================================ Music.on_jukebox_message (usuário e webhook)
 
 
 def montar_pedido(monkeypatch, erro: BaseException, *, webhook=False):
@@ -201,16 +201,16 @@ def montar_pedido(monkeypatch, erro: BaseException, *, webhook=False):
         config={"AUTO_ERROR_REPORT_WEBHOOK": "https://discord.com/api/webhooks/1/segredo" if webhook else ""},
         get_cog=lambda nome: webhook_cog,
         pool=SimpleNamespace(
-            servers=SimpleNamespace(request=SimpleNamespace(is_panel_bot=AsyncMock(return_value=True)))
+            servers=SimpleNamespace(jukebox=SimpleNamespace(is_panel_bot=AsyncMock(return_value=True)))
         ),
     )
     self_ = SimpleNamespace(
         bot=bot,
         song_request_concurrency=SimpleNamespace(acquire=AsyncMock(), release=AsyncMock()),
         delete_message=AsyncMock(),
-        parse_song_request=AsyncMock(side_effect=erro),
+        parse_jukebox_request=AsyncMock(side_effect=erro),
     )
-    self_.song_request_executor = AsyncMock(return_value=self_)  # o bot que toca é o próprio
+    self_.jukebox_executor = AsyncMock(return_value=self_)  # o bot que toca é o próprio
     ctx = SimpleNamespace(command=None, guild=guilda, channel=canal, author=autor)
     return music.Music, self_, ctx, mensagem, envios, webhook_cog
 
@@ -305,10 +305,10 @@ class TestLacunasDaMutacao:
         )
         anexos = []
         monkeypatch.setattr(
-            "empiremuse.music_cog.song_requests.string_to_file", lambda texto, nome: anexos.append((texto, nome))
+            "empiremuse.music_cog.jukebox_messages.string_to_file", lambda texto, nome: anexos.append((texto, nome))
         )
 
-        await classe.song_requests(self_, ctx, mensagem)
+        await classe.on_jukebox_message(self_, ctx, mensagem)
 
         [(texto, nome)] = anexos
         assert nome == (f"error_traceback_songrequest_{CODIGO}.txt" if gera else "error_traceback_songrequest.txt")

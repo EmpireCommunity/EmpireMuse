@@ -84,7 +84,7 @@ class SetupOptions:
 
 async def jukebox_channel_of(pool: Any, guild_id: int) -> Optional[int]:
     """O canal da Jukebox do servidor (a rádio nunca toca nele: a varredura do chat apagaria o painel da Jukebox)."""
-    return getattr(await pool.servers.request.get(guild_id), "channel", None)
+    return getattr(await pool.servers.jukebox.get(guild_id), "channel", None)
 
 
 class RadioSetup:
