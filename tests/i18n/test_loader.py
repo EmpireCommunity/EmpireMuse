@@ -496,3 +496,55 @@ class TestReviewRound173:
     def test_the_default_run_still_checks_the_real_code_against_the_real_catalog(self, capsys):
         assert check.main([]) == 0
         assert "pt-BR: cobertura 100.0%" in capsys.readouterr().out
+
+
+class TestCommunityLocalesOnlyWarn:
+    """Crowdin: só ``en-US`` e ``pt-BR`` derrubam o CI; os outros idiomas avisam e o valor vazio (chave não traduzida) nem isso."""
+
+    @pytest.fixture(autouse=True)
+    def _empty_code(self, root):
+        (root / "empty-code").mkdir()
+
+    def run(self, root):
+        return check.main(["--root", str(root), "--code", str(root / "empty-code")])
+
+    def test_an_empty_value_in_a_community_locale_is_ignored_silently_and_falls_back_to_en_us(self, root, capsys):
+        write(
+            root,
+            "de",
+            {"cmd.music._label": "Musik", "cmd.play.description": ""},
+            {"player.paused": "", "queue.count_one": "{count} Lied", "queue.count_other": "{count} Lieder"},
+        )
+
+        assert self.run(root) == 0
+        err = capsys.readouterr().err
+        assert "descartada" not in err and "ERRO" not in err
+        de = loader.load_catalogs(root)["de"]
+        assert (
+            "player.paused" not in de.entries and ("bot", "player.paused", "empty") in de.dropped
+        )  # tratado como ausente
+        i18n = I18n(root)
+        i18n.load()
+        assert i18n.for_locale("de")("player.paused", user="Ana") == "Paused by Ana."  # o en-US, nunca o pt-BR
+
+    def test_other_drops_and_a_refused_file_in_a_community_locale_are_warnings_with_exit_zero(self, root, capsys):
+        write(root, "de", {"cmd.music._label": "Musik"}, {"player.paused": "Pausiert @everyone"})
+        write(root, "fr", {"cmd.music._label": "Musique"}, None)
+        (root / "fr" / "bot.json").write_bytes(b"\xff")
+
+        assert self.run(root) == 0
+        err = capsys.readouterr().err
+        assert "AVISO de: bot.player.paused descartada" in err and "AVISO fr: arquivo bot recusado" in err
+        assert "ERRO" not in err and "Pausiert" not in err
+
+    def test_a_community_locale_below_the_minimum_coverage_only_warns(self, root, capsys):
+        community(root, "de", 2)
+
+        assert self.run(root) == 0
+        assert "AVISO de: cobertura abaixo de 90%" in capsys.readouterr().err
+
+    def test_a_required_locale_is_still_strict_even_for_an_empty_value(self, root, capsys):
+        write(root, "pt-BR", PT_COMMANDS, {**PT_BOT, "player.paused": ""})
+
+        assert self.run(root) == 1
+        assert "ERRO pt-BR: bot.player.paused descartada" in capsys.readouterr().err
