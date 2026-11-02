@@ -246,6 +246,33 @@ class TestTransport:
         assert "user-agent: empiremuse/" in request
 
     @pytest.mark.asyncio
+    async def test_the_session_ignores_the_proxy_environment_keeps_no_cookies_and_never_decompresses(self, monkeypatch):
+        """F-1: ``trust_env`` desligado, ``DummyCookieJar`` e sem descompressão automática (uma variável de ambiente nunca desvia o logo para um proxy)."""
+        import aiohttp
+
+        seen_options = {}
+        real_session = aiohttp.ClientSession
+
+        def spy(*args, **kwargs):
+            seen_options.update(kwargs)
+            return real_session(*args, **kwargs)
+
+        monkeypatch.setattr(logo_module.aiohttp, "ClientSession", spy)
+        monkeypatch.setenv(
+            "HTTP_PROXY", "http://127.0.0.1:1"
+        )  # um proxy morto: se a sessão o usasse, o pedido falharia
+        monkeypatch.setenv("http_proxy", "http://127.0.0.1:1")
+        monkeypatch.delenv("NO_PROXY", raising=False)
+        monkeypatch.delenv("no_proxy", raising=False)
+        async with http_server(response(png_bytes())) as (port, seen):
+            body = await fetcher_for(port)(LOGO_URL)
+
+        assert body == png_bytes() and len(seen) == 1
+        assert seen_options["trust_env"] is False
+        assert isinstance(seen_options["cookie_jar"], aiohttp.DummyCookieJar)
+        assert seen_options["auto_decompress"] is False
+
+    @pytest.mark.asyncio
     async def test_a_redirect_is_refused_after_one_request(self):
         redirect = response(b"", status="302 Found", extra="Location: http://127.0.0.1:2333/x\r\n")
         async with http_server(redirect) as (port, seen):

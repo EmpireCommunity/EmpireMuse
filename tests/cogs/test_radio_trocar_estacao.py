@@ -523,3 +523,47 @@ class TestResumeBurst:
         await w.cog.radio_panel_click(again)
 
         assert "Aguarde" not in said(again)
+
+
+class TestPickerUsesTheRadioOfNow:
+    """Revisão do R4 (L3): o seletor vive 5 minutos e o ``apply`` relê a rádio de AGORA (desligada ou mudada de canal entre abrir e escolher)."""
+
+    async def opened(self):
+        w = await TestWalking.live_world(list_=[MAIN, RESERVE])
+        press = menu("stations")
+        await w.cog.radio_panel_menu(press)
+        view = press.edit_original_message.await_args.kwargs["view"]
+        view.chosen = station(THIRD, "Rádio 33")
+        return w, view
+
+    @pytest.mark.asyncio
+    async def test_a_radio_turned_off_after_opening_is_not_changed(self):
+        w, view = await self.opened()
+        await w.hub.store.set_enabled(w.radio.id, False)
+        confirm = click(PANEL_MENU_ID)
+
+        await view._on_confirm(confirm)
+
+        assert "não está mais ligada" in said(confirm)
+        assert (await w.hub.store.get(w.radio.id)).source["station"] == MAIN
+
+    @pytest.mark.asyncio
+    async def test_a_click_from_another_channel_is_not_applied(self):
+        w, view = await self.opened()
+        confirm = click(PANEL_MENU_ID, channel_id=CHANNEL + 5)  # o painel de outro canal
+
+        await view._on_confirm(confirm)
+
+        assert "não está mais ligada" in said(confirm)
+        assert (await w.hub.store.get(w.radio.id)).source["station"] == MAIN
+
+    @pytest.mark.asyncio
+    async def test_the_change_goes_to_the_current_radio_document_not_the_one_from_opening(self):
+        w, view = await self.opened()
+        bumped = await w.hub.store.set_volume(w.radio.id, 80, expected_rev=w.radio.rev)  # o rev mudou depois de abrir
+        confirm = click(PANEL_MENU_ID)
+
+        await view._on_confirm(confirm)
+
+        current = await w.hub.store.get(w.radio.id)
+        assert current.source["station"] == THIRD and current.rev > bumped.rev - 1
