@@ -3,15 +3,51 @@
 # projeto vão em segredo do repositório e são lidos por `api_token_env` e `project_id_env`, nunca escritos aqui.
 # O mapeamento leva o idioma do Crowdin ao código do `disnake.Locale` (nome da pasta em empiremuse/locales/).
 # O en-US é escrito no repo, revisado pela comunidade no Crowdin e volta pelo PR da l10n (decisão do dono).
-# Texto não traduzido: `skip_untranslated_strings` tira o que o formato deixar tirar. O JSON ainda pode sair com valor vazio, e o
-# bot trata o vazio como "sem tradução" (cai no en-US, nunca no pt-BR); ver a descrição do PR.
+#
+# Tipo `json` (não `i18next_json`): nossas chaves são planas e o plural é por sufixo (`_one`/`_other`/`_many`), cada sufixo é uma
+# string própria. O `i18next_json` regenera os plurais por idioma (descartou os `_many` do pt-BR e reordenou o en-US no PR #194).
+# Idiomas: `export_languages` limita o que vai ao repo aos locales do Discord, nunca o pt-BR (idioma de origem).
+# Texto não traduzido: o Crowdin enche com o texto de ORIGEM (pt-BR) por padrão. Quem manda é a opção do projeto
+# (Settings > Export > Skip untranslated strings), não a chave do arquivo; ver docs/guides/i18n.md. Nunca ligar
+# "Skip untranslated files": ele anula a anterior e só exporta idioma 100% traduzido.
 preserve_hierarchy: true
+export_languages:
+  - "bg"
+  - "cs"
+  - "da"
+  - "de"
+  - "el"
+  - "en-GB"
+  - "en-US"
+  - "es-419"
+  - "es-ES"
+  - "fi"
+  - "fr"
+  - "hi"
+  - "hr"
+  - "hu"
+  - "id"
+  - "it"
+  - "ja"
+  - "ko"
+  - "lt"
+  - "nl"
+  - "no"
+  - "pl"
+  - "ro"
+  - "ru"
+  - "sv-SE"
+  - "th"
+  - "tr"
+  - "uk"
+  - "vi"
+  - "zh-CN"
+  - "zh-TW"
 
 files:
   - source: /empiremuse/locales/pt-BR/commands.json
     translation: /empiremuse/locales/%locale%/%original_file_name%
-    type: i18next_json
-    skip_untranslated_strings: true
+    type: json
     languages_mapping:
       locale:
         "bg": "bg"
@@ -47,8 +83,7 @@ files:
         "zh-TW": "zh-TW"
   - source: /empiremuse/locales/pt-BR/bot.json
     translation: /empiremuse/locales/%locale%/%original_file_name%
-    type: i18next_json
-    skip_untranslated_strings: true
+    type: json
     languages_mapping:
       locale:
         "bg": "bg"
@@ -84,8 +119,7 @@ files:
         "zh-TW": "zh-TW"
   - source: /empiremuse/locales/pt-BR/panel.json
     translation: /empiremuse/locales/%locale%/%original_file_name%
-    type: i18next_json
-    skip_untranslated_strings: true
+    type: json
     languages_mapping:
       locale:
         "bg": "bg"
