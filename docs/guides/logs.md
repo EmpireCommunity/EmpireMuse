@@ -101,7 +101,7 @@ Por padrão o bot não marca `@everyone` nem cargos em nenhuma mensagem, mesmo q
 
 O dono consulta **onde, como e quando** o bot foi usado, sem o log de arquivo e sem mensagem nova no Discord.
 
-**O que é gravado** (coleção `usage_events` do banco global, no MongoDB ou no banco local): hora UTC, bot, servidor (ID e nome), canal de texto e de voz (ID e nome), tipo (`slash`, `prefix`, `button`, `request_channel`, `panel`, `playback`, `guild`), nome do comando ou botão, `ok` ou um rótulo fixo de erro (nunca o texto da exceção) e a latência. Na reprodução entram também título, autor, origem, duração, o comando que enfileirou, os segundos ouvidos e o motivo do fim (`finished`, `skipped`, `stopped`, `error`). **Nunca** entram ID, nome, avatar ou contagem de usuários, nem o texto digitado na busca.
+**O que é gravado** (coleção `usage_events` do banco global, no MongoDB ou no banco local): hora UTC, bot, servidor (ID e nome), canal de texto e de voz (ID e nome), tipo (`slash`, `prefix`, `button`, `jukebox`, `panel`, `playback`, `guild`), nome do comando ou botão, `ok` ou um rótulo fixo de erro (nunca o texto da exceção) e a latência. Na reprodução entram também título, autor, origem, duração, o comando que enfileirou, os segundos ouvidos e o motivo do fim (`finished`, `skipped`, `stopped`, `error`). **Nunca** entram ID, nome, avatar ou contagem de usuários, nem o texto digitado na busca.
 
 **De onde vem:** comandos de barra, de menu e de prefixo abrem o evento no mesmo gancho do `COMMAND_LOG` (seção 5), mas o registro de uso fica sempre ligado e grava só o nome do comando e onde foi usado: nunca o usuário nem os valores das opções. O `COMMAND_LOG` continua opt-in e não muda.
 

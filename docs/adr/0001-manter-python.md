@@ -49,7 +49,7 @@ Como parte desta decisão:
 
 ### Positivas
 - **Velocidade de Entrega**: Economia de mais de 50% no tempo estimado de engenharia (18–23 semanas vs 43–54 semanas), permitindo focar em estabilização, testes e segurança imediatamente.
-- **Preservação de Recursos**: Garantia de funcionamento ininterrupto de todas as 15 skins, cogs de música, integrações Last.fm e servidor RPC existente.
+- **Preservação de Recursos**: Garantia de funcionamento contínuo de todas as 15 skins, cogs de música, integrações Last.fm e servidor RPC existente.
 - **Modernização Gradual**: Adoção de tooling moderno em Python (Python 3.13, gerenciamento ultra-rápido com `uv`, testes com `pytest`, linters e formatadores modernos).
 
 ### Negativas
@@ -75,3 +75,5 @@ Esta decisão arquitetural deverá ser formalmente revista se qualquer uma das s
 ## Atualização (2026-10-27)
 
 Runtime atualizado para Python 3.14 no item 6; a decisão de manter Python não muda.
+
+> **Nota (2026-11):** Canal de pedidos → Jukebox; modo 24/7 → Radios.
