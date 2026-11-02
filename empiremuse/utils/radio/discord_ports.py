@@ -253,6 +253,9 @@ class DiscordRadioPorts:
     def _panel_view(self) -> Any:
         return None  # a ao vivo mostra título, reserva no ar e fora do ar (``LiveRadioPorts``)
 
+    async def _custom_view(self) -> Any:
+        return None  # a personalizada por estação mostra a faixa no ar e o crédito do Last.fm (``CustomRadioPorts``)
+
     async def _station_card(self, current: Radio) -> Any:
         return None  # só a rádio ao vivo tem estação (``LiveRadioPorts``)
 
@@ -285,6 +288,7 @@ class DiscordRadioPorts:
             color=bot.get_color(guild.me),
             live=live,
             view=self._panel_view(),
+            custom=await self._custom_view(),
             station=await self._station_card(current),
             emojis=lambda name: app_emoji(bot, name),
             avatar=self._avatar_url(guild),

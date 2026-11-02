@@ -220,6 +220,8 @@ class TestActions:
             "volume_down",
             "mute",
             "volume_up",
+            "station_previous",
+            "station_next",
         ]
         for forged in ("radio_panel_mute:1", "RADIO_PANEL_MUTE", "radio_panel_mute ", "radio_panel_menu", 5, None):
             assert panel_action(forged) is None

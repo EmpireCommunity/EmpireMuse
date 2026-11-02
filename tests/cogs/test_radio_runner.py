@@ -70,6 +70,9 @@ class FakePorts:
             error, self.prepare_error = self.prepare_error, None
             raise error
 
+    async def play_next(self):
+        self.played.append((-1, 0))  # a personalizada por estação sorteia a faixa: sem posição a calcular
+
     async def skip_track(self):
         self.skips += 1
 
