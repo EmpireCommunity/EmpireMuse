@@ -141,3 +141,18 @@ def test_the_old_format_accepts_a_plain_url_string_as_the_value():
 
     assert [(p.name, p.url) for p in parsed.items] == [("Rock", f"{BASE}rock"), ("Pop", f"{BASE}pop")]
     assert [skip.name for skip in parsed.invalid] == ["Ruim"]
+
+
+@pytest.mark.asyncio
+async def test_the_legacy_radio_path_with_source_playlist_resolves_only_radio_playlists():
+    from empiremuse.utils.radio.discord_ports import DiscordRadioPorts
+
+    find = AsyncMock(return_value=None)
+    ports = object.__new__(DiscordRadioPorts)
+    ports._tracks = []
+    ports.pool = SimpleNamespace(servers=SimpleNamespace(playlists=SimpleNamespace(find=find)))
+    ports.radio = SimpleNamespace(guild_id=GID, source={"playlist": "Antiga"})
+    ports._bot = ports._guild = lambda: None
+
+    assert await ports._load_tracks() == []
+    find.assert_awaited_once_with(GID, "Antiga", scope=SCOPE_RADIO)

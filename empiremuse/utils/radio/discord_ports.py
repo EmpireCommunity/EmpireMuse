@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import disnake
 
+from empiremuse.rules.playlists import SCOPE_RADIO
 from empiremuse.rules.radio import Radio
 from empiremuse.utils.radio.chat import PermissionLost
 from empiremuse.utils.radio.runner import Allowed
@@ -215,7 +216,9 @@ class DiscordRadioPorts:
         if self._tracks:
             return self._tracks
         bot, guild = self._bot(), self._guild()
-        playlist = await self.pool.servers.playlists.find(self.radio.guild_id, self.radio.source.get("playlist", ""))
+        playlist = await self.pool.servers.playlists.find(
+            self.radio.guild_id, self.radio.source.get("playlist", ""), scope=SCOPE_RADIO
+        )  # rádio só toca playlist de rádio, também o caminho legado
         if bot is None or guild is None or playlist is None:
             return []
         music = bot.get_cog("Music")
