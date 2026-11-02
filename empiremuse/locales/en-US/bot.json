@@ -617,7 +617,7 @@
   "legacy.jukebox.no_content_intent": "Unfortunately I can't read the content of your message...\nTry adding a song using **/play** or click one of the buttons below:",
   "legacy.jukebox.playlist_link": "**The link contains a video with a playlist.**\nSelect an option within <t:{ts}:R> to continue.\n-# Note: If the link is from a private playlist, only the video of the current link will be loaded.",
   "legacy.jukebox.send_link_or_name": "{user} you must send a link/song name.",
-  "legacy.jukebox.wait_previous": "{user} you must wait for your previous song request to load...",
+  "legacy.jukebox.wait_previous": "{user} you must wait for your previous music request to load...",
   "legacy.session.channel_incompatible": "**The player-controller is active in a channel that is incompatible with creating a thread/conversation.**",
   "legacy.session.jukebox_configured": "**You can't use this command with a configured Jukebox channel.**",
   "legacy.session.log_empty": "**The command log is empty...**",

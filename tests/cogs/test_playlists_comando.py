@@ -20,6 +20,7 @@ from empiremuse.rules.errors import FILE_TOO_LARGE, RuleError
 from empiremuse.rules.limits import PLAYLIST_FILE_MAX_BYTES, PLAYLIST_PASTE_MAX
 from empiremuse.rules.playlists import ImportReport
 from empiremuse.utils.music.errors import GenericError
+from empiremuse.i18n.service import get_i18n
 
 pytestmark = pytest.mark.critical
 
@@ -59,7 +60,7 @@ def world():
         list=AsyncMock(return_value=(object(),)),
         export_bytes=AsyncMock(return_value=b"{}"),
     )
-    bot = SimpleNamespace(pool=SimpleNamespace(servers=SimpleNamespace(playlists=playlists)))
+    bot = SimpleNamespace(pool=SimpleNamespace(i18n=get_i18n(), servers=SimpleNamespace(playlists=playlists)))
     return SimpleNamespace(cog=ServerPlaylistsCog(bot), playlists=playlists)
 
 

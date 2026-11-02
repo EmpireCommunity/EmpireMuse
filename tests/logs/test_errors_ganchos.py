@@ -24,6 +24,7 @@ from empiremuse.utils.music.errors import GenericError
 from tests.cogs.test_error_handler import _interacao, enviado, handler  # noqa: F401  (fixtures)
 from tests.logs.apoio_erros import configuracao, novo_fluxo
 from tests.logs.apoio import excecao
+from empiremuse.i18n.service import get_i18n
 
 pytestmark = pytest.mark.critical
 
@@ -140,7 +141,7 @@ class TestOnError:
         bot = BotCore(
             command_prefix=commands.when_mentioned,
             intents=disnake.Intents.none(),
-            pool=SimpleNamespace(config={"OWNER_IDS": ""}, loop=None),
+            pool=SimpleNamespace(config={"OWNER_IDS": ""}, loop=None, i18n=get_i18n()),
             identifier="teste",
         )
         try:
