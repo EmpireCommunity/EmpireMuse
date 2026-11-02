@@ -1,0 +1,36 @@
+{# Configuração e redefinição de uma rádio (fragmento htmx, id=radio-config-<slug>). Variáveis: config (Formulario),
+   redefinir (ResetView: radio_id, slug, acao, versao, bot_nome, canal_nome, ligada, token|None, mensagem,
+   mensagem_tipo, removida). #}
+<div id="radio-config-{{ redefinir.slug }}" class="radio-config">
+  {% if redefinir.removida %}
+  <p class="mensagem-form mensagem-sucesso" role="status" tabindex="-1">{{ redefinir.mensagem }}</p>
+  {% else %}
+  <details{% if config.mensagem %} open{% end %}>
+    <summary role="button" class="secondary outline">{{ _("panel.radio.setup.edit_title") }}<span class="visually-hidden"> {{ redefinir.bot_nome }}</span></summary>
+    {% set form = config %}
+    {% include "form_radio_setup.html" %}
+  </details>
+  {% if redefinir.token %}
+  <div class="bloco-perigo radio-redefinir" role="group" aria-labelledby="titulo-redefinir-{{ redefinir.slug }}">
+    <h3 class="subtitulo" id="titulo-redefinir-{{ redefinir.slug }}">{{ _("panel.radio.setup.reset_confirm_title") }}</h3>
+    <p class="aviso aviso-erro" role="note">{{ _("panel.radio.setup.reset_confirm", bot=redefinir.bot_nome, channel=redefinir.canal_nome) }}</p>
+    <form class="form-config" method="post" action="{{ redefinir.acao }}" hx-post="{{ redefinir.acao }}" hx-target="#radio-config-{{ redefinir.slug }}" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]">
+      {% module xsrf_form_html() %}
+      <input type="hidden" name="versao" value="{{ redefinir.versao }}">
+      <input type="hidden" name="acao" value="confirmar_reiniciar">
+      <input type="hidden" name="token" value="{{ redefinir.token }}">
+      <button type="submit" class="botao-perigo-cheio">{{ _("panel.radio.setup.reset_yes") }}</button>
+    </form>
+  </div>
+  {% else %}
+  <form class="form-apagar" method="post" action="{{ redefinir.acao }}" hx-post="{{ redefinir.acao }}" hx-target="#radio-config-{{ redefinir.slug }}" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]">
+    {% module xsrf_form_html() %}
+    <input type="hidden" name="versao" value="{{ redefinir.versao }}">
+    <input type="hidden" name="acao" value="reiniciar">
+    {% if redefinir.mensagem %}<p class="mensagem-form {% if redefinir.mensagem_tipo == 'sucesso' %}mensagem-sucesso{% else %}mensagem-erro{% end %}" role="alert" tabindex="-1">{{ redefinir.mensagem }}</p>{% end %}
+    <p class="nota">{{ _("panel.radio.setup.reset_help") }}</p>
+    <button type="submit" class="secondary outline botao-perigo">{{ _("panel.radio.setup.reset_button") }}<span class="visually-hidden"> {{ redefinir.bot_nome }}</span></button>
+  </form>
+  {% end %}
+  {% end %}
+</div>

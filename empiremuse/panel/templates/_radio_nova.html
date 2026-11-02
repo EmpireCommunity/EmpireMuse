@@ -1,0 +1,12 @@
+{# Nova rádio (fragmento htmx, id=radio-nova). Variáveis: nova (Formulario ou None quando o servidor já tem o máximo),
+   max_radios. #}
+<section id="radio-nova" class="bloco-config bloco-largo" aria-labelledby="titulo-radio-nova">
+  <h2 class="subtitulo" id="titulo-radio-nova">{{ _("panel.radio.setup.new_title") }}</h2>
+  <p class="nota">{{ _("panel.radio.setup.help") }}</p>
+  {% if nova %}
+  {% set form = nova %}
+  {% include "form_radio_setup.html" %}
+  {% else %}
+  <p class="aviso aviso-info" role="note">{{ _("panel.radio.setup.full", max=max_radios) }}</p>
+  {% end %}
+</section>

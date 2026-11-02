@@ -1,0 +1,5 @@
+{# Resposta htmx da cascata: os selects (no alvo) e, fora de banda, a lista de estações do nó final. Variáveis: vivo, form. #}
+{% include "_radio_local.html" %}
+<div id="estacoes-{{ vivo.slug }}" aria-live="polite" hx-swap-oob="true">
+  {% include "_radio_estacoes.html" %}
+</div>

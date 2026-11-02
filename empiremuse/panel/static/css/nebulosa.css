@@ -743,7 +743,7 @@ main:focus {
   overflow-wrap: anywhere;
 }
 
-/* Etapa 4c — canal de pedidos */
+/* Etapa 4c — Jukebox (configurar, redefinir, tarefas) */
 .tarefa {
   background: var(--nb-superficie);
   border: 1px solid var(--nb-borda);
@@ -776,6 +776,31 @@ main:focus {
 
 .bloco-perigo {
   border-color: var(--nb-erro-texto);
+}
+
+/* Rádios — configurar e redefinir (contrato-nomes-radios §4.3) */
+.radio-config {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0.75rem 0 1.25rem;
+}
+
+.radio-config > details > summary {
+  width: auto;
+}
+
+.radio-redefinir {
+  border: 1px solid var(--nb-erro-texto);
+  border-radius: var(--pico-border-radius);
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+}
+
+.radio-redefinir .subtitulo,
+.radio-redefinir .aviso,
+.radio-redefinir .form-config {
+  margin: 0;
 }
 
 .botao-perigo-cheio {
@@ -844,3 +869,97 @@ main:focus {
 .campo-icone {
   max-width: 8rem;
 }
+
+/* Item 8 — Rádios: cascata de local (R4) e lista de estações */
+.cascata-local .nota {
+  margin-top: 0;
+}
+
+.cascata-niveis {
+  display: grid;
+  gap: 0 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+}
+
+.cascata-nivel {
+  min-width: 0;
+}
+
+.cascata-descricao {
+  color: var(--nb-texto-suave);
+  display: block;
+  margin-top: -0.5rem;
+  margin-bottom: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.form-local button[type="submit"],
+.form-busca button[type="submit"] {
+  margin-bottom: 0;
+}
+
+.estacoes-atuais dd {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+/* Logo da estação (PNG servido pelo próprio painel; sem logo, o ícone de onda sonora) */
+.estacao-logo {
+  background: var(--nb-elevada);
+  border: 1px solid var(--nb-borda);
+  border-radius: 0.5rem;
+  flex-shrink: 0;
+  height: 2.5rem;
+  object-fit: contain;
+  padding: 0.125rem;
+  width: 2.5rem;
+}
+
+.item-estacao {
+  align-items: center;
+}
+
+.lista-estacoes .item-link-acoes button {
+  white-space: nowrap;
+}
+
+.paginacao {
+  align-items: center;
+  color: var(--nb-texto-suave);
+  display: flex;
+  flex-wrap: wrap;
+  font-variant-numeric: tabular-nums;
+  gap: 0.5rem 1rem;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+/* Item 8 — Rádios: estações personalizadas (R5) */
+.credito-lastfm a {
+  font-weight: 600;
+}
+
+.aviso-estacao {
+  color: var(--nb-texto);
+}
+
+.form-apagar {
+  margin: 0;
+}
+
+.detalhes-nova-estacao > summary {
+  width: auto;
+}
+
+.form-estacao .opcoes label {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.form-estacao textarea {
+  resize: vertical;
+}
+

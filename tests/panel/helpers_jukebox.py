@@ -1,6 +1,6 @@
-"""Dublês da E4c (categoria `canal`): um servidor 100 com um bot (7000) e canais REAIS de disnake.
+"""Dublês da E4c (categoria `jukebox`): um servidor 100 com um bot (7000) e canais REAIS de disnake.
 
-Reaproveita os dublês de Discord de tests/support/canal_de_pedidos.py (os mesmos da caracterização) e o FakeDB do
+Reaproveita os dublês de Discord de tests/support/canal_da_jukebox.py (os mesmos da caracterização) e o FakeDB do
 painel (tests/panel/helpers_settings.py), que registra mutação do cache, gravação do próprio dict e ids não-int.
 """
 
@@ -99,7 +99,7 @@ class PanelPool:
 
 
 class ChannelWorld:
-    """Canais do servidor 100: #geral (11, dentro da categoria Música 66), #pedidos (22), #outro (23), voz (33),
+    """Canais do servidor 100: #geral (11, dentro da categoria Música 66), #jukebox (22), #outro (23), voz (33),
     palco (44), fórum (55) e um canal de OUTRO servidor (99) no cache do bot."""
 
     def __init__(self, *, features=(), admin=False, manage_channels=True, manage_threads=True, history=True):
@@ -119,7 +119,7 @@ class ChannelWorld:
         g = self.guild
         self.category = FakeCategoryChannel(self.j, 66, "Música", g)
         self.lobby = FakeText(self.j, 11, "geral", g, category=self.category)
-        self.text = FakeText(self.j, 22, "pedidos", g)
+        self.text = FakeText(self.j, 22, "jukebox", g)
         self.other = FakeText(self.j, 23, "outro", g)
         self.voice = FakeVoice(self.j, 33, "voz", g)
         self.stage = FakeStage(self.j, 44, "palco", g)
@@ -168,28 +168,28 @@ class ChannelWorld:
         self.next_message += 1
         return target.add_message(self.next_message, self.guild.me)
 
-    # ---- estado do banco: o canal de pedidos mora na seção ``request`` do documento único do servidor
+    # ---- estado do banco: a Jukebox mora na seção ``jukebox`` do documento único do servidor
     @property
     def bot_doc(self):
         """O documento por bot (não é mais lido nem gravado pelo painel)."""
         return self.db.doc(str(BOT_ID), GID)
 
     @property
-    def request_doc(self):
-        return copy.deepcopy(self.database.servers[GID]["request"])
+    def jukebox_doc(self):
+        return copy.deepcopy(self.database.servers[GID]["jukebox"])
 
     async def premigrate(self):
         await self.pool.servers.get(GID)
-        await self.pool.servers.request.get(GID)
-        await self.pool.servers.request.elect(GID)  # servidor já em uso: o bot do painel já foi eleito
+        await self.pool.servers.jukebox.get(GID)
+        await self.pool.servers.jukebox.elect(GID)  # servidor já em uso: o bot do painel já foi eleito
         self.db.reads.clear()
         self.db.writes.clear()
         self.j.clear()
 
     def configure(self, channel=None, message_id=None):
-        """Grava channel/message_id no documento único (como o /setup deixaria)."""
+        """Grava channel/message_id no documento único (como o /jukebox setup deixaria)."""
         doc = self.database.servers[GID]
-        doc["request"].update({"channel": channel, "message_id": message_id})
+        doc["jukebox"].update({"channel": channel, "message_id": message_id})
         doc["rev"] += 1
         self.pool.servers._docs.clear()
 
@@ -205,7 +205,7 @@ class ChannelWorld:
         return post
 
 
-class ChannelBase(SettingsBase):
+class JukeboxBase(SettingsBase):
     """Painel montado com o ChannelWorld; o send_idle_embed do módulo compartilhado é trocado pelo dublê."""
 
     world_kwargs: dict = {}
@@ -217,9 +217,9 @@ class ChannelBase(SettingsBase):
         self.pool, self.db, self.events = self.world.pool, self.world.db, self.world.j
         self.fake = make_fake_oauth(settings, guilds=self.world.raw)
         self.io_loop.run_sync(self.world.premigrate)
-        request_channel = require("empiremuse.utils.music.request_channel")
+        jukebox_channel = require("empiremuse.utils.music.jukebox_channel")
         self.monkeypatch.setitem(
-            request_channel._apply_request_channel.__kwdefaults__, "send_idle_embed", self.world.fake_send_idle_embed
+            jukebox_channel._apply_jukebox_channel.__kwdefaults__, "send_idle_embed", self.world.fake_send_idle_embed
         )
         app = panel.build_panel_app(self.pool, settings, oauth_client=self.fake, clock=self.clock)
         self.panel_app = app

@@ -1,4 +1,4 @@
-"""Tarefas assíncronas do painel (setup/reset do canal de pedidos), em memória, com acompanhamento por polling.
+"""Tarefas assíncronas do painel (configurar/reiniciar a Jukebox), em memória, com acompanhamento por polling.
 
 Uma tarefa por servidor por vez; dono = usuário do painel que a criou. Tarefas terminadas expiram depois de 15 minutos.
 As ``asyncio.Task`` ficam em um conjunto rastreado (sem ``create_task`` solto) e ``shutdown()`` cancela todas.
