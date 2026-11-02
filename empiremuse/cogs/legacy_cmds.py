@@ -323,14 +323,14 @@ class Owner(commands.Cog):
 
     updatelavalink_flags = CommandArgparse()
     updatelavalink_flags.add_argument(
-        "-yml", "--yml", action="store_true", help="Fazer download do arquivo application.yml."
+        "-yml", "--yml", action="store_true", help="legacy.flag.yml"
     )
     updatelavalink_flags.add_argument(
         "-resetids",
         "-reset",
         "--resetids",
         "--reset",
-        help="Resetar info de ids das músicas (útil pra evitar problemas com certas mudanças do lavaplayer/lavalink).",
+        help="legacy.flag.resetids",
         action="store_true",
     )
 

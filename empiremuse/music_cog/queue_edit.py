@@ -266,7 +266,7 @@ class QueueEditMixin:
                 components=[
                     disnake.ui.Button(
                         emoji=app_emoji(inter.bot, "play"),
-                        label="Tocar agora",
+                        label=(await guild_text(inter.bot, inter.guild, "legacy.queue.mv_play_now")),
                         custom_id=PlayerControls.embed_forceplay,
                     ),
                 ],
