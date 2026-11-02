@@ -22,6 +22,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ### Documentação
 - **`crowdin.yml` corrigido** (PR #194 do Crowdin vinha com texto de origem nos outros idiomas, plurais reordenados e `_many` do pt-BR perdidos): origem passa a ser `en-US` (decisão do dono, para facilitar a tradução da comunidade), `pt-BR` vira destino escrito pelo time, tipo `json` e `export_languages` só com os 31 locales do Discord, sem `en-US`; os passos que só existem na interface do Crowdin estão em `docs/guides/i18n.md`.
+- Badge do Crowdin (progresso das traduções) no README, ao lado dos outros.
 - `crowdin.yml` na raiz: liga os catálogos `empiremuse/locales/en-US/{commands,bot,panel}.json` ao projeto público do Crowdin, com as traduções voltando para `empiremuse/locales/<locale>/`.
 
 ## [2.2.0] - 2026-11-01
