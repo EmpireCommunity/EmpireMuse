@@ -1156,5 +1156,10 @@
   "legacy.queue.reverse_log": "reversed the order of the queue tracks.",
   "legacy.queue.reverse_msg": "🔄 **⠂{user} reversed the order of the queue tracks.**",
   "legacy.queue.shuffle_log": "shuffled the queue tracks.",
-  "legacy.queue.shuffle_msg": "🔀 **⠂{user} shuffled the queue tracks.**"
+  "legacy.queue.shuffle_msg": "🔀 **⠂{user} shuffled the queue tracks.**",
+  "radio.panel.custom.favorites": "Favorites",
+  "radio.panel.custom.favorite_added": "⭐ **{station}** was added to YOUR favorites.",
+  "radio.panel.custom.favorite_removed": "**{station}** was removed from your favorites.",
+  "radio.panel.custom.favorite_full": "Your favorites already hold {max} stations, the limit.",
+  "radio.panel.favorites_empty": "You have no favorite stations on this radio yet. Use the star to favorite one."
 }

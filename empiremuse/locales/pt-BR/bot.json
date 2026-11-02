@@ -1169,5 +1169,10 @@
   "legacy.queue.reverse_log": "inverteu a ordem das músicas na fila.",
   "legacy.queue.reverse_msg": "🔄 **⠂{user} inverteu a ordem das músicas na fila.**",
   "legacy.queue.shuffle_log": "misturou as músicas da fila.",
-  "legacy.queue.shuffle_msg": "🔀 **⠂{user} misturou as músicas da fila.**"
+  "legacy.queue.shuffle_msg": "🔀 **⠂{user} misturou as músicas da fila.**",
+  "radio.panel.custom.favorites": "Favoritas",
+  "radio.panel.custom.favorite_added": "⭐ **{station}** entrou nas SUAS favoritas.",
+  "radio.panel.custom.favorite_removed": "**{station}** saiu das suas favoritas.",
+  "radio.panel.custom.favorite_full": "Suas favoritas já têm {max} estações, o limite.",
+  "radio.panel.favorites_empty": "Você ainda não tem estações favoritas nesta rádio. Use a estrela para favoritar."
 }

@@ -66,7 +66,7 @@ CUSTOM_ACTIONS = frozenset(
     {"station_previous", "station_next"}
 )  # só no painel da personalizada: anterior e próxima ESTAÇÃO do servidor
 LIVE_ACTIONS = frozenset(
-    {"previous", "mute", "volume_down", "volume_up", "reconnect", "favorite", "info"}
+    {"previous", "mute", "volume_down", "volume_up", "reconnect", "info"}
 )  # só no painel da rádio ao vivo (o "próxima" existe nos dois, com outro sentido)
 VOLUME_GAP_S = 1.0
 STATION_GAP_S = 5.0  # anterior, próxima e o seletor de estação: no máximo uma troca a cada 5 s por rádio (cada uma reabre o fluxo e consulta o diretório)
@@ -305,8 +305,11 @@ class Radio(RadioPrefixCommands, commands.Cog):
                 return
             await runner.set_admin_pause(muted)
             await reply(content=tr("radio.panel.muted" if muted else "radio.panel.unmuted"))
-        elif action == "favorite":
-            await reply(content=await self._favorite(interaction, tr, radio))
+        elif action == "favorite":  # ao vivo: favoritas do SERVIDOR; personalizada: favoritas de QUEM clicou
+            if radio.kind == KIND_LIVE:
+                await reply(content=await self._favorite(interaction, tr, radio))
+            else:
+                await reply(content=await custom_panel.favorite(self, interaction, tr, radio))
         elif action == "info":
             await reply(content=await self._info(tr, radio), allowed_mentions=disnake.AllowedMentions.none())
         elif action == "reconnect":

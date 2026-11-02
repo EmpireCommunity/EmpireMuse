@@ -93,7 +93,7 @@ async def test_the_type_filter_is_saved_without_changing_the_station_and_a_forge
     cog.hub.store.set_filter.assert_awaited_once_with("r", "f:artists", expected_rev=3, updated_by="9")
     await custom_panel.pick_filter(cog, inter(), tr, radio, "f:all")  # volta a 'todas'
     cog.hub.store.set_filter.assert_awaited_with("r", None, expected_rev=3, updated_by="9")
-    for bad in ("f:fav", "c:BR", None):
+    for bad in ("f:fav:9", "c:BR", None):
         with pytest.raises(GenericError):
             await custom_panel.pick_filter(cog, inter(), tr, radio, bad)
 
@@ -117,3 +117,52 @@ async def test_the_snapshot_lists_the_filtered_stations_with_the_station_name_an
     )
     assert [o.name for o in snap.stations] == ["E1", "E3"] and snap.current_index == 1
     assert snap.filter_path == ("radio.station.kind.genre",) and snap.state == "live"
+
+
+class FakeFavs:
+    """``hub.custom_favorites`` em memória: o mesmo contrato do CustomFavorites, só para provar o uso por membro."""
+
+    def __init__(self):
+        self.data = {}
+
+    async def list(self, guild_id, user_id):
+        return list(self.data.get((guild_id, user_id), []))
+
+    async def toggle(self, guild_id, user_id, station_id):
+        from empiremuse.utils.radio.custom_favorites import Toggled
+
+        current = self.data.setdefault((guild_id, user_id), [])
+        if station_id in current:
+            current.remove(station_id)
+            return Toggled.REMOVED
+        current.append(station_id)
+        return Toggled.ADDED
+
+
+@pytest.mark.asyncio
+async def test_the_star_toggles_for_the_member_who_clicked_and_not_for_the_others():
+    radio, cog, *_ = world(active=2)
+    cog.hub.custom_favorites = FakeFavs()
+    ana, bia = SimpleNamespace(author=SimpleNamespace(id=1)), SimpleNamespace(author=SimpleNamespace(id=2))
+    await custom_panel.favorite(cog, ana, lambda k, **kw: k, radio)
+    assert cog.hub.custom_favorites.data == {(1, 1): [STATIONS[1].id]}
+    await custom_panel.favorite(cog, bia, lambda k, **kw: k, radio)
+    await custom_panel.favorite(cog, ana, lambda k, **kw: k, radio)  # desliga só a dela
+    assert cog.hub.custom_favorites.data == {(1, 1): [], (1, 2): [STATIONS[1].id]}
+
+
+@pytest.mark.asyncio
+async def test_the_favorites_filter_uses_the_list_of_who_picked_it_and_walking_stays_in_it(monkeypatch):
+    radio, cog, calls, change = world(active=1)
+    monkeypatch.setattr(custom_panel.actions, "change_custom_station", change)
+    cog.hub.custom_favorites = FakeFavs()
+    cog.hub.custom_favorites.data = {(1, 9): [STATIONS[0].id, STATIONS[3].id]}
+    assert (
+        await custom_panel.pick_filter(cog, inter(), tr, radio, "f:fav") == "radio.panel.filter_applied[('total', 2)]"
+    )
+    cog.hub.store.set_filter.assert_awaited_once_with("r", "f:fav:9", expected_rev=3, updated_by="9")
+    radio.filter = "f:fav:9"
+    await custom_panel.walk(cog, inter(), tr, radio, 1)
+    assert calls == [STATIONS[3].id]  # E1 -> E4 (as únicas favoritas de 9)
+    other = SimpleNamespace(author=SimpleNamespace(id=5))  # quem não tem favoritas recebe o aviso e o filtro não muda
+    assert await custom_panel.pick_filter(cog, other, tr, radio, "f:fav") == "radio.panel.favorites_empty"

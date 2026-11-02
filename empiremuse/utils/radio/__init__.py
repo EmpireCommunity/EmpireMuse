@@ -12,6 +12,7 @@ from cachetools import TTLCache
 from empiremuse.utils.radio.control import BotRoles, RadioControl
 from empiremuse.utils.radio.custom_source import STOCK_SLOTS, ResolvedTracks
 from empiremuse.utils.radio.directory import Directory
+from empiremuse.utils.radio.custom_favorites import CustomFavorites
 from empiremuse.utils.radio.favorites import RadioFavorites
 from empiremuse.utils.radio.lastfm_feed import LastFmFeed
 from empiremuse.utils.radio.health import HealthChecker, StationHealth
@@ -61,6 +62,7 @@ class RadioHub:
         )  # adiantados (a próxima faixa) ao mesmo tempo em todas as rádios do processo
         self.lastfm = LastFmFeed(pool)  # listas de gênero e de artistas do Last.fm (R5)
         self.favorites = RadioFavorites(pool)  # estações favoritas do servidor (painel da rádio ao vivo)
+        self.custom_favorites = CustomFavorites(pool)  # favoritas da personalizada, POR MEMBRO
         self.service = RadioService(pool)
         self.manager = RadioManager(self, self.service)  # quem faz as rádios rodarem neste processo
         self.setup = RadioSetup(self, pool)  # configurar e redefinir: o Discord e o painel web chamam esta mesma porta
