@@ -275,12 +275,20 @@ class Radio(commands.Cog):
         reply = interaction.edit_original_message
         if action == "pause":
             paused = not runner.admin_paused
+            if not paused and self._too_soon(radio.id, "station", STATION_GAP_S):
+                await reply(
+                    content=tr("radio.panel.wait")
+                )  # retomar ocupa uma vaga da fila global e gasta uma ficha do play: pausar segue imediato
+                return
             await runner.set_admin_pause(paused)
             await reply(content=tr("radio.panel.paused" if paused else "radio.panel.resumed"))
         elif action == "mute":
             muted = (
                 not runner.admin_paused
             )  # parar o fluxo: ao voltar, a rádio entra no ponto AO VIVO, não no que ficou guardado
+            if not muted and self._too_soon(radio.id, "station", STATION_GAP_S):
+                await reply(content=tr("radio.panel.wait"))  # desmudar é retomar: mesma regra
+                return
             await runner.set_admin_pause(muted)
             await reply(content=tr("radio.panel.muted" if muted else "radio.panel.unmuted"))
         elif action in CUSTOM_ACTIONS:

@@ -907,6 +907,57 @@ class TestLiveLoadsOnlyOnTheLocalNode:
             await w.hub.relay.close()
 
     @pytest.mark.asyncio
+    async def test_the_play_asks_to_expect_its_own_audio_right_before_starting_the_player(self):
+        """Revisão do R4: ``expect_flow`` no ponto de chamada. O áudio do ``loadtracks`` não pode valer como "o play abriu" (tocando com player mudo)."""
+        w, ports = await self.world_with_player()
+        events = []
+        real_expect = w.hub.relay.expect_flow
+
+        def expect(token):
+            events.append("expect_flow")
+            return real_expect(token)
+
+        w.hub.relay.expect_flow = expect
+        real_play = w.player.process_next
+
+        async def play(**kwargs):
+            events.append("process_next")
+            return await real_play(**kwargs)
+
+        w.player.process_next = play
+        try:
+            await ports.connect()
+            await ports.play_live()
+        finally:
+            await w.hub.relay.close()
+
+        assert events == ["expect_flow", "process_next"]
+
+    @pytest.mark.asyncio
+    async def test_audio_read_by_the_load_does_not_make_a_silent_play_look_like_playing(self, monkeypatch):
+        from unittest.mock import AsyncMock
+
+        from empiremuse.utils.radio import live_ports
+
+        monkeypatch.setattr(live_ports, "FLOW_WAIT_S", 0.05)
+        w, ports = await self.world_with_player()
+
+        async def load_that_flowed(query, **kwargs):
+            for session in w.hub.relay._sessions.values():
+                session.opened += 1
+                session.flowing.set()  # o loadtracks do Lavalink leu áudio...
+            return [SimpleNamespace(title="live", info={"uri": "x"})]
+
+        self.local.get_tracks.side_effect = load_that_flowed
+        w.player.process_next = AsyncMock()  # ...mas o play nunca abriu a estação
+        try:
+            await ports.connect()
+            with pytest.raises((StationFailure, RuntimeError)):
+                await ports.play_live()
+        finally:
+            await w.hub.relay.close()
+
+    @pytest.mark.asyncio
     async def test_a_stream_that_never_delivers_audio_is_not_playing_and_the_station_is_to_blame(self, monkeypatch):
         """Litmus: a rádio que falhou ficava muda enquanto o contador dizia "tocando". Sem o primeiro áudio no prazo, ``play_live`` FALHA."""
         from empiremuse.utils.radio import live_ports

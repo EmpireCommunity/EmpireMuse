@@ -482,3 +482,88 @@ class TestNoBurstOnTheDirectory:
             taken += 1
 
         assert taken >= 1 and bucket.try_acquire() is True  # a ficha de reserva ainda serve ao play (reserve 0)
+
+
+class TestResumeBurst:
+    """V190-1 (Vigil), parte 2: desmudar e retomar ocupam uma vaga da fila GLOBAL de retomada e gastam uma ficha do play; pausar e mudar são baratos."""
+
+    @pytest.mark.asyncio
+    async def test_twenty_mute_toggles_in_a_second_resume_at_most_once_and_muting_is_immediate(self):
+        w = await TestWalking.live_world()
+        runner = w.hub.manager.runner(w.radio.id)
+        resumes = []
+        real = runner.set_admin_pause
+
+        async def counting(paused):
+            if not paused:
+                resumes.append(True)
+            return await real(paused)
+
+        runner.set_admin_pause = counting
+        presses = [click(PANEL_MUTE_ID) for _ in range(20)]
+        for press in presses:
+            await w.cog.radio_panel_click(press)
+
+        assert len(resumes) <= 1
+        assert "Aguarde" not in said(presses[0])  # o primeiro clique (silenciar) é imediato
+        assert (
+            sum("Aguarde" in said(p) for p in presses) >= 15
+        )  # depois do primeiro desmudar, os seguintes esperam os 5 s
+
+    @pytest.mark.asyncio
+    async def test_after_five_seconds_unmuting_works_again(self):
+        w = await TestWalking.live_world()
+        await w.cog.radio_panel_click(click(PANEL_MUTE_ID))  # muda
+        first = click(PANEL_MUTE_ID)
+        await w.cog.radio_panel_click(first)  # desmuda (primeira retomada)
+        await w.cog.radio_panel_click(click(PANEL_MUTE_ID))  # muda de novo, imediato
+        w.cog._gap_at.clear()  # passaram os 5 s
+
+        again = click(PANEL_MUTE_ID)
+        await w.cog.radio_panel_click(again)
+
+        assert "Aguarde" not in said(again)
+
+
+class TestPickerUsesTheRadioOfNow:
+    """Revisão do R4 (L3): o seletor vive 5 minutos e o ``apply`` relê a rádio de AGORA (desligada ou mudada de canal entre abrir e escolher)."""
+
+    async def opened(self):
+        w = await TestWalking.live_world(list_=[MAIN, RESERVE])
+        press = menu("stations")
+        await w.cog.radio_panel_menu(press)
+        view = press.edit_original_message.await_args.kwargs["view"]
+        view.chosen = station(THIRD, "Rádio 33")
+        return w, view
+
+    @pytest.mark.asyncio
+    async def test_a_radio_turned_off_after_opening_is_not_changed(self):
+        w, view = await self.opened()
+        await w.hub.store.set_enabled(w.radio.id, False)
+        confirm = click(PANEL_MENU_ID)
+
+        await view._on_confirm(confirm)
+
+        assert "não está mais ligada" in said(confirm)
+        assert (await w.hub.store.get(w.radio.id)).source["station"] == MAIN
+
+    @pytest.mark.asyncio
+    async def test_a_click_from_another_channel_is_not_applied(self):
+        w, view = await self.opened()
+        confirm = click(PANEL_MENU_ID, channel_id=CHANNEL + 5)  # o painel de outro canal
+
+        await view._on_confirm(confirm)
+
+        assert "não está mais ligada" in said(confirm)
+        assert (await w.hub.store.get(w.radio.id)).source["station"] == MAIN
+
+    @pytest.mark.asyncio
+    async def test_the_change_goes_to_the_current_radio_document_not_the_one_from_opening(self):
+        w, view = await self.opened()
+        bumped = await w.hub.store.set_volume(w.radio.id, 80, expected_rev=w.radio.rev)  # o rev mudou depois de abrir
+        confirm = click(PANEL_MENU_ID)
+
+        await view._on_confirm(confirm)
+
+        current = await w.hub.store.get(w.radio.id)
+        assert current.source["station"] == THIRD and current.rev > bumped.rev - 1
