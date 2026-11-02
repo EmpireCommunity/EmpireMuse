@@ -28,36 +28,36 @@ def world():
 def stored(message_id):
     doc = {**new_doc(), "_id": str(GID)}
     doc["migrated"] = {section: True for section in doc["migrated"]}
-    doc["request"] = {"channel": "7", "message_id": message_id, "panel_bot_id": None}
+    doc["jukebox"] = {"channel": "7", "message_id": message_id, "panel_bot_id": None}
     return doc
 
 
 def test_a_document_that_is_not_in_the_cache_is_unknown(world):
     world.banco.put(*SERVERS, GID, stored("500"))
 
-    assert world.request.peek_message_id(GID) is None
+    assert world.jukebox.peek_message_id(GID) is None
 
 
 def test_after_one_real_read_the_panel_message_id_comes_from_the_cache_without_copying(world):
     world.banco.put(*SERVERS, GID, stored("500"))
-    run(world.request.get(GID))
+    run(world.jukebox.get(GID))
 
-    assert world.request.peek_message_id(GID) == 500
+    assert world.jukebox.peek_message_id(GID) == 500
     assert (
-        world.store.peek_section(GID, "request") is world.store._docs[str(GID)]["request"]
+        world.store.peek_section(GID, "request") is world.store._docs[str(GID)]["jukebox"]
     )  # a mesma seção, não uma cópia
 
 
 def test_a_panel_without_a_message_peeks_as_zero_not_as_unknown(world):
     world.banco.put(*SERVERS, GID, stored(None))
-    run(world.request.get(GID))
+    run(world.jukebox.get(GID))
 
-    assert world.request.peek_message_id(GID) == 0
+    assert world.jukebox.peek_message_id(GID) == 0
 
 
 def test_a_section_that_was_not_migrated_yet_is_unknown(world):
     doc = deepcopy(stored("500"))
-    doc["migrated"]["request"] = False
+    doc["migrated"]["jukebox"] = False
     world.store._docs[str(GID)] = doc
 
     assert world.store.peek_section(GID, "request") is None
