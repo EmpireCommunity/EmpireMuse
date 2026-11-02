@@ -3,7 +3,7 @@
 # projeto vão em segredo do repositório e são lidos por `api_token_env` e `project_id_env`, nunca escritos aqui.
 # O mapeamento leva o idioma do Crowdin ao código do `disnake.Locale` (nome da pasta em empiremuse/locales/).
 # O en-US é escrito no repo, revisado pela comunidade no Crowdin e volta pelo PR da l10n (decisão do dono).
-# Texto não traduzido: `skip_untranslated_*` tira o que o formato deixar tirar. O JSON ainda pode sair com valor vazio, e o
+# Texto não traduzido: `skip_untranslated_strings` tira o que o formato deixar tirar. O JSON ainda pode sair com valor vazio, e o
 # bot trata o vazio como "sem tradução" (cai no en-US, nunca no pt-BR); ver a descrição do PR.
 preserve_hierarchy: true
 
@@ -12,7 +12,6 @@ files:
     translation: /empiremuse/locales/%locale%/%original_file_name%
     type: i18next_json
     skip_untranslated_strings: true
-    skip_untranslated_files: true
     languages_mapping:
       locale:
         "bg": "bg"
@@ -50,7 +49,6 @@ files:
     translation: /empiremuse/locales/%locale%/%original_file_name%
     type: i18next_json
     skip_untranslated_strings: true
-    skip_untranslated_files: true
     languages_mapping:
       locale:
         "bg": "bg"
@@ -88,7 +86,6 @@ files:
     translation: /empiremuse/locales/%locale%/%original_file_name%
     type: i18next_json
     skip_untranslated_strings: true
-    skip_untranslated_files: true
     languages_mapping:
       locale:
         "bg": "bg"
