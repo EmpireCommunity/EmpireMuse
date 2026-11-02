@@ -272,6 +272,24 @@ def menu(value, **kwargs):
     return press
 
 
+class TestFavoriteAndInfoButtons:
+    """O painel novo (sem o menu "Mais opções") tem botões próprios de favoritar e informações: as mesmas ações do menu."""
+
+    @pytest.mark.asyncio
+    async def test_the_favorite_button_adds_the_station_and_the_info_button_shows_it(self):
+        from empiremuse.rules.radio import PANEL_FAVORITE_ID, PANEL_INFO_ID
+
+        w = await TestWalking.live_world()
+        favorite, info = click(PANEL_FAVORITE_ID), click(PANEL_INFO_ID)
+
+        await w.cog.radio_panel_click(favorite)
+        w.cog._gap_at.clear()  # passaram os 5 s entre consultas ao diretório
+        await w.cog.radio_panel_click(info)
+
+        assert "entrou nas favoritas" in said(favorite) and "MP3" in said(info)
+        assert [f.uuid for f in await w.hub.favorites.list(GUILD)] == [MAIN]
+
+
 class TestMenu:
     @pytest.mark.asyncio
     async def test_favorite_adds_the_station_to_the_server_list_once(self):

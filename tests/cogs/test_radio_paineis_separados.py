@@ -224,6 +224,8 @@ class TestActions:
             "station_next",
             "reconnect",
             "random",
+            "favorite",
+            "info",
         ]
         for forged in ("radio_panel_mute:1", "RADIO_PANEL_MUTE", "radio_panel_mute ", "radio_panel_menu", 5, None):
             assert panel_action(forged) is None
