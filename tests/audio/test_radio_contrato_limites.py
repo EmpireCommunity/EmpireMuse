@@ -9,7 +9,7 @@ from empiremuse.rules import radio_shuffle, radio_station
 from empiremuse.rules.radio_shuffle import Track, next_pick, remember
 from empiremuse.utils.radio import custom_source, lastfm_feed
 from empiremuse.utils.radio.custom import CustomRadioRunner
-from empiremuse.utils.radio.custom_source import CustomSession, NoPlayableTracks, ResolvedTracks
+from empiremuse.utils.radio.custom_source import CustomSession, ResolvedTracks, StreakLimit
 from empiremuse.utils.radio.runner import Phase, ProcessLimits
 from tests.cogs.test_radio_runner import FakePorts
 from tests.persistence.test_radio_store import FakeDb
@@ -21,7 +21,7 @@ def test_the_contract_numbers_are_the_literal_ones():
     assert custom_source.FAIL_STREAK_MAX == 5
     assert custom_source.FAIL_TTL_S == 86_400
     assert custom_source.RESOLVED_TTL_S == 604_800
-    assert custom_source.RETRY_AFTER_S == 600
+    assert custom_source.RETRY_AFTER_S == 600 and custom_source.REBUILD_BACKOFF_S == 20
     assert custom_source.STOCK_SLOTS == 2
     assert lastfm_feed.RATE_PER_S == 1.0 and lastfm_feed.BURST == 3.0
     assert lastfm_feed.FRESH_S == 86_400 and lastfm_feed.STALE_S == 604_800
@@ -70,7 +70,7 @@ class TestTheDrawWindows:
 
 class TestFailureAndPause:
     @pytest.mark.asyncio
-    async def test_exactly_five_failures_in_a_row_pause_the_station(self):
+    async def test_exactly_five_failures_in_a_row_stop_the_draw_for_the_rebuild(self):
         pool = [Track(f"A{i}", f"T{i}") for i in range(20)]
         session = CustomSession(pool, ResolvedTracks(FakeDb()))
         calls = []
@@ -79,7 +79,7 @@ class TestFailureAndPause:
             calls.append(track)
             return None
 
-        with pytest.raises(NoPlayableTracks):
+        with pytest.raises(StreakLimit):
             await session.next_playable(resolve)
 
         assert len(calls) == 5

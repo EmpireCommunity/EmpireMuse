@@ -2,6 +2,7 @@
 
 import random
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -13,7 +14,7 @@ from empiremuse.utils.radio.custom_source import (
     CustomSession,
     EmptyStation,
     ResolvedTracks,
-    NoPlayableTracks,
+    StreakLimit,
     load_pool,
 )
 from empiremuse.utils.radio.lastfm_feed import FeedResult
@@ -119,7 +120,7 @@ class TestSession:
         assert tried[0] not in session.pool
 
     @pytest.mark.asyncio
-    async def test_five_failures_in_a_row_pause_and_the_streak_resets(self):
+    async def test_five_failures_in_a_row_stop_the_draw_for_a_rebuild_and_never_pause(self):
         session = CustomSession(self.pool(), ResolvedTracks(FakeDb()), random.Random(3))
         calls = []
 
@@ -127,10 +128,38 @@ class TestSession:
             calls.append(track)
             return None
 
-        with pytest.raises(NoPlayableTracks):
+        with pytest.raises(StreakLimit):
             await session.next_playable(resolve)
 
-        assert len(calls) == FAIL_STREAK_MAX and session.streak == 0
+        assert len(calls) == FAIL_STREAK_MAX == 5
+
+    @pytest.mark.asyncio
+    async def test_playback_failures_count_in_the_same_streak_and_a_start_zeroes_it(self):
+        session = CustomSession(self.pool(), ResolvedTracks(FakeDb()), random.Random(5))
+        for number in range(4):
+            await session.failure(Track("Artista 0", f"Faixa 0-{number}"))
+        assert session.streak == 4
+
+        await session.failure(Track("Artista 1", "Faixa 1-0"))
+
+        with pytest.raises(StreakLimit):
+            await session.next_playable(AsyncMock(return_value="ok"))  # a quinta, de reprodução, fecha a sequência
+
+    @pytest.mark.asyncio
+    async def test_after_a_rebuild_a_pool_fully_in_the_negative_cache_is_tried_anyway(self):
+        db = FakeDb()
+        pool = [Track("A", "1"), Track("B", "2")]
+        for track in pool:
+            await ResolvedTracks(db).mark(track)
+        session = CustomSession(list(pool), ResolvedTracks(db), random.Random(6))
+
+        with pytest.raises(StreakLimit):  # antes de reconstruir não há o que sortear
+            await session.next_playable(AsyncMock(return_value="ok"))
+
+        session.rebuilt = True
+        track, resolved = await session.next_playable(AsyncMock(return_value="ok"))
+
+        assert track in pool and resolved == "ok"
 
     @pytest.mark.asyncio
     async def test_a_failed_track_from_another_server_is_also_skipped_through_the_database(self):

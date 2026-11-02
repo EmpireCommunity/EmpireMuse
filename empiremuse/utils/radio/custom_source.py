@@ -34,8 +34,11 @@ ABSENT_TTL_S = (
     300  # "não há nada guardado para esta faixa" é lembrado por 5 min (sem uma consulta por faixa a cada sorteio)
 )
 STOCK_SLOTS = 2  # adiantados ao mesmo tempo em todas as rádios do processo
-FAIL_STREAK_MAX = 5  # falhas seguidas que pausam a estação
-RETRY_AFTER_S = 600  # a nova tentativa de uma estação sem faixas tocáveis
+FAIL_STREAK_MAX = 5  # falhas seguidas (de resolução ou de reprodução) que fazem o recuo e a reconstrução do pool
+RETRY_AFTER_S = 600  # a nova tentativa de uma estação de fonte quebrada (pool vazio, Last.fm fora sem lista velha)
+REBUILD_BACKOFF_S = (
+    20  # o recuo depois de ``FAIL_STREAK_MAX`` falhas seguidas, antes de reconstruir o pool (a rádio não pausa)
+)
 PLAYLIST_NAMES_MAX = 5
 
 PlaylistTracks = Callable[[Sequence[str]], Awaitable[list[Track]]]
@@ -47,7 +50,12 @@ class EmptyStation(Exception):
 
 
 class NoPlayableTracks(Exception):
-    """``FAIL_STREAK_MAX`` faixas seguidas sem stream tocável: a estação pausa e tenta de novo em ``RETRY_AFTER_S``."""
+    """A FONTE está quebrada (pool vazio depois de reconstruído, ou Last.fm fora sem lista velha): a estação para de tocar, continua ligada e tenta de
+    novo em ``RETRY_AFTER_S``. Falha de faixa nunca é isto (regra do dono: a rádio não para, pula para a próxima)."""
+
+
+class StreakLimit(Exception):
+    """``FAIL_STREAK_MAX`` falhas seguidas (ou nada mais para sortear): quem chama recua ``REBUILD_BACKOFF_S``, reconstrói o pool e segue."""
 
 
 @dataclass
@@ -175,29 +183,35 @@ class ResolvedTracks:
 
 @dataclass
 class CustomSession:
-    """O sorteio de UMA rádio: o pool, o histórico (só em memória) e a sequência de falhas."""
+    """O sorteio de UMA rádio: o pool, o histórico (só em memória) e a sequência de falhas (resolução ou reprodução; zera quando uma faixa da rádio começa)."""
 
     pool: list[Track]
     failed: ResolvedTracks
     rng: random.Random = field(default_factory=random.Random)
     history: list[Track] = field(default_factory=list)
     streak: int = 0
+    rebuilt: bool = False  # o pool já foi reconstruído: se TODAS as faixas estão no cache negativo, a estação o ignora e tenta assim mesmo
 
     async def next_playable(self, resolve: Resolve) -> tuple[Track, Any]:
-        """Sorteia e resolve até achar uma faixa tocável. ``NoPlayableTracks`` depois de ``FAIL_STREAK_MAX`` falhas seguidas (a sequência é zerada ao pausar)."""
-        while self.streak < FAIL_STREAK_MAX:
+        """Sorteia e resolve até achar uma faixa tocável. ``StreakLimit`` quando a sequência de falhas chega a ``FAIL_STREAK_MAX`` ou não há o que sortear."""
+        while True:
+            if self.streak >= FAIL_STREAK_MAX:
+                raise StreakLimit
             candidates = [t for t in self.pool if not await self.failed.failed(t)]
+            if not candidates and self.rebuilt:
+                candidates = list(self.pool)
             pick = next_pick(candidates, self.history, self.rng)
             if pick is None:
-                break
+                raise StreakLimit
             resolved = await resolve(pick)
             if resolved is None:
-                self.streak += 1
-                await self.failed.mark(pick)
-                self.pool = [t for t in self.pool if track_key(t) != track_key(pick)] or self.pool
+                await self.failure(pick)
                 continue
-            self.streak = 0
             self.history = remember(self.history, pick)
             return pick, resolved
-        self.streak = 0
-        raise NoPlayableTracks
+
+    async def failure(self, track: Track) -> None:
+        """A faixa falhou (não resolveu, não carregou, travou): cache negativo pela chave dela e mais uma na sequência."""
+        self.streak += 1
+        await self.failed.mark(track)
+        self.pool = [t for t in self.pool if track_key(t) != track_key(track)] or self.pool
