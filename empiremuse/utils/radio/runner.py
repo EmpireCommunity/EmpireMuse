@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -133,6 +134,10 @@ class RadioRunner:
         self._last_skip: float | None = None
         self._tick_lock = asyncio.Lock()
         self._out_ticks = 0
+        self._retry_deadline: float | None = (
+            None  # quando o recuo atual acaba (relógio do ``ports.now``): o painel mostra "tentando de novo em N s"
+        )
+        self.on_air_since: float | None = None  # relógio de parede de quando a rádio começou a tocar ("no ar há N min")
         self._last_verdict: float | None = None
 
     @property
@@ -141,7 +146,17 @@ class RadioRunner:
 
     # ------------------------------------------------------------------ estado
 
+    def retry_seconds(self) -> int | None:
+        """Quanto falta para a próxima tentativa (só com a rádio fora do ar, esperando o recuo); senão ``None``."""
+        if self.phase not in (Phase.RECONNECTING, Phase.CONNECTING) or self._retry_deadline is None:
+            return None
+        return max(0, math.ceil(self._retry_deadline - self.ports.now()))
+
     def _set(self, phase: Phase) -> None:
+        if phase is Phase.PLAYING and self.phase is not Phase.PLAYING:
+            self.on_air_since = self.ports.wall()
+        elif phase in (Phase.OFF, Phase.RECONNECTING, Phase.CONNECTING, Phase.STANDBY):
+            self.on_air_since = None
         self.phase = phase
         if phase is Phase.OFF:
             self._publish(None)
@@ -232,7 +247,10 @@ class RadioRunner:
     async def retry(self) -> None:
         """O recuo (5, 10, 20, 40, 60 s...): espera, reconfere premium/canal/permissão e tenta de novo. Nunca há volta imediata."""
         while not self._stopped and self.phase is not Phase.OFF:
-            await self.ports.sleep(self._backoff())
+            delay = self._backoff()
+            self._retry_deadline = self.ports.now() + delay
+            await self.ports.sleep(delay)
+            self._retry_deadline = None
             self.attempt += 1
             if self._stopped:
                 return

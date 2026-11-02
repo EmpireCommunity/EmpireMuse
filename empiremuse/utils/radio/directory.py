@@ -23,7 +23,7 @@ import logging
 import random
 import socket
 import time
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from typing import Any, NamedTuple
 
 import aiohttp
@@ -61,6 +61,7 @@ MIRROR_TTL_S = 3600
 MIRROR_RETRY_S = 60.0  # descoberta que falhou (ou veio vazia) não se repete antes disto
 DISCOVERY_TIMEOUT_S = 5.0
 MIRRORS_PER_REQUEST = 3
+BYUUIDS_MAX = 30  # estações por consulta de várias (a janela do painel)
 SEARCH_RESERVE = 1.0  # a busca deixa sempre uma ficha do balde global para o play e o health check
 SEARCH_PER_KEY_RATE = 0.5  # por servidor: uma busca nova a cada 2 s, com rajada de 3
 SEARCH_PER_KEY_BURST = 3
@@ -491,6 +492,14 @@ class Directory:
         payload = await self._get("/json/stations/byuuid", {"uuids": str(uuid)}, reserve=reserve)
         found = self._stations(payload)
         return found[0] if found and found[0].uuid == uuid else None
+
+    async def by_uuids(self, uuids: Iterable[object], *, reserve: float = SEARCH_RESERVE) -> dict[str, Station]:
+        """Várias estações de uma vez (UMA consulta, até ``BYUUIDS_MAX``): para o painel mostrar a janela da lista sem gastar uma ficha por estação."""
+        wanted = [u for u in dict.fromkeys(uuids) if valid_uuid(u)][:BYUUIDS_MAX]
+        if not wanted:
+            return {}
+        payload = await self._get("/json/stations/byuuid", {"uuids": ",".join(wanted)}, reserve=reserve)  # type: ignore[arg-type]
+        return {station.uuid: station for station in self._stations(payload)}
 
     # ------------------------------------------------------------------ logo (painel)
 

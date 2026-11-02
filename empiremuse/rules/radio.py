@@ -38,8 +38,13 @@ CHAT_INVALID = "radio_chat_invalid"
 CHAT_UNKNOWN_FIELD = "radio_chat_unknown_field"
 ENABLED_INVALID = "radio_enabled_invalid"
 REV_INVALID = "radio_rev_invalid"
+SKIN_INVALID = "radio_skin_invalid"
+FILTER_INVALID = "radio_filter_invalid"
+SKINS = ("black", "white")
+DEFAULT_SKIN = SKINS[0]
 
 _SNOWFLAKE = re.compile(r"[0-9]{1,20}")
+_FILTER_ID = re.compile(r"[A-Za-z0-9_:.\-]{1,48}")
 _RADIO_ID = re.compile(r"([0-9]{1,20}):([0-9]{1,20})")
 _CUSTOM_STATION_ID = re.compile(r"[0-9a-f]{24}")
 _STATION_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
@@ -61,6 +66,10 @@ class Radio:
     panel_message_id: int | None = None
     clock_started_at: float | None = (
         None  # época (``time.time()``) em que a programação virtual ligou: sobrevive ao reinício (Q3)
+    )
+    skin: str = "black"  # o visual do painel (R7): ``SKINS``
+    filter: str | None = (
+        None  # o ÚLTIMO filtro de local aplicado (id do nó da árvore; ``f:fav`` = as favoritas): o painel o reabre já expandido (R6)
     )
     extra: dict[str, Any] = field(default_factory=dict, compare=False)
 
@@ -237,6 +246,12 @@ def check_radio(raw: object) -> Radio | RuleError:
         isinstance(clock, (int, float)) and not isinstance(clock, bool) and 0 < clock < 4_000_000_000 and clock == clock
     ):
         return RuleError(REV_INVALID, "clock_started_at")
+    skin = raw.get("skin", DEFAULT_SKIN)
+    if skin not in SKINS:
+        return RuleError(SKIN_INVALID, "skin")
+    last_filter = raw.get("filter")
+    if last_filter is not None and not (isinstance(last_filter, str) and _FILTER_ID.fullmatch(last_filter)):
+        return RuleError(FILTER_INVALID, "filter")
     return Radio(
         id=radio_id(bot_id, guild_id),
         bot_id=bot_id,
@@ -249,6 +264,8 @@ def check_radio(raw: object) -> Radio | RuleError:
         rev=rev,
         panel_message_id=panel_id,
         clock_started_at=None if clock is None else float(clock),
+        skin=skin,
+        filter=last_filter,
     )
 
 
@@ -267,6 +284,8 @@ def to_document(radio: Radio, *, updated_by: str = "") -> dict[str, Any]:
         "enabled": radio.enabled,
         "panel_message_id": None if radio.panel_message_id is None else str(radio.panel_message_id),
         "clock_started_at": radio.clock_started_at,
+        "skin": radio.skin,
+        "filter": radio.filter,
         "rev": radio.rev,
         "updated_by": str(updated_by)[:40],
     }
