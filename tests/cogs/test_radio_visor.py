@@ -300,3 +300,74 @@ async def test_the_live_ports_send_the_visor_panel_and_the_custom_ports_keep_the
 
     custom = await w.ports._panel_payload(w.bot, w.guild, w.ports.radio)
     assert custom["embeds"][0].image.url != "attachment://visor.png"
+
+
+# ============================================================================ a rádio PERSONALIZADA no mesmo visor (tipo no lugar da reserva, select 2 por tipo)
+
+
+def custom_snapshot(**overrides):
+    base = dict(
+        skin="black",
+        station_name="Rock Clássico",
+        codec="",
+        bitrate_kbps=0,
+        quality="good",
+        now_title="Bohemian Rhapsody",
+        now_artist="Queen",
+        reserve_number=None,
+        filter_path=("Gênero",),
+        stations=tuple(
+            __import__("empiremuse.utils.radio.snapshot", fromlist=["StationOption"]).StationOption(
+                i, f"{i:024x}", f"Estação {i}", 0, "", "good"
+            )
+            for i in range(1, 4)
+        ),
+        current_index=0,
+        position=1,
+        total=3,
+        favorite=False,
+    )
+    base.update(overrides)
+    return snapshot(**base)
+
+
+@pytest.mark.parametrize("skin", SKIN_NAMES)
+def test_the_custom_visor_renders_in_both_skins_and_differs_from_the_live_drawing_of_the_same_data(skin):
+    from empiremuse.utils.radio.visor import render_snapshot
+
+    snap = custom_snapshot(skin=skin)
+
+    custom = render_snapshot(snap, PT, custom=True)
+    assert png(custom).size == (WIDTH * SCALE, HEIGHT * SCALE)
+    assert custom != render_snapshot(snap, PT)  # badge WEB, "Estação do servidor" e o tipo no lugar da reserva
+    assert render_snapshot(custom_snapshot(skin=skin, filter_path=()), EN, custom=True) != custom  # "ALL TYPES"
+
+
+def test_the_type_select_marks_the_current_filter_and_all_stations_when_there_is_none():
+    from empiremuse.utils.radio.panel import ALL_TYPES_FILTER, type_select_options
+
+    none = type_select_options(PT, None)
+    assert [o.value for o in none] == [ALL_TYPES_FILTER, "f:genre", "f:artists", "f:playlists"]
+    assert [o.default for o in none] == [True, False, False, False]
+    assert none[1].label == "Gênero" and type_select_options(EN, None)[1].label == "Genre"
+
+    genre = type_select_options(PT, "f:genre")
+    assert [o.default for o in genre] == [False, True, False, False]
+
+
+@pytest.mark.asyncio
+async def test_the_custom_payload_keeps_the_two_by_five_rows_and_uses_the_type_select():
+    from empiremuse.rules.radio import PANEL_FILTER_SELECT_ID, PANEL_STATION_SELECT_ID
+    from empiremuse.utils.radio.panel import type_select_options, visor_payload_async
+    from empiremuse.utils.radio.visor import render_snapshot
+
+    snap = custom_snapshot()
+    payload = await visor_payload_async(PT, snap, filter_options=type_select_options(PT, "f:genre"), custom=True)
+
+    rows = payload["components"]
+    assert len(rows) == 4 and len(rows[0].children) == 5 and len(rows[1].children) == 5
+    assert rows[2].children[0].custom_id == PANEL_STATION_SELECT_ID
+    assert [o.value for o in rows[2].children[0].options] == [f"{i:024x}" for i in range(1, 4)]
+    filter_select = rows[3].children[0]
+    assert filter_select.custom_id == PANEL_FILTER_SELECT_ID and filter_select.placeholder.startswith("Tipo")
+    assert payload["file"].fp.read() == render_snapshot(snap, PT, custom=True)

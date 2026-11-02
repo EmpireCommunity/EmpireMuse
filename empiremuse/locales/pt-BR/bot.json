@@ -1174,5 +1174,10 @@
   "radio.panel.custom.favorite_added": "⭐ **{station}** entrou nas SUAS favoritas.",
   "radio.panel.custom.favorite_removed": "**{station}** saiu das suas favoritas.",
   "radio.panel.custom.favorite_full": "Suas favoritas já têm {max} estações, o limite.",
-  "radio.panel.favorites_empty": "Você ainda não tem estações favoritas nesta rádio. Use a estrela para favoritar."
+  "radio.panel.favorites_empty": "Você ainda não tem estações favoritas nesta rádio. Use a estrela para favoritar.",
+  "visor.select.type.all.label": "Todas as estações",
+  "visor.select.type.placeholder": "Tipo: gênero, artistas ou playlists do servidor",
+  "visor.select.type.all.description": "Todas as estações do servidor, de qualquer tipo",
+  "visor.custom.detail": "Estação do servidor",
+  "visor.all_types": "TODOS OS TIPOS"
 }

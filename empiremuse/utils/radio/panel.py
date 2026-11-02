@@ -417,6 +417,34 @@ def filter_select_options(
     return options
 
 
+ALL_TYPES_FILTER = "f:all"  # select 2 da personalizada: sem filtro de tipo (``Radio.filter = None``)
+TYPE_FILTERS: tuple[tuple[str, str, str], ...] = (  # value do select, chave do rótulo, emoji do bot
+    ("f:genre", "radio.station.kind.genre", "music_note"),
+    ("f:artists", "radio.station.kind.artists", "microphone"),
+    ("f:playlists", "radio.station.kind.playlists", "playlists"),
+)
+
+
+def type_select_options(
+    tr: Any, current: Optional[str], *, emojis: Emojis = fallback_emojis
+) -> list[disnake.SelectOption]:
+    """As opções do select 2 da rádio PERSONALIZADA: ``Todas as estações`` e um tipo por linha (gênero, artistas, playlists do
+    servidor), com o filtro atual marcado. As favoritas da personalizada ainda não existem (decisão do dono pendente)."""
+    options = [
+        disnake.SelectOption(
+            label=fit(tr("visor.select.type.all.label"), 100),
+            value=ALL_TYPES_FILTER,
+            description=fit(tr("visor.select.type.all.description"), 100),
+            default=current not in {value for value, _, _ in TYPE_FILTERS},
+        )
+    ]
+    for value, key, icon in TYPE_FILTERS:
+        options.append(
+            disnake.SelectOption(label=fit(tr(key), 100), value=value, emoji=emojis(icon), default=current == value)
+        )
+    return options
+
+
 def visor_payload(
     tr: Any,
     snapshot: Any,
@@ -425,6 +453,7 @@ def visor_payload(
     color: int = 0,
     emojis: Emojis = fallback_emojis,
     picture: Optional[bytes] = None,
+    custom: bool = False,
 ) -> dict[str, Any]:
     """O painel da rádio AO VIVO no desenho aprovado (P1-P8): embed só com a imagem do visor e o rodapé, duas fileiras de cinco botões
     só com emoji e os dois selects. ``{"embeds", "components", "file"}``; quem envia põe ``AllowedMentions.none()`` e, ao editar,
@@ -449,7 +478,7 @@ def visor_payload(
     ]
     options = list(filter_options)[:SELECT_LIMIT] or [disnake.SelectOption(label="—", value="none")]
     filter_select = disnake.ui.Select(
-        placeholder=fit(tr("visor.select.filter.placeholder"), 150),
+        placeholder=fit(tr("visor.select.type.placeholder" if custom else "visor.select.filter.placeholder"), 150),
         options=options,
         custom_id=PANEL_FILTER_SELECT_ID,
         min_values=1,
@@ -457,7 +486,7 @@ def visor_payload(
         disabled=not filter_options,
     )
     if picture is None:
-        picture = render_snapshot(snapshot, tr)
+        picture = render_snapshot(snapshot, tr, custom=custom)
     return {
         "embeds": [embed],
         "components": [
@@ -477,7 +506,10 @@ async def visor_payload_async(
     filter_options: list[disnake.SelectOption],
     color: int = 0,
     emojis: Emojis = fallback_emojis,
+    custom: bool = False,
 ) -> dict[str, Any]:
     """``visor_payload`` com o PNG renderizado numa thread (``asyncio.to_thread``): o desenho com Pillow não segura o laço do bot."""
-    picture = await asyncio.to_thread(render_snapshot, snapshot, tr)
-    return visor_payload(tr, snapshot, filter_options=filter_options, color=color, emojis=emojis, picture=picture)
+    picture = await asyncio.to_thread(render_snapshot, snapshot, tr, custom=custom)
+    return visor_payload(
+        tr, snapshot, filter_options=filter_options, color=color, emojis=emojis, picture=picture, custom=custom
+    )
