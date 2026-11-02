@@ -139,6 +139,8 @@ class RadiosHandler(SettingsHandler):
                 stations = await self.stations.view(ctx, f"{action}/{STATIONS_PATH}", tr)
             rows = await self._with_custom(ctx, action, rows, tr, custom)
             rows, nova = await self._with_setup(ctx, action, rows, nova, config, redefinir)
+        else:  # sem premium só o redefinir fica (contrato §2: pede só ``manage_guild``), sem nada ir ao diretório
+            rows = self._with_reset(action, rows, redefinir)
         self.set_status(status)
         self.render_page(
             PAGE_TEMPLATE,
@@ -175,9 +177,22 @@ class RadiosHandler(SettingsHandler):
             estado="",
             titulo=None,
             form=None,
-            config=Formulario(key="radio_setup", form_id="", template="", acao="", versao="", valores={}),
+            config=None,
             redefinir=view,
         )
+
+    def _with_reset(self, action: str, rows: tuple, redefinir: Optional[ResetView]) -> tuple:
+        """Sem premium: só o bloco de redefinir em cada rádio (o resultado de um POST entra no lugar do bloco daquela rádio)."""
+        done = []
+        for row in rows:
+            if row.redefinir is not None:  # a linha sintética da rádio redefinida
+                done.append(row)
+                continue
+            view = redefinir if redefinir is not None and redefinir.radio_id == row.id else None
+            if view is None:
+                view = self.setup.reset_view(row.radio, f"{action}/{row.id}/{RESET_PATH}", self.names_of(row))
+            done.append(row._replace(redefinir=view))
+        return tuple(done)
 
     async def _with_setup(
         self,
@@ -573,7 +588,8 @@ class RadioStationItemHandler(RadioStationsHandler):
 
 class RadioSetupHandler(RadiosHandler):
     """Base dos POSTs do §4.3: 413, 429, 404 (servidor ou rádio de outro servidor) e 403 sem premium antes de qualquer
-    chamada ao bot; ``manage_guild`` de quem faz é conferido pelo ``GuildAccess`` e de novo pelo bot."""
+    chamada ao bot (o redefinir dispensa o premium: contrato §2); ``manage_guild`` de quem faz é conferido pelo
+    ``GuildAccess`` e de novo pelo bot."""
 
     async def get(self, guild_id: str, *rest: str) -> None:  # type: ignore[override]
         self.redirect(f"{SERVERS_PATH}/{guild_id}/{RADIOS_CATEGORY}")
@@ -587,7 +603,7 @@ class RadioSetupHandler(RadiosHandler):
     async def _post(self, guild_id: str, *rest: str) -> None:
         raise NotImplementedError
 
-    async def _gate(self, guild_id: str) -> Optional[tuple]:
+    async def _gate(self, guild_id: str, *, premium_required: bool = True) -> Optional[tuple]:
         if len(self.request.body) > MAX_BODY_BYTES:
             self._reject_plain(413, *_MSG_TOO_LARGE)
             return None
@@ -600,7 +616,7 @@ class RadioSetupHandler(RadiosHandler):
         except GuildAccessDenied:
             self._not_found()
             return None
-        if not can_write(await ctx.pool.radio.premium.get(ctx.guild_id)):
+        if premium_required and not can_write(await ctx.pool.radio.premium.get(ctx.guild_id)):
             tr = panel_translator(ctx.pool)
             self._reject_plain(STATUS_FORBIDDEN, UNAVAILABLE_TITLE, tr("panel.radio.setup.forbidden.premium"))
             return None
@@ -615,9 +631,9 @@ class RadioSetupHandler(RadiosHandler):
             return None
         return radio
 
-    async def _row_of(self, ctx: FormContext, action: str, radio: Any) -> Any:
+    async def _row_of(self, ctx: FormContext, action: str, radio: Any, *, editable: bool = True) -> Any:
         tr = panel_translator(ctx.pool)
-        rows = await self.page.rows(ctx, action, True, tr)
+        rows = await self.page.rows(ctx, action, editable, tr)
         return next((row for row in rows if row.id == str(radio.id)), None)
 
 
@@ -677,17 +693,22 @@ class RadioConfigHandler(RadioSetupHandler):
 
 
 class RadioResetHandler(RadioSetupHandler):
-    """``POST /painel/servidores/<gid>/radios/<bot:guild>/reset``: redefinir em dois passos (token assinado, 60 s)."""
+    """``POST /painel/servidores/<gid>/radios/<bot:guild>/reset``: redefinir em dois passos (token assinado, 60 s).
+
+    Não pede premium (contrato §2, decisão do Maestro): um servidor que o perdeu apaga a própria configuração; o
+    ``manage_guild`` de quem faz é conferido pelo bot. Sem premium nada vai ao diretório (nem o formulário de configurar).
+    """
 
     async def _post(self, guild_id: str, *rest: str) -> None:
-        gated = await self._gate(guild_id)
+        gated = await self._gate(guild_id, premium_required=False)
         if gated is None:
             return
         ctx, access, action = gated
         radio = await self._radio_of(ctx, rest[0])
         if radio is None:
             return
-        row = await self._row_of(ctx, action, radio)
+        editable = can_write(await ctx.pool.radio.premium.get(ctx.guild_id))
+        row = await self._row_of(ctx, action, radio, editable=editable)
         if row is None:
             self._not_found()
             return
@@ -701,9 +722,11 @@ class RadioResetHandler(RadioSetupHandler):
             self._not_found()
             return
         if self._is_htmx():
-            options = await self.setup.options(ctx)
-            current = (int(radio.bot_id), str(row.bot_nome))
-            form = self.setup.form(radio, f"{action}/{radio.id}/{CONFIG_PATH}", options, current_bot=current)
+            form = None
+            if editable:
+                options = await self.setup.options(ctx)
+                current = (int(radio.bot_id), str(row.bot_nome))
+                form = self.setup.form(radio, f"{action}/{radio.id}/{CONFIG_PATH}", options, current_bot=current)
             self.set_status(status)
             self.render_page(CONFIG_TEMPLATE, config=form, redefinir=view, **self._common(access))
             return

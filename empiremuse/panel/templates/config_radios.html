@@ -45,7 +45,7 @@
   {% if radio.canal_nome is None %}
   <p class="aviso aviso-erro" role="note">{{ _("panel.radio.channel_removed") }}</p>
   {% end %}
-  {% if radio.config and radio.redefinir %}
+  {% if radio.redefinir %}
   {% set config = radio.config %}
   {% set redefinir = radio.redefinir %}
   {% include "_radio_config.html" %}

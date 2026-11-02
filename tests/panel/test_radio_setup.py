@@ -211,6 +211,23 @@ class ConfigureTest(SetupBase):
 
 
 class ResetTest(SetupBase):
+    def test_without_premium_the_reset_block_stays_and_resets_through_the_bot(self):
+        """Contrato §2 (decisão do Maestro): redefinir pede só ``manage_guild``. Sem premium a página mostra o bloco de
+        redefinir de cada rádio e nada de criar ou configurar; o POST passa sem o 403 de premium e nada vai ao diretório."""
+        radio = self.seed(bot_id=1)
+        browser = self.logged_in()
+        body = self.page(browser)
+        assert self.new_form(body) is None and self.config_form(body, radio) is None and "/config" not in body
+        assert self.reset_form(body, radio) is not None
+        confirmation = self.reset_step_one(browser, radio)
+        assert confirmation.code == 200 and self.config_form(confirmation.body.decode(), radio) is None
+        response = self.reset_confirm(browser, radio, confirmation)
+        assert response.code == 200 and "Rádio redefinida" in response.body.decode()
+        assert self.radio.setup.calls == [
+            ("reset", ALFA, int(self.fake.user["id"]), {"radio_id": radio.id, "rev": radio.rev})
+        ]
+        assert radio.id not in self.radio.store.docs
+
     def test_step_one_only_shows_the_confirmation(self):
         self.grant()
         radio = self.seed(bot_id=1)

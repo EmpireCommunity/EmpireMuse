@@ -1,15 +1,17 @@
-{# Configuração e redefinição de uma rádio (fragmento htmx, id=radio-config-<slug>). Variáveis: config (Formulario),
-   redefinir (ResetView: radio_id, slug, acao, versao, bot_nome, canal_nome, ligada, token|None, mensagem,
-   mensagem_tipo, removida). #}
+{# Configuração e redefinição de uma rádio (fragmento htmx, id=radio-config-<slug>). Variáveis: config (Formulario,
+   ou None sem premium: só o redefinir), redefinir (ResetView: radio_id, slug, acao, versao, bot_nome, canal_nome,
+   ligada, token|None, mensagem, mensagem_tipo, removida). #}
 <div id="radio-config-{{ redefinir.slug }}" class="radio-config">
   {% if redefinir.removida %}
   <p class="mensagem-form mensagem-sucesso" role="status" tabindex="-1">{{ redefinir.mensagem }}</p>
   {% else %}
+  {% if config %}
   <details{% if config.mensagem %} open{% end %}>
     <summary role="button" class="secondary outline">{{ _("panel.radio.setup.edit_title") }}<span class="visually-hidden"> {{ redefinir.bot_nome }}</span></summary>
     {% set form = config %}
     {% include "form_radio_setup.html" %}
   </details>
+  {% end %}
   {% if redefinir.token %}
   <div class="bloco-perigo radio-redefinir" role="group" aria-labelledby="titulo-redefinir-{{ redefinir.slug }}">
     <h3 class="subtitulo" id="titulo-redefinir-{{ redefinir.slug }}">{{ _("panel.radio.setup.reset_confirm_title") }}</h3>

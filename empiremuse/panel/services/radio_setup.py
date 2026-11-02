@@ -3,8 +3,9 @@
 Uma função só para o Discord e o painel, do Turbine em ``utils/radio/setup.py``, exposta pelo hub como
 ``pool.radio.setup``: ``options(guild_id)`` (os bots reserva livres e os canais de voz/palco que valem),
 ``configure(guild_id, actor_id, *, radio_id, channel_id, bot_id, kind, rev)`` e ``reset(guild_id, actor_id, radio_id, rev)``.
-As checagens (premium, ``manage_guild`` de quem faz, só reserva livre, uma rádio por bot, máximo 3, canal de voz ou
-palco que não é o da Jukebox e onde o bot conecta e fala, rádio ligada exige desligar antes, CAS em ``rev``) rodam lá;
+As checagens (premium para criar e configurar, ``manage_guild`` de quem faz, só reserva livre, uma rádio por bot, máximo 3,
+canal de voz ou palco que não é o da Jukebox e onde o bot conecta e fala, rádio ligada exige desligar antes, CAS em
+``rev``) rodam lá; o redefinir pede só ``manage_guild`` (contrato §2), por isso ``RadioForbidden("premium")`` não sai dele;
 aqui ficam só a forma dos campos (allowlist ``kind``, ``channel_id``, ``bot_id``), a versão otimista, o token da
 confirmação do redefinir e a tradução das recusas para o campo certo: ``RadioNotFound`` 404, ``RadioForbidden`` 403,
 ``RadioConflict`` 409, ``RadioInvalid`` 422 (``.error.key`` é o campo). Nada do usuário vai para o log além dos ids.
