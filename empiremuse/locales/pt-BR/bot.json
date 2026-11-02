@@ -538,5 +538,13 @@
   "radio.status.line": "- {channel}: {state}",
   "radio.status.no_premium": "Este servidor não tem o premium de rádio. Fale com o dono do bot.",
   "radio.status.none": "Nenhuma rádio configurada ainda. Use `/radio ligar`.",
-  "radio.status.paused_all": "⏸️ Todas as rádios estão pausadas pelo dono do bot por enquanto."
+  "radio.status.paused_all": "⏸️ Todas as rádios estão pausadas pelo dono do bot por enquanto.",
+  "hardreset.ask": "⚠️ **hardreset**: apaga TODO o banco do bot (rádios, estações, servidores, usuários, sessões, bans, uso), **menos o premium**. Não tem volta. Confirma?",
+  "hardreset.confirm": "Apagar tudo (menos o premium)",
+  "hardreset.cancel": "Cancelar",
+  "hardreset.cancelled": "Cancelado. Nada foi apagado.",
+  "hardreset.not_yours": "Só quem pediu o hardreset pode usar estes botões.",
+  "hardreset.running": "Apagando…",
+  "hardreset.done": "✅ Banco apagado: {tables} tabelas, {documents} documentos e {files} arquivos de sessão. O premium foi mantido.",
+  "hardreset.failed": "❌ O hardreset falhou. Parte do banco pode ter sido apagada; veja o log."
 }

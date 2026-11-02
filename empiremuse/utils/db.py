@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import shutil
+from collections.abc import Iterable
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Optional, Union
@@ -290,6 +291,23 @@ class LocalDatabase(BaseDB):
         table.update_one({"_id": id_}, update)
         return True
 
+    async def wipe(self, databases: Iterable[str], keep: frozenset[tuple[str, str]]) -> dict[str, int]:
+        """Apaga toda tabela dos bancos ``databases`` (e dos ``<banco>_events`` dos eventos), menos as de ``keep`` = ``(banco, tabela)``.
+
+        Devolve ``{"banco.tabela": documentos apagados}``. Só mexe nos bancos pedidos; o cache de documentos é esvaziado.
+        """
+        dropped: dict[str, int] = {}
+        for name in databases:
+            for db_label in (name, f"{name}_events"):
+                database = self._connect[db_label]
+                for table in list(database.list_collection_names()):
+                    if (db_label, table) in keep:
+                        continue
+                    dropped[f"{db_label}.{table}"] = len(list(database[table].find({})))
+                    database.drop_collection(table)
+        self.cache.clear()
+        return dropped
+
     async def delete_data(self, id_, db_name: str, collection: str):
         try:
             self._connect[collection][db_name].delete_one({"_id": str(id_)})
@@ -450,6 +468,22 @@ class MongoDatabase(BaseDB):
             update["$unset"] = {field: "" for field in fields}
         result = await self._connect[collection][db_name].update_one({"_id": str(id_), "rev": expected_rev}, update)
         return result.matched_count == 1
+
+    async def wipe(self, databases: Iterable[str], keep: frozenset[tuple[str, str]]) -> dict[str, int]:
+        """Apaga toda coleção dos bancos ``databases``, menos as de ``keep`` = ``(banco, coleção)``; devolve ``{"banco.coleção": documentos}``.
+
+        Só os bancos pedidos (o cluster pode ter outros). O cache de documentos é esvaziado.
+        """
+        dropped: dict[str, int] = {}
+        for name in databases:
+            database = self._connect[name]
+            for table in await database.list_collection_names():
+                if (name, table) in keep:
+                    continue
+                dropped[f"{name}.{table}"] = await database[table].count_documents({})
+                await database.drop_collection(table)
+        self.cache.clear()
+        return dropped
 
     async def delete_data(self, id_, db_name: str, collection: str):
         try:

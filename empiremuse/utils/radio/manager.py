@@ -283,6 +283,10 @@ class RadioManager:
             start.cancel()  # a partida que chamou o deactivate (o _shutdown dela) segue até o destroy: não cancela a si mesma
         self.service.publish(radio_id, None)
 
+    def known_radios(self) -> list[Radio]:
+        """As rádios que este processo conhece (rodando ou em espera)."""
+        return list(self._radios.values())
+
     async def stop_radios(self, radios, *, destroy_players: bool = True) -> None:
         """Para as rádios dadas e faz o bot de cada uma sair da call (``destroy``); uma falha não impede as outras."""
         for radio in radios:

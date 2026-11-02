@@ -111,6 +111,10 @@ class ServerStore:
         self.jukebox = ServerJukebox(self)
         self.request = self.jukebox
 
+    def forget_all(self) -> None:
+        """Esquece os documentos em cache (depois do ``hardreset``: o banco foi apagado por baixo)."""
+        self._docs.clear()
+
     # ------------------------------------------------------------------ o pool
 
     def main_bot(self) -> Optional[BotCore]:

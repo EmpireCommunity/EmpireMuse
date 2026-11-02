@@ -78,6 +78,12 @@ class RadioHub:
         )
         self._notices: TTLCache = TTLCache(maxsize=512, ttl=NOTICE_SECONDS)
 
+    def forget_all(self) -> None:
+        """Esquece o que as rádios guardam do banco em memória (depois do ``hardreset``). O premium fica: o documento também."""
+        self.resolved._memory.clear()
+        self.health._until.clear()
+        self._notices.clear()
+
     async def reload_station(self, station: Any) -> None:
         """Uma estação do servidor foi editada: cada rádio LIGADA que a toca recarrega o pool (a troca passa pelo recuo, sem prender quem editou)."""
         for radio in await self.stations.radios_using(station.guild_id, station.id):

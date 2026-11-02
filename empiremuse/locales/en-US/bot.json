@@ -525,5 +525,13 @@
   "radio.status.line": "- {channel}: {state}",
   "radio.status.no_premium": "This server does not have radio premium. Ask the bot owner.",
   "radio.status.none": "No radio set up yet. Use `/radio ligar`.",
-  "radio.status.paused_all": "⏸️ All radios are paused by the bot owner for now."
+  "radio.status.paused_all": "⏸️ All radios are paused by the bot owner for now.",
+  "hardreset.ask": "⚠️ **hardreset**: wipes the WHOLE bot database (radios, stations, servers, users, sessions, bans, usage), **except premium**. There is no undo. Confirm?",
+  "hardreset.confirm": "Wipe everything (keep premium)",
+  "hardreset.cancel": "Cancel",
+  "hardreset.cancelled": "Cancelled. Nothing was deleted.",
+  "hardreset.not_yours": "Only whoever ran hardreset can use these buttons.",
+  "hardreset.running": "Wiping…",
+  "hardreset.done": "✅ Database wiped: {tables} tables, {documents} documents and {files} session files. Premium was kept.",
+  "hardreset.failed": "❌ hardreset failed. Part of the database may already be gone; check the log."
 }
