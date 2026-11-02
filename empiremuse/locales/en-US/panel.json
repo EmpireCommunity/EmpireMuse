@@ -13,6 +13,7 @@
   "panel.jukebox.options.text_requests.label": "Every message is a request",
   "panel.jukebox.options.text_requests.help": "On, any message that does not start with the prefix or with / becomes a request. Off, only commands work: plain text is never executed.",
   "panel.jukebox.options.save": "Save",
+  "panel.jukebox.setup.warn_permissions": "The Jukebox was set up in #{channel}, but the bot could not adjust that channel's permissions: it lacks Manage Permissions there. Still missing for the bot: {permissions}. Grant them, or give the bot Manage Permissions, and run the setup again.",
   "panel.playlists.filter.legend": "Show playlists of",
   "panel.playlists.scope.jukebox.label": "Jukebox",
   "panel.playlists.scope.radio.label": "Radio",

@@ -8,6 +8,8 @@ A Jukebox é UMA por servidor (item 11, P4): lida e gravada só pela seção ``j
   (confirmação com token assinado, 60 s, uso único); criar um canal novo e usar um fórum não limpam nada e vão direto;
 - reiniciar (o /jukebox reset) tem dois passos pelo mesmo token;
 - os jobs releem a seção dentro da trava do servidor e passam o ``JukeboxConfig`` lido ao módulo compartilhado.
+- gerenciar permissões do canal é opcional (como no ``/jukebox setup``): sem ela o setup segue sem editar o canal e a
+  tarefa termina ``ok`` com o aviso localizado do que ficou sem aplicar (``JukeboxChannelResult.not_applied``).
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ from typing import Any, Callable, NamedTuple, Optional
 
 import disnake
 
-from empiremuse.panel.services.base import DIGITS, Args, FormContext, first, version_of
+from empiremuse.panel.services.base import DIGITS, Args, FormContext, first, panel_translator, version_of
 from empiremuse.panel.services.jukebox_tokens import JukeboxTokens
 from empiremuse.panel.services.service import SettingsService
 from empiremuse.panel.services.tasks import Job, Task, TaskFailure, TaskRunner
@@ -29,6 +31,7 @@ from empiremuse.utils import branding
 from empiremuse.utils.music.converters import perms_translations
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.music.jukebox_channel import (
+    JukeboxChannelResult,
     MissingManagePermissions,
     apply_jukebox_channel,
     build_channel_kwargs,
@@ -105,6 +108,17 @@ def refusal_message(exc: GenericError) -> str:
     if isinstance(exc, MissingManagePermissions):
         return MSG_MANAGE_PERMISSIONS
     return plain_message(exc.text)
+
+
+def setup_message(ctx: FormContext, result: JukeboxChannelResult) -> str:
+    """Texto final da tarefa de configurar: o sucesso e, se o setup não pôde editar o canal, o aviso localizado com as
+    permissões que o bot ainda não tem nele (nomes em pt-BR, como o ``/jukebox setup``; sem menções)."""
+    if not result.not_applied:
+        return MSG_SETUP_OK
+    tr = panel_translator(ctx.pool)
+    names = ", ".join(perms_translations.get(name, name) for name in result.not_applied)
+    channel = str(getattr(result.channel, "name", "") or "")
+    return f"{MSG_SETUP_OK} {tr('panel.jukebox.setup.warn_permissions', channel=channel, permissions=names)}"
 
 
 # ============================================================================ estruturas dos templates
@@ -369,18 +383,18 @@ class JukeboxService:
     def _setup_job(self, ctx: FormContext, plan: SetupPlan) -> Job:
         async def job() -> str:
             async with self._settings.lock(self.SCOPE, ctx.guild_id):
-                await self._setup(ctx, plan)
-            return MSG_SETUP_OK
+                result = await self._setup(ctx, plan)
+            return setup_message(ctx, result)
 
         return job
 
-    async def _setup(self, ctx: FormContext, plan: SetupPlan) -> None:
+    async def _setup(self, ctx: FormContext, plan: SetupPlan) -> JukeboxChannelResult:
         config = await ctx.pool.servers.jukebox.get(ctx.guild_id)  # relido na trava: o módulo grava com esse rev
         player, original_message = await find_current_jukebox_message(ctx.bot, ctx.guild, config)
         channel_kwargs = build_channel_kwargs(ctx.guild)
         try:
             target = await self._target(ctx, plan, channel_kwargs)
-            await apply_jukebox_channel(
+            result = await apply_jukebox_channel(
                 ctx.bot,
                 ctx.guild,
                 PanelActor(ctx.user_id),
@@ -395,6 +409,7 @@ class JukeboxService:
         except GenericError as exc:
             raise TaskFailure(refusal_message(exc))
         self._audit(ctx, TASK_SETUP)
+        return result
 
     async def _target(self, ctx: FormContext, plan: SetupPlan, channel_kwargs: dict) -> Any:
         if plan.mode == "criar":

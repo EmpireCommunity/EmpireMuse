@@ -22,7 +22,7 @@ from tests.panel.helpers_jukebox import GID, PANEL_USER, TASK_ID
 from tests.panel.helpers_login import DEFAULT_USER
 from tests.panel.helpers_settings import NOT_FOUND_TEXT, UID, acao_form
 from tests.panel.test_jukebox_page import JukeboxPageBase
-from tests.support.canal_da_jukebox import FakePlayer
+from tests.support.canal_da_jukebox import FULL_TEXT, FakePlayer, perms
 
 TASK_URL = re.compile(r"/painel/servidores/(\d+)/jukebox/tarefas/([A-Za-z0-9_-]{32})")
 FINAL = ("ok", "erro")
@@ -129,6 +129,18 @@ class SetupExecutionTest(TasksBase):
         state, body = self.run_setup(modo="existente", canal="22")
         text = html.unescape(re.sub(r"<[^>]+>", " ", body))
         assert state == "ok" and "<#22>" not in body and "Traceback" not in text and "repr" not in text.lower()
+
+    def test_without_manage_permissions_the_setup_finishes_and_warns_what_was_not_applied(self):
+        """Como o /jukebox setup: sem Gerenciar Permissões o canal não é editado, o setup segue e a tarefa avisa
+        (localizado) quais permissões o bot ainda não tem no canal."""
+        self.world.text._perms = perms(
+            **{k: v for k, v in FULL_TEXT.items() if k not in ("manage_permissions", "attach_files")}
+        )
+        state, body = self.run_setup(modo="existente", canal="22")
+        text = html.unescape(re.sub(r"<[^>]+>", " ", body))
+        assert state == "ok" and self.world.jukebox_doc["channel"] == "22"
+        assert self.world.j.of("channel.edit") == [], "sem Gerenciar Permissões o canal não é editado"
+        assert "Gerenciar Permissões" in text and "Anexar Arquivos" in text and "<#22>" not in body
 
     def test_forum_creates_a_post_with_the_given_title_and_saves_the_post_id(self):
         self.run_setup(modo="existente", canal="55", titulo_forum="Pedidos do bot")
