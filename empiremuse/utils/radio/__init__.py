@@ -18,6 +18,7 @@ from empiremuse.utils.radio.manager import RadioManager
 from empiremuse.utils.radio.premium import PremiumStore
 from empiremuse.utils.radio.relay import RadioRelay
 from empiremuse.utils.radio.service import RadioService
+from empiremuse.utils.radio.setup import RadioSetup
 from empiremuse.utils.radio.stations import StationStore
 from empiremuse.utils.radio.store import RadioStore
 
@@ -53,6 +54,7 @@ class RadioHub:
         self.favorites = RadioFavorites(pool)  # estações favoritas do servidor (painel da rádio ao vivo)
         self.service = RadioService(pool)
         self.manager = RadioManager(self, self.service)  # quem faz as rádios rodarem neste processo
+        self.setup = RadioSetup(self, pool)  # configurar e redefinir: o Discord e o painel web chamam esta mesma porta
         self.locations = load_locations()  # Região → país → estado → cidade (R4); ``None`` = filtro desligado
         self.directory = Directory(
             state_index=self.locations.state_index if self.locations else None

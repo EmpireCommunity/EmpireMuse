@@ -144,6 +144,8 @@ def check_source(kind: str, raw: object) -> dict[str, Any] | RuleError:
     """A fonte: ``{station}`` (id da estação do servidor, R5; ``{playlist}`` é o legado da R1) na personalizada; ``{station, reserve}`` na ao vivo (a R3 usa; aqui só se confere o formato)."""
     if not isinstance(raw, Mapping):
         return RuleError(SOURCE_INVALID, "source")
+    if not raw:
+        return {}  # configurada (canal, bot e tipo) e ainda sem estação: pode existir, não pode ligar (``source_chosen``)
     if kind == KIND_CUSTOM:
         station_id = raw.get("station")
         if set(raw) == {"station"} and isinstance(station_id, str) and _CUSTOM_STATION_ID.fullmatch(station_id):
@@ -183,6 +185,11 @@ def check_source(kind: str, raw: object) -> dict[str, Any] | RuleError:
         if volume != VOLUME_DEFAULT:
             source["volume"] = volume
     return source
+
+
+def source_chosen(radio: Radio) -> bool:
+    """A rádio já tem estação (ou playlist do legado)? Sem ela a configuração existe, mas a rádio não liga."""
+    return bool(radio.source)
 
 
 def _identity(raw: Mapping[str, Any]) -> tuple[int, int] | None:
