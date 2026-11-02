@@ -130,6 +130,10 @@ class RadioStore:
         docs = await self._documents({"guild_id": str(int(guild_id))})
         return sorted((r for d in docs if (r := self._radio(d)) is not None), key=lambda r: r.id)
 
+    async def list_all(self) -> list[Radio]:
+        """Todas as rádios de todos os servidores, ligadas ou não (a migração da subida)."""
+        return sorted((r for d in await self._documents() if (r := self._radio(d)) is not None), key=lambda r: r.id)
+
     async def list_enabled(self) -> list[Radio]:
         docs = await self._documents({"enabled": True})
         return sorted((r for d in docs if (r := self._radio(d)) is not None), key=lambda r: r.id)
@@ -184,6 +188,24 @@ class RadioStore:
         if isinstance(checked, RuleError):
             raise RadioInvalid(checked)
         if not await self._save(radio_id, to_document(checked, updated_by=updated_by), expected_rev):
+            raise RadioConflict
+        return checked
+
+    async def migrate_playlist_source(self, radio_id: str, station_id: str, *, expected_rev: int) -> Radio:
+        """Migração da R5: a rádio personalizada com ``{playlist}`` passa a ``{station}`` (ligada ou não, o resto do documento fica). ``RadioConflict`` se o
+        ``rev`` mudou; ``RadioInvalid`` se a rádio já não é de playlist."""
+        current = self._radio(await self._find(radio_id))
+        if current is None:
+            raise RadioNotFound
+        if current.rev != expected_rev:
+            raise RadioConflict
+        if current.kind != KIND_CUSTOM or "playlist" not in current.source:
+            raise RadioInvalid(RuleError(SOURCE_INVALID, "source"))
+        updated = dataclasses.replace(current, source={"station": station_id}, rev=current.rev + 1)
+        checked = check_radio(to_document(updated))
+        if isinstance(checked, RuleError):
+            raise RadioInvalid(checked)
+        if not await self._save(radio_id, to_document(checked, updated_by="migration"), expected_rev):
             raise RadioConflict
         return checked
 

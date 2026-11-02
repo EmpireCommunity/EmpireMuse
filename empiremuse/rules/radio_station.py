@@ -27,6 +27,7 @@ MAX_STATIONS_PER_GUILD = 10
 MAX_ARTISTS = 10
 MAX_PLAYLISTS = 5
 ARTIST_NAME_MAX = 64
+PLAYLIST_NAME_MAX = 100  # o mesmo teto do nome de playlist do servidor
 POOL_MAX = 300  # faixas por estação
 POOL_PER_ARTIST_MAX = 30
 
@@ -92,15 +93,15 @@ def valid_station_id(value: object) -> bool:
     return isinstance(value, str) and _STATION_ID.fullmatch(value) is not None
 
 
-def _names(raw: object, high: int, key: str) -> list[str] | RuleError:
+def _names(raw: object, high: int, key: str, name_max: int = ARTIST_NAME_MAX) -> list[str] | RuleError:
     """Uma lista de 1 a ``high`` nomes de 1 a 64 caracteres; repetido (sem diferenciar a caixa) some em silêncio."""
     if not isinstance(raw, list) or not 1 <= len(raw) <= high:
         return RuleError(STATION_SOURCE_INVALID, key, limit=high)
     found: list[str] = []
     for item in raw:
-        name = clean_title(item, 1, ARTIST_NAME_MAX)
+        name = clean_title(item, 1, name_max)
         if name is None:
-            return RuleError(STATION_SOURCE_INVALID, key, limit=ARTIST_NAME_MAX)
+            return RuleError(STATION_SOURCE_INVALID, key, limit=name_max)
         if normalize_name(name) not in {normalize_name(n) for n in found}:
             found.append(name)
     return found
@@ -120,7 +121,7 @@ def check_source(
     if kind == KIND_ARTISTS:
         names = _names(value, MAX_ARTISTS, FIELD_ARTISTS)
         return names if isinstance(names, RuleError) else {"artists": names}
-    names = _names(value, MAX_PLAYLISTS, FIELD_PLAYLISTS)
+    names = _names(value, MAX_PLAYLISTS, FIELD_PLAYLISTS, PLAYLIST_NAME_MAX)
     if isinstance(names, RuleError):
         return names
     known = set(playlists)

@@ -33,7 +33,7 @@ from empiremuse.rules.servers import is_main_identifier
 from empiremuse.rules.text import external_text
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.others import CustomContext
-from empiremuse.utils.radio import actions
+from empiremuse.utils.radio import actions, migrate_r5
 from empiremuse.utils.radio.actions import Actor, Refused
 from empiremuse.utils.radio.control import MainBotRefused
 from empiremuse.utils.radio.custom_ports import CustomRadioPorts
@@ -152,6 +152,12 @@ class Radio(commands.Cog):
         )
         manager.chat_ports_factory = lambda radio: DiscordChatPorts(pool, radio)
         manager.start_ticker()
+        try:
+            await migrate_r5.run(
+                self.hub
+            )  # as rádios de playlist viram estações do servidor ANTES de retomar (idempotente)
+        except Exception as error:  # noqa: BLE001 - uma migração que falha não impede a subida: o legado segue tocando; só o tipo vai ao log (R-12)
+            logger.warning("Migração das rádios para estações falhou (%s)", type(error).__name__)
         await self.hub.health.refresh()
         self.hub.health_checker.start()
         # com nova tentativa (30 s, 60 s... 5 min): uma falha passageira do banco na subida não deixa as rádios caídas até o restart
