@@ -133,3 +133,11 @@ async def test_owner_admin_or_manage_server_creates_a_radio_playlist_without_pre
     saved = await world.playlists.list(GID, SCOPE_RADIO)
     assert names(saved) == ["Nova"] and saved[0].genres == ("rock", "pop")
     assert await world.playlists.list(GID, SCOPE_JUKEBOX) == ()
+
+
+def test_the_old_format_accepts_a_plain_url_string_as_the_value():
+    raw = json.dumps({"Rock": f"{BASE}rock", "Pop": {"url": f"{BASE}pop"}, "Ruim": 5})
+    parsed = parse_file(raw, max_bytes=PLAYLIST_FILE_MAX_BYTES)
+
+    assert [(p.name, p.url) for p in parsed.items] == [("Rock", f"{BASE}rock"), ("Pop", f"{BASE}pop")]
+    assert [skip.name for skip in parsed.invalid] == ["Ruim"]
