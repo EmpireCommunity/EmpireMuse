@@ -53,6 +53,9 @@ NAME_CACHE_TTL_S = 600
 NAME_CACHE_SIZE = 500
 RESERVE_FIELD = "reserva"
 STATION_FIELD = "estacao"
+STATION_LIST_MAX = (
+    150  # = rules.radio.LIST_MAX do bot: anterior e próxima andam pela lista de onde a estação foi escolhida
+)
 SEARCH_FIELD = "q"
 SEARCH_RAW_LIMIT = 200  # o que se lê da query antes da regra (ela corta em 64)
 REV_DIGITS = 12
@@ -296,9 +299,10 @@ class LivePage:
             return invalid
         if wanted == radio.source.get("station"):
             return LiveOutcome(STATUS_OK, SAVED_TEXT, KIND_OK, radio)
+        station_list = await self.list_of(ctx, args, wanted)
         try:
             saved = await ctx.pool.radio.store.set_station(
-                radio.id, wanted, expected_rev=int(radio.rev), updated_by=ctx.user_id
+                radio.id, wanted, expected_rev=int(radio.rev), updated_by=ctx.user_id, station_list=station_list
             )
         except RadioConflict, RadioNotFound:
             return LiveOutcome(STATUS_CONFLICT, CONFLICT_TEXT, KIND_ERROR, radio)
@@ -310,6 +314,22 @@ class LivePage:
         except Exception as exc:
             logger.warning("Estação principal gravada, mas a rádio ligada não trocou (%s)", type(exc).__name__)
         return LiveOutcome(STATUS_OK, SAVED_TEXT, KIND_OK, saved)
+
+    @staticmethod
+    async def list_of(ctx: FormContext, args: Args, wanted: str) -> Optional[tuple[str, ...]]:
+        """A lista de onde a principal foi escolhida (M1 do Keystone): escolhida na cascata, os uuids daquele nó final
+        (``region`` já está no cache do diretório: nenhum pedido novo), como o seletor da call; vinda da busca por nome,
+        sem nó ou fora da lista, ``None`` (a lista velha sai; nunca fica a de outro lugar)."""
+        state = list_state(args)
+        if not state.node:
+            return None
+        tree = tree_of(ctx)
+        node = resolve_node(tree, state.node) if tree is not None else None
+        if node is None or not node.final:
+            return None
+        result = await ctx.pool.radio.directory.region(node, key=ctx.guild_id)
+        uuids = tuple(str(hit.station.uuid) for hit in result.hits)[:STATION_LIST_MAX]
+        return uuids if wanted in uuids and len(uuids) >= 2 else None
 
 
 def _audit(ctx: FormContext, radio: Any, field: str) -> None:

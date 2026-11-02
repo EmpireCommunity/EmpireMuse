@@ -24,6 +24,9 @@ from empiremuse.utils.radio.premium import Premium, RadioUnavailable
 from empiremuse.utils.radio.store import RadioConflict, RadioInvalid, RadioNotFound
 
 
+KEEP = object()  # como ``utils.radio.store.KEEP``: "não mexa" na lista
+
+
 class FakeStore:
     def __init__(self):
         self.docs = {}
@@ -32,6 +35,7 @@ class FakeStore:
         self.set_reserve_error = None
         self.set_station_error = None
         self.stations = None  # ligado por FakeRadioApi (a store de estações, para set_custom_station)
+        self.station_lists = {}  # radio_id -> a lista gravada por set_station (None = tirada)
 
     def seed(self, bot_id, guild_id, channel_id, *, kind="custom", enabled=True, rev=3, chat=None):
         source = {"playlist": "Rock"} if kind == "custom" else {"station": "0" * 8 + "-0000-0000-0000-" + "0" * 12}
@@ -113,10 +117,13 @@ class FakeStore:
         self.updates.append((radio_id_, updated_by))
         return saved
 
-    async def set_station(self, radio_id_, station, *, expected_rev, updated_by=""):
+    async def set_station(self, radio_id_, station, *, expected_rev, updated_by="", station_list=KEEP):
         """Como a store real (R4): só rádio ao vivo, uuid válido, compare-and-set em ``rev``; a reserva igual à principal
-        nova é zerada. ``set_station_error`` simula a store recusando DEPOIS do pré-check do painel."""
+        nova é zerada; ``station_list`` (a lista de onde veio, ``None`` tira, ``KEEP`` mantém) fica em ``station_lists``.
+        ``set_station_error`` simula a store recusando DEPOIS do pré-check do painel."""
         self._check()
+        if station_list is not KEEP:
+            self.station_lists[radio_id_] = station_list
         if self.set_station_error is not None:
             raise self.set_station_error
         radio = self.docs.get(radio_id_)

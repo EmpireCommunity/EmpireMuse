@@ -246,14 +246,33 @@ class MainStationTest(LocalBase):
         audit = self.audit_text()
         assert "escopo=radio:1 categoria=radios campos=source.station" in audit and B not in audit
         assert selected(self.local_form(body)) == ["r:america_latina", "c:BR", "s:BR:27", SP]
-        assert uuids(body, "estacao") == [C, A] and self.radio.directory.region_calls == [(SP, ALFA)]  # a lista volta
+        assert uuids(body, "estacao") == [C, A]  # a lista volta
+        assert self.radio.directory.region_calls == [
+            (SP, ALFA),
+            (SP, ALFA),
+        ]  # a lista gravada e a lista exibida (cache no real)
         assert "Beta FM (Portugal · MP3 128 kbps)" in body  # agora como principal
+        assert self.radio.store.station_lists[radio.id] == (B, C, A), "anterior/próxima andam pela lista da cidade (M1)"
+
+    def test_choosing_from_the_search_or_outside_the_list_clears_the_station_list(self):
+        radio = self.seed_local()
+        browser = self.logged_in()
+        assert self.post_station(browser, radio, B, extra=[("q", "fm")]).code == 200
+        assert self.radio.store.station_lists[radio.id] is None, "vinda da busca: a lista velha sai"
+        radio = self.radio.store.docs[radio.id]
+        self.radio.directory.region_hits = [
+            station(A, "Alfa"),
+            station(C, "Gama Rock"),
+        ]  # C fora da lista de SP: sai também
+        assert self.post_station(browser, radio, C, extra=[("node", "c:XX")]).code == 200
+        assert self.radio.store.station_lists[radio.id] is None
 
     def test_the_search_list_also_comes_back_after_the_post(self):
         radio = self.seed_local()
         body = self.post_station(self.logged_in(), radio, B, extra=[("q", "fm")]).body.decode()
         assert self.radio.directory.calls == [("fm", ALFA)] and uuids(body, "reserva") == [C, A]
         assert 'name="q" value="fm"' in body
+        assert self.radio.directory.region_calls == [], "busca por nome: nada vai ao region"
 
     def test_invalid_main_stations_are_422_or_409_without_writing(self):
         radio = self.seed_local()
