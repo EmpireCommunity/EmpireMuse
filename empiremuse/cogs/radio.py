@@ -377,11 +377,6 @@ class Radio(commands.Cog):
         name = next(s.name for s in stations if s.id == neighbor)
         return tr("radio.local.changed", station=external_text(name, NAME_LIMIT))
 
-    async def station_saved(self, station: Any) -> None:
-        """Uma estação foi editada: as rádios que a tocam recarregam o pool (a troca passa pelo recuo, sem prender quem editou)."""
-        for radio in await self.hub.stations.radios_using(station.guild_id, station.id):
-            await self.hub.manager.change_station(radio)
-
     async def _volume(self, interaction: Any, tr: Any, radio: Any, runner: Any, wanted: int) -> str:
         """Grava o volume (com ``rev``) e o aplica ao player. No máximo uma mudança por segundo e por rádio."""
         now = time.monotonic()

@@ -19,7 +19,7 @@ import disnake
 from empiremuse.rules.radio import Radio
 from empiremuse.rules.radio_shuffle import Track
 from empiremuse.rules.radio_station import KIND_ARTISTS, KIND_GENRE, CustomStation
-from empiremuse.utils.radio.custom_source import CustomSession, FailedTracks, load_pool
+from empiremuse.utils.radio.custom_source import CustomSession, load_pool
 from empiremuse.utils.radio.discord_ports import DiscordRadioPorts
 from empiremuse.utils.radio.panel import CustomView
 
@@ -40,7 +40,6 @@ class CustomRadioPorts(DiscordRadioPorts):
         self.current: Optional[Track] = None
         self.no_tracks = False
         self._stocking = asyncio.Lock()
-        self._failed = FailedTracks(pool.database)
         self._panel_task: Optional[asyncio.Task] = None
 
     def _configure_player(self, player: Any) -> None:
@@ -59,7 +58,7 @@ class CustomRadioPorts(DiscordRadioPorts):
         loaded = await load_pool(hub, station, self._playlist_tracks)
         self.station = station
         self.unknown = loaded.unknown
-        self.session = CustomSession(loaded.pool, self._failed, random.Random())
+        self.session = CustomSession(loaded.pool, hub.resolved, random.Random())
         if loaded.unknown != station.unknown and station.kind == KIND_ARTISTS:
             await hub.stations.set_unknown(station.guild_id, station.id, loaded.unknown)
         self.no_tracks = False
@@ -89,12 +88,16 @@ class CustomRadioPorts(DiscordRadioPorts):
     # ------------------------------------------------------------------ tocar
 
     async def _resolve(self, track: Track) -> Any | None:
-        """A faixa como ``PartialTrack`` já resolvida pelo nó (mesmo caminho do autoplay), ou ``None`` se nenhum stream tocável."""
+        """A faixa como ``PartialTrack`` pronta para tocar, ou ``None`` se nenhum stream tocável. Primeiro o cache de faixas resolvidas (7 dias, vale depois
+        de um reinício); só sem ele o nó busca (mesmo caminho do autoplay) e o resultado é guardado."""
         from empiremuse.utils.music.models import PartialTrack  # tarde: os modelos importam o cliente
 
         player = self._player()
         if player is None:
             raise RuntimeError("sem player")
+        cached = await self._from_cache(player, track)
+        if cached is not None:
+            return cached
         partial = PartialTrack(
             title=track.title, author=track.artist, source_name=SOURCE_NAME, requester=self.radio.bot_id
         )
@@ -103,7 +106,35 @@ class CustomRadioPorts(DiscordRadioPorts):
         except Exception as error:  # noqa: BLE001 - uma faixa que não resolve é só a próxima sorteada: só o tipo vai ao log (R-12)
             logger.warning("Faixa da rádio não resolvida (%s)", type(error).__name__)
             return None
-        return partial if partial.id else None
+        if not partial.id:
+            return None
+        await self.pool.radio.resolved.store(track, partial)
+        return partial
+
+    async def _from_cache(self, player: Any, track: Track) -> Any | None:
+        """A faixa do cache de resolvidas, se o nó ainda decodifica o ``encoded`` guardado; senão a entrada é apagada e a busca segue."""
+        from empiremuse.utils.music.models import PartialTrack
+
+        cache = self.pool.radio.resolved
+        entry = await cache.get(track)
+        if entry is None:
+            return None
+        try:
+            await player.node.build_track(entry["encoded"])
+        except Exception as error:  # noqa: BLE001 - só o tipo vai ao log (R-12)
+            logger.info("Faixa guardada sem decodificar (%s)", type(error).__name__)
+            await cache.forget(track)
+            return None
+        partial = PartialTrack(
+            title=track.title,
+            author=track.artist,
+            uri=str(entry.get("uri") or ""),
+            duration=int(entry.get("length_ms") or 0),
+            source_name=str(entry.get("source") or SOURCE_NAME),
+            requester=self.radio.bot_id,
+        )
+        partial.id = partial.info["id"] = entry["encoded"]
+        return partial
 
     async def play_next(self) -> None:
         """Sorteia, resolve e toca uma faixa NOVA agora (ligar, retomar, trocar de estação). Depois adianta a seguinte."""
@@ -132,7 +163,10 @@ class CustomRadioPorts(DiscordRadioPorts):
         async with self._stocking:
             if len(player.queue) >= 1:
                 return
-            _, partial = await self.session.next_playable(self._resolve)
+            async with (
+                self.pool.radio.stock_slots
+            ):  # no máximo 2 adiantados ao mesmo tempo em todas as rádios do processo
+                _, partial = await self.session.next_playable(self._resolve)
             player.queue.append(partial)
 
     async def keep_playing(self) -> None:

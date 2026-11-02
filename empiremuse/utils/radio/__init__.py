@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from functools import cache
 from typing import TYPE_CHECKING, Any
@@ -9,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 from cachetools import TTLCache
 
 from empiremuse.utils.radio.control import BotRoles, RadioControl
+from empiremuse.utils.radio.custom_source import STOCK_SLOTS, ResolvedTracks
 from empiremuse.utils.radio.directory import Directory
 from empiremuse.utils.radio.favorites import RadioFavorites
 from empiremuse.utils.radio.lastfm_feed import LastFmFeed
@@ -49,6 +51,13 @@ class RadioHub:
         self.roles = BotRoles(pool)  # bots só-rádio (dono)
         self.store = RadioStore(pool, self.premium)
         self.stations = StationStore(pool, self.store)  # estações do servidor para a rádio personalizada (R5)
+        self.stations.on_updated = self.reload_station
+        self.resolved = ResolvedTracks(
+            pool.database
+        )  # faixas resolvidas e sem stream, em memória e em ``global.radio_resolved`` (R5)
+        self.stock_slots = asyncio.Semaphore(
+            STOCK_SLOTS
+        )  # adiantados (a próxima faixa) ao mesmo tempo em todas as rádios do processo
         self.lastfm = LastFmFeed(pool)  # listas de gênero e de artistas do Last.fm (R5)
         self.favorites = RadioFavorites(pool)  # estações favoritas do servidor (painel da rádio ao vivo)
         self.service = RadioService(pool)
@@ -66,6 +75,11 @@ class RadioHub:
             recovered=self.manager.station_recovered,
         )
         self._notices: TTLCache = TTLCache(maxsize=512, ttl=NOTICE_SECONDS)
+
+    async def reload_station(self, station: Any) -> None:
+        """Uma estação do servidor foi editada: cada rádio LIGADA que a toca recarrega o pool (a troca passa pelo recuo, sem prender quem editou)."""
+        for radio in await self.stations.radios_using(station.guild_id, station.id):
+            await self.manager.change_station(radio)
 
     async def _probe_station(self, station: Any) -> bool:
         return await self.relay.probe(station.url_resolved, station.codec)

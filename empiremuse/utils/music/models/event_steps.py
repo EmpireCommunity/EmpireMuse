@@ -20,6 +20,7 @@ from empiremuse.utils.music.models.helpers import (
     get_start_pos,
     lavalink_text,
 )
+from empiremuse.utils.music.models.autoqueue_steps import reject_no_stream
 from empiremuse.utils.music.models.tracks import PartialTrack
 from empiremuse.utils.usage import usage_of
 
@@ -109,6 +110,24 @@ def _he_live_radio(self, event) -> bool:
     return True
 
 
+async def _he_custom_radio_no_stream(self, event) -> bool:
+    """Rádio personalizada (R5): a faixa que o nó não consegue tocar ("No playable stream") troca de candidato (até 3 por faixa) em vez de falhar.
+    Devolve ``True`` se o evento foi consumido aqui (a faixa voltou à fila com outro candidato, ou a rádio sorteia a próxima)."""
+    if not getattr(self, "radio_custom", False) or not isinstance(event, wavelink.TrackException):
+        return False
+    node = getattr(event, "node", None)
+    if node is not None and node.identifier != self.node.identifier:
+        return True  # evento atrasado de um nó antigo
+    track = self.current
+    if track is not None and reject_no_stream(track, getattr(event, "message", "")):
+        await self.resolve_track(track)
+        if track.id:
+            self.queue.appendleft(track)
+            await self.process_next()
+        return True
+    return False
+
+
 async def _he_dispatch(self, event) -> None:
     """Despacha o evento do Lavalink com o contexto de log (bot e servidor) e as métricas do pool."""
     with log_context(bot=getattr(self.bot, "identifier", None), guild=self.guild.id):
@@ -132,7 +151,7 @@ async def _he_dispatch(self, event) -> None:
             if _he_live_radio(self, event):
                 if metrics:
                     metrics.error("track_exception")
-            else:
+            elif not await _he_custom_radio_no_stream(self, event):
                 await _he_track_exception(self, event)
         elif isinstance(event, wavelink.TrackStuck):
             if metrics:

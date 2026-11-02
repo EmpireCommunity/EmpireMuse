@@ -12,7 +12,7 @@ import dataclasses
 import logging
 import secrets
 import time
-from collections.abc import Collection
+from collections.abc import Awaitable, Callable, Collection
 from typing import TYPE_CHECKING, Any
 
 from empiremuse.rules.errors import RuleError
@@ -62,6 +62,9 @@ class StationStore:
         self.pool = pool
         self.radios = radios
         self._locks: dict[int, asyncio.Lock] = {}
+        self.on_updated: Callable[[CustomStation], Awaitable[None]] | None = (
+            None  # o hub liga: as rádios que tocam a estação a recarregam
+        )
 
     @property
     def _database(self) -> Any:
@@ -204,7 +207,17 @@ class StationStore:
             )
             if not await self._save(station_id, to_document(updated), expected_rev):
                 raise StationConflict
-            return updated
+        await self._announce(updated)
+        return updated
+
+    async def _announce(self, station: CustomStation) -> None:
+        """Uma estação foi editada (pelo chat OU pelo painel web: o mesmo backend): quem toca ela recarrega. Falhar aqui nunca desfaz a edição."""
+        if self.on_updated is None:
+            return
+        try:
+            await self.on_updated(station)
+        except Exception as error:  # noqa: BLE001 - a edição já foi gravada; só o tipo vai ao log (R-12)
+            logger.warning("Rádios da estação editada não recarregadas (%s)", type(error).__name__)
 
     async def delete(self, guild_id: int, station_id: str, *, expected_rev: int) -> None:
         """Apaga a estação. ``StationInUse`` (com as rádios) enquanto alguma rádio a usa; ``StationNotFound``; ``StationConflict``."""

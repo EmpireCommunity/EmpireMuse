@@ -557,8 +557,33 @@ async def _rt_query_results(self, track, query, req):
     return result
 
 
+NO_STREAM_ERROR = (
+    "No playable stream"  # o que o nó diz quando o candidato escolhido não tem stream tocável (ERR-65FEA7)
+)
+REJECTED_CANDIDATES_MAX = 3  # candidatos sem stream que uma faixa pode trocar antes de falhar
+
+
+def _rt_rejected(track) -> list:
+    """Os candidatos já recusados desta parcial (ids), guardados na própria faixa."""
+    return track.info.setdefault("extra", {}).setdefault("rejected", [])
+
+
+def reject_no_stream(track, message) -> bool:
+    """O candidato escolhido para ``track`` não tem stream ("No playable stream"): recusa-o e solta a escolha para ``resolve_track`` ir ao próximo.
+
+    ``True`` se vale tentar de novo (até ``REJECTED_CANDIDATES_MAX`` por faixa); qualquer outro erro, ou o teto, é ``False`` e a faixa falha como antes.
+    """
+    rejected = _rt_rejected(track)
+    if not track.id or NO_STREAM_ERROR not in str(message or "") or len(rejected) >= REJECTED_CANDIDATES_MAX:
+        return False
+    rejected.append(track.id)
+    track.id = None
+    track.info.pop("id", None)
+    return True
+
+
 def _rt_pick_candidate(track, result, req):
-    """Primeira faixa de `result` que serve para a parcial (sem stream, sem tags excluídas, duração próxima)."""
+    """Primeira faixa de `result` que serve para a parcial (sem stream, sem tags excluídas, duração próxima, e que o nó já não recusou)."""
 
     try:
         if result[0].info["sourceName"] == "bandcamp":
@@ -573,8 +598,10 @@ def _rt_pick_candidate(track, result, req):
 
     req.tracks.extend(result)
 
+    rejected = _rt_rejected(track)
+
     for t in result:
-        if t.is_stream:
+        if t.is_stream or t.id in rejected:
             continue
 
         if not has_exclude_tags and any(tag for tag in exclude_tags if tag.lower() in t.title.lower()):
