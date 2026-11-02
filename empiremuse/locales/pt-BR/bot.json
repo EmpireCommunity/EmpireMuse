@@ -1000,5 +1000,6 @@
   "legacy.saved_queue.incompatible": "**A sua fila salva está em um formato incompatível e não pôde ser carregada.**\nO arquivo foi mantido; salve a fila de novo para substituí-la.",
   "legacy.saved_queue.save_failed": "**Não foi possível salvar a fila agora. Tente novamente em instantes.**",
   "legacy.saved_queue.save_incompatible": "**Não foi possível salvar a fila: alguma música tem dados incompatíveis com o formato de armazenamento.**",
-  "legacy.session.thread_ended": "**A sessão de pedido de música da conversa atual foi encerrada.**"
+  "legacy.session.thread_ended": "**A sessão de pedido de música da conversa atual foi encerrada.**",
+  "legacy.jukebox.file_format": "{user} o arquivo que você enviou deve ser um áudio nos formatos mp3, ogg, m4a ou aac."
 }

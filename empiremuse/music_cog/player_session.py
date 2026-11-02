@@ -224,7 +224,7 @@ class PlayerSessionMixin:
                 )
 
         elif user.id not in player.dj:
-            GenericError(await guild_text(bot, inter.guild, "legacy.session.member_not_dj", user=user.mention))
+            raise GenericError(await guild_text(bot, inter.guild, "legacy.session.member_not_dj", user=user.mention))
 
         else:
             player.dj.remove(user.id)
