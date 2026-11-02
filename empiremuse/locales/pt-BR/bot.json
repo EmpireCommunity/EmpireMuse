@@ -1169,5 +1169,10 @@
   "legacy.queue.reverse_log": "inverteu a ordem das músicas na fila.",
   "legacy.queue.reverse_msg": "🔄 **⠂{user} inverteu a ordem das músicas na fila.**",
   "legacy.queue.shuffle_log": "misturou as músicas da fila.",
-  "legacy.queue.shuffle_msg": "🔀 **⠂{user} misturou as músicas da fila.**"
+  "legacy.queue.shuffle_msg": "🔀 **⠂{user} misturou as músicas da fila.**",
+  "visor.custom.detail": "Estação do servidor",
+  "visor.all_types": "TODOS OS TIPOS",
+  "visor.select.type.placeholder": "Tipo: gênero, artistas ou playlists do servidor",
+  "visor.select.type.all.label": "Todas as estações",
+  "visor.select.type.all.description": "Todas as estações do servidor, de qualquer tipo"
 }

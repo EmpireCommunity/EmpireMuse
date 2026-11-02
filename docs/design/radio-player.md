@@ -158,3 +158,16 @@ divulgação (ideia do dono para o site), monte um `VisorData` com dados de exem
 qualquer idioma do catálogo. Para outro painel (por exemplo, um player de música em imagem), copie a estrutura: tokens por skin,
 coordenadas em 1× desenhadas em 2×, texto de fora sempre por `clean_text` + corte com reticências, e um `NamedTuple` imutável como
 entrada.
+
+## Rádio personalizada no mesmo visor
+
+O retrato (`custom_panel.custom_snapshot`) é o mesmo `RadioPanelSnapshot`; o renderizador recebe `custom=True`
+(`render_snapshot(..., custom=True)`, `visor_payload(..., custom=True)`) e adapta só o que não existe na personalizada:
+
+- Badge `WEB` no lugar de `FM`; sem codec nem taxa, a linha de detalhe diz `visor.custom.detail` ("Estação do servidor").
+- O botão lateral da reserva vira o **tipo** filtrado (ícone de lista + último rótulo de `filter_path`) ou `visor.all_types`.
+- Select 2 = `panel.type_select_options`: `Todas as estações` (`f:all`), `Gênero`, `Artistas`, `Playlists do servidor`
+  (values `f:genre|f:artists|f:playlists`, rótulos `radio.station.kind.*`). Favoritas da personalizada: pendente do dono.
+- O ícone da estação (disco de 24 px) fica no disco de reserva até a escolha do dono (comparação em
+  `/var/tmp/maestro/custom-icons-comparison.md`).
+- Nomes compridos de estação encolhem (Bold 20 → 17 → 15) antes de receber reticências; vale também para a ao vivo.

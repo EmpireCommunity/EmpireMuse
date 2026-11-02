@@ -76,6 +76,7 @@ class VisorData(NamedTuple):
     quality: Quality = "good"
     retry_seconds: int = 0  # só em ``offline``
     next_stations: tuple[NextStation, ...] = ()
+    custom: bool = False  # rádio PERSONALIZADA (estações do servidor): badge WEB, sem codec, tipo no lugar da reserva
 
 
 # ---------------------------------------------------------------------------------------------------------------------- texto
@@ -174,6 +175,11 @@ def _mono_icon(kind: str, size: float, color: RGB) -> Image.Image:
     elif kind == "signal":
         for i, h in enumerate((30, 50, 70, 90)):
             d.rounded_rectangle((20 + i * 24, 108 - h, 36 + i * 24, 108), radius=4, fill=color)
+    elif kind == "list":
+        for i in range(3):
+            y = 30 + i * 34
+            d.ellipse((12, y - 7, 26, y + 7), fill=color)
+            d.rounded_rectangle((38, y - 5, 116, y + 5), radius=5, fill=color)
     elif kind == "headphone":
         d.arc((20, 24, 108, 112), start=180, end=360, fill=color, width=10)
         d.rounded_rectangle((18, 66, 42, 104), radius=8, fill=color)
@@ -254,15 +260,29 @@ def _draw_left(c: _Canvas, t: Mapping[str, RGB], tr: Translator, data: VisorData
     c.text((26 + label_w + pos_w / 2, 27), position, chip_font, t["chip_light_text"], anchor="mm")
 
     name_color = t["lcd_text"] if data.state != "muted" else t["lcd_dim"]
-    name_font = _font("Bold", 20)
-    name = c.fit(clean_text(data.station_name, 80) or "—", name_font, LCD_RIGHT - 8 - LOGO_SIZE - 6 - 22)
+    raw_name = clean_text(data.station_name, 80) or "—"
+    name_width = LCD_RIGHT - 8 - LOGO_SIZE - 6 - 22
+    name_font = next(  # um nome comprido encolhe antes de ser cortado
+        (f for f in (_font("Bold", 20), _font("Bold", 17), _font("Bold", 15)) if c.width(raw_name, f) <= name_width),
+        _font("Bold", 15),
+    )
+    name = c.fit(raw_name, name_font, name_width)
     c.text((22, 62), name, name_font, name_color)
     c.paste(_circle_logo(data.logo, LOGO_SIZE, t["lcd_dim"]), (LCD_RIGHT - 8 - LOGO_SIZE, 50))
-    c.text((22, 90), "FM", _font("Bold", 12), name_color)
+    badge = "WEB" if data.custom else "FM"
+    badge_w = c.text((22, 90), badge, _font("Bold", 12), name_color)
     codec = clean_text(data.codec, 8).upper()
     rate = f"{int(data.bitrate_kbps)} kbps" if data.bitrate_kbps else ""
     detail = " · ".join(part for part in (rate, codec) if part)
-    c.text((44, 91), c.fit(detail, _font("Medium", 9.5), LCD_RIGHT - 52), _font("Medium", 9.5), t["lcd_dim"])
+    if data.custom and not detail:
+        detail = tr("visor.custom.detail")
+    detail_x = 22 + badge_w + 8
+    c.text(
+        (detail_x, 91),
+        c.fit(detail, _font("Medium", 9.5), LCD_RIGHT - 8 - detail_x),
+        _font("Medium", 9.5),
+        t["lcd_dim"],
+    )
 
     np_box = (LCD_RIGHT + 8, 14, HALF - 14, 110)
     c.rrect(np_box, 8, fill=t["np"])
@@ -342,9 +362,16 @@ def _draw_right(c: _Canvas, t: Mapping[str, RGB], tr: Translator, data: VisorDat
     c.text((rx + rw - 66 - 26, 30), c.fit(path, path_font, max_path), path_font, t["box_text"], anchor="rm")
     c.icon("chevron_right", 9, t["box_label"], (rx + rw - 66 - 20, 25.5))
     c.rrect((rx + rw - 58, 14, rx + rw, 46), 6, fill=t["side_btn"])
-    reserve_color = t["side_btn_text"] if data.reserve_number else t["transport_dim"]
-    c.icon("headphone", 13, reserve_color, (rx + rw - 35.5, 17))
-    reserve = tr("visor.reserve", number=int(data.reserve_number)) if data.reserve_number else tr("visor.no_reserve")
+    if data.custom:  # a personalizada não tem reserva: o botão lateral mostra o tipo filtrado (ou "todos os tipos")
+        reserve_color = t["side_btn_text"]
+        c.icon("list", 13, reserve_color, (rx + rw - 35.5, 17))
+        reserve = clean_text(data.filter_path[-1], 40) if data.filter_path else tr("visor.all_types")
+    else:
+        reserve_color = t["side_btn_text"] if data.reserve_number else t["transport_dim"]
+        c.icon("headphone", 13, reserve_color, (rx + rw - 35.5, 17))
+        reserve = (
+            tr("visor.reserve", number=int(data.reserve_number)) if data.reserve_number else tr("visor.no_reserve")
+        )
     c.text(
         (rx + rw - 29, 38), c.fit(reserve, _font("Medium", 7.5), 54), _font("Medium", 7.5), reserve_color, anchor="mm"
     )
@@ -413,7 +440,7 @@ def render_visor(data: VisorData, tr: Translator, skin: str = DEFAULT_RADIO_SKIN
 # ------------------------------------------------------------------------------------------------------ snapshot do bot
 
 
-def from_snapshot(snapshot: "RadioPanelSnapshot | Any") -> VisorData:
+def from_snapshot(snapshot: "RadioPanelSnapshot | Any", *, custom: bool = False) -> VisorData:
     """``VisorData`` a partir do ``RadioPanelSnapshot`` (``utils/radio/snapshot.py``): as duas estações seguintes vêm da janela
     ``stations`` depois de ``current_index`` (ou, sem índice, as de posição maior que a atual); fora da lista não há seguintes."""
     stations = tuple(getattr(snapshot, "stations", ()) or ())
@@ -447,9 +474,13 @@ def from_snapshot(snapshot: "RadioPanelSnapshot | Any") -> VisorData:
         quality=snapshot.quality if snapshot.quality in QUALITY_COLORS else "good",
         retry_seconds=int(snapshot.retry_seconds or 0),
         next_stations=next_stations,
+        custom=custom,
     )
 
 
-def render_snapshot(snapshot: "RadioPanelSnapshot | Any", tr: Translator) -> bytes:
-    """O PNG do visor para um snapshot do bot, na skin gravada no documento da rádio."""
-    return render_visor(from_snapshot(snapshot), tr, str(getattr(snapshot, "skin", "") or DEFAULT_RADIO_SKIN))
+def render_snapshot(snapshot: "RadioPanelSnapshot | Any", tr: Translator, *, custom: bool = False) -> bytes:
+    """O PNG do visor para um snapshot do bot, na skin gravada no documento da rádio. ``custom`` = rádio personalizada
+    (``custom_panel.custom_snapshot``): o mesmo retrato, desenhado com as adaptações da ``VisorData.custom``."""
+    return render_visor(
+        from_snapshot(snapshot, custom=custom), tr, str(getattr(snapshot, "skin", "") or DEFAULT_RADIO_SKIN)
+    )

@@ -1156,5 +1156,10 @@
   "legacy.queue.reverse_log": "reversed the order of the queue tracks.",
   "legacy.queue.reverse_msg": "🔄 **⠂{user} reversed the order of the queue tracks.**",
   "legacy.queue.shuffle_log": "shuffled the queue tracks.",
-  "legacy.queue.shuffle_msg": "🔀 **⠂{user} shuffled the queue tracks.**"
+  "legacy.queue.shuffle_msg": "🔀 **⠂{user} shuffled the queue tracks.**",
+  "visor.custom.detail": "Server station",
+  "visor.all_types": "ALL TYPES",
+  "visor.select.type.placeholder": "Type: genre, artists or server playlists",
+  "visor.select.type.all.label": "All stations",
+  "visor.select.type.all.description": "Every station of the server, whatever the type"
 }
