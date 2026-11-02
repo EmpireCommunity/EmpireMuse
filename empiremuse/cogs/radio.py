@@ -71,6 +71,8 @@ LIVE_ACTIONS = frozenset(
     {"previous", "mute", "volume_down", "volume_up"}
 )  # só no painel da rádio ao vivo (o "próxima" existe nos dois, com outro sentido)
 VOLUME_GAP_S = 1.0
+STATION_GAP_S = 5.0  # anterior, próxima e o seletor de estação: no máximo uma troca a cada 5 s por rádio (cada uma reabre o fluxo e consulta o diretório)
+LOOKUP_GAP_S = 5.0  # informações e favoritar: no máximo uma consulta ao diretório a cada 5 s por rádio
 MAX_CHOICES = 25
 NAME_LIMIT = 80
 
@@ -111,6 +113,7 @@ class Radio(commands.Cog):
     def __init__(self, bot: BotCore) -> None:
         self.bot = bot
         self._boot_task: Any = None
+        self._gap_at: dict[tuple[str, str], float] = {}  # a última troca de estação e a última consulta de cada rádio
         self._volume_at: dict[
             str, float
         ] = {}  # quando o volume de cada rádio mudou pela última vez (no máximo 1 por segundo)
@@ -311,6 +314,16 @@ class Radio(commands.Cog):
         await self.hub.manager.stop_radios(self.hub.manager.running_in(radio.guild_id, radio.channel_id))
         await interaction.edit_original_message(content=tr("radio.panel.stopped"))
 
+    def _too_soon(self, radio_id: str, kind: str, gap: float) -> bool:
+        """``True`` se a última ação do mesmo tipo nesta rádio foi há menos de ``gap`` s; senão registra esta e devolve ``False``. Um membro na call
+        clicando em rajada não esvazia o balde do diretório nem reabre o fluxo a cada clique (V190-1)."""
+        now = time.monotonic()
+        last = self._gap_at.get((radio_id, kind))
+        if last is not None and now - last < gap:
+            return True
+        self._gap_at[(radio_id, kind)] = now
+        return False
+
     async def _walk(self, interaction: Any, tr: Any, radio: Any, step: int) -> str:
         """Anterior e próxima: a estação vizinha na lista de onde a atual foi escolhida (dá a volta e pula as indisponíveis)."""
         stations = list(radio.source.get("list") or ())
@@ -318,6 +331,8 @@ class Radio(commands.Cog):
         neighbor = station_neighbor(stations, radio.source["station"], step, unavailable)
         if neighbor is None:
             return tr("radio.panel.no_other_station")
+        if self._too_soon(radio.id, "station", STATION_GAP_S):
+            return tr("radio.panel.wait")
         station = await self.hub.directory.by_uuid(neighbor)
         if station is None:
             return tr("radio.live.not_found")
@@ -346,6 +361,8 @@ class Radio(commands.Cog):
         return await self.hub.directory.by_uuid(radio.source["station"])
 
     async def _favorite(self, interaction: Any, tr: Any, radio: Any) -> str:
+        if self._too_soon(radio.id, "lookup", LOOKUP_GAP_S):
+            return tr("radio.panel.wait")
         station = await self._station_of(radio)
         if station is None:
             return tr("radio.live.not_found")
@@ -355,6 +372,8 @@ class Radio(commands.Cog):
         )
 
     async def _info(self, tr: Any, radio: Any) -> str:
+        if self._too_soon(radio.id, "lookup", LOOKUP_GAP_S):
+            return tr("radio.panel.wait")
         station = await self._station_of(radio)
         if station is None:
             return tr("radio.live.not_found")
@@ -590,10 +609,15 @@ class Radio(commands.Cog):
             raise GenericError(tr("radio.owner.unavailable")) from None
 
         async def apply(click: disnake.MessageInteraction, station: Station, station_list: tuple[str, ...]) -> str:
+            fresh, _ = await self._panel_radio(
+                click, tr
+            )  # a rádio de AGORA (o seletor vive 5 min: ela pode ter sido desligada ou ter mudado de canal)
+            if self._too_soon(fresh.id, "station", STATION_GAP_S):
+                return tr("radio.panel.wait")
             try:
                 await actions.change_station(
                     self.hub,
-                    radio_id=radio.id,
+                    radio_id=fresh.id,
                     station=station,
                     actor=self._authorized(click),
                     station_list=station_list or None,

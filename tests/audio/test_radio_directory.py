@@ -501,7 +501,10 @@ class TestReserveAndPerServer:
 
         for n in range(10):
             await d.search(f"termo{n}")  # um admin digitando sem parar
-        found = await d.by_uuid(UUID)  # e o play do servidor de outra pessoa, no mesmo segundo
+        screen = await d.by_uuid(UUID)  # um clique de painel (reserva a ficha do play)...
+        found = await d.by_uuid(UUID, reserve=0.0)  # ...e o play/health do servidor de outra pessoa, no mesmo segundo
+
+        assert screen is None
 
         assert found is not None and found.uuid == UUID
         assert [c[1] for c in fetcher.calls].count("/json/stations/search") == 1

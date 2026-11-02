@@ -31,7 +31,10 @@ from cachetools import TTLCache
 
 from empiremuse.rules.playlists import is_public_address
 from empiremuse.rules.radio_stations import favicon_thumbnail, valid_uuid
-from empiremuse.utils.server_playlists_fetch import PinnedResolver, system_resolve
+from empiremuse.utils.server_playlists_fetch import PinnedResolver
+from empiremuse.utils.url_guard import (
+    system_resolve,
+)  # fila própria de resolução: um DNS que trava não prende o executor do laço
 from empiremuse.version import image_version
 
 logger = logging.getLogger(__name__)

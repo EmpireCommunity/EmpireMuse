@@ -176,7 +176,7 @@ class TestWalking:
         w.cog.bot.user = SimpleNamespace(id=2)
         picked = {}
 
-        async def by_uuid(uuid):
+        async def by_uuid(uuid, **kwargs):
             return station(uuid, f"Rádio {uuid[:2]}")
 
         w.hub.directory = SimpleNamespace(by_uuid=by_uuid, logo_png=AsyncMock(), favicon_of=lambda u: None)
@@ -205,6 +205,7 @@ class TestWalking:
         seen = []
 
         for custom_id in (PANEL_NEXT_ID, PANEL_NEXT_ID, PANEL_NEXT_ID, PANEL_PREVIOUS_ID):
+            w.cog._gap_at.clear()  # passaram os 5 s entre uma troca e outra
             press = click(custom_id)
             await w.cog.radio_panel_click(press)
             seen.append((await w.hub.store.get(w.radio.id)).source["station"])
@@ -292,6 +293,7 @@ class TestMenu:
         first, second = menu("favorite"), menu("favorite")
 
         await w.cog.radio_panel_menu(first)
+        w.cog._gap_at.clear()  # passaram os 5 s
         await w.cog.radio_panel_menu(second)
 
         assert "entrou nas favoritas" in said(first) and "já está nas favoritas" in said(second)
@@ -428,3 +430,55 @@ class TestMenuStopNeedsManageGuild:
         await w.cog.radio_panel_menu(allowed)
 
         assert not w.hub.manager.is_running(w.radio.id)
+
+
+class TestNoBurstOnTheDirectory:
+    """V190-1 (Vigil): quem está na call clicando em rajada não esvazia o balde do diretório nem reabre o fluxo a cada clique."""
+
+    @pytest.mark.asyncio
+    async def test_twenty_clicks_on_next_make_one_directory_request_and_one_station_change(self):
+        w = await TestWalking.live_world()
+        calls = []
+        real = w.hub.directory.by_uuid
+
+        async def counting(uuid, **kwargs):
+            calls.append(uuid)
+            return await real(uuid)
+
+        w.hub.directory.by_uuid = counting
+
+        presses = [click(PANEL_NEXT_ID) for _ in range(20)]
+        for press in presses:
+            await w.cog.radio_panel_click(press)
+
+        assert len(calls) == 1 and len(w.ports.applied) == 1
+        assert sum("Aguarde" in said(p) for p in presses) == 19
+
+    @pytest.mark.asyncio
+    async def test_info_and_favorite_in_a_burst_make_one_lookup(self):
+        w = await TestWalking.live_world()
+        calls = []
+        real = w.hub.directory.by_uuid
+
+        async def counting(uuid, **kwargs):
+            calls.append(uuid)
+            return await real(uuid)
+
+        w.hub.directory.by_uuid = counting
+
+        for value in ("info", "favorite", "info", "favorite", "info"):
+            await w.cog.radio_panel_menu(menu(value))
+
+        assert len(calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_the_screen_lookup_leaves_a_token_for_the_play_of_other_radios(self):
+        from empiremuse.utils.radio.directory import SEARCH_RESERVE, TokenBucket
+
+        bucket = TokenBucket(2.0, 2.0)
+        assert SEARCH_RESERVE >= 1.0
+        taken = 0
+        while bucket.try_acquire(SEARCH_RESERVE):  # o caminho de tela
+            taken += 1
+
+        assert taken >= 1 and bucket.try_acquire() is True  # a ficha de reserva ainda serve ao play (reserve 0)

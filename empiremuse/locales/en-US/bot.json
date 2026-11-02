@@ -350,6 +350,7 @@
   "radio.panel.volume_set": "🔊 Volume: {volume}%",
   "radio.panel.volume_up": "+",
   "radio.panel.volume_wait": "Wait a moment before changing the volume again.",
+  "radio.panel.wait": "Wait a few seconds before using this button again.",
   "radio.player_locked": "This call is a radio: use the radio panel or /radio.",
   "radio.refused.bot_cannot_join": "None of the spare bots can join that channel. Give them **View Channel** and **Connect** there.",
   "radio.refused.cap_reached": "This server already has 3 radios on, the limit.",
