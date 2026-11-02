@@ -75,6 +75,14 @@ class _TextModal(disnake.ui.Modal):
         await self._on_submit(interaction, str(interaction.text_values.get("text", "")))
 
 
+async def premium_ok(hub: RadioHub, guild_id: int) -> bool:
+    """Estações do servidor pedem o premium de rádio (a mesma regra da página web). Sem como conferir, nega."""
+    try:
+        return await hub.premium.get(guild_id) is not None
+    except RadioUnavailable:
+        return False
+
+
 def error_text(tr: Translator, error: Exception) -> str:
     """O texto da recusa de gravar uma estação, no idioma do servidor (nunca texto do banco nem rastro)."""
     if isinstance(error, StationInvalid):
@@ -261,6 +269,11 @@ class StationEditor(disnake.ui.View):
         if interaction.author.id != self.author_id or not self._can_manage(interaction):
             await interaction.response.send_message(self.tr("radio.refused.no_manage_guild"), ephemeral=True)
             return False
+        if not await premium_ok(
+            self.hub, interaction.guild_id
+        ):  # o premium pode ter sido revogado enquanto a tela estava aberta
+            await interaction.response.send_message(self.tr("radio.refused.no_premium"), ephemeral=True)
+            return False
         return True
 
     @staticmethod
@@ -385,6 +398,11 @@ class ConfirmDelete(disnake.ui.View):
     async def interaction_check(self, interaction: disnake.Interaction) -> bool:  # type: ignore[override]
         if interaction.author.id != self.author_id or not self._can_manage(interaction):
             await interaction.response.send_message(self.tr("radio.refused.no_manage_guild"), ephemeral=True)
+            return False
+        if not await premium_ok(
+            self.hub, interaction.guild_id
+        ):  # o premium pode ter sido revogado enquanto a tela estava aberta
+            await interaction.response.send_message(self.tr("radio.refused.no_premium"), ephemeral=True)
             return False
         return True
 

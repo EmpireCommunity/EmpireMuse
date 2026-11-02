@@ -273,6 +273,8 @@ class ErrorHandler(commands.Cog):
         if isinstance(error, PoolException):
             return
 
+        ctx.command_failed = True
+
         if isinstance(error, commands.CommandNotFound):
             if ctx.prefix.startswith(self.bot.user.mention):
                 await self.do_playcmd(ctx)

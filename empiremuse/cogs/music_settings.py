@@ -41,16 +41,23 @@ from empiremuse.utils.others import (
     CommandArgparse,
     update_inter,
 )
-from empiremuse.utils.music.request_channel import (
-    apply_request_channel,
+from empiremuse.utils.music.checks import (
+    check_voice,
+    has_player,
+    is_dj,
+)
+from empiremuse.utils.music.jukebox_channel import (
+    apply_jukebox_channel,
     build_channel_kwargs,
     check_channel_perm,  # noqa: F401
-    create_request_channel,
+    create_jukebox_channel,
     ensure_can_create_channel,
     ensure_can_reset,
-    find_current_request_message,
-    find_request_channel,
-    reset_request_channel,
+    find_current_jukebox_message,
+    find_jukebox_channel,
+    jukebox_reset as run_jukebox_reset,
+    reset_jukebox_channel,  # noqa: F401
+    validate_jukebox_target,  # noqa: F401
 )
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
 
@@ -78,7 +85,7 @@ def skin_selector_description(
     """Descrição da embed do seletor: títulos em negrito (o ```ansi sumia no fundo escuro) e as duas listas de links."""
     return (
         f"**Modo Normal:**\n{skin_links(skins, names)}\n\n"
-        f"**Modo Fixo (Song-Request):**\n{skin_links(static_skins, static_names)}\n\n"
+        f"**Modo Fixo (Jukebox):**\n{skin_links(static_skins, static_names)}\n\n"
         "`Nota: No modo global a skin será aplicada globalmente em todos os bots.`"
     )
 
@@ -363,6 +370,7 @@ class MusicSettings(commands.Cog):
         await self.player_settings.callback(self=self, interaction=ctx)
 
     @commands.slash_command(
+        name=localized("cmd.player_settings.name"),
         description=localized("cmd.player_settings.description"),
         default_member_permissions=disnake.Permissions(manage_guild=True),
     )
@@ -398,71 +406,124 @@ class MusicSettings(commands.Cog):
 
     setup_cd = commands.CooldownMapping.from_cooldown(1, 20, commands.BucketType.guild)
     setup_mc = commands.MaxConcurrency(1, per=commands.BucketType.guild, wait=False)
+    jukebox_thread_cd = commands.CooldownMapping.from_cooldown(1, 120, commands.BucketType.guild)
 
-    setup_args = CommandArgparse()
-    setup_args.add_argument(
-        "-reset",
-        "--reset",
-        "-purge",
-        "--purge",
-        action="store_true",
-        help="Limpar mensagens do canal selecionado (até 100 mensagens, não efetivo em forum).",
+    @commands.group(
+        name="jukebox",
+        aliases=["jb"],
+        description="Comandos da Jukebox do servidor.",
+        invoke_without_command=True,
     )
+    async def jukebox_group(self, ctx: CustomContext):
+        tr = await self.bot.pool.i18n.for_guild(ctx.guild)
+        embed = disnake.Embed(
+            title="🎶 Jukebox",
+            description=(
+                f"`{ctx.prefix}jukebox setup` (`configurar`) — {tr('cmd.jukebox.setup.description')}\n"
+                f"`{ctx.prefix}jukebox reset` (`redefinir`) — {tr('cmd.jukebox.reset.description')}\n"
+                f"`{ctx.prefix}jukebox thread` (`conversa`) — {tr('cmd.jukebox.thread.description')}"
+            ),
+            color=self.bot.get_color(ctx.guild.me if ctx.guild else None),
+        )
+        await ctx.send(embed=embed)
 
     @commands.has_guild_permissions(manage_guild=True)
-    @commands.command(
+    @jukebox_group.command(
         name="setup",
-        aliases=["songrequestchannel", "sgrc"],
-        usage="{prefix}{cmd} [id|#canal]\nEx: {prefix}{cmd} #canal",
-        description="Criar/escolher um canal dedicado para pedir músicas e deixar player fixado.",
+        aliases=["configurar"],
+        usage="{prefix}jukebox setup [id|#canal]\nEx: {prefix}jukebox setup #canal",
+        description="Configurar o canal da Jukebox do servidor.",
         cooldown=setup_cd,
         max_concurrency=setup_mc,
-        extras={"flags": setup_args},
     )
-    async def setup_legacy(
+    async def jukebox_setup_legacy(
         self,
         ctx: CustomContext,
         channel: Union[disnake.TextChannel, disnake.VoiceChannel, disnake.ForumChannel, None] = None,
-        *args,
     ):
-        args, unknown = ctx.command.extras["flags"].parse_known_args(args)
+        await self.jukebox_setup.callback(
+            self=self, interaction=ctx, target=channel, auto_delete=None, text_requests=None
+        )
 
-        await self.setup.callback(self=self, interaction=ctx, target=channel, purge_messages=args.reset)
-
-    @commands.slash_command(
-        description=localized("cmd.setup.description"),
-        default_member_permissions=disnake.Permissions(manage_guild=True),
+    @commands.has_guild_permissions(manage_guild=True)
+    @commands.bot_has_guild_permissions(manage_threads=True)
+    @jukebox_group.command(
+        name="reset",
+        aliases=["redefinir"],
+        description="Desativar a Jukebox do servidor, apagar o painel e voltar as opções ao padrão.",
         cooldown=setup_cd,
         max_concurrency=setup_mc,
     )
+    async def jukebox_reset_legacy(self, ctx: CustomContext):
+        await self.jukebox_reset.callback(self=self, interaction=ctx)
+
+    @is_dj()
+    @has_player()
+    @check_voice()
+    @jukebox_group.command(
+        name="thread",
+        aliases=["conversa"],
+        description="Abrir uma conversa temporária na mensagem do player para pedir músicas por texto.",
+        extras={"only_voiced": True},
+        cooldown=jukebox_thread_cd,
+    )
+    async def jukebox_thread_legacy(self, ctx: CustomContext):
+        await self.jukebox_thread.callback(self=self, inter=ctx)
+
+    @commands.slash_command(
+        name=localized("cmd.jukebox.name"),
+        description=localized("cmd.jukebox.description"),
+    )
     @commands.contexts(guild=True)
-    async def setup(
+    async def jukebox(self, interaction: disnake.ApplicationCommandInteraction):
+        pass
+
+    @commands.has_guild_permissions(manage_guild=True)
+    @jukebox.sub_command(
+        name=localized("cmd.jukebox.setup.name"),
+        description=localized("cmd.jukebox.setup.description"),
+        cooldown=setup_cd,
+        max_concurrency=setup_mc,
+    )
+    async def jukebox_setup(
         self,
         interaction: disnake.ApplicationCommandInteraction,
         target: Union[
             disnake.TextChannel, disnake.VoiceChannel, disnake.ForumChannel, disnake.StageChannel
         ] = commands.Param(
-            name=localized("cmd.setup.opt.channel.name"),
+            name=localized("cmd.jukebox.setup.opt.channel.name"),
             default=None,
-            description=localized("cmd.setup.opt.channel.description"),
+            description=localized("cmd.jukebox.setup.opt.channel.description"),
         ),
-        purge_messages: str = commands.Param(
-            name=localized("cmd.setup.opt.clear_messages.name"),
-            default="no",
-            description=localized("cmd.setup.opt.clear_messages.description"),
-            choices=[
-                disnake.OptionChoice(localized("cmd.setup.opt.clear_messages.choice.yes"), "yes"),
-                disnake.OptionChoice(localized("cmd.setup.opt.clear_messages.choice.no"), "no"),
-            ],
+        auto_delete: Optional[bool] = commands.Param(
+            name=localized("cmd.jukebox.setup.opt.auto_delete.name"),
+            default=None,
+            description=localized("cmd.jukebox.setup.opt.auto_delete.description"),
         ),
+        text_requests: Optional[bool] = commands.Param(
+            name=localized("cmd.jukebox.setup.opt.text_requests.name"),
+            default=None,
+            description=localized("cmd.jukebox.setup.opt.text_requests.description"),
+        ),
+    ):
+        await self._run_jukebox_setup(interaction, target=target, auto_delete=auto_delete, text_requests=text_requests)
+
+    async def _run_jukebox_setup(
+        self,
+        interaction: disnake.ApplicationCommandInteraction,
+        *,
+        target: Any = None,
+        auto_delete: Optional[bool] = None,
+        text_requests: Optional[bool] = None,
+        purge_messages: str = "yes",
     ):
         inter, bot = await select_bot_pool(interaction, return_new=True)
 
         if not bot:
             return
 
-        # o canal de pedidos é único: quem o cria e escreve nele é o bot do painel (o principal, senão a 1ª reserva presente)
-        bot = (await bot.pool.servers.request.panel_bot(inter.guild_id)) or bot
+        # a Jukebox é única: quem cria o canal e escreve nele é o bot do painel (o principal, senão a 1ª reserva presente)
+        bot = (await bot.pool.servers.jukebox.panel_bot(inter.guild_id)) or bot
 
         guild = bot.get_guild(inter.guild_id)
 
@@ -471,7 +532,7 @@ class MusicSettings(commands.Cog):
         if target and bot != self.bot:
             target = bot.get_channel(target.id)
 
-        channel_name = f"{bot.user.name} Song Request"
+        channel_name = f"{bot.user.name} Jukebox"
 
         if isinstance(target, disnake.ForumChannel) and not isinstance(inter, CustomContext):
             await inter.response.send_modal(
@@ -516,11 +577,11 @@ class MusicSettings(commands.Cog):
 
         await inter.response.defer(ephemeral=True)
 
-        config = await bot.pool.servers.request.get(inter.guild_id)
+        config = await bot.pool.servers.jukebox.get(inter.guild_id)
 
         existing_channel = True
 
-        player, original_message = await find_current_request_message(bot, guild, config)
+        player, original_message = await find_current_jukebox_message(bot, guild, config)
 
         if not target:
             try:
@@ -574,7 +635,7 @@ class MusicSettings(commands.Cog):
                 disnake.Embed(
                     description="**Selecione um canal "
                     + (
-                        "ou clique em um dos botões abaixo para criar um novo canal para pedir músicas."
+                        "ou clique em um dos botões abaixo para criar um novo canal para a Jukebox."
                         if guild.me.guild_permissions.manage_channels
                         else "abaixo:"
                     )
@@ -698,7 +759,7 @@ class MusicSettings(commands.Cog):
                     kind = "stage"
                 else:
                     kind = "text"
-                target = await create_request_channel(bot, target, kind, channel_kwargs)
+                target = await create_jukebox_channel(bot, target, kind, channel_kwargs)
 
                 existing_channel = False
 
@@ -757,13 +818,13 @@ class MusicSettings(commands.Cog):
 
             return current_title
 
-        result = await apply_request_channel(
+        result = await apply_jukebox_channel(
             bot,
             guild,
             inter.author,
             target,
             existing_channel=existing_channel,
-            purge=purge_messages == "yes",
+            purge=purge_messages,
             channel_kwargs=channel_kwargs,
             channel_name=channel_name,
             original_message=original_message,
@@ -776,11 +837,19 @@ class MusicSettings(commands.Cog):
         if not result:
             return
 
+        option_changes = {}
+        if auto_delete is not None:
+            option_changes["jukebox_auto_delete"] = bool(auto_delete)
+        if text_requests is not None:
+            option_changes["jukebox_text_requests"] = bool(text_requests)
+        if option_changes and hasattr(bot.pool.servers, "patch"):
+            await bot.pool.servers.patch(inter.guild_id, "settings", option_changes)
+
         channel = result.channel
 
-        msg = f"{inter.author.mention}, o sistema pra pedidos de música foi configurado no canal <#{channel.id}> através do bot: {bot.user.mention}"
+        msg = f"{inter.author.mention}, a Jukebox foi configurada no canal <#{channel.id}> através do bot: {bot.user.mention}"
 
-        reset_txt = f"{inter.prefix}reset" if isinstance(inter, CustomContext) else "/reset"
+        reset_txt = f"{inter.prefix}jukebox reset" if isinstance(inter, CustomContext) else "/jukebox reset"
 
         embed = disnake.Embed(
             description=f"**{msg}**\n\nObs: Caso queira reverter essa configuração, apenas use o comando {reset_txt} ou "
@@ -803,37 +872,22 @@ class MusicSettings(commands.Cog):
 
     @commands.has_guild_permissions(manage_guild=True)
     @commands.bot_has_guild_permissions(manage_threads=True)
-    @commands.command(
-        name="reset",
-        description="Resetar as configurações relacionadas ao canal de pedir música (song request).",
+    @jukebox.sub_command(
+        name=localized("cmd.jukebox.reset.name"),
+        description=localized("cmd.jukebox.reset.description"),
         cooldown=setup_cd,
         max_concurrency=setup_mc,
     )
-    async def reset_legacy(self, ctx: CustomContext, *, delete_channel: str = None):
-        if delete_channel == "--delete":
-            delete_channel = "sim"
-
-        await self.reset.callback(self=self, interaction=ctx, delete_channel=delete_channel)
-
-    @commands.slash_command(
-        description=localized("cmd.reset.description"),
-        default_member_permissions=disnake.Permissions(manage_guild=True),
-        cooldown=setup_cd,
-        max_concurrency=setup_mc,
-    )
-    @commands.contexts(guild=True)
-    async def reset(
+    async def jukebox_reset(
         self,
         interaction: disnake.ApplicationCommandInteraction,
-        delete_channel: str = commands.Param(
-            name=localized("cmd.reset.opt.delete_channel.name"),
-            description=localized("cmd.reset.opt.delete_channel.description"),
-            default=None,
-            choices=[
-                disnake.OptionChoice(localized("cmd.reset.opt.delete_channel.choice.yes"), "sim"),
-                disnake.OptionChoice(localized("cmd.reset.opt.delete_channel.choice.no"), "não"),
-            ],
-        ),
+    ):
+        await self._run_jukebox_reset(interaction)
+
+    async def _run_jukebox_reset(
+        self,
+        interaction: disnake.ApplicationCommandInteraction,
+        delete_channel: Optional[str] = None,
     ):
         inter, bot = await select_bot_pool(interaction)
 
@@ -841,7 +895,7 @@ class MusicSettings(commands.Cog):
             return
 
         bot = (
-            await bot.pool.servers.request.panel_bot(inter.guild_id)
+            await bot.pool.servers.jukebox.panel_bot(inter.guild_id)
         ) or bot  # o canal é único: quem reseta é o bot do painel
 
         await inter.response.defer(ephemeral=True)
@@ -852,9 +906,9 @@ class MusicSettings(commands.Cog):
 
         channel_inter = bot.get_channel(inter.channel.id)
 
-        config = await bot.pool.servers.request.get(inter.guild_id)
+        config = await bot.pool.servers.jukebox.get(inter.guild_id)
 
-        channel = await find_request_channel(bot, inter.guild_id, config)
+        channel = await find_jukebox_channel(bot, inter.guild_id, config)
 
         async def notify(event: str):
             if event == "forum_deleted":
@@ -876,12 +930,12 @@ class MusicSettings(commands.Cog):
             await func(
                 embed=disnake.Embed(
                     color=self.bot.get_color(guild.me),
-                    description="**O Canal de pedir música foi resetado com sucesso.**",
+                    description="**A Jukebox foi redefinida com sucesso.**",
                 ),
                 components=[],
             )
 
-        await reset_request_channel(
+        await run_jukebox_reset(
             bot,
             guild,
             inter.author,
@@ -891,6 +945,20 @@ class MusicSettings(commands.Cog):
             config=config,
             notify=notify,
         )
+
+    @is_dj()
+    @has_player()
+    @check_voice()
+    @jukebox.sub_command(
+        name=localized("cmd.jukebox.thread.name"),
+        description=localized("cmd.jukebox.thread.description"),
+        extras={"only_voiced": True},
+        cooldown=jukebox_thread_cd,
+    )
+    async def jukebox_thread(self, inter: disnake.ApplicationCommandInteraction):
+        music_cog = self.bot.get_cog("Music")
+        if music_cog:
+            await music_cog.create_jukebox_thread(inter)
 
     djrole_cd = commands.CooldownMapping.from_cooldown(1, 7, commands.BucketType.guild)
     djrole_mc = commands.MaxConcurrency(1, per=commands.BucketType.guild, wait=False)
@@ -907,6 +975,7 @@ class MusicSettings(commands.Cog):
         await self.add_dj_role.callback(self=self, interaction=ctx, role=role)
 
     @commands.slash_command(
+        name=localized("cmd.add_dj_role.name"),
         description=localized("cmd.add_dj_role.description"),
         default_member_permissions=disnake.Permissions(manage_guild=True),
         cooldown=djrole_cd,
@@ -967,6 +1036,7 @@ class MusicSettings(commands.Cog):
         await self.remove_dj_role.callback(self=self, interaction=ctx, role=role)
 
     @commands.slash_command(
+        name=localized("cmd.remove_dj_role.name"),
         description=localized("cmd.remove_dj_role.description"),
         default_member_permissions=disnake.Permissions(manage_guild=True),
         cooldown=djrole_cd,
@@ -1023,6 +1093,7 @@ class MusicSettings(commands.Cog):
         await self.change_skin.callback(self=self, interaction=ctx)
 
     @commands.slash_command(
+        name=localized("cmd.change_skin.name"),
         description=localized("cmd.change_skin.description"),
         cooldown=skin_cd,
         max_concurrency=skin_mc,
@@ -1068,7 +1139,7 @@ class MusicSettings(commands.Cog):
         static_skins_opts = [
             disnake.SelectOption(
                 emoji="💠" if s.startswith(CUSTOM_SKIN_PREFIX) else "🎨",
-                label=f"Song-Request: {s.replace(CUSTOM_SKIN_PREFIX, '')}",
+                label=f"Jukebox: {s.replace(CUSTOM_SKIN_PREFIX, '')}",
                 value=s,
                 **{"default": True, "description": "skin atual"} if static_selected == s else {},
             )
@@ -1087,7 +1158,7 @@ class MusicSettings(commands.Cog):
         global_static_skins_opts = [
             disnake.SelectOption(
                 emoji="💠" if s.startswith(CUSTOM_SKIN_PREFIX) else "🎨",
-                label=f"Song-Request: {s.replace(CUSTOM_SKIN_PREFIX, '')}",
+                label=f"Jukebox: {s.replace(CUSTOM_SKIN_PREFIX, '')}",
                 value=s,
                 **{"default": True, "description": "skin atual"} if global_static_selected == s else {},
             )
@@ -1172,9 +1243,9 @@ class MusicSettings(commands.Cog):
 
             if global_static_selected != select_view.static_skin_selected:
                 try:
-                    changed_skins_txt += f"Global - Song Request: {skin_link(self.bot.player_static_skins, select_view.static_skin_selected)}\n"
+                    changed_skins_txt += f"Global - Jukebox: {skin_link(self.bot.player_static_skins, select_view.static_skin_selected)}\n"
                 except Exception:
-                    changed_skins_txt += f"Global - Song Request: `{select_view.static_skin_selected.replace(CUSTOM_SKIN_PREFIX, '[custom skin]: ')}`\n"
+                    changed_skins_txt += f"Global - Jukebox: `{select_view.static_skin_selected.replace(CUSTOM_SKIN_PREFIX, '[custom skin]: ')}`\n"
 
         else:
             # só o que o usuário trocou: o outro campo pode ter sido alterado por outro admin enquanto a tela estava aberta
@@ -1197,10 +1268,10 @@ class MusicSettings(commands.Cog):
             if static_selected != select_view.static_skin_selected:
                 try:
                     changed_skins_txt += (
-                        f"Song Request: {skin_link(self.bot.player_static_skins, select_view.static_skin_selected)}\n"
+                        f"Jukebox: {skin_link(self.bot.player_static_skins, select_view.static_skin_selected)}\n"
                     )
                 except Exception:
-                    changed_skins_txt += f"Song Request: `{select_view.static_skin_selected.replace(CUSTOM_SKIN_PREFIX, '[custom skin]: ')}`\n"
+                    changed_skins_txt += f"Jukebox: `{select_view.static_skin_selected.replace(CUSTOM_SKIN_PREFIX, '[custom skin]: ')}`\n"
 
         if global_mode != select_view.global_mode:
             changed_skins_txt += "Skin Global: `" + ("Ativado" if select_view.global_mode else "Desativado") + "`\n"
@@ -1449,7 +1520,10 @@ class MusicSettings(commands.Cog):
         await self.nodeinfo.callback(self=self, interaction=ctx)
 
     @commands.cooldown(1, 5, commands.BucketType.user)
-    @commands.slash_command(description=localized("cmd.nodeinfo.description"))
+    @commands.slash_command(
+        name=localized("cmd.nodeinfo.name"),
+        description=localized("cmd.nodeinfo.description"),
+    )
     @commands.contexts(guild=True)
     async def nodeinfo(self, interaction: disnake.ApplicationCommandInteraction):
         inter, bot = await select_bot_pool(interaction, return_new=True)
@@ -1570,7 +1644,7 @@ class MusicSettings(commands.Cog):
     @commands.has_guild_permissions(administrator=True)
     @commands.command(
         name="customskin",
-        aliases=["setskin", "cskin", "cs", "ss"],
+        aliases=["cskin", "cs", "setskin"],
         description="Criar suas próprias skins/templates para usar no player de música.",
         cooldown=customskin_cd,
         max_concurrency=customskin__mc,
@@ -1579,6 +1653,7 @@ class MusicSettings(commands.Cog):
         await self.custom_skin.callback(self=self, inter=ctx)
 
     @commands.slash_command(
+        name=localized("cmd.custom_skin.name"),
         cooldown=customskin_cd,
         max_concurrency=customskin__mc,
         description=localized("cmd.custom_skin.description"),
@@ -1674,7 +1749,7 @@ class RPCCog(commands.Cog):
     @commands.max_concurrency(1, commands.BucketType.guild)
     @commands.cooldown(1, 120, commands.BucketType.guild)
     @commands.has_permissions(manage_channels=True)
-    @commands.command(description="Alterar a região de um canal de palco")
+    @commands.command(aliases=["regiaopalco"], description="Alterar a região de um canal de palco")
     async def stageregion(self, ctx: CustomContext):
         if not isinstance(ctx.author.voice.channel, disnake.StageChannel):
             ctx.command.reset_cooldown(ctx)
@@ -1741,13 +1816,17 @@ class RPCCog(commands.Cog):
     @commands.command(
         description="Ativar/Desativar o sistema de rich-presence no seu status.",
         name="richpresence",
-        aliases=["rich_presence", "rpc"],
+        aliases=["rpc"],
         cooldown=rpc_cd,
     )
     async def rich_presence_legacy(self, ctx: CustomContext):
         await self.rich_presence.callback(self=self, inter=ctx)
 
-    @commands.slash_command(description=localized("cmd.rich_presence.description"), cooldown=rpc_cd)
+    @commands.slash_command(
+        name=localized("cmd.rich_presence.name"),
+        description=localized("cmd.rich_presence.description"),
+        cooldown=rpc_cd,
+    )
     @commands.contexts(guild=True)
     async def rich_presence(self, inter: disnake.ApplicationCommandInteraction):
         if not self.bot.config["ENABLE_RPC_COMMAND"] and not any(

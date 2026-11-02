@@ -658,7 +658,7 @@ def run_app(pool: BotPool, message: str = "", config: dict = None):
 
 
 def _shutdown_panel(panel_app) -> None:
-    """Cancela as tarefas do painel em andamento (setup/reset do canal de pedidos) ao encerrar o servidor."""
+    """Cancela as tarefas do painel em andamento (setup/reset da Jukebox) ao encerrar o servidor."""
     if panel_app is None:
         return
     try:

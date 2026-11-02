@@ -1,4 +1,4 @@
-"""Rádio 24/7 (item 8, R1): os comandos de dono. ``/radio ligar|desligar|status`` entram nesta mesma classe.
+"""Rádios (item 8): o grupo ``/radio`` (setup, on, off, status, reset, station), o painel na call e, no mixin do prefixo, os comandos de dono.
 
 R-1: premium, bots só-rádio e "pausar todas" são só de quem está em ``OWNER_IDS`` (``bot.env_owner_ids``). Nada de ``is_owner()``, porque ele
 também aceita o dono e a equipe da aplicação; nem ``manage_guild`` nem administrador do servidor valem. Lista vazia = ninguém. Como todo bot
@@ -18,34 +18,30 @@ from empiremuse.i18n import localized
 from empiremuse.rules.i18n import fit
 from empiremuse.rules.radio import (
     KIND_LIVE,
+    KINDS,
     PANEL_MENU_ID,
     VOLUME_DEFAULT,
     VOLUME_STEP,
-    BotCandidate,
     clamp_volume,
     menu_action,
     panel_action,
     radio_id,
     station_neighbor,
 )
-from empiremuse.rules.radio_station import normalize_name
 from empiremuse.rules.radio_stations import Station
-from empiremuse.rules.servers import is_main_identifier
 from empiremuse.rules.text import external_text
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.others import CustomContext
-from empiremuse.utils.radio import actions, migrate_r5, station_commands
-from empiremuse.utils.radio.station_ui import error_text as station_error_text
-from empiremuse.utils.radio.stations import StationInvalid
+from empiremuse.utils.radio import actions, migrate_r5, setup_flow, station_commands
 from empiremuse.utils.radio.actions import Actor, Refused
-from empiremuse.utils.radio.control import MainBotRefused
 from empiremuse.utils.radio.custom_ports import CustomRadioPorts
 from empiremuse.utils.radio.discord_ports import DiscordChatPorts, DiscordRadioPorts
-from empiremuse.utils.radio.live import LiveRadioRunner
 from empiremuse.utils.radio.live_ports import LiveRadioPorts
 from empiremuse.utils.radio.favorites import MAX_FAVORITES
 from empiremuse.utils.radio.picker import RadioPicker, VolumePicker
 from empiremuse.utils.radio.premium import RadioUnavailable
+from empiremuse.utils.radio.prefix_commands import RADIO_COOLDOWN, RadioPrefixCommands, is_env_owner  # noqa: F401
+from empiremuse.utils.radio.setup import jukebox_channel_of
 from empiremuse.utils.radio.store import RadioConflict
 
 if TYPE_CHECKING:
@@ -53,23 +49,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-GRANT = ("conceder", "grant", "dar")
-REVOKE = ("revogar", "revoke", "tirar")
-LIST = ("listar", "list")
-ADD = ("adicionar", "add")
-REMOVE = ("remover", "remove")
-
-
-def is_env_owner(bot: BotCore, user_id: int) -> bool:
-    """O usuário está em ``OWNER_IDS``? Só isso: a equipe e o dono da aplicação do Discord NÃO contam."""
-    return user_id in bot.env_owner_ids
-
-
-def _guild_id(raw: str) -> int | None:
-    return int(raw) if raw.isdecimal() and 0 < int(raw) < 1 << 64 else None
-
-
-RADIO_COOLDOWN = commands.CooldownMapping.from_cooldown(1, 10, commands.BucketType.guild)
 CUSTOM_ACTIONS = frozenset(
     {"station_previous", "station_next"}
 )  # só no painel da personalizada: anterior e próxima ESTAÇÃO do servidor
@@ -83,39 +62,22 @@ MAX_CHOICES = 25
 NAME_LIMIT = 80
 
 
-async def playlist_autocomplete(inter: disnake.ApplicationCommandInteraction, current: str) -> list[str]:
-    """Até 25 nomes de playlist do servidor; o texto digitado só filtra e quem decide é o ``find`` da store em execução."""
-    if inter.guild_id is None or not inter.author.guild_permissions.manage_guild:
-        return []
-    from empiremuse.utils.server_playlists import safe_list  # tarde: o módulo importa muita coisa
-
-    wanted = (current or "").strip().casefold()
-    names = [p.name for p in await safe_list(inter.bot, inter.guild_id) if wanted in p.name.casefold()]
-    return names[:MAX_CHOICES]
-
-
-async def station_autocomplete(inter: disnake.ApplicationCommandInteraction, current: str) -> dict[str, str]:
-    """Até 25 estações do Radio Browser como ``{nome mostrado: uuid}``. Sem ``manage_guild`` ou sem premium (cache): vazio, e NENHUMA requisição ao diretório."""
+async def bot_autocomplete(inter: disnake.ApplicationCommandInteraction, current: str) -> dict[str, str]:
+    """Os bots reserva livres do servidor como ``{nome: id}``. Só informa: quem decide é o ``configure`` em execução. Sem ``manage_guild`` ou sem premium, vazio."""
     if inter.guild_id is None or not inter.author.guild_permissions.manage_guild:
         return {}
     hub = inter.bot.pool.radio
     try:
         if await hub.premium.get(inter.guild_id) is None:
             return {}
+        options = await hub.setup.options(inter.guild_id)
     except RadioUnavailable:
         return {}
-    tr = await inter.bot.pool.i18n.for_guild(inter.guild)
-    choices: dict[str, str] = {}
-    for station in (await hub.directory.search(current, key=inter.guild_id))[:MAX_CHOICES]:
-        detail = f"{station.codec} {station.bitrate}k" if station.bitrate else station.codec
-        label = f"{station.name} · {detail}" + (f" · {station.country}" if station.country else "")
-        if hub.health.unavailable(station.uuid):
-            label = f"⛔ {label} · {tr('radio.live.unavailable')}"
-        choices[fit(label, 100)] = station.uuid
-    return choices
+    wanted = (current or "").strip().casefold()
+    return {fit(name, 100): str(bot_id) for bot_id, name in options.bots if wanted in name.casefold()}
 
 
-class Radio(commands.Cog):
+class Radio(RadioPrefixCommands, commands.Cog):
     def __init__(self, bot: BotCore) -> None:
         self.bot = bot
         self._boot_task: Any = None
@@ -174,10 +136,6 @@ class Radio(commands.Cog):
 
     def _only_main(self) -> bool:
         return self.bot.pool.servers.main_bot() is self.bot
-
-    async def cog_check(self, ctx: CustomContext) -> bool:  # type: ignore[override]
-        # só os comandos de dono vivem aqui como prefixo; a conferência vale para TODOS eles
-        return self._only_main() and is_env_owner(self.bot, ctx.author.id)
 
     # ------------------------------------------------------------------ painel na call (R-6)
 
@@ -439,41 +397,6 @@ class Radio(commands.Cog):
 
     # ------------------------------------------------------------------ /radio (manage_guild; a execução confere de novo)
 
-    def _candidates(self, guild_id: int, channel: Any) -> tuple[list[BotCandidate], bool]:
-        """Os bots do pool vistos deste servidor e este canal. Sem ``view_channel`` e ``connect`` no canal, o bot conta como ocupado."""
-        pool = self.bot.pool
-        candidates: list[BotCandidate] = []
-        can_join = False
-        reserves_here = False
-        for bot in pool.get_all_bots():
-            if bot.user is None:
-                continue
-            guild = bot.get_guild(guild_id)
-            exclusive = getattr(bot, "exclusive_guild_id", None)
-            in_guild = guild is not None and not (exclusive and exclusive != guild_id)
-            main = is_main_identifier(bot.identifier)
-            perms_ok = False
-            if in_guild:
-                seen = guild.get_channel(channel.id)
-                permissions = seen.permissions_for(guild.me) if seen is not None else None
-                perms_ok = bool(permissions and permissions.view_channel and permissions.connect)
-            busy = not perms_ok or guild_id in bot.music.players or bool(in_guild and guild.me.voice)
-            reserves_here = reserves_here or (in_guild and not main)
-            can_join = can_join or (perms_ok and not main)
-            candidates.append(
-                BotCandidate(
-                    bot.identifier,
-                    bot.user.id,
-                    main,
-                    pool.radio.roles.is_radio_only(bot.identifier),
-                    bool(bot.bot_ready),
-                    bool(in_guild),
-                    busy,
-                )
-            )
-        # sem nenhum reserva no servidor a recusa certa é "não há bot livre", não "nenhum consegue entrar"
-        return candidates, can_join or not reserves_here
-
     @commands.slash_command(
         name="radio",
         description=localized("cmd.radio.description"),
@@ -492,118 +415,85 @@ class Radio(commands.Cog):
             raise GenericError(tr("radio.cooldown", seconds=int(retry) + 1))
         return tr
 
-    @radio.sub_command(name="ligar", description=localized("cmd.radio.ligar.description"))
+    @radio.sub_command(name="setup", description=localized("cmd.radio.setup.description"))
+    async def radio_setup(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        channel: Union[disnake.VoiceChannel, disnake.StageChannel] = commands.Param(
+            name=localized("cmd.radio.setup.opt.channel.name"),
+            description=localized("cmd.radio.setup.opt.channel.description"),
+        ),
+        bot: str = commands.Param(
+            name=localized("cmd.radio.setup.opt.bot.name"),
+            description=localized("cmd.radio.setup.opt.bot.description"),
+            autocomplete=bot_autocomplete,
+        ),
+        kind: str = commands.Param(
+            name=localized("cmd.radio.setup.opt.kind.name"),
+            description=localized("cmd.radio.setup.opt.kind.description"),
+            choices=list(KINDS),
+        ),
+    ) -> None:
+        await setup_flow.setup(self, inter, channel, bot, kind)
+
+    @radio.sub_command(name="on", description=localized("cmd.radio.on.description"))
     async def radio_on(
         self,
         inter: disnake.ApplicationCommandInteraction,
         channel: Union[disnake.VoiceChannel, disnake.StageChannel] = commands.Param(
-            name=localized("cmd.radio.ligar.opt.channel.name"),
-            description=localized("cmd.radio.ligar.opt.channel.description"),
-        ),
-        playlist: Optional[str] = commands.Param(
-            default=None,
-            name=localized("cmd.radio.ligar.opt.playlist.name"),
-            description=localized("cmd.radio.ligar.opt.playlist.description"),
-            autocomplete=playlist_autocomplete,
-        ),
-        station: Optional[str] = commands.Param(
-            default=None,
-            name=localized("cmd.radio.ligar.opt.station.name"),
-            description=localized("cmd.radio.ligar.opt.station.description"),
-            autocomplete=station_autocomplete,
+            name=localized("cmd.radio.on.opt.channel.name"),
+            description=localized("cmd.radio.on.opt.channel.description"),
         ),
     ) -> None:
         tr = await self._gate(inter)
-        if playlist is None and station is None:
-            await self._open_start_picker(inter, tr, channel)  # nem playlist nem estação: escolhe a estação por local
-            return
-        found = None
-        picked = None
-        custom = await self._resolve_custom_station(inter, tr, playlist) if playlist else None
-        if station:  # o valor vem do autocomplete, mas o usuário pode digitar qualquer coisa: antes do diretório, o direito (manage_guild e premium)
-            await self._require_station_rights(inter, tr)
-            picked = await self.hub.directory.by_uuid(station)
-            if picked is None:
-                raise GenericError(tr("radio.live.not_found"))
-        text = await self._start(inter, tr, channel, playlist=None, found=found, picked=picked, custom_station=custom)
+        text = await self._turn_on(inter.author, inter.guild_id, tr, channel)
         await inter.edit_original_message(content=text, allowed_mentions=disnake.AllowedMentions.none())
 
-    async def _resolve_custom_station(self, inter: Any, tr: Any, name: str) -> Any:
-        """A estação do servidor que a rádio vai tocar. ``name`` é o nome de uma estação; se não há estação com esse nome mas há uma PLAYLIST, nasce a estação
-        de playlist (a mesma que a migração da subida faria), então nenhuma rádio nova volta a depender de playlist solta."""
-        if not inter.author.guild_permissions.manage_guild:
-            raise GenericError(tr(f"radio.refused.{actions.NO_MANAGE_GUILD}"))
-        try:
-            wanted = normalize_name(name)
-            stations = await self.hub.stations.list_for_guild(inter.guild_id)
-            found = next((s for s in stations if s.name_norm == wanted), None)
-            if found is not None:
-                return found
-            playlist = await self.bot.pool.servers.playlists.find(inter.guild_id, name)
-            if playlist is None:
-                raise GenericError(tr(f"radio.refused.{actions.NO_PLAYLIST}"))
-            return next(
-                (s for s in stations if s.kind == "playlists" and s.source.get("playlists") == [playlist.name]),
-                None,
-            ) or await self.hub.stations.create(
-                inter.guild_id,
-                {"name": playlist.name[:32], "kind": "playlists", "source": {"playlists": [playlist.name]}},
-                playlists={playlist.name},
-                updated_by=str(inter.author.id),
-            )
-        except StationInvalid as error:
-            raise GenericError(station_error_text(tr, error)) from None
-        except RadioUnavailable:
-            raise GenericError(tr("radio.owner.unavailable")) from None
-
-    async def _require_station_rights(self, inter: Any, tr: Any) -> None:
-        """Antes de qualquer pedido ao diretório: ``manage_guild`` e premium do servidor (como no autocomplete)."""
-        if not inter.author.guild_permissions.manage_guild:
-            raise GenericError(tr(f"radio.refused.{actions.NO_MANAGE_GUILD}"))
-        try:
-            if await self.hub.premium.get(inter.guild_id) is None:
-                raise GenericError(tr(f"radio.refused.{actions.NO_PREMIUM}"))
-        except RadioUnavailable:
-            raise GenericError(tr("radio.owner.unavailable")) from None
-
-    async def _start(
+    @radio.sub_command(name="reset", description=localized("cmd.radio.reset.description"))
+    async def radio_reset(
         self,
-        inter: Any,
-        tr: Any,
-        channel: Any,
-        *,
-        playlist: Optional[str],
-        found: Any,
-        picked: Optional[Station],
-        station_list: tuple[str, ...] = (),
-        custom_station: Any = None,
-    ) -> str:
-        """Liga a rádio (personalizada com ``found`` ou ao vivo com ``picked``) e devolve o texto da resposta. Vale para o comando e para o seletor."""
+        inter: disnake.ApplicationCommandInteraction,
+        channel: Union[disnake.VoiceChannel, disnake.StageChannel] = commands.Param(
+            name=localized("cmd.radio.reset.opt.channel.name"),
+            description=localized("cmd.radio.reset.opt.channel.description"),
+        ),
+    ) -> None:
+        await setup_flow.reset(self, inter, channel)
+
+    def _bot_state(self, radio: Any, channel: Any) -> tuple[bool, bool]:
+        """O bot FIXO da rádio visto deste canal: ``(consegue entrar, está livre)``. Sem ``view_channel`` e ``connect`` no canal ele não entra; em call ou com player no servidor não está livre."""
+        pool = self.bot.pool
+        bot = next((b for b in pool.get_all_bots() if b.user is not None and b.user.id == radio.bot_id), None)
+        guild = bot.get_guild(radio.guild_id) if bot is not None else None
+        if bot is None or guild is None or not bot.bot_ready:
+            return False, False
+        seen = guild.get_channel(channel.id)
+        permissions = seen.permissions_for(guild.me) if seen is not None else None
+        can_join = bool(permissions and permissions.view_channel and permissions.connect)
+        free = radio.guild_id not in bot.music.players and not guild.me.voice
+        return can_join, free
+
+    async def _turn_on(self, author: Any, guild_id: int, tr: Any, channel: Any) -> str:
+        """Liga a rádio configurada neste canal e devolve o texto da resposta."""
         actor = Actor(
-            user_id=inter.author.id,
-            manage_guild=inter.author.guild_permissions.manage_guild,
-            manage_messages_in_channel=channel.permissions_for(
-                inter.author
-            ).manage_messages,  # no CANAL, em execução (R-4)
+            user_id=author.id,
+            manage_guild=author.guild_permissions.manage_guild,
+            manage_messages_in_channel=channel.permissions_for(author).manage_messages,  # no CANAL, em execução (R-4)
         )
-        request_channel = (await self.bot.pool.servers.request.get(inter.guild_id)).channel
-        candidates, can_join = self._candidates(inter.guild_id, channel)
         try:
+            configured = next(
+                (r for r in await self.hub.store.list_for_guild(guild_id) if r.channel_id == channel.id), None
+            )
+            can_join, free = self._bot_state(configured, channel) if configured is not None else (True, True)
+            jukebox = await jukebox_channel_of(self.bot.pool, guild_id)
             radio = await actions.turn_on(
                 self.hub,
-                guild_id=inter.guild_id,
+                guild_id=guild_id,
                 channel_id=channel.id,
-                playlist=found.name
-                if found
-                else playlist,  # com estação também, o turn_on recusa (choose_one): nada é ignorado em silêncio
-                custom_station=custom_station,
-                station=picked,
-                station_list=station_list or None,
                 actor=actor,
-                candidates=candidates,
-                playlist_exists=found is not None,
                 bot_can_join=can_join,
-                request_channel_id=request_channel,
+                bot_free=free,
+                jukebox_channel_id=jukebox,
             )
         except Refused as refusal:
             raise GenericError(tr(f"radio.refused.{refusal.code}")) from None
@@ -613,17 +503,7 @@ class Radio(commands.Cog):
             radio, wait=False
         )  # a partida segue em segundo plano: sem prender a resposta ao token
         logger.info("radio.toggle: ligada (%d neste processo)", self.hub.manager.counts().on)
-        if picked is not None:
-            return tr(
-                "radio.on.done_station",
-                channel=channel.mention,
-                station=external_text(picked.name, NAME_LIMIT),
-                bot=f"<@{radio.bot_id}>",
-            )
-        name = external_text(
-            custom_station.name if custom_station is not None else radio.source.get("playlist"), NAME_LIMIT
-        )
-        return tr("radio.on.done", channel=channel.mention, playlist=name, bot=f"<@{radio.bot_id}>")
+        return tr("radio.on.ready", channel=channel.mention, bot=f"<@{radio.bot_id}>")
 
     # ------------------------------------------------------------------ seletor de estação por local (R4)
 
@@ -658,17 +538,6 @@ class Radio(commands.Cog):
             check=check or self._can_manage,
             deny_key=deny_key,
         )
-
-    async def _open_start_picker(self, inter: Any, tr: Any, channel: Any) -> None:
-        await self._require_station_rights(inter, tr)
-
-        async def apply(click: disnake.MessageInteraction, station: Station, station_list: tuple[str, ...]) -> str:
-            return await self._start(
-                click, tr, channel, playlist=None, found=None, picked=station, station_list=station_list
-            )
-
-        picker = self._picker(inter, tr, apply, tr("radio.local.confirm_start", channel=channel.name))
-        await inter.edit_original_message(**await picker.render())
 
     async def _open_station_picker(self, interaction: disnake.MessageInteraction, tr: Any, radio: Any) -> None:
         """ "Trocar estação" do painel ao vivo: escolhe uma estação por local (ou nas favoritas) e troca a principal da rádio que já toca. Quem abre já está na
@@ -757,19 +626,23 @@ class Radio(commands.Cog):
     async def radio_station_list(self, inter: disnake.ApplicationCommandInteraction) -> None:
         await station_commands.list_stations(self, inter)
 
-    @radio.sub_command(name="desligar", description=localized("cmd.radio.desligar.description"))
+    @radio.sub_command(name="off", description=localized("cmd.radio.off.description"))
     async def radio_off(
         self,
         inter: disnake.ApplicationCommandInteraction,
         channel: Union[disnake.VoiceChannel, disnake.StageChannel] = commands.Param(
-            name=localized("cmd.radio.desligar.opt.channel.name"),
-            description=localized("cmd.radio.desligar.opt.channel.description"),
+            name=localized("cmd.radio.off.opt.channel.name"),
+            description=localized("cmd.radio.off.opt.channel.description"),
         ),
     ) -> None:
         tr = await self._gate(inter)
-        actor = Actor(user_id=inter.author.id, manage_guild=inter.author.guild_permissions.manage_guild)
+        await inter.edit_original_message(content=await self._switch_off(inter.author, inter.guild_id, tr, channel))
+
+    async def _switch_off(self, author: Any, guild_id: int, tr: Any, channel: Any) -> str:
+        """Desliga a rádio deste canal (qualquer bot do servidor) e devolve o texto da resposta."""
+        actor = Actor(user_id=author.id, manage_guild=author.guild_permissions.manage_guild)
         try:
-            off = await actions.turn_off(self.hub, guild_id=inter.guild_id, channel_id=channel.id, actor=actor)
+            off = await actions.turn_off(self.hub, guild_id=guild_id, channel_id=channel.id, actor=actor)
         except Refused as refusal:
             raise GenericError(tr(f"radio.refused.{refusal.code}")) from None
         except RadioUnavailable:
@@ -777,20 +650,24 @@ class Radio(commands.Cog):
         finally:
             # mesmo que o banco tenha falhado no meio, o que este processo está tocando nesse canal para (e o bot sai da call)
             if actor.manage_guild:
-                await self.hub.manager.stop_radios(self.hub.manager.running_in(inter.guild_id, channel.id))
+                await self.hub.manager.stop_radios(self.hub.manager.running_in(guild_id, channel.id))
         logger.info("radio.toggle: desligada (%d neste processo)", self.hub.manager.counts().on)
-        await inter.edit_original_message(content=tr("radio.off.done", count=len(off), channel=channel.mention))
+        return tr("radio.off.done", count=len(off), channel=channel.mention)
 
     @radio.sub_command(name="status", description=localized("cmd.radio.status.description"))
     async def radio_status(self, inter: disnake.ApplicationCommandInteraction) -> None:
         tr = await self._gate(inter)
+        await inter.edit_original_message(
+            content=await self._status_text(tr, inter.guild_id), allowed_mentions=disnake.AllowedMentions.none()
+        )
+
+    async def _status_text(self, tr: Any, guild_id: int) -> str:
         try:
-            result = await actions.status(self.hub, guild_id=inter.guild_id)
+            result = await actions.status(self.hub, guild_id=guild_id)
         except RadioUnavailable:
             raise GenericError(tr("radio.owner.unavailable")) from None
         if result.premium is None:
-            await inter.edit_original_message(content=tr("radio.status.no_premium"))
-            return
+            return tr("radio.status.no_premium")
         lines = [tr("radio.status.header", active=result.premium.active, cap=3)]
         for line in result.lines:
             state = line.state
@@ -810,82 +687,7 @@ class Radio(commands.Cog):
             lines.append(tr("radio.status.none"))
         if result.paused_all:
             lines.append(tr("radio.status.paused_all"))
-        await inter.edit_original_message(content="\n".join(lines), allowed_mentions=disnake.AllowedMentions.none())
-
-    # ------------------------------------------------------------------ premium
-
-    @commands.command(name="radio-premium", hidden=True)
-    async def radio_premium(self, ctx: CustomContext, action: str = "", guild: str = ""):
-        """``radio-premium conceder|revogar <id do servidor>`` e ``radio-premium listar``."""
-        tr = await self._tr(ctx)
-        action = action.casefold()
-        try:
-            if action in LIST:
-                lines = [f"`{p.guild_id}` — {p.active}/3" for p in await self.hub.premium.all()]
-                await ctx.send(tr("radio.owner.premium_list", lines="\n".join(lines) or tr("radio.owner.none")))
-                return
-            guild_id = _guild_id(guild)
-            if action not in GRANT + REVOKE or guild_id is None:
-                raise GenericError(tr("radio.owner.premium_usage"))
-            if action in GRANT:
-                await self.hub.premium.grant(guild_id, by=ctx.author.id)
-                logger.info("Premium de rádio concedido")
-                await ctx.send(tr("radio.owner.premium_granted", guild=guild_id))
-            else:
-                off = await self.hub.manager.revoke_premium(guild_id, updated_by=str(ctx.author.id))
-                logger.info("Premium de rádio revogado (%d rádios desligadas)", off)
-                await ctx.send(tr("radio.owner.premium_revoked", guild=guild_id, count=off))
-        except RadioUnavailable:
-            raise GenericError(tr("radio.owner.unavailable"))
-
-    # ------------------------------------------------------------------ pausar todas
-
-    @commands.command(name="radio-pausar-todas", hidden=True)
-    async def radio_pause_all(self, ctx: CustomContext):
-        tr = await self._tr(ctx)
-        try:
-            changed = await self.hub.control.set_paused_all(True, by=ctx.author.id)
-        except RadioUnavailable:
-            raise GenericError(tr("radio.owner.unavailable"))
-        logger.info("Rádios: pausa geral %s", "ligada" if changed else "já estava ligada")
-        await ctx.send(tr("radio.owner.paused_all" if changed else "radio.owner.paused_all_already"))
-
-    @commands.command(name="radio-retomar-todas", hidden=True)
-    async def radio_resume_all(self, ctx: CustomContext):
-        tr = await self._tr(ctx)
-        try:
-            changed = await self.hub.control.set_paused_all(False, by=ctx.author.id)
-        except RadioUnavailable:
-            raise GenericError(tr("radio.owner.unavailable"))
-        logger.info("Rádios: pausa geral %s", "desligada" if changed else "já estava desligada")
-        await ctx.send(tr("radio.owner.resumed_all" if changed else "radio.owner.resumed_all_already"))
-
-    # ------------------------------------------------------------------ bots só-rádio
-
-    @commands.command(name="radio-bot", hidden=True)
-    async def radio_bot(self, ctx: CustomContext, action: str = "", identifier: str = ""):
-        """``radio-bot adicionar|remover <TOKEN_2>`` e ``radio-bot listar``: os bots reservas dedicados a rádio."""
-        tr = await self._tr(ctx)
-        action = action.casefold()
-        try:
-            if action in LIST:
-                await self.hub.roles.load()
-                bots = ", ".join(f"`{i}`" for i in self.hub.roles.radio_only) or tr("radio.owner.none")
-                await ctx.send(tr("radio.owner.bots_list", bots=bots), allowed_mentions=disnake.AllowedMentions.none())
-                return
-            if action not in ADD + REMOVE or not identifier.isascii() or not 1 <= len(identifier) <= 40:
-                raise GenericError(tr("radio.owner.bots_usage"))
-            if action in ADD:
-                await self.hub.roles.add(identifier)
-            else:
-                await self.hub.roles.remove(identifier)
-            await ctx.send(
-                tr("radio.owner.bots_changed", bot=identifier), allowed_mentions=disnake.AllowedMentions.none()
-            )
-        except MainBotRefused:
-            raise GenericError(tr("radio.owner.main_refused"))
-        except RadioUnavailable:
-            raise GenericError(tr("radio.owner.unavailable"))
+        return "\n".join(lines)
 
 
 def setup(bot: BotCore) -> None:

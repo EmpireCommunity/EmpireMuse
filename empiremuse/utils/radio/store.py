@@ -25,6 +25,7 @@ from empiremuse.rules.radio import (
     Radio,
     check_chat,
     check_radio,
+    source_chosen,
     to_document,
 )
 from empiremuse.rules.radio_station import from_document as from_station_document
@@ -293,21 +294,24 @@ class RadioStore:
             raise RadioConflict
         return checked
 
-    async def reconfigure(self, radio: Radio, *, updated_by: str = "") -> Radio:
-        """Troca canal, tipo e fonte de uma rádio DESLIGADA (o comando ``/radio ligar`` reaproveita o documento do bot). Ligada: ``RadioConflict``."""
+    async def save_config(self, radio: Radio, *, expected_rev: int, updated_by: str = "") -> Radio:
+        """Grava canal, tipo e fonte de uma rádio já configurada (``/radio setup`` e a página Rádios). Chat, ``enabled`` e ``rev`` são os do banco:
+        quem pede só leva o que o compare-and-set em ``expected_rev`` confirma. ``RadioConflict`` se o ``rev`` mudou; ligada e com outro canal ou
+        tipo, ``RadioConflict`` também (o desligar vem antes)."""
         current = self._radio(await self._find(radio.id))
         if current is None:
             raise RadioNotFound
-        if current.enabled:
+        if current.rev != expected_rev:
+            raise RadioConflict
+        if current.enabled and (current.channel_id, current.kind) != (radio.channel_id, radio.kind):
             raise RadioConflict
         updated = dataclasses.replace(
             current,
             channel_id=radio.channel_id,
             kind=radio.kind,
             source=dict(radio.source),
-            chat=dict(current.chat),  # as regras de chat gravadas pelo painel sobrevivem à troca de canal e fonte
-            panel_message_id=None,
-            clock_started_at=None,  # outra playlist, outra programação: o relógio recomeça quando ligar
+            panel_message_id=radio.panel_message_id,
+            clock_started_at=radio.clock_started_at,
             rev=current.rev + 1,
         )
         checked = check_radio(to_document(updated))
@@ -368,6 +372,8 @@ class RadioStore:
                 raise RadioNotFound
             if current.enabled == enabled:
                 return current
+            if enabled and not source_chosen(current):
+                raise RadioInvalid(RuleError(SOURCE_INVALID, "source"))  # configurada, mas sem estação: não liga
             changed = dataclasses.replace(current, enabled=enabled, rev=current.rev + 1)
             if enabled:  # ligar de verdade começa a programação virtual agora; o reinício do bot a continua dessa época
                 changed = dataclasses.replace(changed, clock_started_at=time.time())

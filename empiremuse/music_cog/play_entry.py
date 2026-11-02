@@ -46,7 +46,10 @@ class PlayEntryMixin:
     @check_voice()
     @can_send_message_check()
     @commands.message_command(
-        name="add to queue", extras={"check_player": False}, cooldown=play_cd, max_concurrency=play_mc
+        name=disnake.Localized("Add to queue", data={disnake.Locale.pt_BR: "Adicionar na fila"}),
+        extras={"check_player": False},
+        cooldown=play_cd,
+        max_concurrency=play_mc,
     )
     async def message_play(self, inter: disnake.MessageCommandInteraction):
         if not inter.target.content:
@@ -392,7 +395,7 @@ class PlayEntryMixin:
     @pool_command(
         name="play",
         description="Tocar música em um canal de voz.",
-        aliases=["p"],
+        aliases=["p", "tocar"],
         check_player=False,
         cooldown=play_cd,
         max_concurrency=play_mc,
@@ -421,7 +424,7 @@ class PlayEntryMixin:
     @pool_command(
         name="search",
         description="Pesquisar por músicas e escolher uma entre os resultados para tocar.",
-        aliases=["sc"],
+        aliases=["sc", "buscar"],
         check_player=False,
         cooldown=play_cd,
         max_concurrency=play_mc,

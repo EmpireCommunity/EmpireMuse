@@ -30,7 +30,7 @@ class PlayerModesMixin:
     @check_voice()
     @pool_command(
         name="restrictmode",
-        aliases=["rstc", "restrict", "restrito", "modorestrito"],
+        aliases=["rstc", "restrito"],
         only_voiced=True,
         cooldown=restrict_cd,
         max_concurrency=restrict_mc,
@@ -68,66 +68,6 @@ class PlayerModesMixin:
 
         await self.interaction_message(inter, text, emoji=msg[1])
 
-    nonstop_cd = commands.CooldownMapping.from_cooldown(2, 15, commands.BucketType.member)
-
-    nonstop_mc = commands.MaxConcurrency(1, per=commands.BucketType.member, wait=False)
-
-    @has_player()
-    @check_voice()
-    @commands.has_guild_permissions(manage_guild=True)
-    @pool_command(
-        name="247",
-        aliases=["nonstop"],
-        only_voiced=True,
-        cooldown=nonstop_cd,
-        max_concurrency=nonstop_mc,
-        description="Ativar/Desativar o modo 24/7 do player (Em testes).",
-    )
-    async def nonstop_legacy(self, ctx: CustomContext):
-        await self.nonstop.callback(self=self, inter=ctx)
-
-    @has_player()
-    @check_voice()
-    @commands.slash_command(
-        name="247",
-        description=localized("cmd.247.description"),
-        default_member_permissions=disnake.Permissions(manage_guild=True),
-        extras={"only_voiced": True},
-        cooldown=nonstop_cd,
-        max_concurrency=nonstop_mc,
-    )
-    @commands.contexts(guild=True)
-    async def nonstop(self, inter: disnake.ApplicationCommandInteraction):
-        try:
-            bot = inter.music_bot
-        except AttributeError:
-            bot = inter.bot
-
-        player: LavalinkPlayer = bot.music.players[inter.guild_id]
-
-        player.keep_connected = not player.keep_connected
-
-        msg = ["ativou", "♾️"] if player.keep_connected else ["desativou", "❌"]
-
-        text = [
-            f"{msg[0]} o modo 24/7 (interrupto) do player.",
-            f"{msg[1]} **⠂{inter.author.mention} {msg[0]} o modo 24/7 (interrupto) do player.**",
-        ]
-
-        if not len(player.queue):
-            player.queue.extend(player.played)
-            player.played.clear()
-
-        await player.process_save_queue()
-
-        if player.current:
-            await self.interaction_message(inter, txt=text, emoji=msg[1])
-            return
-
-        await self.interaction_message(inter, text)
-
-        await player.process_next()
-
     autoplay_cd = commands.CooldownMapping.from_cooldown(2, 15, commands.BucketType.member)
 
     autoplay_mc = commands.MaxConcurrency(1, per=commands.BucketType.member, wait=False)
@@ -136,7 +76,7 @@ class PlayerModesMixin:
     @check_voice()
     @pool_command(
         name="autoplay",
-        aliases=["ap", "aplay"],
+        aliases=["ap"],
         only_voiced=True,
         cooldown=autoplay_cd,
         max_concurrency=autoplay_mc,

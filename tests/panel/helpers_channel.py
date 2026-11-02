@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import tornado.web
 
-from tests.support.canal_de_pedidos import (
+from tests.support.canal_da_jukebox import (
     BOT_ID,
     BOT_MENTION,
     FakeBot,

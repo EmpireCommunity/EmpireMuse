@@ -157,9 +157,8 @@ class LastFmCog(commands.Cog):
     lastfm_mc = commands.MaxConcurrency(1, per=commands.BucketType.user, wait=False)
 
     @commands.command(
-        hidden=True,
         name="lastfm",
-        aliases=["lastfmconnect", "lfm"],
+        aliases=["lfm"],
         description="Vincular sua conta do last.fm para registrar as músicas via scrobble.",
         cooldown=lastfm_cd,
         max_concurrency=lastfm_mc,
@@ -169,7 +168,7 @@ class LastFmCog(commands.Cog):
 
     @commands.slash_command(
         hidden=True,
-        name="lastfm",
+        name=localized("cmd.lastfm.name"),
         description=localized("cmd.lastfm.description"),
         extras={"allow_private": True},
         cooldown=lastfm_cd,
@@ -188,7 +187,7 @@ class LastFmCog(commands.Cog):
         cog = self.bot.get_cog("Music")
 
         if cog:
-            await inter.response.defer(ephemeral=await cog.is_request_channel(inter, ignore_thread=True))
+            await inter.response.defer(ephemeral=await cog.is_jukebox_channel(inter, ignore_thread=True))
         else:
             await inter.response.defer(ephemeral=True)
 

@@ -48,10 +48,6 @@ class PlayerEventsMixin:
             if event.code == 4022:
                 if self.keep_connected and vc:
                     await asyncio.sleep(5)
-                    self.set_command_log(
-                        emoji="⚠️",
-                        text=self.tr("player.if_you_want_to_disconnect", mention=str(vc.mention)),
-                    )
                     await self.connect(vc.id)
                     self.update = True
                 else:

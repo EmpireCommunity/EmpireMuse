@@ -37,7 +37,7 @@ from empiremuse.utils.radio.panel import (
     panel_payload,
     split_stream_title,
 )
-from tests.cogs.test_radio_ao_vivo import MAIN, RESERVE, LivePorts, make_live
+from tests.cogs.test_radio_ao_vivo import MAIN, RESERVE, make_live
 
 pytestmark = pytest.mark.critical
 
@@ -68,7 +68,7 @@ class TestLivePanel:
         payload = live_payload(tr_pt(), station=CARD, view=LiveView(has_list=True))
 
         embed = payload["embeds"][0]
-        assert embed.title == "Rádio ao Vivo 24/7" and "**Rádio Boa FM – Brasil**" in embed.description
+        assert embed.title == "Rádio ao vivo" and "**Rádio Boa FM – Brasil**" in embed.description
         assert ids(payload) == [
             PANEL_PREVIOUS_ID,
             PANEL_VOLUME_DOWN_ID,

@@ -1,6 +1,6 @@
 """Caracterização (VERDE contra o código ATUAL) de /setup e /reset — modules/music_settings.py:375-1010.
 
-Objetivo: congelar o comportamento antes de extrair a lógica para `utils/music/request_channel.py` (E4c, opção A).
+Objetivo: congelar o comportamento antes de extrair a lógica para `utils/music/jukebox_channel.py` (E4c, opção A).
 Mede efeitos no Discord e no banco, a ORDEM entre eles, mensagens de erro e limites. Nada aqui corrige defeitos:
 comportamentos ruins estão registrados de propósito e marcados `INVERTER_APOS_E4C` quando a E4c vai corrigi-los.
 """
@@ -10,7 +10,7 @@ import asyncio
 import pytest
 
 import empiremuse.cogs.music_settings as ms
-from tests.support.canal_de_pedidos import (
+from tests.support.canal_da_jukebox import (
     GUILD_ID,
     CommandInter,
     FakeBot,
@@ -79,13 +79,14 @@ class Scenario:
     def command_inter(self):
         return CommandInter(self.j, self.bot, self.guild, self.lobby)
 
-    def setup(self, target=None, purge="no", inter=None):
+    def setup(self, target=None, inter=None, **options):
         self.inter = inter or self.command_inter()
-        return asyncio.run(self.cog.setup.callback(self.cog, self.inter, target=target, purge_messages=purge))
+        options = {"auto_delete": None, "text_requests": None, **options}
+        return asyncio.run(self.cog.jukebox_setup.callback(self.cog, self.inter, target=target, **options))
 
-    def reset(self, delete="não", inter=None):
+    def reset(self, inter=None):
         self.inter = inter or self.command_inter()
-        return asyncio.run(self.cog.reset.callback(self.cog, self.inter, delete_channel=delete))
+        return asyncio.run(self.cog.jukebox_reset.callback(self.cog, self.inter))
 
     # ---- consultas
     @property
@@ -122,7 +123,6 @@ class TestResetTextChannel:
             in ("db.update", "inter.edit_original_message", "player.process_hint", "player.invoke_np", "message.edit")
         ]
         assert names == [
-            "message.edit",
             "db.update",
             "inter.edit_original_message",
             "player.process_hint",

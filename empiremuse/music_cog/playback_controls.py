@@ -100,7 +100,7 @@ class PlaybackControlsMixin:
             except AttributeError:
                 pass
 
-            await inter.send(embed=embed, ephemeral=await self.is_request_channel(inter), view=view)
+            await inter.send(embed=embed, ephemeral=await self.is_jukebox_channel(inter), view=view)
             await view.wait()
             if view.volume is None:
                 return
@@ -166,7 +166,7 @@ class PlaybackControlsMixin:
     @check_voice()
     @pool_command(
         name="resume",
-        aliases=["unpause"],
+        aliases=["unpause", "retomar"],
         description="Retomar/Despausar a música.",
         only_voiced=True,
         cooldown=pause_resume_cd,
@@ -342,6 +342,7 @@ class PlaybackControlsMixin:
     @has_source()
     @check_voice()
     @pool_command(
+        aliases=["repetir"],
         description=f"Selecionar modo de repetição entre: música atual / fila / desativar / quantidade (usando números).",
         only_voiced=True,
         cooldown=loop_cd,

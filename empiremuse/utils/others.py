@@ -72,6 +72,8 @@ class CustomContext(commands.Context):
         self.guild_id = self.guild.id
         self.channel_id = self.channel.id
         self.store_message = None
+        self.sent_messages = []
+        self.command_failed = False
         self.application_command = None
 
     async def defer(self, ephemeral: bool = False, *args, **kwargs):
@@ -106,7 +108,10 @@ class CustomContext(commands.Context):
         # if self.channel.permissions_for(self.guild.me).read_message_history:
         #    return await super().reply(fail_if_not_exists=False, content=content, **kwargs)
 
-        return await super().send(content=content, **kwargs)
+        msg = await super().send(content=content, **kwargs)
+        if msg is not None:
+            self.sent_messages.append(msg)
+        return msg
 
     async def reply(self, content: Optional[str] = None, **kwargs):
         try:
@@ -128,12 +133,18 @@ class CustomContext(commands.Context):
             if self.author.mention not in content:
                 content = f"{self.author.mention}. {content}"
 
-            return await super().send(content=content, **kwargs)
+            msg = await super().send(content=content, **kwargs)
+            if msg is not None:
+                self.sent_messages.append(msg)
+            return msg
 
         if self.author.id == self.bot.user.id and self.author.mention not in content:
             content = f"{self.author.mention}. {content}"
 
-        return await super().reply(fail_if_not_exists=False, content=content, **kwargs)
+        msg = await super().reply(fail_if_not_exists=False, content=content, **kwargs)
+        if msg is not None:
+            self.sent_messages.append(msg)
+        return msg
 
 
 class PoolCommand(commands.Command):
@@ -170,7 +181,7 @@ class PlayerControls:
     help_button = "musicplayer_help"
     restrict_mode = "musicplayer_restrict_mode"
     miniqueue = "musicplayer_miniqueue"
-    song_request_thread = "musicplayer_song_request_thread"
+    jukebox_thread = "musicplayer_jukebox_thread"
     fav_manager = "musicplayer_fav_manager"
     autoplay = "musicplayer_autoplay"
     add_favorite = "musicplayer_add_favorite"
@@ -238,7 +249,7 @@ class EmbedPaginator(disnake.ui.View):
         self.stop()
 
 
-def song_request_buttons(bot: BotCore, tr) -> list[disnake.ui.Button]:
+def jukebox_buttons(bot: BotCore, tr) -> list[disnake.ui.Button]:
     """O botão de pedir música; ``tr`` é o tradutor do servidor (``await bot.pool.i18n.for_guild(guild)``)."""
     return [
         disnake.ui.Button(
@@ -449,7 +460,7 @@ async def send_idle_embed(
             )
         )
 
-    components.extend(song_request_buttons(bot, tr))
+    components.extend(jukebox_buttons(bot, tr))
 
     if is_forum:
         content = tr("player.idle.request_forum_content")

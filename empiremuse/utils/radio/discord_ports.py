@@ -178,7 +178,7 @@ class DiscordRadioPorts:
         )
         try:
             await channel.create_instance(
-                topic=topic, privacy_level=disnake.StagePrivacyLevel.guild_only, reason="Rádio 24/7"
+                topic=topic, privacy_level=disnake.StagePrivacyLevel.guild_only, reason="Rádio"
             )
         except (disnake.Forbidden, disnake.HTTPException) as error:
             logger.warning("Evento de palco da rádio não criado (%s)", type(error).__name__)
@@ -207,7 +207,7 @@ class DiscordRadioPorts:
         if instance is None:
             return
         try:
-            await instance.delete(reason="Rádio 24/7 desligada")
+            await instance.delete(reason="Rádio desligada")
         except (disnake.Forbidden, disnake.NotFound, disnake.HTTPException) as error:
             logger.warning("Evento de palco da rádio não encerrado (%s)", type(error).__name__)
 

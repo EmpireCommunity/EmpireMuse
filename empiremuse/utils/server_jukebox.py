@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Canal de pedidos único (item 11, P4): a seção ``request`` do documento único e a eleição do bot do painel.
+"""Jukebox única (item 11, P4): a seção ``jukebox`` do documento único e a eleição do bot do painel.
 
 Um canal por servidor para todo o pool. O bot do painel (o principal se está no servidor, senão a 1ª reserva presente) é o ÚNICO que envia,
 edita e trata as mensagens do canal. A eleição é decidida DENTRO da trava do servidor, conferindo de novo quem está no servidor (S-V11). Tudo
@@ -13,8 +13,8 @@ import logging
 import weakref
 from typing import TYPE_CHECKING, NamedTuple, Optional
 
-from empiremuse.rules.request_panel import PanelPeer, elect_panel_bot
-from empiremuse.rules.servers import SECTION_REQUEST
+from empiremuse.rules.jukebox_panel import PanelPeer, elect_panel_bot
+from empiremuse.rules.servers import SECTION_JUKEBOX, SECTION_SETTINGS
 from empiremuse.utils.servers import ServerConfigConflict
 
 if TYPE_CHECKING:
@@ -23,11 +23,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-SECTIONS = (SECTION_REQUEST,)
+SECTIONS = (SECTION_JUKEBOX,)
 
 
-class RequestConfig(NamedTuple):
-    """O canal de pedidos do servidor. ``panel_bot_id`` é o último bot eleito (``None`` = nunca houve canal)."""
+class JukeboxConfig(NamedTuple):
+    """A Jukebox do servidor. ``panel_bot_id`` é o último bot eleito (``None`` = nunca houve canal)."""
 
     channel: Optional[int]
     message_id: Optional[int]
@@ -55,23 +55,23 @@ def _as_id(value: object) -> Optional[int]:
     return number if number > 0 else None
 
 
-def _config(doc: dict) -> RequestConfig:
-    request = doc.get(SECTION_REQUEST) or {}
-    return RequestConfig(
-        _as_id(request.get("channel")),
-        _as_id(request.get("message_id")),
-        _as_id(request.get("panel_bot_id")),
+def _config(doc: dict) -> JukeboxConfig:
+    jukebox = doc.get(SECTION_JUKEBOX) or {}
+    return JukeboxConfig(
+        _as_id(jukebox.get("channel")),
+        _as_id(jukebox.get("message_id")),
+        _as_id(jukebox.get("panel_bot_id")),
         int(doc.get("rev", 0)),
     )
 
 
-class ServerRequest:
+class ServerJukebox:
     def __init__(self, store: ServerStore) -> None:
         self.store = store
         self._operation_locks: weakref.WeakValueDictionary[int, asyncio.Lock] = weakref.WeakValueDictionary()
 
     def operation(self, gid: int) -> asyncio.Lock:
-        """A trava de OPERAÇÃO do canal do servidor: ``/setup`` e ``/reset`` (Discord e painel web) correm um de cada vez.
+        """A trava de OPERAÇÃO do canal do servidor: ``/jukebox setup`` e ``/jukebox reset`` (Discord e painel web) correm um de cada vez.
 
         É diferente da trava do store: ela cobre os efeitos no Discord (criar, apagar, arquivar), que o compare-and-set não desfaz.
         """
@@ -82,12 +82,12 @@ class ServerRequest:
 
     # ------------------------------------------------------------------ leitura
 
-    async def get(self, gid: int) -> RequestConfig:
+    async def get(self, gid: int) -> JukeboxConfig:
         return _config(await self.store.get_sections(gid, *SECTIONS))
 
     def peek_message_id(self, gid: int) -> Optional[int]:
         """O id da mensagem do painel olhando só o cache (sem cópia, sem banco); ``None`` = não sei (documento fora do cache)."""
-        section = self.store.peek_section(gid, SECTION_REQUEST)
+        section = self.store.peek_section(gid, SECTION_JUKEBOX)
         return None if section is None else _as_id(section.get("message_id")) or 0
 
     # ------------------------------------------------------------------ escrita
@@ -100,7 +100,7 @@ class ServerRequest:
         *,
         expected_rev: Optional[int] = None,
         expected: Optional[tuple[Optional[int], Optional[int]]] = None,
-    ) -> RequestConfig:
+    ) -> JukeboxConfig:
         """Grava canal e mensagem juntos (``None`` limpa) sob a trava; sem canal, sem mensagem.
 
         ``expected`` = ``(canal, mensagem)`` que o escritor leu: se o gravado já é outro, ``ServerConfigConflict`` (conferido DENTRO da
@@ -112,9 +112,9 @@ class ServerRequest:
         def apply(doc: dict) -> bool:
             if expected is not None and (_config(doc).channel, _config(doc).message_id) != tuple(expected):
                 raise ServerConfigConflict
-            before = dict(doc[SECTION_REQUEST])
-            doc[SECTION_REQUEST].update({"channel": channel, "message_id": message})
-            return doc[SECTION_REQUEST] != before
+            before = dict(doc[SECTION_JUKEBOX])
+            doc[SECTION_JUKEBOX].update({"channel": channel, "message_id": message})
+            return doc[SECTION_JUKEBOX] != before
 
         return _config(await self.store.mutate_doc(gid, SECTIONS, apply, expected_rev=expected_rev))
 
@@ -124,8 +124,26 @@ class ServerRequest:
         *,
         expected_rev: Optional[int] = None,
         expected: Optional[tuple[Optional[int], Optional[int]]] = None,
-    ) -> RequestConfig:
-        return await self.set(gid, None, None, expected_rev=expected_rev, expected=expected)
+    ) -> JukeboxConfig:
+        def apply(doc: dict) -> bool:
+            if expected is not None and (_config(doc).channel, _config(doc).message_id) != tuple(expected):
+                raise ServerConfigConflict
+            before = dict(doc[SECTION_JUKEBOX])
+            doc[SECTION_JUKEBOX].update({"channel": None, "message_id": None})
+            changed = doc[SECTION_JUKEBOX] != before
+            settings = doc.get(SECTION_SETTINGS)
+            if isinstance(settings, dict):
+                if settings.get("jukebox_auto_delete") is True:
+                    settings["jukebox_auto_delete"] = False
+                    changed = True
+                if settings.get("jukebox_text_requests", True) is False:
+                    settings["jukebox_text_requests"] = True
+                    changed = True
+            return changed
+
+        return _config(
+            await self.store.mutate_doc(gid, (SECTION_JUKEBOX, SECTION_SETTINGS), apply, expected_rev=expected_rev)
+        )
 
     # ------------------------------------------------------------------ o bot do painel
 
@@ -164,7 +182,7 @@ class ServerRequest:
         outcome: dict = {}
 
         def apply(doc: dict) -> bool:
-            stored = doc[SECTION_REQUEST].get("panel_bot_id")
+            stored = doc[SECTION_JUKEBOX].get("panel_bot_id")
             # conferido aqui dentro: o que valeu fora da trava pode ter mudado
             elected = self.elected_id(gid, _as_id(stored))
             new = None if elected is None else str(elected)
@@ -172,14 +190,14 @@ class ServerRequest:
             outcome["changed"] = stored != new
             if stored == new:
                 return False
-            doc[SECTION_REQUEST]["panel_bot_id"] = new
+            doc[SECTION_JUKEBOX]["panel_bot_id"] = new
             return True
 
         await self.store.mutate_doc(gid, SECTIONS, apply)
         election = Election(self._bot_by_id(outcome["elected"]), bool(outcome["changed"]))
         if election.changed and election.bot is not None:
             # toda troca gravada passa o painel ao novo bot, qualquer que seja o caminho que a gravou (panel_bot, is_panel_bot, entrada/saída)
-            panel = getattr(self.store.pool, "request_panel", None)
+            panel = getattr(self.store.pool, "jukebox_panel", None)
             if panel is not None:
                 panel.schedule_handoff(gid)
         return election
@@ -212,6 +230,6 @@ class ServerRequest:
 
     def _retry_handoff(self, gid: int) -> None:
         """A eleição já está gravada: se a passagem do painel ficou pendente (falhou antes), tenta de novo."""
-        panel = getattr(self.store.pool, "request_panel", None)
+        panel = getattr(self.store.pool, "jukebox_panel", None)
         if panel is not None:
             panel.retry_pending_handoff(gid)

@@ -11,8 +11,8 @@ import pytest
 
 from empiremuse.i18n import get_i18n
 from empiremuse.rules import i18n as rules
-from empiremuse.rules.request_panel import PAUSED, PanelEntry
-from empiremuse.utils.music.interactions.request_panel import render_panel
+from empiremuse.rules.jukebox_panel import PAUSED, PanelEntry
+from empiremuse.utils.music.interactions.jukebox_panel import render_panel
 from empiremuse.utils.music.models.player import LavalinkPlayer
 from tests.i18n.skins_harness import make_player
 
@@ -92,11 +92,11 @@ ENTRIES = (
 )
 
 
-class TestRequestPanel:
+class TestJukeboxPanel:
     def test_pt_br_is_todays_text(self):
         embed = panel(PT, *ENTRIES, last_action="alguém fez algo")["embeds"][0]
 
-        assert embed.title == "🎶 Pedidos de música"
+        assert embed.title == "🎶 Jukebox"
         assert embed.description == (
             "Entre em um canal de voz e peça uma música aqui no canal (ou pelo botão abaixo). "
             "**2 players ativos** neste servidor:"
@@ -114,7 +114,7 @@ class TestRequestPanel:
         data = panel(EN, *ENTRIES)
         embed = data["embeds"][0]
 
-        assert embed.title == "🎶 Music requests" and "active players" in embed.description
+        assert embed.title == "🎶 Jukebox" and "active players" in embed.description
         assert embed.fields[0].value.startswith("-# Playing: ") and "in the queue" in embed.fields[0].value
         assert embed.fields[1].name.endswith("private channel")
         assert data["components"][0].children[0].label == "Request a song"

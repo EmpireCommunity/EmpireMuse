@@ -1,4 +1,4 @@
-"""E4c — `check_channel_perm` (utils/music/request_channel.py) deve enxergar os nomes CANÔNICOS das permissões.
+"""E4c — `check_channel_perm` (utils/music/jukebox_channel.py) deve enxergar os nomes CANÔNICOS das permissões.
 
 Hoje `Permissions` itera por `view_channel`/`send_messages` e a lista da função usa os aliases `read_messages`/
 `create_forum_threads`, que nunca casam: falta de ler mensagens (e de postar em fórum) passa batido (RED).
@@ -6,9 +6,9 @@ Hoje `Permissions` itera por `view_channel`/`send_messages` e a lista da funçã
 
 import pytest
 
-from empiremuse.utils.music import request_channel
+from empiremuse.utils.music import jukebox_channel
 from empiremuse.utils.music.errors import GenericError
-from tests.support.canal_de_pedidos import (
+from tests.support.canal_da_jukebox import (
     BOT_MENTION,
     FULL_TEXT,
     FakeGuild,
@@ -23,15 +23,17 @@ ESC = "\x1b"
 
 
 def exact(channel, missing):
-    """Mensagem EXATA esperada (bloco ```ansi com ESC[0;33m … ESC[0m, na ordem de iteração de Permissions)."""
+    """Mensagem EXATA esperada (bloco ```ansi, uma linha ``▪`` por permissão, na ordem de iteração de Permissions; singular com uma só)."""
     from empiremuse.utils.music.converters import perms_translations
 
     ordered = [name for name, _ in channel.permissions_for(None) if name in missing]
-    lines = "\n".join(f"{ESC}[0;33m{perms_translations.get(name, name)}{ESC}[0m" for name in ordered)
-    return (
-        f"**{BOT_MENTION} não possui as seguintes permissões necessárias no canal {channel.mention}** ```ansi\n"
-        f"{lines}```"
+    plural = len(ordered) > 1
+    lines = "\n".join(f" {ESC}[0;33m▪ {ESC}[0;31m{perms_translations.get(name, name)} {ESC}[0m" for name in ordered)
+    head = (
+        f"**{BOT_MENTION} não possui {'as seguintes permissões necessárias' if plural else 'a seguinte permissão necessária'} "
+        f"no canal {channel.mention}**"
     )
+    return f"{head} ```ansi\n{lines}```"
 
 
 def guild():
@@ -45,7 +47,7 @@ def without(*names):
 
 def message_of(channel):
     with pytest.raises(GenericError) as raised:
-        request_channel.check_channel_perm(channel)
+        jukebox_channel.check_channel_perm(channel)
     return raised.value.text
 
 

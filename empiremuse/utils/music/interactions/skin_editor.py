@@ -59,8 +59,8 @@ class SkinSettingsButton(disnake.ui.View):
                     default=self.mode == "custom_skins",
                 ),
                 disnake.SelectOption(
-                    label="Song-Request",
-                    description="Aplicar skin no modo song-request do player",
+                    label="Jukebox",
+                    description="Aplicar skin no modo Jukebox do player",
                     value="custom_skins_static",
                     default=self.mode == "custom_skins_static",
                 ),

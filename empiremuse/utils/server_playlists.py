@@ -241,16 +241,16 @@ class ServerPlaylists:
     # ------------------------------------------------------------------ embed ocioso
 
     def refresh_idle(self, gid: int) -> None:
-        """Atualiza, em segundo plano, o painel do canal de pedidos (o canal é único: só o bot do painel edita a mensagem)."""
+        """Atualiza, em segundo plano, o painel da Jukebox (o canal é único: só o bot do painel edita a mensagem)."""
         task = asyncio.get_running_loop().create_task(self._refresh(gid))
         self._refresh_tasks.add(task)
         task.add_done_callback(self._refresh_tasks.discard)
 
     async def _refresh(self, gid: int) -> None:
-        panel = getattr(self.store.pool, "request_panel", None)
+        panel = getattr(self.store.pool, "jukebox_panel", None)
         if panel is None:
             return
         try:
             await panel.refresh(gid)
         except Exception as exc:  # noqa: BLE001 - enfeite: a lista já foi gravada
-            logger.warning("Painel do canal de pedidos não atualizado [%s] (%s)", gid, type(exc).__name__)
+            logger.warning("Painel da Jukebox não atualizado [%s] (%s)", gid, type(exc).__name__)

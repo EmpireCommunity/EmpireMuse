@@ -10,7 +10,7 @@ import disnake
 from disnake.ext import commands
 
 import empiremuse.wavelink as wavelink
-from empiremuse.rules.request_panel import choose_player
+from empiremuse.rules.jukebox_panel import choose_player
 from empiremuse.rules.voice_status import control_lock_seconds
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.converters import time_format
@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 
 def resolve_player(pool: BotPool, guild_id: int, member: disnake.Member) -> Optional[tuple[BotCore, LavalinkPlayer]]:
-    """O (bot, player) que está na call de quem apertou no painel do canal de pedidos, ou ``None`` (S-V8).
+    """O (bot, player) que está na call de quem apertou no painel da Jukebox, ou ``None`` (S-V8).
 
     É o ÚNICO jeito de achar o player de um clique no painel: nunca vem de ``custom_id`` nem de valor de select, e nunca cai no player de
     outra call. Quem não está em call, ou está numa call sem player, não tem player. Os bots são olhados na ordem do ``identifier``.
@@ -757,15 +757,6 @@ async def check_player_perm(inter, bot: BotCore, channel, guild_data: dict = Non
 
     if inter.author.guild_permissions.manage_channels:
         return True
-
-    if player.keep_connected:
-        txt, components = get_available_bots_info(bot.pool, player.guild_id, inter.author)
-
-        raise GenericError(
-            "Apenas membros com a permissão de **gerenciar canais** "
-            f"podem usar esse comando/botão com o **modo 24/7 ativo** no canal <#{player.channel_id}>...\n\n" + txt,
-            components=components,
-        )
 
     if inter.author.id == player.player_creator or inter.author.id in player.dj:
         return True

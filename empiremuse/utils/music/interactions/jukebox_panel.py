@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Painel do canal de pedidos com 2+ players (item 11, P4): uma seção por player, botões comuns e o select de playlists.
+"""Painel da Jukebox com 2+ players (item 11, P4): uma seção por player, botões comuns e o select de playlists.
 
-Só monta a mensagem: quem envia/edita é o bot do painel (``utils/server_request``), com ``AllowedMentions.none()``. Os botões
+Só monta a mensagem: quem envia/edita é o bot do painel (``utils/server_jukebox``), com ``AllowedMentions.none()``. Os botões
 levam os ``custom_id`` de hoje (``PlayerControls``), sem bot nem player dentro: quem apertou age no player da PRÓPRIA call
 (``resolve_player``, S-V8). Texto de terceiros (faixa, call, quem pediu) só sai via ``md_link``/``md_code``; call privada
 não mostra faixa nem quem pediu (S-V7).
@@ -15,7 +15,7 @@ from typing import Any
 import disnake
 
 from empiremuse.rules.i18n import Translator, fit
-from empiremuse.rules.request_panel import (
+from empiremuse.rules.jukebox_panel import (
     GENRE_SELECT_ID,
     MAX_GENRE_OPTIONS,
     PAUSED,

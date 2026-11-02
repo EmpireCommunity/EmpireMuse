@@ -1,8 +1,8 @@
-"""Estado compartilhado pelas etapas dos pedidos de música por mensagem."""
+"""Estado compartilhado pelas etapas dos pedidos de música na Jukebox."""
 
 
-class ParseRequestState:
-    """Variáveis que passam de uma etapa para outra (antes, locais de `parse_song_request`)."""
+class JukeboxParseState:
+    """Variáveis que passam de uma etapa para outra (antes, locais de ``parse_jukebox_request``)."""
 
     __slots__ = (
         "attachment",
@@ -32,8 +32,8 @@ class ParseRequestState:
         self.tracks = None
 
 
-class SongRequestState:
-    """Variáveis que passam de uma etapa para outra (antes, locais de `song_requests`)."""
+class JukeboxState:
+    """Variáveis que passam de uma etapa para outra (antes, locais de ``on_jukebox_message``)."""
 
     __slots__ = (
         "ctx",

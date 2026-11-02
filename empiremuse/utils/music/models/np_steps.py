@@ -325,9 +325,9 @@ def _np_buttons_extra(self, req):
     if not self.static and not self.has_thread:
         data["components"][5].options.append(
             disnake.SelectOption(
-                label="Song-Request Thread",
+                label="Jukebox Thread",
                 emoji=app_emoji(self.bot, "comment"),
-                value=PlayerControls.song_request_thread,
+                value=PlayerControls.jukebox_thread,
                 description=fit(self.tr("player.create_a_temporary_thread_to.description"), 100),
             )
         )
@@ -442,12 +442,12 @@ async def _np_message_edit(self, req):
 
 
 async def _np_send_new(self, req):
-    """Envia uma mensagem nova do player e atualiza o canal de pedidos."""
+    """Envia uma mensagem nova do player e atualiza o canal da Jukebox."""
     data = req.data
 
-    panel = getattr(self.bot.pool, "request_panel", None)
+    panel = getattr(self.bot.pool, "jukebox_panel", None)
     if not self.message and self.static and panel is not None:
-        # canal de pedidos único: a mensagem é do bot do painel (o autor); quem manda uma nova é ele, nunca o bot deste player
+        # canal da Jukebox único: a mensagem é do bot do painel (o autor); quem manda uma nova é ele, nunca o bot deste player
         try:
             message = await panel.resend(self.guild_id)
             if message is not None:

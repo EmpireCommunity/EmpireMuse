@@ -1,4 +1,4 @@
-"""Regras puras da rádio 24/7 (item 8, R1): o modelo, a validação, o teto por servidor, a presença, o recuo da reconexão e o relógio virtual.
+"""Regras puras da rádio (item 8, R1): o modelo, a validação, o teto por servidor, a presença, o recuo da reconexão e o relógio virtual.
 
 Uma rádio é um bot reserva fixo numa call (voz ou palco), com a fonte (uma playlist do servidor; na R3 uma estação ao vivo) e as regras do
 chat da própria call. Aqui só há dados e decisões: o banco, o Discord e o Lavalink são de ``utils/radio``. Toda validação devolve o valor
@@ -8,11 +8,10 @@ limpo ou um ``RuleError`` (``code`` estável, ``key`` = o campo); nada aqui mont
 from __future__ import annotations
 
 import re
-from collections.abc import Container, Iterable, Mapping, Sequence
+from collections.abc import Container, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, NamedTuple
+from typing import Any
 
-from empiremuse.rules.bot_roles import identifier_sort_key
 from empiremuse.rules.errors import RuleError
 
 KIND_CUSTOM = "custom"
@@ -144,6 +143,8 @@ def check_source(kind: str, raw: object) -> dict[str, Any] | RuleError:
     """A fonte: ``{station}`` (id da estação do servidor, R5; ``{playlist}`` é o legado da R1) na personalizada; ``{station, reserve}`` na ao vivo (a R3 usa; aqui só se confere o formato)."""
     if not isinstance(raw, Mapping):
         return RuleError(SOURCE_INVALID, "source")
+    if not raw:
+        return {}  # configurada (canal, bot e tipo) e ainda sem estação: pode existir, não pode ligar (``source_chosen``)
     if kind == KIND_CUSTOM:
         station_id = raw.get("station")
         if set(raw) == {"station"} and isinstance(station_id, str) and _CUSTOM_STATION_ID.fullmatch(station_id):
@@ -183,6 +184,11 @@ def check_source(kind: str, raw: object) -> dict[str, Any] | RuleError:
         if volume != VOLUME_DEFAULT:
             source["volume"] = volume
     return source
+
+
+def source_chosen(radio: Radio) -> bool:
+    """A rádio já tem estação (ou playlist do legado)? Sem ela a configuração existe, mas a rádio não liga."""
+    return bool(radio.source)
 
 
 def _identity(raw: Mapping[str, Any]) -> tuple[int, int] | None:
@@ -264,32 +270,6 @@ def to_document(radio: Radio, *, updated_by: str = "") -> dict[str, Any]:
         "rev": radio.rev,
         "updated_by": str(updated_by)[:40],
     }
-
-
-# ---------------------------------------------------------------------- qual bot toca a rádio
-
-
-class BotCandidate(NamedTuple):
-    """Um bot do pool visto de um servidor. ``busy`` = já tem player ou está numa call aí; ``has_radio_here`` = já roda uma rádio deste servidor."""
-
-    identifier: str
-    bot_id: int
-    main: bool
-    radio_only: bool
-    ready: bool
-    in_guild: bool
-    busy: bool
-    has_radio_here: bool = False
-
-
-def pick_radio_bot(candidates: Iterable[BotCandidate]) -> int | None:
-    """O bot que vai tocar a rádio: primeiro um reserva ``radio_only`` livre, depois qualquer reserva livre (ordem natural do identificador).
-
-    Nunca o principal, nunca um bot que já está em call no servidor, nem um que já roda uma rádio aqui (uma rádio por bot e servidor).
-    """
-    usable = [c for c in candidates if c.ready and c.in_guild and not c.main and not c.busy and not c.has_radio_here]
-    usable.sort(key=lambda c: (not c.radio_only, identifier_sort_key(c.identifier)))
-    return usable[0].bot_id if usable else None
 
 
 # ---------------------------------------------------------------------- painel na call (R-6)

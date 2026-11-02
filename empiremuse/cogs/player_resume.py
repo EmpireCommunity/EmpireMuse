@@ -15,7 +15,7 @@ from empiremuse.rules.voice_status import resolve_voice_status
 from empiremuse.serialization.schema import SchemaError
 from empiremuse.utils.client import BotCore
 from empiremuse.utils.db import DBModel
-from empiremuse.utils.request_panel import fetch_panel_message
+from empiremuse.utils.jukebox_panel import fetch_panel_message
 from empiremuse.utils.music.checks import can_connect, can_send_message
 from empiremuse.utils.music.errors import PoolException
 from empiremuse.utils.music.filters import AudioFilter
@@ -642,7 +642,6 @@ class PlayerSession(commands.Cog):
                         skin=data["skin"],
                         skin_static=data["skin_static"],
                         player_creator=data["player_creator"],
-                        keep_connected=data.get("keep_connected"),
                         autoplay=data.get("autoplay", False),
                         static=data["static"],
                         custom_skin_data=data.get("custom_skin_data", {}),

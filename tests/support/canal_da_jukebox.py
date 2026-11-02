@@ -78,6 +78,7 @@ class FakeMessage:
         self.journal, self.id, self.channel, self.author, self.thread = journal, id_, channel, author, thread
         self.guild = channel.guild
         self.fail_edit = None
+        self.fail_delete = None
 
     async def edit(self, **kwargs):
         self.journal.add("message.edit", self.id, kwargs)
@@ -86,6 +87,8 @@ class FakeMessage:
 
     async def delete(self):
         self.journal.add("message.delete", self.id)
+        if self.fail_delete:
+            raise self.fail_delete
 
     async def create_thread(self, *, name, auto_archive_duration=None):
         self.journal.add("message.create_thread", self.id, name, auto_archive_duration)
@@ -335,7 +338,7 @@ class FakePlayer:
 
 
 class FakeRequestStore:
-    """O ``pool.servers.request`` do canal de pedidos sobre o ``FakeDB`` (o bot é o único e portanto o bot do painel)."""
+    """O ``pool.servers.jukebox`` do canal de pedidos sobre o ``FakeDB`` (o bot é o único e portanto o bot do painel)."""
 
     def __init__(self, bot):
         self.bot = bot
@@ -351,11 +354,11 @@ class FakeRequestStore:
         return True
 
     async def get(self, gid):
-        from empiremuse.utils.server_request import RequestConfig
+        from empiremuse.utils.server_jukebox import JukeboxConfig
 
         controller = self.bot.db.doc["player_controller"]
         ident = lambda value: int(value) if value else None
-        return RequestConfig(ident(controller["channel"]), ident(controller["message_id"]), self.bot.user.id, 1)
+        return JukeboxConfig(ident(controller["channel"]), ident(controller["message_id"]), self.bot.user.id, 1)
 
     async def set(self, gid, channel_id, message_id, *, expected_rev=None, expected=None):
         doc = copy.deepcopy(self.bot.db.doc)
@@ -380,7 +383,7 @@ class FakeBot:
         self.script = {}  # evento -> lista de interações entregues por wait_for (exceção = levantar)
         self.waits = []
         self.pool = SimpleNamespace(
-            get_guild_bots=lambda gid: [self], servers=SimpleNamespace(request=FakeRequestStore(self))
+            get_guild_bots=lambda gid: [self], servers=SimpleNamespace(jukebox=FakeRequestStore(self))
         )
 
     @property

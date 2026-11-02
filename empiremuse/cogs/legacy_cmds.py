@@ -871,7 +871,7 @@ class Owner(commands.Cog):
     @commands.has_guild_permissions(manage_guild=True)
     @commands.cooldown(1, 10, commands.BucketType.guild)
     @commands.command(
-        aliases=["mudarprefixo", "prefix", "changeprefix"],
+        aliases=["prefix", "mudarprefixo"],
         description="Alterar o prefixo do servidor",
         usage="{prefix}{cmd} [prefixo]\nEx: {prefix}{cmd} >>",
     )
@@ -921,7 +921,7 @@ class Owner(commands.Cog):
 
     @commands.cooldown(1, 10, commands.BucketType.guild)
     @commands.command(
-        aliases=["uprefix", "spu", "setmyprefix", "spm", "setcustomprefix", "scp", "customprefix", "myprefix"],
+        aliases=["myprefix", "uprefix", "meuprefixo"],
         description="Alterar seu prefixo de usuário (prefixo que irei responder a você independente "
         "do prefixo configurado no servidor).",
         usage="{prefix}{cmd} [prefixo]\nEx: {prefix}{cmd} >>",
@@ -1271,7 +1271,7 @@ class Owner(commands.Cog):
 
     @check_voice()
     @commands.cooldown(1, 15, commands.BucketType.guild)
-    @commands.command(description="inicializar um player no servidor.", aliases=["spawn", "sp", "spw", "smn"])
+    @commands.command(description="inicializar um player no servidor.", aliases=["spawn", "smn"])
     async def summon(self, ctx: CustomContext):
         try:
             ctx.bot.music.players[ctx.guild.id]  # type ignore
