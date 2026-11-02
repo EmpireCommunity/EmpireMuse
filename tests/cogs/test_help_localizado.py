@@ -139,11 +139,14 @@ class TestTheCommandPageReadsTheCatalog:
     @pytest.mark.asyncio
     async def test_the_decorator_text_never_shows_when_the_catalog_has_the_command(self):
         """``adddj`` tem ``cmd.add_dj.*``: o texto é o do catálogo, mesmo que o decorador tenha outra descrição."""
-        command = by_name("adddj")
+        async def nothing(ctx):
+            return None
+
+        command = commands.Command(nothing, name="adddj", description="Texto do decorador")
         page = await page_of("en-US", command)
 
         assert "Add a member to the DJ list" in page
-        assert command.description not in page
+        assert "Texto do decorador" not in page
 
     @pytest.mark.asyncio
     async def test_a_command_outside_the_catalog_falls_back_to_the_decorator(self):

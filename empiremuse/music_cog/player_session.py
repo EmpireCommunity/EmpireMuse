@@ -120,7 +120,6 @@ class PlayerSessionMixin:
         name="adddj",
         aliases=["adj"],
         only_voiced=True,
-        description="Adicionar um membro à lista de DJ's na sessão atual do player.",
     )
     async def add_dj_legacy(self, ctx: CustomContext, user: disnake.Member):
         await self.add_dj.callback(self=self, inter=ctx, user=user)
@@ -246,7 +245,6 @@ class PlayerSessionMixin:
         name="commandlog",
         aliases=["cmdlog", "cl"],
         only_voiced=True,
-        description="Ver o log de uso dos comandos.",
     )
     async def command_log_legacy(self, ctx: CustomContext):
         await self.command_log.callback(self=self, inter=ctx)
@@ -284,7 +282,6 @@ class PlayerSessionMixin:
         name="stop",
         aliases=["leave", "parar"],
         only_voiced=True,
-        description="Parar o player e me desconectar do canal de voz.",
     )
     async def stop_legacy(self, ctx: CustomContext):
         await self.stop.callback(self=self, inter=ctx)
@@ -341,7 +338,6 @@ class PlayerSessionMixin:
         only_voiced=True,
         cooldown=queue_manipulation_cd,
         max_concurrency=remove_mc,
-        description="Experimental: Salvar a música e fila atual pra reusá-los a qualquer momento.",
     )
     async def savequeue_legacy(self, ctx: CustomContext):
         await self.save_queue.callback(self=self, inter=ctx)

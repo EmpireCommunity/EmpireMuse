@@ -41,7 +41,6 @@ class QueueEditMixin:
     @pool_command(
         name="remove",
         aliases=["r", "remover"],
-        description="Remover uma música específica da fila.",
         only_voiced=True,
         max_concurrency=remove_mc,
         extras={"flags": case_sensitive_args},
@@ -109,7 +108,6 @@ class QueueEditMixin:
         only_voiced=True,
         cooldown=queue_manipulation_cd,
         max_concurrency=remove_mc,
-        description="Readicionar as músicas tocadas na fila.",
     )
     async def readd_legacy(self, ctx: CustomContext):
         await self.readd_songs.callback(self=self, inter=ctx)
@@ -165,7 +163,6 @@ class QueueEditMixin:
         name="rotate",
         aliases=["rt", "rotacionar"],
         only_voiced=True,
-        description="Rotacionar a fila para a música especificada.",
         cooldown=queue_manipulation_cd,
         max_concurrency=remove_mc,
         extras={"flags": case_sensitive_args},
