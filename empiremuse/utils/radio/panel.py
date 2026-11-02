@@ -262,7 +262,9 @@ def custom_payload(
             shown = ", ".join(external_text(a, NAME_LIMIT) for a in view.unknown[:UNKNOWN_SHOWN])
             lines.append(f"-# ⚠️ {tr('radio.panel.custom.unknown', artists=shown)}")
         if view.credit:
-            lines.append(f"-# {tr('radio.panel.custom.credit', url=LASTFM_URL)}")
+            lines.append(
+                f"-# [{tr('radio.panel.custom.credit')}]({LASTFM_URL})"
+            )  # o link vem do código: o catálogo de textos não aceita link
         embed.add_field(name=fit(f"▶️ {station}", 256), value="\n".join(lines), inline=False)
         buttons = []
         if view.has_list:

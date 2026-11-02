@@ -178,9 +178,11 @@ class StationEditor(disnake.ui.View):
                 self.tr("radio.station.ui.lastfm_missing")
             )  # sem a chave do Last.fm a estação salva, mas não toca
         kind_select = disnake.ui.Select(
-            placeholder=self.tr("radio.station.ui.kind_placeholder"),
+            placeholder=fit(self.tr("radio.station.ui.kind_placeholder"), 150),
             options=[
-                disnake.SelectOption(label=self.tr(f"radio.station.kind.{k}"), value=k, default=k == self.kind)
+                disnake.SelectOption(
+                    label=fit(self.tr(f"radio.station.kind.{k}"), 100), value=k, default=k == self.kind
+                )
                 for k in STATION_KINDS
             ],
         )
@@ -190,22 +192,24 @@ class StationEditor(disnake.ui.View):
             self._add_genre_selects()
         elif self.kind == KIND_ARTISTS:
             button = disnake.ui.Button(
-                label=self.tr("radio.station.ui.artists_button"), custom_id="radio_station_artists"
+                label=fit(self.tr("radio.station.ui.artists_button"), 80), custom_id="radio_station_artists"
             )
             button.callback = self._on_artists_button
             self.add_item(button)
         else:
             self._add_playlist_select(lines)
-        name_button = disnake.ui.Button(label=self.tr("radio.station.ui.name_button"), custom_id="radio_station_name")
+        name_button = disnake.ui.Button(
+            label=fit(self.tr("radio.station.ui.name_button"), 80), custom_id="radio_station_name"
+        )
         name_button.callback = self._on_name_button
         save = disnake.ui.Button(
-            label=self.tr("radio.station.ui.save"),
+            label=fit(self.tr("radio.station.ui.save"), 80),
             custom_id="radio_station_save",
             style=disnake.ButtonStyle.success,
             disabled=self._source() is None,
         )
         save.callback = self._on_save
-        cancel = disnake.ui.Button(label=self.tr("radio.station.ui.cancel"), custom_id="radio_station_cancel")
+        cancel = disnake.ui.Button(label=fit(self.tr("radio.station.ui.cancel"), 80), custom_id="radio_station_cancel")
         cancel.callback = self._on_cancel
         for item in (name_button, save, cancel):
             self.add_item(item)
@@ -213,9 +217,11 @@ class StationEditor(disnake.ui.View):
 
     def _add_genre_selects(self) -> None:
         group = disnake.ui.Select(
-            placeholder=self.tr("radio.station.ui.group_placeholder"),
+            placeholder=fit(self.tr("radio.station.ui.group_placeholder"), 150),
             options=[
-                disnake.SelectOption(label=self.tr(f"radio.genre.group.{g}"), value=g, default=g == self.group)
+                disnake.SelectOption(
+                    label=fit(self.tr(f"radio.genre.group.{g}"), 100), value=g, default=g == self.group
+                )
                 for g in GROUPS
             ],
         )
@@ -223,7 +229,7 @@ class StationEditor(disnake.ui.View):
         self.add_item(group)
         genres = [g for g in self.hub.stations.genres() if g.group == self.group][:SELECT_MAX]
         genre = disnake.ui.Select(
-            placeholder=self.tr("radio.station.ui.genre_placeholder"),
+            placeholder=fit(self.tr("radio.station.ui.genre_placeholder"), 150),
             options=[
                 disnake.SelectOption(
                     label=fit(self.tr(f"radio.genre.{g.id}"), 100), value=g.id, default=g.id == self.genre
@@ -239,7 +245,7 @@ class StationEditor(disnake.ui.View):
             lines.append(self.tr("radio.station.ui.no_playlists"))
             return
         select = disnake.ui.Select(
-            placeholder=self.tr("radio.station.ui.playlists_placeholder"),
+            placeholder=fit(self.tr("radio.station.ui.playlists_placeholder"), 150),
             min_values=1,
             max_values=min(MAX_PLAYLISTS, len(self.playlists)),
             options=[
@@ -372,7 +378,7 @@ class ConfirmDelete(disnake.ui.View):
         super().__init__(timeout=CONFIRM_TIMEOUT_S)
         self.hub, self.tr, self.author_id, self.station, self._can_manage = hub, tr, author_id, station, can_manage
         confirm = disnake.ui.Button(
-            label=self.tr("radio.station.ui.delete_confirm"),
+            label=fit(self.tr("radio.station.ui.delete_confirm"), 80),
             custom_id="radio_station_delete_confirm",
             style=disnake.ButtonStyle.danger,
         )
