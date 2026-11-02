@@ -37,6 +37,10 @@ class FakePorts:
         self.skips = 0
         self.panels = 0
         self.panel_error: Exception | None = None
+        self.in_call = True
+
+    def in_channel(self):
+        return self.in_call
 
     def now(self):
         return self.t
@@ -226,6 +230,36 @@ class TestReconnect:
         await runner.on_disconnect()
 
         assert ports.sleeps[0] >= 4.0 and ports.stops == 1 and runner.phase is Phase.PLAYING
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("listeners", [1, 0])  # tocando e esperando ouvinte: nos dois a rádio volta sozinha
+    async def test_when_the_bot_is_taken_out_of_the_call_the_watchdog_brings_it_back_without_any_event(self, listeners):
+        """B3: o dono desconectou o bot e o evento do Discord não chegou (ou foi descartado): o vigia do passo percebe e religa pelo recuo."""
+        runner, ports, _ = make(FakePorts(listeners=listeners))
+        await runner.start()
+        connects = ports.connects
+
+        ports.in_call = False
+        assert runner.lost_channel() is False  # o 1º passo fora da call só anota (mudança de canal em curso não conta)
+        assert runner.lost_channel() is True  # o 2º seguido religa
+        ports.in_call = True  # o Discord o recoloca na volta
+        await runner.on_disconnect()
+
+        assert ports.connects == connects + 1 and runner.phase in (Phase.PLAYING, Phase.PAUSED_PRESENCE)
+        assert runner.lost_channel() is False
+
+    @pytest.mark.asyncio
+    async def test_being_back_in_the_call_between_two_steps_clears_the_count(self):
+        runner, ports, _ = make()
+        await runner.start()
+
+        ports.in_call = False
+        runner.lost_channel()
+        ports.in_call = True
+        runner.lost_channel()
+        ports.in_call = False
+
+        assert runner.lost_channel() is False  # recomeçou do zero
 
     @pytest.mark.asyncio
     async def test_the_jitter_stays_within_twenty_percent(self):

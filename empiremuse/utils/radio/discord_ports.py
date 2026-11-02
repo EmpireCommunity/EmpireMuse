@@ -38,6 +38,10 @@ STAGE_TOPIC_LIMIT = 120
 PANEL_CLEANUP_LIMIT = 50  # mensagens do canal que se olham atrás de painéis antigos do próprio bot
 
 
+JOIN_WAIT_S = 8.0  # quanto o ``connect`` espera o Discord confirmar que o bot entrou na call
+JOIN_POLL_S = 0.5
+
+
 class RadioBotUnavailable(Exception):
     """O bot da rádio (ou o servidor dele) ainda não está pronto: o runner trata como "não sei agora" e tenta de novo."""
 
@@ -106,6 +110,24 @@ class DiscordRadioPorts:
             return Allowed.NO_PERMISSION
         return Allowed.YES
 
+    def in_channel(self) -> bool:
+        """O bot está NA call da rádio agora (o Discord diz). Quem não consegue ver (sem cache do servidor) conta como "sim": só se age sobre fato."""
+        guild, channel = self._guild(), self._channel()
+        if guild is None or channel is None or not hasattr(guild.me, "voice"):
+            return True
+        voice = guild.me.voice
+        return voice is not None and getattr(voice.channel, "id", None) == channel.id
+
+    async def _joined(self) -> bool:
+        """Espera o Discord confirmar a entrada (até ``JOIN_WAIT_S``): ``player.connect`` só pede, e uma falha dele fica no log, sem exceção."""
+        waited = 0.0
+        while waited < JOIN_WAIT_S:
+            if self.in_channel():
+                return True
+            await asyncio.sleep(JOIN_POLL_S)
+            waited += JOIN_POLL_S
+        return self.in_channel()
+
     async def connect(self) -> bool:
         """Entra (ou volta) na call; no palco pede a palavra UMA vez por conexão. Qualquer falha é ``False`` e o runner recua."""
         bot, guild, channel = self._bot(), self._guild(), self._channel()
@@ -114,6 +136,9 @@ class DiscordRadioPorts:
         try:
             player = self._player() or await self._create_player(bot, guild, channel)
             await player.connect(channel.id, self_deaf=True)
+            if not await self._joined():
+                logger.warning("Rádio não entrou na call (o Discord não confirmou)")
+                return False
             if isinstance(channel, disnake.StageChannel):
                 await self._speak(guild, channel, player)
         except Exception as error:  # noqa: BLE001 - só o tipo vai ao log (R-12)

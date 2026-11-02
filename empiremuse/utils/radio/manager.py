@@ -366,6 +366,10 @@ class RadioManager:
 
         async def one(runner: RadioRunner) -> None:
             try:
+                if runner.lost_channel():  # o bot saiu da call e nenhum evento chegou: volta pelo recuo (fora do passo, que não espera por ele)
+                    logger.warning("Rádio fora da call: religando pelo recuo")
+                    self._spawn(runner.on_disconnect())
+                    return
                 await asyncio.wait_for(runner.tick(), TICK_TIMEOUT_S)
             except Exception as error:  # noqa: BLE001 - uma rádio com defeito ou travada não para as outras
                 logger.warning("Rádio com falha no passo de presença (%s)", type(error).__name__)
