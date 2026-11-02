@@ -54,7 +54,7 @@ EXTRA_KEY = "usage_cmd"
 OPEN_COMMANDS_MAX = 2000  # comandos iniciados e ainda sem desfecho
 OPEN_COMMANDS_TTL = 900
 # Só o que enfileira música carimba as faixas (um /skip ou /volume não enfileira nada).
-ENQUEUE_PREFIXES = ("play", "search", "add", "enqueue", "embed_", "song_request")
+ENQUEUE_PREFIXES = ("play", "search", "add", "enqueue", "embed_", "jukebox")
 
 
 def _id_and_name(obj: object) -> tuple[Optional[int], Optional[str]]:
@@ -227,7 +227,7 @@ class UsageRecorder:
     def record_command(
         self, kind: str, name: str, source: object, *, bot: object, ok: bool, error: Optional[str] = None
     ) -> None:
-        """Um comando (barra, prefixo, botão, canal de pedidos ou painel). ``source`` é a interação ou o contexto de origem."""
+        """Um comando (barra, prefixo, botão, Jukebox ou painel). ``source`` é a interação ou o contexto de origem."""
         try:
             guild = getattr(source, "guild", None)
             if guild is None:  # mensagem privada: sem servidor não há o que registrar

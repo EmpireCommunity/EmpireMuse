@@ -12,7 +12,7 @@ from empiremuse.logs.context import guild_extra
 from empiremuse.rules.voice_status import resolve_voice_status
 from empiremuse.utils.client import BotCore
 from empiremuse.utils.db import DBModel
-from empiremuse.utils.request_panel import fetch_panel_message
+from empiremuse.utils.jukebox_panel import fetch_panel_message
 from empiremuse.utils.music.skin_store import load_custom_skins
 from empiremuse.utils.music.models import (
     LavalinkPlayer,
@@ -283,7 +283,7 @@ class PlayerLifecycleMixin:
             if not player.has_thread:
                 player.message = None
             else:
-                await self.thread_song_request(message_inter.thread, reopen=True, bot=bot)
+                await self.thread_jukebox(message_inter.thread, reopen=True, bot=bot)
 
         return player
 

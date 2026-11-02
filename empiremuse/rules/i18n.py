@@ -46,10 +46,12 @@ LIMITS: Mapping[str, int] = {
     "placeholder": 150,
     "modal_title": 45,
     "title": 256,
-    "name": 32,  # só ``cmd.<caminho>.opt.<base>.name``: o nome de uma opção de comando
+    "name": 32,  # ``cmd.<caminho>.name`` e ``cmd.<caminho>.opt.<base>.name``
+    "aliases": 100,
 }
 DEFAULT_LIMIT = 2000
 NO_NEWLINE_KINDS = frozenset(LIMITS)
+CONTEXT_MENU_COMMANDS = frozenset({"avatar", "add_to_queue", "add_dj_menu"})
 
 # Hosts que um texto pode citar (a referência também passa por aqui, porque o CI não é fronteira: I-8).
 ALLOWED_DOMAINS = frozenset({"github.com", "last.fm", "www.last.fm"})
@@ -60,10 +62,10 @@ GROUP_EMOJI: dict[str, str] = {"music": "🎶", "settings": "🔧", "lastfm": "�
 
 # O grupo (``cmd.<grupo>._label``) da legenda de cada comando: a descrição é medida com a legenda do PRÓPRIO grupo.
 COMMAND_GROUPS: Mapping[str, str] = {
-    "247": "music",
     "about": "misc",
     "add_dj": "music",
     "add_dj_role": "settings",
+    "addposition": "music",
     "autoplay": "music",
     "back": "music",
     "change_node": "music",
@@ -73,9 +75,15 @@ COMMAND_GROUPS: Mapping[str, str] = {
     "controller": "music",
     "custom_skin": "settings",
     "fav_manager": "music",
+    "help": "misc",
     "invite": "misc",
+    "jukebox": "settings",
+    "jukebox.reset": "settings",
+    "jukebox.setup": "settings",
+    "jukebox.thread": "settings",
     "language": "settings",
     "lastfm": "lastfm",
+    "listenalong": "settings",
     "loop_amount": "music",
     "loop_mode": "music",
     "move": "music",
@@ -86,27 +94,34 @@ COMMAND_GROUPS: Mapping[str, str] = {
     "play": "music",
     "play_music_file": "music",
     "player_settings": "settings",
+    "playeruptime": "settings",
     "playlists": "playlists",
-    "playlists.exportar": "playlists",
-    "playlists.importar": "playlists",
+    "playlists.export": "playlists",
+    "playlists.import": "playlists",
+    "queue": "music",
+    "queue.clear": "music",
+    "queue.display": "music",
+    "queue.reverse": "music",
+    "queue.shuffle": "music",
     "radio": "music",
     "radio.desligar": "music",
     "radio.ligar": "music",
-    "radio.status": "music",
+    "radio.off": "music",
+    "radio.on": "music",
+    "radio.reset": "music",
+    "radio.setup": "music",
     "radio.station": "music",
     "radio.station.create": "music",
     "radio.station.delete": "music",
     "radio.station.edit": "music",
     "radio.station.list": "music",
-    "queue.clear": "music",
-    "queue.display": "music",
-    "queue.reverse": "music",
-    "queue.shuffle": "music",
+    "radio.status": "music",
     "readd_songs": "music",
     "remove": "music",
     "remove_dj": "music",
     "remove_dj_role": "settings",
-    "reset": "settings",
+    "resetprefix": "misc",
+    "resetuserprefix": "misc",
     "restrict_mode": "music",
     "resume": "music",
     "rich_presence": "settings",
@@ -115,11 +130,13 @@ COMMAND_GROUPS: Mapping[str, str] = {
     "search": "music",
     "seek": "music",
     "set_voice_status": "music",
-    "setup": "settings",
+    "setprefix": "misc",
+    "setuserprefix": "misc",
     "skip": "music",
     "skipto": "music",
-    "song_request_thread": "music",
+    "stageregion": "settings",
     "stop": "music",
+    "summon": "settings",
     "volume": "music",
     "voteskip": "music",
 }
@@ -342,6 +359,38 @@ def is_option_name(key: str) -> bool:
     )
 
 
+def is_command_name(key: str) -> bool:
+    """``cmd.<caminho>.name``: o nome (traduzido) de um comando, grupo ou subcomando."""
+    parts = key.split(".")
+    return (
+        len(parts) >= 3
+        and parts[0] == "cmd"
+        and parts[-1] == "name"
+        and "opt" not in parts
+        and "choice" not in parts
+    )
+
+
+def command_name_parts(key: str) -> tuple[str, str] | None:
+    """``(nível-pai, base)`` de ``cmd.<caminho>.name`` (``("__cmd__:", base)`` no topo), ou ``None``."""
+    if not is_command_name(key):
+        return None
+    parts = key.split(".")[1:-1]
+    return f"__cmd__:{'.'.join(parts[:-1])}", parts[-1]
+
+
+def is_aliases_key(key: str) -> bool:
+    """``cmd.<caminho>.aliases``: os apelidos de prefixo mostrados no ``/help`` (vazio = comando sem apelidos)."""
+    parts = key.split(".")
+    return (
+        len(parts) >= 3
+        and parts[0] == "cmd"
+        and parts[-1] == "aliases"
+        and "opt" not in parts
+        and "choice" not in parts
+    )
+
+
 def option_name_ok(value: str) -> bool:
     """O nome de uma opção traduzido: 1 a 32 unidades UTF-16, minúsculo, só letras e dígitos (de qualquer escrita) ou ``-``, ``_`` e ``'``."""
     return (
@@ -452,6 +501,23 @@ def check_entry(
         if is_secret_option(value) and not is_secret_option(parts[1]):  # um nome de segredo só vale na base
             return NAME
         return None  # o conjunto de caracteres já exclui menção, link, markdown e placeholder
+    if is_command_name(key):
+        parts = command_name_parts(key)
+        if parts is None or not OPTION_BASE.fullmatch(parts[1]):
+            return NAME
+        if parts[1] in CONTEXT_MENU_COMMANDS:
+            if not (1 <= utf16_length(value) <= LIMITS["name"]) or "\n" in value or _bad_chars(value):
+                return NAME
+            return None
+        if not option_name_ok(value):
+            return NAME
+        if reference is None and value != parts[1]:  # na referência o nome é o próprio id do comando
+            return NAME
+        if is_secret_option(value) and not is_secret_option(parts[1]):
+            return NAME
+        return None
+    if is_aliases_key(key) and value == "":
+        return None
     if not value.strip():
         return EMPTY
     if utf16_length(value) > _limit_for(key, ref_value):
@@ -560,21 +626,26 @@ def _prefix_units(labels: Mapping[str, str]) -> dict[str, int]:
 
 
 def _conflicting_levels(entries: Mapping[str, str], reference: Mapping[str, str] | None) -> list[str]:
-    """Os ``cmd.<caminho>.opt.<base>.name`` aceitos de cada nível (comando, subcomando ou grupo) em que o nome EFETIVO se repete.
+    """Os ``cmd.<caminho>.opt.<base>.name`` e ``cmd.<caminho>.name`` aceitos de cada nível em que o nome EFETIVO se repete.
 
     O nome efetivo é o localizado ou, se faltar ou tiver sido descartado, a base. Qualquer colisão derruba TODA a localização de nome do
     nível naquele locale: descartar só os repetidos deixaria uma base voltar e colidir com o que sobrou (o sync global falharia).
     """
-    levels: dict[str, dict[str, str]] = {}
+    levels: dict[str, dict[str, tuple[str, str]]] = {}
     for key, value in (reference if reference is not None else entries).items():
-        parts = option_parts(key) if is_option_name(key) else None
-        if parts is not None:
-            levels.setdefault(parts[0], {})[parts[1]] = value
+        if is_option_name(key) and (parts := option_parts(key)) is not None:
+            levels.setdefault(parts[0], {})[parts[1]] = (f"cmd.{parts[0]}.opt.{parts[1]}.name", value)
+        elif (
+            is_command_name(key)
+            and (parts := command_name_parts(key)) is not None
+            and parts[1] not in CONTEXT_MENU_COMMANDS
+        ):
+            levels.setdefault(parts[0], {})[parts[1]] = (key, value)
     doomed: list[str] = []
-    for path, bases in levels.items():
-        effective = [entries.get(f"cmd.{path}.opt.{base}.name", base_name) for base, base_name in bases.items()]
+    for bases in levels.values():
+        effective = [entries.get(entry_key, base_name) for entry_key, base_name in bases.values()]
         if len(set(effective)) != len(effective):
-            doomed.extend(key for base in bases if (key := f"cmd.{path}.opt.{base}.name") in entries)
+            doomed.extend(entry_key for entry_key, _ in bases.values() if entry_key in entries)
     return doomed
 
 

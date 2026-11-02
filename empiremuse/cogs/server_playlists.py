@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""``/playlists importar`` e ``/playlists exportar``: as playlists do servidor (item 17).
+"""``/playlists import`` e ``/playlists export``: as playlists do servidor (item 17).
 
 Quem pode: dono do servidor, Administrador ou Gerenciar Servidor, conferido NA EXECUÇÃO de todo comando e de todo modal (nunca só pelo
 ``default_member_permissions``, nunca atalho do dono do bot). O servidor vem sempre de ``inter.guild_id``. Toda resposta é efêmera, sem
@@ -154,7 +154,7 @@ class ServerPlaylistsCog(commands.Cog):
         await inter.edit_original_message(format_report(report), allowed_mentions=NO_MENTIONS)
 
     @commands.slash_command(
-        name="playlists",
+        name=localized("cmd.playlists.name"),
         description=localized("cmd.playlists.description"),
         default_member_permissions=disnake.Permissions(manage_guild=True),
     )
@@ -163,8 +163,8 @@ class ServerPlaylistsCog(commands.Cog):
         pass
 
     @playlists.sub_command(
-        name="importar",
-        description=localized("cmd.playlists.importar.description"),
+        name=localized("cmd.playlists.import.name"),
+        description=localized("cmd.playlists.import.description"),
         cooldown=cooldown,
     )
     @commands.check(_manage_check)
@@ -172,19 +172,19 @@ class ServerPlaylistsCog(commands.Cog):
         self,
         inter: disnake.ApplicationCommandInteraction,
         file: Optional[str] = commands.Param(
-            name=localized("cmd.playlists.importar.opt.file.name"),
-            description=localized("cmd.playlists.importar.opt.file.description"),
+            name=localized("cmd.playlists.import.opt.file.name"),
+            description=localized("cmd.playlists.import.opt.file.description"),
             default=None,
             autocomplete=_file_autocomplete,
         ),
         attachment: Optional[disnake.Attachment] = commands.Param(
-            name=localized("cmd.playlists.importar.opt.attachment.name"),
-            description=localized("cmd.playlists.importar.opt.attachment.description"),
+            name=localized("cmd.playlists.import.opt.attachment.name"),
+            description=localized("cmd.playlists.import.opt.attachment.description"),
             default=None,
         ),
         link: Optional[str] = commands.Param(
-            name=localized("cmd.playlists.importar.opt.link.name"),
-            description=localized("cmd.playlists.importar.opt.link.description"),
+            name=localized("cmd.playlists.import.opt.link.name"),
+            description=localized("cmd.playlists.import.opt.link.description"),
             default=None,
             max_length=2000,
         ),
@@ -230,8 +230,8 @@ class ServerPlaylistsCog(commands.Cog):
         await self.run_import(inter, parse_file(data, max_bytes=PLAYLIST_FILE_MAX_BYTES))
 
     @playlists.sub_command(
-        name="exportar",
-        description=localized("cmd.playlists.exportar.description"),
+        name=localized("cmd.playlists.export.name"),
+        description=localized("cmd.playlists.export.description"),
         cooldown=cooldown,
     )
     @commands.check(_manage_check)

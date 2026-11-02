@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Etapas de `Music.song_requests` e `Music.parse_song_request` (pedidos de música por mensagem)."""
+"""Etapas de ``Music.on_jukebox_message`` e ``Music.parse_jukebox_request`` (pedidos de música na Jukebox)."""
 
 import asyncio
 import datetime
@@ -11,7 +11,7 @@ from disnake.ext import commands
 
 from empiremuse.utils.client import BotCore
 from empiremuse.utils.db import DBModel
-from empiremuse.utils.request_panel import fetch_panel_message
+from empiremuse.utils.jukebox_panel import fetch_panel_message
 from empiremuse.utils.music.checks import (
     can_connect,
     check_player_perm,
@@ -44,7 +44,7 @@ from empiremuse.utils.others import (
     CustomContext,
     PlayerControls,
     string_to_file,
-    song_request_buttons,
+    jukebox_buttons,
     update_inter,
 )
 
@@ -85,7 +85,7 @@ async def _pr_checks(self, req):
     try:
         player = self.bot.music.players[message.guild.id]
         await check_player_perm(message, self.bot, message.channel, guild_data=data)
-        destroy_message = True
+        destroy_message = bool(req.destroy_message)
     except KeyError:
         destroy_message = False
         player = await self.create_player(
@@ -102,7 +102,7 @@ async def _pr_checks(self, req):
         except Exception:
             cached_message = None
         if cached_message is None:
-            cached_message = await self.bot.pool.request_panel.resend(message.guild.id)
+            cached_message = await self.bot.pool.jukebox_panel.resend(message.guild.id)
 
         player.message = cached_message
 
@@ -268,13 +268,13 @@ async def _pr_single(self, req):
 async def _is_panel_bot(self, guild_id: int) -> bool:
     """Este bot é o bot do painel do servidor? Store indisponível = não (melhor ignorar a mensagem que duas respostas)."""
     try:
-        return await self.bot.pool.servers.request.is_panel_bot(guild_id, self.bot)
+        return await self.bot.pool.servers.jukebox.is_panel_bot(guild_id, self.bot)
     except GenericError:
         return False
 
 
 async def _sr_validate_channel(self, req):
-    """Valida o canal de pedidos, as permissões e a mensagem recebida."""
+    """Valida o canal da Jukebox, as permissões e a mensagem recebida."""
     data = req.data
     message = req.message
     player = req.player
@@ -329,7 +329,7 @@ async def _sr_validate_channel(self, req):
             return True
 
         if not self.bot.intents.message_content:
-            if self.song_request_cooldown.get_bucket(message).update_rate_limit():
+            if self.jukebox_cooldown.get_bucket(message).update_rate_limit():
                 return True
 
             await message.channel.send(
@@ -339,7 +339,7 @@ async def _sr_validate_channel(self, req):
                     "Tente adicionar música usando **/play** ou clique em um dos botões abaixo:",
                     color=self.bot.get_color(message.guild.me),
                 ),
-                components=song_request_buttons(self.bot, await self.bot.pool.i18n.for_guild(message.guild)),
+                components=jukebox_buttons(self.bot, await self.bot.pool.i18n.for_guild(message.guild)),
                 delete_after=20,
             )
             return True
@@ -393,7 +393,7 @@ async def _sr_prepare_query(self, req):
     msg = req.msg
 
     try:
-        await self.song_request_concurrency.acquire(message)
+        await self.jukebox_concurrency.acquire(message)
     except Exception:
         await message.channel.send(
             f"{message.author.mention} você deve aguardar seu pedido de música anterior carregar...",
@@ -435,7 +435,7 @@ async def _sr_prepare_query(self, req):
             )
 
             msg = await message.channel.send(message.author.mention, embed=embed, view=view)
-            req.msg = msg  # o tratamento de erro de song_requests lê a mensagem já enviada
+            req.msg = msg  # o tratamento de erro de on_jukebox_message lê a mensagem já enviada
 
             await view.wait()
 

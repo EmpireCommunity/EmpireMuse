@@ -192,11 +192,11 @@ async def _pc_route_panel_click(self, req) -> bool:
     interaction = req.interaction
     pool = self.bot.pool
     try:
-        request = pool.servers.request
-        config = await request.get(interaction.guild_id)
+        jukebox = pool.servers.jukebox
+        config = await jukebox.get(interaction.guild_id)
         if not config.message_id or interaction.message.id != config.message_id:
             return False
-        if not await request.is_panel_bot(interaction.guild_id, self.bot):
+        if not await jukebox.is_panel_bot(interaction.guild_id, self.bot):
             return False
     except GenericError:
         return False
@@ -558,6 +558,11 @@ def _pc_command_args(self, req):
 
     elif control == PlayerControls.skip:
         cmd_kwargs = {"query": None, "play_only": "no"}
+
+    elif control == PlayerControls.jukebox_thread:
+        jukebox_cmd = self.bot.get_slash_command("jukebox")
+        if jukebox_cmd:
+            cmd = jukebox_cmd.children.get("thread")
 
     if not cmd:
         cmd = self.bot.get_slash_command(control[12:])

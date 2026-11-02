@@ -8,9 +8,14 @@ from typing import Union, Optional
 import disnake
 from disnake.ext import commands
 
-from empiremuse.rules.request_panel import StrictAction, strict_action
-from empiremuse.rules.servers import request_channel_strict
-from empiremuse.rules.usage import KIND_REQUEST
+from empiremuse.rules.jukebox_panel import (
+    AUTO_DELETE_DELAY_SECONDS,
+    PENDING_COMMAND_CAP_SECONDS,
+    JukeboxAction,
+    jukebox_action,
+)
+from empiremuse.rules.servers import jukebox_auto_delete, jukebox_text_requests
+from empiremuse.rules.usage import KIND_JUKEBOX
 from empiremuse.utils.client import BotCore
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.checks import (
@@ -44,7 +49,7 @@ from empiremuse.utils.others import (
     CustomContext,
     PlayerControls,
     string_to_file,
-    song_request_buttons,
+    jukebox_buttons,
     update_inter,
 )
 
@@ -52,9 +57,9 @@ from empiremuse.utils.others import (
 from empiremuse.music_cog.shared import (
     logger,
 )
-from empiremuse.music_cog.song_request_state import ParseRequestState, SongRequestState
+from empiremuse.music_cog.jukebox_state import JukeboxParseState, JukeboxState
 from empiremuse.utils.usage import label_for, usage_of
-from empiremuse.music_cog.song_request_steps import (
+from empiremuse.music_cog.jukebox_steps import (
     _pr_checks,
     _pr_playlist,
     _pr_single,
@@ -64,22 +69,59 @@ from empiremuse.music_cog.song_request_steps import (
 )
 
 
-async def _request_channel_strict(self, message: disnake.Message) -> bool:
-    """O servidor liga a Jukebox estrita? Sem servidor, documento antigo ou store indisponível, não (o canal fica como sempre foi)."""
+async def _jukebox_options(self, message: disnake.Message) -> tuple[bool, bool]:
+    """Lê ``(jukebox_auto_delete, jukebox_text_requests)`` do servidor; sem servidor ou store indisponível devolve ``(False, True)``."""
     if message.guild is None:
+        return False, True
+    try:
+        settings = await self.bot.pool.servers.settings(message.guild.id)
+        return jukebox_auto_delete(settings), jukebox_text_requests(settings)
+    except Exception as error:  # noqa: BLE001 - sem a configuração o canal segue o padrão, mas fica no log
+        logger.warning(
+            "Jukebox: configuração do servidor não lida, seguindo com o padrão (%s)", type(error).__name__
+        )
+        return False, True
+
+
+def _is_panel_message(self, message: disnake.Message) -> bool:
+    """A mensagem do painel nunca é apagada pelo fluxo de auto-delete."""
+    guild = getattr(message, "guild", None)
+    msg_id = getattr(message, "id", None)
+    if guild is None or msg_id is None:
         return False
     try:
-        return request_channel_strict(await self.bot.pool.servers.settings(message.guild.id))
-    except Exception as error:  # noqa: BLE001 - sem a configuração o canal segue o fluxo de antes (não estrito), mas fica no log
-        logger.warning(
-            "Jukebox estrita: configuração do servidor não lida, seguindo sem o modo estrito (%s)", type(error).__name__
-        )
-        return False
+        jukebox = getattr(getattr(self.bot.pool, "servers", None), "jukebox", None)
+        if jukebox is not None and jukebox.peek_message_id(guild.id) == msg_id:
+            return True
+    except Exception:
+        pass
+    try:
+        player = self.bot.music.players.get(guild.id)
+        if player and getattr(player.message, "id", None) == msg_id:
+            return True
+    except Exception:
+        pass
+    return False
 
 
-class SongRequestsMixin:
+async def cleanup_jukebox_command_messages(cog, ctx: CustomContext, *, delay: int | None = None) -> None:
+    """Apaga a mensagem do comando e as respostas enviadas em ``ctx`` (exceto a mensagem do painel)."""
+    seen: set[int] = set()
+    candidates = [ctx.message, getattr(ctx, "store_message", None), *getattr(ctx, "sent_messages", ())]
+    for msg in candidates:
+        if msg is None:
+            continue
+        mid = getattr(msg, "id", None)
+        if mid is not None:
+            if mid in seen:
+                continue
+            seen.add(mid)
+        await cog.delete_message(msg, delay=delay)
+
+
+class JukeboxMessagesMixin:
     @commands.Cog.listener("on_modal_submit")
-    async def song_request_modal(self, inter: disnake.ModalInteraction):
+    async def jukebox_modal(self, inter: disnake.ModalInteraction):
         if inter.custom_id.startswith("modal_add_song"):
             try:
                 query = inter.values["song_input"]
@@ -185,7 +227,7 @@ class SongRequestsMixin:
             except Exception as e:
                 self.bot.dispatch("interaction_player_error", inter, e)
 
-    async def song_request_executor(self, req):
+    async def jukebox_executor(self, req):
         """O cog ``Music`` do bot que toca o que foi digitado: o que já está na call de quem pediu, senão o 1º livre (S7)."""
         bot = pick_request_bot(self.bot.pool, req.message.guild.id, req.message.author)
         if bot is None:
@@ -195,7 +237,7 @@ class SongRequestsMixin:
         return self if bot is self.bot else bot.get_cog("Music")
 
     async def delete_message(self, message: disnake.Message, delay: int = None, ignore=False):
-        if ignore:
+        if ignore or message is None or _is_panel_message(self, message):
             return
 
         try:
@@ -210,13 +252,13 @@ class SongRequestsMixin:
             try:
                 await message.delete(delay=delay)
             except disnake.NotFound:
-                pass  # já apagada (a Jukebox estrita apaga na hora; o fluxo do pedido tenta de novo no fim)
+                pass
             except Exception:
                 logger.exception("Falha em delete_message")
 
-    @commands.Cog.listener("on_song_request")
-    async def song_requests(self, ctx: Optional[CustomContext], message: disnake.Message):
-        req = SongRequestState(ctx=ctx, message=message)
+    @commands.Cog.listener("on_jukebox_message")
+    async def on_jukebox_message(self, ctx: Optional[CustomContext], message: disnake.Message):
+        req = JukeboxState(ctx=ctx, message=message)
         if req.ctx.command:
             return
 
@@ -233,27 +275,29 @@ class SongRequestsMixin:
         if await _sr_validate_channel(self, req):
             return
 
-        # só aqui, já sabendo que a mensagem é do canal de pedidos (este listener roda em toda mensagem de todo servidor)
-        strict = await _request_channel_strict(self, req.message)
-        if req.message.mentions and not strict:
-            return  # sem o modo estrito, mensagem com menção segue ignorada como sempre foi
-        action = strict_action(
-            strict,
+        # só aqui, já sabendo que a mensagem é do canal da Jukebox (este listener roda em toda mensagem de todo servidor)
+        auto_delete, text_requests = await _jukebox_options(self, req.message)
+        if req.message.mentions and not auto_delete:
+            return
+        action = jukebox_action(
+            auto_delete,
+            text_requests,
             author_is_bot=req.message.author.bot,
             is_command=False,
             has_mentions=bool(req.message.mentions),
             is_system=req.message.is_system(),
         )
-        if action is StrictAction.DELETE:
-            await self.delete_message(req.message)  # texto que não é pedido: some na hora, sem resposta
+        if action is JukeboxAction.IGNORE:
             return
-        # o nome digitado vale como pedido, mas a mensagem já não fica no canal. Arquivo de áudio sem texto fica: apagar a mensagem
-        # apaga o anexo e o Lavalink ainda vai baixá-lo (o fluxo a apaga no fim).
-        if action is StrictAction.DELETE_AND_PROCESS and not (req.message.attachments and not req.message.content):
-            await self.delete_message(req.message)
+        if action is JukeboxAction.DELETE:
+            delay = None if req.message.is_system() else AUTO_DELETE_DELAY_SECONDS
+            await self.delete_message(req.message, delay=delay)
+            return
 
         if req.message.content.startswith("/") or req.message.is_system():
-            await self.delete_message(req.message)
+            if auto_delete or req.message.is_system():
+                delay = None if req.message.is_system() else AUTO_DELETE_DELAY_SECONDS
+                await self.delete_message(req.message, delay=delay)
             return
 
         try:
@@ -261,7 +305,8 @@ class SongRequestsMixin:
                 if isinstance(req.message.channel.parent, disnake.ForumChannel):
                     if req.data["player_controller"]["channel"] != str(req.message.channel.id):
                         return
-                    await self.delete_message(req.message)
+                    if auto_delete:
+                        await self.delete_message(req.message)
 
         except AttributeError:
             pass
@@ -271,6 +316,16 @@ class SongRequestsMixin:
         failure = None
         req.error_code = ""
         req.has_exception = None
+        cap_task = None
+
+        async def _cap_cleanup():
+            await asyncio.sleep(PENDING_COMMAND_CAP_SECONDS)
+            await self.delete_message(req.message)
+            if req.msg:
+                await self.delete_message(req.msg)
+
+        if action is JukeboxAction.DELETE_AND_PROCESS:
+            cap_task = asyncio.create_task(_cap_cleanup())
 
         try:
             if req.message.author.bot:
@@ -278,19 +333,21 @@ class SongRequestsMixin:
                 return
 
             if await _sr_empty_content(self, req):
-                if action is StrictAction.DELETE_AND_PROCESS:
-                    await self.delete_message(
-                        req.message
-                    )  # anexo que não é áudio, grande demais ou sem nada: no modo estrito também some
+                if action is JukeboxAction.DELETE_AND_PROCESS:
+                    await self.delete_message(req.message, delay=AUTO_DELETE_DELAY_SECONDS)
                 return
 
             if await _sr_prepare_query(self, req):
                 return
 
-            executor = await self.song_request_executor(req)
-            await executor.parse_song_request(
+            executor = await self.jukebox_executor(req)
+            await executor.parse_jukebox_request(
                 req.message, req.text_channel, req.data, response=req.msg, source=req.source
             )
+            if action is JukeboxAction.DELETE_AND_PROCESS:
+                await self.delete_message(req.message)
+                if req.msg:
+                    await self.delete_message(req.msg)
 
         except GenericError as e:
             failure = e
@@ -311,16 +368,19 @@ class SongRequestsMixin:
                 error = f"{req.message.author.mention}. {error_msg}"
             else:
                 req.has_exception = e
-                req.error_code = log_unexpected_error(logger, e, "pedido de música (song-request)")
+                req.error_code = log_unexpected_error(logger, e, "pedido de música (Jukebox)")
                 error = (
                     f"{req.message.author.mention} **ocorreu um erro ao tentar obter resultados para sua busca.**"
                     f"{error_code_text(req.error_code)}"
                 )
+        finally:
+            if cap_task is not None:
+                cap_task.cancel()
 
         if usage := usage_of(self.bot):
             usage.record_command(
-                KIND_REQUEST,
-                "song_request",
+                KIND_JUKEBOX,
+                "jukebox",
                 req.message,
                 bot=self.bot,
                 ok=failure is None,
@@ -328,22 +388,28 @@ class SongRequestsMixin:
             )
 
         if error:
-            await self.delete_message(req.message)
+            err_delay = AUTO_DELETE_DELAY_SECONDS if auto_delete else 9
+            if auto_delete:
+                await self.delete_message(req.message, delay=AUTO_DELETE_DELAY_SECONDS)
+            else:
+                await self.delete_message(req.message)
 
             try:
                 if req.msg:
                     await req.msg.edit(content=error, embed=None, view=None)
+                    if auto_delete:
+                        await self.delete_message(req.msg, delay=AUTO_DELETE_DELAY_SECONDS)
                 else:
-                    await req.message.channel.send(error, delete_after=9)
+                    await req.message.channel.send(error, delete_after=err_delay)
             except Exception:
-                logger.exception("Falha em song_requests")
+                logger.exception("Falha em on_jukebox_message")
 
-        await self.song_request_concurrency.release(req.message)
+        await self.jukebox_concurrency.release(req.message)
 
         if req.has_exception and self.bot.config["AUTO_ERROR_REPORT_WEBHOOK"]:
             await _sr_error_webhook(self, req)
 
-    async def parse_song_request(
+    async def parse_jukebox_request(
         self,
         message: disnake.Message,
         text_channel,
@@ -353,7 +419,7 @@ class SongRequestsMixin:
         attachment: disnake.Attachment = None,
         source=None,
     ):
-        req = ParseRequestState(
+        req = JukeboxParseState(
             message=message,
             text_channel=text_channel,
             data=data,
@@ -415,7 +481,7 @@ class SongRequestsMixin:
 
         component_interaction = isinstance(inter, disnake.MessageInteraction)
 
-        ephemeral = await self.is_request_channel(inter, data=data)
+        ephemeral = await self.is_jukebox_channel(inter, data=data)
 
         if ephemeral:
             player.set_command_log(text=f"{inter.author.mention} {txt}", emoji=emoji)
@@ -479,7 +545,7 @@ class SongRequestsMixin:
                 await inter.edit_original_response(embed=embed, **kwargs)
 
     @commands.Cog.listener("on_thread_create")
-    async def thread_song_request(self, thread: disnake.Thread, reopen: bool = False, bot: BotCore = None):
+    async def thread_jukebox(self, thread: disnake.Thread, reopen: bool = False, bot: BotCore = None):
         if not bot:
             bot = self.bot
 
@@ -496,7 +562,7 @@ class SongRequestsMixin:
                 embed=disnake.Embed(
                     color=self.bot.get_color(thread.guild.me),
                     description="**Não tenho permissão de enviar mensagens em conversas do canal atual para ativar "
-                    "o sistema de song-request...**\n\n"
+                    "a conversa de pedidos...**\n\n"
                     f"Mensagens enviadas na conversa {thread.mention} serão ignoradas.",
                 ),
                 delete_after=30,
@@ -513,7 +579,7 @@ class SongRequestsMixin:
 
         elif not player.controller_mode:
             embed.description = (
-                "**A skin/aparência atual não é compatível com o sistem de song-request "
+                "**A skin/aparência atual não é compatível com a conversa de pedidos "
                 "via thread/conversa\n\n"
                 "Nota:** `Esse sistema requer uma skin que use botões.`"
             )
@@ -555,7 +621,7 @@ async def _sr_error_webhook(self, req):
         )
 
         embed = disnake.Embed(
-            title="Ocorreu um erro em um servidor (song-request):",
+            title="Ocorreu um erro em um servidor (Jukebox):",
             timestamp=disnake.utils.utcnow(),
             description=f"Erro inesperado no pedido de música.{error_code_text(error_code)}",
         )
@@ -605,7 +671,7 @@ async def _sr_error_webhook(self, req):
             embed=embed,
             file=string_to_file(
                 full_error_msg,
-                f"error_traceback_songrequest_{error_code}.txt" if error_code else "error_traceback_songrequest.txt",
+                f"error_traceback_jukebox_{error_code}.txt" if error_code else "error_traceback_jukebox.txt",
             ),
         )
 

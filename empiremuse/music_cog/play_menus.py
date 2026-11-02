@@ -22,7 +22,7 @@ from empiremuse.utils.music.interactions import (
 )
 from empiremuse.utils.others import (
     music_source_emoji_url,
-    song_request_buttons,
+    jukebox_buttons,
     get_source_emoji_cfg,
 )
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
@@ -169,7 +169,7 @@ class PlayMenusMixin:
             try:
                 await func(
                     embed=embed,
-                    components=song_request_buttons(self.bot, await self.bot.pool.i18n.for_guild(inter.guild)),
+                    components=jukebox_buttons(self.bot, await self.bot.pool.i18n.for_guild(inter.guild)),
                 )
             except AttributeError:
                 logger.exception("Falha ao atualizar a mensagem de pedido de música")
@@ -427,13 +427,13 @@ class PlayMenusMixin:
                     try:
                         await msg.edit(
                             embed=embed,
-                            components=song_request_buttons(self.bot, await self.bot.pool.i18n.for_guild(inter.guild)),
+                            components=jukebox_buttons(self.bot, await self.bot.pool.i18n.for_guild(inter.guild)),
                         )
                     except AttributeError:
                         try:
                             await select_interaction.response.edit_message(
                                 embed=embed,
-                                components=song_request_buttons(
+                                components=jukebox_buttons(
                                     self.bot, await self.bot.pool.i18n.for_guild(inter.guild)
                                 ),
                             )

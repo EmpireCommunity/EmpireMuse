@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Painel do canal de pedidos único (item 11, P4): quem edita a mensagem, quantos players há e a edição agrupada por servidor.
+"""Painel da Jukebox única (item 11, P4): quem edita a mensagem, quantos players há e a edição agrupada por servidor.
 
 O bot do painel é o AUTOR da mensagem e por isso o único que pode editá-la; os players dos outros bots a recebem já ligada ao bot do painel
 (``fetch_panel_message``), então ``player.message.edit`` sai com o token certo. Com 0 players o painel é o embed ocioso; com 1 é a skin
-estática desse player; com 2 ou mais é a lista (``interactions/request_panel.render_panel``). Edição do painel: no máximo uma por servidor a
+estática desse player; com 2 ou mais é a lista (``interactions/jukebox_panel.render_panel``). Edição do painel: no máximo uma por servidor a
 cada 3 s, agrupada (várias mudanças viram uma só). Toda falha vai para o log; o painel é enfeite sobre uma lista já gravada.
 """
 
@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import disnake
 
-from empiremuse.rules.request_panel import (
+from empiremuse.rules.jukebox_panel import (
     MAX_GENRE_OPTIONS,
     PANEL_TICK_MS,
     PLAYING,
@@ -81,11 +81,11 @@ def entry_for(bot: BotCore, player: LavalinkPlayer) -> Optional[PanelEntry]:
 
 async def fetch_panel_message(pool: BotPool, guild_id: int) -> Optional[disnake.Message]:
     """A mensagem do painel vista PELO BOT DO PAINEL (o autor): só ela pode ser editada. ``None`` se não há canal ou mensagem."""
-    request = pool.servers.request
-    config = await request.get(guild_id)
+    jukebox = pool.servers.jukebox
+    config = await jukebox.get(guild_id)
     if not config.channel or not config.message_id:
         return None
-    bot = await request.panel_bot(guild_id)
+    bot = await jukebox.panel_bot(guild_id)
     if bot is None:
         return None
     channel = bot.get_channel(config.channel) or await bot.fetch_channel(config.channel)
@@ -94,7 +94,7 @@ async def fetch_panel_message(pool: BotPool, guild_id: int) -> Optional[disnake.
     return await channel.fetch_message(config.message_id)
 
 
-class RequestPanel:
+class JukeboxPanel:
     def __init__(self, pool: BotPool) -> None:
         self.pool = pool
         self._last: dict[int, int] = {}
@@ -113,7 +113,7 @@ class RequestPanel:
     # ------------------------------------------------------------------ quem está tocando
 
     def players(self, guild_id: int) -> list[tuple[BotCore, LavalinkPlayer]]:
-        """Os players estáticos (do canal de pedidos) do servidor, de todos os bots, na ordem do ``identifier``."""
+        """Os players estáticos (da Jukebox) do servidor, de todos os bots, na ordem do ``identifier``."""
         found = []
         for bot in sorted(self.pool.get_all_bots(), key=lambda b: b.identifier):
             player = bot.music.players.get(guild_id) if bot.user else None
@@ -175,15 +175,15 @@ class RequestPanel:
             try:
                 await self._draw(guild_id)
             except Exception as exc:  # noqa: BLE001 - enfeite sobre dados já gravados
-                logger.warning("Painel do canal de pedidos não atualizado [%s] (%s)", guild_id, type(exc).__name__)
+                logger.warning("Painel da Jukebox não atualizado [%s] (%s)", guild_id, type(exc).__name__)
 
     async def _draw(self, guild_id: int) -> None:
         from empiremuse.utils.others import send_idle_embed  # tarde: utils.others importa muita coisa
-        from empiremuse.utils.music.interactions.request_panel import render_panel
+        from empiremuse.utils.music.interactions.jukebox_panel import render_panel
         from empiremuse.rules.playlists import genres_of
         from empiremuse.utils.server_playlists import safe_list, select_options
 
-        panel_bot = await self.pool.servers.request.panel_bot(guild_id)
+        panel_bot = await self.pool.servers.jukebox.panel_bot(guild_id)
         message = await fetch_panel_message(self.pool, guild_id)
         if panel_bot is None or message is None:
             return
@@ -245,13 +245,13 @@ class RequestPanel:
         ids = set(message_ids)
         if guild_id in self._healing:
             return
-        stored = self.pool.servers.request.peek_message_id(
+        stored = self.pool.servers.jukebox.peek_message_id(
             guild_id
         )  # sem cópia do documento: roda a cada mensagem apagada
         if stored is not None and stored not in ids:
             return
         try:
-            config = await self.pool.servers.request.get(guild_id)
+            config = await self.pool.servers.jukebox.get(guild_id)
         except Exception:  # noqa: BLE001 - servidor desconhecido ou store indisponível: nada a recuperar agora
             return
         if not config.message_id or config.message_id not in ids or guild_id in self._healing:
@@ -268,12 +268,12 @@ class RequestPanel:
             if wait:
                 await asyncio.sleep(wait / 1000)
             self._healed[guild_id] = int(time.monotonic() * 1000)
-            config = await self.pool.servers.request.get(guild_id)
+            config = await self.pool.servers.jukebox.get(guild_id)
             if config.message_id != gone_id:
-                return  # outro caminho (passagem, /setup) já pôs um painel novo
+                return  # outro caminho (passagem, /jukebox setup) já pôs um painel novo
             await self.handoff(guild_id)
         except Exception as exc:  # noqa: BLE001 - o painel é enfeite; a próxima chamada (ou a subida) tenta de novo
-            logger.warning("Painel do canal de pedidos não recuperado [%s] (%s)", guild_id, type(exc).__name__)
+            logger.warning("Painel da Jukebox não recuperado [%s] (%s)", guild_id, type(exc).__name__)
         finally:
             self._healing.discard(guild_id)
 
@@ -282,8 +282,8 @@ class RequestPanel:
         a passagem manda um painel novo). Falha de um servidor não impede os outros."""
         for guild in list(bot.guilds):
             try:
-                config = await self.pool.servers.request.get(guild.id)
-                if not config.channel or not await self.pool.servers.request.is_panel_bot(guild.id, bot):
+                config = await self.pool.servers.jukebox.get(guild.id)
+                if not config.channel or not await self.pool.servers.jukebox.is_panel_bot(guild.id, bot):
                     continue
                 try:
                     message = await fetch_panel_message(self.pool, guild.id)
@@ -301,7 +301,7 @@ class RequestPanel:
             return
 
     async def resend(self, guild_id: int, *, replace_message_id: Optional[int] = None) -> Optional[disnake.Message]:
-        """O BOT DO PAINEL envia um painel novo no canal de pedidos e grava o id (a mensagem anterior sumiu ou era de outro bot).
+        """O BOT DO PAINEL envia um painel novo no canal da Jukebox e grava o id (a mensagem anterior sumiu ou era de outro bot).
 
         ``replace_message_id``: a mensagem antiga (do bot que saiu); o novo painel tenta apagá-la, sem insistir se não puder.
         """
@@ -311,9 +311,9 @@ class RequestPanel:
         if lock is None:
             lock = self._resend_locks[guild_id] = asyncio.Lock()
         async with lock:  # dois reenvios juntos mandariam dois painéis: o segundo encontra o do primeiro
-            request = self.pool.servers.request
-            config = await request.get(guild_id)
-            bot = await request.panel_bot(guild_id)
+            jukebox = self.pool.servers.jukebox
+            config = await jukebox.get(guild_id)
+            bot = await jukebox.panel_bot(guild_id)
             if not config.channel or bot is None:
                 return None
             if replace_message_id is None:
@@ -333,7 +333,7 @@ class RequestPanel:
             channel = bot.get_channel(config.channel) or await bot.fetch_channel(config.channel)
             message = await send_idle_embed(channel, bot=bot, force=True)
             try:
-                await request.set(guild_id, config.channel, message.id, expected=config.current)
+                await jukebox.set(guild_id, config.channel, message.id, expected=config.current)
             except Exception:
                 await message.delete()  # a configuração mudou no meio: não deixa painel órfão
                 raise
@@ -346,15 +346,15 @@ class RequestPanel:
 
     async def on_roster_change(self, guild_id: int) -> None:
         """Um bot entrou ou saiu do servidor: reelege o bot do painel. Se a eleição mudou, ``elect`` já agenda a passagem do painel."""
-        await self.pool.servers.request.elect(guild_id)
+        await self.pool.servers.jukebox.elect(guild_id)
 
     async def handoff(self, guild_id: int) -> None:
         """A passagem do painel: garante que a mensagem é do bot do painel atual (senão ele manda uma nova e a antiga sai), religa os
-        players a ela e redesenha. É o ÚNICO caminho depois de uma troca de ``panel_bot_id``, venha ela do ``/setup``, da entrada ou
+        players a ela e redesenha. É o ÚNICO caminho depois de uma troca de ``panel_bot_id``, venha ela do ``/jukebox setup``, da entrada ou
         saída de um bot ou de quem chamou ``panel_bot``/``is_panel_bot`` primeiro: idempotente (painel já do bot = só religar)."""
-        request = self.pool.servers.request
+        jukebox = self.pool.servers.jukebox
         message = await self.resend(guild_id)
-        if message is None or (await request.get(guild_id)).message_id != message.id:
+        if message is None or (await jukebox.get(guild_id)).message_id != message.id:
             return  # outro reenvio gravou uma mensagem mais nova durante este: religar à antiga deixaria os players numa apagada
         for _, player in self.players(guild_id):
             player.message = message  # a anterior foi apagada; os players passam a editar o painel novo
@@ -388,7 +388,7 @@ class RequestPanel:
                         guild_id
                     )  # fica pendente: a próxima chamada de panel_bot/is_panel_bot tenta de novo
                     logger.warning(
-                        "Painel do canal de pedidos não passado ao novo bot [%s] (%s)", guild_id, type(exc).__name__
+                        "Painel da Jukebox não passado ao novo bot [%s] (%s)", guild_id, type(exc).__name__
                     )
                     return
         finally:

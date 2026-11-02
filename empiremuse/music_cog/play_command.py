@@ -267,7 +267,7 @@ class PlayCommandMixin(PlayMenusMixin, PlayResolveMixin, PlayEnqueueMixin):
         if not inter.response.is_done():
             try:
                 async with timeout(1.5):
-                    ephemeral = await self.is_request_channel(inter, data=guild_data, ignore_thread=True)
+                    ephemeral = await self.is_jukebox_channel(inter, data=guild_data, ignore_thread=True)
             except asyncio.TimeoutError:
                 ephemeral = True
             await inter.response.defer(ephemeral=ephemeral, with_message=True)
@@ -477,7 +477,7 @@ class PlayCommandMixin(PlayMenusMixin, PlayResolveMixin, PlayEnqueueMixin):
             static_player = guild_data["player_controller"]
 
             if not inter.response.is_done():
-                ephemeral = await self.is_request_channel(inter, data=guild_data, ignore_thread=True)
+                ephemeral = await self.is_jukebox_channel(inter, data=guild_data, ignore_thread=True)
                 await inter.response.defer(ephemeral=ephemeral)
 
             if static_player["channel"]:
@@ -507,7 +507,7 @@ class PlayCommandMixin(PlayMenusMixin, PlayResolveMixin, PlayEnqueueMixin):
         query = req.query
 
         if ephemeral is None:
-            ephemeral = await self.is_request_channel(inter, data=guild_data, ignore_thread=True)
+            ephemeral = await self.is_jukebox_channel(inter, data=guild_data, ignore_thread=True)
 
         is_pin = None
 
