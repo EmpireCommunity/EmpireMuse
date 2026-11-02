@@ -77,9 +77,7 @@ async def _jukebox_options(self, message: disnake.Message) -> tuple[bool, bool]:
         settings = await self.bot.pool.servers.settings(message.guild.id)
         return jukebox_auto_delete(settings), jukebox_text_requests(settings)
     except Exception as error:  # noqa: BLE001 - sem a configuração o canal segue o padrão, mas fica no log
-        logger.warning(
-            "Jukebox: configuração do servidor não lida, seguindo com o padrão (%s)", type(error).__name__
-        )
+        logger.warning("Jukebox: configuração do servidor não lida, seguindo com o padrão (%s)", type(error).__name__)
         return False, True
 
 

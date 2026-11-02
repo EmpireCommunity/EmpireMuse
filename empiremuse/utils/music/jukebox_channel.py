@@ -71,17 +71,11 @@ forum_perms = ("create_forum_threads", "send_messages_in_threads", "read_message
 
 def check_channel_perm(channel: TargetChannel):
     if isinstance(channel, disnake.ForumChannel):
-        missing_perms = [
-            p for p, v in channel.permissions_for(channel.guild.me) if p in forum_perms and not v
-        ]
+        missing_perms = [p for p, v in channel.permissions_for(channel.guild.me) if p in forum_perms and not v]
     elif isinstance(channel, disnake.Thread):
-        missing_perms = [
-            p for p, v in channel.parent.permissions_for(channel.guild.me) if p in thread_perms and not v
-        ]
+        missing_perms = [p for p, v in channel.parent.permissions_for(channel.guild.me) if p in thread_perms and not v]
     else:
-        missing_perms = [
-            p for p, v in channel.permissions_for(channel.guild.me) if p in channel_perms and not v
-        ]
+        missing_perms = [p for p, v in channel.permissions_for(channel.guild.me) if p in channel_perms and not v]
 
     if missing_perms:
         raise GenericError(
@@ -163,9 +157,7 @@ async def find_current_jukebox_message(bot: BotCore, guild: disnake.Guild, confi
 
 
 def ensure_can_create_channel(bot: BotCore, guild: disnake.Guild) -> None:
-    req_perms = [
-        p for p, v in guild.me.guild_permissions if p in ("manage_channels", "manage_threads") and not v
-    ]
+    req_perms = [p for p, v in guild.me.guild_permissions if p in ("manage_channels", "manage_threads") and not v]
     if req_perms:
         raise MissingManagePermissions(bot.user.mention, req_perms)
 
@@ -183,11 +175,11 @@ async def create_jukebox_channel(
     channel_name = (name or f"{bot.user.name} player controller")[:FORUM_POST_TITLE_MAX_LENGTH]
     reason = f"Canal da Jukebox criado por: {actor}" if actor else "Canal da Jukebox criado pelo painel."
 
-    if not parent.permissions_for(parent.guild.me if isinstance(parent, disnake.CategoryChannel) else parent.me).manage_channels:
+    if not parent.permissions_for(
+        parent.guild.me if isinstance(parent, disnake.CategoryChannel) else parent.me
+    ).manage_channels:
         where = f"na categoria {parent.mention}" if isinstance(parent, disnake.CategoryChannel) else "no servidor"
-        raise GenericError(
-            f"**{bot.user.mention} não possui permissão de gerenciar canais {where}.**"
-        )
+        raise GenericError(f"**{bot.user.mention} não possui permissão de gerenciar canais {where}.**")
 
     if kind == "voice":
         return await parent.create_voice_channel(channel_name, reason=reason, **channel_kwargs)
@@ -310,8 +302,9 @@ async def _purge_existing_channel(target, guild_me, original_message) -> None:
             if created_at is not None and (now - created_at) >= BULK_DELETE_MAX_AGE:
                 old_messages.append(msg)
 
-    check = lambda m: (m.author != guild_me or not m.thread) and (
-        not original_message or getattr(m, "id", None) != getattr(original_message, "id", None)
+    check = lambda m: (
+        (m.author != guild_me or not m.thread)
+        and (not original_message or getattr(m, "id", None) != getattr(original_message, "id", None))
     )
     for _ in range(max(1, (total + BULK_DELETE_LIMIT - 1) // BULK_DELETE_LIMIT)):
         deleted = await target.purge(limit=BULK_DELETE_LIMIT, check=check)
@@ -356,9 +349,7 @@ async def _apply_jukebox_channel(
         color=bot.get_color(guild.me),
     )
 
-    validate_jukebox_target(
-        bot, guild, target, existing_channel=existing_channel, command_prefix=command_prefix
-    )
+    validate_jukebox_target(bot, guild, target, existing_channel=existing_channel, command_prefix=command_prefix)
 
     if isinstance(target, disnake.ForumChannel):
         channel_kwargs.clear()

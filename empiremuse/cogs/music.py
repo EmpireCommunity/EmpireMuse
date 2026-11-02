@@ -218,9 +218,7 @@ class Music(
 
         self.player_interaction_concurrency = commands.MaxConcurrency(1, per=commands.BucketType.member, wait=False)
 
-        self.jukebox_cooldown = commands.CooldownMapping.from_cooldown(
-            rate=1, per=300, type=commands.BucketType.member
-        )
+        self.jukebox_cooldown = commands.CooldownMapping.from_cooldown(rate=1, per=300, type=commands.BucketType.member)
 
         self.music_settings_cooldown = commands.CooldownMapping.from_cooldown(
             rate=3, per=15, type=commands.BucketType.guild

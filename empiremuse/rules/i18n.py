@@ -363,11 +363,7 @@ def is_command_name(key: str) -> bool:
     """``cmd.<caminho>.name``: o nome (traduzido) de um comando, grupo ou subcomando."""
     parts = key.split(".")
     return (
-        len(parts) >= 3
-        and parts[0] == "cmd"
-        and parts[-1] == "name"
-        and "opt" not in parts
-        and "choice" not in parts
+        len(parts) >= 3 and parts[0] == "cmd" and parts[-1] == "name" and "opt" not in parts and "choice" not in parts
     )
 
 

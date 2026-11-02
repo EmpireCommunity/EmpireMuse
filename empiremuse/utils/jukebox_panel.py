@@ -387,9 +387,7 @@ class JukeboxPanel:
                     self._handoff_pending.add(
                         guild_id
                     )  # fica pendente: a próxima chamada de panel_bot/is_panel_bot tenta de novo
-                    logger.warning(
-                        "Painel da Jukebox não passado ao novo bot [%s] (%s)", guild_id, type(exc).__name__
-                    )
+                    logger.warning("Painel da Jukebox não passado ao novo bot [%s] (%s)", guild_id, type(exc).__name__)
                     return
         finally:
             self._handoff_running.discard(guild_id)

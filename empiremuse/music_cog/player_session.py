@@ -87,9 +87,7 @@ class PlayerSessionMixin:
 
         await inter.response.defer(ephemeral=True)
 
-        thread = await player.message.create_thread(
-            name=f"{bot.user.name} temp. jukebox", auto_archive_duration=10080
-        )
+        thread = await player.message.create_thread(name=f"{bot.user.name} temp. jukebox", auto_archive_duration=10080)
 
         txt = [
             "Ativou o sistema de thread/conversa temporária para pedido de música.",

@@ -35,7 +35,7 @@ def legacy(**fields):
 def test_new_document_starts_with_defaults_and_nothing_migrated():
     doc = new_doc()
     assert doc["settings"] == default_settings() and set(default_settings()) == set(SETTINGS_FIELDS)
-    assert doc["rev"] == 0 and doc["migrated"] == {"settings": False, "request": False, "playlists": False}
+    assert doc["rev"] == 0 and doc["migrated"] == {"settings": False, "jukebox": False, "playlists": False}
 
 
 @pytest.mark.parametrize(

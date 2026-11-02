@@ -506,9 +506,7 @@ class MusicSettings(commands.Cog):
             description=localized("cmd.jukebox.setup.opt.text_requests.description"),
         ),
     ):
-        await self._run_jukebox_setup(
-            interaction, target=target, auto_delete=auto_delete, text_requests=text_requests
-        )
+        await self._run_jukebox_setup(interaction, target=target, auto_delete=auto_delete, text_requests=text_requests)
 
     async def _run_jukebox_setup(
         self,

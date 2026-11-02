@@ -433,9 +433,7 @@ class PlayMenusMixin:
                         try:
                             await select_interaction.response.edit_message(
                                 embed=embed,
-                                components=jukebox_buttons(
-                                    self.bot, await self.bot.pool.i18n.for_guild(inter.guild)
-                                ),
+                                components=jukebox_buttons(self.bot, await self.bot.pool.i18n.for_guild(inter.guild)),
                             )
                         except AttributeError:
                             logger.exception("Falha ao atualizar a mensagem de pedido de música")

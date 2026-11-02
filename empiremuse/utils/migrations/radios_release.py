@@ -58,9 +58,7 @@ def _needs_migration(doc: dict[str, Any]) -> bool:
     if isinstance(migrated, dict) and (OLD_SECTION in migrated or SECTION_JUKEBOX not in migrated):
         return True
     if isinstance(settings, dict) and (
-        OLD_STRICT_KEY in settings
-        or "jukebox_auto_delete" not in settings
-        or "jukebox_text_requests" not in settings
+        OLD_STRICT_KEY in settings or "jukebox_auto_delete" not in settings or "jukebox_text_requests" not in settings
     ):
         return True
     return SECTION_JUKEBOX not in doc
