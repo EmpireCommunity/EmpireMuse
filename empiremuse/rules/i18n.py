@@ -436,7 +436,11 @@ def check_entry(
         ref_value = found  # type: ignore[assignment]
     if is_option_name(key):
         parts = option_parts(key)
-        if parts is None or not OPTION_BASE.fullmatch(parts[1]) or not option_name_ok(value):
+        if parts is None or not OPTION_BASE.fullmatch(parts[1]):
+            return NAME
+        if not value.strip():
+            return EMPTY  # nome de opção ainda não traduzido (o Crowdin pode exportá-lo vazio): é "ausente", não "nome inválido"
+        if not option_name_ok(value):
             return NAME
         if reference is None and value != parts[1]:  # na referência o nome é a própria base
             return NAME
