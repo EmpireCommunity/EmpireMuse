@@ -37,7 +37,15 @@ from empiremuse.utils import playlists_commands
 from empiremuse.rules.playlists import SCOPE_RADIO
 from empiremuse.utils.others import CustomContext
 from empiremuse.utils.ephemeral import CONFIRMATION_TTL_S, cleanup_later
-from empiremuse.utils.radio import actions, migrate_r5, panel_handlers, radio_commands, setup_flow, station_commands
+from empiremuse.utils.radio import (
+    actions,
+    custom_panel,
+    migrate_r5,
+    panel_handlers,
+    radio_commands,
+    setup_flow,
+    station_commands,
+)
 from empiremuse.utils.radio.actions import Actor, Refused
 from empiremuse.utils.radio.custom_ports import CustomRadioPorts
 from empiremuse.utils.radio.discord_ports import DiscordChatPorts, DiscordRadioPorts
@@ -58,7 +66,7 @@ CUSTOM_ACTIONS = frozenset(
     {"station_previous", "station_next"}
 )  # só no painel da personalizada: anterior e próxima ESTAÇÃO do servidor
 LIVE_ACTIONS = frozenset(
-    {"previous", "mute", "volume_down", "volume_up", "reconnect", "random", "favorite", "info"}
+    {"previous", "mute", "volume_down", "volume_up", "reconnect", "favorite", "info"}
 )  # só no painel da rádio ao vivo (o "próxima" existe nos dois, com outro sentido)
 VOLUME_GAP_S = 1.0
 STATION_GAP_S = 5.0  # anterior, próxima e o seletor de estação: no máximo uma troca a cada 5 s por rádio (cada uma reabre o fluxo e consulta o diretório)
@@ -249,11 +257,10 @@ class Radio(RadioPrefixCommands, commands.Cog):
         tr = await self.bot.pool.i18n.for_guild(interaction.guild)
         try:
             radio, _ = await self._panel_radio(interaction, tr)
-            if radio.kind != KIND_LIVE:
-                raise GenericError(tr("radio.panel.not_here"))
-            handler = (
-                panel_handlers.pick_station if custom_id == PANEL_STATION_SELECT_ID else panel_handlers.pick_filter
-            )
+            handlers = (
+                panel_handlers if radio.kind == KIND_LIVE else custom_panel
+            )  # cada tipo valida o valor à sua maneira
+            handler = handlers.pick_station if custom_id == PANEL_STATION_SELECT_ID else handlers.pick_filter
             await interaction.edit_original_message(content=await handler(self, interaction, tr, radio, value))
         except GenericError as error:
             await interaction.edit_original_message(content=error.text)
@@ -304,11 +311,14 @@ class Radio(RadioPrefixCommands, commands.Cog):
             await reply(content=await self._info(tr, radio), allowed_mentions=disnake.AllowedMentions.none())
         elif action == "reconnect":
             await reply(content=await panel_handlers.reconnect(self, tr, runner))
-        elif action == "random":
-            await reply(content=await panel_handlers.random_station(self, interaction, tr, radio))
+        elif (
+            action == "random"
+        ):  # nos dois tipos: sorteia na lista do filtro (ao vivo: uuids; personalizada: estações do servidor)
+            handler = panel_handlers.random_station if radio.kind == KIND_LIVE else custom_panel.random_station
+            await reply(content=await handler(self, interaction, tr, radio))
         elif action in CUSTOM_ACTIONS:
             await reply(
-                content=await self._walk_stations(interaction, tr, radio, 1 if action == "station_next" else -1)
+                content=await custom_panel.walk(self, interaction, tr, radio, 1 if action == "station_next" else -1)
             )
         elif action == "next" and radio.kind == KIND_LIVE or action == "previous":
             await reply(content=await self._walk(interaction, tr, radio, 1 if action == "next" else -1))
@@ -377,20 +387,6 @@ class Radio(RadioPrefixCommands, commands.Cog):
             return tr("radio.live.not_found")
         await actions.change_station(self.hub, radio_id=radio.id, station=station, actor=self._authorized(interaction))
         return tr("radio.local.changed", station=external_text(station.name, NAME_LIMIT))
-
-    async def _walk_stations(self, interaction: Any, tr: Any, radio: Any, step: int) -> str:
-        """Anterior e próxima ESTAÇÃO do servidor (por nome) na rádio personalizada: dá a volta; uma só estação não tem por onde andar."""
-        stations = await self.hub.stations.list_for_guild(radio.guild_id)
-        neighbor = station_neighbor([s.id for s in stations], radio.source.get("station"), step)
-        if neighbor is None:
-            return tr("radio.panel.no_other_station")
-        if self._too_soon(radio.id, "station", STATION_GAP_S):
-            return tr("radio.panel.wait")
-        await actions.change_custom_station(
-            self.hub, radio_id=radio.id, station_id=neighbor, actor=self._authorized(interaction)
-        )
-        name = next(s.name for s in stations if s.id == neighbor)
-        return tr("radio.local.changed", station=external_text(name, NAME_LIMIT))
 
     async def _volume(self, interaction: Any, tr: Any, radio: Any, runner: Any, wanted: int) -> str:
         """Grava o volume (com ``rev``) e o aplica ao player. No máximo uma mudança por segundo e por rádio."""
