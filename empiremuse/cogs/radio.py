@@ -34,7 +34,8 @@ from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils import playlists_commands
 from empiremuse.rules.playlists import SCOPE_RADIO
 from empiremuse.utils.others import CustomContext
-from empiremuse.utils.radio import actions, migrate_r5, setup_flow, station_commands
+from empiremuse.utils.ephemeral import CONFIRMATION_TTL_S, cleanup_later
+from empiremuse.utils.radio import actions, migrate_r5, radio_commands, setup_flow, station_commands
 from empiremuse.utils.radio.actions import Actor, Refused
 from empiremuse.utils.radio.custom_ports import CustomRadioPorts
 from empiremuse.utils.radio.discord_ports import DiscordChatPorts, DiscordRadioPorts
@@ -451,25 +452,40 @@ class Radio(RadioPrefixCommands, commands.Cog):
     async def radio_on(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        channel: Union[disnake.VoiceChannel, disnake.StageChannel] = commands.Param(
+        channel: Optional[str] = commands.Param(
+            None,
             name=localized("cmd.radio.on.opt.channel.name"),
             description=localized("cmd.radio.on.opt.channel.description"),
+            autocomplete=radio_commands.channel_autocomplete,
+        ),
+        bot: Optional[str] = commands.Param(
+            None,
+            name=localized("cmd.radio.on.opt.bot.name"),
+            description=localized("cmd.radio.on.opt.bot.description"),
+            autocomplete=radio_commands.bot_autocomplete,
         ),
     ) -> None:
         tr = await self._gate(inter)
-        text = await self._turn_on(inter.author, inter.guild_id, tr, channel)
-        await inter.edit_original_message(content=text, allowed_mentions=disnake.AllowedMentions.none())
+        radios = await radio_commands.pick(inter, tr, channel, bot)
+        texts = [
+            await self._turn_on(inter.author, inter.guild_id, tr, radio_commands.channel_of(inter, radio))
+            for radio in radios
+        ]
+        await inter.edit_original_message(content="\n".join(texts), allowed_mentions=disnake.AllowedMentions.none())
+        cleanup_later(inter, CONFIRMATION_TTL_S)
 
     @radio.sub_command(name="reset", description=localized("cmd.radio.reset.description"))
     async def radio_reset(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        channel: Union[disnake.VoiceChannel, disnake.StageChannel] = commands.Param(
-            name=localized("cmd.radio.reset.opt.channel.name"),
-            description=localized("cmd.radio.reset.opt.channel.description"),
+        bot: Optional[str] = commands.Param(
+            None,
+            name=localized("cmd.radio.reset.opt.bot.name"),
+            description=localized("cmd.radio.reset.opt.bot.description"),
+            autocomplete=radio_commands.bot_autocomplete,
         ),
     ) -> None:
-        await setup_flow.reset(self, inter, channel)
+        await setup_flow.reset(self, inter, bot)
 
     def _bot_state(self, radio: Any, channel: Any) -> tuple[bool, bool]:
         """O bot FIXO da rádio visto deste canal: ``(consegue entrar, está livre)``. Sem ``view_channel`` e ``connect`` no canal ele não entra; em call ou com player no servidor não está livre."""
@@ -689,13 +705,27 @@ class Radio(RadioPrefixCommands, commands.Cog):
     async def radio_off(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        channel: Union[disnake.VoiceChannel, disnake.StageChannel] = commands.Param(
+        channel: Optional[str] = commands.Param(
+            None,
             name=localized("cmd.radio.off.opt.channel.name"),
             description=localized("cmd.radio.off.opt.channel.description"),
+            autocomplete=radio_commands.channel_autocomplete,
+        ),
+        bot: Optional[str] = commands.Param(
+            None,
+            name=localized("cmd.radio.off.opt.bot.name"),
+            description=localized("cmd.radio.off.opt.bot.description"),
+            autocomplete=radio_commands.bot_autocomplete,
         ),
     ) -> None:
         tr = await self._gate(inter)
-        await inter.edit_original_message(content=await self._switch_off(inter.author, inter.guild_id, tr, channel))
+        radios = await radio_commands.pick(inter, tr, channel, bot)
+        texts = [
+            await self._switch_off(inter.author, inter.guild_id, tr, radio_commands.channel_of(inter, radio))
+            for radio in radios
+        ]
+        await inter.edit_original_message(content="\n".join(texts))
+        cleanup_later(inter, CONFIRMATION_TTL_S)
 
     async def _switch_off(self, author: Any, guild_id: int, tr: Any, channel: Any) -> str:
         """Desliga a rádio deste canal (qualquer bot do servidor) e devolve o texto da resposta."""

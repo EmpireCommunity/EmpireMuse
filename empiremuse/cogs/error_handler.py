@@ -19,6 +19,8 @@ from empiremuse.utils.others import send_message, CustomContext, string_to_file,
 if TYPE_CHECKING:
     from empiremuse.utils.client import BotCore
 
+from empiremuse.utils.ephemeral import ERROR_TTL_S, cleanup_later
+
 logger = logging.getLogger(__name__)
 
 # Erro inesperado: o usuário nunca vê repr, traceback, caminho de arquivo nem configuração interna; o detalhe completo
@@ -196,6 +198,10 @@ class ErrorHandler(commands.Cog):
         if resp_msg:
             try:
                 await send_message(inter, components=components, **kwargs)
+                if isinstance(inter, disnake.ApplicationCommandInteraction):
+                    cleanup_later(
+                        inter, ERROR_TTL_S
+                    )  # R8: a resposta de erro some sozinha (o aviso não fica acumulando no chat)
             except Exception:
                 logger.exception("Falha ao responder o erro ao usuário")
         else:
