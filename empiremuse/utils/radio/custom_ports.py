@@ -21,6 +21,7 @@ from empiremuse.rules.radio_shuffle import Track
 from empiremuse.rules.radio_station import KIND_ARTISTS, KIND_GENRE, CustomStation
 from empiremuse.utils.radio.custom_source import (
     REBUILD_BACKOFF_S,
+    RETRY_AFTER_S,
     CustomSession,
     EmptyStation,
     NoPlayableTracks,
@@ -204,8 +205,7 @@ class CustomRadioPorts(DiscordRadioPorts):
         try:
             track, partial = await self._draw()
         except NoPlayableTracks:
-            self.no_tracks = True
-            self._refresh_panel()
+            self._source_broken()
             raise
         self.no_tracks = False
         player.queue.clear()
@@ -214,6 +214,24 @@ class CustomRadioPorts(DiscordRadioPorts):
         await player.process_next()
         self._refresh_panel()
         await self._stock()
+
+    def _source_broken(self) -> None:
+        """Pool vazio ou Last.fm fora sem lista velha: a rádio segue ligada, o painel avisa e a próxima tentativa só vem em ``RETRY_AFTER_S``."""
+        self.no_tracks = True
+        self.retry_at = self.now() + RETRY_AFTER_S
+        self._refresh_panel()
+
+    async def _retry_broken_source(self) -> bool:
+        """Chamado a cada passo com a fonte quebrada. ``False`` enquanto não chegou a hora (nenhum ``prepare``, nenhuma consulta ao Last.fm); chegada a hora,
+        relê a estação e a fonte volta (``True``) ou segue quebrada por mais ``RETRY_AFTER_S``."""
+        if self.now() < self.retry_at:
+            return False
+        try:
+            await self.prepare()
+        except EmptyStation, LastFmMissing, LastFmUnavailable:
+            self._source_broken()
+            return False
+        return True
 
     async def _draw(self, *, stocking: bool = False) -> tuple[Track, Any]:
         """Uma faixa tocável. A cada ``FAIL_STREAK_MAX`` falhas seguidas a rádio NÃO pausa: recua ``REBUILD_BACKOFF_S``, reconstrói o pool e segue.
@@ -288,13 +306,19 @@ class CustomRadioPorts(DiscordRadioPorts):
         async with self._stocking:
             if len(player.queue) >= 1:
                 return
-            _, partial = await self._draw(stocking=True)
+            try:
+                _, partial = await self._draw(stocking=True)
+            except NoPlayableTracks:
+                self._source_broken()
+                raise
             player.queue.append(partial)
 
     async def keep_playing(self) -> None:
         """Chamado a cada passo do runner enquanto toca: a fila seca ou o player parado (faixa acabou sem próxima) volta a tocar."""
         player = self._player()
         if player is None or self.session is None:
+            return
+        if self.no_tracks and not await self._retry_broken_source():
             return
         if getattr(player, "current", None) is None and not player.queue:
             await self.play_next()
@@ -326,6 +350,7 @@ class CustomRadioPorts(DiscordRadioPorts):
     async def apply_station(self, radio: Radio) -> None:
         """A estação da rádio mudou (``set_custom_station``): descarta o sorteio velho; a próxima partida relê a estação."""
         self.radio = radio
+        self.retry_at = 0.0
         if self.no_tracks or self.searching:
             self._wake.set()  # a fonte estava quebrada ou em recuo: a estação nova tenta na hora, sem esperar os 10 min
         self.station, self.session, self.current, self.no_tracks = None, None, None, False

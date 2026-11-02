@@ -75,6 +75,7 @@ class TestCustomPorts:
         ports.pool = SimpleNamespace(radio=SimpleNamespace(stock_slots=asyncio.Semaphore(2)))
         ports.play_next = AsyncMock()
         ports._refresh_panel = MagicMock()
+        ports.no_tracks = False
         return ports, player
 
     @pytest.mark.asyncio
@@ -300,3 +301,68 @@ class TestEditingWakesABrokenStation:
         assert not ports._wake.is_set()
         with pytest.raises(TimeoutError):
             await asyncio.wait_for(ports.sleep(5), 0.05)
+
+
+class TestABrokenSourceWaitsTenMinutes:
+    """§3: pool vazio ou Last.fm fora para a rádio (continua ligada), com nova tentativa em 10 min e nenhuma consulta antes disso."""
+
+    @staticmethod
+    def make_ports(clock):
+        from empiremuse.utils.radio.custom_source import EmptyStation
+
+        ports = object.__new__(CustomRadioPorts)
+        player = SimpleNamespace(queue=[], current=object(), process_next=AsyncMock())
+        ports._player = lambda: player
+        ports.session = SimpleNamespace(streak=5)
+        ports.no_tracks, ports.searching, ports.retry_at = False, False, 0.0
+        ports._refresh_panel = MagicMock()
+        ports.now = lambda: clock[0]
+        ports.prepare = AsyncMock(side_effect=EmptyStation)
+        ports._stock = AsyncMock()
+        ports.play_next = AsyncMock()
+        ports._wake = asyncio.Event()
+        return ports
+
+    @pytest.mark.asyncio
+    async def test_no_prepare_and_no_lastfm_call_for_ten_minutes_then_one_retry(self):
+        clock = [1000.0]
+        ports = self.make_ports(clock)
+        ports._source_broken()
+        assert ports.no_tracks is True and ports.retry_at == 1600.0
+
+        for step in range(0, 599, 5):  # um passo do runner a cada 5 s
+            clock[0] = 1000.0 + step
+            await ports.keep_playing()
+        ports.prepare.assert_not_awaited()
+        ports.play_next.assert_not_awaited()
+
+        clock[0] = 1600.0
+        await ports.keep_playing()
+
+        ports.prepare.assert_awaited_once()  # ainda quebrada: uma tentativa e mais 10 min
+        assert ports.retry_at == 2200.0 and ports.no_tracks is True
+        ports.play_next.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_when_the_source_comes_back_the_radio_plays_again(self):
+        clock = [1000.0]
+        ports = self.make_ports(clock)
+        ports.prepare = AsyncMock()
+        ports._source_broken()
+        ports._player().current = None
+        clock[0] = 1600.0
+
+        await ports.keep_playing()
+
+        ports.prepare.assert_awaited_once()
+        ports.play_next.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_editing_or_changing_the_station_tries_at_once(self):
+        clock = [1000.0]
+        ports = self.make_ports(clock)
+        ports._source_broken()
+
+        await ports.apply_station(SimpleNamespace())
+
+        assert ports.retry_at == 0.0 and ports._wake.is_set()  # a espera acorda e o runner reconecta com a estação nova
