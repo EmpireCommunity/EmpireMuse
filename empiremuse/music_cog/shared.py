@@ -8,13 +8,14 @@ from urllib.parse import urlparse
 import disnake
 from disnake.ext import commands
 
+from empiremuse.i18n import localized
 from empiremuse.utils.others import CommandArgparse
 
 # Mesmo nome do logger de ``empiremuse/cogs/music.py``: o que os mixins registram continua nele.
 logger = logging.getLogger("empiremuse.cogs.music")
 
 EMOJI = "🎶"
-NAME = "Música"
+NAME = "Music"
 DESC_PREFIX = f"[{EMOJI} {NAME}] | "
 
 remove_mc = commands.MaxConcurrency(1, per=commands.BucketType.guild, wait=False)
@@ -24,14 +25,14 @@ case_sensitive_args.add_argument(
     "-casesensitive",
     "-cs",
     action="store_true",
-    help="Buscar por músicas com a frase exata no nome da música ao invés de buscar palavra por palavra.",
+    help="legacy.flag.casesensitive",
 )
 
 play_cd = commands.CooldownMapping.from_cooldown(3, 12, commands.BucketType.member)
 play_mc = commands.MaxConcurrency(1, per=commands.BucketType.member, wait=False)
 playlist_opts = [
-    disnake.OptionChoice("Misturar Playlist", "shuffle"),
-    disnake.OptionChoice("Inverter Playlist", "reversed"),
+    disnake.OptionChoice(localized("cmd.play.opt.options.choice.shuffle"), "shuffle"),
+    disnake.OptionChoice(localized("cmd.play.opt.options.choice.reversed"), "reversed"),
 ]
 
 sc_recommended = re.compile(r"https://soundcloud\.com/.*/recommended$")

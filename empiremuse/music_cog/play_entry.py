@@ -335,7 +335,7 @@ class PlayEntryMixin:
 
     stage_flags = CommandArgparse()
 
-    stage_flags.add_argument("query", nargs="*", help="nome ou link da música")
+    stage_flags.add_argument("query", nargs="*", help="legacy.flag.query")
 
     stage_flags.add_argument(
         "-position",
@@ -343,40 +343,38 @@ class PlayEntryMixin:
         "-p",
         type=int,
         default=0,
-        help="Colocar a música em uma posição específica da fila (será ignorado caso use -next etc).\nEx: -p 10",
+        help="legacy.flag.position_play",
     )
 
     stage_flags.add_argument(
         "-next",
         "-proximo",
         action="store_true",
-        help="Adicionar a música/playlist no topo da fila (equivalente ao: -pos 1)",
+        help="legacy.flag.next",
     )
 
     stage_flags.add_argument(
         "-reverse",
         "-r",
         action="store_true",
-        help="Inverter a ordem das músicas adicionadas (efetivo apenas ao adicionar playlist).",
+        help="legacy.flag.reverse",
     )
 
     stage_flags.add_argument(
         "-shuffle",
         "-sl",
         action="store_true",
-        help="Misturar as músicas adicionadas (efetivo apenas ao adicionar playlist).",
+        help="legacy.flag.shuffle",
     )
 
-    stage_flags.add_argument(
-        "-select", "-s", action="store_true", help="Escolher a música entre os resultados encontrados."
-    )
+    stage_flags.add_argument("-select", "-s", action="store_true", help="legacy.flag.select")
 
     stage_flags.add_argument(
         "-mix",
         "-rec",
         "-recommended",
         action="store_true",
-        help="Adicionar/tocar músicas recomendadas com o nome do artsta - música informado.",
+        help="legacy.flag.mix",
     )
 
     stage_flags.add_argument(
@@ -385,12 +383,12 @@ class PlayEntryMixin:
         "-n",
         "-f",
         action="store_true",
-        help="Tocar a música adicionada imediatamente (efetivo apenas se houver uma música tocando atualmente.)",
+        help="legacy.flag.force",
     )
 
-    stage_flags.add_argument("-server", "-sv", type=str, default=None, help="Usar um servidor de música específico.")
+    stage_flags.add_argument("-server", "-sv", type=str, default=None, help="legacy.flag.server")
 
-    stage_flags.add_argument("-selectbot", "-sb", action="store_true", help="Selecionar um bot disponível manualmente.")
+    stage_flags.add_argument("-selectbot", "-sb", action="store_true", help="legacy.flag.selectbot")
 
     @can_send_message_check()
     @commands.bot_has_guild_permissions(send_messages=True)

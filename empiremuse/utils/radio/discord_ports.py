@@ -318,23 +318,55 @@ class DiscordRadioPorts:
         return {**payload, "attachments": []} if "file" in payload else dict(payload)
 
     async def _panel_payload(self, bot: BotCore, guild: disnake.Guild, current: Radio) -> dict[str, Any]:
-        """O painel do tipo desta rádio (ao vivo ou personalizada) com o visual da Jukebox: ícones do bot, miniatura e cor."""
+        """O painel do tipo desta rádio: a ao vivo no desenho aprovado (visor em imagem, 2x5 botões só com emoji e os dois selects);
+        a personalizada ainda no painel com o visual da Jukebox: ícones do bot, miniatura e cor."""
         from empiremuse.utils.music.app_emojis import emoji as app_emoji  # tarde: o módulo importa o cliente
         from empiremuse.utils.radio.panel import panel_payload
 
         tr = await bot.pool.i18n.for_guild(guild)
-        live = self.radio.kind == "live"
+        if self.radio.kind == "live":
+            return await self._visor_payload(bot, guild, current, tr)
         return panel_payload(
             tr,
-            playlist_name="" if live else await self._panel_name(current),
+            playlist_name=await self._panel_name(current),
             color=bot.get_color(guild.me),
-            live=live,
+            live=False,
             view=self._panel_view(),
             custom=await self._custom_view(),
             station=await self._station_card(current),
             emojis=lambda name: app_emoji(bot, name),
             avatar=self._avatar_url(guild),
             logo=await self._logo(current),
+        )
+
+    async def _visor_payload(self, bot: BotCore, guild: disnake.Guild, current: Radio, tr: Any) -> dict[str, Any]:
+        """O painel da rádio AO VIVO (R6/R7): o retrato imutável (``live_snapshot``) vira o PNG do visor numa thread e os controles.
+        Custa, por edição (no máximo uma a cada ``live_ports.PANEL_EDIT_INTERVAL_S``): o logo em cache, um ``by_uuids`` e duas leituras das favoritas."""
+        from empiremuse.utils.music.app_emojis import emoji as app_emoji  # tarde: o módulo importa o cliente
+        from empiremuse.utils.radio.panel import filter_select_options, visor_payload_async
+        from empiremuse.utils.radio.snapshot import live_snapshot
+
+        hub = self.pool.radio
+        guild_locale = getattr(guild, "preferred_locale", None)
+        snapshot = await live_snapshot(
+            hub, current, self, hub.manager.runner(current.id), locale=tr.locale, logo=await self._logo(current)
+        )
+        favorites = await hub.favorites.list(current.guild_id)
+        options = filter_select_options(
+            tr,
+            hub.locations,
+            current.filter,
+            tr.locale,
+            favorites_total=len(favorites),
+            guild_locale=str(getattr(guild_locale, "value", guild_locale)) if guild_locale else None,
+            emojis=lambda name: app_emoji(bot, name),
+        )
+        return await visor_payload_async(
+            tr,
+            snapshot,
+            filter_options=options,
+            color=bot.get_color(guild.me),
+            emojis=lambda name: app_emoji(bot, name),
         )
 
     async def _refresh_existing(self, message: Any, bot: BotCore, guild: disnake.Guild, current: Radio) -> None:
