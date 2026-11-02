@@ -663,5 +663,18 @@
   "legacy.playlists.exported": "**Playlists exportadas.** Você pode importar este arquivo em outro servidor.",
   "legacy.playlists.import_failed": "**Não foi possível importar as playlists agora.**",
   "legacy.playlists.none_yet": "**O servidor ainda não tem playlists.**",
-  "legacy.playlists.one_source": "**Escolha só uma origem: o arquivo, o anexo ou o link.**"
+  "legacy.playlists.one_source": "**Escolha só uma origem: o arquivo, o anexo ou o link.**",
+  "legacy.checks.channel_full": "**O canal {channel} está lotado!**",
+  "legacy.checks.dj_added": "{user} foi adicionado à lista de DJ's por não haver um no canal <#{channel}>.",
+  "legacy.checks.guild_only": "**Este comando deve ser usado em um servidor...**",
+  "legacy.checks.no_connect": "**Não tenho permissão para conectar no canal {channel}**",
+  "legacy.checks.no_dm": "**Esse comando não pode ser usado nas mensagens privada.**",
+  "legacy.checks.no_embed_permission": "**{bot} não possui permissão de inserir links no canal: {channel}**",
+  "legacy.checks.no_send_permission": "**{bot} não possui permissão de enviar mensagens no canal:** {channel}",
+  "legacy.checks.no_speak": "**Não tenho permissão para falar no canal {channel}**",
+  "legacy.checks.other_bot": "**Há outro bot conectado no canal:** <#{channel}>",
+  "legacy.checks.queue_loading": "**Não é possível executar essa ação com o processamento da música em andamento (por favor aguarde mais alguns segundos e tente novamente).**",
+  "legacy.checks.restrict_mode": "Apenas DJ's ou membros com a permissão de **mover membros** podem usar este comando/botão com o **modo restrito ativo**...\n\n",
+  "legacy.checks.status_lock": "**Você terá que aguardar {time} para usar essa função com o status automático do canal ligado...**",
+  "legacy.checks.youtube_cooldown": "**{user}, você só pode pular a música atual do youtube em {time}**.\n-# Isso é uma forma de ajudar a evitar possíveis bloqueios do youtube na reprodução da música"
 }
