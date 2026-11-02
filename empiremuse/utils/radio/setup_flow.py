@@ -16,7 +16,9 @@ from empiremuse.rules.i18n import fit
 from empiremuse.rules.radio import KIND_CUSTOM, KIND_LIVE, Radio
 from empiremuse.rules.radio_stations import Station
 from empiremuse.rules.text import external_text
+from empiremuse.utils.ephemeral import CONFIRMATION_TTL_S, ERROR_TTL_S, cleanup_later
 from empiremuse.utils.music.errors import GenericError
+from empiremuse.utils.radio import radio_commands
 from empiremuse.utils.radio.premium import RadioUnavailable
 from empiremuse.utils.radio.setup import REASON_PREMIUM, RadioForbidden
 from empiremuse.utils.radio.store import RadioConflict, RadioInvalid, RadioNotFound
@@ -231,21 +233,33 @@ async def prepare_reset(cog: RadioCog, tr: Any, author: Any, guild_id: int, chan
     if radio is None:
         raise GenericError(tr("radio.reset.none", channel=channel.mention))
     return tr("radio.reset.ask", channel=channel.mention, bot=f"<@{radio.bot_id}>"), ConfirmReset(
-        cog, tr, radio, author.id
+        cog, tr, [radio], author.id
     )
 
 
-async def reset(cog: RadioCog, inter: disnake.ApplicationCommandInteraction, channel: Any) -> None:
-    """``/radio reset canal:``: pede a confirmação efêmera (botão, 60 s) antes de apagar a configuração da rádio daquele canal."""
+async def reset(cog: RadioCog, inter: disnake.ApplicationCommandInteraction, bot: str | None) -> None:
+    """``/radio reset [bot:]``: pede a confirmação efêmera (botão, 60 s). Com ``bot``, só a rádio dele; sem, TODAS as do servidor (sem exceção)."""
     tr = await cog._gate(inter)
-    content, view = await prepare_reset(cog, tr, inter.author, inter.guild_id, channel)
-    await inter.edit_original_message(content=content, view=view, allowed_mentions=disnake.AllowedMentions.none())
+    if not inter.author.guild_permissions.manage_guild:
+        raise GenericError(tr("radio.refused.no_manage_guild"))
+    radios = await radio_commands.pick(inter, tr, None, bot, all_if_empty=True)
+    if not radios:
+        raise GenericError(tr("radio.pick.none"))
+    if len(radios) == 1:
+        radio = radios[0]
+        ask = tr("radio.reset.ask", channel=f"<#{radio.channel_id}>", bot=f"<@{radio.bot_id}>")
+    else:
+        ask = tr("radio.reset.ask_all", total=len(radios))
+    view = ConfirmReset(cog, tr, list(radios), inter.author.id)
+    await inter.edit_original_message(content=ask, view=view, allowed_mentions=disnake.AllowedMentions.none())
+    view.message_interaction = inter
 
 
 class ConfirmReset(disnake.ui.View):
-    def __init__(self, cog: RadioCog, tr: Any, radio: Radio, author_id: int) -> None:
+    def __init__(self, cog: RadioCog, tr: Any, radios: list[Radio], author_id: int) -> None:
         super().__init__(timeout=CONFIRM_TIMEOUT_S)
-        self.cog, self.tr, self.radio, self.author_id = cog, tr, radio, author_id
+        self.cog, self.tr, self.radios, self.author_id = cog, tr, radios, author_id
+        self.message_interaction: Any = None  # a resposta com a pergunta: some no prazo se ninguém responder (R8)
         confirm = disnake.ui.Button(
             label=fit(tr("radio.reset.confirm"), 80), style=disnake.ButtonStyle.danger, custom_id="radio_reset_confirm"
         )
@@ -263,16 +277,31 @@ class ConfirmReset(disnake.ui.View):
     async def cancelled(self, interaction: disnake.MessageInteraction) -> None:
         self.stop()
         await interaction.response.edit_message(content=self.tr("radio.reset.cancelled"), view=None)
+        cleanup_later(interaction, CONFIRMATION_TTL_S)
+
+    async def on_timeout(self) -> None:
+        self.stop()
+        if self.message_interaction is not None:
+            cleanup_later(self.message_interaction, 0)
 
     async def confirmed(self, interaction: disnake.MessageInteraction) -> None:
         await interaction.response.defer()
         self.stop()
-        try:
-            await self.cog.hub.setup.reset(interaction.guild_id, interaction.author.id, self.radio.id, self.radio.rev)
-        except (RadioForbidden, RadioNotFound, RadioConflict, RadioInvalid, RadioUnavailable) as error:
-            await interaction.edit_original_message(content=str(refusal(self.tr, error)), view=None)
+        failures = []
+        for radio in self.radios:
+            try:
+                await self.cog.hub.setup.reset(interaction.guild_id, interaction.author.id, radio.id, radio.rev)
+            except (RadioForbidden, RadioNotFound, RadioConflict, RadioInvalid, RadioUnavailable) as error:
+                failures.append(str(refusal(self.tr, error)))
+        if failures:
+            await interaction.edit_original_message(content="\n".join(dict.fromkeys(failures)), view=None)
+            cleanup_later(interaction, ERROR_TTL_S)
             return
-        logger.info("radio.reset: configuração apagada")
-        await interaction.edit_original_message(
-            content=self.tr("radio.reset.done", channel=f"<#{self.radio.channel_id}>"), view=None
+        logger.info("radio.reset: configuração apagada (%d)", len(self.radios))
+        done = (
+            self.tr("radio.reset.done", channel=f"<#{self.radios[0].channel_id}>")
+            if len(self.radios) == 1
+            else self.tr("radio.reset.done_many", total=len(self.radios))
         )
+        await interaction.edit_original_message(content=done, view=None)
+        cleanup_later(interaction, CONFIRMATION_TTL_S)

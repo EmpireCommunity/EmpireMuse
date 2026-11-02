@@ -90,7 +90,9 @@ def build(
     inter = SimpleNamespace(
         response=SimpleNamespace(defer=AsyncMock()),
         edit_original_message=AsyncMock(),
-        guild=SimpleNamespace(id=GUILD, preferred_locale="pt-BR"),
+        guild=SimpleNamespace(
+            id=GUILD, preferred_locale="pt-BR", get_channel=lambda cid: channel if cid == CHANNEL else None
+        ),
         guild_id=GUILD,
         author=SimpleNamespace(id=7, guild_permissions=SimpleNamespace(manage_guild=manage_guild)),
         bot=cog.bot,
@@ -125,7 +127,7 @@ async def run_on(w, **kwargs):
             kind="live" if live else "custom",
             source={"station": live, "reserve": None} if live else kwargs.get("source"),
         )
-    await radio_cog.Radio.radio_on.callback(w.cog, w.inter, channel=channel)
+    await radio_cog.Radio.radio_on.callback(w.cog, w.inter, channel=str(channel.id), bot=None)
     await settle(w)
 
 
@@ -298,7 +300,7 @@ class TestLigar:
         w.db.fail = True
 
         with pytest.raises(GenericError):
-            await radio_cog.Radio.radio_on.callback(w.cog, w.inter, channel=w.channel)
+            await radio_cog.Radio.radio_on.callback(w.cog, w.inter, channel=str(w.channel.id), bot=None)
 
 
 class TestDesligarEStatus:
@@ -311,7 +313,7 @@ class TestDesligarEStatus:
         player = SimpleNamespace(destroy=AsyncMock())
         w.bots[1].music.players[GUILD] = player
 
-        await radio_cog.Radio.radio_off.callback(w.cog, w.inter, channel=w.channel)
+        await radio_cog.Radio.radio_off.callback(w.cog, w.inter, channel=str(w.channel.id), bot=None)
 
         assert not w.hub.manager.is_running(radio_id(2, GUILD)) and player.destroy.await_count == 1
         assert (await w.hub.premium.fresh(GUILD)).active == 0 and "desligada" in reply(w)
@@ -322,11 +324,11 @@ class TestDesligarEStatus:
         await premium(w)
 
         with pytest.raises(GenericError) as nothing:
-            await radio_cog.Radio.radio_off.callback(w.cog, w.inter, channel=w.channel)
+            await radio_cog.Radio.radio_off.callback(w.cog, w.inter, channel=str(w.channel.id), bot=None)
         radio_cog.RADIO_COOLDOWN._cache.clear()
         w.inter.author.guild_permissions.manage_guild = False
         with pytest.raises(GenericError) as no_guild:
-            await radio_cog.Radio.radio_off.callback(w.cog, w.inter, channel=w.channel)
+            await radio_cog.Radio.radio_off.callback(w.cog, w.inter, channel=str(w.channel.id), bot=None)
 
         assert "Não há rádio" in str(nothing.value) and "Gerenciar Servidor" in str(no_guild.value)
 
