@@ -304,7 +304,7 @@ def test_a_bot_entering_or_leaving_never_changes_the_servers_settings_or_playlis
 def test_every_path_that_persists_a_new_panel_bot_hands_the_panel_off(world):  # CodeRabbit #159
     """``panel_bot`` e ``is_panel_bot`` também gravam a eleição: a passagem do painel sai de ``elect``, não só de ``on_roster_change``."""
     handoffs = []
-    world.pool.request_panel = SimpleNamespace(schedule_handoff=handoffs.append, retry_pending_handoff=lambda gid: None)
+    world.pool.jukebox_panel = SimpleNamespace(schedule_handoff=handoffs.append, retry_pending_handoff=lambda gid: None)
     main, reserve = world.bots
     main_sees = main.get_guild
     main.get_guild = lambda gid: None  # só a reserva está no servidor
@@ -326,7 +326,7 @@ def test_every_path_that_persists_a_new_panel_bot_hands_the_panel_off(world):  #
 
 def test_panel_bot_and_is_panel_bot_retry_a_pending_handoff_once_the_election_is_stored(world):  # CodeRabbit #159
     retried = []
-    world.pool.request_panel = SimpleNamespace(schedule_handoff=lambda gid: None, retry_pending_handoff=retried.append)
+    world.pool.jukebox_panel = SimpleNamespace(schedule_handoff=lambda gid: None, retry_pending_handoff=retried.append)
     main, reserve = world.bots
     run(world.jukebox.elect(GID))  # eleição gravada: o principal
     retried.clear()
@@ -342,7 +342,7 @@ def test_panel_bot_and_is_panel_bot_retry_a_pending_handoff_once_the_election_is
 
 def test_a_repeated_election_with_no_change_does_not_hand_the_panel_off_again(world):
     handoffs = []
-    world.pool.request_panel = SimpleNamespace(schedule_handoff=handoffs.append, retry_pending_handoff=lambda gid: None)
+    world.pool.jukebox_panel = SimpleNamespace(schedule_handoff=handoffs.append, retry_pending_handoff=lambda gid: None)
 
     assert run(world.jukebox.elect(GID)).changed is True and handoffs == [GID]
     assert run(world.jukebox.elect(GID)).changed is False

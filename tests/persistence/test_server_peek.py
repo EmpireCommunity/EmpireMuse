@@ -22,7 +22,7 @@ def world():
     banco = Banco()
     bots = [make_bot(MAIN_ID, "TOKEN", guilds=(GID,)), make_bot(RESERVE_ID, "TOKEN_2", guilds=(GID,))]
     store = ServerStore(SimpleNamespace(database=banco, get_all_bots=lambda: bots))
-    return SimpleNamespace(banco=banco, store=store, request=ServerJukebox(store))
+    return SimpleNamespace(banco=banco, store=store, jukebox=ServerJukebox(store))
 
 
 def stored(message_id):
