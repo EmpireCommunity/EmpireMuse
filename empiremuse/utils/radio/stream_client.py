@@ -6,7 +6,7 @@ HTTP/1.0 a resposta nunca vem em ``chunked``, o ``Connection: close`` encerra li
 - a URL passa por ``rules.radio_stations.check_stream_url`` (http/https, sem credencial, porta 80/443/8000-8999);
 - o nome é resolvido AQUI e TODO endereço tem de ser público (``is_public_address``; cobre IPv4 dentro de IPv6 e NAT64); a conexão vai
   direto no IP conferido, com o SNI e o certificado conferidos no NOME do host (nunca ``ssl=False``, nunca IP com SNI inventado);
-- prazos: conexão 5 s, cabeçalhos 10 s; cabeçalhos até 16 KiB e 100 linhas; sem cookie, sem proxy, ``Accept-Encoding: identity``;
+- prazos: conexão 5 s (os endereços entram numa corrida escalonada de 0,25 s, o primeiro que conectar vence), cabeçalhos 10 s; cabeçalhos até 16 KiB e 100 linhas; sem cookie, sem proxy, ``Accept-Encoding: identity``;
 - nunca segue redirecionamento: devolve a resposta e quem chama (o relay) decide, conferindo cada salto de novo.
 
 Erros viram ``StreamRefused`` com um código estável; a URL nunca vai na exceção nem no log (R-12: só o host).
@@ -32,6 +32,7 @@ USER_AGENT = "EmpireMuse/radio"
 CONNECT_TIMEOUT_S = 5.0
 HEADER_TIMEOUT_S = 10.0
 RESOLVE_TIMEOUT_S = 5.0
+HAPPY_EYEBALLS_DELAY_S = 0.25  # o endereço seguinte entra na corrida depois disto, sem esperar o anterior desistir (um IPv6 sem rota custava 5 s por salto)
 MAX_ADDRESSES = 3
 MAX_HEADER_BYTES = 16 * 1024
 MAX_HEADER_LINES = 100
@@ -148,6 +149,62 @@ def _request(host: str, port: int, scheme: str, path: str, *, want_icy: bool) ->
     return "\r\n".join(lines).encode("ascii")
 
 
+async def _race_connect(
+    addresses: Sequence[str], port: int, context: ssl.SSLContext | None, host: str, connect_timeout: float
+) -> tuple[str, asyncio.StreamReader, asyncio.StreamWriter]:
+    """Conecta ao primeiro endereço que responder: cada um entra ``HAPPY_EYEBALLS_DELAY_S`` depois do anterior (ou assim que o anterior falha) e os que
+    perderem são cancelados e fechados. O prazo de ``connect_timeout`` vale para a corrida inteira. ``StreamRefused`` com o último motivo se ninguém conectou."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + connect_timeout
+    queue = list(addresses)
+    pending: dict[asyncio.Future, str] = {}
+    last_error = CONNECT_FAILED
+    winner: tuple[str, asyncio.StreamReader, asyncio.StreamWriter] | None = None
+    try:
+        while winner is None and (queue or pending):
+            if queue:
+                address = queue.pop(0)
+                task = asyncio.ensure_future(
+                    asyncio.open_connection(
+                        address,
+                        port,
+                        ssl=context,
+                        server_hostname=host if context else None,
+                        limit=MAX_HEADER_BYTES * 2,
+                    )
+                )
+                pending[task] = address
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                last_error = TIMEOUT
+                break
+            wait = min(HAPPY_EYEBALLS_DELAY_S, remaining) if queue else remaining
+            done, _ = await asyncio.wait(pending, timeout=wait, return_when=asyncio.FIRST_COMPLETED)
+            if not done and not queue and loop.time() >= deadline:
+                last_error = TIMEOUT
+                break
+            for task in done:
+                address = pending.pop(task)
+                try:
+                    reader, writer = task.result()
+                except ssl.SSLError:
+                    last_error = TLS_FAILED
+                except OSError:
+                    last_error = CONNECT_FAILED
+                else:
+                    winner = (address, reader, writer)
+                    break
+    finally:
+        for task in pending:
+            task.cancel()
+        for outcome in await asyncio.gather(*pending, return_exceptions=True):
+            if isinstance(outcome, tuple):  # conectou tarde demais: fecha, o socket da estação não fica aberto
+                outcome[1].close()
+    if winner is None:
+        raise StreamRefused(last_error)
+    return winner
+
+
 async def open_stream(
     url: object,
     *,
@@ -166,23 +223,14 @@ async def open_stream(
     addresses = await _addresses(host, port, resolve, public)
     context = (ssl_context or ssl.create_default_context()) if scheme == "https" else None
     last_error = CONNECT_FAILED
-    for address in addresses:
+    remaining = list(addresses)
+    while remaining:
         try:
-            reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(
-                    address, port, ssl=context, server_hostname=host if context else None, limit=MAX_HEADER_BYTES * 2
-                ),
-                connect_timeout,
-            )
-        except TimeoutError:
-            last_error = TIMEOUT
-            continue
-        except ssl.SSLError:
-            last_error = TLS_FAILED
-            continue
-        except OSError:
-            last_error = CONNECT_FAILED
-            continue
+            address, reader, writer = await _race_connect(remaining, port, context, host, connect_timeout)
+        except StreamRefused as refusal:
+            last_error = refusal.reason
+            break
+        remaining.remove(address)  # se os cabeçalhos falharem, os outros endereços ainda têm vez
         try:
             writer.write(_request(host, port, scheme, path, want_icy=want_icy))
             await asyncio.wait_for(writer.drain(), header_timeout)

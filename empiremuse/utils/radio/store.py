@@ -12,7 +12,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -26,6 +26,7 @@ from empiremuse.rules.radio import (
     check_radio,
     to_document,
 )
+from empiremuse.rules.radio_stations import valid_uuid
 from empiremuse.utils.radio.premium import CAS_ATTEMPTS, GLOBAL_DB, PremiumStore, RadioUnavailable
 
 if TYPE_CHECKING:
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 RADIOS_DB = "radios"  # nome da coleção
+KEEP: object = object()  # "não mexa" em ``set_station(station_list=...)``
 
 
 class RadioConflict(Exception):
@@ -173,9 +175,60 @@ class RadioStore:
             raise RadioConflict
         if current.kind != KIND_LIVE or reserve == current.source.get("station"):
             raise RadioInvalid(RuleError(SOURCE_INVALID, "reserve"))
-        updated = dataclasses.replace(
-            current, source={"station": current.source["station"], "reserve": reserve}, rev=current.rev + 1
-        )
+        updated = dataclasses.replace(current, source={**current.source, "reserve": reserve}, rev=current.rev + 1)
+        checked = check_radio(to_document(updated))
+        if isinstance(checked, RuleError):
+            raise RadioInvalid(checked)
+        if not await self._save(radio_id, to_document(checked, updated_by=updated_by), expected_rev):
+            raise RadioConflict
+        return checked
+
+    async def set_station(
+        self,
+        radio_id: str,
+        uuid: object,
+        *,
+        expected_rev: int,
+        updated_by: str = "",
+        station_list: Sequence[str] | None | object = KEEP,
+    ) -> Radio:
+        """Muda a estação PRINCIPAL de uma rádio AO VIVO (o seletor de local do painel da call e da página Rádios, e o anterior/próxima). Mesmas regras do
+        ``set_reserve``: ``RadioConflict`` se o ``rev`` mudou, ``RadioInvalid`` se não é rádio ao vivo ou o uuid não é válido. A reserva igual à nova
+        principal é tirada. ``station_list`` é a lista de onde a estação foi escolhida (a região ou os favoritos): ``KEEP`` mantém a de antes, ``None`` ou
+        uma lista curta a tira. Quem muda a estação de uma rádio ligada chama depois ``RadioManager.change_station`` (o runner guarda a principal que leu)."""
+        current = self._radio(await self._find(radio_id))
+        if current is None:
+            raise RadioNotFound
+        if current.rev != expected_rev:
+            raise RadioConflict
+        if current.kind != KIND_LIVE or not valid_uuid(uuid):
+            raise RadioInvalid(RuleError(SOURCE_INVALID, "station"))
+        source = {**current.source, "station": uuid}
+        if source.get("reserve") == uuid:
+            source["reserve"] = None
+        if station_list is not KEEP:
+            source.pop("list", None)
+            if station_list:
+                source["list"] = list(station_list)  # type: ignore[arg-type]
+        updated = dataclasses.replace(current, source=source, rev=current.rev + 1)
+        checked = check_radio(to_document(updated))
+        if isinstance(checked, RuleError):
+            raise RadioInvalid(checked)
+        if not await self._save(radio_id, to_document(checked, updated_by=updated_by), expected_rev):
+            raise RadioConflict
+        return checked
+
+    async def set_volume(self, radio_id: str, volume: object, *, expected_rev: int, updated_by: str = "") -> Radio:
+        """Muda o volume de uma rádio AO VIVO (10 a 150; o padrão, 100, não fica gravado). Mesmas regras do ``set_reserve``."""
+        current = self._radio(await self._find(radio_id))
+        if current is None:
+            raise RadioNotFound
+        if current.rev != expected_rev:
+            raise RadioConflict
+        if current.kind != KIND_LIVE or isinstance(volume, bool) or not isinstance(volume, int):
+            raise RadioInvalid(RuleError(SOURCE_INVALID, "volume"))
+        source = {**current.source, "volume": volume}
+        updated = dataclasses.replace(current, source=source, rev=current.rev + 1)
         checked = check_radio(to_document(updated))
         if isinstance(checked, RuleError):
             raise RadioInvalid(checked)

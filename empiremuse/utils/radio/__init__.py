@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import logging
+from functools import cache
 from typing import TYPE_CHECKING, Any
 
 from cachetools import TTLCache
 
 from empiremuse.utils.radio.control import BotRoles, RadioControl
 from empiremuse.utils.radio.directory import Directory
+from empiremuse.utils.radio.favorites import RadioFavorites
 from empiremuse.utils.radio.health import HealthChecker, StationHealth
+from empiremuse.utils.radio.locations import LocationDataError, LocationTree
 from empiremuse.utils.radio.manager import RadioManager
 from empiremuse.utils.radio.premium import PremiumStore
 from empiremuse.utils.radio.relay import RadioRelay
@@ -21,6 +25,18 @@ if TYPE_CHECKING:
 
 NOTICE_SECONDS = 60
 
+logger = logging.getLogger(__name__)
+
+
+@cache
+def load_locations() -> LocationTree | None:
+    """A árvore de local fixa (R4), lida uma vez por processo; arquivo ausente ou inválido desliga o filtro e a busca por nome segue."""
+    try:
+        return LocationTree.load()
+    except LocationDataError as error:
+        logger.warning("Filtro de local das rádios desligado (%s)", error.reason)
+        return None
+
 
 class RadioHub:
     """``pool.radio.store`` (rádios), ``.premium`` (concessões e contador) e ``.service`` (o que roda agora)."""
@@ -30,9 +46,13 @@ class RadioHub:
         self.control = RadioControl(pool)  # "pausar todas" (dono)
         self.roles = BotRoles(pool)  # bots só-rádio (dono)
         self.store = RadioStore(pool, self.premium)
+        self.favorites = RadioFavorites(pool)  # estações favoritas do servidor (painel da rádio ao vivo)
         self.service = RadioService(pool)
         self.manager = RadioManager(self, self.service)  # quem faz as rádios rodarem neste processo
-        self.directory = Directory()  # Radio Browser (R3): busca, uuid -> estação, limites e cache
+        self.locations = load_locations()  # Região → país → estado → cidade (R4); ``None`` = filtro desligado
+        self.directory = Directory(
+            state_index=self.locations.state_index if self.locations else None
+        )  # Radio Browser (R3): busca, uuid -> estação, local, limites e cache
         self.relay = RadioRelay()  # o único endereço que o Lavalink recebe: http://127.0.0.1:<porta>/r/<token>
         self.health = StationHealth(pool)  # estações indisponíveis (R-10)
         self.health_checker = HealthChecker(

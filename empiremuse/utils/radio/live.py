@@ -67,7 +67,14 @@ class LiveRadioRunner(RadioRunner):
         state = self._state(phase)
         show = getattr(self.ports, "update_panel", None)
         if show is not None:  # o painel da call espelha título, reserva no ar e fora do ar (contrato §2 e §3)
-            show(LiveView(title=state.title, on_reserve=state.on_reserve, offline=state.offline))
+            show(
+                LiveView(
+                    title=state.title,
+                    on_reserve=state.on_reserve,
+                    offline=state.offline,
+                    muted=state.paused_by_admin,
+                )
+            )
 
     def set_title(self, title: Optional[str]) -> None:
         """O título que o relay leu do fluxo (já limpo e com o teto de 1 a cada 15 s). Só vale tocando."""
@@ -125,7 +132,9 @@ class LiveRadioRunner(RadioRunner):
         """O Lavalink avisou que o fluxo acabou ou falhou (fim, exceção, travou). Só vale tocando; pausas nossas não passam por aqui."""
         if self._stopped or self.phase is not Phase.PLAYING:
             return
-        if self._is_stable():
+        if getattr(self.ports, "relay_limited", lambda: False)():
+            pass  # o relay recusou a reconexão do Lavalink (política): não é a estação, então nada conta; o token é revogado e o recuo pede outro
+        elif self._is_stable():
             self.failures = self.attempt = 0
         else:
             self.failures += 1  # a estação aceitou e caiu logo: conta como falha, senão o ciclo nunca fecha e ela nunca é trocada nem marcada
@@ -139,6 +148,18 @@ class LiveRadioRunner(RadioRunner):
         await super()._tick()
         if self.phase is Phase.PLAYING and self.failures and self._is_stable():
             self.failures = self.attempt = 0  # tocando de forma estável: o ciclo de falhas recomeça
+
+    async def station_changed(self) -> None:
+        """A principal mudou (painel da call ou página Rádios): zera o ciclo de falhas e o título e recomeça pelo recuo; pausada ou em recuo, a próxima
+        tentativa já usa a estação nova."""
+        if self._stopped:
+            return
+        self.failures = 0
+        self.outage = False
+        self.title = None
+        if self.phase is Phase.PLAYING:
+            self.attempt = 0
+            await self.on_disconnect()
 
     async def restore_primary(self) -> bool:
         """O health check reabilitou a estação principal: se a rádio está na reserva (ou em silêncio), volta para ela. Tocando, a volta é pelo

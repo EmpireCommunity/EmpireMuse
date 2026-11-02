@@ -427,7 +427,7 @@ class HubWorld:
                 collection="global",
             )
 
-    async def by_uuid(self, uuid):
+    async def by_uuid(self, uuid, **kwargs):
         self.by_uuid_calls.append(uuid)
         return Station(uuid, "n", "http://stream.example:8000/x", "MP3", 128, "BR")
 
@@ -494,10 +494,10 @@ class TestHealthChecker:
         world.good = {uuid_n(1)}
         original = world.by_uuid
 
-        async def flaky(uuid):
+        async def flaky(uuid, **kwargs):
             if uuid == uuid_n(0):
                 raise OSError("rede")
-            return await original(uuid)
+            return await original(uuid, **kwargs)
 
         world.by_uuid = flaky  # type: ignore[method-assign]
 
@@ -770,10 +770,21 @@ class TestLiveLoadsOnlyOnTheLocalNode:
             }
         )
         ports = LiveRadioPorts(w.ports.pool, radio)
-        self.local = SimpleNamespace(
-            identifier="LOCAL",
-            get_tracks=AsyncMock(return_value=[SimpleNamespace(title="live", info={"uri": "http://127.0.0.1:9/r/x"})]),
-        )
+
+        async def load(query, **kwargs):
+            for session in w.hub.relay._sessions.values():
+                session.opened += 1  # o relay abriu a estação (o loadtracks do Lavalink)
+            return [SimpleNamespace(title="live", info={"uri": "http://127.0.0.1:9/r/x"})]
+
+        async def play(**kwargs):
+            for session in w.hub.relay._sessions.values():
+                session.served += 1
+                session.claimed_serial = session.served
+                session.flowing.set()  # ...e o primeiro áudio do PLAY chegou ao Lavalink: a rádio toca de verdade
+
+        w.player.process_next = AsyncMock(side_effect=play)
+
+        self.local = SimpleNamespace(identifier="LOCAL", get_tracks=AsyncMock(side_effect=load))
         self.remote = SimpleNamespace(
             identifier="PUBLICO", get_tracks=AsyncMock(return_value=[SimpleNamespace(title="outro")])
         )
@@ -824,7 +835,19 @@ class TestLiveLoadsOnlyOnTheLocalNode:
         real._trusted_encoded = OrderedDict()
         real._checked_encoded = TTLCache(maxsize=64, ttl=600)
         track = SimpleNamespace(id="LIVE-ENCODED", title="live", info={"uri": "http://127.0.0.1:9/r/x"})
-        real._get_tracks = AsyncMock(return_value=[track])
+
+        async def flowing_load(*args, **kwargs):
+            for session in w.hub.relay._sessions.values():
+                session.opened += 1
+            return [track]
+
+        async def play(**kwargs):
+            for session in w.hub.relay._sessions.values():
+                session.flowing.set()
+
+        w.player.process_next = AsyncMock(side_effect=play)
+
+        real._get_tracks = AsyncMock(side_effect=flowing_load)
         real.build_track = AsyncMock(side_effect=AssertionError("a faixa do relay não deveria ser decodificada"))
         real.identifier = "LOCAL"
         w.bot.music.nodes = {"LOCAL": real}
@@ -871,7 +894,7 @@ class TestLiveLoadsOnlyOnTheLocalNode:
 
         async def fail_after_touching(query, **kwargs):
             for session in w.hub.relay._sessions.values():
-                session.hits += 1  # o Lavalink chegou ao relay
+                session.opened += 1  # o relay chegou a abrir a estação
             raise OSError("fluxo sem áudio")
 
         self.local.get_tracks.side_effect = fail_after_touching
@@ -880,6 +903,106 @@ class TestLiveLoadsOnlyOnTheLocalNode:
             with pytest.raises(StationFailure):
                 await ports.play_live()
             assert w.hub.relay._sessions == {}  # o token foi revogado
+        finally:
+            await w.hub.relay.close()
+
+    @pytest.mark.asyncio
+    async def test_the_play_asks_to_expect_its_own_audio_right_before_starting_the_player(self):
+        """Revisão do R4: ``expect_flow`` no ponto de chamada. O áudio do ``loadtracks`` não pode valer como "o play abriu" (tocando com player mudo)."""
+        w, ports = await self.world_with_player()
+        events = []
+        real_expect = w.hub.relay.expect_flow
+
+        def expect(token):
+            events.append("expect_flow")
+            return real_expect(token)
+
+        w.hub.relay.expect_flow = expect
+        real_play = w.player.process_next
+
+        async def play(**kwargs):
+            events.append("process_next")
+            return await real_play(**kwargs)
+
+        w.player.process_next = play
+        try:
+            await ports.connect()
+            await ports.play_live()
+        finally:
+            await w.hub.relay.close()
+
+        assert events == ["expect_flow", "process_next"]
+
+    @pytest.mark.asyncio
+    async def test_audio_read_by_the_load_does_not_make_a_silent_play_look_like_playing(self, monkeypatch):
+        from unittest.mock import AsyncMock
+
+        from empiremuse.utils.radio import live_ports
+
+        monkeypatch.setattr(live_ports, "FLOW_WAIT_S", 0.05)
+        w, ports = await self.world_with_player()
+
+        async def load_that_flowed(query, **kwargs):
+            for session in w.hub.relay._sessions.values():
+                session.opened += 1
+                session.flowing.set()  # o loadtracks do Lavalink leu áudio...
+            return [SimpleNamespace(title="live", info={"uri": "x"})]
+
+        self.local.get_tracks.side_effect = load_that_flowed
+        w.player.process_next = AsyncMock()  # ...mas o play nunca abriu a estação
+        try:
+            await ports.connect()
+            with pytest.raises((StationFailure, RuntimeError)):
+                await ports.play_live()
+        finally:
+            await w.hub.relay.close()
+
+    @pytest.mark.asyncio
+    async def test_a_stream_that_never_delivers_audio_is_not_playing_and_the_station_is_to_blame(self, monkeypatch):
+        """Litmus: a rádio que falhou ficava muda enquanto o contador dizia "tocando". Sem o primeiro áudio no prazo, ``play_live`` FALHA."""
+        from empiremuse.utils.radio import live_ports
+
+        monkeypatch.setattr(live_ports, "FLOW_WAIT_S", 0.05)
+        w, ports = await self.world_with_player()
+
+        async def opened_but_silent(query, **kwargs):
+            for session in w.hub.relay._sessions.values():
+                session.opened += 1  # o relay abriu a estação, mas nenhum áudio chegou ao Lavalink
+            return [SimpleNamespace(title="live", info={"uri": "x"})]
+
+        from unittest.mock import AsyncMock
+
+        w.player.process_next = AsyncMock()  # o play não entrega áudio nenhum
+        self.local.get_tracks.side_effect = opened_but_silent
+        try:
+            await ports.connect()
+            with pytest.raises(StationFailure):
+                await ports.play_live()
+            w.player.stop.assert_awaited()  # nada de faixa velha esperando
+            assert w.hub.relay._sessions == {}
+        finally:
+            await w.hub.relay.close()
+
+    @pytest.mark.asyncio
+    async def test_a_stream_the_lavalink_never_fetched_is_silent_but_not_the_stations_fault(self, monkeypatch):
+        from empiremuse.utils.radio import live_ports
+
+        monkeypatch.setattr(live_ports, "FLOW_WAIT_S", 0.05)
+        w, ports = await self.world_with_player()
+        from unittest.mock import AsyncMock
+
+        w.player.process_next = AsyncMock()  # o play não entrega áudio nenhum
+        self.local.get_tracks.side_effect = None
+        self.local.get_tracks.return_value = [
+            SimpleNamespace(title="live", info={"uri": "x"})
+        ]  # carregou, mas nunca pediu o áudio
+        try:
+            await ports.connect()
+            with pytest.raises(RuntimeError) as failure:
+                await ports.play_live()
+            assert not isinstance(
+                failure.value, StationFailure
+            )  # o relay nem tentou a estação: não é falha dela, e o runner tenta de novo
         finally:
             await w.hub.relay.close()
 
@@ -924,13 +1047,13 @@ class TestLivePanel:
         def text(view):
             return panel_payload(tr, playlist_name="Boa FM", live=True, view=view)["embeds"][0].description
 
-        assert "panel_now|title=Artista - Faixa" in text(LiveView(title="Artista - Faixa"))
-        assert "panel_live" in text(LiveView()) and "panel_reserve" not in text(LiveView())
-        assert "panel_reserve" in text(LiveView(on_reserve=True))
-        assert "panel_offline" in text(LiveView(offline=True)) and "panel_now" not in text(
+        assert "radio.panel.live.now|artist=Artista|song=Faixa" in text(LiveView(title="Artista - Faixa"))
+        assert "radio.panel.live.now" not in text(LiveView())  # sem título do fluxo não há "Tocando agora"
+        assert "panel_reserve" in text(LiveView(on_reserve=True)) and "panel_reserve" not in text(LiveView())
+        assert "panel_offline" in text(LiveView(offline=True)) and "radio.panel.live.now" not in text(
             LiveView(offline=True, title="x")
         )
-        assert len(text(LiveView(title="z" * 1000))) < 400  # o título tem teto
+        assert len(text(LiveView(title="z" * 1000))) < 500  # o título tem teto
 
     @pytest.mark.asyncio
     async def test_a_title_every_100_ms_edits_the_panel_at_most_once_per_15_seconds_with_the_latest(self):

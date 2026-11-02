@@ -3,12 +3,14 @@
 # nota: este sistema é totalmente experimental.
 import asyncio
 import logging
+import time
 from contextlib import suppress
 from typing import Union
 
 import disnake
 from disnake.ext import commands
 
+from empiremuse.rules.radio import radio_id
 from empiremuse.rules.voice_status import resolve_voice_status
 from empiremuse.serialization.schema import SchemaError
 from empiremuse.utils.client import BotCore
@@ -24,6 +26,7 @@ from empiremuse.utils.others import send_idle_embed, CustomContext
 
 from empiremuse.logs.context import guild_extra
 
+ROLES_RELOAD_S = 30.0  # a lista de bots só-rádio é relida no máximo a cada 30 s na retomada
 logger = logging.getLogger("empiremuse.player")
 
 
@@ -95,6 +98,8 @@ class PlayerSession(commands.Cog):
                 logger.exception("Falha em queue_updater_task", extra=guild_extra(getattr(player, "guild_id", None)))
 
     async def save_info(self, player: LavalinkPlayer):
+        if getattr(player, "radio_id", None) is not None:
+            return  # rádio (item 8): quem a retoma é o gerenciador de rádios; a sessão a traria de volta como um player comum, controlável pela Jukebox
         if not player.guild.me.voice or player.is_closing:
             return
 
@@ -217,6 +222,45 @@ class PlayerSession(commands.Cog):
         except Exception:
             logger.exception("Falha em save_info", extra=guild_extra(getattr(player, "guild_id", None)))
 
+    async def _radio_owns_session(self, data: dict) -> tuple[bool, bool]:
+        """``(pular, esquecer)``: a sessão de música NUNCA ressuscita uma rádio. Rádio volta só do gerenciador de rádios (ligada e no canal de agora); uma
+        sessão antiga dela (desligada ou em outro canal) traria um player fantasma que colide com a rádio de verdade.
+
+        Pula (e esquece) a sessão de bot só-rádio; a de bot que tem uma rádio ligada neste servidor; e a que parece de rádio (``keep_connected``) num servidor
+        onde este bot tem uma rádio, ligada ou não. Sem resposta do banco de rádios pula, mas não esquece: na próxima subida decide."""
+        hub = getattr(getattr(self.bot, "pool", None), "radio", None)
+        if hub is None:
+            return False, False
+        if (
+            time.monotonic() - getattr(self, "_roles_loaded_at", -ROLES_RELOAD_S) >= ROLES_RELOAD_S
+        ):  # uma leitura por retomada, não uma por sessão
+            self._roles_loaded_at = time.monotonic()
+            try:
+                await hub.roles.load()
+            except Exception:  # noqa: BLE001 - sem a lista de bots só-rádio vale a lista que já estava em memória
+                logger.debug("Lista de bots só-rádio não relida na retomada")
+        if hub.roles.is_radio_only(getattr(self.bot, "identifier", None)):
+            return True, True
+        try:
+            guild_id = int(data["_id"])
+            radio = await hub.store.get(radio_id(self.bot.user.id, guild_id))
+        except KeyError, TypeError, ValueError:
+            return False, False
+        except Exception as error:  # noqa: BLE001 - banco de rádios fora: não dá para saber, então não retoma agora
+            logger.warning("Sessão não retomada: rádios indisponíveis (%s)", type(error).__name__)
+            return True, False
+        if radio is None:
+            return False, False
+        looks_like_radio = bool(data.get("keep_connected"))
+        if radio.enabled or looks_like_radio:
+            logger.info(
+                "Sessão de música de uma rádio ignorada (%s)",
+                "ligada" if radio.enabled else "antiga",
+                extra=guild_extra(guild_id),
+            )
+            return True, True
+        return False, False
+
     async def resume_players(self):
         try:
             if self.bot.player_resuming:
@@ -273,6 +317,11 @@ class PlayerSession(commands.Cog):
             hints = self.bot.config["EXTRA_HINTS"].split("||")
 
             for data in data_list.values():
+                skip, forget = await self._radio_owns_session(data)
+                if skip:
+                    if forget:
+                        await self.delete_data(int(data["_id"]))  # a sessão velha de uma rádio não volta nunca mais
+                    continue
                 try:
                     self.bot.players_resumed[data["_id"]]
                 except KeyError:

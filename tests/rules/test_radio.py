@@ -45,7 +45,7 @@ def doc(**over):
         "channel_id": str(CHANNEL),
         "kind": "custom",
         "source": {"playlist": "Rock"},
-        "chat": {"voice_delete_after_s": 30, "stage_max_messages": 7, "stage_max_age_s": 600},
+        "chat": {"voice_delete_after_s": 60, "stage_max_messages": 7, "stage_max_age_s": 600},
         "enabled": False,
         "rev": 3,
     }
@@ -63,9 +63,9 @@ class TestCheckRadio:
     def test_the_panel_shape_asdict_of_a_radio_is_accepted(self):
         shape = dataclasses.asdict(check_radio(doc()))
 
-        edited = check_radio({**shape, "chat": {**shape["chat"], "voice_delete_after_s": 60}})
+        edited = check_radio({**shape, "chat": {**shape["chat"], "voice_delete_after_s": 90}})
 
-        assert edited.chat["voice_delete_after_s"] == 60
+        assert edited.chat["voice_delete_after_s"] == 90
 
     @pytest.mark.parametrize("bad", ["", "1", "1:", ":2", "a:b", "1:2:3", "-1:2", None, 5, "1: 2"])
     def test_a_malformed_id_is_refused(self, bad):
@@ -131,7 +131,8 @@ class TestCheckRadio:
 
 class TestChat:
     def test_defaults_when_nothing_is_given(self):
-        assert check_chat(None) == {"voice_delete_after_s": 30, "stage_max_messages": 7, "stage_max_age_s": 600}
+        # o padrão da voz é 60 s (decisão do dono depois do teste ao vivo: ninguém perde uma mensagem); o do palco não mudou
+        assert check_chat(None) == {"voice_delete_after_s": 60, "stage_max_messages": 7, "stage_max_age_s": 600}
 
     @pytest.mark.parametrize("field", list(CHAT_LIMITS))
     def test_the_limits_are_inclusive_at_both_ends(self, field):
