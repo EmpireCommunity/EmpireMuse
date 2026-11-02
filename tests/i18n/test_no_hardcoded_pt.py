@@ -29,6 +29,11 @@ CLEAN_PATHS = (
     "empiremuse/utils/music/guild_text.py",
     "empiremuse/utils/music/models/state_steps.py",
     "empiremuse/utils/music/saved_queue.py",
+    "empiremuse/music_cog/queue_group.py",
+    "empiremuse/music_cog/queue_move_steps.py",
+    "empiremuse/music_cog/queue_edit.py",
+    "empiremuse/music_cog/queue_clear_steps.py",
+    "empiremuse/music_cog/shared.py",
 )
 
 # Acentos ou palavras que só aparecem em português (nada que também seja inglês, como "link", "volume" ou "skin").
@@ -46,7 +51,9 @@ PORTUGUESE = re.compile(
 KEY_CALLS = frozenset({"tr", "localized", "app_emoji", "emoji", "get_cog", "get_slash_command", "getattr", "get"})
 LOG_METHODS = frozenset({"debug", "info", "warning", "error", "exception", "critical", "log"})
 # Argumentos nomeados que nunca são texto para o usuário.
-NON_TEXT_KEYWORDS = frozenset({"custom_id", "filename", "name_", "key", "db_name", "icon", "url", "emoji"})
+NON_TEXT_KEYWORDS = frozenset(
+    {"custom_id", "filename", "name_", "key", "db_name", "icon", "url", "emoji", "aliases", "below", "above"}
+)
 
 
 def _docstring_ids(tree: ast.AST) -> set[int]:

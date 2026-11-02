@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, NamedTuple, Optional, Union
 import disnake
 from disnake.ext import commands
 
+from empiremuse.i18n.service import get_i18n
 from empiremuse.utils.music.command_usage import command_usage
 from empiremuse.rules.i18n import fit
 from empiremuse.utils.music.errors import GenericError
@@ -272,7 +273,8 @@ class HelpCog(commands.Cog, name="Ajuda"):
 
                 s = " ".join(i for i in a.option_strings)
 
-                s = f"[{s}] {a.help}"
+                help_text = tr(a.help) if a.help in get_i18n().reference else a.help
+                s = f"[{s}] {help_text}"
 
                 # s += f" = `{a.help}`"
 
