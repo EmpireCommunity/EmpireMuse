@@ -19,6 +19,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from empiremuse.i18n.service import get_i18n
 
 pytestmark = pytest.mark.regression
 
@@ -201,7 +202,8 @@ def montar_pedido(monkeypatch, erro: BaseException, *, webhook=False):
         config={"AUTO_ERROR_REPORT_WEBHOOK": "https://discord.com/api/webhooks/1/segredo" if webhook else ""},
         get_cog=lambda nome: webhook_cog,
         pool=SimpleNamespace(
-            servers=SimpleNamespace(jukebox=SimpleNamespace(is_panel_bot=AsyncMock(return_value=True)))
+            i18n=get_i18n(),
+            servers=SimpleNamespace(jukebox=SimpleNamespace(is_panel_bot=AsyncMock(return_value=True))),
         ),
     )
     self_ = SimpleNamespace(

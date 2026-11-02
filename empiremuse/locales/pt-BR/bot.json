@@ -1041,5 +1041,7 @@
   "legacy.errors.video_unavailable": "**Este vídeo está indisponível ou privado...**",
   "legacy.errors.wrong_usage": "### Você usou o comando de forma incorreta.\n",
   "legacy.errors.youtube_disabled": "O suporte a links/buscas do youtube está desativado devido a medidas reforçadas do próprio youtube que impede o funcionamento nativo de links do yt. Caso queira conferir a postagem do youtube sobre isso você pode {link}.",
-  "legacy.errors.click_here": "clicar aqui"
+  "legacy.errors.click_here": "clicar aqui",
+  "legacy.errors.code_line": "\n\nCódigo do erro: `{code}` (informe ao suporte se precisar de ajuda).",
+  "legacy.errors.code_suffix": " (código do erro: `{code}`)"
 }

@@ -190,7 +190,7 @@ class ErrorHandler(commands.Cog):
                 send_webhook = True
                 kwargs["embed"].description += await guild_text(self.bot, inter.guild, "legacy.error.dev_notified")
 
-            kwargs["embed"].description += error_code_text(code)
+            kwargs["embed"].description += error_code_text(code, await self.bot.pool.i18n.for_guild(inter.guild))
 
         else:
             logger.debug("Erro esperado no comando: %s", type(error).__name__)
@@ -346,7 +346,7 @@ class ErrorHandler(commands.Cog):
                     send_webhook = True
                     kwargs["embed"].description += await guild_text(self.bot, ctx.guild, "legacy.error.dev_notified")
 
-                kwargs["embed"].description += error_code_text(code)
+                kwargs["embed"].description += error_code_text(code, await self.bot.pool.i18n.for_guild(ctx.guild))
 
             else:
                 kwargs["content"] += (
@@ -354,7 +354,7 @@ class ErrorHandler(commands.Cog):
                     + await guild_text(self.bot, ctx.guild, "legacy.error.title")
                     + "**\n"
                     + await guild_text(self.bot, ctx.guild, "legacy.error.unexpected")
-                    + error_code_text(code)
+                    + error_code_text(code, await self.bot.pool.i18n.for_guild(ctx.guild))
                 )
 
         else:

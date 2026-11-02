@@ -17,14 +17,23 @@ from empiremuse.wavelink import WavelinkException, TrackNotFound, MissingSession
 logger = logging.getLogger("empiremuse.errors")
 
 
-def error_code_text(code: str) -> str:
-    """Linha com o código do erro para o usuário (vazia se não houve código)."""
-    return f"\n\nCódigo do erro: `{code}` (informe ao suporte se precisar de ajuda)." if code else ""
+def error_code_text(code: str, tr=None) -> str:
+    """Linha com o código do erro para o usuário (vazia se não houve código); ``tr`` é o tradutor do servidor."""
+    return _code_translator(tr)("legacy.errors.code_line", code=code) if code else ""
 
 
-def code_suffix(code: str) -> str:
+def code_suffix(code: str, tr=None) -> str:
     """Código do erro numa frase curta, para mensagens de uma linha (vazio se não houve código)."""
-    return f" (código do erro: `{code}`)" if code else ""
+    return _code_translator(tr)("legacy.errors.code_suffix", code=code) if code else ""
+
+
+def _code_translator(tr):
+    """O tradutor do servidor, ou o do idioma de reserva quando quem chama não tem um."""
+    if tr is not None:
+        return tr
+    from empiremuse.i18n.service import get_i18n
+
+    return get_i18n().for_locale()
 
 
 def log_unexpected_error(log: logging.Logger, error: BaseException, what: str) -> str:

@@ -580,7 +580,7 @@ class FavModalAdd(disnake.ui.Modal):
             )
         except Exception as e:
             code = log_unexpected_error(logger, e, "integration: URL read with yt-dlp")
-            await inter.edit_original_message(tr("fav.itg.ytdl.error") + error_code_text(code))
+            await inter.edit_original_message(tr("fav.itg.ytdl.error") + error_code_text(code, tr))
             return None
 
         if not info:
@@ -606,7 +606,7 @@ class FavModalAdd(disnake.ui.Modal):
     async def _profile_error(self, inter: disnake.ModalInteraction, error_code: str = "") -> None:
         await inter.edit_original_message(
             embed=disnake.Embed(
-                description=self.view.tr("fav.itg.profile_error") + error_code_text(error_code),
+                description=self.view.tr("fav.itg.profile_error") + error_code_text(error_code, self.view.tr),
                 color=self.view.bot.get_color(),
             )
         )

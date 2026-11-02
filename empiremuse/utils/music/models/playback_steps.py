@@ -134,7 +134,7 @@ async def _pn_sources(self, req):
                             description=self.tr(
                                 "legacy.playback.process_problem",
                                 link=md_link(track.title, track.uri, code=False),
-                                code=error_code_text(error_code),
+                                code=error_code_text(error_code, self.tr),
                             ),
                             color=self.bot.get_color(),
                         )

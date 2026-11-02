@@ -371,7 +371,7 @@ class JukeboxMessagesMixin:
                 req.error_code = log_unexpected_error(logger, e, "pedido de música (Jukebox)")
                 error = (
                     f"{req.message.author.mention} **ocorreu um erro ao tentar obter resultados para sua busca.**"
-                    f"{error_code_text(req.error_code)}"
+                    + error_code_text(req.error_code, await self.bot.pool.i18n.for_guild(req.message.guild))
                 )
         finally:
             if cap_task is not None:

@@ -432,7 +432,7 @@ async def _np_message_edit(self, req):
         error_code = log_unexpected_error(logger, e, "atualização da mensagem do player")
         if self.static or self.has_thread:
             self.set_command_log(
-                f"{(interaction.author.mention + ' ') if interaction else ''}houve um erro na interação{code_suffix(error_code)}.",
+                f"{(interaction.author.mention + ' ') if interaction else ''}houve um erro na interação{code_suffix(error_code, self.tr)}.",
                 "⚠️",
                 controller=True,
             )

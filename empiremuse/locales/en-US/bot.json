@@ -1028,5 +1028,7 @@
   "legacy.errors.video_unavailable": "**This video is unavailable or private...**",
   "legacy.errors.wrong_usage": "### You used the command incorrectly.\n",
   "legacy.errors.youtube_disabled": "YouTube links/searches are disabled because of youtube enforcement measures that block native yt link support. To read the youtube post about it you can {link}.",
-  "legacy.errors.click_here": "click here"
+  "legacy.errors.click_here": "click here",
+  "legacy.errors.code_line": "\n\nError code: `{code}` (tell support if you need help).",
+  "legacy.errors.code_suffix": " (error code: `{code}`)"
 }
