@@ -136,6 +136,10 @@ nó <nome>: players N · CPU x% · memória y MiB · quadros enviados A anulados
 - **GeoNames:** os dados de localização (cidades e estados) vêm do GeoNames, licença **CC BY 4.0**. O rodapé da página Rádios mostra "Dados de localização: GeoNames, CC BY 4.0", e a atribuição completa fica no `CREDITS.md`.
 - **Radio Browser:** o diretório das estações ao vivo é de domínio público. O bot se identifica com um User-Agent próprio.
 
+## Voltar para uma versão anterior
+
+Depois que a migração R5 rodar, voltar para uma versão **anterior à release RADIOS** deixa as rádios personalizadas migradas ilegíveis para o bot antigo. Antes de reverter, restaure o original guardado em `global.migration_backup`. Sem essa restauração, as estações personalizadas não são lidas e as rádios dessas estações não sobem.
+
 ## Riscos aceitos e o que não está incluído
 
 - Mensagens do público no chat da rádio **são apagadas** (decisão do dono).
