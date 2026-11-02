@@ -14,6 +14,7 @@
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white" alt="Python 3.14"></a>
   <a href="https://github.com/EmpireCommunity/EmpireMuse/actions/workflows/ci.yml"><img src="https://github.com/EmpireCommunity/EmpireMuse/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://hub.docker.com/r/or4cu1o/empiremuse"><img src="https://img.shields.io/docker/v/or4cu1o/empiremuse?sort=semver&logo=docker&logoColor=white&label=Docker" alt="Docker Hub"></a>
+  <a href="https://crowdin.com/project/empiremuse"><img src="https://badges.crowdin.net/empiremuse/localized.svg" alt="Crowdin"></a>
 </p>
 
 ---
