@@ -238,3 +238,16 @@ def test_muted_shows_the_unmute_emoji_in_danger_style_and_the_mapping_of_the_but
     assert str(mute_live.emoji) != str(mute_muted.emoji)
     assert live["components"][0].children[2].custom_id == PANEL_MUTE_ID, "mudo no centro da linha 1"
     assert live["components"][1].children[2].custom_id == "radio_panel_reconnect", "reconectar no centro da linha 2"
+
+
+@pytest.mark.asyncio
+async def test_the_async_payload_renders_in_a_thread_and_equals_the_sync_one():
+    from empiremuse.utils.radio.panel import visor_payload, visor_payload_async
+    from empiremuse.utils.radio.visor import render_snapshot
+
+    snap = snapshot()
+    payload = await visor_payload_async(PT, snap, filter_options=[], color=1)
+
+    assert payload["file"].fp.read() == render_snapshot(snap, PT)
+    sync = visor_payload(PT, snap, filter_options=[], color=1, picture=b"x")
+    assert sync["file"].fp.read() == b"x" and len(sync["components"]) == len(payload["components"]) == 4

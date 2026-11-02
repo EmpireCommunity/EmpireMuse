@@ -11,6 +11,7 @@ mais o bot que recebeu a interação. Todo texto de fora (estação, título do 
 
 from __future__ import annotations
 
+import asyncio
 import io
 from collections.abc import Callable
 from functools import cache
@@ -423,10 +424,11 @@ def visor_payload(
     filter_options: list[disnake.SelectOption],
     color: int = 0,
     emojis: Emojis = fallback_emojis,
+    picture: Optional[bytes] = None,
 ) -> dict[str, Any]:
     """O painel da rádio AO VIVO no desenho aprovado (P1-P8): embed só com a imagem do visor e o rodapé, duas fileiras de cinco botões
     só com emoji e os dois selects. ``{"embeds", "components", "file"}``; quem envia põe ``AllowedMentions.none()`` e, ao editar,
-    troca o anexo (``edit_kwargs``)."""
+    troca o anexo (``edit_kwargs``). ``picture`` = o PNG já renderizado (``visor_payload_async`` o faz fora do laço); sem ele, renderiza aqui."""
     muted = getattr(snapshot, "state", "live") == "muted"
     embed = disnake.Embed(color=color)
     embed.set_image(url=f"attachment://{VISOR_NAME}")
@@ -454,7 +456,8 @@ def visor_payload(
         max_values=1,
         disabled=not filter_options,
     )
-    picture = render_snapshot(snapshot, tr)
+    if picture is None:
+        picture = render_snapshot(snapshot, tr)
     return {
         "embeds": [embed],
         "components": [
@@ -465,3 +468,16 @@ def visor_payload(
         ],
         "file": disnake.File(io.BytesIO(picture), filename=VISOR_NAME),
     }
+
+
+async def visor_payload_async(
+    tr: Any,
+    snapshot: Any,
+    *,
+    filter_options: list[disnake.SelectOption],
+    color: int = 0,
+    emojis: Emojis = fallback_emojis,
+) -> dict[str, Any]:
+    """``visor_payload`` com o PNG renderizado numa thread (``asyncio.to_thread``): o desenho com Pillow não segura o laço do bot."""
+    picture = await asyncio.to_thread(render_snapshot, snapshot, tr)
+    return visor_payload(tr, snapshot, filter_options=filter_options, color=color, emojis=emojis, picture=picture)
