@@ -8,6 +8,7 @@ from urllib.parse import quote
 import disnake
 
 import empiremuse.wavelink as wavelink
+from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.utils.client import BotCore
 from empiremuse.utils.safe_error import safe_error
 from empiremuse.utils.url_guard import UnsafeUrl, ensure_public_url, log_refusal
@@ -108,7 +109,7 @@ class TracksMixin:
             nodes.insert(0, node)
 
         if not nodes:
-            raise GenericError("**Não há servidores de música disponível!**")
+            raise GenericError(await guild_text(bot, getattr(ctx, "guild", None), "legacy.tracks.no_nodes"))
 
         exceptions = set()
 
@@ -224,7 +225,7 @@ class TracksMixin:
         if mix:
             if not self.bot.pool.last_fm:
                 raise GenericError(
-                    "**No momento não há suporte a mix/recomendações devido o Last.fm não ter sido configurado na minha estrutura.**"
+                    await guild_text(self.bot, getattr(ctx, "guild", None), "legacy.tracks.mix_needs_lastfm")
                 )
 
             query = query.title()
@@ -235,7 +236,9 @@ class TracksMixin:
                 try:
                     artist, track = query.split(" ", 1)
                 except Exception:
-                    raise GenericError("Você deve informar sua busca dessa forma: nome do artista - nome da música")
+                    raise GenericError(
+                        await guild_text(self.bot, getattr(ctx, "guild", None), "legacy.tracks.search_format")
+                    )
 
             current = None
 
@@ -293,7 +296,7 @@ class TracksMixin:
                     None, lambda: self.bot.pool.ytdl.extract_info(query, download=False)
                 )
             except AttributeError:
-                raise GenericError("**O uso do yt-dlp está desativado...**")
+                raise GenericError(await guild_text(bot, getattr(ctx, "guild", None), "legacy.tracks.ytdl_disabled"))
 
             playlist = PartialPlaylist(url=info["webpage_url"], data={"playlistInfo": {"name": info["title"]}})
 
@@ -326,13 +329,13 @@ class TracksMixin:
                 if txt:
                     if "This track is not readable. Available countries:" in txt:
                         raise GenericError(
-                            "**A música informada não está disponível na minha região atual...**", error=txt
+                            await guild_text(bot, getattr(ctx, "guild", None), "legacy.tracks.region_blocked"),
+                            error=txt,
                         )
                     raise GenericError(
-                        "**Não foi possível concluir sua busca agora. Tente novamente em instantes "
-                        "ou use outro termo/link.**",
+                        await guild_text(bot, getattr(ctx, "guild", None), "legacy.tracks.search_failed"),
                         error=txt,
                     )
-                raise GenericError("**Não houve resultados para sua busca.**")
+                raise GenericError(await guild_text(bot, getattr(ctx, "guild", None), "legacy.tracks.no_results"))
 
         return tracks, node

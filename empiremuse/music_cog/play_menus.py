@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import disnake
 
+from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.music_cog.play_guild_menu import GuildPlaylistSelect
 from empiremuse.rules.limits import MAX_SERVER_PLAYLISTS
 from empiremuse.utils.db import DBModel
@@ -130,8 +131,13 @@ class PlayMenusMixin:
 
         embed = disnake.Embed(
             color=self.bot.get_color(guild.me),
-            description=f"{txt}## Selecione uma opção abaixo:"
-            f"\n-# Nota: Essa solicitação será cancelada automaticamente <t:{int((disnake.utils.utcnow() + datetime.timedelta(seconds=180)).timestamp())}:R> caso não seja selecionado uma opção abaixo.",
+            description=await guild_text(
+                self.bot,
+                guild,
+                "legacy.menu.pick_option",
+                txt=txt,
+                ts=int((disnake.utils.utcnow() + datetime.timedelta(seconds=180)).timestamp()),
+            ),
         )
 
         kwargs = {"content": "", "embed": embed}
@@ -178,7 +184,10 @@ class PlayMenusMixin:
 
         if select_interaction.data.values[0] == "cancel":
             await func(
-                embed=disnake.Embed(description="**Seleção cancelada!**", color=self.bot.get_color(guild.me)),
+                embed=disnake.Embed(
+                    description=await guild_text(self.bot, guild, "legacy.menu.cancelled"),
+                    color=self.bot.get_color(guild.me),
+                ),
                 components=None,
             )
             return True
@@ -262,10 +271,7 @@ class PlayMenusMixin:
 
         elif query.startswith(">> [📑 Músicas recentes 📑] <<"):
             if not user_data["last_tracks"]:
-                raise GenericError(
-                    "**Você não possui músicas registradas no seu histórico...**\n"
-                    "Elas vão aparecer a medida que for adicionando músicas via busca ou link."
-                )
+                raise GenericError(await guild_text(bot, guild, "legacy.menu.no_history"))
 
             query = ""
             menu = "latest"
@@ -289,7 +295,7 @@ class PlayMenusMixin:
 
             playlists = await safe_list(bot, guild.id)
             if not playlists:
-                raise GenericError("**O servidor não possui links fixos/favoritos.**")
+                raise GenericError(await guild_text(bot, guild, "legacy.menu.no_pinned_links"))
 
             menu = "guild_favs"
 
@@ -388,7 +394,7 @@ class PlayMenusMixin:
                         bot, guild.id
                     )  # relida: pode ter esvaziado desde que o menu foi montado
                     if not playlists:
-                        raise GenericError("**O servidor não possui links fixos/favoritos.**")
+                        raise GenericError(await guild_text(bot, guild, "legacy.menu.no_pinned_links"))
                     view = GuildPlaylistSelect(inter.author, bot, playlists)
                 else:
                     view = SelectInteraction(user=inter.author, timeout=75, opts=[i["option"] for i in fav_opts])

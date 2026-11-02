@@ -3,6 +3,7 @@
 import disnake
 from disnake.ext import commands
 
+from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.i18n import localized
 from empiremuse.utils.music.checks import (
     check_voice,
@@ -137,7 +138,7 @@ class SkipMixin:
             try:
                 index = queue_track_index(inter, bot, query, case_sensitive=case_sensitive)[0][0]
             except IndexError:
-                raise GenericError(f"**Não há músicas na fila com o nome: {query}**")
+                raise GenericError(await guild_text(bot, inter.guild, "legacy.queue.no_match_name", query=query))
 
             if player.queue:
                 track: LavalinkTrack = player.queue[index]
@@ -170,8 +171,14 @@ class SkipMixin:
 
             embed = disnake.Embed(
                 color=self.bot.get_color(guild.me),
-                description=f"⤵️ **⠂{inter.author.mention} pulou para a música:**\n"
-                f"╰{md_link(track.title, track.uri or track.search_uri, limit=43)}{player.controller_link}",
+                description=await guild_text(
+                    bot,
+                    guild,
+                    "legacy.skip.to_song",
+                    user=inter.author.mention,
+                    link=md_link(track.title, track.uri or track.search_uri, limit=43),
+                    controller=player.controller_link,
+                ),
             )
 
             try:
@@ -206,9 +213,14 @@ class SkipMixin:
 
                 embed = disnake.Embed(
                     color=self.bot.get_color(guild.me),
-                    description=f"⏭️ **⠂{inter.author.mention} pulou a música:\n"
-                    f"╰{md_link(player.current.title, player.current.uri or player.current.search_uri, limit=43)}**"
-                    f"{player.controller_link}",
+                    description=await guild_text(
+                        bot,
+                        guild,
+                        "legacy.skip.song",
+                        user=inter.author.mention,
+                        link=md_link(player.current.title, player.current.uri or player.current.search_uri, limit=43),
+                        controller=player.controller_link,
+                    ),
                 )
 
                 try:
@@ -345,7 +357,7 @@ class SkipMixin:
         embed = disnake.Embed()
 
         if inter.author.id in player.votes:
-            raise GenericError("**Você já votou para pular a música atual.**")
+            raise GenericError(await guild_text(bot, guild, "legacy.skip.already_voted"))
 
         embed.colour = self.bot.get_color(guild.me)
 

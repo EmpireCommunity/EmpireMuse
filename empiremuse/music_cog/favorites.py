@@ -3,6 +3,7 @@
 import disnake
 from disnake.ext import commands
 
+from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.i18n import localized
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.errors import (
@@ -84,9 +85,7 @@ class FavoritesMixin:
         txt = view.build_txt()
 
         if not txt:
-            raise GenericError(
-                "**Não há suporte a esse recurso no momento...**\n\n`Suporte ao spotify e YTDL não estão ativados.`"
-            )
+            raise GenericError(await guild_text(bot, inter.guild, "legacy.favorites.unsupported"))
 
         view.message = await inter.send(txt, view=view, ephemeral=ephemeral)
 

@@ -8,6 +8,7 @@ from typing import Union, Optional
 import disnake
 from disnake.ext import commands
 
+from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.utils.music.checks import (
     check_voice,
     has_player,
@@ -42,7 +43,7 @@ from empiremuse.music_cog.shared import (
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
 
 
-def _qm_filters(self, req):
+async def _qm_filters(self, req):
     """Valida os argumentos e monta a lista de filtros."""
     absent_members = req.absent_members
     duplicates = req.duplicates
@@ -57,7 +58,15 @@ def _qm_filters(self, req):
     user = req.user
 
     if min_duration and max_duration:
-        raise GenericError("Você deve escolher apenas uma das opções: **duração_abaixo_de** ou **duração_acima_de**.")
+        raise GenericError(
+            await guild_text(
+                inter.bot,
+                inter.guild,
+                "legacy.queue.one_duration_option",
+                below="duração_abaixo_de",
+                above="duração_acima_de",
+            )
+        )
 
     try:
         bot = inter.music_bot
@@ -67,7 +76,7 @@ def _qm_filters(self, req):
     player: LavalinkPlayer = bot.music.players[inter.guild_id]
 
     if not player.queue and not player.queue_autoplay:
-        raise GenericError("**Não há musicas na fila.**")
+        raise GenericError(await guild_text(bot, inter.guild, "legacy.queue.empty"))
 
     filters = []
     final_filters = set()
@@ -100,7 +109,7 @@ def _qm_filters(self, req):
         filters.append("duplicates")
 
     if not filters and not range_start and not range_end:
-        raise GenericError("**Você deve usar pelo menos uma opção pra mover**")
+        raise GenericError(await guild_text(bot, inter.guild, "legacy.queue.move_needs_option"))
 
     req.bot = bot
     req.filters = filters
@@ -116,7 +125,7 @@ def _qm_filters(self, req):
     req.txt = txt
 
 
-def _qm_range(self, req):
+async def _qm_range(self, req):
     """Resolve o player e o intervalo de posições da fila."""
     amount = req.amount
     bot = req.bot
@@ -141,7 +150,7 @@ def _qm_range(self, req):
 
     if range_start > 0 and range_end > 0:
         if range_start >= range_end:
-            raise GenericError("**A posição final deve ser maior que a posição inicial!**")
+            raise GenericError(await guild_text(bot, inter.guild, "legacy.queue.range_end_after_start"))
 
         song_list = list(player.queue)[range_start - 1 : -(range_end - 1)]
         txt.append(f"**Posição inicial da fila:** `{range_start}`\n**Posição final da fila:** `{range_end}`")
