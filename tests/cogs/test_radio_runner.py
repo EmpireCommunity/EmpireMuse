@@ -151,6 +151,28 @@ class TestStart:
         assert runner.phase is Phase.OFF and states[-1] is None and ports.stops == 1
 
 
+class TestReconnectNow:
+    @pytest.mark.asyncio
+    async def test_the_panel_button_only_acts_while_the_radio_waits_for_the_backoff(self):
+        ports = FakePorts()
+        woken = []
+        ports.wake_retry = lambda: woken.append(True)
+        ports.connect_results.extend([False])
+        runner, ports, _ = make(ports)
+        answers = []
+        original = ports.sleep
+
+        async def spy(seconds):
+            answers.append(runner.reconnect_now())  # durante a espera do recuo
+            await original(seconds)
+
+        ports.sleep = spy
+        await runner.start()
+
+        assert answers[0] is True and woken == [True]
+        assert runner.reconnect_now() is False  # tocando: nada a encurtar
+
+
 class TestStandby:
     """R1: a rádio recém-configurada entra na call e espera a estação (o painel escolhe), sem tocar nem recuar."""
 

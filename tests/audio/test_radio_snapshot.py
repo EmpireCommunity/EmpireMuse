@@ -163,3 +163,104 @@ class TestSnapshot:
         snap = await live_snapshot(hub, radio, ports, runner, locale="pt-BR")
 
         assert snap.station_name == "Nome em cache" and snap.bitrate_kbps == 0
+
+
+class TestPanelHandlers:
+    """Os cliques novos do painel (reconectar, aleatória, selects): o valor do cliente nunca é confiado."""
+
+    @staticmethod
+    def cog_with(ids, *, current=None):
+        from empiremuse.utils.music.errors import GenericError  # noqa: F401
+
+        changed = []
+        cog = SimpleNamespace(
+            hub=SimpleNamespace(
+                health=SimpleNamespace(unavailable=lambda u: u == ids[2]),
+                directory=SimpleNamespace(
+                    by_uuid=AsyncMock(side_effect=lambda u: Station(u, "N", "http://x", "MP3", 128, "BR"))
+                ),
+            ),
+            _too_soon=lambda *a: False,
+            _authorized=lambda i: SimpleNamespace(user_id=1, manage_guild=True),
+            changed=changed,
+        )
+        radio = SimpleNamespace(id="2:5", source={"station": current or ids[0], "list": ids}, guild_id=5)
+        return cog, radio
+
+    @pytest.mark.asyncio
+    async def test_the_station_select_only_accepts_a_station_of_the_radios_list(self, monkeypatch):
+        from empiremuse.utils.music.errors import GenericError
+        from empiremuse.utils.radio import actions, panel_handlers
+
+        ids = [uuid_of(n) for n in range(1, 5)]
+        cog, radio = self.cog_with(ids)
+        applied = AsyncMock()
+        monkeypatch.setattr(actions, "change_station", applied)
+        tr = lambda key, **kw: key  # noqa: E731
+
+        with pytest.raises(GenericError):
+            await panel_handlers.pick_station(cog, SimpleNamespace(), tr, radio, uuid_of(99))  # fora da lista
+        with pytest.raises(GenericError):
+            await panel_handlers.pick_station(cog, SimpleNamespace(), tr, radio, None)
+        await panel_handlers.pick_station(cog, SimpleNamespace(), tr, radio, ids[1])
+
+        applied.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_random_never_picks_the_current_or_an_unavailable_station(self, monkeypatch):
+        from empiremuse.utils.radio import actions, panel_handlers
+
+        ids = [uuid_of(n) for n in range(1, 4)]  # ids[2] indisponível, ids[0] é a atual
+        cog, radio = self.cog_with(ids)
+        applied = AsyncMock()
+        monkeypatch.setattr(actions, "change_station", applied)
+
+        for _ in range(20):
+            await panel_handlers.random_station(cog, SimpleNamespace(), lambda k, **kw: k, radio)
+
+        assert {call.kwargs["station"].uuid for call in applied.await_args_list} == {ids[1]}
+
+    @pytest.mark.asyncio
+    async def test_random_with_nothing_else_says_so(self):
+        from empiremuse.utils.radio import panel_handlers
+
+        ids = [uuid_of(1), uuid_of(2), uuid_of(3)]
+        cog, radio = self.cog_with(ids)
+        radio.source["list"] = [ids[0], ids[2]]  # a outra está indisponível
+
+        assert (
+            await panel_handlers.random_station(cog, SimpleNamespace(), lambda k, **kw: k, radio)
+            == "radio.panel.no_other_station"
+        )
+
+    @pytest.mark.asyncio
+    async def test_the_filter_select_saves_list_and_filter_without_changing_the_station(self):
+        from empiremuse.utils.music.errors import GenericError
+        from empiremuse.utils.radio import panel_handlers
+
+        w = build()
+        await premium(w)
+        ids = [uuid_of(n) for n in range(1, 6)]
+        radio = await configure(
+            w.hub,
+            guild_id=GUILD,
+            channel_id=CHANNEL,
+            bot_id=2,
+            kind="live",
+            source={"station": ids[0], "reserve": None},
+        )
+        hits = tuple(SimpleNamespace(station=SimpleNamespace(uuid=u), clickcount=n) for n, u in enumerate(ids))
+        w.hub.directory.region = AsyncMock(return_value=SimpleNamespace(hits=hits))
+        w.hub.locations = SimpleNamespace(node=lambda n: SimpleNamespace(id=n) if n == "br" else None)
+        interaction = SimpleNamespace(author=SimpleNamespace(id=7))
+        tr = lambda key, **kw: key  # noqa: E731
+        cog = SimpleNamespace(hub=w.hub)
+
+        text = await panel_handlers.pick_filter(cog, interaction, tr, radio, "br")
+        saved = await w.hub.store.get(radio.id)
+
+        assert text == "radio.panel.filter_applied"
+        assert saved.filter == "br" and saved.source["station"] == ids[0]  # a estação no ar não mudou
+        assert saved.source["list"] == list(reversed(ids))  # as mais ouvidas primeiro
+        with pytest.raises(GenericError):
+            await panel_handlers.pick_filter(cog, interaction, tr, saved, "inexistente")

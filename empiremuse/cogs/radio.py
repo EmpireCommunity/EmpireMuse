@@ -19,7 +19,9 @@ from empiremuse.rules.i18n import fit
 from empiremuse.rules.radio import (
     KIND_LIVE,
     KINDS,
+    PANEL_FILTER_SELECT_ID,
     PANEL_MENU_ID,
+    PANEL_STATION_SELECT_ID,
     VOLUME_DEFAULT,
     VOLUME_STEP,
     clamp_volume,
@@ -35,7 +37,7 @@ from empiremuse.utils import playlists_commands
 from empiremuse.rules.playlists import SCOPE_RADIO
 from empiremuse.utils.others import CustomContext
 from empiremuse.utils.ephemeral import CONFIRMATION_TTL_S, cleanup_later
-from empiremuse.utils.radio import actions, migrate_r5, radio_commands, setup_flow, station_commands
+from empiremuse.utils.radio import actions, migrate_r5, panel_handlers, radio_commands, setup_flow, station_commands
 from empiremuse.utils.radio.actions import Actor, Refused
 from empiremuse.utils.radio.custom_ports import CustomRadioPorts
 from empiremuse.utils.radio.discord_ports import DiscordChatPorts, DiscordRadioPorts
@@ -56,7 +58,7 @@ CUSTOM_ACTIONS = frozenset(
     {"station_previous", "station_next"}
 )  # só no painel da personalizada: anterior e próxima ESTAÇÃO do servidor
 LIVE_ACTIONS = frozenset(
-    {"previous", "mute", "volume_down", "volume_up"}
+    {"previous", "mute", "volume_down", "volume_up", "reconnect", "random"}
 )  # só no painel da rádio ao vivo (o "próxima" existe nos dois, com outro sentido)
 VOLUME_GAP_S = 1.0
 STATION_GAP_S = 5.0  # anterior, próxima e o seletor de estação: no máximo uma troca a cada 5 s por rádio (cada uma reabre o fluxo e consulta o diretório)
@@ -235,6 +237,41 @@ class Radio(RadioPrefixCommands, commands.Cog):
             if refresh is not None:
                 refresh()  # o select volta a "Mais opções" (a escolha feita fica marcada no cliente até a mensagem ser editada)
 
+    @commands.Cog.listener("on_dropdown")
+    async def radio_panel_selects(self, interaction: disnake.MessageInteraction) -> None:
+        """Os dois selects do painel ao vivo: a estação do filtro aplicado e a troca de filtro. Mesma regra do menu: só quem está na call."""
+        custom_id = interaction.data.custom_id
+        if custom_id not in (PANEL_STATION_SELECT_ID, PANEL_FILTER_SELECT_ID) or interaction.guild_id is None:
+            return
+        values = getattr(interaction.data, "values", None) or []
+        value = values[0] if len(values) == 1 else None
+        await interaction.response.defer(ephemeral=True, with_message=True)
+        tr = await self.bot.pool.i18n.for_guild(interaction.guild)
+        try:
+            radio, _ = await self._panel_radio(interaction, tr)
+            if radio.kind != KIND_LIVE:
+                raise GenericError(tr("radio.panel.not_here"))
+            handler = (
+                panel_handlers.pick_station if custom_id == PANEL_STATION_SELECT_ID else panel_handlers.pick_filter
+            )
+            await interaction.edit_original_message(content=await handler(self, interaction, tr, radio, value))
+        except GenericError as error:
+            await interaction.edit_original_message(content=error.text)
+        except Refused as refusal:
+            await interaction.edit_original_message(content=tr(f"radio.refused.{refusal.code}"))
+        except RadioUnavailable:
+            await interaction.edit_original_message(content=tr("radio.owner.unavailable"))
+        except RadioConflict:
+            await interaction.edit_original_message(content=tr("radio.refused.changed"))
+        except Exception as error:  # noqa: BLE001 - o clique não pode ficar sem resposta; só o tipo vai ao log
+            logger.warning("Select do painel da rádio falhou (%s)", type(error).__name__)
+            await interaction.edit_original_message(content=tr("radio.owner.unavailable"))
+        finally:
+            ports = getattr(self.hub.manager.runner(radio_id(self.bot.user.id, interaction.guild_id)), "ports", None)
+            refresh = getattr(ports, "refresh_panel", None)
+            if refresh is not None:
+                refresh()
+
     @staticmethod
     def _authorized(interaction: Any) -> Actor:
         """Quem passou por ``_panel_radio`` está na call da rádio: o painel vale como autorização para trocar estação, volume e favoritas, então o ``Actor``
@@ -261,6 +298,10 @@ class Radio(RadioPrefixCommands, commands.Cog):
                 return
             await runner.set_admin_pause(muted)
             await reply(content=tr("radio.panel.muted" if muted else "radio.panel.unmuted"))
+        elif action == "reconnect":
+            await reply(content=await panel_handlers.reconnect(self, tr, runner))
+        elif action == "random":
+            await reply(content=await panel_handlers.random_station(self, interaction, tr, radio))
         elif action in CUSTOM_ACTIONS:
             await reply(
                 content=await self._walk_stations(interaction, tr, radio, 1 if action == "station_next" else -1)

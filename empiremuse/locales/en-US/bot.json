@@ -1088,5 +1088,8 @@
   "visor.quality.good": "Good",
   "visor.quality.ok": "OK",
   "visor.quality.weak": "Weak",
-  "visor.quality.failing": "Failing"
+  "visor.quality.failing": "Failing",
+  "radio.panel.reconnecting": "Trying to reconnect right now…",
+  "radio.panel.reconnect_not_needed": "The radio is on the air; there is nothing to reconnect.",
+  "radio.panel.filter_applied": "Filter applied: {total} stations in the list."
 }

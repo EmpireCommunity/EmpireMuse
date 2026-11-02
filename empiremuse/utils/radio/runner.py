@@ -289,6 +289,14 @@ class RadioRunner:
         self._out_ticks += 1
         return self._out_ticks >= OUT_OF_CALL_TICKS
 
+    def reconnect_now(self) -> bool:
+        """Fora do ar e esperando o recuo: acorda a espera e tenta já (painel). ``False`` se não há espera a encurtar."""
+        wake = getattr(self.ports, "wake_retry", None)
+        if self.phase not in (Phase.RECONNECTING, Phase.CONNECTING) or self._retry_deadline is None or wake is None:
+            return False
+        wake()
+        return True
+
     async def on_disconnect(self) -> None:
         """Queda, mudança de canal ou desconexão (inclusive por membro): sempre pelo recuo, nunca volta imediata."""
         if self._stopped or self.phase in (Phase.OFF, Phase.RECONNECTING, Phase.CONNECTING):

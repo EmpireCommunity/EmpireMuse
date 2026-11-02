@@ -54,6 +54,7 @@ class DiscordRadioPorts:
         self._tracks: list[Any] = []
         self._stage_created = False  # o evento de palco foi criado por este bot (e só esse ele encerra)
         self._stage_noticed = False
+        self._retry_wake = asyncio.Event()  # o botão "reconectar" acorda a espera do recuo
         self.purge_on_arrival = False  # ``/radio setup``: o chat da call é limpo UMA vez, antes do primeiro painel
 
     # ------------------------------------------------------------------ o mundo
@@ -91,7 +92,14 @@ class DiscordRadioPorts:
         return random.random()
 
     async def sleep(self, seconds: float) -> None:
-        await asyncio.sleep(seconds)
+        self._retry_wake.clear()
+        try:
+            await asyncio.wait_for(self._retry_wake.wait(), seconds)
+        except TimeoutError:
+            pass  # o prazo inteiro passou: é o caso normal
+
+    def wake_retry(self) -> None:
+        self._retry_wake.set()
 
     async def allowed(self) -> Allowed:
         """R-1: o premium (cache de 30 s) e o canal/permissão de agora. Falha do banco propaga e o runner trata como "não sei"."""

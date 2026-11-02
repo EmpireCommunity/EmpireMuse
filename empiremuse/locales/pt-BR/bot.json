@@ -1101,5 +1101,8 @@
   "visor.quality.good": "Boa",
   "visor.quality.ok": "Ok",
   "visor.quality.weak": "Fraca",
-  "visor.quality.failing": "Falhando"
+  "visor.quality.failing": "Falhando",
+  "radio.panel.reconnecting": "Tentando reconectar agora…",
+  "radio.panel.reconnect_not_needed": "A rádio está no ar; não há o que reconectar.",
+  "radio.panel.filter_applied": "Filtro aplicado: {total} estações na lista."
 }

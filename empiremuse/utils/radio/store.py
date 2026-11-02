@@ -311,6 +311,26 @@ class RadioStore:
             raise RadioConflict
         return checked
 
+    async def set_list(self, radio_id: str, uuids: Sequence[str], *, expected_rev: int, updated_by: str = "") -> Radio:
+        """Troca só a LISTA de onde a estação anda (o filtro aplicado) numa rádio AO VIVO, sem mudar a estação no ar. Lista curta (menos de 2) a tira."""
+        current = self._radio(await self._find(radio_id))
+        if current is None:
+            raise RadioNotFound
+        if current.rev != expected_rev:
+            raise RadioConflict
+        if current.kind != KIND_LIVE or not current.source:
+            raise RadioInvalid(RuleError(SOURCE_INVALID, "list"))
+        source = {k: v for k, v in current.source.items() if k != "list"}
+        if len(uuids) >= 2:
+            source["list"] = list(uuids)
+        updated = dataclasses.replace(current, source=source, rev=current.rev + 1)
+        checked = check_radio(to_document(updated))
+        if isinstance(checked, RuleError):
+            raise RadioInvalid(checked)
+        if not await self._save(radio_id, to_document(checked, updated_by=updated_by), expected_rev):
+            raise RadioConflict
+        return checked
+
     async def set_skin(self, radio_id: str, skin: object, *, expected_rev: int, updated_by: str = "") -> Radio:
         """O visual do painel (``black`` ou ``white``). ``RadioInvalid`` para qualquer outro valor."""
         return await self._set_field(radio_id, "skin", skin, expected_rev=expected_rev, updated_by=updated_by)

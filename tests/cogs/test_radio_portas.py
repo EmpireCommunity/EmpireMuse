@@ -1,6 +1,7 @@
 """As portas reais da rádio (item 8, R1) sobre bot, canal e player falsos: o direito de agora (R-1), os ouvintes, a conexão, o palco (R-5),
 a fila virtual e o desligamento por perda de direito."""
 
+import asyncio
 import dataclasses
 from collections import deque
 from types import SimpleNamespace
@@ -666,3 +667,20 @@ class TestStageInstance:
         await w.hub.manager.deactivate(radio.id)
 
         w.ports.end_stage.assert_awaited_once()
+
+
+class TestRetryWake:
+    @pytest.mark.asyncio
+    async def test_waking_the_retry_cuts_the_backoff_short_and_a_full_wait_still_ends_normally(self):
+        import time
+
+        w = build()
+        started = time.monotonic()
+        waiter = asyncio.ensure_future(w.ports.sleep(30))
+        await asyncio.sleep(0.05)
+
+        w.ports.wake_retry()
+        await asyncio.wait_for(waiter, 1)
+
+        assert time.monotonic() - started < 1
+        await asyncio.wait_for(w.ports.sleep(0.05), 1)  # sem despertar: espera o prazo e segue
