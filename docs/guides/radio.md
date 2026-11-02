@@ -140,6 +140,8 @@ nó <nome>: players N · CPU x% · memória y MiB · quadros enviados A anulados
 
 Depois que a migração R5 rodar, voltar para uma versão **anterior à release RADIOS** deixa as rádios personalizadas migradas ilegíveis para o bot antigo. Antes de reverter, restaure o original guardado em `global.migration_backup`. Sem essa restauração, as estações personalizadas não são lidas e as rádios dessas estações não sobem.
 
+A mesma reversão também esconde a configuração do Jukebox da versão antiga. A cópia fica guardada por 90 dias em `global.migration_backup`; depois desse prazo ela deixa de existir e não há como restaurar.
+
 ## Riscos aceitos e o que não está incluído
 
 - Mensagens do público no chat da rádio **são apagadas** (decisão do dono).
