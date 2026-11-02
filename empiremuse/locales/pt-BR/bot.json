@@ -658,5 +658,10 @@
   "legacy.lastfm.cooldown_other": "**Você terá que aguardar {count} segundos para ativar/desativar o scrobble/registro.**",
   "legacy.lastfm.link_account": "**Vincule (ou crie) uma conta no {link} para registrar todas as músicas que você ouvir por aqui no seu perfil do last.fm para obter sugestões de músicas/artistas/álbuns e ter uma estatística geral das músicas que você ouviu alem de ter acesso a uma comunidade incrível da plataforma.**",
   "legacy.lastfm.no_embed_permission": "**Você não possui permissão de inserir links/anexos no canal <#{channel}>**",
-  "legacy.lastfm.not_your_button": "Você não pode usar esse botão"
+  "legacy.lastfm.not_your_button": "Você não pode usar esse botão",
+  "legacy.playlists.attachment_failed": "**Não consegui baixar o anexo. Tente enviar o arquivo de novo.**",
+  "legacy.playlists.exported": "**Playlists exportadas.** Você pode importar este arquivo em outro servidor.",
+  "legacy.playlists.import_failed": "**Não foi possível importar as playlists agora.**",
+  "legacy.playlists.none_yet": "**O servidor ainda não tem playlists.**",
+  "legacy.playlists.one_source": "**Escolha só uma origem: o arquivo, o anexo ou o link.**"
 }

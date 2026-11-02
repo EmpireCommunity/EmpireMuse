@@ -645,5 +645,10 @@
   "legacy.lastfm.cooldown_other": "**You will have to wait {count} seconds to enable/disable scrobbling.**",
   "legacy.lastfm.link_account": "**Link (or create) an account on {link} to record every song you listen to here on your last.fm profile, get song/artist/album suggestions, have overall statistics of the songs you listened to, and access an amazing community on the platform.**",
   "legacy.lastfm.no_embed_permission": "**You don't have permission to embed links/attachments in the channel <#{channel}>**",
-  "legacy.lastfm.not_your_button": "You can't use this button"
+  "legacy.lastfm.not_your_button": "You can't use this button",
+  "legacy.playlists.attachment_failed": "**I couldn't download the attachment. Try sending the file again.**",
+  "legacy.playlists.exported": "**Playlists exported.** You can import this file on another server.",
+  "legacy.playlists.import_failed": "**Couldn't import the playlists right now.**",
+  "legacy.playlists.none_yet": "**The server doesn't have any playlists yet.**",
+  "legacy.playlists.one_source": "**Choose only one source: the file, the attachment or the link.**"
 }
