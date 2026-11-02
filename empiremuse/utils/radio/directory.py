@@ -471,11 +471,12 @@ class Directory:
             self._cache[cache_key] = hits
         return RegionResult(hits, partial)
 
-    async def by_uuid(self, uuid: object) -> Station | None:
-        """A estação pelo ``uuid``, SEM registrar clique (mostrar a reserva atual, health check)."""
+    async def by_uuid(self, uuid: object, *, reserve: float = SEARCH_RESERVE) -> Station | None:
+        """A estação pelo ``uuid``, SEM registrar clique (mostrar a reserva atual, health check). Por padrão deixa uma ficha do balde global para o play e
+        o health check (caminho de tela: um clique de painel nunca esvazia o balde); o health check passa ``reserve=0``."""
         if not valid_uuid(uuid):
             return None
-        payload = await self._get("/json/stations/byuuid", {"uuids": str(uuid)})
+        payload = await self._get("/json/stations/byuuid", {"uuids": str(uuid)}, reserve=reserve)
         found = self._stations(payload)
         return found[0] if found and found[0].uuid == uuid else None
 

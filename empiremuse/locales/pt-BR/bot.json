@@ -362,6 +362,7 @@
   "radio.panel.volume_set": "🔊 Volume: {volume}%",
   "radio.panel.volume_up": "+",
   "radio.panel.volume_wait": "Aguarde um instante para mudar o volume de novo.",
+  "radio.panel.wait": "Aguarde alguns segundos antes de usar este botão de novo.",
   "radio.player_locked": "Esta call é de uma rádio: use o painel da rádio ou o /radio.",
   "radio.refused.bot_cannot_join": "Nenhum bot reserva consegue entrar nesse canal. Dê a eles **Ver Canal** e **Conectar** lá.",
   "radio.refused.cap_reached": "Este servidor já tem 3 rádios ligadas, o limite.",

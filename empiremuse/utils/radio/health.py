@@ -154,7 +154,7 @@ class HealthChecker:
         async with gate:
             try:
                 self.requests += 1
-                station = await self.hub.directory.by_uuid(uuid)  # byuuid: não registra clique
+                station = await self.hub.directory.by_uuid(uuid, reserve=0.0)  # byuuid: não registra clique
                 if station is None or not await self._probe(station):
                     return False
                 await self.hub.health.clear(uuid)

@@ -427,7 +427,7 @@ class HubWorld:
                 collection="global",
             )
 
-    async def by_uuid(self, uuid):
+    async def by_uuid(self, uuid, **kwargs):
         self.by_uuid_calls.append(uuid)
         return Station(uuid, "n", "http://stream.example:8000/x", "MP3", 128, "BR")
 
@@ -494,10 +494,10 @@ class TestHealthChecker:
         world.good = {uuid_n(1)}
         original = world.by_uuid
 
-        async def flaky(uuid):
+        async def flaky(uuid, **kwargs):
             if uuid == uuid_n(0):
                 raise OSError("rede")
-            return await original(uuid)
+            return await original(uuid, **kwargs)
 
         world.by_uuid = flaky  # type: ignore[method-assign]
 
