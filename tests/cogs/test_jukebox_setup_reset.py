@@ -10,7 +10,7 @@ import asyncio
 import pytest
 
 import empiremuse.cogs.music_settings as ms
-from tests.support.jukebox import (
+from tests.support.canal_da_jukebox import (
     GUILD_ID,
     CommandInter,
     FakeBot,

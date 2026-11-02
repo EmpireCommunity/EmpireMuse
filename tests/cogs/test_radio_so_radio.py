@@ -8,7 +8,7 @@ import pytest
 from empiremuse.i18n import get_i18n
 from empiremuse.utils.radio import RadioHub
 from empiremuse.utils.radio.notice import refuse_radio_only
-from empiremuse.utils.server_request import ServerJukebox
+from empiremuse.utils.server_jukebox import ServerJukebox
 from tests.persistence.test_radio_store import FakeDb
 
 pytestmark = pytest.mark.critical

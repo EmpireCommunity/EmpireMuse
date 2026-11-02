@@ -351,7 +351,7 @@ class FakeRequestStore:
         return True
 
     async def get(self, gid):
-        from empiremuse.utils.server_request import JukeboxConfig
+        from empiremuse.utils.server_jukebox import JukeboxConfig
 
         controller = self.bot.db.doc["player_controller"]
         ident = lambda value: int(value) if value else None

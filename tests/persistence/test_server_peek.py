@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from empiremuse.rules.servers import new_doc
-from empiremuse.utils.server_request import ServerJukebox
+from empiremuse.utils.server_jukebox import ServerJukebox
 from empiremuse.utils.servers import ServerStore
 from tests.persistence.test_servers_store import GID, MAIN_ID, RESERVE_ID, SERVERS, Banco, make_bot, run
 

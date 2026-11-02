@@ -300,7 +300,7 @@ class BotDoPlayer(BotDeComandos):
         self.documento("global", "users", AUTOR)["fav_links"].update(favoritos or {})
 
         async def sem_canal_de_pedidos(gid):
-            from empiremuse.utils.server_request import JukeboxConfig
+            from empiremuse.utils.server_jukebox import JukeboxConfig
 
             return JukeboxConfig(None, None, None, 0)  # sem painel configurado: o clique segue pelo caminho normal
 

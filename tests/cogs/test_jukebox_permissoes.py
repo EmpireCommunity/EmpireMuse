@@ -8,7 +8,7 @@ import pytest
 
 from empiremuse.utils.music import jukebox_channel
 from empiremuse.utils.music.errors import GenericError
-from tests.support.jukebox import (
+from tests.support.canal_da_jukebox import (
     BOT_MENTION,
     FULL_TEXT,
     FakeGuild,
