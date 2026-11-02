@@ -251,3 +251,52 @@ async def test_the_async_payload_renders_in_a_thread_and_equals_the_sync_one():
     assert payload["file"].fp.read() == render_snapshot(snap, PT)
     sync = visor_payload(PT, snap, filter_options=[], color=1, picture=b"x")
     assert sync["file"].fp.read() == b"x" and len(sync["components"]) == len(payload["components"]) == 4
+
+
+# ============================================================================ a ligação: as portas da rádio ao vivo mandam o visor; a personalizada segue no painel antigo
+
+
+def live_world():
+    from unittest.mock import AsyncMock
+
+    from empiremuse.rules.radio import check_radio, radio_id
+    from empiremuse.utils.radio.live_ports import LiveRadioPorts
+    from tests.cogs.test_radio_portas import BOT_ID, CHANNEL, GUILD, build
+
+    w = build()
+    w.bot.get_color = lambda member: 0x8B5CF6
+    w.bot.pool.i18n.for_guild = AsyncMock(return_value=PT)
+    w.hub.directory.by_uuids = AsyncMock(return_value={})
+    w.hub.directory.logo_png = AsyncMock(return_value=type("Logo", (), {"png": None})())
+    ids = [f"{n:08x}-0000-4000-8000-000000000000" for n in range(1, 4)]
+    radio = check_radio(
+        {
+            "_id": radio_id(BOT_ID, GUILD),
+            "channel_id": str(CHANNEL),
+            "kind": "live",
+            "source": {"station": ids[0], "reserve": None, "list": ids},
+            "skin": "white",
+        }
+    )
+    return w, LiveRadioPorts(w.ports.pool, radio), radio
+
+
+@pytest.mark.asyncio
+async def test_the_live_ports_send_the_visor_panel_and_the_custom_ports_keep_the_old_one():
+    from empiremuse.rules.radio import PANEL_FILTER_SELECT_ID, PANEL_STATION_SELECT_ID
+
+    w, ports, radio = live_world()
+
+    payload = await ports._panel_payload(w.bot, w.guild, radio)
+
+    assert payload["file"].filename == "visor.png" and payload["embeds"][0].image.url == "attachment://visor.png"
+    assert [row.children[0].custom_id for row in payload["components"][2:]] == [
+        PANEL_STATION_SELECT_ID,
+        PANEL_FILTER_SELECT_ID,
+    ]
+    assert png(payload["file"].fp.read()).size == (WIDTH * SCALE, HEIGHT * SCALE)
+    edit = ports.edit_kwargs(payload)
+    assert edit["attachments"] == [] and edit["file"] is payload["file"]
+
+    custom = await w.ports._panel_payload(w.bot, w.guild, w.ports.radio)
+    assert custom["embeds"][0].image.url != "attachment://visor.png"

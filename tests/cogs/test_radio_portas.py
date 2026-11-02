@@ -38,6 +38,13 @@ class Player:
         self.destroy = AsyncMock()
 
 
+def _fake_tr(key, **_kwargs):
+    return key
+
+
+_fake_tr.locale = "en-US"  # o tradutor real tem ``locale``; o visor (R6) o usa para os rótulos da árvore
+
+
 def build(*, stage=False, premium=True, perms=(True, True), has_channel=True, mute_members=False):
     db = FakeDb()
     pool = SimpleNamespace(database=db)
@@ -62,7 +69,7 @@ def build(*, stage=False, premium=True, perms=(True, True), has_channel=True, mu
         user=SimpleNamespace(id=BOT_ID),
         get_guild=lambda gid: guild if gid == GUILD else None,
         get_cog=lambda name: music,
-        pool=SimpleNamespace(i18n=SimpleNamespace(for_guild=AsyncMock(return_value=lambda key, **k: key))),
+        pool=SimpleNamespace(i18n=SimpleNamespace(for_guild=AsyncMock(return_value=_fake_tr))),
         music=SimpleNamespace(players={}, get_player=MagicMock(side_effect=lambda **kw: _register(bot, player, kw))),
     )
     pool.get_all_bots = lambda: [bot]
