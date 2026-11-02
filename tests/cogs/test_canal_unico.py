@@ -563,7 +563,7 @@ def static_player(resend):
     panel = SimpleNamespace(resend=resend)
     text_channel = SimpleNamespace(send=AsyncMock())
     player = SimpleNamespace(
-        bot=SimpleNamespace(pool=SimpleNamespace(request_panel=panel)),
+        bot=SimpleNamespace(pool=SimpleNamespace(jukebox_panel=panel)),
         message=None,
         static=True,
         guild_id=GID,
@@ -720,7 +720,7 @@ def players_with_two_bots():
     panel = SimpleNamespace(
         players=lambda gid: [(me, me.music.players[GID]), (other, other.music.players[GID])], refresh=AsyncMock()
     )
-    me.pool = SimpleNamespace(request_panel=panel)
+    me.pool = SimpleNamespace(jukebox_panel=panel)
     return me, other, panel
 
 
@@ -844,7 +844,7 @@ async def test_when_nothing_could_be_resent_the_players_keep_what_they_had():
 
 @pytest.mark.asyncio
 async def test_drawing_the_list_resets_each_players_cache_so_going_back_to_one_player_redraws_its_skin(monkeypatch):
-    from empiremuse.utils.music.interactions import request_panel as ui
+    from empiremuse.utils.music.interactions import jukebox_panel as ui
     from empiremuse.utils import server_playlists
 
     one, two = make_bot(1, "TOKEN", call=100), make_bot(2, "TOKEN_2", call=200)
@@ -873,7 +873,7 @@ def test_one_player_in_an_open_call_keeps_its_skin_but_in_a_private_call_the_lis
 
 @pytest.mark.asyncio
 async def test_one_player_in_a_private_call_is_drawn_as_the_list_with_no_track_or_requester(monkeypatch):  # S-V7
-    from empiremuse.utils.music.interactions import request_panel as ui
+    from empiremuse.utils.music.interactions import jukebox_panel as ui
     from empiremuse.utils import server_playlists
 
     track = SimpleNamespace(title="Faixa secreta", uri="https://exemplo.test/x", requester="7")
@@ -926,7 +926,7 @@ async def test_the_pool_shutdown_closes_the_request_panel_before_closing_the_bot
         version_check_task=None,
         playlist_icons_task=None,
         helper_watch_tasks=set(),
-        request_panel=SimpleNamespace(close=lambda: order.append("panel")),
+        jukebox_panel=SimpleNamespace(close=lambda: order.append("panel")),
         i18n=SimpleNamespace(close=lambda: order.append("i18n")),
         get_all_bots=lambda: [closing_bot],
         lavalink_instance=None,

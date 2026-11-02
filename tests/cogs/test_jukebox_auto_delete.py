@@ -448,7 +448,7 @@ def test_every_reply_to_a_panel_interaction_is_ephemeral():
     arquivos = sorted((raiz / "music_cog").glob("controller_*.py")) + [
         raiz / "music_cog" / "player_controller.py",
         raiz / "music_cog" / "panel_interactions.py",
-        raiz / "utils" / "music" / "interactions" / "request_panel.py",
+        raiz / "utils" / "music" / "interactions" / "jukebox_panel.py",
     ]
     soltos = []
     for arquivo in arquivos:
@@ -479,7 +479,7 @@ def clique(*, valores=None, custom_id=QUEUE_BUTTON_ID, em_call=True):
         author=SimpleNamespace(id=7),
         user=SimpleNamespace(id=7, voice=SimpleNamespace(channel=SimpleNamespace(id=100)) if em_call else None),
     )
-    pool = SimpleNamespace(i18n=SimpleNamespace(for_guild=AsyncMock(return_value=PT)), request_panel=None)
+    pool = SimpleNamespace(i18n=SimpleNamespace(for_guild=AsyncMock(return_value=PT)), jukebox_panel=None)
     eu = SimpleNamespace(bot=SimpleNamespace(pool=pool, dispatch=MagicMock()))
     return panel_interactions.PanelInteractionsMixin, eu, interacao
 
