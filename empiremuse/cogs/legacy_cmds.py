@@ -322,9 +322,7 @@ class Owner(commands.Cog):
         )
 
     updatelavalink_flags = CommandArgparse()
-    updatelavalink_flags.add_argument(
-        "-yml", "--yml", action="store_true", help="legacy.flag.yml"
-    )
+    updatelavalink_flags.add_argument("-yml", "--yml", action="store_true", help="legacy.flag.yml")
     updatelavalink_flags.add_argument(
         "-resetids",
         "-reset",
