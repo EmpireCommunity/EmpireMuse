@@ -370,7 +370,7 @@ class StationInUse(RadioInvalid):
 
 
 STATION_KINDS = ("genre", "artists", "playlists")
-GENRE_GROUPS = (
+GENRE_GROUPS = (  # o catálogo do bot (utils/radio/data/genres.json, 33 ids estáveis)
     (
         "international",
         (
@@ -378,25 +378,42 @@ GENRE_GROUPS = (
             "metal",
             "pop",
             "kpop",
-            "jpop_anime",
+            "jpop",
             "hiphop",
             "trap",
             "rnb",
             "electronic",
             "house",
             "lofi",
-            "chill_ambient",
+            "chill",
             "jazz",
             "blues",
             "classical",
             "reggae",
-            "latin_reggaeton",
-            "indie",
-            "anos_80",
-            "anos_90",
+            "latin",
+            "phonk",
+            "afrobeats",
+            "eighties",
+            "nineties",
         ),
     ),
-    ("brazilian", ("sertanejo", "funk_br", "pagode_samba", "forro", "mpb", "gospel", "rock_nacional")),
+    (
+        "brazilian",
+        (
+            "sertanejo_uni",
+            "sertanejo_modao",
+            "agronejo",
+            "funk_br",
+            "trap_rap_br",
+            "pagode_samba",
+            "piseiro_arrocha",
+            "forro",
+            "mpb",
+            "gospel",
+            "rock_br",
+            "phonk_br",
+        ),
+    ),
 )
 GENRES = tuple(g for _group, ids in GENRE_GROUPS for g in ids)
 
@@ -435,7 +452,7 @@ class FakeStations:
         if self.fail_with is not None:
             raise self.fail_with
 
-    def _validate(self, guild_id, raw, *, skip=None):
+    def _validate(self, guild_id, raw, *, skip=None, playlists=()):
         name = str(raw.get("name") or "").strip()
         if not 1 <= len(name) <= 32:
             raise RadioInvalid(RuleError("station_name", "name"))
@@ -457,7 +474,7 @@ class FakeStations:
             source = {"artists": artists}
         if kind == "playlists":
             wanted = [str(p) for p in source["playlists"]]
-            known = set(self.playlists.get(guild_id, ()))
+            known = set(playlists) | set(self.playlists.get(guild_id, ()))
             if not 1 <= len(wanted) <= 5 or any(p not in known for p in wanted):
                 raise RadioInvalid(RuleError("station_playlists", "playlists"))
         if skip is None and sum(1 for s in self.docs.values() if s.guild_id == guild_id) >= self.MAX:
@@ -468,13 +485,14 @@ class FakeStations:
         self._check()
         return [s for s in self.docs.values() if s.guild_id == int(guild_id)]
 
-    async def get(self, station_id):
+    async def get(self, guild_id, station_id):
         self._check()
-        return self.docs.get(station_id)
+        station = self.docs.get(station_id)
+        return station if station is not None and station.guild_id == int(guild_id) else None
 
-    async def create(self, guild_id, raw, *, updated_by=""):
+    async def create(self, guild_id, raw, *, playlists=(), updated_by=""):
         self._check()
-        name, kind, source = self._validate(int(guild_id), raw)
+        name, kind, source = self._validate(int(guild_id), raw, playlists=playlists)
         station = CustomStation(
             secrets.token_hex(12), int(guild_id), name, kind, source, 1, updated_by, datetime.now(timezone.utc)
         )
@@ -482,33 +500,37 @@ class FakeStations:
         self.updates.append((station.id, "create", updated_by))
         return station
 
-    async def update(self, station_id, raw, *, expected_rev, updated_by=""):
+    async def update(self, guild_id, station_id, raw, *, expected_rev, playlists=(), updated_by=""):
         self._check()
-        station = self.docs.get(station_id)
+        station = await self.get(guild_id, station_id)
         if station is None:
             raise RadioNotFound
         if station.rev != expected_rev:
             raise RadioConflict
-        name, kind, source = self._validate(station.guild_id, raw, skip=station_id)
+        name, kind, source = self._validate(station.guild_id, raw, skip=station_id, playlists=playlists)
         saved = station._replace(name=name, kind=kind, source=source, rev=station.rev + 1, updated_by=updated_by)
         self.docs[station_id] = saved
         self.updates.append((station_id, "update", updated_by))
         return saved
 
-    async def radios_using(self, station_id):
+    async def radios_using(self, guild_id, station_id):
         self._check()
-        return [r for r in self._radios.docs.values() if r.source.get("station") == station_id]
+        return [
+            r
+            for r in self._radios.docs.values()
+            if r.guild_id == int(guild_id) and r.source.get("station") == station_id
+        ]
 
-    async def delete(self, station_id, *, expected_rev):
+    async def delete(self, guild_id, station_id, *, expected_rev):
         self._check()
-        station = self.docs.get(station_id)
+        station = await self.get(guild_id, station_id)
         if station is None:
             raise RadioNotFound
         if station.rev != expected_rev:
             raise RadioConflict
-        using = await self.radios_using(station_id)
+        using = await self.radios_using(guild_id, station_id)
         if using:
-            raise StationInUse(using)
+            raise StationInUse([r.id for r in using])  # ids, como a store real
         del self.docs[station_id]
         self.updates.append((station_id, "delete", ""))
 

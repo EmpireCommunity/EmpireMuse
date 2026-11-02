@@ -112,6 +112,16 @@ def parse(args: Args) -> tuple[dict[str, Any], dict[str, Any]]:
     return raw, echo
 
 
+async def _radios_of(ctx: FormContext, ids: Any) -> list:
+    """As rádios de ``StationInUse.radios`` (ids ``bot:guild``), só as deste servidor; objetos já prontos passam direto."""
+    found = []
+    for item in ids:
+        radio = item if hasattr(item, "channel_id") else await ctx.pool.radio.store.get(str(item))
+        if radio is not None and int(getattr(radio, "guild_id", ctx.guild_id)) == ctx.guild_id:
+            found.append(radio)
+    return found
+
+
 def field_of(error: Any) -> str:
     field = getattr(error, "field", None) or getattr(error, "key", "") or ""
     return field if field in FIELDS or field == LIMIT_FIELD else "name"
@@ -214,7 +224,7 @@ class StationsPage:
 
     @staticmethod
     async def _in_use(ctx: FormContext, station: Any) -> tuple[str, ...]:
-        radios = await ctx.pool.radio.stations.radios_using(station.id)
+        radios = await ctx.pool.radio.stations.radios_using(ctx.guild_id, station.id)
         return tuple(channel_label(ctx, radio) for radio in radios)
 
     # ------------------------------------------------------------------ escrita (R-6)
@@ -223,7 +233,7 @@ class StationsPage:
         raw, echo = parse(args)
         genres, playlists = self.genre_groups(ctx), await self.playlist_names(ctx)
         try:
-            saved = await ctx.pool.radio.stations.create(ctx.guild_id, raw, updated_by=ctx.user_id)
+            saved = await ctx.pool.radio.stations.create(ctx.guild_id, raw, playlists=playlists, updated_by=ctx.user_id)
         except RadioInvalid as exc:
             form = self._refused(action, tr, exc, echo, genres, playlists)
             return StationsOutcome(STATUS_INVALID, await self.view(ctx, action, tr, form=form))
@@ -249,7 +259,12 @@ class StationsPage:
         raw, echo = parse(args)
         try:
             saved = await ctx.pool.radio.stations.update(
-                station.id, raw, expected_rev=int(station.rev), updated_by=ctx.user_id
+                ctx.guild_id,
+                station.id,
+                raw,
+                expected_rev=int(station.rev),
+                playlists=playlists,
+                updated_by=ctx.user_id,
             )
         except RadioConflict, RadioNotFound:
             form = self.form(
@@ -285,11 +300,11 @@ class StationsPage:
         if refused is not None:
             return await refuse(*refused)
         try:
-            await ctx.pool.radio.stations.delete(station.id, expected_rev=int(station.rev))
+            await ctx.pool.radio.stations.delete(ctx.guild_id, station.id, expected_rev=int(station.rev))
         except RadioConflict, RadioNotFound:
             return await refuse(STATUS_CONFLICT, CONFLICT_TEXT)
         except RadioInvalid as exc:
-            radios = getattr(exc, "radios", None)
+            radios = await _radios_of(ctx, getattr(exc, "radios", None) or ())
             if radios:  # em uso: a mensagem diz qual call a usa (R5 §2)
                 channels = ", ".join(channel_label(ctx, r) for r in radios)
                 return await refuse(STATUS_INVALID, tr("panel.radio.station.in_use", channels=channels))

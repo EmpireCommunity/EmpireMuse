@@ -477,7 +477,7 @@ class RadioStationItemHandler(RadioStationsHandler):
             return
         ctx, access, action = gated
         wanted = station_id_of(rest[0]) if rest else None
-        station = await ctx.pool.radio.stations.get(wanted) if wanted is not None else None
+        station = await ctx.pool.radio.stations.get(ctx.guild_id, wanted) if wanted is not None else None
         if station is None or not station_belongs_to(station, ctx.guild_id):
             self._not_found()
             return
