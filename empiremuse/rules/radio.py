@@ -301,6 +301,10 @@ PANEL_PREVIOUS_ID = "radio_panel_previous"  # painel AO VIVO: a estação anteri
 PANEL_VOLUME_DOWN_ID = "radio_panel_volume_down"
 PANEL_MUTE_ID = "radio_panel_mute"  # painel AO VIVO: silencia (para o fluxo); ao voltar entra no ponto AO VIVO, não no que ficou guardado
 PANEL_VOLUME_UP_ID = "radio_panel_volume_up"
+PANEL_STATION_PREVIOUS_ID = (
+    "radio_panel_station_previous"  # painel da PERSONALIZADA: a estação anterior do servidor (por nome)
+)
+PANEL_STATION_NEXT_ID = "radio_panel_station_next"  # idem, a seguinte
 PANEL_MENU_ID = "radio_panel_menu"  # o select "Mais opções" do painel AO VIVO
 PANEL_IDS = (
     PANEL_PAUSE_ID,
@@ -310,6 +314,8 @@ PANEL_IDS = (
     PANEL_VOLUME_DOWN_ID,
     PANEL_MUTE_ID,
     PANEL_VOLUME_UP_ID,
+    PANEL_STATION_PREVIOUS_ID,
+    PANEL_STATION_NEXT_ID,
 )  # fixos: NADA de rádio, bot ou servidor dentro do ``custom_id``
 MENU_VALUES = ("stations", "favorite", "volume", "info", "stop")  # o que o select "Mais opções" oferece
 SKIP_COOLDOWN_S = 5.0  # a "próxima" não vira rajada de comandos ao Lavalink
@@ -327,6 +333,8 @@ def panel_action(custom_id: object) -> str | None:
             PANEL_VOLUME_DOWN_ID: "volume_down",
             PANEL_MUTE_ID: "mute",
             PANEL_VOLUME_UP_ID: "volume_up",
+            PANEL_STATION_PREVIOUS_ID: "station_previous",
+            PANEL_STATION_NEXT_ID: "station_next",
         }.get(custom_id)
         if isinstance(custom_id, str)
         else None

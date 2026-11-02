@@ -26,6 +26,8 @@ from empiremuse.rules.radio import (
     PANEL_NEXT_ID,
     PANEL_PAUSE_ID,
     PANEL_PREVIOUS_ID,
+    PANEL_STATION_NEXT_ID,
+    PANEL_STATION_PREVIOUS_ID,
     PANEL_STOP_ID,
     PANEL_VOLUME_DOWN_ID,
     PANEL_VOLUME_UP_ID,
@@ -80,6 +82,23 @@ class LiveView(NamedTuple):
     offline: bool = False
     has_list: bool = False
     muted: bool = False
+
+
+class CustomView(NamedTuple):
+    """O que o painel da PERSONALIZADA mostra: a estação do servidor, a faixa no ar (artista e título, já limpos pela R-11), se ela está sem faixas tocáveis,
+    se há outra estação por onde andar, se vem do Last.fm (crédito com link) e os artistas que o Last.fm não conhece (⚠️)."""
+
+    station: object = ""
+    artist: str = ""
+    title: str = ""
+    no_tracks: bool = False
+    has_list: bool = False
+    credit: bool = False
+    unknown: tuple[str, ...] = ()
+
+
+LASTFM_URL = "https://www.last.fm"
+UNKNOWN_SHOWN = 3
 
 
 class StationCard(NamedTuple):
@@ -205,24 +224,54 @@ def custom_payload(
     playlist_name: object = "",
     color: int = 0,
     avatar: Optional[str] = None,
+    view: Optional[CustomView] = None,
 ) -> dict[str, Any]:
-    """O painel da rádio PERSONALIZADA (playlist do servidor): pausar, pular e desligar, e nada de pedido, link ou fila."""
-    embed = disnake.Embed(title=tr("radio.panel.custom.title"), description=tr("radio.panel.custom.intro"), color=color)
-    lines = [
-        f"-# {emojis('playlists')} {tr('radio.panel.custom.playlist', playlist=external_text(playlist_name, NAME_LIMIT))}",
-        f"-# {emojis('history')} {tr('radio.panel.custom.schedule')}",
-    ]
-    embed.add_field(
-        name=fit(f"▶️ {external_text(playlist_name, NAME_LIMIT)}", 256), value="\n".join(lines), inline=False
-    )
+    """O painel da rádio PERSONALIZADA. Com ``view`` (R5): a estação do servidor, "Tocando agora", o crédito do Last.fm e anterior, pausar, próxima estação,
+    pular faixa e desligar. Sem ``view`` (rádio antiga, de playlist): pausar, pular e desligar. Nada de pedido, link do usuário ou fila."""
+    if view is None:
+        embed = disnake.Embed(
+            title=tr("radio.panel.custom.title"), description=tr("radio.panel.custom.intro"), color=color
+        )
+        name = external_text(playlist_name, NAME_LIMIT)
+        lines = [f"-# {emojis('playlists')} {tr('radio.panel.custom.playlist', playlist=name)}"]
+        embed.add_field(name=fit(f"▶️ {name}", 256), value="\n".join(lines), inline=False)
+        buttons = [
+            _button(tr, emojis, "radio.panel.pause", "playpause", PANEL_PAUSE_ID),
+            _button(tr, emojis, "radio.panel.next", "skip", PANEL_NEXT_ID),
+            _button(tr, emojis, "radio.panel.stop", "stop", PANEL_STOP_ID, disnake.ButtonStyle.danger),
+        ]
+    else:
+        embed = disnake.Embed(
+            title=tr("radio.panel.custom.title"), description=tr("radio.panel.custom.intro_station"), color=color
+        )
+        station = external_text(view.station, NAME_LIMIT)
+        lines = [f"**{station}**"]
+        if view.no_tracks:
+            lines.append(f"-# {tr('radio.panel.custom.no_tracks')}")
+        elif view.title.strip():
+            song, artist = external_text(view.title, TITLE_LIMIT), external_text(view.artist, TITLE_LIMIT)
+            lines.append(
+                tr("radio.panel.live.now", song=song, artist=artist)
+                if artist
+                else tr("radio.panel.live.now_song", song=song)
+            )
+        if view.unknown:
+            shown = ", ".join(external_text(a, NAME_LIMIT) for a in view.unknown[:UNKNOWN_SHOWN])
+            lines.append(f"-# ⚠️ {tr('radio.panel.custom.unknown', artists=shown)}")
+        if view.credit:
+            lines.append(f"-# {tr('radio.panel.custom.credit', url=LASTFM_URL)}")
+        embed.add_field(name=fit(f"▶️ {station}", 256), value="\n".join(lines), inline=False)
+        buttons = []
+        if view.has_list:
+            buttons.append(_button(tr, emojis, "radio.panel.station_previous", "backward", PANEL_STATION_PREVIOUS_ID))
+        buttons.append(_button(tr, emojis, "radio.panel.pause", "playpause", PANEL_PAUSE_ID))
+        if view.has_list:
+            buttons.append(_button(tr, emojis, "radio.panel.station_next", "skip", PANEL_STATION_NEXT_ID))
+        buttons.append(_button(tr, emojis, "radio.panel.skip_track", "arrow_right", PANEL_NEXT_ID))
+        buttons.append(_button(tr, emojis, "radio.panel.stop", "stop", PANEL_STOP_ID, disnake.ButtonStyle.danger))
     embed.set_footer(text=tr("radio.panel.custom.footer"))
     if avatar:
         embed.set_thumbnail(url=avatar)
-    buttons = [
-        _button(tr, emojis, "radio.panel.pause", "playpause", PANEL_PAUSE_ID),
-        _button(tr, emojis, "radio.panel.next", "skip", PANEL_NEXT_ID),
-        _button(tr, emojis, "radio.panel.stop", "stop", PANEL_STOP_ID, disnake.ButtonStyle.danger),
-    ]
     return {"embeds": [embed], "components": [disnake.ui.ActionRow(*buttons)]}
 
 
@@ -237,9 +286,10 @@ def panel_payload(
     emojis: Emojis = fallback_emojis,
     avatar: Optional[str] = None,
     logo: Optional[bytes] = None,
+    custom: Optional[CustomView] = None,
 ) -> dict[str, Any]:
     """O painel certo para o tipo da rádio: ``live`` escolhe entre ``live_payload`` e ``custom_payload``."""
     if live:
         card = station if station is not None else StationCard(name=playlist_name)
         return live_payload(tr, emojis, station=card, view=view, color=color, avatar=avatar, logo=logo)
-    return custom_payload(tr, emojis, playlist_name=playlist_name, color=color, avatar=avatar)
+    return custom_payload(tr, emojis, playlist_name=playlist_name, color=color, avatar=avatar, view=custom)

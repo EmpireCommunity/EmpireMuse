@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, NamedTuple, Optional
 
 from empiremuse.rules.radio import KIND_LIVE, PANEL_RECREATE_S, Radio
 from empiremuse.utils.radio.chat import ChatPorts, ChatSweeper
+from empiremuse.utils.radio.custom import CustomRadioRunner
 from empiremuse.utils.radio.live import LiveRadioRunner
 from empiremuse.utils.radio.runner import Phase, ProcessLimits, RadioPorts, RadioRunner
 from empiremuse.utils.radio.service import RadioService
@@ -113,7 +114,9 @@ class RadioManager:
         """A estação principal de uma rádio ao vivo mudou na store (``set_station``): se ela está ligada neste processo, troca de estação ao vivo.
         Desligada, ou de outra instância do bot, não faz nada (a próxima partida já lê o documento novo). ``True`` se trocou."""
         runner = self._runners.get(radio.id)
-        if runner is None or runner.stopped or radio.kind != KIND_LIVE or not isinstance(runner, LiveRadioRunner):
+        if runner is None or runner.stopped or not isinstance(runner, LiveRadioRunner | CustomRadioRunner):
+            return False
+        if (radio.kind == KIND_LIVE) != isinstance(runner, LiveRadioRunner):
             return False
         self._radios[radio.id] = radio
         apply = getattr(runner.ports, "apply_station", None)
@@ -165,7 +168,13 @@ class RadioManager:
         if self.ports_factory is None:
             logger.warning("Rádio não iniciada: o adaptador do Discord não foi instalado")
             return None
-        runner_class = LiveRadioRunner if radio.kind == KIND_LIVE else RadioRunner
+        runner_class: type[RadioRunner] = (
+            LiveRadioRunner
+            if radio.kind == KIND_LIVE
+            else CustomRadioRunner
+            if "station" in radio.source  # R5: a estação do servidor; ``{playlist}`` é o legado até a migração
+            else RadioRunner
+        )
         runner = runner_class(
             radio.id,
             self.ports_factory(radio),

@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from empiremuse.rules.errors import RuleError
+from empiremuse.rules.radio_station import CustomStation
 from empiremuse.rules.radio_stations import Station
 from empiremuse.rules.radio import KIND_CUSTOM, KIND_LIVE, BotCandidate, Radio, check_radio, pick_radio_bot, radio_id
 from empiremuse.utils.radio.premium import Premium
@@ -68,6 +69,7 @@ async def turn_on(
     request_channel_id: int | None = None,
     station: Station | None = None,
     station_list: Sequence[str] | None = None,
+    custom_station: CustomStation | None = None,
 ) -> Radio:
     """Liga uma rádio personalizada neste canal, no bot reserva escolhido. Devolve a rádio ligada (já gravada, ainda sem runner)."""
     if not actor.manage_guild:
@@ -81,9 +83,13 @@ async def turn_on(
     premium = await hub.premium.fresh(guild_id)
     if premium is None:
         raise Refused(NO_PREMIUM)
-    if (station is None) == (playlist is None):
-        raise Refused(CHOOSE_ONE)  # ou uma playlist do servidor ou uma estação ao vivo, nunca as duas nem nenhuma
-    if station is None and not playlist_exists:
+    if sum(x is not None for x in (station, playlist, custom_station)) != 1:
+        raise Refused(
+            CHOOSE_ONE
+        )  # ou uma estação do servidor (ou playlist, legado) ou uma estação ao vivo, nunca duas nem nenhuma
+    if custom_station is not None and custom_station.guild_id != int(guild_id):
+        raise Refused(NOT_FOUND)  # a estação de outro servidor nunca vale (R-6)
+    if playlist is not None and not playlist_exists:
         raise Refused(NO_PLAYLIST)
     if station is not None and hub.health.unavailable(station.uuid):
         raise Refused(STATION_DOWN)
@@ -104,10 +110,16 @@ async def turn_on(
         {
             "_id": radio_id(picked, guild_id),
             "channel_id": str(channel_id),
-            "kind": KIND_CUSTOM if station is None else KIND_LIVE,
-            "source": {"playlist": playlist}
-            if station is None
-            else {"station": station.uuid, "reserve": None, **({"list": list(station_list)} if station_list else {})},
+            "kind": KIND_LIVE if station is not None else KIND_CUSTOM,
+            "source": {
+                "station": station.uuid,
+                "reserve": None,
+                **({"list": list(station_list)} if station_list else {}),
+            }
+            if station is not None
+            else {"station": custom_station.id}
+            if custom_station is not None
+            else {"playlist": playlist},
         }
     )
     if isinstance(wanted, RuleError):
@@ -145,6 +157,32 @@ async def change_station(
     try:
         updated = await hub.store.set_station(
             radio_id, station.uuid, expected_rev=current.rev, updated_by=str(actor.user_id), station_list=station_list
+        )
+    except RadioConflict as error:
+        raise Refused(CHANGED) from error
+    except RadioInvalid as error:
+        raise Refused(INVALID) from error
+    except RadioNotFound as error:
+        raise Refused(NOT_FOUND) from error
+    await hub.manager.change_station(updated)
+    return updated
+
+
+async def change_custom_station(hub: RadioHub, *, radio_id: str, station_id: str, actor: Actor) -> Radio:
+    """Troca a estação do servidor de uma rádio PERSONALIZADA ligada (anterior e próxima do painel, comando): a store grava com ``rev`` e o gerenciador troca.
+
+    ``manage_guild`` e premium são conferidos AQUI, em execução; a estação tem de ser do MESMO servidor da rádio (a store confere de novo).
+    """
+    if not actor.manage_guild:
+        raise Refused(NO_MANAGE_GUILD)
+    current = await hub.store.get(radio_id)
+    if current is None or not current.enabled or current.kind != KIND_CUSTOM:
+        raise Refused(NOT_FOUND)
+    if await hub.premium.fresh(current.guild_id) is None:
+        raise Refused(NO_PREMIUM)
+    try:
+        updated = await hub.store.set_custom_station(
+            radio_id, station_id, expected_rev=current.rev, updated_by=str(actor.user_id)
         )
     except RadioConflict as error:
         raise Refused(CHANGED) from error
