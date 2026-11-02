@@ -71,10 +71,14 @@ class TestWhoMayUseTheOwnerCommands:
         assert await w.cog.owner_check(ctx_of(OWNER)) is False
 
     def test_the_cog_never_calls_is_owner_nor_the_decorator(self):
-        tree = ast.parse(pathlib.Path(radio_cog.__file__).read_text(encoding="utf-8"))
-        names = {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)} | {
-            n.id for n in ast.walk(tree) if isinstance(n, ast.Name)
-        }
+        from empiremuse.utils.radio import prefix_commands
+
+        names = set()
+        for module in (radio_cog, prefix_commands):
+            tree = ast.parse(pathlib.Path(module.__file__).read_text(encoding="utf-8"))
+            names |= {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)} | {
+                n.id for n in ast.walk(tree) if isinstance(n, ast.Name)
+            }
 
         assert "is_owner" not in names
 
