@@ -2,12 +2,19 @@
 # Sem token neste arquivo: a integração com o GitHub não precisa dele. Se um dia o CI precisar da CLI, o token e o id do
 # projeto vão em segredo do repositório e são lidos por `api_token_env` e `project_id_env`, nunca escritos aqui.
 # O mapeamento leva o idioma do Crowdin ao código do `disnake.Locale` (nome da pasta em empiremuse/locales/).
+# O en-US é escrito no repo e fica FORA da exportação (`excluded_target_languages`): o Crowdin nunca o sobrescreve.
+# Texto não traduzido: `skip_untranslated_*` tira o que o formato deixar tirar. O JSON ainda pode sair com valor vazio, e o
+# bot trata o vazio como "sem tradução" (cai no en-US, nunca no pt-BR); ver a descrição do PR.
 preserve_hierarchy: true
 
 files:
   - source: /empiremuse/locales/pt-BR/commands.json
     translation: /empiremuse/locales/%locale%/%original_file_name%
     type: i18next_json
+    skip_untranslated_strings: true
+    skip_untranslated_files: true
+    excluded_target_languages:
+      - "en-US"
     languages_mapping:
       locale:
         "bg": "bg"
@@ -16,7 +23,6 @@ files:
         "de": "de"
         "el": "el"
         "en-GB": "en-GB"
-        "en-US": "en-US"
         "es-419": "es-419"
         "es-ES": "es-ES"
         "fi": "fi"
@@ -44,6 +50,10 @@ files:
   - source: /empiremuse/locales/pt-BR/bot.json
     translation: /empiremuse/locales/%locale%/%original_file_name%
     type: i18next_json
+    skip_untranslated_strings: true
+    skip_untranslated_files: true
+    excluded_target_languages:
+      - "en-US"
     languages_mapping:
       locale:
         "bg": "bg"
@@ -52,7 +62,6 @@ files:
         "de": "de"
         "el": "el"
         "en-GB": "en-GB"
-        "en-US": "en-US"
         "es-419": "es-419"
         "es-ES": "es-ES"
         "fi": "fi"
@@ -80,6 +89,10 @@ files:
   - source: /empiremuse/locales/pt-BR/panel.json
     translation: /empiremuse/locales/%locale%/%original_file_name%
     type: i18next_json
+    skip_untranslated_strings: true
+    skip_untranslated_files: true
+    excluded_target_languages:
+      - "en-US"
     languages_mapping:
       locale:
         "bg": "bg"
@@ -88,7 +101,6 @@ files:
         "de": "de"
         "el": "el"
         "en-GB": "en-GB"
-        "en-US": "en-US"
         "es-419": "es-419"
         "es-ES": "es-ES"
         "fi": "fi"
