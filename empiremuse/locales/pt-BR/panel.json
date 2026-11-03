@@ -121,6 +121,7 @@
   "panel.radio.local.credit": "Dados de localização: GeoNames, CC BY 4.0",
   "panel.radio.station.title": "Estações personalizadas",
   "panel.radio.station.count": "estações",
+  "panel.radio.station.of": "de",
   "panel.radio.station.help": "Uma estação é uma fonte de músicas para a rádio personalizada: um gênero, até 10 artistas ou até 5 playlists do servidor. A rádio toca em ordem aleatória, sem repetir faixa nem artista por perto.",
   "panel.radio.station.lastfm": "Gêneros e artistas vêm do Last.fm.",
   "panel.radio.station.empty": "Nenhuma estação ainda. Crie a primeira abaixo.",

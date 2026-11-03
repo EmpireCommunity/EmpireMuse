@@ -32,6 +32,7 @@ from empiremuse.utils import playlists_commands
 from empiremuse.rules.playlists import SCOPE_JUKEBOX
 from empiremuse.utils.db import DBModel
 from empiremuse.rules.text import format_mib
+from empiremuse.utils.music.jukebox_confirm import confirm_purge
 from empiremuse.utils.music.converters import time_format, md_link, md_code, perms_translations
 from empiremuse.utils.music.errors import GenericError, NoVoice
 from empiremuse.utils.music.interactions import SkinEditorMenu, EmbedPaginatorInteraction, ButtonInteraction
@@ -871,6 +872,14 @@ class MusicSettings(commands.Cog):
                 return inter.text_values["forum_title"]
 
             return current_title
+
+        if (
+            existing_channel
+            and purge_messages == "yes"
+            and isinstance(target, (disnake.TextChannel, disnake.VoiceChannel, disnake.StageChannel))
+            and not await confirm_purge(inter, target)
+        ):
+            return
 
         result = await apply_jukebox_channel(
             bot,

@@ -6,6 +6,7 @@ comportamentos ruins estão registrados de propósito e marcados `INVERTER_APOS_
 """
 
 import asyncio
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -65,6 +66,8 @@ class Scenario:
         self.cog = ms.MusicSettings(self.bot)
         self.next_message = 9000
         monkeypatch.setattr(ms, "send_idle_embed", self.fake_send_idle_embed)
+        self.confirm_purge = AsyncMock(return_value=True)  # a confirmação da limpeza tem teste próprio
+        monkeypatch.setattr(ms, "confirm_purge", self.confirm_purge)
 
     # ---- o send_idle_embed real monta embeds enormes: aqui só registramos a chamada e devolvemos a mensagem
     async def fake_send_idle_embed(self, target, text="", *, bot, force=False, guild_data=None):
