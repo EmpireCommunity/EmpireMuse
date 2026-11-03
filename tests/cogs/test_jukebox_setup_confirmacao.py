@@ -27,7 +27,7 @@ def clicker(user_id):
     )
 
 
-def setup(view_action):
+def setup(view_action, done=True):
     message = SimpleNamespace(edit=AsyncMock())
     sent = {}
 
@@ -41,6 +41,7 @@ def setup(view_action):
         guild=None,
         bot=SimpleNamespace(pool=SimpleNamespace(i18n=SimpleNamespace(for_guild=_for_guild))),
         followup=SimpleNamespace(send=send),
+        response=SimpleNamespace(is_done=lambda: done, defer=AsyncMock()),
     )
     return inter, SimpleNamespace(mention="<#1>"), message, sent
 
@@ -88,3 +89,13 @@ def test_confirmation_text_states_the_real_scope_whole_channel(locale, word):
     """O texto não pode dizer que só as mensagens do bot somem: a limpeza é do canal inteiro."""
     text = tr_for(locale)("jukebox.setup.purge.ask", user="<@7>", channel="<#1>", seconds=60)
     assert word in text and "bot" not in text.lower()
+
+
+@pytest.mark.asyncio
+async def test_unacknowledged_select_interaction_is_deferred_before_the_followup():
+    async def act(view):
+        await view.cancel.callback(clicker(AUTHOR))
+
+    inter, target, _, _s = setup(act, done=False)
+    await confirm_purge(inter, target)
+    inter.response.defer.assert_awaited_once_with(ephemeral=True)

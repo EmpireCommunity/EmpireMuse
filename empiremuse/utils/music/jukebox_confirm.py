@@ -44,6 +44,8 @@ async def confirm_purge(inter: Any, target: Any) -> bool:
     view = ConfirmJukeboxPurge(inter.author.id, tr)
     text = tr("jukebox.setup.purge.ask", user=inter.author.mention, channel=target.mention, seconds=CONFIRM_TIMEOUT_S)
     if hasattr(inter, "followup"):
+        if not inter.response.is_done():  # a interação do select de canal ainda não foi reconhecida
+            await inter.response.defer(ephemeral=True)
         message = await inter.followup.send(text, view=view, ephemeral=True, wait=True)
     else:
         message = await inter.send(text, view=view)
