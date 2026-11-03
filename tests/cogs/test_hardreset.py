@@ -108,7 +108,7 @@ async def test_a_reserve_bot_stays_silent_instead_of_raising_an_unexpected_check
     assert await w.cog.cog_check(SimpleNamespace()) is True
 
 
-def test_hard_reset_also_forgets_the_pause_all_and_the_radio_only_bots_held_in_memory():
+def test_hard_reset_also_forgets_the_pause_all_and_the_radio_only_bots_held_in_memory() -> None:
     """CodeRabbit #199: os documentos somem no hardreset, mas a pausa geral e os bots só-rádio ficavam na memória até reiniciar."""
     from empiremuse.utils.radio import RadioHub
     from empiremuse.utils.radio.control import BotRoles, RadioControl

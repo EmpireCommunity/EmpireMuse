@@ -85,7 +85,18 @@ async def pick_filter(cog: RadioCog, interaction: Any, tr: Any, radio: Any, node
     if fresh is None:
         raise GenericError(tr("radio.panel.gone"))
     by = str(interaction.author.id)
-    saved = await hub.store.set_list(radio.id, uuids[:LIST_MAX], expected_rev=fresh.rev, updated_by=by)
+    if not fresh.source.get(
+        "station"
+    ):  # recém-configurada (em espera, sem estação): o filtro dá a primeira, a mais ouvida que não está indisponível
+        first = next((u for u in uuids if not hub.health.unavailable(u)), None)
+        station = await hub.directory.by_uuid(first) if first else None
+        if station is None:
+            return tr("radio.local.no_results")
+        saved = await actions.change_station(
+            hub, radio_id=radio.id, station=station, actor=cog._authorized(interaction), station_list=uuids[:LIST_MAX]
+        )
+    else:
+        saved = await hub.store.set_list(radio.id, uuids[:LIST_MAX], expected_rev=fresh.rev, updated_by=by)
     await hub.store.set_filter(radio.id, node_id, expected_rev=saved.rev, updated_by=by)
     sync = getattr(getattr(hub.manager.runner(radio.id), "ports", None), "sync_list", None)
     if sync is not None:

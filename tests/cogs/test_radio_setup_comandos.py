@@ -520,3 +520,45 @@ class TestStationChosenInThePanelAfterSetup:
             and w.hub.manager.runner(radio_id(2, GUILD)).phase.value == "playing"
         )
         assert (await w.hub.store.get(radio_id(2, GUILD))).source["station"] == LIVE_STATION
+
+    @pytest.mark.asyncio
+    async def test_the_filter_select_gives_a_waiting_radio_its_first_station_and_its_list(self):
+        """CodeRabbit #199: em espera (sem fonte), ``set_list`` recusava e o filtro do painel não definia estação nenhuma."""
+        from types import SimpleNamespace
+
+        from empiremuse.rules.radio_stations import Station
+        from empiremuse.utils.radio import panel_handlers
+        from empiremuse.utils.radio.actions import Actor
+        from tests.cogs.radio_config import LIVE_STATION
+        from tests.cogs.test_radio_ao_vivo import LivePorts
+
+        w, _ = await world_with_station()
+        live_ports = LivePorts()
+        live_ports.source = False
+        live_ports.apply_station = AsyncMock()
+        w.hub.manager.ports_factory = lambda radio: live_ports
+        await run_setup(w, kind="live")
+        await settle(w)
+        rid = radio_id(2, GUILD)
+        waiting = await w.hub.store.get(rid)
+        assert not waiting.source.get("station")
+        other = "aaaaaaaa-2222-3333-4444-555555555555"
+        station = Station(LIVE_STATION, "Rock FM", "http://stream.example:8000/x", "MP3", 128, "Brasil")
+        hits = tuple(
+            SimpleNamespace(station=SimpleNamespace(uuid=u), clickcount=n) for u, n in ((LIVE_STATION, 9), (other, 1))
+        )
+        w.hub.directory.region = AsyncMock(return_value=SimpleNamespace(hits=hits))
+        w.hub.directory.by_uuid = AsyncMock(return_value=station)
+        w.hub.locations = SimpleNamespace(node=lambda n: SimpleNamespace(id=n))
+        live_ports.source = True
+        cog = SimpleNamespace(hub=w.hub, _authorized=lambda _i: Actor(user_id=7, manage_guild=True))
+
+        text = await panel_handlers.pick_filter(
+            cog, SimpleNamespace(author=SimpleNamespace(id=7)), lambda k, **kw: k, waiting, "br"
+        )
+        await settle(w)
+
+        saved = await w.hub.store.get(rid)
+        assert text == "radio.panel.filter_applied"
+        assert saved.source["station"] == LIVE_STATION and saved.source["list"] == [LIVE_STATION, other]
+        assert saved.filter == "br"
