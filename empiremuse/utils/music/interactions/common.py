@@ -40,8 +40,10 @@ async def process_idle_embed(bot: BotCore, guild: disnake.Guild, guild_data: dic
 
 
 class ViewMode:
+    """Modos do ``/fav_manager``: favoritos e integrações do membro. As playlists do servidor saíram daqui
+    (``/jukebox playlists`` e ``/radio playlists``; o valor "1" fica reservado)."""
+
     fav_manager = "0"
-    guild_fav_manager = "1"
     integrations_manager = "2"
 
 

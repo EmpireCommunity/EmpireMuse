@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Optional
 import disnake
 from disnake.ext import commands
 
+from empiremuse.rules.playlists import SCOPE_RADIO
 from empiremuse.rules.radio_station import (
     KIND_GENRE,
     MAX_STATIONS_PER_GUILD,
@@ -52,7 +53,7 @@ async def gate(cog: Radio, inter: disnake.ApplicationCommandInteraction):
 async def playlist_names(inter: Any) -> list[str]:
     from empiremuse.utils.server_playlists import safe_list  # tarde: o módulo importa muita coisa
 
-    return [p.name for p in await safe_list(inter.bot, inter.guild_id)]
+    return [p.name for p in await safe_list(inter.bot, inter.guild_id, SCOPE_RADIO)]  # só as de escopo rádio
 
 
 async def server_station_autocomplete(inter: disnake.ApplicationCommandInteraction, current: str) -> list[str]:

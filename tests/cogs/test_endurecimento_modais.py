@@ -24,7 +24,7 @@ from tests.support.modais import URL_BASE, ModalBot, adicionar_integracao, troca
 
 pytestmark = pytest.mark.critical
 
-FAVORITOS, SERVIDOR, INTEGRACOES = ViewMode.fav_manager, ViewMode.guild_fav_manager, ViewMode.integrations_manager
+FAVORITOS, INTEGRACOES = ViewMode.fav_manager, ViewMode.integrations_manager
 PERFIL_DEEZER = "https://www.deezer.com/br/profile/123456"
 PERFIL_SPOTIFY = "https://open.spotify.com/user/abc123"
 CANAL_YOUTUBE = "https://www.youtube.com/@canal"

@@ -84,6 +84,9 @@ class CustomRadioRunner(RadioRunner):
         """A estação da rádio mudou (painel da call, comando ou página): recomeça pelo recuo; pausada ou em recuo, a próxima tentativa já usa a nova."""
         if self._stopped:
             return
+        if self.phase is Phase.STANDBY:
+            await self.leave_standby()  # a rádio só esperava a estação: toca na hora
+            return
         self.no_tracks = False
         if self.phase is Phase.PLAYING:
             self.attempt = 0

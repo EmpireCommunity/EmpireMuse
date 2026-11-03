@@ -119,7 +119,7 @@ class PlayerPlaybackMixin:
             if self.current:
                 embed.description += f" {md_link(self.current.title, self.current.uri)}"
 
-            embed.description += error_code_text(req.error_code)
+            embed.description += error_code_text(req.error_code, self.tr)
 
             if self.text_channel:
                 try:

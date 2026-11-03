@@ -85,6 +85,10 @@ _REASON_TEXT = {
 }
 _ITEM_KEYS = frozenset({"order", "name", "description", "genres", "url", "icon"})
 
+SCOPE_JUKEBOX = "jukebox"  # /play, Jukebox e menus
+SCOPE_RADIO = "radio"  # só como fonte de estação de rádio personalizada
+SCOPES = (SCOPE_JUKEBOX, SCOPE_RADIO)
+
 
 class Playlist(NamedTuple):
     order: int
@@ -93,6 +97,7 @@ class Playlist(NamedTuple):
     genres: tuple[str, ...]
     url: str
     icon: str | None = None
+    scope: str = SCOPE_JUKEBOX
 
 
 class Skip(NamedTuple):
@@ -462,6 +467,15 @@ def _decode(raw: str | bytes, max_bytes: int) -> tuple[Any, list[str]] | RuleErr
         return RuleError(FILE_FORMAT)
 
 
+def _old_entry(name: str, value: Any) -> Any:
+    """Uma entrada do formato antigo ``{nome: ...}``: o valor é um objeto (``url``, ``description``) ou só a URL em texto (formato dos favoritos)."""
+    if isinstance(value, dict):
+        return {**value, "name": name}
+    if isinstance(value, str):
+        return {"name": name, "url": value}
+    return value
+
+
 def parse_file(raw: str | bytes, *, max_bytes: int) -> ParsedFile | RuleError:
     """Lê um arquivo de playlists, no formato novo ``{"playlists": [...]}`` ou no antigo ``{nome: {url, description}}``.
 
@@ -484,10 +498,7 @@ def parse_file(raw: str | bytes, *, max_bytes: int) -> ParsedFile | RuleError:
     else:
         if any(key in _ITEM_KEYS for key in repeated):
             return RuleError(FILE_FORMAT)
-        entries = [
-            (str(name), {**value, "name": name} if isinstance(value, dict) else value)
-            for name, value in document.items()
-        ]
+        entries = [(str(name), _old_entry(name, value)) for name, value in document.items()]
         invalid.extend(Skip(str(key), DUP_IN_FILE) for key in repeated)
     if len(entries) > PLAYLIST_FILE_MAX_ITEMS:
         return RuleError(FILE_TOO_MANY, limit=PLAYLIST_FILE_MAX_ITEMS)
@@ -580,13 +591,19 @@ def to_doc(playlist: Playlist) -> dict[str, Any]:
     }
     if playlist.icon:
         doc["icon"] = playlist.icon
+    doc["scope"] = playlist.scope
     return doc
 
 
 def from_doc(doc: Any) -> Playlist | None:
     """O item gravado, relido com as mesmas regras (``icon`` gravado que não seja um emoji vira ``None``); ``None`` se o dado gravado estiver ruim."""
+    scope = (
+        doc.get("scope", SCOPE_JUKEBOX) if isinstance(doc, Mapping) else SCOPE_JUKEBOX
+    )  # sem o campo = antes do escopo
+    if scope not in SCOPES:
+        return None
     checked = check_playlist(doc)
-    return None if isinstance(checked, RuleError) else checked
+    return None if isinstance(checked, RuleError) else checked._replace(scope=scope)
 
 
 def move_leading_icons(stored: Sequence[Any]) -> tuple[list[Any], int]:

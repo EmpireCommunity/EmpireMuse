@@ -6,6 +6,7 @@ from typing import Union, Optional
 import disnake
 from disnake.ext import commands
 
+from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.i18n import localized
 from empiremuse.utils.music.checks import (
     check_voice,
@@ -56,7 +57,6 @@ class QueueGroupMixin:
         name="shuffle",
         aliases=["sf", "misturar"],
         only_voiced=True,
-        description="Misturar as músicas da fila",
         cooldown=queue_manipulation_cd,
         max_concurrency=remove_mc,
     )
@@ -80,13 +80,16 @@ class QueueGroupMixin:
         player: LavalinkPlayer = bot.music.players[inter.guild_id]
 
         if len(player.queue) < 3:
-            raise GenericError("**A fila tem que ter no mínimo 3 músicas para ser misturada.**")
+            raise GenericError(await guild_text(bot, inter.guild, "legacy.queue.shuffle_min"))
 
         shuffle(player.queue)
 
         await self.interaction_message(
             inter,
-            ["misturou as músicas da fila.", f"🔀 **⠂{inter.author.mention} misturou as músicas da fila.**"],
+            [
+                await guild_text(bot, inter.guild, "legacy.queue.shuffle_log"),
+                await guild_text(bot, inter.guild, "legacy.queue.shuffle_msg", user=inter.author.mention),
+            ],
             emoji="🔀",
         )
 
@@ -97,7 +100,6 @@ class QueueGroupMixin:
         name="reverse",
         aliases=["rv", "inverter"],
         only_voiced=True,
-        description="Inverter a ordem das músicas na fila",
         cooldown=queue_manipulation_cd,
         max_concurrency=remove_mc,
     )
@@ -120,14 +122,14 @@ class QueueGroupMixin:
         player: LavalinkPlayer = bot.music.players[inter.guild_id]
 
         if len(player.queue) < 2:
-            raise GenericError("**A fila tem que ter no mínimo 2 músicas para inverter a ordem.**")
+            raise GenericError(await guild_text(bot, inter.guild, "legacy.queue.reverse_min"))
 
         player.queue.reverse()
         await self.interaction_message(
             inter,
             txt=[
-                "inverteu a ordem das músicas na fila.",
-                f"🔄 **⠂{inter.author.mention} inverteu a ordem das músicas na fila.**",
+                await guild_text(bot, inter.guild, "legacy.queue.reverse_log"),
+                await guild_text(bot, inter.guild, "legacy.queue.reverse_msg", user=inter.author.mention),
             ],
             emoji="🔄",
         )
@@ -139,7 +141,6 @@ class QueueGroupMixin:
     @pool_command(
         name="queue",
         aliases=["q", "fila"],
-        description="Exibir as músicas que estão na fila.",
         only_voiced=True,
         max_concurrency=queue_show_mc,
     )
@@ -157,9 +158,9 @@ class QueueGroupMixin:
         player: LavalinkPlayer = bot.music.players[inter.guild_id]
 
         if not player.queue and not player.queue_autoplay:
-            raise GenericError("**Não há músicas na fila.**")
+            raise GenericError(await guild_text(bot, inter.guild, "legacy.queue.empty"))
 
-        view = QueueInteraction(bot, inter.author)
+        view = QueueInteraction(bot, inter.author, tr=await inter.bot.pool.i18n.for_guild(inter.guild))
         embed = view.embed
 
         try:
@@ -194,7 +195,7 @@ class QueueGroupMixin:
         "-title",
         "-songname",
         nargs="+",
-        help="incluir nome que tiver na música.\nEx: -name NCS",
+        help="legacy.flag.songtitle",
         default=[],
     )
 
@@ -204,7 +205,7 @@ class QueueGroupMixin:
         "-artist",
         nargs="+",
         default=[],
-        help="Remover músicas com o nome que tiver no autor/artista/uploader especificado.\nEx: -uploader sekai",
+        help="legacy.flag.uploader",
     )
 
     adv_queue_flags.add_argument(
@@ -213,11 +214,11 @@ class QueueGroupMixin:
         "-u",
         nargs="+",
         default=[],
-        help="Remover músicas pedidas pelo usuário especificado.\nEx: -user @user",
+        help="legacy.flag.member",
     )
 
     adv_queue_flags.add_argument(
-        "-duplicates", "-dupes", "-duplicate", action="store_true", help="Remover músicas duplicadas."
+        "-duplicates", "-dupes", "-duplicate", action="store_true", help="legacy.flag.duplicates"
     )
 
     adv_queue_flags.add_argument(
@@ -226,7 +227,7 @@ class QueueGroupMixin:
         "-pl",
         nargs="+",
         default=[],
-        help="Remover música que tiver com o nome especificado na playlist associada.\nEx: -playlist minhaplaylist",
+        help="legacy.flag.playlist",
     )
 
     adv_queue_flags.add_argument(
@@ -236,7 +237,7 @@ class QueueGroupMixin:
         "-minduration",
         "-minduration",
         default=None,
-        help="Remover músicas com a duração mínima especificada.\nEx: -min 1:23.",
+        help="legacy.flag.minimaltime",
     )
 
     adv_queue_flags.add_argument(
@@ -244,7 +245,7 @@ class QueueGroupMixin:
         "-maxtime",
         "-max",
         default=None,
-        help="Remover músicas com a duração máxima especificada.\nEx: -max 1:23.",
+        help="legacy.flag.maxduration",
     )
 
     adv_queue_flags.add_argument(
@@ -254,7 +255,7 @@ class QueueGroupMixin:
         "-c",
         type=int,
         default=None,
-        help="Especificar uma quantidade de músicas para mover com o nome especificado.\nEx: -amount 5",
+        help="legacy.flag.amount",
     )
 
     adv_queue_flags.add_argument(
@@ -263,7 +264,7 @@ class QueueGroupMixin:
         "-start",
         type=int,
         default=0,
-        help="Remover músicas a partir de uma posição inicial da fila.\nEx: -start 10",
+        help="legacy.flag.startposition",
     )
 
     adv_queue_flags.add_argument(
@@ -272,7 +273,7 @@ class QueueGroupMixin:
         "-end",
         type=int,
         default=0,
-        help="Remover músicas da fila até uma posição específica na fila.\nEx: -end 15",
+        help="legacy.flag.endposition",
     )
 
     adv_queue_flags.add_argument(
@@ -280,7 +281,7 @@ class QueueGroupMixin:
         "-absent",
         "-abs",
         action="store_true",
-        help="Remover músicas adicionads por membros que saíram do canal",
+        help="legacy.flag.absentmembers",
     )
 
     clear_flags = CommandArgparse(parents=[adv_queue_flags])
@@ -291,7 +292,6 @@ class QueueGroupMixin:
     @pool_command(
         name="clear",
         aliases=["limpar"],
-        description="Limpar a fila de música.",
         only_voiced=True,
         extras={"flags": clear_flags},
         cooldown=queue_manipulation_cd,
@@ -406,14 +406,19 @@ class QueueGroupMixin:
             range_end=range_end,
             absent_members=absent_members,
         )
-        _qc_filters(self, req)
+        await _qc_filters(self, req)
 
         if not req.filters and not req.range_start and not req.range_end:
             req.player.queue.clear()
-            req.txt = ["limpou a fila de música.", f"♻️ **⠂{req.inter.author.mention} limpou a fila de música.**"]
+            req.txt = [
+                await guild_text(req.inter.bot, req.inter.guild, "legacy.queue.clear_log"),
+                await guild_text(
+                    req.inter.bot, req.inter.guild, "legacy.queue.clear_msg", user=req.inter.author.mention
+                ),
+            ]
 
         else:
-            _qc_range(self, req)
+            await _qc_range(self, req)
 
             _qc_remove(self, req)
 
@@ -429,15 +434,13 @@ class QueueGroupMixin:
 
     move_queue_flags = CommandArgparse(parents=[adv_queue_flags])
 
-    move_queue_flags.add_argument(
-        "-position", "-pos", help="Especificar uma posição de destino (opcional).\nEx: -pos 1", type=int, default=None
-    )
+    move_queue_flags.add_argument("-position", "-pos", help="legacy.flag.position_move", type=int, default=None)
 
     move_queue_flags.add_argument(
         "-casesensitive",
         "-cs",
         action="store_true",
-        help="Buscar por músicas com a frase exata no nome da música ao invés de buscar palavra por palavra.",
+        help="legacy.flag.casesensitive",
     )
 
     @check_queue_loading()
@@ -447,7 +450,6 @@ class QueueGroupMixin:
     @pool_command(
         name="move",
         aliases=["mv", "mover"],
-        description="Mover músicas da fila.",
         only_voiced=True,
         extras={"flags": move_queue_flags},
         cooldown=queue_manipulation_cd,
@@ -613,20 +615,20 @@ class QueueGroupMixin:
             absent_members=absent_members,
             case_sensitive=case_sensitive,
         )
-        _qm_filters(self, req)
+        await _qm_filters(self, req)
 
-        _qm_range(self, req)
+        await _qm_range(self, req)
 
         if not req.tracklist:
             _qm_select(self, req)
 
         if not req.tracklist:
-            raise GenericError("Nenhuma música encontrada com os filtros selecionados!")
+            raise GenericError(await guild_text(inter.bot, inter.guild, "legacy.queue.no_filter_match"))
 
         for req.t in reversed(req.tracklist):
             req.insert_func(req.position - 1, req.t)
 
-        _qm_filter_texts(self, req)
+        await _qm_filter_texts(self, req)
 
         await _qm_move(self, req)
 

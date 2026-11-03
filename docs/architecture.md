@@ -18,7 +18,7 @@ flowchart LR
     pool --> web["empiremuse/web_app.py<br/>tornado: /, /ws e /painel"]
     pool --> db[("MongoDB (PyMongo Async)<br/>ou TinyMongo local")]
     b1 & b2 --> cogs["empiremuse/cogs/*.py<br/>(cogs)"]
-    cogs --> req["empiremuse/utils/music/request_channel.py<br/>(setup e reset de canal)"]
+    cogs --> req["empiremuse/utils/music/jukebox_channel.py<br/>(setup e off da Jukebox)"]
     cogs --> rules["empiremuse/rules/<br/>(regras puras: só stdlib)"]
     cogs --> player["LavalinkPlayer<br/>empiremuse/utils/music/models/"]
     player --> wl["empiremuse/wavelink/<br/>(cliente próprio)"]
@@ -134,16 +134,16 @@ só os atributos de núcleo (`emoji`, `name`, `desc_prefix`, `providers_info`, �
 | `queue_clear_steps.py`, `queue_move_steps.py` | — | etapas `_qc_*` de `/queue clear` e `_qm_*` de `/queue move` |
 | `queue_state.py` | — | `ClearState` e `MoveState`: as variáveis que passam de uma etapa para outra |
 | `autocompletes.py` | `AutocompletesMixin` | `queue_tracks` e `node_suggestions`, que decoram comandos de mais de um mixin |
-| `player_modes.py` | `PlayerModesMixin` | `restrict_mode`, `nonstop`, `autoplay` |
+| `player_modes.py` | `PlayerModesMixin` | `restrict_mode`, `autoplay` |
 | `nodes.py` | `NodesMixin` | `change_node`, `playeruptime`, eventos e reconexão de nodes, `connect_node`, `get_best_node` |
 | `favorites.py` | `FavoritesMixin` | `fav_manager` |
-| `controller_dispatch.py` | `ControllerDispatchMixin` | canal de pedidos, despacho de interações do controlador |
+| `controller_dispatch.py` | `ControllerDispatchMixin` | canal da Jukebox, despacho de interações do controlador |
 | `player_controller.py` | `PlayerControllerMixin` | `player_controller` (orquestra as ações dos botões do controlador do player) |
 | `controller_embed.py`, `controller_buttons.py` | — | etapas `_pc_*` do `player_controller` (botões do embed; pedir música, last.fm, favoritar, letras) |
 | `controller_state.py` | — | `ControllerState`: as variáveis que passam de uma etapa do `player_controller` para outra |
-| `song_requests.py` | `SongRequestsMixin` | pedidos de música por mensagem (`song_requests`, `parse_song_request`, `song_request_modal`) |
-| `song_request_steps.py` | — | etapas `_sr_*` de `song_requests` e `_pr_*` de `parse_song_request` |
-| `song_request_state.py` | — | `SongRequestState` e `ParseRequestState` |
+| `jukebox_messages.py` | `JukeboxMessagesMixin` | mensagens do canal da Jukebox (evento `on_jukebox_message`, texto que vira pedido, modal) |
+| `jukebox_steps.py` | — | etapas `_sr_*` das mensagens da Jukebox e `_pr_*` da leitura do pedido |
+| `jukebox_state.py` | — | `JukeboxState` e `JukeboxParseState` |
 | `tracks.py` | `TracksMixin` | `get_partial_tracks`, `get_lavalink_tracks`, `get_tracks` |
 | `player_lifecycle.py` | `PlayerLifecycleMixin` | `process_music`, `create_player`, `player_vc_disconnect`, relatório de erros |
 | `shared.py` | — | constantes e objetos de corpo de classe usados por mais de um mixin |
@@ -153,7 +153,7 @@ O `/play` (KI-29b) é só o orquestrador: `PlayCommandMixin.play` cria um `PlayS
 é `True`, quando a etapa encerra o `/play` (o orquestrador então faz `return`); as demais devolvem `False` ou nada.
 As etapas moram em `PlayCommandMixin` (bot, canal e permissões), `PlayMenusMixin`, `PlayResolveMixin` e `PlayEnqueueMixin`.
 
-O mesmo padrão vale para `/queue clear`, `/queue move`, `Music.player_controller`, `Music.song_requests` e `Music.parse_song_request`, com uma diferença: as etapas são **funções de módulo** `(self, req)` (`_qc_*`, `_qm_*`, `_pc_*`, `_sr_*`, `_pr_*`), não métodos, porque testes chamam esses comandos com um `self` falso. Cada comando fica com no máximo 150 linhas; a etapa que usa um nome trocado por teste (`string_to_file`) continua em `song_requests.py`.
+O mesmo padrão vale para `/queue clear`, `/queue move`, `Music.player_controller` e as mensagens da Jukebox, com uma diferença: as etapas são **funções de módulo** `(self, req)` (`_qc_*`, `_qm_*`, `_pc_*`, `_sr_*`, `_pr_*`), não métodos, porque testes chamam esses comandos com um `self` falso. Cada comando fica com no máximo 150 linhas; a etapa que usa um nome trocado por teste (`string_to_file`) continua em `jukebox_messages.py`.
 
 Regras de montagem (guardadas por testes em `tests/repo/` e `tests/cogs/`):
 
@@ -313,7 +313,7 @@ O painel web é ativado quando `PANEL_ENABLED=true` e requer `RUN_RPC_SERVER=tru
 - **Sessões e Cookies (`empiremuse/panel/sessions.py`)**: as sessões ativas residem em memória, associadas a um ID aleatório de 32 bytes emitido em cookie assinado (`cookie_secret`). Em produção com HTTPS, utiliza o prefixo de segurança `__Host-` (`__Host-painel_sessao`) com flags `Secure`, `HttpOnly`, `SameSite=Lax` e `Path=/`. Para desenvolvimento local em `http://localhost`, a flag `PANEL_INSECURE_COOKIES=true` autoriza cookies normais sem a flag `Secure`.
 - **Autorização Autoritativa (`empiremuse/panel/authz.py`)**: a lista de servidores do OAuth funciona apenas como pré-filtro. Toda ação em `/painel/servidores/<gid>` valida no servidor com dados do `BotPool`: verifica se algum bot do pool está presente na guilda e se o usuário logado é dono do servidor ou possui as permissões `administrator` ou `manage_guild`. Leituras utilizam cache de até 30 segundos; escritas usam verificação mandatória em tempo real (`fresh=True`).
 - **Serviços Puros e Concorrência Otimista (`empiremuse/panel/services/`)**: as regras de configuração de servidores (Player, DJ, Aparência, Links fixos, Geral, que inclui o status de voz permanente e o modelo do servidor, os mesmos campos `voice_status_permanent` e `voice_channel_status` do `/setvoicestatus`) e conta (prefixo pessoal, favoritos, integrações, Last.fm e token RPC) são implementadas em serviços desacoplados do HTTP, importando regras puras de `empiremuse/rules/` com paridade em relação aos comandos do bot. Cada formulário inclui um campo oculto `versao` baseado no hash SHA-256 dos campos pertinentes sob bloqueio assíncrono (`asyncio.Lock`), prevenindo sobrescrita de dados concorrente (retorno HTTP 409).
-- **Canal de Pedidos e Tarefas Assíncronas (`empiremuse/panel/services/channel.py`, `channel_tokens.py`, `tasks.py` e `empiremuse/utils/music/request_channel.py`)**: a lógica de `/setup` e `/reset` foi centralizada em `empiremuse/utils/music/request_channel.py`, compartilhada entre os cogs de comandos e o painel. O painel executa configurações demoradas via `TaskRunner` assíncrono em background, com atualização de estado por polling htmx e encerramento gracioso via `_shutdown_panel()` no desligamento do servidor.
+- **Jukebox e Tarefas Assíncronas (`empiremuse/panel/services/jukebox.py`, `jukebox_tokens.py`, `tasks.py` e `empiremuse/utils/music/jukebox_channel.py`)**: a lógica de `/jukebox setup` e `/jukebox off` foi centralizada em `empiremuse/utils/music/jukebox_channel.py`, compartilhada entre os cogs de comandos e o painel. O painel executa configurações demoradas via `TaskRunner` assíncrono em background, com atualização de estado por polling htmx e encerramento gracioso via `_shutdown_panel()` no desligamento do servidor.
 - **Frontend e Segurança de Conteúdo**: interface construída com templates nativos do Tornado, trocas parciais de HTML via **htmx 2.0.10** (0BSD) e folhas de estilo **Pico CSS 2.1.1** (MIT) vendorizadas em `empiremuse/panel/static/vendor/` (com hashes validados em `SHA256SUMS`) e estendidas por `empiremuse/panel/static/css/nebulosa.css`. Política de Segurança de Conteúdo (CSP) rígida sem `'unsafe-inline'` nem `'unsafe-eval'`. Proteção XSRF obrigatória em todas as requisições `POST`.
 
 ### Pacote de Regras Compartilhadas (`empiremuse/rules/`)
@@ -416,7 +416,7 @@ Linhas medidas com `wc -l` (total do projeto: ~34,5 mil linhas Python; testes em
 | `empiremuse/logs/` | Log centralizado: configuração, redator único de segredos, agregador de repetidos, relatório de subida, métricas e contexto de erros | ~1.500 |
 | `empiremuse/rules/` | Regras de negócio puras (limites, texto, URLs, cota, configurações, erros, favoritos, links, integrações, IP do visitante atrás da Cloudflare); só biblioteca padrão | 542 |
 | `empiremuse/serialization/` | Serialização segura em JSON (schema, codec, queue, cache, skins, session, tracks, files) | 1.442 (soma) |
-| `empiremuse/utils/music/request_channel.py` | Lógica unificada de setup e reset de canal de pedidos compartilhada entre cogs e painel | 497 |
+| `empiremuse/utils/music/jukebox_channel.py` | Lógica unificada de setup e off da Jukebox compartilhada entre cogs e painel | 497 |
 | `empiremuse/utils/client.py` | `BotPool` (setup, nodes, tokens) e `BotCore` (prefixo, sync, módulos) | 1.511 |
 | `empiremuse/utils/db.py` | Modelos, `MongoDatabase`, `LocalDatabase`, prefixos | 330 |
 | `empiremuse/utils/others.py` | Contexto, `PoolCommand`, paginação, emojis, utilitários | 893 |

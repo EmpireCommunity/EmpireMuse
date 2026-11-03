@@ -30,6 +30,7 @@ from empiremuse.panel.services.base import (
 from empiremuse.panel.services.radio import RadioPage
 from empiremuse.panel.services.service import STATUS_CONFLICT, STATUS_INVALID, STATUS_OK
 from empiremuse.rules.i18n import Translator
+from empiremuse.rules.playlists import SCOPE_RADIO
 from empiremuse.utils.radio.store import RadioConflict, RadioInvalid, RadioNotFound
 
 logger = logging.getLogger(__name__)
@@ -134,7 +135,8 @@ class StationsPage:
 
     @staticmethod
     async def playlist_names(ctx: FormContext) -> tuple[str, ...]:
-        items, _rev = await ctx.pool.servers.playlists.snapshot(ctx.guild_id)
+        """Só as playlists de escopo rádio: as da Jukebox nunca são fonte de estação (playlists por escopo, item 10)."""
+        items, _rev = await ctx.pool.servers.playlists.snapshot(ctx.guild_id, scope=SCOPE_RADIO)
         return tuple(str(item.name) for item in items)
 
     @staticmethod

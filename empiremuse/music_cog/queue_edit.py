@@ -3,6 +3,7 @@
 import disnake
 from disnake.ext import commands
 
+from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.i18n import localized
 from empiremuse.utils.music.checks import (
     check_voice,
@@ -40,17 +41,15 @@ class QueueEditMixin:
     @pool_command(
         name="remove",
         aliases=["r", "remover"],
-        description="Remover uma música específica da fila.",
         only_voiced=True,
         max_concurrency=remove_mc,
         extras={"flags": case_sensitive_args},
-        usage="{prefix}{cmd} [nome]\nEx: {prefix}{cmd} sekai",
     )
     async def remove_legacy(self, ctx: CustomContext, *, flags: str = ""):
         args, unknown = ctx.command.extras["flags"].parse_known_args(flags.split())
 
         if not unknown:
-            raise GenericError("**Você não adicionou o nome da música.**")
+            raise GenericError(await guild_text(self.bot, ctx.guild, "legacy.queue.no_song_name"))
 
         await self.remove.callback(self=self, inter=ctx, query=" ".join(unknown), case_sensitive=args.casesensitive)
 
@@ -83,7 +82,7 @@ class QueueEditMixin:
         try:
             index = queue_track_index(inter, bot, query, case_sensitive=case_sensitive)[0][0]
         except IndexError:
-            raise GenericError(f"**Não há músicas na fila com o nome: {query}**")
+            raise GenericError(await guild_text(bot, inter.guild, "legacy.queue.no_match_name", query=query))
 
         player: LavalinkPlayer = bot.music.players[inter.guild_id]
 
@@ -92,8 +91,19 @@ class QueueEditMixin:
         player.queue.remove(track)
 
         txt = [
-            f"removeu a música {md_link(track.title, track.uri or track.search_uri, limit=25)} da fila.",
-            f"♻️ **⠂{inter.author.mention} removeu a música da fila:**\n╰{md_link(track.title, track.uri or track.search_uri)}",
+            await guild_text(
+                bot,
+                inter.guild,
+                "legacy.queue.removed_log",
+                link=md_link(track.title, track.uri or track.search_uri, limit=25),
+            ),
+            await guild_text(
+                bot,
+                inter.guild,
+                "legacy.queue.removed_text",
+                user=inter.author.mention,
+                link=md_link(track.title, track.uri or track.search_uri),
+            ),
         ]
 
         await self.interaction_message(inter, txt, emoji="♻️")
@@ -109,7 +119,6 @@ class QueueEditMixin:
         only_voiced=True,
         cooldown=queue_manipulation_cd,
         max_concurrency=remove_mc,
-        description="Readicionar as músicas tocadas na fila.",
     )
     async def readd_legacy(self, ctx: CustomContext):
         await self.readd_songs.callback(self=self, inter=ctx)
@@ -133,7 +142,7 @@ class QueueEditMixin:
         player: LavalinkPlayer = bot.music.players[inter.guild_id]
 
         if not player.played and not player.failed_tracks:
-            raise GenericError("**Não há músicas tocadas.**")
+            raise GenericError(await guild_text(bot, inter.guild, "legacy.queue.no_played"))
 
         qsize = len(player.played) + len(player.failed_tracks)
 
@@ -145,8 +154,8 @@ class QueueEditMixin:
         player.failed_tracks.clear()
 
         txt = [
-            f"readicionou [{qsize}] música{(s := 's'[: qsize ^ 1])} tocada{s} na fila.",
-            f"🎶 **⠂{inter.author.mention} readicionou {qsize} música{s} na fila.**",
+            await guild_text(bot, inter.guild, "legacy.queue.readded_log", count=qsize),
+            await guild_text(bot, inter.guild, "legacy.queue.readded_text", count=qsize, user=inter.author.mention),
         ]
 
         await self.interaction_message(inter, txt, emoji="🎶")
@@ -165,17 +174,15 @@ class QueueEditMixin:
         name="rotate",
         aliases=["rt", "rotacionar"],
         only_voiced=True,
-        description="Rotacionar a fila para a música especificada.",
         cooldown=queue_manipulation_cd,
         max_concurrency=remove_mc,
         extras={"flags": case_sensitive_args},
-        usage="{prefix}{cmd} [nome]\nEx: {prefix}{cmd} sekai",
     )
     async def rotate_legacy(self, ctx: CustomContext, *, flags: str = ""):
         args, unknown = ctx.command.extras["flags"].parse_known_args(flags.split())
 
         if not unknown:
-            raise GenericError("**Você não adicionou o nome da música.**")
+            raise GenericError(await guild_text(self.bot, ctx.guild, "legacy.queue.no_song_name"))
 
         await self.rotate.callback(self=self, inter=ctx, query=" ".join(unknown), case_sensitive=args.casesensitive)
 
@@ -210,7 +217,7 @@ class QueueEditMixin:
         index = queue_track_index(inter, bot, query, case_sensitive=case_sensitive)
 
         if not index:
-            raise GenericError(f"**Não há músicas na fila com o nome: {query}**")
+            raise GenericError(await guild_text(bot, inter.guild, "legacy.queue.no_match_name", query=query))
 
         index = index[0][0]
 
@@ -220,7 +227,12 @@ class QueueEditMixin:
 
         if index <= 0:
             raise GenericError(
-                f"**A música **{md_link(track.title, track.uri or track.search_uri)} já é a próxima da fila."
+                await guild_text(
+                    bot,
+                    inter.guild,
+                    "legacy.queue.already_next",
+                    link=md_link(track.title, track.uri or track.search_uri),
+                )
             )
 
         if track.autoplay:
@@ -229,8 +241,19 @@ class QueueEditMixin:
             player.queue.rotate(0 - (index))
 
         txt = [
-            f"rotacionou a fila para a música {md_link(track.title, track.uri or track.search_uri, limit=25)}.",
-            f"🔃 **⠂{inter.author.mention} rotacionou a fila para a música:**\n╰{md_link(track.title, track.uri or track.search_uri)}.",
+            await guild_text(
+                bot,
+                inter.guild,
+                "legacy.queue.rotated_log",
+                link=md_link(track.title, track.uri or track.search_uri, limit=25),
+            ),
+            await guild_text(
+                bot,
+                inter.guild,
+                "legacy.queue.rotated_text",
+                user=inter.author.mention,
+                link=md_link(track.title, track.uri or track.search_uri),
+            ),
         ]
 
         if isinstance(inter, disnake.MessageInteraction):
@@ -243,7 +266,7 @@ class QueueEditMixin:
                 components=[
                     disnake.ui.Button(
                         emoji=app_emoji(inter.bot, "play"),
-                        label="Tocar agora",
+                        label=(await guild_text(inter.bot, inter.guild, "legacy.queue.mv_play_now")),
                         custom_id=PlayerControls.embed_forceplay,
                     ),
                 ],

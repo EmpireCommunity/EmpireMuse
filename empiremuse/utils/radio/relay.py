@@ -56,6 +56,7 @@ OPEN_CONCURRENCY = (
 PROBE_CONCURRENCY = 2
 BURST_ON_CONNECT_S = 20.0  # crédito inicial do limite de taxa: estações como a laut.fm despejam ~15 s de áudio ao conectar (``Burst-On-Connect``)
 MAX_REDIRECTS = 3
+TAKE_OVER_WAIT_S = 5.0  # quanto o novo consumidor espera a saída antiga terminar de ser cancelada
 REQUEST_LINE_LIMIT = 2048
 REQUEST_TIMEOUT_S = 5.0
 IDLE_TIMEOUT_S = 15.0
@@ -66,6 +67,7 @@ CHUNK = 8192
 RATE_FACTOR = 1.5
 PROBE_TOTAL_S = 30.0  # prazo total do health check: estação que pinga 1 byte por vez não prende a reabilitação de todas
 MAX_CONSUMERS = 2  # por token, sem condição: o loadtracks e o play do Lavalink (o último vence). Do 3º em diante é RECONEXÃO, com a política abaixo
+LOAD_CONSUMERS = 8  # o ``loadtracks`` do Lavalink 4 abre o endereço 3x em 0,4 s (testa um container por vez): medido; até aqui sem política de reconexão
 RECONNECT_MAX = (
     6  # reconexões aceitas por token na janela móvel; a 7ª esgota o token de vez (o runner pede um novo pelo recuo)
 )
@@ -126,6 +128,11 @@ class RelaySession:
     last_accept: float | None = None
     last_write: float = 0.0  # a última vez que o ``_pump`` escreveu áudio para o Lavalink
     claimed_serial: int = 0  # o número (``served``) da conexão que é a saída agora
+    playing: bool = (
+        False  # ``expect_flow`` já foi chamado: as conexões de agora são do PLAY, com a política de reconexão
+    )
+    claims: int = 0  # quantas conexões já viraram a saída; NUNCA zera (``served`` zera no ``expect_flow``)
+    claim_id: int = 0  # o ``claims`` da conexão que é a saída agora
     flow_after: int = 0  # só o áudio de uma conexão DEPOIS desta conta como "chegou" (o loadtracks do Lavalink não prova que o play abriu)
     closed: asyncio.Event = field(default_factory=asyncio.Event, repr=False)  # o token foi revogado
     exhausted: bool = False  # a 7ª reconexão: o token não aceita mais nada
@@ -262,8 +269,8 @@ class RadioRelay:
         if session is None:
             return
         session.hits += 1
-        if (
-            session.served >= MAX_CONSUMERS
+        if session.served >= (
+            MAX_CONSUMERS if session.playing else LOAD_CONSUMERS
         ):  # a reconexão do Lavalink no mesmo token: aceita só dentro da política (nunca com 2 saídas abertas)
             async with session.gate:
                 refusal = await self._admit_reconnect(session)
@@ -311,6 +318,8 @@ class RadioRelay:
         session.output = writer
         session.task = asyncio.current_task()
         session.claimed_serial = session.served
+        session.claims += 1
+        session.claim_id = session.claims
         session.free.clear()
         session.last_write = self._clock()
 
@@ -361,7 +370,7 @@ class RadioRelay:
             output.close()
         if previous is not None and previous is not asyncio.current_task():
             previous.cancel()
-            await asyncio.wait({previous}, timeout=2)
+            await asyncio.wait({previous}, timeout=TAKE_OVER_WAIT_S)
         return not session.busy
 
     @staticmethod
@@ -404,7 +413,13 @@ class RadioRelay:
         """Chamado antes de mandar o Lavalink TOCAR: o áudio das conexões de antes (o ``loadtracks``) não prova que o play abriu a estação."""
         session = self._sessions.get(token)
         if session is not None:
-            session.flow_after = session.served
+            session.playing = True
+            session.served = 0  # a contagem do play começa limpa: as conexões do loadtracks (até LOAD_CONSUMERS) não gastam a cota nem o intervalo
+            session.accepts.clear()
+            session.last_accept = None
+            session.flow_after = (
+                session.claims
+            )  # só uma conexão aceita DEPOIS daqui prova o play; um loadtracks ainda aberto não
             session.flowing.clear()
 
     async def wait_flowing(self, token: str, timeout: float) -> bool:
@@ -532,7 +547,7 @@ class RadioRelay:
         throttle = TitleThrottle()
         response = upstream.response
         last_audio = self._clock()
-        serial = session.claimed_serial
+        serial = session.claim_id
         reason = "cancelled"  # o que ficar assim é o cancelamento (take-over ou revogação)
         waiting = "upstream"  # onde está esperando: a estação ou o consumidor
         try:
@@ -581,4 +596,4 @@ class RadioRelay:
             return
         finally:
             logger.info("Relay: saída encerrada [%s]", reason)  # só o código do motivo: nunca a URL da estação (R-12)
-            await response.close()
+            response.abort()  # sem esperar o fecho do TLS: o próximo consumidor (take-over) espera esta tarefa terminar, e um fecho lento dava 409 no play

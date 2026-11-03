@@ -45,7 +45,7 @@ def alvo(permissoes: disnake.Permissions, *, fixada: bool = False, tipo=disnake.
     return mensagem
 
 
-async def sem_playlists(gid):
+async def sem_playlists(gid, scope="jukebox"):
     return ()
 
 

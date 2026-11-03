@@ -12,6 +12,7 @@ from cachetools import TTLCache
 from empiremuse.utils.radio.control import BotRoles, RadioControl
 from empiremuse.utils.radio.custom_source import STOCK_SLOTS, ResolvedTracks
 from empiremuse.utils.radio.directory import Directory
+from empiremuse.utils.radio.custom_favorites import CustomFavorites
 from empiremuse.utils.radio.favorites import RadioFavorites
 from empiremuse.utils.radio.lastfm_feed import LastFmFeed
 from empiremuse.utils.radio.health import HealthChecker, StationHealth
@@ -54,13 +55,14 @@ class RadioHub:
         self.stations = StationStore(pool, self.store)  # estações do servidor para a rádio personalizada (R5)
         self.stations.on_updated = self.reload_station
         self.resolved = ResolvedTracks(
-            pool.database
+            database_of=lambda: pool.database
         )  # faixas resolvidas e sem stream, em memória e em ``global.radio_resolved`` (R5)
         self.stock_slots = asyncio.Semaphore(
             STOCK_SLOTS
         )  # adiantados (a próxima faixa) ao mesmo tempo em todas as rádios do processo
         self.lastfm = LastFmFeed(pool)  # listas de gênero e de artistas do Last.fm (R5)
         self.favorites = RadioFavorites(pool)  # estações favoritas do servidor (painel da rádio ao vivo)
+        self.custom_favorites = CustomFavorites(pool)  # favoritas da personalizada, POR MEMBRO
         self.service = RadioService(pool)
         self.manager = RadioManager(self, self.service)  # quem faz as rádios rodarem neste processo
         self.setup = RadioSetup(self, pool)  # configurar e redefinir: o Discord e o painel web chamam esta mesma porta
@@ -77,6 +79,14 @@ class RadioHub:
             recovered=self.manager.station_recovered,
         )
         self._notices: TTLCache = TTLCache(maxsize=512, ttl=NOTICE_SECONDS)
+
+    def forget_all(self) -> None:
+        """Esquece o que as rádios guardam do banco em memória (depois do ``hardreset``). O premium fica: o documento também."""
+        self.resolved._memory.clear()
+        self.health._until.clear()
+        self._notices.clear()
+        self.control.forget()
+        self.roles.forget()
 
     async def reload_station(self, station: Any) -> None:
         """Uma estação do servidor foi editada: cada rádio LIGADA que a toca recarrega o pool (a troca passa pelo recuo, sem prender quem editou)."""

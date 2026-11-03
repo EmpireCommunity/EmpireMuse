@@ -58,6 +58,10 @@ class TestPayload:
             "volume_up",
             "station_previous",
             "station_next",
+            "reconnect",
+            "random",
+            "favorite",
+            "info",
         ]
         for forged in (
             "radio_panel_pause:1:2",

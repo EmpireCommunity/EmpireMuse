@@ -9,6 +9,7 @@ from typing import Union, Optional
 import disnake
 from disnake.ext import commands
 
+from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.utils.client import BotCore
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.jukebox_panel import fetch_panel_message
@@ -65,7 +66,7 @@ async def _pr_checks(self, req):
     text_channel = self.bot.get_channel(req.text_channel.id) or req.text_channel
 
     if not message.author.voice:
-        raise GenericError("Você deve entrar em um canal de voz para pedir uma música.")
+        raise GenericError(await guild_text(self.bot, guild, "legacy.jukebox.join_voice"))
 
     voice_channel = guild.get_channel(message.author.voice.channel.id) or message.author.voice.channel
 
@@ -78,7 +79,9 @@ async def _pr_checks(self, req):
 
     try:
         if guild.me.voice.channel != voice_channel:
-            raise GenericError(f"Você deve entrar no canal <#{guild.me.voice.channel.id}> para pedir uma música.")
+            raise GenericError(
+                await guild_text(self.bot, guild, "legacy.jukebox.join_channel", channel=guild.me.voice.channel.id)
+            )
     except AttributeError:
         pass
 
@@ -335,8 +338,7 @@ async def _sr_validate_channel(self, req):
             await message.channel.send(
                 message.author.mention,
                 embed=disnake.Embed(
-                    description="Infelizmente não posso conferir o conteúdo de sua mensagem...\n"
-                    "Tente adicionar música usando **/play** ou clique em um dos botões abaixo:",
+                    description=await guild_text(self.bot, message.guild, "legacy.jukebox.no_content_intent"),
                     color=self.bot.get_color(message.guild.me),
                 ),
                 components=jukebox_buttons(self.bot, await self.bot.pool.i18n.for_guild(message.guild)),
@@ -364,21 +366,28 @@ async def _sr_empty_content(self, req):
             attachment = message.attachments[0]
         except IndexError:
             await message.channel.send(
-                f"{message.author.mention} você deve enviar um link/nome da música.", delete_after=8
+                await guild_text(
+                    self.bot, message.guild, "legacy.jukebox.send_link_or_name", user=message.author.mention
+                ),
+                delete_after=8,
             )
             return True
 
         else:
             if attachment.size > 18000000:
                 await message.channel.send(
-                    f"{message.author.mention} o arquivo que você enviou deve ter o tamanho inferior a 18mb.",
+                    await guild_text(
+                        self.bot, message.guild, "legacy.jukebox.file_too_big", user=message.author.mention
+                    ),
                     delete_after=8,
                 )
                 return True
 
             if attachment.content_type not in self.audio_formats:
                 await message.channel.send(
-                    f"{message.author.mention} o arquivo que você enviou deve ter o tamanho inferior a 18mb.",
+                    await guild_text(
+                        self.bot, message.guild, "legacy.jukebox.file_format", user=message.author.mention
+                    ),
                     delete_after=8,
                 )
                 return True
@@ -396,7 +405,7 @@ async def _sr_prepare_query(self, req):
         await self.jukebox_concurrency.acquire(message)
     except Exception:
         await message.channel.send(
-            f"{message.author.mention} você deve aguardar seu pedido de música anterior carregar...",
+            await guild_text(self.bot, message.guild, "legacy.jukebox.wait_previous", user=message.author.mention),
         )
 
         await self.delete_message(message)
@@ -419,18 +428,25 @@ async def _sr_prepare_query(self, req):
                 timeout=45,
                 buttons=[
                     disnake.ui.Button(
-                        label="Carregar apenas a música", emoji=app_emoji(self.bot, "music_note"), custom_id="music"
+                        label=await guild_text(self.bot, message.guild, "legacy.jukebox.load_only_song"),
+                        emoji=app_emoji(self.bot, "music_note"),
+                        custom_id="music",
                     ),
                     disnake.ui.Button(
-                        label="Carregar playlist", emoji=app_emoji(self.bot, "playlist_play"), custom_id="playlist"
+                        label=await guild_text(self.bot, message.guild, "legacy.jukebox.load_playlist"),
+                        emoji=app_emoji(self.bot, "playlist_play"),
+                        custom_id="playlist",
                     ),
                 ],
             )
 
             embed = disnake.Embed(
-                description="**O link contém vídeo com playlist.**\n"
-                f"Selecione uma opção em até <t:{int((disnake.utils.utcnow() + datetime.timedelta(seconds=45)).timestamp())}:R> para prosseguir.\n"
-                f"-# Nota: Caso o link seja de uma playlist privada, apenas o vídeo do link atual será carregado.",
+                description=await guild_text(
+                    self.bot,
+                    message.guild,
+                    "legacy.jukebox.playlist_link",
+                    ts=int((disnake.utils.utcnow() + datetime.timedelta(seconds=45)).timestamp()),
+                ),
                 color=self.bot.get_color(message.guild.me),
             )
 

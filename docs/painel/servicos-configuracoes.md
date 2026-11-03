@@ -14,7 +14,7 @@ Os handlers (`panel/handlers/*.py`) só fazem HTTP; os helpers comuns (`_is_htmx
 | `panel/services/general.py` | Prefixo e status automático do canal de voz |
 | `panel/services/links.py` | Links fixos do servidor (adicionar, editar, remover, importar; exportar no handler) |
 | `panel/services/listen_along.py` | Convites de "ouvir junto" (listar e remover) |
-| `panel/services/channel.py` | Canal de pedidos (E4c): validação síncrona, `ChannelService`, jobs de setup/reset e estruturas dos templates |
+| `panel/services/jukebox.py` | Jukebox (E4c): validação síncrona, `JukeboxService`, jobs de setup/off e estruturas dos templates |
 | `panel/services/channel_tokens.py` | `ResetTokens`: token HMAC do reset (2 min, uso único) |
 | `panel/services/tasks.py` | `TaskRunner`: tarefas assíncronas em memória (timeout, limites, expiração, `shutdown`) |
 | `panel/services/account*.py` | Conta do usuário (E5): `account_base`, `account` (serviço), `account_misc`, `account_links` — ver a seção "Conta do usuário (E5)" |
@@ -69,7 +69,7 @@ o navegador mostra a primeira opção e salvar sem reescolher troca a skin. Caso
 - **Links fixos** (`player_controller.fav_links`): versão única da lista inteira do bot; adicionar usa os limites do modal
   do servidor (nome 2–25, URL 10–250 extraída com `URL_REG`, descrição vazia ou 3–100, máximo 25); importar usa os do
   `FavModalImport` (nome ≤ 25, URL ≤ `USER_FAV_MAX_URL_LENGTH`, descrição obrigatória ≤ 50) e valida todos os itens.
-  Adicionar, editar e importar exigem canal de pedidos configurado e visível ao bot; remover e exportar não. O efeito é
+  Adicionar, editar e importar exigem a Jukebox configurada e visível ao bot; remover e exportar não. O efeito é
   `process_idle_embed`, como no comando. Reenviar a descrição já gravada não é troca (aceita mesmo abaixo do mínimo).
 - **Ouvir junto** (`listen_along_invites`, global): listar e remover (adicionar fica fora da v1). Remover exige
   `manage_channels` (dono e administrador implicam), reavaliado na escrita: sem ela, mas ainda gerenciando o servidor,
@@ -78,13 +78,13 @@ o navegador mostra a primeira opção e salvar sem reescolher troca a skin. Caso
 - **Limite de corpo**: o `HTTPServer` da porta inteira recusa corpos acima de 64 KiB (`web_app.MAX_BODY_SIZE`), com ou
   sem painel; o painel ainda limita as escritas a 16 KiB (413).
 
-## Canal de pedidos (E4c)
+## Jukebox (E4c)
 
-- A lógica do `/setup` e do `/reset` vive em `utils/music/request_channel.py` e é compartilhada entre os comandos e o
-  painel (`apply_request_channel`, `reset_request_channel`, `validate_request_target`, `check_channel_perm`). O cog
+- A lógica do `/jukebox setup` e do `/jukebox off` vive em `utils/music/jukebox_channel.py` e é compartilhada entre os
+  comandos e o painel (`apply_jukebox_channel`, `reset_jukebox_channel`, `validate_jukebox_target`, `check_channel_perm`). O cog
   mantém só a interação (selects, botões, modais, timeouts) e passa `ask_forum_title`/`notify` como callbacks; o painel
   passa `ask_forum_title=None`.
-- O painel valida **antes** de criar a tarefa (422 síncrono, sem efeito no Discord nem no banco) e executa o setup/reset
+- O painel valida **antes** de criar a tarefa (422 síncrono, sem efeito no Discord nem no banco) e executa o setup/off
   como tarefa assíncrona (`panel/services/tasks.py`): uma por servidor (409 se ocupado), estados
   pendente → executando → ok | erro, timeout de 60 s, expiração 15 min depois de terminar, limites de 5 por usuário e 500
   no total, `shutdown()` ligado ao encerramento do servidor web. O acompanhamento é por polling htmx (`every 2s`) até o

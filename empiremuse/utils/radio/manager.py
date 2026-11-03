@@ -172,7 +172,8 @@ class RadioManager:
             LiveRadioRunner
             if radio.kind == KIND_LIVE
             else CustomRadioRunner
-            if "station" in radio.source  # R5: a estação do servidor; ``{playlist}`` é o legado até a migração
+            if "playlist"
+            not in radio.source  # R5: a estação do servidor (ou nenhuma ainda); ``{playlist}`` é o legado até a migração
             else RadioRunner
         )
         runner = runner_class(
@@ -190,7 +191,7 @@ class RadioManager:
         runner = self._runners.get(radio_id)
         return runner is not None and not runner.stopped
 
-    async def activate(self, radio: Radio, *, queued: bool = False, wait: bool = True) -> None:
+    async def activate(self, radio: Radio, *, queued: bool = False, wait: bool = True, fresh: bool = False) -> None:
         """Liga o runner da rádio. ``queued`` (subida): entra na fila global de retomadas; ``wait=False`` (comando): devolve na hora e a
         partida segue em segundo plano (um canal sem permissão não prende a resposta do comando até o token expirar)."""
         if self.is_running(radio.id):
@@ -202,6 +203,8 @@ class RadioManager:
         runner = self._runner_for(radio)
         if runner is None:
             return
+        if fresh:  # recém-configurada (``/radio setup``): ao chegar na call, limpa o chat uma vez antes de pôr o painel
+            runner.ports.purge_on_arrival = True
         self._start_sweeper(radio)
         if queued:
             self._starts[radio.id] = self._spawn(self._boot(runner))
@@ -283,6 +286,10 @@ class RadioManager:
             start.cancel()  # a partida que chamou o deactivate (o _shutdown dela) segue até o destroy: não cancela a si mesma
         self.service.publish(radio_id, None)
 
+    def known_radios(self) -> list[Radio]:
+        """As rádios que este processo conhece (rodando ou em espera)."""
+        return list(self._radios.values())
+
     async def stop_radios(self, radios, *, destroy_players: bool = True) -> None:
         """Para as rádios dadas e faz o bot de cada uma sair da call (``destroy``); uma falha não impede as outras."""
         for radio in radios:
@@ -362,6 +369,10 @@ class RadioManager:
 
         async def one(runner: RadioRunner) -> None:
             try:
+                if runner.lost_channel():  # o bot saiu da call e nenhum evento chegou: volta pelo recuo (fora do passo, que não espera por ele)
+                    logger.warning("Rádio fora da call: religando pelo recuo")
+                    self._spawn(runner.on_disconnect())
+                    return
                 await asyncio.wait_for(runner.tick(), TICK_TIMEOUT_S)
             except Exception as error:  # noqa: BLE001 - uma rádio com defeito ou travada não para as outras
                 logger.warning("Rádio com falha no passo de presença (%s)", type(error).__name__)

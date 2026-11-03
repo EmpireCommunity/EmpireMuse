@@ -182,7 +182,7 @@ class LinksImportExportTest(LinksBase):
         assert response.code == 200 and "1 adicionada" in body and "2 ignorada" in body
         assert self.names() == ["Rock", "Novo"]
         stored = self.snapshot()["playlists"]
-        assert stored[0] == doc("Rock", 1, BASE_URL + "rock") and "icon" not in stored[1]
+        assert stored[0] == {**doc("Rock", 1, BASE_URL + "rock"), "scope": "jukebox"} and "icon" not in stored[1]
 
     def test_the_old_format_is_accepted(self):
         old = {"Antiga": {"url": BASE_URL + "antiga", "description": "formato antigo"}}
@@ -225,6 +225,78 @@ class LinksImportExportTest(LinksBase):
         assert self.do_import(browser, exported).code == 200
         items = sorted_by_order(from_doc(d) for d in self.snapshot()["playlists"])
         assert json.loads(exported) == to_export(items)
+
+
+# ============================================================================ escopo (playlists por escopo, item 10)
+
+
+def radio_doc(name, order, url=None, **extra):
+    return {**doc(name, order, url, **extra), "scope": "radio"}
+
+
+class LinksScopeTest(LinksBase):
+    """Jukebox | Rádio: cada bloco lista, cria, importa e exporta só o seu escopo; o nome pode repetir entre escopos."""
+
+    def block(self, body, escopo):
+        """O trecho do HTML do bloco de um escopo (os blocos vêm na ordem jukebox, rádio)."""
+        start = body.index(f'id="playlists-{escopo}"')
+        end = body.index('id="playlists-radio"') if escopo == "jukebox" else len(body)
+        return body[start:end]
+
+    def scoped_names(self, gid=100):
+        docs = self.world.database.servers[gid]["playlists"]
+        return {
+            scope: [p["name"] for p in sorted(docs, key=lambda p: p["order"]) if p.get("scope", "jukebox") == scope]
+            for scope in ("jukebox", "radio")
+        }
+
+    def test_each_block_lists_only_its_scope_and_the_filter_offers_both(self):
+        self.world.set_playlists(100, [doc("Rock", 1), radio_doc("Ondas", 1, BASE_URL + "ondas")])
+        body = self.body_of(self.logged_in(), 100)
+        jukebox, radio = self.block(body, "jukebox"), self.block(body, "radio")
+        assert "Rock" in jukebox and "Ondas" not in jukebox
+        assert "Ondas" in radio and "Rock" not in radio
+        assert 'name="filtro-escopo" value="jukebox"' in body and 'name="filtro-escopo" value="radio"' in body
+
+    def test_adding_with_the_radio_scope_writes_scope_radio_and_leaves_the_jukebox_list_alone(self):
+        browser = self.logged_in()
+        assert self.add(browser, "Ondas", BASE_URL + "ondas", escopo="radio").code == 200
+        assert self.scoped_names() == {"jukebox": ["Fixo"], "radio": ["Ondas"]}
+        assert self.add(browser, "Fixo", BASE_URL + "fixo-radio", escopo="radio").code == 200  # nome único por escopo
+        assert self.scoped_names()["radio"] == ["Ondas", "Fixo"]
+
+    def test_an_unknown_scope_is_422_and_nothing_is_written(self):
+        browser, before, writes = self.logged_in(), self.snapshot(), len(self.db.writes)
+        assert self.add(browser, "Ondas", BASE_URL + "ondas", escopo="palco").code == 422
+        self.assert_untouched(before, writes)
+
+    def test_editing_and_removing_act_inside_the_items_scope(self):
+        self.world.set_playlists(100, [doc("Rock", 1), radio_doc("Rock", 1, BASE_URL + "rock-radio")])
+        browser = self.logged_in()
+        body = self.body_of(browser, 100)
+        form = acao_form(self.block(body, "radio"), "editar", "Rock")
+        assert form is not None and form.value("escopo") == "radio"
+        assert self.submit(browser, self.links_url(100), form, nome="Ondas").code == 200
+        assert self.scoped_names() == {"jukebox": ["Rock"], "radio": ["Ondas"]}
+        form = acao_form(self.block(self.body_of(browser, 100), "radio"), "remover", "Ondas")
+        assert self.submit(browser, self.links_url(100), form).code == 200
+        assert self.scoped_names() == {"jukebox": ["Rock"], "radio": []}
+
+    def test_import_goes_to_the_chosen_scope_only(self):
+        browser = self.logged_in()
+        payload = json.dumps({"playlists": [{"name": "Ondas", "url": BASE_URL + "ondas"}]})
+        assert self.act(browser, 100, "importar", dados=payload, escopo="radio").code == 200
+        assert self.scoped_names() == {"jukebox": ["Fixo"], "radio": ["Ondas"]}
+
+    def test_export_can_be_filtered_by_scope_and_an_unknown_scope_is_not_found(self):
+        self.world.set_playlists(100, [doc("Rock", 1), radio_doc("Ondas", 1, BASE_URL + "ondas")])
+        browser = self.logged_in()
+        radio = browser.get("/painel/servidores/100/links/exportar?escopo=radio")
+        assert radio.code == 200 and [p["name"] for p in json.loads(radio.body)["playlists"]] == ["Ondas"]
+        assert 'filename="playlists-100-radio.json"' in radio.headers["Content-Disposition"]
+        both = browser.get("/painel/servidores/100/links/exportar")
+        assert sorted(p["name"] for p in json.loads(both.body)["playlists"]) == ["Ondas", "Rock"]
+        assert browser.get("/painel/servidores/100/links/exportar?escopo=palco").code == 404
 
 
 # ============================================================================ A6 e P-V7: acesso e versão

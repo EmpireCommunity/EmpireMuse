@@ -14,6 +14,8 @@ import disnake
 from disnake.ext import commands
 
 from empiremuse.i18n import localized
+from empiremuse.utils.confirm_view import ConfirmView
+from empiremuse.utils.ephemeral import CONFIRMATION_TTL_S, cleanup_later
 from empiremuse.rules.errors import ROLE_DUPLICATE, RuleError
 from empiremuse.rules.limits import (
     CUSTOM_SKIN_PREFIX,
@@ -26,10 +28,12 @@ from empiremuse.rules.servers import SettingError
 from empiremuse.rules.settings import add_dj_role as add_role, allowed_names
 from empiremuse.utils import branding
 from empiremuse.utils.branding import asset_url
+from empiremuse.utils import playlists_commands
+from empiremuse.rules.playlists import SCOPE_JUKEBOX
 from empiremuse.utils.db import DBModel
 from empiremuse.rules.text import format_mib
 from empiremuse.utils.music.jukebox_confirm import confirm_purge
-from empiremuse.utils.music.converters import time_format, md_link, md_code
+from empiremuse.utils.music.converters import time_format, md_link, md_code, perms_translations
 from empiremuse.utils.music.errors import GenericError, NoVoice
 from empiremuse.utils.music.interactions import SkinEditorMenu, EmbedPaginatorInteraction, ButtonInteraction
 from empiremuse.utils.music.skin_store import load_custom_skins
@@ -456,7 +460,7 @@ class MusicSettings(commands.Cog):
         max_concurrency=setup_mc,
     )
     async def jukebox_reset_legacy(self, ctx: CustomContext):
-        await self.jukebox_reset.callback(self=self, interaction=ctx)
+        await self._run_jukebox_reset(ctx)
 
     @is_dj()
     @has_player()
@@ -478,6 +482,56 @@ class MusicSettings(commands.Cog):
     @commands.contexts(guild=True)
     async def jukebox(self, interaction: disnake.ApplicationCommandInteraction):
         pass
+
+    @jukebox.sub_command_group(
+        name=localized("cmd.jukebox.playlists.name"), description=localized("cmd.jukebox.playlists.description")
+    )
+    async def jukebox_playlists(self, inter: disnake.ApplicationCommandInteraction) -> None:
+        return
+
+    @jukebox_playlists.sub_command(
+        name=localized("cmd.jukebox.playlists.list.name"),
+        description=localized("cmd.jukebox.playlists.list.description"),
+    )
+    async def jukebox_playlists_list(self, inter: disnake.ApplicationCommandInteraction) -> None:
+        await playlists_commands.list_(self.bot, inter, SCOPE_JUKEBOX)
+
+    @jukebox_playlists.sub_command(
+        name=localized("cmd.jukebox.playlists.create.name"),
+        description=localized("cmd.jukebox.playlists.create.description"),
+    )
+    async def jukebox_playlists_create(self, inter: disnake.ApplicationCommandInteraction) -> None:
+        await playlists_commands.create(self.bot, inter, SCOPE_JUKEBOX)
+
+    @jukebox_playlists.sub_command(
+        name=localized("cmd.jukebox.playlists.edit.name"),
+        description=localized("cmd.jukebox.playlists.edit.description"),
+    )
+    async def jukebox_playlists_edit(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        name: str = commands.Param(
+            name=localized("cmd.jukebox.playlists.edit.opt.name.name"),
+            description=localized("cmd.jukebox.playlists.edit.opt.name.description"),
+            autocomplete=playlists_commands.jukebox_names,
+        ),
+    ) -> None:
+        await playlists_commands.edit(self.bot, inter, SCOPE_JUKEBOX, name)
+
+    @jukebox_playlists.sub_command(
+        name=localized("cmd.jukebox.playlists.remove.name"),
+        description=localized("cmd.jukebox.playlists.remove.description"),
+    )
+    async def jukebox_playlists_remove(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        name: str = commands.Param(
+            name=localized("cmd.jukebox.playlists.remove.opt.name.name"),
+            description=localized("cmd.jukebox.playlists.remove.opt.name.description"),
+            autocomplete=playlists_commands.jukebox_names,
+        ),
+    ) -> None:
+        await playlists_commands.remove(self.bot, inter, SCOPE_JUKEBOX, name)
 
     @commands.has_guild_permissions(manage_guild=True)
     @jukebox.sub_command(
@@ -860,11 +914,15 @@ class MusicSettings(commands.Cog):
 
         reset_txt = f"{inter.prefix}jukebox reset" if isinstance(inter, CustomContext) else "/jukebox reset"
 
-        embed = disnake.Embed(
-            description=f"**{msg}**\n\nObs: Caso queira reverter essa configuração, apenas use o comando {reset_txt} ou "
-            f"delete o canal/post {channel.mention}",
-            color=bot.get_color(guild.me),
+        description = (
+            f"**{msg}**\n\nObs: Caso queira reverter essa configuração, apenas use o comando {reset_txt} ou "
+            f"delete o canal/post {channel.mention}"
         )
+        if result.not_applied:
+            tr = await bot.pool.i18n.for_guild(guild)
+            names = ", ".join(f"**{perms_translations.get(name, name)}**" for name in result.not_applied)
+            description += "\n\n" + tr("jukebox.setup.warn_permissions", channel=channel.mention, permissions=names)
+        embed = disnake.Embed(description=description, color=bot.get_color(guild.me))
 
         if not inter.response.is_done():
             try:
@@ -891,23 +949,43 @@ class MusicSettings(commands.Cog):
         self,
         interaction: disnake.ApplicationCommandInteraction,
     ):
-        await self._run_jukebox_reset(interaction)
+        """Sem opção nenhuma (R3): redefine a Jukebox DO SERVIDOR, depois de uma confirmação só de quem pediu."""
+        tr = await self.bot.pool.i18n.for_guild(interaction.guild)
+
+        async def run(click: disnake.MessageInteraction) -> None:
+            await click.response.defer()
+            await self._run_jukebox_reset(click)
+
+        view = ConfirmView(
+            tr,
+            interaction.author.id,
+            run,
+            confirm_key="jukebox.reset.confirm",
+            cancel_key="jukebox.reset.cancel",
+            cancelled_key="jukebox.reset.cancelled",
+            not_yours_key="jukebox.reset.not_yours",
+        )
+        await interaction.response.send_message(tr("jukebox.reset.ask"), view=view, ephemeral=True)
+        view.message_interaction = interaction
 
     async def _run_jukebox_reset(
         self,
         interaction: disnake.ApplicationCommandInteraction,
         delete_channel: Optional[str] = None,
     ):
-        inter, bot = await select_bot_pool(interaction)
-
-        if not bot:
-            return
+        if isinstance(interaction, CustomContext):
+            inter, bot = await select_bot_pool(interaction)
+            if not bot:
+                return
+        else:  # slash: nenhum seletor de bot, a Jukebox é uma por servidor e quem a reseta é o bot do painel
+            inter, bot = interaction, interaction.bot
 
         bot = (
             await bot.pool.servers.jukebox.panel_bot(inter.guild_id)
         ) or bot  # o canal é único: quem reseta é o bot do painel
 
-        await inter.response.defer(ephemeral=True)
+        if not inter.response.is_done():
+            await inter.response.defer(ephemeral=True)
 
         guild = bot.get_guild(inter.guild_id) or inter.guild
 
@@ -942,7 +1020,10 @@ class MusicSettings(commands.Cog):
                     description="**A Jukebox foi redefinida com sucesso.**",
                 ),
                 components=[],
+                **({} if isinstance(inter, CustomContext) else {"content": None}),
             )
+            if not isinstance(inter, CustomContext):
+                cleanup_later(inter, CONFIRMATION_TTL_S)
 
         await run_jukebox_reset(
             bot,

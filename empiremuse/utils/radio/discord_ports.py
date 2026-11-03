@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import disnake
 
+from empiremuse.rules.playlists import SCOPE_RADIO
 from empiremuse.rules.radio import Radio
 from empiremuse.utils.radio.chat import PermissionLost
 from empiremuse.utils.radio.runner import Allowed
@@ -37,6 +38,11 @@ STAGE_TOPIC_LIMIT = 120
 PANEL_CLEANUP_LIMIT = 50  # mensagens do canal que se olham atrás de painéis antigos do próprio bot
 
 
+JOIN_WAIT_S = 8.0  # quanto o ``connect`` espera o Discord confirmar que o bot entrou na call
+JOIN_POLL_S = 0.5
+ARRIVAL_PURGE_LIMIT = 500  # mensagens do chat da call apagadas na chegada do setup (como a limpeza da Jukebox)
+
+
 class RadioBotUnavailable(Exception):
     """O bot da rádio (ou o servidor dele) ainda não está pronto: o runner trata como "não sei agora" e tenta de novo."""
 
@@ -48,6 +54,8 @@ class DiscordRadioPorts:
         self._tracks: list[Any] = []
         self._stage_created = False  # o evento de palco foi criado por este bot (e só esse ele encerra)
         self._stage_noticed = False
+        self._retry_wake = asyncio.Event()  # o botão "reconectar" acorda a espera do recuo
+        self.purge_on_arrival = False  # ``/radio setup``: o chat da call é limpo UMA vez, antes do primeiro painel
 
     # ------------------------------------------------------------------ o mundo
 
@@ -84,7 +92,14 @@ class DiscordRadioPorts:
         return random.random()
 
     async def sleep(self, seconds: float) -> None:
-        await asyncio.sleep(seconds)
+        self._retry_wake.clear()
+        try:
+            await asyncio.wait_for(self._retry_wake.wait(), seconds)
+        except TimeoutError:
+            pass  # o prazo inteiro passou: é o caso normal
+
+    def wake_retry(self) -> None:
+        self._retry_wake.set()
 
     async def allowed(self) -> Allowed:
         """R-1: o premium (cache de 30 s) e o canal/permissão de agora. Falha do banco propaga e o runner trata como "não sei"."""
@@ -105,6 +120,28 @@ class DiscordRadioPorts:
             return Allowed.NO_PERMISSION
         return Allowed.YES
 
+    def has_source(self) -> bool:
+        """A rádio já tem estação escolhida? (sem ela o runner fica em espera, na call e com o painel)."""
+        return bool(self.radio.source)
+
+    def in_channel(self) -> bool:
+        """O bot está NA call da rádio agora (o Discord diz). Quem não consegue ver (sem cache do servidor) conta como "sim": só se age sobre fato."""
+        guild, channel = self._guild(), self._channel()
+        if guild is None or channel is None or not hasattr(guild.me, "voice"):
+            return True
+        voice = guild.me.voice
+        return voice is not None and getattr(voice.channel, "id", None) == channel.id
+
+    async def _joined(self) -> bool:
+        """Espera o Discord confirmar a entrada (até ``JOIN_WAIT_S``): ``player.connect`` só pede, e uma falha dele fica no log, sem exceção."""
+        waited = 0.0
+        while waited < JOIN_WAIT_S:
+            if self.in_channel():
+                return True
+            await asyncio.sleep(JOIN_POLL_S)
+            waited += JOIN_POLL_S
+        return self.in_channel()
+
     async def connect(self) -> bool:
         """Entra (ou volta) na call; no palco pede a palavra UMA vez por conexão. Qualquer falha é ``False`` e o runner recua."""
         bot, guild, channel = self._bot(), self._guild(), self._channel()
@@ -113,6 +150,9 @@ class DiscordRadioPorts:
         try:
             player = self._player() or await self._create_player(bot, guild, channel)
             await player.connect(channel.id, self_deaf=True)
+            if not await self._joined():
+                logger.warning("Rádio não entrou na call (o Discord não confirmou)")
+                return False
             if isinstance(channel, disnake.StageChannel):
                 await self._speak(guild, channel, player)
         except Exception as error:  # noqa: BLE001 - só o tipo vai ao log (R-12)
@@ -215,7 +255,9 @@ class DiscordRadioPorts:
         if self._tracks:
             return self._tracks
         bot, guild = self._bot(), self._guild()
-        playlist = await self.pool.servers.playlists.find(self.radio.guild_id, self.radio.source.get("playlist", ""))
+        playlist = await self.pool.servers.playlists.find(
+            self.radio.guild_id, self.radio.source.get("playlist", ""), scope=SCOPE_RADIO
+        )  # rádio só toca playlist de rádio, também o caminho legado
         if bot is None or guild is None or playlist is None:
             return []
         music = bot.get_cog("Music")
@@ -276,23 +318,87 @@ class DiscordRadioPorts:
         return {**payload, "attachments": []} if "file" in payload else dict(payload)
 
     async def _panel_payload(self, bot: BotCore, guild: disnake.Guild, current: Radio) -> dict[str, Any]:
-        """O painel do tipo desta rádio (ao vivo ou personalizada) com o visual da Jukebox: ícones do bot, miniatura e cor."""
+        """O painel do tipo desta rádio: a ao vivo no desenho aprovado (visor em imagem, 2x5 botões só com emoji e os dois selects);
+        a personalizada ainda no painel com o visual da Jukebox: ícones do bot, miniatura e cor."""
         from empiremuse.utils.music.app_emojis import emoji as app_emoji  # tarde: o módulo importa o cliente
         from empiremuse.utils.radio.panel import panel_payload
 
         tr = await bot.pool.i18n.for_guild(guild)
-        live = self.radio.kind == "live"
+        if self.radio.kind == "live":
+            return await self._visor_payload(bot, guild, current, tr)
+        if self.radio.kind == "custom" and hasattr(self, "station"):  # só as portas da personalizada têm estação
+            return await self._custom_visor_payload(bot, guild, current, tr)
         return panel_payload(
             tr,
-            playlist_name="" if live else await self._panel_name(current),
+            playlist_name=await self._panel_name(current),
             color=bot.get_color(guild.me),
-            live=live,
+            live=False,
             view=self._panel_view(),
             custom=await self._custom_view(),
             station=await self._station_card(current),
             emojis=lambda name: app_emoji(bot, name),
             avatar=self._avatar_url(guild),
             logo=await self._logo(current),
+        )
+
+    async def _visor_payload(self, bot: BotCore, guild: disnake.Guild, current: Radio, tr: Any) -> dict[str, Any]:
+        """O painel da rádio AO VIVO (R6/R7): o retrato imutável (``live_snapshot``) vira o PNG do visor numa thread e os controles.
+        Custa, por edição (no máximo uma a cada ``live_ports.PANEL_EDIT_INTERVAL_S``): o logo em cache, um ``by_uuids`` e duas leituras das favoritas."""
+        from empiremuse.utils.music.app_emojis import emoji as app_emoji  # tarde: o módulo importa o cliente
+        from empiremuse.utils.radio.panel import filter_select_options, visor_payload_async
+        from empiremuse.utils.radio.snapshot import live_snapshot
+
+        hub = self.pool.radio
+        guild_locale = getattr(guild, "preferred_locale", None)
+        snapshot = await live_snapshot(
+            hub, current, self, hub.manager.runner(current.id), locale=tr.locale, logo=await self._logo(current)
+        )
+        favorites = await hub.favorites.list(current.guild_id)
+        options = filter_select_options(
+            tr,
+            hub.locations,
+            current.filter,
+            tr.locale,
+            favorites_total=len(favorites),
+            guild_locale=str(getattr(guild_locale, "value", guild_locale)) if guild_locale else None,
+            emojis=lambda name: app_emoji(bot, name),
+        )
+        return await visor_payload_async(
+            tr,
+            snapshot,
+            filter_options=options,
+            color=bot.get_color(guild.me),
+            emojis=lambda name: app_emoji(bot, name),
+        )
+
+    async def _custom_visor_payload(
+        self, bot: BotCore, guild: disnake.Guild, current: Radio, tr: Any
+    ) -> dict[str, Any]:
+        """O painel da rádio PERSONALIZADA no visor: estações do servidor (do filtro) e select 2 = tipo + Favoritas do membro que as escolheu."""
+        from empiremuse.utils.music.app_emojis import emoji as app_emoji  # tarde: o módulo importa o cliente
+        from empiremuse.utils.radio import custom_panel
+        from empiremuse.utils.radio.panel import type_select_options, visor_payload_async
+
+        hub, emojis = self.pool.radio, (lambda name: app_emoji(bot, name))
+        snapshot = await custom_panel.custom_snapshot(
+            hub, current, self, hub.manager.runner(current.id), locale=tr.locale, tr=tr
+        )
+        owner = custom_panel.favorites_owner(current.filter)
+        options = type_select_options(tr, current.filter, emojis=emojis)
+        if owner is not None:
+            options = [
+                disnake.SelectOption(label=o.label, value=o.value, emoji=o.emoji) for o in options
+            ]  # nenhum tipo marcado
+        options.append(
+            disnake.SelectOption(
+                label=tr("radio.panel.custom.favorites"),
+                value=custom_panel.FAVORITES_VALUE,
+                emoji=emojis("star"),
+                default=owner is not None,
+            )
+        )
+        return await visor_payload_async(
+            tr, snapshot, filter_options=options, color=bot.get_color(guild.me), emojis=emojis, custom=True
         )
 
     async def _refresh_existing(self, message: Any, bot: BotCore, guild: disnake.Guild, current: Radio) -> None:
@@ -338,6 +444,9 @@ class DiscordRadioPorts:
                 logger.warning("Painel da rádio sem permissão para ler o chat da call")
                 return
         payload = await self._panel_payload(bot, guild, current)
+        if self.purge_on_arrival:
+            self.purge_on_arrival = False
+            await self._purge_chat(channel)
         await self._remove_old_panels(channel, bot)  # um id de painel perdido não deixa painéis se acumulando no canal
         try:
             message = await channel.send(allowed_mentions=disnake.AllowedMentions.none(), **payload)
@@ -346,6 +455,13 @@ class DiscordRadioPorts:
             return
         await hub.store.set_panel_message(self.radio.id, message.id)
         hub.manager.note_panel(self.radio.id, message.id)
+
+    async def _purge_chat(self, channel: Any) -> None:
+        """Apaga as mensagens do chat da call (até ``ARRIVAL_PURGE_LIMIT``). Sem permissão ou com o Discord falhando, só avisa: o painel sai do mesmo jeito."""
+        try:
+            await channel.purge(limit=ARRIVAL_PURGE_LIMIT)
+        except (disnake.Forbidden, disnake.HTTPException) as error:
+            logger.warning("Chat da rádio não limpo (%s)", type(error).__name__)
 
     async def stop_stream(self) -> None:
         player = self._player()

@@ -1,6 +1,7 @@
 """As portas reais da rádio (item 8, R1) sobre bot, canal e player falsos: o direito de agora (R-1), os ouvintes, a conexão, o palco (R-5),
 a fila virtual e o desligamento por perda de direito."""
 
+import asyncio
 import dataclasses
 from collections import deque
 from types import SimpleNamespace
@@ -37,6 +38,13 @@ class Player:
         self.destroy = AsyncMock()
 
 
+def _fake_tr(key, **_kwargs):
+    return key
+
+
+_fake_tr.locale = "en-US"  # o tradutor real tem ``locale``; o visor (R6) o usa para os rótulos da árvore
+
+
 def build(*, stage=False, premium=True, perms=(True, True), has_channel=True, mute_members=False):
     db = FakeDb()
     pool = SimpleNamespace(database=db)
@@ -61,7 +69,7 @@ def build(*, stage=False, premium=True, perms=(True, True), has_channel=True, mu
         user=SimpleNamespace(id=BOT_ID),
         get_guild=lambda gid: guild if gid == GUILD else None,
         get_cog=lambda name: music,
-        pool=SimpleNamespace(i18n=SimpleNamespace(for_guild=AsyncMock(return_value=lambda key, **k: key))),
+        pool=SimpleNamespace(i18n=SimpleNamespace(for_guild=AsyncMock(return_value=_fake_tr))),
         music=SimpleNamespace(players={}, get_player=MagicMock(side_effect=lambda **kw: _register(bot, player, kw))),
     )
     pool.get_all_bots = lambda: [bot]
@@ -185,6 +193,21 @@ class TestConnect:
         w.player.connect.side_effect = disnake.HTTPException(MagicMock(status=500), "x")
 
         assert await w.ports.connect() is False
+
+    @pytest.mark.asyncio
+    async def test_connect_is_only_true_when_discord_confirms_the_bot_is_in_the_channel(self, monkeypatch):
+        """B3: ``player.connect`` só pede a entrada (e engole a falha): sem o Discord confirmar, volta ``False`` e o recuo tenta de novo."""
+        from empiremuse.utils.radio import discord_ports
+
+        monkeypatch.setattr(discord_ports, "JOIN_WAIT_S", 0.0)
+        w = build()
+        w.ports._guild().me.voice = None  # o bot NÃO está na call
+
+        assert w.ports.in_channel() is False and await w.ports.connect() is False
+
+        w.ports._guild().me.voice = SimpleNamespace(channel=SimpleNamespace(id=CHANNEL))
+
+        assert w.ports.in_channel() is True and await w.ports.connect() is True
 
     @pytest.mark.asyncio
     async def test_a_gone_bot_or_channel_cannot_connect(self):
@@ -504,6 +527,42 @@ class TestOrphanPanels:
 
         assert (await w.hub.store.get(w.ports.radio.id)).panel_message_id == 777 and "Forbidden" in caplog.text
 
+    @pytest.mark.asyncio
+    async def test_on_arrival_the_chat_is_purged_once_before_the_panel_and_a_failure_does_not_stop_it(self, caplog):
+        w = build()
+        await grant(w)
+        order = []
+
+        async def purge(limit):
+            order.append("purge")
+            raise disnake.Forbidden(MagicMock(status=403), "x")
+
+        async def send(**kwargs):
+            order.append("send")
+            return SimpleNamespace(id=888)
+
+        async def history(limit):
+            return
+            yield
+
+        w.channel.history, w.channel.purge, w.channel.send = history, purge, send
+        w.channel.fetch_message = AsyncMock()
+        w.bot.get_color = lambda me: 0
+        w.bot.user = SimpleNamespace(id=BOT_ID)
+        w.ports.purge_on_arrival = True
+
+        with caplog.at_level("WARNING"):
+            await w.ports.ensure_panel()
+
+        assert order == ["purge", "send"] and w.ports.purge_on_arrival is False and "não limpo" in caplog.text
+
+    def test_the_source_is_chosen_only_when_the_radio_has_one(self):
+        w = build()
+
+        assert w.ports.has_source() is True
+        w.ports.radio = dataclasses.replace(w.ports.radio, source={})
+        assert w.ports.has_source() is False
+
 
 STAGE_MODERATOR = dict(view_channel=True, connect=True, mute_members=True, manage_channels=True, move_members=True)
 
@@ -615,3 +674,20 @@ class TestStageInstance:
         await w.hub.manager.deactivate(radio.id)
 
         w.ports.end_stage.assert_awaited_once()
+
+
+class TestRetryWake:
+    @pytest.mark.asyncio
+    async def test_waking_the_retry_cuts_the_backoff_short_and_a_full_wait_still_ends_normally(self):
+        import time
+
+        w = build()
+        started = time.monotonic()
+        waiter = asyncio.ensure_future(w.ports.sleep(30))
+        await asyncio.sleep(0.05)
+
+        w.ports.wake_retry()
+        await asyncio.wait_for(waiter, 1)
+
+        assert time.monotonic() - started < 1
+        await asyncio.wait_for(w.ports.sleep(0.05), 1)  # sem despertar: espera o prazo e segue

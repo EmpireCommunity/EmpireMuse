@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, Mock
 import aiohttp
 import pytest
 
+from empiremuse.i18n.service import get_i18n
 from empiremuse.cogs.lastfm import LastFmCog, LastFMView
 from empiremuse.utils.music import lastfm_tools
 from empiremuse.utils.music.lastfm_tools import LastFM
@@ -97,9 +98,10 @@ async def test_the_auth_link_sent_to_the_user_is_https() -> None:
     bot = SimpleNamespace(
         loop=SimpleNamespace(create_task=Mock()),
         last_fm=SimpleNamespace(api_key="AK", get_token=AsyncMock(return_value="TK")),
+        pool=SimpleNamespace(i18n=get_i18n()),
     )
     visao.ctx = SimpleNamespace(bot=bot)
-    interacao = SimpleNamespace(send=AsyncMock())
+    interacao = SimpleNamespace(send=AsyncMock(), guild=None)
 
     await visao.send_authurl_callback(interacao)
 

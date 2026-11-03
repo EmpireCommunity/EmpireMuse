@@ -466,7 +466,7 @@ def test_pasted_text_is_limited_to_4000_characters_on_the_server_too(text, ok):
 def test_displaying_the_list_never_breaks_when_the_store_cannot_answer(raised):
     from empiremuse.utils.server_playlists import safe_list
 
-    async def failing(gid):
+    async def failing(gid, scope="jukebox"):
         raise raised
 
     bot = SimpleNamespace(pool=SimpleNamespace(servers=SimpleNamespace(playlists=SimpleNamespace(list=failing))))

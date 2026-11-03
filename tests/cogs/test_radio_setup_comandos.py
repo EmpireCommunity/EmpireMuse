@@ -8,7 +8,7 @@ import pytest
 from empiremuse.cogs import radio as radio_cog
 from empiremuse.rules.radio import radio_id
 from empiremuse.utils.music.errors import GenericError
-from empiremuse.utils.radio import setup_flow
+from empiremuse.utils.radio import radio_commands, setup_flow
 from tests.cogs.radio_config import CUSTOM_STATION, configure
 from tests.cogs.test_radio_comandos import CHANNEL, GUILD, build, fresh_cooldown, premium, reply, settle  # noqa: F401
 
@@ -38,55 +38,61 @@ def click_of(user_id=7, values=None):
 
 class TestSetupCommand:
     @pytest.mark.asyncio
-    async def test_a_custom_radio_is_configured_and_asks_for_one_of_the_server_stations(self):
-        w, station = await world_with_station()
+    async def test_setup_turns_the_radio_on_without_a_station_and_asks_for_none(self):
+        """R1: o setup liga a rádio (o bot entra na call sozinho), sem seletor de estação; a estação é escolhida no painel."""
+        w, _ = await world_with_station()
 
         await run_setup(w)
+        await settle(w)
 
         radio = await w.hub.store.get(radio_id(2, GUILD))
-        assert radio.kind == "custom" and radio.source == {} and radio.enabled is False
+        assert radio.kind == "custom" and radio.source == {} and radio.enabled is True
         sent = w.inter.edit_original_message.await_args.kwargs
-        assert (
-            f"<#{CHANNEL}>" in sent["content"]
-            and "<@2>" in sent["content"]
-            and "/radio station create" in sent["content"]
-        )
+        assert f"<#{CHANNEL}>" in sent["content"] and "<@2>" in sent["content"] and "painel" in sent["content"]
+        assert "view" not in sent  # nenhum seletor dentro do setup
         assert sent["allowed_mentions"].everyone is False
-        options = sent["view"].children[0].options
-        assert [o.value for o in options] == [station.id]
+        assert w.hub.manager.is_running(radio_id(2, GUILD)) and w.ports.connects == 1  # entrou na call na hora
 
     @pytest.mark.asyncio
-    async def test_picking_the_station_saves_it_and_leaves_the_radio_off(self):
-        w, station = await world_with_station()
+    async def test_the_arrival_purges_the_voice_chat_once_before_the_panel(self):
+        w, _ = await world_with_station()
+
         await run_setup(w)
-        view = w.inter.edit_original_message.await_args.kwargs["view"]
-        choice = click_of(values=[station.id])
+        await settle(w)
 
-        await view.picked(choice)
-
-        radio = await w.hub.store.get(radio_id(2, GUILD))
-        assert radio.source == {"station": station.id} and radio.enabled is False
-        assert "/radio on" in choice.edit_original_message.await_args.kwargs["content"]
+        assert w.ports.purge_on_arrival is True  # o gerente marcou a chegada para limpar o chat antes do 1º painel
 
     @pytest.mark.asyncio
-    async def test_a_server_without_stations_is_told_where_to_create_one(self):
+    async def test_a_server_without_stations_still_gets_the_radio_and_the_panel_flow(self):
         w = build()
         await premium(w)
 
         await run_setup(w)
 
-        assert "/radio station create" in reply(w)
+        assert "painel" in reply(w) and (await w.hub.store.get(radio_id(2, GUILD))).enabled is True
+
+    @pytest.mark.asyncio
+    async def test_without_manage_messages_the_configuration_stays_and_the_reply_says_why_it_did_not_start(self):
+        w = build(manage_messages=False)
+        await premium(w)
+
+        await run_setup(w)
+
+        radio = await w.hub.store.get(radio_id(2, GUILD))
+        assert radio is not None and radio.enabled is False and "Gerenciar Mensagens" in reply(w)
 
     @pytest.mark.asyncio
     async def test_running_setup_again_on_the_same_channel_edits_that_radio(self):
         w, _ = await world_with_station()
         await run_setup(w)
+        await w.hub.manager.stop_radios(w.hub.manager.running_in(GUILD, CHANNEL))
+        await w.hub.store.set_enabled(radio_id(2, GUILD), False)
         radio_cog.RADIO_COOLDOWN._cache.clear()
 
         await radio_cog.Radio.radio_setup.callback(w.cog, w.inter, channel=w.channel, bot="2", kind="live")
 
         radios = await w.hub.store.list_for_guild(GUILD)
-        assert [(r.id, r.kind, r.rev) for r in radios] == [(radio_id(2, GUILD), "live", 1)]
+        assert [(r.id, r.kind) for r in radios] == [(radio_id(2, GUILD), "live")]
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -130,8 +136,10 @@ class TestStationSelectIsOnlyForWhoOpenedIt:
     @pytest.mark.asyncio
     async def test_another_user_is_refused_and_the_radio_is_untouched(self):
         w, station = await world_with_station()
-        await run_setup(w)
-        view = w.inter.edit_original_message.await_args.kwargs["view"]
+        await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2, source={})
+        view = setup_flow.StationSelect(
+            w.cog, await w.cog.bot.pool.i18n.for_guild(w.inter.guild), radio_id(2, GUILD), 7, [station]
+        )
         stranger = click_of(user_id=99)
 
         assert await view.interaction_check(stranger) is False
@@ -141,8 +149,10 @@ class TestStationSelectIsOnlyForWhoOpenedIt:
     @pytest.mark.asyncio
     async def test_a_station_deleted_meanwhile_is_not_saved(self):
         w, station = await world_with_station()
-        await run_setup(w)
-        view = w.inter.edit_original_message.await_args.kwargs["view"]
+        await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2, source={})
+        view = setup_flow.StationSelect(
+            w.cog, await w.cog.bot.pool.i18n.for_guild(w.inter.guild), radio_id(2, GUILD), 7, [station]
+        )
 
         with pytest.raises(GenericError):
             await view.picked(click_of(values=["0" * 24]))  # um id que o select nunca ofereceu
@@ -152,8 +162,10 @@ class TestStationSelectIsOnlyForWhoOpenedIt:
     @pytest.mark.asyncio
     async def test_premium_revoked_while_the_select_was_open_stops_the_save(self):
         w, station = await world_with_station()
-        await run_setup(w)
-        view = w.inter.edit_original_message.await_args.kwargs["view"]
+        await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2, source={})
+        view = setup_flow.StationSelect(
+            w.cog, await w.cog.bot.pool.i18n.for_guild(w.inter.guild), radio_id(2, GUILD), 7, [station]
+        )
         await w.hub.store.revoke_premium(GUILD)
 
         with pytest.raises(GenericError) as refused:
@@ -169,7 +181,7 @@ class TestResetCommand:
         await premium(w)
         await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
 
-        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=w.channel)
+        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=None, bot=None)
 
         sent = w.inter.edit_original_message.await_args.kwargs
         assert "<@2>" in sent["content"] and [c.label for c in sent["view"].children] == ["Redefinir", "Cancelar"]
@@ -180,7 +192,7 @@ class TestResetCommand:
         w = build()
         await premium(w)
         await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
-        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=w.channel)
+        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=None, bot=None)
         view = w.inter.edit_original_message.await_args.kwargs["view"]
 
         cancel = click_of()
@@ -197,7 +209,7 @@ class TestResetCommand:
         w = build()
         await premium(w)
         radio = await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
-        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=w.channel)
+        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=None, bot=None)
         view = w.inter.edit_original_message.await_args.kwargs["view"]
         await w.hub.store.set_panel_message(radio.id, 1)  # alguém mexeu na rádio: o rev andou
 
@@ -212,23 +224,40 @@ class TestResetCommand:
         w = build()
         await premium(w)
         await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
-        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=w.channel)
+        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=None, bot=None)
         view = w.inter.edit_original_message.await_args.kwargs["view"]
 
         assert await view.interaction_check(click_of(user_id=99)) is False
 
         radio_cog.RADIO_COOLDOWN._cache.clear()
-        other = SimpleNamespace(id=555, mention="<#555>")
-        with pytest.raises(GenericError) as refused:
-            await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=other)
-        assert "<#555>" in str(refused.value)
+        with pytest.raises(
+            GenericError
+        ) as refused:  # um bot que não serve rádio nenhuma (digitado à mão) é recusado com o motivo
+            await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=None, bot="555")
+        assert "/radio setup" in str(refused.value)
+
+    @pytest.mark.asyncio
+    async def test_channel_alone_points_at_that_radio_and_none_resets_all(self):
+        """Dono: /radio reset aceita canal E bot, os dois opcionais; sem nenhum, todas as rádios do servidor."""
+        w = build()
+        await premium(w)
+        await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
+        await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL + 1, bot_id=3)
+
+        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=str(CHANNEL + 1), bot=None)
+        one = w.inter.edit_original_message.await_args.kwargs
+        assert [r.channel_id for r in one["view"].radios] == [CHANNEL + 1] and f"<#{CHANNEL + 1}>" in one["content"]
+
+        radio_cog.RADIO_COOLDOWN._cache.clear()
+        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=None, bot=None)
+        assert len(w.inter.edit_original_message.await_args.kwargs["view"].radios) == 2
 
     @pytest.mark.asyncio
     async def test_a_server_without_premium_can_still_ask_and_confirm_the_reset(self):
         w = build()
         await w.hub.control.load()  # sem premium
         await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
-        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=w.channel)
+        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=None, bot=None)
         view = w.inter.edit_original_message.await_args.kwargs["view"]
 
         confirm = click_of()
@@ -243,7 +272,7 @@ class TestResetCommand:
         await premium(w)
 
         with pytest.raises(GenericError):
-            await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=w.channel)
+            await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=None, bot=None)
 
 
 class TestBotAutocomplete:
@@ -254,25 +283,53 @@ class TestBotAutocomplete:
         inter = SimpleNamespace(
             guild_id=GUILD,
             author=SimpleNamespace(guild_permissions=SimpleNamespace(manage_guild=True)),
+            guild=w.inter.guild,
             bot=SimpleNamespace(pool=w.bots[0].pool if hasattr(w.bots[0], "pool") else w.cog.bot.pool),
         )
 
         assert await radio_cog.bot_autocomplete(inter, "") == {"Bot 2": "2", "Bot 3": "3"}
         assert await radio_cog.bot_autocomplete(inter, "3") == {"Bot 3": "3"}
         inter.author.guild_permissions.manage_guild = False
-        assert await radio_cog.bot_autocomplete(inter, "") == {}
+        assert list(await radio_cog.bot_autocomplete(inter, "")) == [
+            "Você precisa da permissão Gerenciar Servidor para configurar uma rádio."
+        ]
 
     @pytest.mark.asyncio
-    async def test_without_premium_nothing_is_offered(self):
+    async def test_without_premium_one_entry_says_why_instead_of_an_empty_list(self):
         w = build()
         await w.hub.control.load()
         inter = SimpleNamespace(
             guild_id=GUILD,
+            guild=w.inter.guild,
             author=SimpleNamespace(guild_permissions=SimpleNamespace(manage_guild=True)),
             bot=w.cog.bot,
         )
 
-        assert await radio_cog.bot_autocomplete(inter, "") == {}
+        offered = await radio_cog.bot_autocomplete(inter, "")
+
+        assert offered == {"Este servidor não tem premium: as rádios exigem.": radio_cog.NO_CHOICE}
+
+    @pytest.mark.asyncio
+    async def test_with_every_reserve_taken_the_entry_and_the_command_name_each_channel_and_point_to_reset(self):
+        w = build()
+        await premium(w)
+        await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
+        await configure(w.hub, guild_id=GUILD, channel_id=901, bot_id=3)
+        inter = SimpleNamespace(
+            guild_id=GUILD,
+            guild=w.inter.guild,
+            author=SimpleNamespace(guild_permissions=SimpleNamespace(manage_guild=True)),
+            bot=w.cog.bot,
+        )
+
+        offered = await radio_cog.bot_autocomplete(inter, "")
+        with pytest.raises(GenericError) as refused:
+            await run_setup(w, bot=radio_cog.NO_CHOICE)
+
+        assert list(offered.values()) == [radio_cog.NO_CHOICE] and "/radio reset" in next(iter(offered))
+        text = str(refused.value)
+        assert "Bot 2" in text and f"<#{CHANNEL}>" in text and "Bot 3" in text and "<#901>" in text
+        assert "/radio reset" in text
 
 
 def ctx_for(w, *, channel=None, manage_guild=True):
@@ -351,3 +408,190 @@ class TestPrefixSubcommands:
         assert ctx.send.await_args_list[0].kwargs["view"] is not None
         assert "/radio setup" in ctx.send.await_args_list[1].args[0]
         assert await w.hub.store.get(radio_id(2, GUILD)) is not None
+
+
+class TestPickingTheRadio:
+    """R2, R2b e R4: canal OU bot, só de rádios que existem; o reset sem bot apaga todas (com a confirmação)."""
+
+    @staticmethod
+    def inter_of(w):
+        return SimpleNamespace(
+            guild_id=GUILD,
+            guild=w.inter.guild,
+            author=SimpleNamespace(guild_permissions=SimpleNamespace(manage_guild=True)),
+            bot=w.cog.bot,
+        )
+
+    @pytest.mark.asyncio
+    async def test_the_lists_offer_only_channels_and_bots_that_have_a_radio(self):
+        w = build()
+        await premium(w)
+        await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
+        inter = self.inter_of(w)
+
+        channels = await radio_commands.channel_autocomplete(inter, "")
+        bots = await radio_commands.bot_autocomplete(inter, "")
+
+        assert list(channels.values()) == [str(CHANNEL)] and bots == {"Bot 2": "2"}  # o Bot 3 (livre) não aparece
+        assert await radio_commands.bot_autocomplete(inter, "zzz") == {}
+
+    @pytest.mark.asyncio
+    async def test_on_and_off_need_a_channel_or_a_bot(self):
+        w = build()
+        await premium(w)
+
+        for command in (radio_cog.Radio.radio_on, radio_cog.Radio.radio_off):
+            radio_cog.RADIO_COOLDOWN._cache.clear()
+            with pytest.raises(GenericError) as refused:
+                await command.callback(w.cog, w.inter, channel=None, bot=None)
+            assert "canal OU um bot" in str(refused.value)
+
+    @pytest.mark.asyncio
+    async def test_a_bot_alone_is_enough_and_a_channel_and_bot_that_disagree_are_refused(self):
+        w = build()
+        await premium(w)
+        await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
+
+        await radio_cog.Radio.radio_on.callback(w.cog, w.inter, channel=None, bot="2")
+        radio_cog.RADIO_COOLDOWN._cache.clear()
+        with pytest.raises(GenericError):
+            await radio_cog.Radio.radio_on.callback(w.cog, w.inter, channel=str(CHANNEL), bot="3")
+
+        assert w.hub.manager.is_running(radio_id(2, GUILD))
+
+    @pytest.mark.asyncio
+    async def test_reset_without_a_bot_resets_every_radio_of_the_server_after_the_confirmation(self):
+        w = build()
+        await premium(w)
+        await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
+        await configure(w.hub, guild_id=GUILD, channel_id=901, bot_id=3)
+
+        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=None, bot=None)
+        sent = w.inter.edit_original_message.await_args.kwargs
+        assert "TODAS" in sent["content"] and len(await w.hub.store.list_for_guild(GUILD)) == 2  # nada antes do botão
+
+        await sent["view"].confirmed(click_of())
+
+        assert await w.hub.store.list_for_guild(GUILD) == []
+
+    @pytest.mark.asyncio
+    async def test_reset_with_a_bot_touches_only_that_radio(self):
+        w = build()
+        await premium(w)
+        await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
+        await configure(w.hub, guild_id=GUILD, channel_id=901, bot_id=3)
+
+        await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=None, bot="3")
+        await w.inter.edit_original_message.await_args.kwargs["view"].confirmed(click_of())
+
+        assert [r.bot_id for r in await w.hub.store.list_for_guild(GUILD)] == [2]
+
+
+class TestStationChosenInThePanelAfterSetup:
+    """B4: a estação escolhida no painel de uma rádio recém-configurada (ligada, sem estação) é gravada e a rádio toca."""
+
+    @pytest.mark.asyncio
+    async def test_a_live_radio_waiting_for_its_station_saves_and_plays_the_one_picked(self):
+        from empiremuse.rules.radio_stations import Station
+        from empiremuse.utils.radio import actions
+        from empiremuse.utils.radio.actions import Actor
+        from tests.cogs.radio_config import LIVE_STATION
+
+        from tests.cogs.test_radio_ao_vivo import LivePorts
+
+        w, _ = await world_with_station()
+        live_ports = LivePorts()
+        live_ports.source = False  # sem estação ainda
+        live_ports.apply_station = AsyncMock()
+        w.hub.manager.ports_factory = lambda radio: live_ports
+        await run_setup(w, kind="live")
+        await settle(w)
+        assert w.hub.manager.runner(radio_id(2, GUILD)).phase.value == "standby"
+        live_ports.source = True  # o painel grava a estação: as portas passam a ter fonte
+        wanted = Station(LIVE_STATION, "Rock FM", "http://stream.example:8000/x", "MP3", 128, "Brasil")
+
+        saved = await actions.change_station(
+            w.hub, radio_id=radio_id(2, GUILD), station=wanted, actor=Actor(user_id=7, manage_guild=True)
+        )
+        await settle(w)
+
+        assert (
+            saved.source["station"] == LIVE_STATION
+            and w.hub.manager.runner(radio_id(2, GUILD)).phase.value == "playing"
+        )
+        assert (await w.hub.store.get(radio_id(2, GUILD))).source["station"] == LIVE_STATION
+
+    @pytest.mark.asyncio
+    async def test_the_filter_select_gives_a_waiting_radio_its_first_station_and_its_list(self):
+        """CodeRabbit #199: em espera (sem fonte), ``set_list`` recusava e o filtro do painel não definia estação nenhuma."""
+        from types import SimpleNamespace
+
+        from empiremuse.rules.radio_stations import Station
+        from empiremuse.utils.radio import panel_handlers
+        from empiremuse.utils.radio.actions import Actor
+        from tests.cogs.radio_config import LIVE_STATION
+        from tests.cogs.test_radio_ao_vivo import LivePorts
+
+        w, _ = await world_with_station()
+        live_ports = LivePorts()
+        live_ports.source = False
+        live_ports.apply_station = AsyncMock()
+        w.hub.manager.ports_factory = lambda radio: live_ports
+        await run_setup(w, kind="live")
+        await settle(w)
+        rid = radio_id(2, GUILD)
+        waiting = await w.hub.store.get(rid)
+        assert not waiting.source.get("station")
+        other = "aaaaaaaa-2222-3333-4444-555555555555"
+        station = Station(LIVE_STATION, "Rock FM", "http://stream.example:8000/x", "MP3", 128, "Brasil")
+        hits = (
+            SimpleNamespace(station=station, clickcount=9),
+            SimpleNamespace(station=SimpleNamespace(uuid=other), clickcount=1),
+        )
+        w.hub.directory.region = AsyncMock(return_value=SimpleNamespace(hits=hits))
+        w.hub.directory.by_uuid = AsyncMock(
+            return_value=None
+        )  # balde global esgotado: o filtro não pode depender desta consulta
+        w.hub.locations = SimpleNamespace(node=lambda n: SimpleNamespace(id=n))
+        live_ports.source = True
+        cog = SimpleNamespace(hub=w.hub, _authorized=lambda _i: Actor(user_id=7, manage_guild=True))
+
+        text = await panel_handlers.pick_filter(
+            cog, SimpleNamespace(author=SimpleNamespace(id=7)), lambda k, **kw: k, waiting, "br"
+        )
+        await settle(w)
+
+        saved = await w.hub.store.get(rid)
+        assert text == "radio.panel.filter_applied"
+        assert saved.source["station"] == LIVE_STATION and saved.source["list"] == [LIVE_STATION, other]
+        assert saved.filter == "br"
+
+    @pytest.mark.asyncio
+    async def test_a_failed_station_lookup_for_favorites_is_not_reported_as_no_results(self):
+        """CodeRabbit #199: ``by_uuid`` devolve ``None`` com o balde global esgotado; isso não é "sem resultados" e a rádio segue em espera."""
+        from types import SimpleNamespace
+
+        from empiremuse.utils.radio import panel_handlers
+        from empiremuse.utils.radio.actions import Actor
+        from empiremuse.utils.radio.panel_handlers import FAVORITES_ID
+        from tests.cogs.radio_config import LIVE_STATION
+        from tests.cogs.test_radio_ao_vivo import LivePorts
+
+        w, _ = await world_with_station()
+        live_ports = LivePorts()
+        live_ports.source = False
+        w.hub.manager.ports_factory = lambda radio: live_ports
+        await run_setup(w, kind="live")
+        await settle(w)
+        rid = radio_id(2, GUILD)
+        waiting = await w.hub.store.get(rid)
+        w.hub.favorites.list = AsyncMock(return_value=[SimpleNamespace(uuid=LIVE_STATION)])
+        w.hub.directory.by_uuid = AsyncMock(return_value=None)
+        cog = SimpleNamespace(hub=w.hub, _authorized=lambda _i: Actor(user_id=7, manage_guild=True))
+
+        text = await panel_handlers.pick_filter(
+            cog, SimpleNamespace(author=SimpleNamespace(id=7)), lambda k, **kw: k, waiting, FAVORITES_ID
+        )
+
+        assert text == "radio.live.not_found" != "radio.local.no_results"
+        assert not (await w.hub.store.get(rid)).source.get("station")

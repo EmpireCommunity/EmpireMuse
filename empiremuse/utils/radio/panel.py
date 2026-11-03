@@ -11,6 +11,7 @@ mais o bot que recebeu a interação. Todo texto de fora (estação, título do 
 
 from __future__ import annotations
 
+import asyncio
 import io
 from collections.abc import Callable
 from functools import cache
@@ -21,19 +22,33 @@ import disnake
 
 from empiremuse.rules.i18n import fit
 from empiremuse.rules.radio import (
+    PANEL_FAVORITE_ID,
+    PANEL_FILTER_SELECT_ID,
+    PANEL_INFO_ID,
     PANEL_MENU_ID,
     PANEL_MUTE_ID,
     PANEL_NEXT_ID,
     PANEL_PAUSE_ID,
     PANEL_PREVIOUS_ID,
+    PANEL_RANDOM_ID,
+    PANEL_RECONNECT_ID,
     PANEL_STATION_NEXT_ID,
     PANEL_STATION_PREVIOUS_ID,
+    PANEL_STATION_SELECT_ID,
     PANEL_STOP_ID,
     PANEL_VOLUME_DOWN_ID,
     PANEL_VOLUME_UP_ID,
 )
 from empiremuse.rules.text import external_text
 from empiremuse.utils.music.app_emojis import APP_EMOJIS
+from empiremuse.utils.radio.visor import QUALITY_COLORS, render_snapshot
+
+FAVORITES_FILTER = (
+    "f:fav"  # o mesmo valor de ``utils/radio/picker.FAVORITES_ID`` (importar o picker aqui criaria ciclo)
+)
+VISOR_NAME = "visor.png"  # o anexo que a imagem do embed do painel novo aponta
+QUALITY_EMOJI = {"good": "🟢", "ok": "🟡", "weak": "🟠", "failing": "🔴"}  # R5, nas opções do select
+SELECT_LIMIT = 25
 
 GENERIC_ICON = Path(__file__).resolve().parents[3] / "assets" / "radio" / "global.png"
 LOGO_NAME = "logo.png"  # o nome do anexo que a miniatura do embed aponta (attachment://logo.png)
@@ -56,7 +71,7 @@ def is_radio_panel(message: Any) -> bool:
     """A mensagem é (ou foi) um painel de rádio? Tem um botão ou select com um dos ``custom_id`` fixos do painel. Serve para achar painéis órfãos."""
     from empiremuse.rules.radio import PANEL_IDS
 
-    ours = {*PANEL_IDS, PANEL_MENU_ID}
+    ours = {*PANEL_IDS, PANEL_MENU_ID, PANEL_STATION_SELECT_ID, PANEL_FILTER_SELECT_ID}
     for row in getattr(message, "components", None) or ():
         for child in getattr(row, "children", None) or ():
             if getattr(child, "custom_id", None) in ours:
@@ -301,3 +316,211 @@ def panel_payload(
         card = station if station is not None else StationCard(name=playlist_name)
         return live_payload(tr, emojis, station=card, view=view, color=color, avatar=avatar, logo=logo)
     return custom_payload(tr, emojis, playlist_name=playlist_name, color=color, avatar=avatar, view=custom)
+
+
+# ===================================================================================== o painel novo (R6/R7): visor + 2x5 + 2 selects
+
+
+def _emoji_button(emojis: Emojis, icon: str, custom_id: str, danger: bool = False) -> disnake.ui.Button:
+    """Botão só com emoji (R6): nenhum rótulo; vermelho quando ``danger``."""
+    style = disnake.ButtonStyle.danger if danger else disnake.ButtonStyle.secondary
+    return disnake.ui.Button(emoji=emojis(icon), custom_id=custom_id, style=style)
+
+
+def _station_select(tr: Any, snapshot: Any) -> disnake.ui.Select:
+    """Select 1: as estações da lista ativa (a janela do snapshot, até 25), com o ponto de qualidade; a atual marcada."""
+    stations = tuple(getattr(snapshot, "stations", ()) or ())[:SELECT_LIMIT]
+    index = getattr(snapshot, "current_index", None)
+    current = stations[index].id if index is not None and 0 <= int(index) < len(stations) else None
+    options: list[disnake.SelectOption] = []
+    for station in stations:
+        name = external_text(station.name, NAME_LIMIT)
+        label = f"{int(station.position)}. {name}" if int(station.position or 0) >= 1 else name
+        codec = external_text(station.codec, 8).upper()
+        description = ""
+        if station.bitrate_kbps:
+            description = tr("visor.select.station.description", bitrate=int(station.bitrate_kbps), codec=codec or "—")
+        options.append(
+            disnake.SelectOption(
+                label=fit(label, 100),
+                value=str(station.id)[:100],
+                description=fit(description, 100) or None,
+                emoji=QUALITY_EMOJI.get(station.quality, QUALITY_EMOJI["good"]),
+                default=station.id == current,
+            )
+        )
+    if not options:
+        options.append(disnake.SelectOption(label=fit(tr("visor.select.station.empty.label"), 100), value="none"))
+    return disnake.ui.Select(
+        placeholder=fit(tr("visor.select.station.placeholder"), 150),
+        options=options,
+        custom_id=PANEL_STATION_SELECT_ID,
+        min_values=1,
+        max_values=1,
+        disabled=not stations,
+    )
+
+
+def filter_select_options(
+    tr: Any,
+    tree: Any,
+    current: Optional[str],
+    locale: str,
+    *,
+    favorites_total: int,
+    guild_locale: Optional[str] = None,
+    emojis: Emojis = fallback_emojis,
+) -> list[disnake.SelectOption]:
+    """As opções do select 2 (P5): ``Favoritas do servidor`` primeiro, depois ``Voltar`` (o nó pai) e o nível que se navega.
+
+    Num nó com filhos, o nível é o dos filhos; num nó final (cidade, ou estado sem cidades) é o dos irmãos, com o atual marcado;
+    sem filtro (ou em favoritas) é o topo da árvore. Nunca mais que 25 opções. ``tree`` é a ``LocationTree`` (``node``, ``children``,
+    ``label``); a árvore ausente dá só a entrada de favoritas."""
+    options = [
+        disnake.SelectOption(
+            label=fit(tr("visor.select.favorites.label", total=int(favorites_total)), 100),
+            value=FAVORITES_FILTER,
+            description=fit(tr("visor.select.favorites.description"), 100),
+            emoji=emojis("star"),
+            default=current == FAVORITES_FILTER,
+        )
+    ]
+    if tree is None:
+        return options
+    node = tree.node(current) if current and current != FAVORITES_FILTER else None
+    if node is None:
+        level, back = tree.children(None, locale, guild_locale=guild_locale), None
+    elif getattr(node, "final", False):
+        level, back = tree.children(node.parent, locale, guild_locale=guild_locale), node.parent
+    else:
+        level, back = tree.children(node.id, locale, guild_locale=guild_locale), node.parent
+    if back:
+        parent = tree.node(back)
+        if parent is not None:
+            name = external_text(tree.label(parent, locale), NAME_LIMIT)
+            options.append(
+                disnake.SelectOption(
+                    label=fit(tr("visor.select.back.label", name=name), 100),
+                    value=str(back)[:100],
+                    description=fit(tr("visor.select.back.description"), 100),
+                )
+            )
+    for option in list(level)[: SELECT_LIMIT - len(options)]:
+        options.append(
+            disnake.SelectOption(
+                label=fit(external_text(option.label, NAME_LIMIT), 100),
+                value=str(option.id)[:100],
+                description=fit(external_text(option.description, 100), 100) or None,
+                default=option.id == current,
+            )
+        )
+    return options
+
+
+ALL_TYPES_FILTER = "f:all"  # select 2 da personalizada: sem filtro de tipo (``Radio.filter = None``)
+TYPE_FILTERS: tuple[tuple[str, str, str], ...] = (  # value do select, chave do rótulo, emoji do bot
+    ("f:genre", "radio.station.kind.genre", "music_note"),
+    ("f:artists", "radio.station.kind.artists", "microphone"),
+    ("f:playlists", "radio.station.kind.playlists", "playlists"),
+)
+
+
+def type_select_options(
+    tr: Any, current: Optional[str], *, emojis: Emojis = fallback_emojis
+) -> list[disnake.SelectOption]:
+    """As opções do select 2 da rádio PERSONALIZADA: ``Todas as estações`` e um tipo por linha (gênero, artistas, playlists do
+    servidor), com o filtro atual marcado. As favoritas da personalizada ainda não existem (decisão do dono pendente)."""
+    options = [
+        disnake.SelectOption(
+            label=fit(tr("visor.select.type.all.label"), 100),
+            value=ALL_TYPES_FILTER,
+            description=fit(tr("visor.select.type.all.description"), 100),
+            default=current not in {value for value, _, _ in TYPE_FILTERS},
+        )
+    ]
+    for value, key, icon in TYPE_FILTERS:
+        options.append(
+            disnake.SelectOption(label=fit(tr(key), 100), value=value, emoji=emojis(icon), default=current == value)
+        )
+    return options
+
+
+def visor_payload(
+    tr: Any,
+    snapshot: Any,
+    *,
+    filter_options: list[disnake.SelectOption],
+    color: int = 0,
+    emojis: Emojis = fallback_emojis,
+    picture: Optional[bytes] = None,
+    custom: bool = False,
+) -> dict[str, Any]:
+    """O painel da rádio AO VIVO no desenho aprovado (P1-P8): embed só com a imagem do visor e o rodapé, duas fileiras de cinco botões
+    só com emoji e os dois selects. ``{"embeds", "components", "file"}``; quem envia põe ``AllowedMentions.none()`` e, ao editar,
+    troca o anexo (``edit_kwargs``). ``picture`` = o PNG já renderizado (``visor_payload_async`` o faz fora do laço); sem ele, renderiza aqui."""
+    muted = getattr(snapshot, "state", "live") == "muted"
+    embed = disnake.Embed(color=color)
+    embed.set_image(url=f"attachment://{VISOR_NAME}")
+    embed.set_footer(text=fit(tr("visor.footer"), 2048))
+    if custom:  # só os botões que o cog atende na personalizada: andar pelas estações do servidor, favoritar, aleatória e desligar
+        row1 = [
+            _emoji_button(emojis, "backward", PANEL_STATION_PREVIOUS_ID),
+            _emoji_button(emojis, "skip", PANEL_STATION_NEXT_ID),
+        ]
+        row2 = [
+            _emoji_button(emojis, "star", PANEL_FAVORITE_ID),
+            _emoji_button(emojis, "shuffle", PANEL_RANDOM_ID),
+            _emoji_button(emojis, "stop", PANEL_STOP_ID, danger=True),
+        ]
+    else:
+        row1 = [
+            _emoji_button(emojis, "backward", PANEL_PREVIOUS_ID),
+            _emoji_button(emojis, "volume_down", PANEL_VOLUME_DOWN_ID),
+            _emoji_button(emojis, "volume" if muted else "volume_mute", PANEL_MUTE_ID, danger=muted),
+            _emoji_button(emojis, "volume", PANEL_VOLUME_UP_ID),
+            _emoji_button(emojis, "skip", PANEL_NEXT_ID),
+        ]
+        row2 = [
+            _emoji_button(emojis, "star", PANEL_FAVORITE_ID),
+            _emoji_button(emojis, "notification", PANEL_INFO_ID),
+            _emoji_button(emojis, "refresh", PANEL_RECONNECT_ID),
+            _emoji_button(emojis, "shuffle", PANEL_RANDOM_ID),
+            _emoji_button(emojis, "stop", PANEL_STOP_ID, danger=True),
+        ]
+    options = list(filter_options)[:SELECT_LIMIT] or [disnake.SelectOption(label="—", value="none")]
+    filter_select = disnake.ui.Select(
+        placeholder=fit(tr("visor.select.type.placeholder" if custom else "visor.select.filter.placeholder"), 150),
+        options=options,
+        custom_id=PANEL_FILTER_SELECT_ID,
+        min_values=1,
+        max_values=1,
+        disabled=not filter_options,
+    )
+    if picture is None:
+        picture = render_snapshot(snapshot, tr, custom=custom)
+    return {
+        "embeds": [embed],
+        "components": [
+            disnake.ui.ActionRow(*row1),
+            disnake.ui.ActionRow(*row2),
+            disnake.ui.ActionRow(_station_select(tr, snapshot)),
+            disnake.ui.ActionRow(filter_select),
+        ],
+        "file": disnake.File(io.BytesIO(picture), filename=VISOR_NAME),
+    }
+
+
+async def visor_payload_async(
+    tr: Any,
+    snapshot: Any,
+    *,
+    filter_options: list[disnake.SelectOption],
+    color: int = 0,
+    emojis: Emojis = fallback_emojis,
+    custom: bool = False,
+) -> dict[str, Any]:
+    """``visor_payload`` com o PNG renderizado numa thread (``asyncio.to_thread``): o desenho com Pillow não segura o laço do bot."""
+    picture = await asyncio.to_thread(render_snapshot, snapshot, tr, custom=custom)
+    return visor_payload(
+        tr, snapshot, filter_options=filter_options, color=color, emojis=emojis, picture=picture, custom=custom
+    )

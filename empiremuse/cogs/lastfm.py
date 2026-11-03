@@ -11,6 +11,7 @@ from disnake.ext import commands
 from rapidfuzz import fuzz
 
 import empiremuse.wavelink as wavelink
+from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.i18n import localized
 from empiremuse.rules.text import format_int
 from empiremuse.rules.title_match import title_matches
@@ -97,14 +98,16 @@ class LastFMView(disnake.ui.View):
 
     async def interaction_check(self, interaction: disnake.MessageInteraction) -> bool:
         if interaction.user.id != self.ctx.author.id:
-            await interaction.send("Você não pode usar esse botão", ephemeral=True)
+            await interaction.send(
+                await guild_text(self.ctx.bot, interaction.guild, "legacy.lastfm.not_your_button"), ephemeral=True
+            )
             return False
         return True
 
     async def scrobble_enable(self, interaction: disnake.MessageInteraction):
         if retry_after := self.cooldown_scrobble_btn.get_bucket(interaction).update_rate_limit():
             await interaction.send(
-                f"**Você terá que aguardar {(rta := int(retry_after))} segundo{'s'[: rta ^ 1]} para ativar/desativar o scrobble/registro.**",
+                await guild_text(self.ctx.bot, interaction.guild, "legacy.lastfm.cooldown", count=int(retry_after)),
                 ephemeral=True,
             )
             return
@@ -134,12 +137,17 @@ class LastFMView(disnake.ui.View):
             self.last_timestamp = int((disnake.utils.utcnow() + datetime.timedelta(minutes=5)).timestamp())
 
         await interaction.send(
-            f'### {md_link("Clique aqui", self.auth_url, code=False)} para vincular sua conta do last.fm (na página clique em "allow")\n\n'
-            f"`O link expira em` <t:{self.last_timestamp}:R> `(Caso esteja expirado, clique no botão novamente).`\n\n"
-            f'`Atenção: Não mostre o link do "clique aqui" pra ninguem e nem envie em locais '
-            f"públicos, pois esse link pode conceder acesso a sua conta do last.fm`\n\n"
-            "`Caso já tenha autorizado a aplicação você deve aguardar até 20 segundos para a "
-            "mensagem acima atualizar confirmando o processo.`",
+            await guild_text(
+                self.ctx.bot,
+                interaction.guild,
+                "legacy.lastfm.auth_prompt",
+                link=md_link(
+                    await guild_text(self.ctx.bot, interaction.guild, "legacy.lastfm.click_here"),
+                    self.auth_url,
+                    code=False,
+                ),
+                ts=self.last_timestamp,
+            ),
             ephemeral=True,
             delete_after=300,
         )
@@ -159,7 +167,6 @@ class LastFmCog(commands.Cog):
     @commands.command(
         name="lastfm",
         aliases=["lfm"],
-        description="Vincular sua conta do last.fm para registrar as músicas via scrobble.",
         cooldown=lastfm_cd,
         max_concurrency=lastfm_mc,
     )
@@ -179,7 +186,9 @@ class LastFmCog(commands.Cog):
         try:
             if not inter.permissions.embed_links:
                 raise GenericError(
-                    f"**Você não possui permissão de inserir links/anexos no canal <#{inter.channel_id}>**"
+                    await guild_text(
+                        self.bot, inter.guild, "legacy.lastfm.no_embed_permission", channel=inter.channel_id
+                    )
                 )
         except AttributeError:
             pass
@@ -362,10 +371,12 @@ class LastFmCog(commands.Cog):
         else:
             embeds = [
                 disnake.Embed(
-                    description=f"**Vincule (ou crie) uma conta no {md_link('last.fm', 'https://www.last.fm/home', code=False)} para registrar "
-                    "todas as músicas que você ouvir por aqui no seu perfil do last.fm para obter sugestões de "
-                    "músicas/artistas/álbuns e ter uma estatística geral das músicas que você ouviu alem de ter "
-                    "acesso a uma comunidade incrível da plataforma.**",
+                    description=await guild_text(
+                        self.bot,
+                        inter.guild,
+                        "legacy.lastfm.link_account",
+                        link=md_link("last.fm", "https://www.last.fm/home", code=False),
+                    ),
                     color=embed_color,
                 ).set_thumbnail(url=asset_url("lastfm_default_twitter_avatar.png"))
             ]

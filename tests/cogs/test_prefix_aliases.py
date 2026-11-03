@@ -23,7 +23,7 @@ PUBLIC_ALIASES = {
     "controller": {"ctl", "controle"},
     "customskin": {"cskin", "cs", "setskin"},
     "adddj": {"adj"},
-    "favmanager": {"favs", "favoritos", "itg", "spl"},
+    "favmanager": {"favs", "favoritos", "itg"},
     "invite": {"convidar"},
     "lastfm": {"lfm"},
     "listenalong": {"la"},

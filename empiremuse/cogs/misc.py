@@ -495,7 +495,6 @@ class Misc(commands.Cog):
     @commands.command(
         name="about",
         aliases=["sobre", "info", "botinfo"],
-        description="Exibir informações sobre mim.",
         cooldown=about_cd,
     )
     async def about_legacy(self, ctx: CustomContext):
@@ -856,7 +855,6 @@ class Misc(commands.Cog):
     @commands.command(
         name="invite",
         aliases=["convidar"],
-        description="Exibir meu link de convite para você me adicionar no seu servidor.",
     )
     async def invite_legacy(self, ctx):
         await self.invite.callback(self=self, inter=ctx)

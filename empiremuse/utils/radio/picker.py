@@ -18,6 +18,7 @@ from empiremuse.rules.i18n import Translator, fit
 from empiremuse.rules.radio import LIST_MAX, VOLUME_DEFAULT
 from empiremuse.rules.radio_geo import MAX_OPTIONS
 from empiremuse.rules.radio_stations import Station, valid_uuid
+from empiremuse.rules.radio_quality import quality_dot, station_quality
 from empiremuse.rules.text import external_text
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.radio.directory import Hit
@@ -41,13 +42,16 @@ FAVORITES_ID = "f:fav"  # a primeira opção do topo: as estações favoritas do
 Apply = Callable[[disnake.MessageInteraction, Station, tuple[str, ...]], Awaitable[str]]
 
 
-def station_option(hub: RadioHub, tr: Translator, station: Station) -> disnake.SelectOption:
-    """Uma estação no select: nome (R-11), codec/taxa/país, e ⛔ se o health check a marcou indisponível."""
+def station_option(
+    hub: RadioHub, tr: Translator, station: Station, check_ok: bool | None = None
+) -> disnake.SelectOption:
+    """Uma estação no select: o pontinho de qualidade (R5), o nome (R-11) e codec/taxa/país; indisponível pela nossa saúde diz isso na descrição."""
     technical = f"{station.codec} {station.bitrate}k" if station.bitrate else station.codec
     detail = " · ".join(part for part in (technical, station.country) if part)
-    label = external_text(station.name, NAME_LIMIT)
-    if hub.health.unavailable(station.uuid):
-        label = f"⛔ {label}"
+    unavailable = hub.health.unavailable(station.uuid)
+    dot = quality_dot(station_quality(station.bitrate, check_ok=check_ok, unavailable=unavailable))
+    label = f"{dot} {external_text(station.name, NAME_LIMIT)}"
+    if unavailable:
         detail = f"{tr('radio.live.unavailable')} · {detail}"
     return disnake.SelectOption(label=fit(label, LABEL_LIMIT), value=station.uuid, description=fit(detail, LABEL_LIMIT))
 
@@ -177,7 +181,7 @@ class RadioPicker(disnake.ui.View):
         self._offered = {hit.station.uuid for hit in shown}
         select = disnake.ui.Select(
             placeholder=fit(self.tr("radio.local.pick_station"), 150),
-            options=[station_option(self.hub, self.tr, hit.station) for hit in shown],
+            options=[station_option(self.hub, self.tr, hit.station, hit.check_ok) for hit in shown],
             min_values=1,
             max_values=1,
         )

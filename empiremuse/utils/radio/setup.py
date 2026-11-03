@@ -138,6 +138,12 @@ class RadioSetup:
                     channels.append((channel.id, str(channel.name), kind))
         return SetupOptions(bots=bots, channels=tuple(channels))
 
+    async def busy_reserves(self, guild_id: int) -> tuple[tuple[str, int], ...]:
+        """``(nome do reserva, canal)`` de cada rádio configurada: quem ocupa os reservas (para dizer ao usuário por que não há livre)."""
+        names = {bot.user.id: str(bot.user.name) for bot in self._bots()}
+        radios = await self.hub.store.list_for_guild(int(guild_id))
+        return tuple((names.get(radio.bot_id, str(radio.bot_id)), radio.channel_id) for radio in radios)
+
     # ------------------------------------------------------------------ as checagens
 
     async def check_actor(self, guild_id: int, actor_id: int) -> None:

@@ -37,6 +37,14 @@ class FakePorts:
         self.skips = 0
         self.panels = 0
         self.panel_error: Exception | None = None
+        self.in_call = True
+        self.source = True
+
+    def in_channel(self):
+        return self.in_call
+
+    def has_source(self):
+        return self.source
 
     def now(self):
         return self.t
@@ -143,6 +151,81 @@ class TestStart:
         assert runner.phase is Phase.OFF and states[-1] is None and ports.stops == 1
 
 
+class TestReconnectNow:
+    @pytest.mark.asyncio
+    async def test_the_panel_button_only_acts_while_the_radio_waits_for_the_backoff(self):
+        ports = FakePorts()
+        woken = []
+        ports.wake_retry = lambda: woken.append(True)
+        ports.connect_results.extend([False])
+        runner, ports, _ = make(ports)
+        answers = []
+        original = ports.sleep
+
+        async def spy(seconds):
+            answers.append(runner.reconnect_now())  # durante a espera do recuo
+            await original(seconds)
+
+        ports.sleep = spy
+        await runner.start()
+
+        assert answers[0] is True and woken == [True]
+        assert runner.reconnect_now() is False  # tocando: nada a encurtar
+
+
+class TestStandby:
+    """R1: a rádio recém-configurada entra na call e espera a estação (o painel escolhe), sem tocar nem recuar."""
+
+    @pytest.mark.asyncio
+    async def test_without_a_station_it_connects_posts_the_panel_and_waits(self):
+        ports = FakePorts()
+        ports.source = False
+        runner, ports, states = make(ports)
+
+        await runner.start()
+
+        assert runner.phase is Phase.STANDBY and ports.connects == 1 and ports.panels == 1
+        assert ports.played == [] and states[-1] == RadioState()
+
+    @pytest.mark.asyncio
+    async def test_the_tick_does_not_pause_resume_or_play_while_waiting(self):
+        ports = FakePorts(listeners=0)
+        ports.source = False
+        runner, ports, _ = make(ports)
+        await runner.start()
+
+        for _ in range(3):
+            ports.t += 60
+            await runner.tick()
+
+        assert runner.phase is Phase.STANDBY and ports.played == []
+
+    @pytest.mark.asyncio
+    async def test_choosing_the_station_plays_at_once_without_the_backoff(self):
+        ports = FakePorts()
+        ports.source = False
+        runner, ports, _ = make(ports)
+        await runner.start()
+        ports.source = True
+        sleeps = len(ports.sleeps)
+
+        await runner.leave_standby()
+
+        assert runner.phase is Phase.PLAYING and ports.played == [(0, 0)] and len(ports.sleeps) == sleeps
+
+    @pytest.mark.asyncio
+    async def test_kicked_while_waiting_it_comes_back_too(self):
+        ports = FakePorts()
+        ports.source = False
+        runner, ports, _ = make(ports)
+        await runner.start()
+
+        ports.in_call = False
+        runner.lost_channel()
+
+        assert runner.lost_channel() is True
+
+
 class TestPresence:
     @pytest.mark.asyncio
     async def test_it_pauses_only_after_thirty_seconds_without_a_listener(self):
@@ -226,6 +309,36 @@ class TestReconnect:
         await runner.on_disconnect()
 
         assert ports.sleeps[0] >= 4.0 and ports.stops == 1 and runner.phase is Phase.PLAYING
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("listeners", [1, 0])  # tocando e esperando ouvinte: nos dois a rádio volta sozinha
+    async def test_when_the_bot_is_taken_out_of_the_call_the_watchdog_brings_it_back_without_any_event(self, listeners):
+        """B3: o dono desconectou o bot e o evento do Discord não chegou (ou foi descartado): o vigia do passo percebe e religa pelo recuo."""
+        runner, ports, _ = make(FakePorts(listeners=listeners))
+        await runner.start()
+        connects = ports.connects
+
+        ports.in_call = False
+        assert runner.lost_channel() is False  # o 1º passo fora da call só anota (mudança de canal em curso não conta)
+        assert runner.lost_channel() is True  # o 2º seguido religa
+        ports.in_call = True  # o Discord o recoloca na volta
+        await runner.on_disconnect()
+
+        assert ports.connects == connects + 1 and runner.phase in (Phase.PLAYING, Phase.PAUSED_PRESENCE)
+        assert runner.lost_channel() is False
+
+    @pytest.mark.asyncio
+    async def test_being_back_in_the_call_between_two_steps_clears_the_count(self):
+        runner, ports, _ = make()
+        await runner.start()
+
+        ports.in_call = False
+        runner.lost_channel()
+        ports.in_call = True
+        runner.lost_channel()
+        ports.in_call = False
+
+        assert runner.lost_channel() is False  # recomeçou do zero
 
     @pytest.mark.asyncio
     async def test_the_jitter_stays_within_twenty_percent(self):

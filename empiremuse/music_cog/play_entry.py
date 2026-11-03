@@ -6,6 +6,7 @@ from typing import Union
 import disnake
 from disnake.ext import commands
 
+from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.i18n import localized
 from empiremuse.utils.branding import asset_url
 from empiremuse.utils.client import BotCore
@@ -54,7 +55,16 @@ class PlayEntryMixin:
     async def message_play(self, inter: disnake.MessageCommandInteraction):
         if not inter.target.content:
             emb = disnake.Embed(
-                description=f"Não há texto na {md_link('mensagem', inter.target.jump_url, code=False)} selecionada...",
+                description=await guild_text(
+                    self.bot,
+                    inter.guild,
+                    "legacy.play.no_message_text",
+                    link=md_link(
+                        await guild_text(self.bot, inter.guild, "legacy.common.message_word"),
+                        inter.target.jump_url,
+                        code=False,
+                    ),
+                ),
                 color=disnake.Colour.red(),
             )
             await inter.send(embed=emb, ephemeral=True)
@@ -218,8 +228,7 @@ class PlayEntryMixin:
         except KeyError:
             logger.debug("Player debug test 20: %s | %s", bot.user, self.bot.user)
             raise GenericError(
-                f"**O player do bot {bot.user.mention} foi finalizado antes de conectar no canal de voz "
-                f"(ou o player não foi inicializado)...\nPor via das dúvidas tente novamente.**"
+                await guild_text(self.bot, me.guild, "legacy.play.player_finished", bot=bot.user.mention)
             )
 
         can_connect(channel, me.guild, check_other_bots_in_vc=check_other_bots_in_vc, bot=bot)
@@ -265,11 +274,8 @@ class PlayEntryMixin:
             if not await check_deafen(me):
                 await text_channel.send(
                     embed=disnake.Embed(
-                        title="Aviso:",
-                        description="Para manter sua privacidade e me ajudar a economizar "
-                        "recursos, recomendo desativar meu áudio do canal clicando "
-                        "com botão direito sobre mim e em seguida marcar: desativar "
-                        "áudio no servidor.",
+                        title=await guild_text(self.bot, me.guild, "legacy.common.warning"),
+                        description=await guild_text(self.bot, me.guild, "legacy.play.privacy_deafen"),
                         color=self.bot.get_color(me),
                     ).set_image(url=asset_url("tutorial_server_deafen_guide.png")),
                     delete_after=20,
@@ -307,16 +313,14 @@ class PlayEntryMixin:
     @commands.max_concurrency(1, commands.BucketType.member)
     @pool_command(
         name="addposition",
-        description="Adicionar música em uma posição especifica da fila.",
         aliases=["adp", "addpos"],
         check_player=False,
         cooldown=play_cd,
         max_concurrency=play_mc,
-        usage="{prefix}{cmd} [posição(Nº)] [nome|link]\nEx: {prefix}{cmd} 2 sekai - burn me down",
     )
     async def addpos_legacy(self, ctx: CustomContext, position: int, *, query: str):
         if position < 1:
-            raise GenericError("**Número da posição da fila tem que ser 1 ou superior.**")
+            raise GenericError(await guild_text(self.bot, ctx.guild, "legacy.play.position_min"))
 
         await self.play.callback(
             self=self,
@@ -331,7 +335,7 @@ class PlayEntryMixin:
 
     stage_flags = CommandArgparse()
 
-    stage_flags.add_argument("query", nargs="*", help="nome ou link da música")
+    stage_flags.add_argument("query", nargs="*", help="legacy.flag.query")
 
     stage_flags.add_argument(
         "-position",
@@ -339,40 +343,38 @@ class PlayEntryMixin:
         "-p",
         type=int,
         default=0,
-        help="Colocar a música em uma posição específica da fila (será ignorado caso use -next etc).\nEx: -p 10",
+        help="legacy.flag.position_play",
     )
 
     stage_flags.add_argument(
         "-next",
         "-proximo",
         action="store_true",
-        help="Adicionar a música/playlist no topo da fila (equivalente ao: -pos 1)",
+        help="legacy.flag.next",
     )
 
     stage_flags.add_argument(
         "-reverse",
         "-r",
         action="store_true",
-        help="Inverter a ordem das músicas adicionadas (efetivo apenas ao adicionar playlist).",
+        help="legacy.flag.reverse",
     )
 
     stage_flags.add_argument(
         "-shuffle",
         "-sl",
         action="store_true",
-        help="Misturar as músicas adicionadas (efetivo apenas ao adicionar playlist).",
+        help="legacy.flag.shuffle",
     )
 
-    stage_flags.add_argument(
-        "-select", "-s", action="store_true", help="Escolher a música entre os resultados encontrados."
-    )
+    stage_flags.add_argument("-select", "-s", action="store_true", help="legacy.flag.select")
 
     stage_flags.add_argument(
         "-mix",
         "-rec",
         "-recommended",
         action="store_true",
-        help="Adicionar/tocar músicas recomendadas com o nome do artsta - música informado.",
+        help="legacy.flag.mix",
     )
 
     stage_flags.add_argument(
@@ -381,12 +383,12 @@ class PlayEntryMixin:
         "-n",
         "-f",
         action="store_true",
-        help="Tocar a música adicionada imediatamente (efetivo apenas se houver uma música tocando atualmente.)",
+        help="legacy.flag.force",
     )
 
-    stage_flags.add_argument("-server", "-sv", type=str, default=None, help="Usar um servidor de música específico.")
+    stage_flags.add_argument("-server", "-sv", type=str, default=None, help="legacy.flag.server")
 
-    stage_flags.add_argument("-selectbot", "-sb", action="store_true", help="Selecionar um bot disponível manualmente.")
+    stage_flags.add_argument("-selectbot", "-sb", action="store_true", help="legacy.flag.selectbot")
 
     @can_send_message_check()
     @commands.bot_has_guild_permissions(send_messages=True)
@@ -394,13 +396,11 @@ class PlayEntryMixin:
     @commands.max_concurrency(1, commands.BucketType.member)
     @pool_command(
         name="play",
-        description="Tocar música em um canal de voz.",
         aliases=["p", "tocar"],
         check_player=False,
         cooldown=play_cd,
         max_concurrency=play_mc,
         extras={"flags": stage_flags},
-        usage="{prefix}{cmd} [nome|link]\nEx: {prefix}{cmd} sekai - burn me down",
     )
     async def play_legacy(self, ctx: CustomContext, *, flags: str = ""):
         args, unknown = ctx.command.extras["flags"].parse_known_args(flags.split())
@@ -423,12 +423,10 @@ class PlayEntryMixin:
     @check_voice()
     @pool_command(
         name="search",
-        description="Pesquisar por músicas e escolher uma entre os resultados para tocar.",
         aliases=["sc", "buscar"],
         check_player=False,
         cooldown=play_cd,
         max_concurrency=play_mc,
-        usage="{prefix}{cmd} [nome]\nEx: {prefix}{cmd} sekai - burn me down",
     )
     async def search_legacy(self, ctx: CustomContext, *, query):
         await self.play.callback(
@@ -519,7 +517,14 @@ class PlayEntryMixin:
             if count < 1:
                 return tracks
             if len(player.queue) >= count and not (await bot.is_owner(user)):
-                raise GenericError(f"**A fila está cheia ({self.bot.config['QUEUE_MAX_ENTRIES']} músicas).**")
+                raise GenericError(
+                    await guild_text(
+                        bot,
+                        bot.get_guild(guild_id),
+                        "legacy.play.queue_full",
+                        count=self.bot.config["QUEUE_MAX_ENTRIES"],
+                    )
+                )
 
         if tracks:
             if isinstance(tracks, list):

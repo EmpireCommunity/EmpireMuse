@@ -354,10 +354,15 @@ def _he_exception_embed(self, event, track):
     )
     error_code = _he_log_exception(self, event, track)
     embed = disnake.Embed(
-        description=f"**Falha ao reproduzir música{' (parcial)' if isinstance(track, PartialTrack) else ''}:\n{md_link(track.title, track.uri or track.search_uri, code=False)}**\n"
-        f"**Motivo:** {lavalink_text(event.message)}\n"
-        f"**Nível:** {md_code(event.severity)}\n"
-        f"**Servidor de música:** {node_info}{code_suffix(error_code)}",
+        description=self.tr(
+            "legacy.playback.failure",
+            partial=self.tr("legacy.playback.partial") if isinstance(track, PartialTrack) else "",
+            link=md_link(track.title, track.uri or track.search_uri, code=False),
+            reason=lavalink_text(event.message),
+            severity=md_code(event.severity),
+            node=node_info,
+            code=code_suffix(error_code, self.tr),
+        ),
         color=disnake.Colour.red(),
     )
     return embed, error_code
@@ -365,7 +370,7 @@ def _he_exception_embed(self, event, track):
 
 def _he_log_retry_while_locked(self, event, track, error_code) -> None:
     self.set_command_log(
-        text=f"A reprodução da música falhou (tentando tocar novamente): {md_link(track.title, track.uri or track.search_uri, limit=15)}. **Motivo:** `{plain_snippet(event.message, 50)}`{code_suffix(error_code)}",
+        text=f"A reprodução da música falhou (tentando tocar novamente): {md_link(track.title, track.uri or track.search_uri, limit=15)}. **Motivo:** `{plain_snippet(event.message, 50)}`{code_suffix(error_code, self.tr)}",
         controller=True,
     )
     self.update = True
@@ -373,7 +378,7 @@ def _he_log_retry_while_locked(self, event, track, error_code) -> None:
 
 def _he_mirror_not_found_embed(self, track):
     return disnake.Embed(
-        description=f"`Ignorando a música` {md_link(track.title, track.url)}`. Pois não houve resultados em outras plataformas de música.`",
+        description=self.tr("legacy.playback.mirror_not_found", link=md_link(track.title, track.url)),
         color=self.bot.get_color(self.guild.me),
     ).set_thumbnail(track.thumb)
 

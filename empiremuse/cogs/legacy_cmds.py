@@ -322,15 +322,13 @@ class Owner(commands.Cog):
         )
 
     updatelavalink_flags = CommandArgparse()
-    updatelavalink_flags.add_argument(
-        "-yml", "--yml", action="store_true", help="Fazer download do arquivo application.yml."
-    )
+    updatelavalink_flags.add_argument("-yml", "--yml", action="store_true", help="legacy.flag.yml")
     updatelavalink_flags.add_argument(
         "-resetids",
         "-reset",
         "--resetids",
         "--reset",
-        help="Resetar info de ids das músicas (útil pra evitar problemas com certas mudanças do lavaplayer/lavalink).",
+        help="legacy.flag.resetids",
         action="store_true",
     )
 
@@ -872,8 +870,6 @@ class Owner(commands.Cog):
     @commands.cooldown(1, 10, commands.BucketType.guild)
     @commands.command(
         aliases=["prefix", "mudarprefixo"],
-        description="Alterar o prefixo do servidor",
-        usage="{prefix}{cmd} [prefixo]\nEx: {prefix}{cmd} >>",
     )
     async def setprefix(self, ctx: CustomContext, prefix: str):
         prefix = validate_prefix(prefix)
@@ -899,7 +895,7 @@ class Owner(commands.Cog):
 
     @commands.has_guild_permissions(manage_guild=True)
     @commands.cooldown(1, 10, commands.BucketType.guild)
-    @commands.command(description="Resetar o prefixo do servidor (Usar o prefixo padrão do bot)")
+    @commands.command()
     async def resetprefix(self, ctx: CustomContext):
         guild_data = await self.bot.get_global_data(ctx.guild.id, db_name=DBModel.guilds)
 
@@ -922,9 +918,6 @@ class Owner(commands.Cog):
     @commands.cooldown(1, 10, commands.BucketType.guild)
     @commands.command(
         aliases=["myprefix", "uprefix", "meuprefixo"],
-        description="Alterar seu prefixo de usuário (prefixo que irei responder a você independente "
-        "do prefixo configurado no servidor).",
-        usage="{prefix}{cmd} [prefixo]\nEx: {prefix}{cmd} >>",
     )
     async def setuserprefix(self, ctx: CustomContext, prefix: str):
         prefix = validate_prefix(prefix)
@@ -949,7 +942,7 @@ class Owner(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.cooldown(1, 10, commands.BucketType.guild)
-    @commands.command(description="Remover seu prefixo de usuário")
+    @commands.command()
     async def resetuserprefix(self, ctx: CustomContext):
         user_data = await self.bot.get_global_data(ctx.author.id, db_name=DBModel.users)
 
@@ -972,7 +965,6 @@ class Owner(commands.Cog):
         aliases=["guildprefix", "sgp", "gp"],
         hidden=True,
         description="Setar um prefixo manualmente pra um server com o id informado (útil para botlists)",
-        usage="{prefix}{cmd} [server id] <prefixo>\nEx: {prefix}{cmd} 1155223334455667788 >>\nNota: Use o comando sem especificar um prefix para removê-lo.",
     )
     async def setguildprefix(self, ctx: CustomContext, server_id: int, prefix: str = None):
         if not 17 < len(str(server_id)) < 24:
@@ -1271,7 +1263,7 @@ class Owner(commands.Cog):
 
     @check_voice()
     @commands.cooldown(1, 15, commands.BucketType.guild)
-    @commands.command(description="inicializar um player no servidor.", aliases=["spawn", "smn"])
+    @commands.command(aliases=["spawn", "smn"])
     async def summon(self, ctx: CustomContext):
         try:
             ctx.bot.music.players[ctx.guild.id]  # type ignore

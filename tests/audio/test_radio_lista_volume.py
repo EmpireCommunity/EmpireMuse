@@ -57,10 +57,11 @@ class TestSource:
 
         assert source == {"station": A, "reserve": None, "list": [A, B, C], "volume": 60}
 
-    def test_the_default_volume_and_a_one_station_list_are_not_stored(self):
+    def test_the_default_volume_is_not_stored_but_a_one_station_list_is(self):
+        """Filtro com uma estação só: o seletor precisa dela (anterior e próxima é que pedem 2, em ``has_list``)."""
         source = check_source("live", {**self.BASE, "list": [A], "volume": 100})
 
-        assert source == {"station": A, "reserve": None}
+        assert source == {"station": A, "reserve": None, "list": [A]}
 
     @pytest.mark.parametrize(
         "extra",

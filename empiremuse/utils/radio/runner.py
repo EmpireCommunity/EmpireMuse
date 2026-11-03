@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -39,6 +40,9 @@ RECONNECT_CONCURRENCY = 2
 PRESENCE_CONCURRENCY = 3
 SWEEP_CONCURRENCY = 2
 STABLE_AFTER_S = 120.0  # conectada por tanto tempo, a próxima queda recomeça o recuo do início
+OUT_OF_CALL_TICKS = (
+    2  # passos seguidos fora da call até o vigia religar (a rádio volta pelo recuo, sem depender do evento do Discord)
+)
 VERDICT_EVERY_S = 30.0  # reconfere premium/canal/permissão de quem está tocando ou pausada
 
 
@@ -50,6 +54,9 @@ class Phase(StrEnum):
     PAUSED_OWNER = "paused_owner"  # pausa geral do dono
     PAUSED_ADMIN = "paused_admin"  # botão "pausar" do painel da call: nada retoma sozinho
     RECONNECTING = "reconnecting"
+    STANDBY = (
+        "standby"  # na call, com o painel, esperando alguém escolher a estação (o ``/radio setup`` não pede estação)
+    )
 
 
 class Allowed(StrEnum):
@@ -79,6 +86,8 @@ class RadioPorts(Protocol):
     def paused_all(self) -> bool: ...
     async def turn_off(self, reason: Allowed) -> None: ...
     def durations_ms(self) -> list[int]: ...
+    def in_channel(self) -> bool: ...
+    def has_source(self) -> bool: ...
 
 
 @dataclass
@@ -124,6 +133,11 @@ class RadioRunner:
         self.admin_paused = False
         self._last_skip: float | None = None
         self._tick_lock = asyncio.Lock()
+        self._out_ticks = 0
+        self._retry_deadline: float | None = (
+            None  # quando o recuo atual acaba (relógio do ``ports.now``): o painel mostra "tentando de novo em N s"
+        )
+        self.on_air_since: float | None = None  # relógio de parede de quando a rádio começou a tocar ("no ar há N min")
         self._last_verdict: float | None = None
 
     @property
@@ -132,7 +146,17 @@ class RadioRunner:
 
     # ------------------------------------------------------------------ estado
 
+    def retry_seconds(self) -> int | None:
+        """Quanto falta para a próxima tentativa (só com a rádio fora do ar, esperando o recuo); senão ``None``."""
+        if self.phase not in (Phase.RECONNECTING, Phase.CONNECTING) or self._retry_deadline is None:
+            return None
+        return max(0, math.ceil(self._retry_deadline - self.ports.now()))
+
     def _set(self, phase: Phase) -> None:
+        if phase is Phase.PLAYING and self.phase is not Phase.PLAYING:
+            self.on_air_since = self.ports.wall()
+        elif phase in (Phase.OFF, Phase.RECONNECTING, Phase.CONNECTING, Phase.STANDBY):
+            self.on_air_since = None
         self.phase = phase
         if phase is Phase.OFF:
             self._publish(None)
@@ -223,7 +247,10 @@ class RadioRunner:
     async def retry(self) -> None:
         """O recuo (5, 10, 20, 40, 60 s...): espera, reconfere premium/canal/permissão e tenta de novo. Nunca há volta imediata."""
         while not self._stopped and self.phase is not Phase.OFF:
-            await self.ports.sleep(self._backoff())
+            delay = self._backoff()
+            self._retry_deadline = self.ports.now() + delay
+            await self.ports.sleep(delay)
+            self._retry_deadline = None
             self.attempt += 1
             if self._stopped:
                 return
@@ -245,6 +272,31 @@ class RadioRunner:
     async def _after_failed_attempt(self) -> None:
         """Gancho: a rádio ao vivo conta o ciclo de tentativas e troca para a reserva."""
 
+    def lost_channel(self) -> bool:
+        """Pelo segundo passo seguido o bot não está na call enquanto a rádio devia estar nela (alguém o desconectou e nenhum evento chegou):
+        quem chama (o gerente) religa pelo recuo. Dois passos seguidos, para não confundir com uma mudança de canal em curso."""
+        connected = self.phase in (
+            Phase.PLAYING,
+            Phase.PAUSED_PRESENCE,
+            Phase.PAUSED_OWNER,
+            Phase.PAUSED_ADMIN,
+            Phase.STANDBY,
+        )
+        in_channel = getattr(self.ports, "in_channel", None)  # portas sem a leitura (dublês) contam como "na call"
+        if self._stopped or not connected or in_channel is None or in_channel():
+            self._out_ticks = 0
+            return False
+        self._out_ticks += 1
+        return self._out_ticks >= OUT_OF_CALL_TICKS
+
+    def reconnect_now(self) -> bool:
+        """Fora do ar e esperando o recuo: acorda a espera e tenta já (painel). ``False`` se não há espera a encurtar."""
+        wake = getattr(self.ports, "wake_retry", None)
+        if self.phase not in (Phase.RECONNECTING, Phase.CONNECTING) or self._retry_deadline is None or wake is None:
+            return False
+        wake()
+        return True
+
     async def on_disconnect(self) -> None:
         """Queda, mudança de canal ou desconexão (inclusive por membro): sempre pelo recuo, nunca volta imediata."""
         if self._stopped or self.phase in (Phase.OFF, Phase.RECONNECTING, Phase.CONNECTING):
@@ -258,7 +310,23 @@ class RadioRunner:
 
     # ------------------------------------------------------------------ depois de conectar
 
+    def _has_source(self) -> bool:
+        has_source = getattr(self.ports, "has_source", None)  # portas sem a leitura (dublês) contam como "tem estação"
+        return True if has_source is None else bool(has_source())
+
+    async def leave_standby(self) -> None:
+        """Escolheram a estação enquanto a rádio esperava: toca já (o bot está na call), sem esperar o recuo."""
+        if self._stopped or self.phase is not Phase.STANDBY:
+            return
+        self.attempt = 0
+        self._set(Phase.CONNECTING)
+        if not await self._attempt():
+            await self.retry()
+
     async def _after_connected(self) -> None:
+        if not self._has_source():
+            self._set(Phase.STANDBY)
+            return
         if self.ports.paused_all():
             self._set(Phase.PAUSED_OWNER)
             return
@@ -334,6 +402,8 @@ class RadioRunner:
             if verdict is not None and verdict is not Allowed.YES:
                 await self._shutdown(verdict)
                 return
+        if self.phase is Phase.STANDBY:
+            return  # esperando a estação: nada a pausar nem retomar
         if self.ports.paused_all():
             if self.phase is not Phase.PAUSED_OWNER:
                 await self.ports.stop_stream()

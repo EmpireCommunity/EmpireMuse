@@ -16,19 +16,31 @@ intacto). Como obra derivada, o EmpireMuse também é distribuído sob a GPL-2.0
 Nosso agradecimento a **zRitsu** e a todas as pessoas que contribuíram com o
 MuseHeart-MusicBot upstream. Sem esse trabalho, o EmpireMuse não existiria.
 
+## Dados e serviços das Radios
+
+- **Last.fm**: os gêneros e os artistas das estações personalizadas vêm da API do [Last.fm](https://www.last.fm/). As telas das rádios mostram "Powered by Last.fm", com link.
+- **Dados geográficos**: as cidades e os estados do seletor de local das rádios ao vivo vêm do [GeoNames](https://www.geonames.org/), licença [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Dados de localização: GeoNames, CC BY 4.0.
+- **Radio Browser**: o diretório das estações ao vivo é o [Radio Browser](https://www.radio-browser.info/), de domínio público.
+
 ## Ícones
 
-Só 48 dos emojis de aplicação em `assets/emojis/` usam ícones da [Flaticon](https://www.flaticon.com/), licença gratuita com
+Só 50 dos emojis de aplicação em `assets/emojis/` usam ícones da [Flaticon](https://www.flaticon.com/), licença gratuita com
 atribuição obrigatória (kits `media-player-icons` e `web-ui-icons`, de mnauliady): `add_music`, `arrow_left`, `arrow_right`, `backward`, `cancel`, `comment`, `config`, `disc`, `drag`, `fast_backward`, `gear`,
 `headset`, `history`, `like`, `lock`, `loved`, `lyrics`, `microphone`, `music_note`, `music_notes`, `music_queue`, `notification`,
 `pause`, `pinned`, `play`, `play_source`, `playlist_add`, `playlist_play`, `playlists`, `playpause`, `plus`, `record`, `refresh`,
 `repeat`, `repeat_all`, `replay`, `search`, `shuffle`, `skip`, `sound_spectrum`, `speaker`, `stagechannel`, `star`, `stop`, `tools`,
-`user`, `voice_event` e `volume`.
+`user`, `voice_event`, `volume`, `volume_down` e `volume_mute`.
 
 <a href="https://www.flaticon.com/free-icons/user-interface" title="user interface icons">User interface icons created by mnauliady - Flaticon</a>
 
 Os demais emojis (logotipos de plataformas como YouTube, Spotify, Deezer, SoundCloud, Twitch e Tidal, e os outros que não foram
 trocados) não vêm desse kit e não fazem parte dessa licença.
+
+## Fontes
+
+- **Inter** (`assets/fonts/Inter-{Regular,Medium,SemiBold,Bold}.ttf`), de The Inter Project Authors, sob a SIL Open Font License 1.1
+  (`assets/fonts/LICENSE-Inter.txt`): a tipografia do visor do painel de rádio (imagem gerada pelo bot). A fonte não é vendida
+  sozinha nem renomeada, como a licença exige.
 
 ## Dados geográficos
 

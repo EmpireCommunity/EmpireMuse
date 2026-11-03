@@ -90,6 +90,10 @@ class RadioControl(_Document):
     def on_change(self, listener: Callable[[bool], None]) -> None:
         self._listeners.append(listener)
 
+    def forget(self) -> None:
+        """O documento foi apagado (``hardreset``): sem documento = não pausado."""
+        self._paused, self._loaded = False, True
+
     async def load(self) -> bool:
         """Lê o valor do banco (na subida e quando alguém quiser conferir). Sem documento = não pausado."""
         doc = await self._read()
@@ -127,6 +131,10 @@ class BotRoles(_Document):
     @property
     def radio_only(self) -> tuple[str, ...]:
         return tuple(sorted(self._radio_only))
+
+    def forget(self) -> None:
+        """O documento foi apagado (``hardreset``): nenhum bot é só-rádio."""
+        self._radio_only = frozenset()
 
     async def load(self) -> tuple[str, ...]:
         doc = await self._read()

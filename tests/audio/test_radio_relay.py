@@ -660,6 +660,11 @@ class TestConsumerCap:
             token = r.register(station.url, codec="MP3", bitrate=128)
             _first = await self.connect(r, token)  # loadtracks
             await asyncio.wait_for(_first[0].read(10), 3)
+            r.expect_flow(
+                token
+            )  # daqui em diante é o play: duas conexões livres (o Lavalink pode sondar e depois tocar)
+            probe = await self.connect(r, token)
+            await asyncio.wait_for(probe[0].read(10), 3)
             play_reader, play_writer = await self.connect(r, token)  # play: assume
             assert (await asyncio.wait_for(play_reader.read(12), 3)).startswith(b"HTTP/1.0 200")
 
@@ -775,6 +780,26 @@ class TestFlowAndReach:
             assert await waiter is True and r.reached(token) is True
 
     @pytest.mark.asyncio
+    async def test_audio_from_a_connection_claimed_before_expect_flow_never_counts_as_the_play(self):
+        """CodeRabbit #199: ``expect_flow`` zerava ``served`` e o loadtracks ainda aberto (serial 1..3) passava em ``serial > flow_after``."""
+        from unittest.mock import MagicMock
+
+        async with relay() as r:
+            token = r.register("http://radio.example:8000/live", codec="MP3", bitrate=128)
+            session = r._sessions[token]
+            session.served = 3
+            r._claim(session, MagicMock())  # a saída do loadtracks, ainda aberta
+            old = session.claim_id
+            session.task = None  # ``_claim`` guarda a tarefa do teste; a revogação do fim não pode cancelá-la
+
+            r.expect_flow(token)
+            assert not old > session.flow_after, "o áudio do loadtracks não pode marcar flowing"
+
+            r._claim(session, MagicMock())  # o take-over do play
+            assert session.claim_id > session.flow_after
+            session.task = None
+
+    @pytest.mark.asyncio
     async def test_a_token_that_never_gets_audio_times_out_and_is_not_playing(self):
         async with relay() as r:
             token = r.register("http://radio.example:8000/live", codec="MP3", bitrate=128)
@@ -810,6 +835,7 @@ class TestFlowAndReach:
             relay() as r,
         ):
             token = r.register(station.url, codec="MP3", bitrate=128)
+            r._sessions[token].playing = True
             r._sessions[token].served = 2
             r._sessions[token].exhausted = True  # os dois consumidores já foram e o token esgotou a cota de reconexões
 
@@ -891,7 +917,11 @@ class TestReconnectPolicy:
     @staticmethod
     async def sequential(r, token, clock, count, *, gap=2.0):
         heads = []
-        for _ in range(count):
+        for index in range(count):
+            if index == 1 and not r._sessions[token].playing:
+                r.expect_flow(
+                    token
+                )  # depois do loadtracks (a 1ª conexão) vem o play: a política de reconexão passa a valer
             head, _ = await fetch_to_eof(r, token)
             heads.append(head[:12])
             assert r.sessions() == 0  # nunca fica saída aberta para trás
@@ -904,16 +934,16 @@ class TestReconnectPolicy:
         async with Station(sends(HEAD, MP3 + b"data")) as station, relay(clock=clock) as r:
             token = r.register(station.url, codec="MP3", bitrate=128)
 
-            heads = await self.sequential(r, token, clock, 2 + 6)
+            heads = await self.sequential(r, token, clock, 3 + 6)
 
-        assert heads == [b"HTTP/1.0 200"] * 8
+        assert heads == [b"HTTP/1.0 200"] * 9
 
     @pytest.mark.asyncio
     async def test_the_seventh_reconnection_gets_409_and_the_token_stays_exhausted_after_ten_minutes(self):
         clock = FakeClock()
         async with Station(sends(HEAD, MP3 + b"data")) as station, relay(clock=clock) as r:
             token = r.register(station.url, codec="MP3", bitrate=128)
-            await self.sequential(r, token, clock, 8)
+            await self.sequential(r, token, clock, 9)
 
             seventh, _ = await fetch_to_eof(r, token)
             clock.now += 700  # a janela inteira passou
@@ -928,7 +958,7 @@ class TestReconnectPolicy:
         clock = FakeClock()
         async with Station(sends(HEAD, MP3 + b"data")) as station, relay(clock=clock) as r:
             token = r.register(station.url, codec="MP3", bitrate=128)
-            await self.sequential(r, token, clock, 2)
+            await self.sequential(r, token, clock, 3)
             third, _ = await fetch_to_eof(r, token)  # a 1ª reconexão
             clock.now += 0.5
             fourth, _ = await fetch_to_eof(r, token)
@@ -940,7 +970,7 @@ class TestReconnectPolicy:
         clock = FakeClock()
         async with Station(sends(HEAD, MP3 + b"data")) as station, relay(clock=clock) as r:
             token = r.register(station.url, codec="MP3", bitrate=128)
-            await self.sequential(r, token, clock, 2)
+            await self.sequential(r, token, clock, 3)
             await fetch_to_eof(r, token)  # a 1ª reconexão aceita
             refusals = [(await fetch_to_eof(r, token))[0][:12] for _ in range(10)]  # todas a menos de 1 s: 409
             clock.now += 2
@@ -955,7 +985,7 @@ class TestReconnectPolicy:
         clock = FakeClock()
         async with Station(sends(HEAD, MP3 + b"data")) as station, relay(clock=clock) as r:
             token = r.register(station.url, codec="MP3", bitrate=128)
-            await self.sequential(r, token, clock, 2 + 5)  # 5 reconexões
+            await self.sequential(r, token, clock, 3 + 5)  # 5 reconexões
             clock.now += 601
             heads = await self.sequential(r, token, clock, 6)  # mais 6: a janela esvaziou
 
@@ -973,6 +1003,9 @@ class TestReconnectPolicy:
             token = r.register(station.url, codec="MP3", bitrate=128)
             load = await full_connect(r, token)
             await asyncio.wait_for(load[0].read(10), 3)
+            r.expect_flow(token)
+            probe = await full_connect(r, token)
+            await asyncio.wait_for(probe[0].read(10), 3)
             play = await full_connect(r, token)
             assert (await asyncio.wait_for(play[0].read(12), 3)).startswith(b"HTTP/1.0 200")
             started = asyncio.get_running_loop().time()
@@ -1039,6 +1072,7 @@ class TestReconnectPolicy:
         clock = FakeClock()
         async with relay(clock=clock) as r:
             token = r.register("http://radio.example:8000/live", codec="MP3", bitrate=128)
+            r._sessions[token].playing = True
             r._sessions[token].served = 2
             r._sessions[token].exhausted = True
             with caplog.at_level("INFO"):
@@ -1096,6 +1130,46 @@ class TestFlowOfThePlayNotTheLoad:
 
             await fetch(r, token)  # o play
             assert await r.wait_flowing(token, 1) is True
+
+    @pytest.mark.asyncio
+    async def test_the_three_quick_connections_of_the_real_loadtracks_do_not_starve_the_play(self):
+        """B1 (medido num Lavalink 4 real): o ``loadtracks`` abre o endereço 3x em ~0,4 s; o play que vinha logo depois levava 409 ``too_soon``."""
+        head = b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n"
+        async with Station(sends(head, MP3 + b"A" * 100)) as station, relay() as r:
+            token = r.register(station.url, codec="MP3", bitrate=128)
+            for _ in range(3):
+                await fetch(r, token)
+
+            r.expect_flow(token)
+            reply, _ = await fetch(r, token)  # o play, sem intervalo
+
+            assert not reply.startswith(b"HTTP/1.0 409") and r.limited(token) is False
+            assert await r.wait_flowing(token, 1) is True
+
+    @pytest.mark.asyncio
+    async def test_a_slow_close_of_the_old_output_does_not_make_the_play_take_a_409(self, monkeypatch):
+        """B1 com ouvinte (log do Lavalink do Litmus): o play que toma a saída do loadtracks levava 409 exatos 2 s depois, porque a tarefa cancelada
+        ainda esperava o fecho (lento) da conexão com a estação. O relay agora derruba a conexão na hora."""
+        from empiremuse.utils.radio.stream_client import StreamResponse
+
+        async def slow_close(self):
+            await asyncio.sleep(30)
+
+        monkeypatch.setattr(StreamResponse, "close", slow_close)
+        head = b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n"
+        async with Station(sends(head, MP3 + b"A" * 100, keep_open=True)) as station, relay() as r:
+            token = r.register(station.url, codec="MP3", bitrate=128)
+            load = await asyncio.open_connection("127.0.0.1", r.port)
+            load[1].write(f"GET /r/{token} HTTP/1.0\r\nHost: x\r\n\r\n".encode())
+            await load[1].drain()
+            await asyncio.wait_for(load[0].read(12), 3)  # o loadtracks está lendo: a saída está aberta
+            r.expect_flow(token)
+
+            started = asyncio.get_running_loop().time()
+            reply, _ = await fetch(r, token)  # o play toma a saída
+
+            assert reply.startswith(b"HTTP/1.0 200") and asyncio.get_running_loop().time() - started < 2
+            load[1].close()
 
     @pytest.mark.asyncio
     async def test_a_revoke_wakes_the_wait_at_once(self):

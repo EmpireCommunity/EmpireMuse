@@ -65,6 +65,12 @@ class StreamResponse:
     writer: asyncio.StreamWriter
     host: str
 
+    def abort(self) -> None:
+        """Derruba a conexão NA HORA (sem esperar o fecho educado do TLS, que numa estação lenta leva segundos): para o fluxo que o relay abandona."""
+        transport = self.writer.transport
+        if transport is not None:
+            transport.abort()
+
     async def close(self) -> None:
         self.writer.close()
         try:

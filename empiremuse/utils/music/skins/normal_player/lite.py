@@ -39,12 +39,14 @@ class LiteSkin:
             embed.description += f"<@{player.current.requester}>"
         else:
             try:
-                embed.description = md_bracketed(md_link("Recomendada", player.current.info["extra"]["related"]["uri"]))
+                embed.description = md_bracketed(
+                    md_link(player.tr("player.recommended"), player.current.info["extra"]["related"]["uri"])
+                )
             except Exception:
-                embed.description = "`[Recomendada]`"
+                embed.description = f"`[{player.tr('player.recommended')}]`"
 
         if player.current.playlist_name:
-            embed.description += f"\n> -# {app_emoji(player.bot, 'playlists')} **┃ Playlist:** {md_link(player.current.playlist_name, player.current.playlist_url)}"
+            embed.description += f"\n> -# {app_emoji(player.bot, 'playlists')} **┃ {player.tr('player.playlist_prefix')}** {md_link(player.current.playlist_name, player.current.playlist_url)}"
 
         embed.set_thumbnail(player.current.thumb)
 

@@ -38,8 +38,13 @@ CHAT_INVALID = "radio_chat_invalid"
 CHAT_UNKNOWN_FIELD = "radio_chat_unknown_field"
 ENABLED_INVALID = "radio_enabled_invalid"
 REV_INVALID = "radio_rev_invalid"
+SKIN_INVALID = "radio_skin_invalid"
+FILTER_INVALID = "radio_filter_invalid"
+SKINS = ("black", "white")
+DEFAULT_SKIN = SKINS[0]
 
 _SNOWFLAKE = re.compile(r"[0-9]{1,20}")
+_FILTER_ID = re.compile(r"[A-Za-z0-9_:.\-]{1,48}")
 _RADIO_ID = re.compile(r"([0-9]{1,20}):([0-9]{1,20})")
 _CUSTOM_STATION_ID = re.compile(r"[0-9a-f]{24}")
 _STATION_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
@@ -61,6 +66,10 @@ class Radio:
     panel_message_id: int | None = None
     clock_started_at: float | None = (
         None  # época (``time.time()``) em que a programação virtual ligou: sobrevive ao reinício (Q3)
+    )
+    skin: str = "black"  # o visual do painel (R7): ``SKINS``
+    filter: str | None = (
+        None  # o ÚLTIMO filtro de local aplicado (id do nó da árvore; ``f:fav`` = as favoritas): o painel o reabre já expandido (R6)
     )
     extra: dict[str, Any] = field(default_factory=dict, compare=False)
 
@@ -175,7 +184,7 @@ def check_source(kind: str, raw: object) -> dict[str, Any] | RuleError:
             or not all(isinstance(u, str) and _STATION_UUID.fullmatch(u) for u in stations)
         ):
             return RuleError(SOURCE_INVALID, "list")
-        if len(stations) >= 2:  # uma lista de uma estação só não tem por onde andar: nem se guarda
+        if stations:  # uma estação só ainda é a lista do seletor; anterior e próxima exigem 2 (``has_list``)
             source["list"] = list(stations)
     volume = raw.get("volume")
     if volume is not None:
@@ -237,6 +246,12 @@ def check_radio(raw: object) -> Radio | RuleError:
         isinstance(clock, (int, float)) and not isinstance(clock, bool) and 0 < clock < 4_000_000_000 and clock == clock
     ):
         return RuleError(REV_INVALID, "clock_started_at")
+    skin = raw.get("skin", DEFAULT_SKIN)
+    if skin not in SKINS:
+        return RuleError(SKIN_INVALID, "skin")
+    last_filter = raw.get("filter")
+    if last_filter is not None and not (isinstance(last_filter, str) and _FILTER_ID.fullmatch(last_filter)):
+        return RuleError(FILTER_INVALID, "filter")
     return Radio(
         id=radio_id(bot_id, guild_id),
         bot_id=bot_id,
@@ -249,6 +264,8 @@ def check_radio(raw: object) -> Radio | RuleError:
         rev=rev,
         panel_message_id=panel_id,
         clock_started_at=None if clock is None else float(clock),
+        skin=skin,
+        filter=last_filter,
     )
 
 
@@ -267,6 +284,8 @@ def to_document(radio: Radio, *, updated_by: str = "") -> dict[str, Any]:
         "enabled": radio.enabled,
         "panel_message_id": None if radio.panel_message_id is None else str(radio.panel_message_id),
         "clock_started_at": radio.clock_started_at,
+        "skin": radio.skin,
+        "filter": radio.filter,
         "rev": radio.rev,
         "updated_by": str(updated_by)[:40],
     }
@@ -285,6 +304,14 @@ PANEL_STATION_PREVIOUS_ID = (
     "radio_panel_station_previous"  # painel da PERSONALIZADA: a estação anterior do servidor (por nome)
 )
 PANEL_STATION_NEXT_ID = "radio_panel_station_next"  # idem, a seguinte
+PANEL_RECONNECT_ID = "radio_panel_reconnect"  # painel AO VIVO: tenta já, sem esperar o recuo
+PANEL_RANDOM_ID = "radio_panel_random"  # painel AO VIVO: uma estação aleatória da lista do filtro
+PANEL_STATION_SELECT_ID = "radio_panel_station_select"  # select 1: as estações do último filtro aplicado
+PANEL_FILTER_SELECT_ID = (
+    "radio_panel_filter_select"  # select 2: trocar o filtro (região › país › estado › cidade, ou ``f:fav``)
+)
+PANEL_FAVORITE_ID = "radio_panel_favorite"  # painel AO VIVO: favorita a estação no ar nas favoritas do servidor
+PANEL_INFO_ID = "radio_panel_info"  # painel AO VIVO: informações da estação no ar
 PANEL_MENU_ID = "radio_panel_menu"  # o select "Mais opções" do painel AO VIVO
 PANEL_IDS = (
     PANEL_PAUSE_ID,
@@ -296,6 +323,10 @@ PANEL_IDS = (
     PANEL_VOLUME_UP_ID,
     PANEL_STATION_PREVIOUS_ID,
     PANEL_STATION_NEXT_ID,
+    PANEL_RECONNECT_ID,
+    PANEL_RANDOM_ID,
+    PANEL_FAVORITE_ID,
+    PANEL_INFO_ID,
 )  # fixos: NADA de rádio, bot ou servidor dentro do ``custom_id``
 MENU_VALUES = ("stations", "favorite", "volume", "info", "stop")  # o que o select "Mais opções" oferece
 SKIP_COOLDOWN_S = 5.0  # a "próxima" não vira rajada de comandos ao Lavalink
@@ -315,6 +346,10 @@ def panel_action(custom_id: object) -> str | None:
             PANEL_VOLUME_UP_ID: "volume_up",
             PANEL_STATION_PREVIOUS_ID: "station_previous",
             PANEL_STATION_NEXT_ID: "station_next",
+            PANEL_RECONNECT_ID: "reconnect",
+            PANEL_RANDOM_ID: "random",
+            PANEL_FAVORITE_ID: "favorite",
+            PANEL_INFO_ID: "info",
         }.get(custom_id)
         if isinstance(custom_id, str)
         else None

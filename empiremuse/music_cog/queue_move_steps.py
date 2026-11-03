@@ -8,6 +8,7 @@ from typing import Union, Optional
 import disnake
 from disnake.ext import commands
 
+from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.utils.music.checks import (
     check_voice,
     has_player,
@@ -42,7 +43,7 @@ from empiremuse.music_cog.shared import (
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
 
 
-def _qm_filters(self, req):
+async def _qm_filters(self, req):
     """Valida os argumentos e monta a lista de filtros."""
     absent_members = req.absent_members
     duplicates = req.duplicates
@@ -57,7 +58,15 @@ def _qm_filters(self, req):
     user = req.user
 
     if min_duration and max_duration:
-        raise GenericError("Você deve escolher apenas uma das opções: **duração_abaixo_de** ou **duração_acima_de**.")
+        raise GenericError(
+            await guild_text(
+                inter.bot,
+                inter.guild,
+                "legacy.queue.one_duration_option",
+                below="duração_abaixo_de",
+                above="duração_acima_de",
+            )
+        )
 
     try:
         bot = inter.music_bot
@@ -67,7 +76,7 @@ def _qm_filters(self, req):
     player: LavalinkPlayer = bot.music.players[inter.guild_id]
 
     if not player.queue and not player.queue_autoplay:
-        raise GenericError("**Não há musicas na fila.**")
+        raise GenericError(await guild_text(bot, inter.guild, "legacy.queue.empty"))
 
     filters = []
     final_filters = set()
@@ -100,7 +109,7 @@ def _qm_filters(self, req):
         filters.append("duplicates")
 
     if not filters and not range_start and not range_end:
-        raise GenericError("**Você deve usar pelo menos uma opção pra mover**")
+        raise GenericError(await guild_text(bot, inter.guild, "legacy.queue.move_needs_option"))
 
     req.bot = bot
     req.filters = filters
@@ -116,7 +125,7 @@ def _qm_filters(self, req):
     req.txt = txt
 
 
-def _qm_range(self, req):
+async def _qm_range(self, req):
     """Resolve o player e o intervalo de posições da fila."""
     amount = req.amount
     bot = req.bot
@@ -141,17 +150,21 @@ def _qm_range(self, req):
 
     if range_start > 0 and range_end > 0:
         if range_start >= range_end:
-            raise GenericError("**A posição final deve ser maior que a posição inicial!**")
+            raise GenericError(await guild_text(bot, inter.guild, "legacy.queue.range_end_after_start"))
 
         song_list = list(player.queue)[range_start - 1 : -(range_end - 1)]
-        txt.append(f"**Posição inicial da fila:** `{range_start}`\n**Posição final da fila:** `{range_end}`")
+        txt.append(
+            await guild_text(bot, inter.guild, "legacy.queue.mv_range_start", n=range_start)
+            + "\n"
+            + await guild_text(bot, inter.guild, "legacy.queue.mv_range_end", n=range_end)
+        )
 
     elif range_start > 0:
         song_list = list(player.queue)[range_start - 1 :]
-        txt.append(f"**Posição inicial da fila:** `{range_start}`")
+        txt.append(await guild_text(bot, inter.guild, "legacy.queue.mv_range_start", n=range_start))
     elif range_end > 0:
         song_list = list(player.queue)[: -(range_end - 1)]
-        txt.append(f"**Posição final da fila:** `{range_end}`")
+        txt.append(await guild_text(bot, inter.guild, "legacy.queue.mv_range_end", n=range_end))
     elif song_name and has_id and filters == ["song_name"] and amount is None:
         indexes = queue_track_index(inter, bot, song_name, match_count=1, case_sensitive=case_sensitive)
         for index, track in reversed(indexes):
@@ -273,7 +286,7 @@ def _qm_select(self, req):
     req.t = t
 
 
-def _qm_filter_texts(self, req):
+async def _qm_filter_texts(self, req):
     """Monta o texto dos filtros usados."""
     final_filters = req.final_filters
     max_duration = req.max_duration
@@ -283,52 +296,53 @@ def _qm_filter_texts(self, req):
     song_name = req.song_name
     txt = req.txt
     user = req.user
+    tr = await req.bot.pool.i18n.for_guild(req.inter.guild)
 
     try:
         final_filters.remove("song_name")
-        txt.append(f"**Inclui nome:** {md_code(song_name)}")
+        txt.append(tr("legacy.queue.mv_name", value=md_code(song_name)))
     except Exception:
         pass
 
     try:
         final_filters.remove("song_author")
-        txt.append(f"**Inclui nome no uploader/artista:** {md_code(song_author)}")
+        txt.append(tr("legacy.queue.mv_author", value=md_code(song_author)))
     except Exception:
         pass
 
     try:
         final_filters.remove("user")
-        txt.append(f"**Pedido pelo membro:** {user.mention}")
+        txt.append(tr("legacy.queue.mv_user", value=user.mention))
     except Exception:
         pass
 
     try:
         final_filters.remove("playlist")
-        txt.append(f"**Playlist:** {' | '.join(playlist_hyperlink)}")
+        txt.append(tr("legacy.queue.mv_playlist", value=" | ".join(playlist_hyperlink)))
     except Exception:
         pass
 
     try:
         final_filters.remove("time_below")
-        txt.append(f"**Com duração inicial/igual:** `{time_format(min_duration)}`")
+        txt.append(tr("legacy.queue.mv_time_below", value=time_format(min_duration)))
     except Exception:
         pass
 
     try:
         final_filters.remove("time_above")
-        txt.append(f"**Com duração máxima:** `{time_format(max_duration)}`")
+        txt.append(tr("legacy.queue.mv_time_above", value=time_format(max_duration)))
     except Exception:
         pass
 
     try:
         final_filters.remove("duplicates")
-        txt.append(f"**Músicas duplicadas**")
+        txt.append(tr("legacy.queue.mv_duplicates"))
     except Exception:
         pass
 
     try:
         final_filters.remove("absent_members")
-        txt.append("`Músicas pedidas por membros que saíram do canal.`")
+        txt.append(tr("legacy.queue.mv_absent"))
     except Exception:
         pass
 
@@ -341,19 +355,30 @@ async def _qm_move(self, req):
     t = req.t
     tracklist = req.tracklist
     txt = req.txt
+    tr = await req.bot.pool.i18n.for_guild(inter.guild)
 
     components = [
         disnake.ui.Button(
-            emoji=app_emoji(inter.bot, "play"), label="Tocar agora", custom_id=PlayerControls.embed_forceplay
+            emoji=app_emoji(inter.bot, "play"),
+            label=tr("legacy.queue.mv_play_now"),
+            custom_id=PlayerControls.embed_forceplay,
         ),
     ]
 
     if indexes:
         track = tracklist[0]
         txt = [
-            f"moveu a música {md_link(track.title, track.uri or track.search_uri, limit=25)} para a posição **[{position}]** da fila.",
-            f"↪️ **⠂{inter.author.mention} moveu uma música para a posição [{position}]:**\n"
-            f"╰{md_link(track.title, track.uri or track.search_uri, limit=43)}",
+            tr(
+                "legacy.queue.mv_one_log",
+                track=md_link(track.title, track.uri or track.search_uri, limit=25),
+                position=position,
+            ),
+            tr(
+                "legacy.queue.mv_one_msg",
+                user=inter.author.mention,
+                position=position,
+                track=md_link(track.title, track.uri or track.search_uri, limit=43),
+            ),
         ]
 
         await self.interaction_message(inter, txt, emoji="↪️", components=components)
@@ -364,17 +389,18 @@ async def _qm_move(self, req):
         moved_tracks_txt = moved_tracks if moved_tracks == 1 else f"[{position}-{position + moved_tracks - 1}]"
 
         msg_txt = (
-            f"### ↪️ ⠂{inter.author.mention} moveu {moved_tracks} música{'s'[: moved_tracks ^ 1]} para a posição {moved_tracks_txt} da fila:\n"
+            tr("legacy.queue.mv_many_msg", count=moved_tracks, user=inter.author.mention, range=moved_tracks_txt)
+            + "\n"
             + "\n".join(f"`{position + n}.` {md_link(t.title, t.uri, limit=45)}" for n, t in enumerate(tracklist[:7]))
         )
 
         if (track_extra := (moved_tracks - 7)) > 0:
-            msg_txt += f"\n`e mais {track_extra} música{'s'[: track_extra ^ 1]}.`"
+            msg_txt += "\n" + tr("legacy.queue.mv_more", count=track_extra)
 
-        msg_txt += f"\n### ✅ ⠂Filtro{(t := 's'[: len(txt) ^ 1])} usado{t}:\n" + "\n".join(txt)
+        msg_txt += "\n" + tr("legacy.queue.mv_filters", count=len(txt)) + "\n" + "\n".join(txt)
 
         txt = [
-            f"moveu {moved_tracks} música{'s'[: moved_tracks ^ 1]} para a posição **[{position}]** da fila.",
+            tr("legacy.queue.mv_many_log", count=moved_tracks, position=position),
             msg_txt,
         ]
 

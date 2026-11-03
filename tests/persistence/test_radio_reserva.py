@@ -152,14 +152,14 @@ class TestListAndVolumeInTheSource:
         assert moved.source["station"] == THIRD
 
     @pytest.mark.asyncio
-    async def test_set_station_with_none_or_a_one_station_list_drops_it(self, world):
+    async def test_set_station_with_none_drops_the_list_and_a_one_station_list_is_kept(self, world):
         created = await live(world)
         listed = await world.store.set_station(created.id, MAIN, expected_rev=created.rev, station_list=[MAIN, RESERVE])
 
         cleared = await world.store.set_station(created.id, RESERVE, expected_rev=listed.rev, station_list=None)
         short = await world.store.set_station(created.id, MAIN, expected_rev=cleared.rev, station_list=[MAIN])
 
-        assert "list" not in cleared.source and "list" not in short.source
+        assert "list" not in cleared.source and short.source["list"] == [MAIN]
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(

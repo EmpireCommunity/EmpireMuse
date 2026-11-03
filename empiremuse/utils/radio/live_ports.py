@@ -12,6 +12,7 @@ import logging
 from contextlib import suppress
 
 import disnake
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Optional
 
 from empiremuse.rules.radio import VOLUME_DEFAULT, Radio
@@ -29,10 +30,16 @@ PANEL_EDIT_INTERVAL_S = 15.0
 FLOW_WAIT_S = 25.0  # o primeiro áudio tem de chegar ao Lavalink neste prazo, senão a rádio NÃO está tocando (abrir a estação leva até 20 s)
 
 
+class LocalNodeUnavailable(RuntimeError):
+    """O nó ``LOCAL`` ainda não existe (na subida a rádio tenta antes do Lavalink local registrar): o recuo tenta de novo; o log mostra este tipo, não um ``RuntimeError`` mudo."""
+
+
 class LiveRadioPorts(DiscordRadioPorts):
     def __init__(self, pool: BotPool, radio: Radio) -> None:
         super().__init__(pool, radio)
-        self.primary: str = radio.source["station"]
+        self.primary: str = radio.source.get(
+            "station", ""
+        )  # vazia: a rádio espera a estação (``/radio setup`` não pede)
         self.reserve: Optional[str] = radio.source.get("reserve")
         self.active: str = self.primary
         self._token: Optional[str] = None
@@ -176,7 +183,7 @@ class LiveRadioPorts(DiscordRadioPorts):
     def _local_node(bot: Any) -> Any:
         node = bot.music.nodes.get("LOCAL")
         if node is None:
-            raise RuntimeError("sem nó local")  # o relay só atende o Lavalink deste host
+            raise LocalNodeUnavailable("sem nó local")  # o relay só atende o Lavalink deste host
         return node
 
     async def _pick_node(self, bot: Any) -> Any:
@@ -217,6 +224,7 @@ class LiveRadioPorts(DiscordRadioPorts):
 
     async def apply_station(self, radio: Radio) -> None:
         """A estação principal mudou (``RadioStore.set_station``): as portas passam a tocar a nova, sem título velho, e o painel é refeito já."""
+        self.radio = radio
         self.primary = radio.source["station"]
         self.reserve = radio.source.get("reserve")
         self.station_list = tuple(radio.source.get("list") or ())
@@ -225,6 +233,10 @@ class LiveRadioPorts(DiscordRadioPorts):
         self._view, self._shown, self._last_edit = LiveView(), None, None
         await self._release()
         self.update_panel(self._view)
+
+    def sync_list(self, uuids: Sequence[str]) -> None:
+        """A lista do filtro recém-aplicado vale já para o seletor e para anterior/próxima (sem reiniciar o fluxo)."""
+        self.station_list = tuple(uuids)
 
     def refresh_panel(self) -> None:
         """Refaz o painel na próxima janela (o select "Mais opções" volta ao título depois de uma escolha)."""

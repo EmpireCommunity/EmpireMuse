@@ -6,6 +6,7 @@ import disnake
 from disnake.ext import commands
 
 import empiremuse.wavelink as wavelink
+from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.rules.errors import RuleError
 from empiremuse.rules.favorites import save_track
 from empiremuse.utils.client import BotCore
@@ -62,7 +63,9 @@ class PlayerControllerMixin:
     async def player_controller(self, interaction: disnake.MessageInteraction, control: str, **kwargs):
         req = ControllerState(interaction=interaction, control=control)
         if not self.bot.bot_ready or not self.bot.is_ready():
-            await req.interaction.send("Ainda estou inicializando...", ephemeral=True)
+            await req.interaction.send(
+                await guild_text(self.bot, req.interaction.guild, "legacy.controller.starting"), ephemeral=True
+            )
             return
 
         if not req.interaction.guild_id:
@@ -121,7 +124,9 @@ class PlayerControllerMixin:
 
             if req.control == PlayerControls.fav_manager:
                 if str(req.interaction.user.id) not in req.interaction.message.content:
-                    await req.interaction.send("Você não pode interagir aqui!", ephemeral=True)
+                    await req.interaction.send(
+                        await guild_text(self.bot, req.interaction.guild, "legacy.controller.not_yours"), ephemeral=True
+                    )
                     return
 
                 req.cmd = self.bot.get_slash_command("fav_manager")
@@ -130,7 +135,9 @@ class PlayerControllerMixin:
 
             if req.control in (PlayerControls.add_song, PlayerControls.enqueue_fav):
                 if not req.interaction.user.voice:
-                    raise GenericError("**Você deve entrar em um canal de voz para usar esse botão.**")
+                    raise GenericError(
+                        await guild_text(self.bot, req.interaction.guild, "legacy.controller.join_voice_button")
+                    )
 
                 req.user_data = await self.bot.get_global_data(id_=req.interaction.user.id, db_name=DBModel.users)
 
@@ -158,7 +165,11 @@ class PlayerControllerMixin:
                 return
 
             if not req.interaction.author.voice or req.interaction.author.voice.channel != req.vc:
-                raise GenericError(f"Você deve estar no canal <#{req.vc.id}> para usar os botões do player.")
+                raise GenericError(
+                    await guild_text(
+                        self.bot, req.interaction.guild, "legacy.controller.join_channel", channel=req.vc.id
+                    )
+                )
 
             if req.control == PlayerControls.miniqueue:
                 await is_dj().predicate(req.interaction)
@@ -176,7 +187,7 @@ class PlayerControllerMixin:
                     await self.player_interaction_concurrency.acquire(req.interaction)
                 except commands.MaxConcurrencyReached:
                     raise GenericError(
-                        '**Você tem uma interação em aberto!**\n`Se for uma mensagem oculta, evite clicar em "ignorar".`'
+                        await guild_text(self.bot, req.interaction.guild, "legacy.controller.open_interaction")
                     )
 
             if req.control == PlayerControls.add_favorite:

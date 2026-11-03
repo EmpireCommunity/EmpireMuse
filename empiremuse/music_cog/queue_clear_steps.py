@@ -8,6 +8,7 @@ from typing import Union, Optional
 import disnake
 from disnake.ext import commands
 
+from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.utils.music.checks import (
     check_voice,
     has_player,
@@ -41,12 +42,13 @@ from empiremuse.music_cog.shared import (
 )
 
 
-def _qc_filters(self, req):
+async def _qc_filters(self, req):
     """Valida os argumentos e monta a lista de filtros."""
     absent_members = req.absent_members
     amount = req.amount
     duplicates = req.duplicates
     inter = req.inter
+
     max_duration = req.max_duration
     min_duration = req.min_duration
     playlist = req.playlist
@@ -55,7 +57,15 @@ def _qc_filters(self, req):
     user = req.user
 
     if min_duration and max_duration:
-        raise GenericError("Você deve escolher apenas uma das opções: **duração_abaixo_de** ou **duração_acima_de**.")
+        raise GenericError(
+            await guild_text(
+                req.inter.bot,
+                req.inter.guild,
+                "legacy.queue.one_duration_option",
+                below="duração_abaixo_de",
+                above="duração_acima_de",
+            )
+        )
 
     try:
         bot = inter.music_bot
@@ -65,7 +75,7 @@ def _qc_filters(self, req):
     player: LavalinkPlayer = bot.music.players[inter.guild_id]
 
     if not player.queue:
-        raise GenericError("**Não há musicas na fila.**")
+        raise GenericError(await guild_text(bot, inter.guild, "legacy.queue.empty"))
 
     if amount is None:
         amount = 0
@@ -114,7 +124,7 @@ def _qc_filters(self, req):
     req.txt = txt
 
 
-def _qc_range(self, req):
+async def _qc_range(self, req):
     """Resolve o intervalo de posições da fila."""
     amount = req.amount
     player = req.player
@@ -124,17 +134,21 @@ def _qc_range(self, req):
 
     if range_start > 0 and range_end > 0:
         if range_start >= range_end:
-            raise GenericError("**A posição final deve ser maior que a posição inicial!**")
+            raise GenericError(await guild_text(req.inter.bot, req.inter.guild, "legacy.queue.range_end_after_start"))
 
         song_list = list(player.queue)[range_start - 1 : -(range_end - 1)]
-        txt.append(f"**Posição inicial da fila:** `{range_start}`\n**Posição final da fila:** `{range_end}`")
+        txt.append(
+            await guild_text(
+                req.inter.bot, req.inter.guild, "legacy.queue.range_both", start=range_start, end=range_end
+            )
+        )
 
     elif range_start > 0:
         song_list = list(player.queue)[range_start - 1 :]
-        txt.append(f"**Posição inicial da fila:** `{range_start}`")
+        txt.append(await guild_text(req.inter.bot, req.inter.guild, "legacy.queue.range_start", start=range_start))
     elif range_end > 0:
         song_list = list(player.queue)[: -(range_end - 1)]
-        txt.append(f"**Posição final da fila:** `{range_end}`")
+        txt.append(await guild_text(req.inter.bot, req.inter.guild, "legacy.queue.range_end", end=range_end))
     else:
         song_list = list(player.queue)
 
@@ -251,6 +265,10 @@ async def _qc_report(self, req):
     duplicated_titles = req.duplicated_titles
     final_filters = req.final_filters
     inter = req.inter
+
+    async def say(key: str, **values) -> str:
+        return await guild_text(inter.bot, inter.guild, key, **values)
+
     max_duration = req.max_duration
     min_duration = req.min_duration
     playlist_hyperlink = req.playlist_hyperlink
@@ -263,68 +281,70 @@ async def _qc_report(self, req):
     duplicated_titles.clear()
 
     if not deleted_tracks:
-        await inter.send("Nenhuma música encontrada!", ephemeral=True)
+        await inter.send(await guild_text(req.inter.bot, inter.guild, "legacy.queue.none_found"), ephemeral=True)
         return True
 
     try:
         final_filters.remove("song_name")
-        txt.append(f"**Inclui nome:** {md_code(song_name)}")
+        txt.append(await say("legacy.queue.filter_name", name=md_code(song_name)))
     except Exception:
         pass
 
     try:
         final_filters.remove("song_author")
-        txt.append(f"**Inclui nome no uploader/artista:** {md_code(song_author)}")
+        txt.append(await say("legacy.queue.filter_author", name=md_code(song_author)))
     except Exception:
         pass
 
     try:
         final_filters.remove("user")
-        txt.append(f"**Pedido pelo membro:** {user.mention}")
+        txt.append(await say("legacy.queue.filter_user", user=user.mention))
     except Exception:
         pass
 
     try:
         final_filters.remove("playlist")
-        txt.append(f"**Playlist:** {' | '.join(playlist_hyperlink)}")
+        txt.append(await say("legacy.queue.filter_playlist", playlist=" | ".join(playlist_hyperlink)))
     except Exception:
         pass
 
     try:
         final_filters.remove("time_below")
-        txt.append(f"**Com duração inicial/igual:** `{time_format(min_duration)}`")
+        txt.append(await say("legacy.queue.filter_min", time=time_format(min_duration)))
     except Exception:
         pass
 
     try:
         final_filters.remove("time_above")
-        txt.append(f"**Com duração máxima:** `{time_format(max_duration)}`")
+        txt.append(await say("legacy.queue.filter_max", time=time_format(max_duration)))
     except Exception:
         pass
 
     try:
         final_filters.remove("duplicates")
-        txt.append(f"**Músicas duplicadas**")
+        txt.append(await say("legacy.queue.filter_duplicates"))
     except Exception:
         pass
 
     try:
         final_filters.remove("absent_members")
-        txt.append("`Músicas pedidas por membros que saíram do canal.`")
+        txt.append(await say("legacy.queue.filter_absent"))
     except Exception:
         pass
 
-    msg_txt = (
-        f"### ♻️ ⠂{inter.author.mention} removeu {deleted_tracks} música{'s'[: deleted_tracks ^ 1]} da fila:\n"
-        + "\n".join(md_link(t.title, t.uri, limit=45) for t in tracklist[:7])
+    msg_txt = await say(
+        "legacy.queue.cleared_head",
+        count=deleted_tracks,
+        user=inter.author.mention,
+        list="\n".join(md_link(t.title, t.uri, limit=45) for t in tracklist[:7]),
     )
 
     if (trackcount := (len(tracklist) - 7)) > 0:
-        msg_txt += f"\n`e mais {trackcount} música{'s'[: trackcount ^ 1]}.`"
+        msg_txt += await say("legacy.queue.cleared_more", count=trackcount)
 
-    msg_txt += f"\n### ✅ ⠂Filtro{(t := 's'[: len(txt) ^ 1])} usado{t}:\n" + "\n".join(txt)
+    msg_txt += await say("legacy.queue.cleared_filters", count=len(txt), filters="\n".join(txt))
 
-    txt = [f"removeu {deleted_tracks} música{'s'[: deleted_tracks ^ 1]} da fila via clear.", msg_txt]
+    txt = [await say("legacy.queue.cleared_log", count=deleted_tracks), msg_txt]
 
     req.txt = txt
     return False

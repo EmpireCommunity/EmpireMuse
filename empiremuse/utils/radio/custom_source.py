@@ -102,10 +102,22 @@ class ResolvedTracks:
     custar uma consulta por faixa a cada sorteio.
     """
 
-    def __init__(self, database: Any, *, clock: Callable[[], float] = time.time) -> None:
-        self._database = database
+    def __init__(
+        self,
+        database: Any = None,
+        *,
+        database_of: Callable[[], Any] | None = None,
+        clock: Callable[[], float] = time.time,
+    ) -> None:
+        self._database_of = (
+            database_of if database_of is not None else (lambda: database)
+        )  # o banco do pool nasce DEPOIS do hub: lido a cada uso
         self._clock = clock
         self._memory: dict[str, tuple[dict[str, Any] | None, float]] = {}  # chave: (documento ou None, quando foi lido)
+
+    @property
+    def _database(self) -> Any:
+        return self._database_of()
 
     async def _entry(self, track: Track) -> dict[str, Any] | None:
         key, now = failure_id(track), self._clock()
