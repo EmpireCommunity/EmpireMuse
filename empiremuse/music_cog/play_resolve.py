@@ -24,7 +24,7 @@ from empiremuse.utils.music.interactions import (
 )
 from empiremuse.utils.others import (
     music_source_emoji_url,
-    song_request_buttons,
+    jukebox_buttons,
     update_inter,
     music_source_emoji,
 )
@@ -309,7 +309,7 @@ class PlayResolveMixin:
                     try:
                         await func(
                             embed=embed,
-                            components=song_request_buttons(self.bot, await self.bot.pool.i18n.for_guild(inter.guild)),
+                            components=jukebox_buttons(self.bot, await self.bot.pool.i18n.for_guild(inter.guild)),
                         )
                     except Exception:
                         logger.exception("Falha ao atualizar a mensagem de pedido de música")
@@ -412,7 +412,7 @@ class PlayResolveMixin:
                 try:
                     await func(
                         embed=embed,
-                        components=song_request_buttons(self.bot, await self.bot.pool.i18n.for_guild(inter.guild)),
+                        components=jukebox_buttons(self.bot, await self.bot.pool.i18n.for_guild(inter.guild)),
                     )
                 except Exception:
                     logger.exception("Falha ao atualizar a mensagem de pedido de música")

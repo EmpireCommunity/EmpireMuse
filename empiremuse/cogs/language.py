@@ -48,6 +48,7 @@ class Language(commands.Cog):
         self.bot = bot
 
     @commands.slash_command(
+        name=localized("cmd.language.name"),
         description=localized("cmd.language.description"),
         default_member_permissions=disnake.Permissions(manage_guild=True),
     )

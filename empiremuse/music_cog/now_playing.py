@@ -36,7 +36,7 @@ class NowPlayingMixin:
 
     @commands.command(
         name="nowplaying",
-        aliases=["np", "npl", "current", "tocando", "playing"],
+        aliases=["np", "tocando"],
         description="Exibir informações da música que você está ouvindo no momento.",
         cooldown=np_cd,
     )
@@ -104,7 +104,7 @@ class NowPlayingMixin:
 
         ephemeral = (
             player.guild.id != inter.guild_id and not await player.bot.is_owner(inter.author)
-        ) or await self.is_request_channel(inter, data=guild_data)
+        ) or await self.is_jukebox_channel(inter, data=guild_data)
 
         url = player.current.uri or player.current.search_uri
 
@@ -189,9 +189,6 @@ class NowPlayingMixin:
             except AttributeError:
                 pass
 
-        if player.keep_connected:
-            txt += "> ♾️ **⠂Modo 24/7:** `Ativado`\n"
-
         if player.queue or player.queue_autoplay:
             if player.guild_id == inter.guild_id:
                 txt += (
@@ -273,7 +270,7 @@ class NowPlayingMixin:
     @check_voice()
     @pool_command(
         name="controller",
-        aliases=["ctl"],
+        aliases=["ctl", "controle"],
         only_voiced=True,
         cooldown=controller_cd,
         max_concurrency=controller_mc,

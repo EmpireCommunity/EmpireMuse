@@ -94,6 +94,8 @@ class PlayerStateMixin:
         self.bot.dispatch("player_destroy", player=self)
 
     async def process_save_queue(self, create_task=True):
+        if getattr(self, "radio_id", None) is not None:
+            return  # rádio (item 8): fora da sessão de música (ver ``PlayerSession.save_info``)
         if self._session_resuming:
             await asyncio.sleep(10)
             self._session_resuming = False
@@ -140,6 +142,8 @@ class PlayerStateMixin:
         users: List[int] = None,
         wait: bool = False,
     ):
+        if getattr(self, "radio_id", None):
+            return  # rádio (item 8): o RPC levaria a URL do relay local, com o token, a cada membro da call
         try:
             if not voice_channel and not close:
                 try:

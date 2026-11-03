@@ -154,3 +154,17 @@ class TestQuadrosDoNo:
 
     def test_an_unavailable_node_still_says_unavailable(self):
         assert resumo(nodes=[NodeSample("LOCAL", None, None, None)])[1].endswith("indisponível")
+
+
+class TestRadios:
+    """Item 8: a linha principal ganha as rádios do processo, só em contagens."""
+
+    def test_the_main_line_shows_the_counts(self):
+        (linha,) = resumo(radios=(5, 3, 2))
+
+        assert linha.endswith("rádios: 5 ligadas (3 tocando, 2 pausadas)")
+
+    def test_without_the_figure_the_line_is_the_same_as_before(self):
+        (sem,) = resumo()
+
+        assert "rádios" not in sem

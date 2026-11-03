@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+from typing import Union
+
 import disnake
 from disnake.ext import commands
 
@@ -32,31 +34,9 @@ from empiremuse.utils.music.converters import md_link
 
 
 class PlayerSessionMixin:
-    song_request_thread_cd = commands.CooldownMapping.from_cooldown(1, 120, commands.BucketType.guild)
+    jukebox_thread_cd = commands.CooldownMapping.from_cooldown(1, 120, commands.BucketType.guild)
 
-    @is_dj()
-    @has_player()
-    @check_voice()
-    @commands.bot_has_guild_permissions(manage_threads=True)
-    @pool_command(
-        name="songrequestthread",
-        aliases=["songrequest", "srt"],
-        only_voiced=True,
-        description="Criar uma thread/conversa temporária para song-request (pedido de música)",
-    )
-    async def song_request_thread_legacy(self, ctx: CustomContext):
-        await self.song_request_thread.callback(self=self, inter=ctx)
-
-    @is_dj()
-    @has_player()
-    @check_voice()
-    @commands.slash_command(
-        extras={"only_voiced": True},
-        cooldown=song_request_thread_cd,
-        description=localized("cmd.song_request_thread.description"),
-    )
-    @commands.contexts(guild=True)
-    async def song_request_thread(self, inter: disnake.ApplicationCommandInteraction):
+    async def create_jukebox_thread(self, inter: Union[disnake.ApplicationCommandInteraction, CustomContext]):
         try:
             bot = inter.music_bot
             guild = inter.music_guild
@@ -72,7 +52,7 @@ class PlayerSessionMixin:
         player: LavalinkPlayer = bot.music.players[guild.id]
 
         if player.static:
-            raise GenericError("**Você não pode usar esse comando com um canal de song-request configurado.**")
+            raise GenericError("**Você não pode usar esse comando com um canal da Jukebox configurado.**")
 
         if player.has_thread:
             raise GenericError("**Já há uma thread/conversa ativa no player.**")
@@ -84,7 +64,7 @@ class PlayerSessionMixin:
 
         if not player.controller_mode:
             raise GenericError(
-                "**A skin/aparência atual não é compatível com o sistem de song-request "
+                "**A skin/aparência atual não é compatível com a conversa de pedidos "
                 "via thread/conversa\n\n"
                 "Nota:** `Esse sistema requer uma skin que use botões.`"
             )
@@ -109,9 +89,7 @@ class PlayerSessionMixin:
 
         await inter.response.defer(ephemeral=True)
 
-        thread = await player.message.create_thread(
-            name=f"{bot.user.name} temp. song-request", auto_archive_duration=10080
-        )
+        thread = await player.message.create_thread(name=f"{bot.user.name} temp. jukebox", auto_archive_duration=10080)
 
         txt = [
             "Ativou o sistema de thread/conversa temporária para pedido de música.",
@@ -259,7 +237,7 @@ class PlayerSessionMixin:
     @check_voice()
     @pool_command(
         name="commandlog",
-        aliases=["cmdlog", "clog", "cl"],
+        aliases=["cmdlog", "cl"],
         only_voiced=True,
         description="Ver o log de uso dos comandos.",
     )
@@ -352,7 +330,7 @@ class PlayerSessionMixin:
     @check_voice()
     @pool_command(
         name="savequeue",
-        aliases=["sq", "svq"],
+        aliases=["sq", "salvarfila"],
         only_voiced=True,
         cooldown=queue_manipulation_cd,
         max_concurrency=remove_mc,

@@ -20,6 +20,7 @@ from empiremuse.utils.music.models.helpers import (
     get_start_pos,
     lavalink_text,
 )
+from empiremuse.utils.music.models.autoqueue_steps import NO_STREAM_ERROR, reject_no_stream
 from empiremuse.utils.music.models.tracks import PartialTrack
 from empiremuse.utils.usage import usage_of
 
@@ -88,6 +89,71 @@ def _he_same_node(self, event) -> bool:
     return event.node.identifier == self.node.identifier
 
 
+LIVE_LOST_REASONS = frozenset(
+    {"FINISHED", "LOAD_FAILED"}
+)  # fim e falha de um fluxo ao vivo; STOPPED/REPLACED/CLEANUP são nossos
+
+
+def _he_live_radio(self, event) -> bool:
+    """Rádio ao vivo (item 8, R3): fim, exceção e travada do fluxo NUNCA seguem o caminho de música (fila, autoplay, destroy); viram um aviso ao
+    ``RadioManager``, que volta pelo recuo de 2 a 32 s. Devolve ``True`` se o evento foi consumido aqui."""
+    if not getattr(self, "radio_live", False) or not isinstance(
+        event, (wavelink.TrackEnd, wavelink.TrackException, wavelink.TrackStuck)
+    ):
+        return False
+    node = getattr(event, "node", None)
+    if node is not None and node.identifier != self.node.identifier:
+        return True  # evento atrasado de um nó antigo: não é queda do fluxo de agora
+    lost = not isinstance(event, wavelink.TrackEnd) or str(getattr(event, "reason", "")).upper() in LIVE_LOST_REASONS
+    if lost and (radio_id := getattr(self, "radio_id", None)):
+        self.bot.pool.radio.manager.note_stream_lost(radio_id)
+    return True
+
+
+def _he_custom_ports(self):
+    """As portas da rádio personalizada deste player, ou ``None`` (não é de rádio personalizada, ou a rádio já não roda)."""
+    if not getattr(self, "radio_custom", False):
+        return None
+    runner = self.bot.pool.radio.manager.runner(getattr(self, "radio_id", ""))
+    return getattr(runner, "ports", None)
+
+
+async def _he_custom_radio_failure(self, event) -> bool:
+    """Rádio personalizada (R5), regra do dono: "A RÁDIO NÃO PODE PARAR, DEVE SIM PULAR PARA A PRÓXIMA MÚSICA".
+
+    ``TrackException`` de qualquer tipo, ``TrackEnd`` ``LOAD_FAILED`` e ``TrackStuck`` NUNCA seguem o caminho de nova tentativa e espera do player de
+    música: vão para as portas da rádio, que marcam a faixa que falhou no cache negativo e tocam a próxima na hora. "No playable stream" antes troca de
+    candidato (até 3 por faixa). Devolve ``True`` se o evento foi consumido aqui."""
+    is_end = isinstance(event, wavelink.TrackEnd)
+    if not getattr(self, "radio_custom", False) or not (
+        isinstance(event, (wavelink.TrackException, wavelink.TrackStuck))
+        or (is_end and str(getattr(event, "reason", "")).upper() == "LOAD_FAILED")
+    ):
+        return False
+    node = getattr(event, "node", None)
+    if node is not None and node.identifier != self.node.identifier:
+        return True  # evento atrasado de um nó antigo
+    ports = _he_custom_ports(self)
+    if ports is None:
+        return False
+    if is_end and ports.consume_load_failed():
+        return True  # o eco de um TrackException já tratado: a falha conta uma vez só
+    track = self.current or self.last_track
+    if track is None:
+        return True
+    if isinstance(event, wavelink.TrackException):
+        ports.expect_load_failed()
+        message = getattr(event, "message", "")
+        if reject_no_stream(track, message):
+            await self.resolve_track(track)
+            await ports.candidate_swapped(track)
+            return True
+        if NO_STREAM_ERROR in str(message or ""):
+            await ports.candidate_dead(track)  # o teto de 3 foi atingido: a entrada guardada não presta mais
+    await ports.track_failed(track)
+    return True
+
+
 async def _he_dispatch(self, event) -> None:
     """Despacha o evento do Lavalink com o contexto de log (bot e servidor) e as métricas do pool."""
     with log_context(bot=getattr(self.bot, "identifier", None), guild=self.guild.id):
@@ -98,7 +164,10 @@ async def _he_dispatch(self, event) -> None:
             if (usage := usage_of(self.bot)) and _he_same_node(self, event):
                 usage.playback_ended(self.bot, self.guild.id, getattr(event, "reason", ""))
             _he_log_track_event(self, f"Faixa terminada ({getattr(event, 'reason', '?')})", self.last_track)
-            await _he_track_end(self, event)
+            if not _he_live_radio(self, event) and not await _he_custom_radio_failure(
+                self, event
+            ):  # ao vivo: o fim é do runner (recuo)
+                await _he_track_end(self, event)
         elif isinstance(event, wavelink.TrackStart):
             if metrics:
                 metrics.track_started(self.guild.id)
@@ -106,8 +175,14 @@ async def _he_dispatch(self, event) -> None:
                 usage.playback_started(self.bot, self, self.current)
             _he_log_track_event(self, "Faixa iniciada", self.current)
             await _he_track_start(self, event)
+            if (ports := _he_custom_ports(self)) is not None:
+                ports.track_started()  # uma faixa da rádio começou: a sequência de falhas zera
         elif isinstance(event, wavelink.TrackException):
-            await _he_track_exception(self, event)
+            if _he_live_radio(self, event):
+                if metrics:
+                    metrics.error("track_exception")
+            elif not await _he_custom_radio_failure(self, event):
+                await _he_track_exception(self, event)
         elif isinstance(event, wavelink.TrackStuck):
             if metrics:
                 metrics.error("track_stuck")
@@ -119,7 +194,8 @@ async def _he_dispatch(self, event) -> None:
                 _he_source(self.current),
                 time_format(getattr(self, "position", 0) or 0),
             )
-            await _he_track_stuck(self)
+            if not _he_live_radio(self, event) and not await _he_custom_radio_failure(self, event):
+                await _he_track_stuck(self)
         else:
             logger.debug("Evento Wavelink desconhecido: %s", type(event).__name__)
 

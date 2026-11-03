@@ -95,14 +95,14 @@ class ControllerDispatchMixin:
                 logger.exception("Falha em resume_players_ready")
 
     async def request_executor(self, inter):
-        """O cog ``Music`` do bot que atende um pedido feito no canal de pedidos ÚNICO (o do painel recebe, quem toca pode ser outro).
+        """O cog ``Music`` do bot que atende um pedido feito no canal da Jukebox ÚNICO (o do painel recebe, quem toca pode ser outro).
 
         Define ``inter.music_bot``/``music_guild`` para o resto do fluxo agir no bot certo: o que já está na call de quem pediu, senão o
         1º livre. Fora do canal único devolve este mesmo cog, sem mexer na interação.
         """
         pool = self.bot.pool
         try:
-            config = await pool.servers.request.get(inter.guild_id)
+            config = await pool.servers.jukebox.get(inter.guild_id)
         except GenericError:
             return self
         channel = getattr(inter, "channel", None)
@@ -114,7 +114,7 @@ class ControllerDispatchMixin:
         update_attr(inter, bot, bot.get_guild(inter.guild_id))
         return self if bot is self.bot else bot.get_cog("Music")
 
-    async def is_request_channel(
+    async def is_jukebox_channel(
         self,
         ctx: Union[disnake.ApplicationCommandInteraction, disnake.MessageInteraction, CustomContext],
         *,
@@ -191,7 +191,7 @@ class ControllerDispatchMixin:
         if (
             channel_db
             and channel_db.guild.id == inter.guild_id
-            and not await bot.pool.servers.request.is_panel_bot(inter.guild_id, bot)
+            and not await bot.pool.servers.jukebox.is_panel_bot(inter.guild_id, bot)
         ):
             # canal único: quem toca (e não é o bot do painel) só o usa; criar post ou zerar a configuração é do bot do painel
             return channel_db, warn_message, None
@@ -243,9 +243,9 @@ class ControllerDispatchMixin:
 
                                     if not thread:
                                         thread_wmessage = await channel_db.parent.create_thread(
-                                            name=f"{bot.user} song-request",
+                                            name=f"{bot.user} jukebox",
                                             content=(await inter.bot.pool.i18n.for_guild(inter.guild))(
-                                                "player.post_for_song_requests"
+                                                "player.jukebox_post"
                                             ),
                                             auto_archive_duration=10080,
                                             slowmode_delay=5,

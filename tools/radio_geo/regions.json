@@ -1,0 +1,135 @@
+{
+  "BR": {
+    "admin1_to_iso": {
+      "01": "AC",
+      "02": "AL",
+      "03": "AP",
+      "04": "AM",
+      "05": "BA",
+      "06": "CE",
+      "07": "DF",
+      "08": "ES",
+      "11": "MS",
+      "13": "MA",
+      "14": "MT",
+      "15": "MG",
+      "16": "PA",
+      "17": "PB",
+      "18": "PR",
+      "20": "PI",
+      "21": "RJ",
+      "22": "RN",
+      "23": "RS",
+      "24": "RO",
+      "25": "RR",
+      "26": "SC",
+      "27": "SP",
+      "28": "SE",
+      "29": "GO",
+      "30": "PE",
+      "31": "TO"
+    },
+    "groups": {
+      "centro_oeste": [
+        "DF",
+        "GO",
+        "MT",
+        "MS"
+      ],
+      "nordeste": [
+        "AL",
+        "BA",
+        "CE",
+        "MA",
+        "PB",
+        "PE",
+        "PI",
+        "RN",
+        "SE"
+      ],
+      "norte": [
+        "AC",
+        "AP",
+        "AM",
+        "PA",
+        "RO",
+        "RR",
+        "TO"
+      ],
+      "sudeste": [
+        "ES",
+        "MG",
+        "RJ",
+        "SP"
+      ],
+      "sul": [
+        "PR",
+        "RS",
+        "SC"
+      ]
+    }
+  },
+  "US": {
+    "groups": {
+      "midwest": [
+        "IL",
+        "IN",
+        "MI",
+        "OH",
+        "WI",
+        "IA",
+        "KS",
+        "MN",
+        "MO",
+        "NE",
+        "ND",
+        "SD"
+      ],
+      "northeast": [
+        "CT",
+        "ME",
+        "MA",
+        "NH",
+        "RI",
+        "VT",
+        "NJ",
+        "NY",
+        "PA"
+      ],
+      "south": [
+        "DE",
+        "FL",
+        "GA",
+        "MD",
+        "NC",
+        "SC",
+        "VA",
+        "DC",
+        "WV",
+        "AL",
+        "KY",
+        "MS",
+        "TN",
+        "AR",
+        "LA",
+        "OK",
+        "TX"
+      ],
+      "west": [
+        "AZ",
+        "CO",
+        "ID",
+        "MT",
+        "NV",
+        "NM",
+        "UT",
+        "WY",
+        "AK",
+        "CA",
+        "HI",
+        "OR",
+        "WA"
+      ]
+    }
+  }
+}

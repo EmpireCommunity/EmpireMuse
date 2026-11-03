@@ -75,3 +75,29 @@ def test_faixas_certas_passam_com_o_limiar_75(busca, artista, titulo):
 @pytest.mark.parametrize(("busca", "artista", "titulo"), list(NEGATIVOS)[:2])
 def test_outra_musica_do_mesmo_artista_ou_sem_relacao_nao_passa(busca, artista, titulo):
     assert not casa(busca, artista, titulo, 75)
+
+
+class TestSearchText:
+    """ERR-65FEA7 (a): a consulta ``ytsearch:"título - autor"`` leva aspas; comparadas com o título do resultado, nada passava."""
+
+    @pytest.mark.parametrize(
+        ("query", "candidate", "title"),
+        [
+            ('ytsearch:"Сказка - IC3PEAK"', "сказка - ic3peak", "сказка"),
+            ('ytsearch:"права - ooes"', "права - ooes", "права"),
+        ],
+    )
+    def test_the_right_youtube_result_is_accepted_for_a_quoted_query(self, query, candidate, title):
+        from rapidfuzz import fuzz
+
+        from empiremuse.rules.title_match import search_text, title_matches
+
+        wanted = search_text(query)
+
+        assert wanted == candidate
+        assert title_matches(fuzz.token_set_ratio, candidate, wanted, title, wanted, 60)
+
+    def test_without_a_provider_prefix_or_quotes_it_is_just_normalized(self):
+        from empiremuse.rules.title_match import search_text
+
+        assert search_text('scsearch:  "A  -  B" ') == "a - b" and search_text("Plain Text") == "plain text"

@@ -1,0 +1,438 @@
+"""Regras puras da rádio (item 8, R1): o modelo, a validação, o teto por servidor, a presença, o recuo da reconexão e o relógio virtual.
+
+Uma rádio é um bot reserva fixo numa call (voz ou palco), com a fonte (uma playlist do servidor; na R3 uma estação ao vivo) e as regras do
+chat da própria call. Aqui só há dados e decisões: o banco, o Discord e o Lavalink são de ``utils/radio``. Toda validação devolve o valor
+limpo ou um ``RuleError`` (``code`` estável, ``key`` = o campo); nada aqui monta texto para o usuário.
+"""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Container, Mapping, Sequence
+from dataclasses import dataclass, field
+from typing import Any
+
+from empiremuse.rules.errors import RuleError
+
+KIND_CUSTOM = "custom"
+KIND_LIVE = "live"
+KINDS = (KIND_CUSTOM, KIND_LIVE)
+
+MAX_PER_GUILD = 3  # decisão do dono: 3 rádios por servidor, contando as pausadas
+PREMIUM_MAX = MAX_PER_GUILD
+PLAYLIST_NAME_MAX = 100
+
+CHAT_FIELDS = ("voice_delete_after_s", "stage_max_messages", "stage_max_age_s")
+CHAT_LIMITS: dict[str, tuple[int, int, int]] = {  # campo: (mínimo, máximo, padrão)
+    "voice_delete_after_s": (5, 600, 60),
+    "stage_max_messages": (3, 50, 7),
+    "stage_max_age_s": (60, 3600, 600),
+}
+
+# Códigos de erro (estáveis; quem mostra traduz).
+ID_INVALID = "radio_id_invalid"
+CHANNEL_INVALID = "radio_channel_invalid"
+KIND_INVALID = "radio_kind_invalid"
+SOURCE_INVALID = "radio_source_invalid"
+CHAT_INVALID = "radio_chat_invalid"
+CHAT_UNKNOWN_FIELD = "radio_chat_unknown_field"
+ENABLED_INVALID = "radio_enabled_invalid"
+REV_INVALID = "radio_rev_invalid"
+
+_SNOWFLAKE = re.compile(r"[0-9]{1,20}")
+_RADIO_ID = re.compile(r"([0-9]{1,20}):([0-9]{1,20})")
+_CUSTOM_STATION_ID = re.compile(r"[0-9a-f]{24}")
+_STATION_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+
+@dataclass(frozen=True)
+class Radio:
+    """Uma rádio já validada. ``id`` = ``'<bot_id>:<guild_id>'`` (uma por bot e por servidor); ``updated_by`` nunca sai do documento (R-12)."""
+
+    id: str
+    bot_id: int
+    guild_id: int
+    channel_id: int
+    kind: str
+    source: dict[str, Any]
+    chat: dict[str, int]
+    enabled: bool = False
+    rev: int = 0
+    panel_message_id: int | None = None
+    clock_started_at: float | None = (
+        None  # época (``time.time()``) em que a programação virtual ligou: sobrevive ao reinício (Q3)
+    )
+    extra: dict[str, Any] = field(default_factory=dict, compare=False)
+
+
+def radio_id(bot_id: int, guild_id: int) -> str:
+    return f"{int(bot_id)}:{int(guild_id)}"
+
+
+def split_radio_id(value: object) -> tuple[int, int] | None:
+    """``(bot_id, guild_id)`` de um id de rádio, ou ``None`` se não tem o formato."""
+    match = _RADIO_ID.fullmatch(value) if isinstance(value, str) else None
+    return (int(match.group(1)), int(match.group(2))) if match else None
+
+
+def belongs_to_guild(value: object, guild_id: int) -> bool:
+    """O id da rádio termina em ``:{guild_id}``? A conferência da página web e dos botões (R-6): nunca confiar no que veio de fora."""
+    parts = split_radio_id(value)
+    return parts is not None and parts[1] == int(guild_id)
+
+
+def _snowflake(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, str) and _SNOWFLAKE.fullmatch(value) and int(value) > 0:
+        return int(value)
+    return None
+
+
+def default_chat() -> dict[str, int]:
+    return {name: limits[2] for name, limits in CHAT_LIMITS.items()}
+
+
+def check_chat(raw: object, *, base: Mapping[str, int] | None = None) -> dict[str, int] | RuleError:
+    """As regras do chat: só os 3 campos conhecidos, inteiros (nunca booleano) dentro dos limites. O que falta vem de ``base`` (ou do padrão)."""
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, Mapping):
+        return RuleError(CHAT_INVALID, "chat")
+    unknown = next((key for key in raw if key not in CHAT_LIMITS), None)
+    if unknown is not None:
+        return RuleError(CHAT_UNKNOWN_FIELD, str(unknown)[:40])
+    chat = {**default_chat(), **(base or {})}
+    for name, value in raw.items():
+        low, high, _ = CHAT_LIMITS[name]
+        if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+            return RuleError(CHAT_INVALID, name, limit=high)
+        chat[name] = value
+    return chat
+
+
+LIST_MAX = 150  # estações da lista de onde a estação foi escolhida (a região ou os favoritos): anterior e próxima andam por ela
+VOLUME_MIN, VOLUME_MAX, VOLUME_DEFAULT, VOLUME_STEP = 10, 150, 100, 10
+
+
+def station_neighbor(stations: Sequence[str], current: object, step: int, skip: Container[str] = ()) -> str | None:
+    """A estação ``step`` casas (+1 próxima, -1 anterior) depois de ``current`` na lista, dando a volta e pulando as de ``skip`` (indisponíveis).
+
+    ``None`` quando não há por onde andar: lista com menos de 2 estações, ``current`` fora dela ou nenhuma outra disponível.
+    """
+    if len(stations) < 2 or current not in stations:
+        return None
+    start = stations.index(current)  # type: ignore[arg-type]
+    for offset in range(1, len(stations)):
+        candidate = stations[(start + step * offset) % len(stations)]
+        if candidate not in skip and candidate != current:
+            return candidate
+    return None
+
+
+def clamp_volume(value: object) -> int:
+    """O volume pedido limitado a 10..150 (o que não é número vira o padrão)."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return VOLUME_DEFAULT
+    return max(VOLUME_MIN, min(VOLUME_MAX, int(value)))
+
+
+def check_source(kind: str, raw: object) -> dict[str, Any] | RuleError:
+    """A fonte: ``{station}`` (id da estação do servidor, R5; ``{playlist}`` é o legado da R1) na personalizada; ``{station, reserve}`` na ao vivo (a R3 usa; aqui só se confere o formato)."""
+    if not isinstance(raw, Mapping):
+        return RuleError(SOURCE_INVALID, "source")
+    if not raw:
+        return {}  # configurada (canal, bot e tipo) e ainda sem estação: pode existir, não pode ligar (``source_chosen``)
+    if kind == KIND_CUSTOM:
+        station_id = raw.get("station")
+        if set(raw) == {"station"} and isinstance(station_id, str) and _CUSTOM_STATION_ID.fullmatch(station_id):
+            return {"station": station_id}  # R5: a estação do servidor (``radio_stations``)
+        playlist = raw.get("playlist")  # legado da R1: vale até a migração da subida trocar por ``{station}``
+        if set(raw) != {"playlist"} or not isinstance(playlist, str):
+            return RuleError(SOURCE_INVALID, "source")
+        name = playlist.strip()
+        if not 1 <= len(name) <= PLAYLIST_NAME_MAX or any(ord(c) < 32 or ord(c) == 127 for c in name):
+            return RuleError(SOURCE_INVALID, "playlist")
+        return {"playlist": name}
+    station, reserve = raw.get("station"), raw.get("reserve")
+    if (
+        set(raw) - {"station", "reserve", "list", "volume"}
+        or not isinstance(station, str)
+        or not _STATION_UUID.fullmatch(station)
+    ):
+        return RuleError(SOURCE_INVALID, "station")
+    if reserve is not None and not (isinstance(reserve, str) and _STATION_UUID.fullmatch(reserve)):
+        return RuleError(SOURCE_INVALID, "reserve")
+    source: dict[str, Any] = {"station": station, "reserve": reserve}
+    stations = raw.get("list")
+    if stations is not None:
+        if (
+            not isinstance(stations, list)
+            or len(stations) > LIST_MAX
+            or len(set(stations)) != len(stations)
+            or not all(isinstance(u, str) and _STATION_UUID.fullmatch(u) for u in stations)
+        ):
+            return RuleError(SOURCE_INVALID, "list")
+        if len(stations) >= 2:  # uma lista de uma estação só não tem por onde andar: nem se guarda
+            source["list"] = list(stations)
+    volume = raw.get("volume")
+    if volume is not None:
+        if isinstance(volume, bool) or not isinstance(volume, int) or not VOLUME_MIN <= volume <= VOLUME_MAX:
+            return RuleError(SOURCE_INVALID, "volume")
+        if volume != VOLUME_DEFAULT:
+            source["volume"] = volume
+    return source
+
+
+def source_chosen(radio: Radio) -> bool:
+    """A rádio já tem estação (ou playlist do legado)? Sem ela a configuração existe, mas a rádio não liga."""
+    return bool(radio.source)
+
+
+def _identity(raw: Mapping[str, Any]) -> tuple[int, int] | None:
+    """``(bot_id, guild_id)`` do ``_id``/``id``; se o mapping traz ``bot_id``/``guild_id`` também, eles precisam concordar com o id."""
+    parts = split_radio_id(raw.get("_id", raw.get("id")))
+    if parts is None:
+        return None
+    for position, name in enumerate(("bot_id", "guild_id")):
+        if name in raw and _snowflake(raw[name]) != parts[position]:
+            return None
+    return parts
+
+
+def check_radio(raw: object) -> Radio | RuleError:
+    """O documento (ou dicionário) de uma rádio validado; ``RuleError(code, campo)`` no primeiro defeito. Campo desconhecido é ignorado."""
+    if not isinstance(raw, Mapping):
+        return RuleError(ID_INVALID, "id")
+    parts = _identity(raw)
+    if parts is None:
+        return RuleError(ID_INVALID, "id")
+    bot_id, guild_id = parts
+    channel_id = _snowflake(raw.get("channel_id"))
+    if channel_id is None:
+        return RuleError(CHANNEL_INVALID, "channel_id")
+    kind = raw.get("kind")
+    if kind not in KINDS:
+        return RuleError(KIND_INVALID, "kind")
+    source = check_source(kind, raw.get("source"))
+    if isinstance(source, RuleError):
+        return source
+    chat = check_chat(raw.get("chat"))
+    if isinstance(chat, RuleError):
+        return chat
+    enabled = raw.get("enabled", False)
+    if not isinstance(enabled, bool):
+        return RuleError(ENABLED_INVALID, "enabled")
+    rev = raw.get("rev", 0)
+    if isinstance(rev, bool) or not isinstance(rev, int) or rev < 0:
+        return RuleError(REV_INVALID, "rev")
+    panel = raw.get("panel_message_id")
+    panel_id = None if panel in (None, "") else _snowflake(panel)
+    if panel not in (None, "") and panel_id is None:
+        return RuleError(ID_INVALID, "panel_message_id")
+    clock = raw.get("clock_started_at")
+    if clock is not None and not (
+        isinstance(clock, (int, float)) and not isinstance(clock, bool) and 0 < clock < 4_000_000_000 and clock == clock
+    ):
+        return RuleError(REV_INVALID, "clock_started_at")
+    return Radio(
+        id=radio_id(bot_id, guild_id),
+        bot_id=bot_id,
+        guild_id=guild_id,
+        channel_id=channel_id,
+        kind=kind,
+        source=source,
+        chat=chat,
+        enabled=enabled,
+        rev=rev,
+        panel_message_id=panel_id,
+        clock_started_at=None if clock is None else float(clock),
+    )
+
+
+def to_document(radio: Radio, *, updated_by: str = "") -> dict[str, Any]:
+    """O documento do banco (ids como texto, para não perder precisão em JSON); ``updated_by`` só aqui, nunca de volta no ``Radio``."""
+    return {
+        "_id": radio.id,
+        "bot_id": str(radio.bot_id),
+        "guild_id": str(
+            radio.guild_id
+        ),  # para filtrar no banco; o ``_id`` continua sendo a verdade (``check_radio`` confere)
+        "channel_id": str(radio.channel_id),
+        "kind": radio.kind,
+        "source": dict(radio.source),
+        "chat": dict(radio.chat),
+        "enabled": radio.enabled,
+        "panel_message_id": None if radio.panel_message_id is None else str(radio.panel_message_id),
+        "clock_started_at": radio.clock_started_at,
+        "rev": radio.rev,
+        "updated_by": str(updated_by)[:40],
+    }
+
+
+# ---------------------------------------------------------------------- painel na call (R-6)
+
+PANEL_PAUSE_ID = "radio_panel_pause"
+PANEL_NEXT_ID = "radio_panel_next"
+PANEL_STOP_ID = "radio_panel_stop"
+PANEL_PREVIOUS_ID = "radio_panel_previous"  # painel AO VIVO: a estação anterior da lista de onde ela foi escolhida
+PANEL_VOLUME_DOWN_ID = "radio_panel_volume_down"
+PANEL_MUTE_ID = "radio_panel_mute"  # painel AO VIVO: silencia (para o fluxo); ao voltar entra no ponto AO VIVO, não no que ficou guardado
+PANEL_VOLUME_UP_ID = "radio_panel_volume_up"
+PANEL_STATION_PREVIOUS_ID = (
+    "radio_panel_station_previous"  # painel da PERSONALIZADA: a estação anterior do servidor (por nome)
+)
+PANEL_STATION_NEXT_ID = "radio_panel_station_next"  # idem, a seguinte
+PANEL_MENU_ID = "radio_panel_menu"  # o select "Mais opções" do painel AO VIVO
+PANEL_IDS = (
+    PANEL_PAUSE_ID,
+    PANEL_NEXT_ID,
+    PANEL_STOP_ID,
+    PANEL_PREVIOUS_ID,
+    PANEL_VOLUME_DOWN_ID,
+    PANEL_MUTE_ID,
+    PANEL_VOLUME_UP_ID,
+    PANEL_STATION_PREVIOUS_ID,
+    PANEL_STATION_NEXT_ID,
+)  # fixos: NADA de rádio, bot ou servidor dentro do ``custom_id``
+MENU_VALUES = ("stations", "favorite", "volume", "info", "stop")  # o que o select "Mais opções" oferece
+SKIP_COOLDOWN_S = 5.0  # a "próxima" não vira rajada de comandos ao Lavalink
+PANEL_RECREATE_S = 5.0  # painel apagado volta na hora, mas quem apaga em laço não vira laço de envios
+
+
+def panel_action(custom_id: object) -> str | None:
+    """A ação de um ``custom_id`` de BOTÃO do painel; qualquer outra coisa (inclusive um id adulterado) é ``None``."""
+    return (
+        {
+            PANEL_PAUSE_ID: "pause",
+            PANEL_NEXT_ID: "next",
+            PANEL_STOP_ID: "stop",
+            PANEL_PREVIOUS_ID: "previous",
+            PANEL_VOLUME_DOWN_ID: "volume_down",
+            PANEL_MUTE_ID: "mute",
+            PANEL_VOLUME_UP_ID: "volume_up",
+            PANEL_STATION_PREVIOUS_ID: "station_previous",
+            PANEL_STATION_NEXT_ID: "station_next",
+        }.get(custom_id)
+        if isinstance(custom_id, str)
+        else None
+    )
+
+
+def menu_action(value: object) -> str | None:
+    """A ação do select "Mais opções" (``stations``, ``favorite``, ``volume``, ``info`` ou ``stop``); qualquer outro valor é ``None``."""
+    return value if isinstance(value, str) and value in MENU_VALUES else None
+
+
+# ---------------------------------------------------------------------- teto por servidor (R-2)
+
+
+def has_room(active: int, cap: int = MAX_PER_GUILD) -> bool:
+    """Cabe mais uma rádio ligada neste servidor? (``active`` conta as ligadas, pausadas incluídas.)"""
+    return 0 <= active < cap
+
+
+def clamp_active(value: object) -> int:
+    """O contador lido do banco como inteiro dentro de 0..teto (lixo vira 0: o recálculo na subida corrige)."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return 0
+    return max(0, min(PREMIUM_MAX, value))
+
+
+# ---------------------------------------------------------------------- presença e reconexão (R-5)
+
+ABSENCE_PAUSE_S = 30  # sem ouvinte por 30 s: a rádio pausa
+PRESENCE_RESUME_S = 5  # ouvinte presente por 5 s: a rádio retoma
+BACKOFF_STEPS_S = (5, 10, 20, 40, 60)
+BACKOFF_JITTER = 0.2
+
+
+def should_pause(empty_since: float | None, now: float) -> bool:
+    """A call está sem ouvinte (que não esteja ensurdecido) há ``ABSENCE_PAUSE_S`` ou mais?"""
+    return empty_since is not None and now - empty_since >= ABSENCE_PAUSE_S
+
+
+def should_resume(listening_since: float | None, now: float) -> bool:
+    return listening_since is not None and now - listening_since >= PRESENCE_RESUME_S
+
+
+def backoff_s(attempt: int, unit: float = 0.5) -> float:
+    """Quanto esperar antes da tentativa ``attempt`` (0 = a primeira queda): 5, 10, 20, 40, 60 e depois 60 s, com ±20 % de jitter.
+
+    ``unit`` é um número em [0, 1] (o sorteio, injetável para testar): 0,5 = sem jitter. Nunca há volta imediata.
+    """
+    base = BACKOFF_STEPS_S[min(max(attempt, 0), len(BACKOFF_STEPS_S) - 1)]
+    spread = max(0.0, min(1.0, unit))
+    return round(base * (1 - BACKOFF_JITTER + 2 * BACKOFF_JITTER * spread), 3)
+
+
+LIVE_BACKOFF_STEPS_S = (2, 4, 8, 16, 32)  # rádio ao vivo (R3): 5 tentativas formam um ciclo; esgotado, tenta a reserva
+LIVE_CYCLE_ATTEMPTS = len(LIVE_BACKOFF_STEPS_S)
+
+
+def live_backoff_s(attempt: int, unit: float = 0.5) -> float:
+    """O recuo da rádio ao vivo antes da tentativa ``attempt``: 2, 4, 8, 16 e 32 s (e 32 s depois), com ±20 % de jitter (``unit`` em [0, 1])."""
+    base = LIVE_BACKOFF_STEPS_S[min(max(attempt, 0), len(LIVE_BACKOFF_STEPS_S) - 1)]
+    spread = max(0.0, min(1.0, unit))
+    return round(base * (1 - BACKOFF_JITTER + 2 * BACKOFF_JITTER * spread), 3)
+
+
+# ---------------------------------------------------------------------- varredura do chat (R-4)
+
+STAGE_SWEEP_MIN_S = 30
+SWEEP_BATCH = 100
+SWEEP_MAX_AGE_S = 14 * 24 * 3600  # o Discord só apaga em lote mensagens com menos de 14 dias
+
+
+def voice_sweep_interval_s(delete_after_s: int) -> float:
+    """De quanto em quanto tempo varrer o chat de uma call de voz: ``max(5, after/2)``."""
+    return max(5.0, delete_after_s / 2)
+
+
+def stage_sweep_interval_s() -> float:
+    return float(STAGE_SWEEP_MIN_S)
+
+
+def sweep_victims(
+    messages: Sequence[tuple[int, float, bool]], now: float, *, stage: bool, chat: Mapping[str, int]
+) -> list[int]:
+    """Quais mensagens apagar. ``messages``: ``(id, criada_em, protegida)`` (a protegida é a fixada, o painel ou o aviso do bot: nunca sai).
+
+    Na voz: as mais velhas que ``voice_delete_after_s``. No palco: as mais velhas que ``stage_max_age_s`` e, sobrando mais de
+    ``stage_max_messages``, as mais antigas até caber. Nunca passa de ``SWEEP_BATCH`` nem inclui mensagem com 14 dias ou mais.
+    """
+    candidates = [(created, mid) for mid, created, protected in messages if not protected]
+    candidates.sort()
+    if stage:
+        age = chat["stage_max_age_s"]
+        old = [pair for pair in candidates if now - pair[0] >= age]
+        rest = [pair for pair in candidates if now - pair[0] < age]
+        excess = max(0, len(rest) - chat["stage_max_messages"])
+        chosen = old + rest[:excess]
+    else:
+        chosen = [pair for pair in candidates if now - pair[0] >= chat["voice_delete_after_s"]]
+    chosen = [pair for pair in chosen if now - pair[0] < SWEEP_MAX_AGE_S]
+    return [mid for _, mid in chosen[:SWEEP_BATCH]]
+
+
+# ---------------------------------------------------------------------- relógio virtual (rádio personalizada, Q3)
+
+
+def virtual_position(durations_ms: Sequence[int], elapsed_ms: int) -> tuple[int, int]:
+    """``(índice da faixa, posição em ms dentro dela)`` depois de ``elapsed_ms`` de programação virtual, dando a volta na lista.
+
+    Sem faixas (ou com duração total zero) devolve ``(0, 0)``. A rádio que pausou por falta de ouvinte volta nesta posição, como se
+    tivesse continuado a tocar.
+    """
+    positive = [max(0, int(d)) for d in durations_ms]
+    total = sum(positive)
+    if total <= 0:
+        return 0, 0
+    rest = max(0, int(elapsed_ms)) % total
+    for index, duration in enumerate(positive):
+        if rest < duration:
+            return index, rest
+        rest -= duration
+    return 0, 0

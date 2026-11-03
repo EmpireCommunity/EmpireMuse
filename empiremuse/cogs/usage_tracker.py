@@ -4,7 +4,7 @@
 O evento do comando é aberto no gancho do ``COMMAND_LOG`` (``BotPool.setup``); aqui só chega o desfecho (``ok`` ou o rótulo fixo do
 erro, a latência e o bot que executou) pelos eventos que o disnake já despacha. O ``UsageRecorder`` do pool só põe no buffer, então
 nada aqui atrasa nem quebra um comando. Os botões que rodam um comando do player são registrados em ``process_player_interaction``,
-o canal de pedidos em ``song_requests`` e o painel web nos tratadores de POST.
+a Jukebox em ``jukebox_message`` e o painel web nos tratadores de POST.
 """
 
 from __future__ import annotations

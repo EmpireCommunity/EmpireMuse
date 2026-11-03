@@ -1,0 +1,48 @@
+{# Criar ou configurar uma rádio (contrato-nomes-radios §4.3): tipo, canal e bot reserva. Variável: form (Formulario;
+   form.bots = ((id, nome), ...), form.channels = ((id, nome, voice|stage), ...), form.kinds, form.nova, form.ligada,
+   form.slug). Textos pelo ``_`` (panel.json); nomes só em texto ou atributo entre aspas; nada do usuário em href/src. #}
+{% set form_id = form.form_id %}
+{% set erros = form.erros %}
+{% set valores = form.valores %}
+<form id="{{ form.form_id }}" class="form-config" method="post" action="{{ form.acao }}" hx-post="{{ form.acao }}" hx-target="this" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]">
+  {% module xsrf_form_html() %}
+  {% if not form.nova %}<input type="hidden" name="versao" value="{{ form.versao }}">{% end %}
+  {% include "_mensagem_form.html" %}
+  {% if form.ligada %}<p class="aviso aviso-info" role="note">{{ _("panel.radio.setup.on_hint") }}</p>{% end %}
+  <fieldset class="opcoes">
+    <legend>{{ _("panel.radio.setup.kind") }}</legend>
+    {% for tipo in form.kinds %}
+    <label>
+      <input type="radio" name="kind" value="{{ tipo }}"{% if valores.get("kind") == tipo %} checked{% end %}{% if erros.get("kind") %} aria-invalid="true" aria-describedby="erro-kind-{{ form.slug }}"{% end %}>
+      {{ _("panel.radio.kind." + tipo) }}
+    </label>
+    {% end %}
+    {% if erros.get("kind") %}<small id="erro-kind-{{ form.slug }}" class="erro-campo">{{ erros["kind"] }}</small>{% end %}
+    <small>{{ _("panel.radio.setup.custom_hint") }}</small>
+  </fieldset>
+  <label for="campo-canal-{{ form.slug }}">{{ _("panel.radio.setup.channel") }}</label>
+  {% if form.channels %}
+  <select id="campo-canal-{{ form.slug }}" name="channel_id"{% if erros.get("channel_id") %} aria-invalid="true" aria-describedby="erro-canal-{{ form.slug }}"{% end %}>
+    <option value=""{% if not valores.get("channel_id") %} selected{% end %}>{{ _("panel.radio.setup.choose") }}</option>
+    {% for canal_id, canal_nome, canal_tipo in form.channels %}
+    <option value="{{ canal_id }}"{% if str(valores.get("channel_id") or "") == str(canal_id) %} selected{% end %}>{{ canal_nome }} ({{ _("panel.radio.setup.channel_kind." + canal_tipo) }})</option>
+    {% end %}
+  </select>
+  {% else %}
+  <p class="nota" id="campo-canal-{{ form.slug }}">{{ _("panel.radio.setup.no_channels") }}</p>
+  {% end %}
+  {% if erros.get("channel_id") %}<small id="erro-canal-{{ form.slug }}" class="erro-campo">{{ erros["channel_id"] }}</small>{% end %}
+  <label for="campo-bot-{{ form.slug }}">{{ _("panel.radio.setup.bot") }}</label>
+  {% if form.bots %}
+  <select id="campo-bot-{{ form.slug }}" name="bot_id"{% if erros.get("bot_id") %} aria-invalid="true" aria-describedby="erro-bot-{{ form.slug }}"{% end %}>
+    <option value=""{% if not valores.get("bot_id") %} selected{% end %}>{{ _("panel.radio.setup.choose") }}</option>
+    {% for bot_id, bot_nome in form.bots %}
+    <option value="{{ bot_id }}"{% if str(valores.get("bot_id") or "") == str(bot_id) %} selected{% end %}>{{ bot_nome }}</option>
+    {% end %}
+  </select>
+  {% else %}
+  <p class="nota" id="campo-bot-{{ form.slug }}">{{ _("panel.radio.setup.no_bots") }}</p>
+  {% end %}
+  {% if erros.get("bot_id") %}<small id="erro-bot-{{ form.slug }}" class="erro-campo">{{ erros["bot_id"] }}</small>{% end %}
+  <button type="submit">{{ _("panel.radio.setup.create") if form.nova else _("panel.radio.setup.save") }}</button>
+</form>

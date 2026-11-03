@@ -143,7 +143,7 @@ def montar_leitura(monkeypatch, faixas_lidas):
     inter.message = None
     inter.music_bot = inter.bot
     inter.music_guild = inter.guild
-    cog.is_request_channel = sem_canal
+    cog.is_jukebox_channel = sem_canal
     cog.check_player_queue = parar
     cog.bot.get_data = lambda *args, **kwargs: _devolver(guild_data)
     cog.bot.get_global_data = dados

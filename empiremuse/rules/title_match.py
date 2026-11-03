@@ -31,3 +31,11 @@ def title_matches(
         scorer(candidate_full, wanted_full) >= threshold
         and scorer(candidate_title, wanted_title) >= TITLE_ONLY_MIN_SCORE
     )
+
+
+def search_text(query: str) -> str:
+    """O termo de uma consulta ``<provedor>:<termo>`` para comparar com o título de um resultado: minúsculas, sem o prefixo e SEM as aspas que a consulta
+    põe em volta (``ytsearch:"{título} - {autor}"``). Com as aspas, nenhum título passava no limiar e ``Сказка - IC3PEAK`` ou ``права - ooes`` não casavam
+    com o YouTube certo (ERR-65FEA7)."""
+    text = query.split(":", 1)[1] if ":" in query else query
+    return " ".join(text.replace('"', " ").split()).lower()

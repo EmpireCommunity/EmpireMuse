@@ -22,19 +22,19 @@ from cachetools import TTLCache
 from empiremuse.rules.limits import MAX_DJ_ROLES
 from empiremuse.rules.playlists import move_leading_icons, plan_migration, to_doc
 from empiremuse.rules.servers import (
-    SECTION_PLAYLISTS,
-    SECTION_REQUEST,
     LEGACY_LANGUAGE,
+    MAIN_IDENTIFIERS,
+    SECTION_JUKEBOX,
+    SECTION_PLAYLISTS,
     SECTION_SETTINGS,
     Allowed,
     SettingError,
-    changed_request,
+    changed_jukebox,
     changed_settings,
-    MAIN_IDENTIFIERS,
     is_main_identifier,
-    migrate_request,
+    jukebox_from_legacy,
+    migrate_jukebox,
     migrate_settings,
-    request_from_legacy,
     new_doc,
     normalize_role_ids,
     settings_from_legacy,
@@ -106,9 +106,10 @@ class ServerStore:
         from empiremuse.utils.server_playlists import ServerPlaylists  # aqui para não criar ciclo de importação
 
         self.playlists = ServerPlaylists(self)
-        from empiremuse.utils.server_request import ServerRequest
+        from empiremuse.utils.server_jukebox import ServerJukebox
 
-        self.request = ServerRequest(self)
+        self.jukebox = ServerJukebox(self)
+        self.request = self.jukebox
 
     # ------------------------------------------------------------------ o pool
 
@@ -249,13 +250,13 @@ class ServerStore:
             logger.info(
                 "Servidor [%s] migrado: configuração antiga do principal %s", gid, "copiada" if legacy else "ausente"
             )
-        if SECTION_REQUEST in pending:
-            new["request"] = migrate_request(legacy)
-            new["migrated"][SECTION_REQUEST] = True
+        if SECTION_JUKEBOX in pending:
+            new[SECTION_JUKEBOX] = migrate_jukebox(legacy)
+            new["migrated"][SECTION_JUKEBOX] = True
             logger.info(
-                "Servidor [%s] migrado: canal de pedidos do principal %s",
+                "Servidor [%s] migrado: Jukebox do principal %s",
                 gid,
-                "copiado" if new["request"]["channel"] else "ausente",
+                "copiada" if new[SECTION_JUKEBOX]["channel"] else "ausente",
             )
         if SECTION_PLAYLISTS in pending:
             plan = plan_migration(((legacy or {}).get("player_controller") or {}).get("fav_links"))
@@ -437,46 +438,46 @@ class ServerStore:
         try:
             if gid_int is None:
                 raise UnknownGuild
-            unique = await self._ensure(gid_int, (SECTION_SETTINGS, SECTION_REQUEST))
+            unique = await self._ensure(gid_int, (SECTION_SETTINGS, SECTION_JUKEBOX))
             settings = unique[SECTION_SETTINGS]
-            request = unique.get(SECTION_REQUEST) or request_from_legacy(
+            jukebox = unique.get(SECTION_JUKEBOX) or jukebox_from_legacy(
                 base
             )  # documento antigo sem a seção: vale o do bot
         except UnknownGuild:  # DM ou servidor fora do pool: vale o que o próprio bot tinha, sem criar documento único
-            settings, request = settings_from_legacy(base), request_from_legacy(base)
-        doc = GuildDoc(to_legacy(base, settings, request))
+            settings, jukebox = settings_from_legacy(base), jukebox_from_legacy(base)
+        doc = GuildDoc(to_legacy(base, settings, jukebox))
         doc.settings_seen = deepcopy(settings)
-        doc.request_seen = {"channel": request.get("channel"), "message_id": request.get("message_id")}
+        doc.request_seen = {"channel": jukebox.get("channel"), "message_id": jukebox.get("message_id")}
         return doc
 
     async def save_legacy(self, bot: BotCore, gid: object, data: dict) -> dict:
-        """Grava o canal e a mensagem do canal de pedidos NO DOCUMENTO ÚNICO, só o que o escritor mudou em relação ao que leu.
+        """Grava o canal e a mensagem da Jukebox NO DOCUMENTO ÚNICO, só o que o escritor mudou em relação ao que leu.
 
         Levanta se ``settings`` foi alterado (use ``pool.servers``). Servidor fora do pool (ou DM) grava no documento do bot, como antes.
         """
         reference = None
         seen = getattr(data, "settings_seen", None)
-        seen_request = getattr(data, "request_seen", None)
-        if seen is None or seen_request is None:  # documento montado à mão: compara com o que o servidor tem agora
+        seen_jukebox = getattr(data, "request_seen", None)
+        if seen is None or seen_jukebox is None:  # documento montado à mão: compara com o que o servidor tem agora
             reference = await self.legacy_doc(bot, gid)
-            seen, seen_request = reference.settings_seen, reference.request_seen
+            seen, seen_jukebox = reference.settings_seen, reference.request_seen
         if changed := changed_settings(data, seen):
             raise StaleSettingsWriter(
                 f"update_data com settings alterado ({', '.join(sorted(changed))}): use pool.servers"
             )
-        changes = changed_request(data, seen_request)
+        changes = changed_jukebox(data, seen_jukebox)
         gid_int = as_guild_id(gid)
         if changes:
             if gid_int is not None and self.knows(gid_int):
 
                 def apply(doc: dict) -> bool:
-                    before = dict(doc["request"])
-                    doc["request"].update(changes)
+                    before = dict(doc[SECTION_JUKEBOX])
+                    doc[SECTION_JUKEBOX].update(changes)
                     if changes.get("channel") is None and "channel" in changes:
-                        doc["request"]["message_id"] = None  # sem canal não há mensagem
-                    return doc["request"] != before
+                        doc[SECTION_JUKEBOX]["message_id"] = None  # sem canal não há mensagem
+                    return doc[SECTION_JUKEBOX] != before
 
-                await self.mutate_doc(gid_int, (SECTION_REQUEST,), apply)
+                await self.mutate_doc(gid_int, (SECTION_JUKEBOX,), apply)
             else:
                 await self._save_bot_document(bot, gid, changes)
         return data

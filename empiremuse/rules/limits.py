@@ -56,5 +56,8 @@ MAX_DJ_ROLES = 25
 # Skins: prefixo do valor que representa uma skin personalizada do servidor.
 CUSTOM_SKIN_PREFIX = "> custom_skin: "
 
-# Canal de pedidos: título do post de fórum.
+# Jukebox: título do post de fórum.
 FORUM_TITLE_MIN, FORUM_TITLE_MAX = 4, 30
+
+# Discord: tamanho máximo do nome de um canal / título de post de fórum.
+FORUM_POST_TITLE_MAX_LENGTH = 100

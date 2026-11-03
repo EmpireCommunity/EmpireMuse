@@ -42,7 +42,7 @@ class CatalogProvider(LocalizationProtocol):
         if (
             kind not in PROVIDER_KINDS
             or not key.startswith("cmd.")
-            or (kind == "name" and not rules.is_option_name(key))
+            or (kind == "name" and not (rules.is_option_name(key) or rules.is_command_name(key)))
         ):
             return None
         found: dict[str, str] = {}

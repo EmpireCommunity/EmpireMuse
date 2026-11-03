@@ -46,7 +46,7 @@ class SkipMixin:
     @check_voice()
     @pool_command(
         name="skip",
-        aliases=["next", "n", "s", "pular", "skipto"],
+        aliases=["n", "s", "next", "pular"],
         cooldown=skip_back_cd,
         max_concurrency=skip_back_mc,
         description=f"Pular a música atual que está tocando.",
@@ -56,9 +56,6 @@ class SkipMixin:
     )
     async def skip_legacy(self, ctx: CustomContext, *, flags: str = ""):
         args, unknown = ctx.command.extras["flags"].parse_known_args(flags.split())
-
-        if ctx.invoked_with == "skipto" and not unknown:
-            raise GenericError("**Você deve adicionar um nome para usar o skipto.**")
 
         await self.skip.callback(self=self, inter=ctx, query=" ".join(unknown), case_sensitive=args.casesensitive)
 
@@ -132,7 +129,7 @@ class SkipMixin:
 
         player: LavalinkPlayer = bot.music.players[inter.guild_id]
 
-        ephemeral = await self.is_request_channel(inter)
+        ephemeral = await self.is_jukebox_channel(inter)
 
         interaction = None
 

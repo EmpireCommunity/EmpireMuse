@@ -39,7 +39,7 @@ class QueueEditMixin:
     @check_voice()
     @pool_command(
         name="remove",
-        aliases=["r", "del"],
+        aliases=["r", "remover"],
         description="Remover uma música específica da fila.",
         only_voiced=True,
         max_concurrency=remove_mc,
@@ -105,7 +105,7 @@ class QueueEditMixin:
     @check_voice()
     @pool_command(
         name="readd",
-        aliases=["readicionar", "rdd"],
+        aliases=["rdd", "readicionar"],
         only_voiced=True,
         cooldown=queue_manipulation_cd,
         max_concurrency=remove_mc,

@@ -18,9 +18,9 @@ from empiremuse.rules.limits import CUSTOM_SKIN_PREFIX, MAX_DJ_ROLES, VOLUMES
 DOC_VERSION = 1.0
 SECTION_SETTINGS = "settings"
 SECTION_PLAYLISTS = "playlists"
-SECTION_REQUEST = "request"
-REQUEST_FIELDS = ("channel", "message_id")  # o que o formato antigo ainda enxerga em player_controller
-MIGRATED_SECTIONS = ("settings", "request", "playlists")
+SECTION_JUKEBOX = "jukebox"
+JUKEBOX_FIELDS = ("channel", "message_id")  # o que o formato antigo ainda enxerga em player_controller
+MIGRATED_SECTIONS = ("settings", "jukebox", "playlists")
 
 SETTINGS_FIELDS = (
     "djroles",
@@ -31,13 +31,20 @@ SETTINGS_FIELDS = (
     "skin",
     "static_skin",
     "language",
-    "request_channel_strict",
+    "jukebox_auto_delete",
+    "jukebox_text_requests",
 )
 # Campos novos, só do documento único: o formato antigo nunca os enxerga nem grava (``save_legacy`` os recusa).
-UNIFIED_ONLY_FIELDS = ("language", "request_channel_strict")
+UNIFIED_ONLY_FIELDS = ("language", "jukebox_auto_delete", "jukebox_text_requests")
 LEGACY_FIELDS = tuple(name for name in SETTINGS_FIELDS if name not in UNIFIED_ONLY_FIELDS)
 LEGACY_LANGUAGE = "pt-BR"  # o que um servidor que já existia ganha na migração (a comunidade de hoje é brasileira)
-FLAG_FIELDS = ("autoplay", "enable_restrict_mode", "check_other_bots_in_vc", "request_channel_strict")
+FLAG_FIELDS = (
+    "autoplay",
+    "enable_restrict_mode",
+    "check_other_bots_in_vc",
+    "jukebox_auto_delete",
+    "jukebox_text_requests",
+)
 SKIN_MAX_LENGTH = 100
 MAIN_IDENTIFIERS = ("TOKEN", "TOKEN_1")  # o principal é o token principal, nunca o primeiro por ordem (contrato §3)
 
@@ -72,13 +79,19 @@ def default_settings() -> dict[str, Any]:
         "skin": None,
         "static_skin": None,
         "language": None,  # ``None`` = automático (o idioma do Discord do servidor)
-        "request_channel_strict": False,  # Jukebox estrita: o canal de pedidos apaga tudo o que se escreve nele
+        "jukebox_auto_delete": False,
+        "jukebox_text_requests": True,
     }
 
 
-def request_channel_strict(settings: Mapping[str, Any]) -> bool:
-    """O canal de pedidos do servidor é estrito? Documento antigo não tem a chave: continua como sempre foi (não estrito)."""
-    return settings.get("request_channel_strict") is True
+def jukebox_auto_delete(settings: Mapping[str, Any]) -> bool:
+    """A Jukebox apaga automaticamente as mensagens do canal? Documento antigo sem a chave fica com ``False``."""
+    return settings.get("jukebox_auto_delete") is True
+
+
+def jukebox_text_requests(settings: Mapping[str, Any]) -> bool:
+    """A Jukebox aceita pedidos por texto sem comando? Documento antigo sem a chave fica com ``True``."""
+    return settings.get("jukebox_text_requests", True) is not False
 
 
 def new_doc() -> dict[str, Any]:
@@ -86,7 +99,7 @@ def new_doc() -> dict[str, Any]:
         "ver": DOC_VERSION,
         "rev": 0,
         "settings": default_settings(),
-        "request": {"channel": None, "message_id": None, "panel_bot_id": None},
+        "jukebox": {"channel": None, "message_id": None, "panel_bot_id": None},
         "playlists": [],
         "migrated": {section: False for section in MIGRATED_SECTIONS},
     }
@@ -201,25 +214,25 @@ def _id_text(value: Any) -> str | None:
     return text if _ROLE_ID.fullmatch(text) and int(text) > 0 else None
 
 
-def request_from_legacy(flat: Mapping[str, Any]) -> dict[str, Any]:
-    """A seção ``request`` a partir de um documento antigo (canal e mensagem do canal de pedidos; sem canal, sem mensagem)."""
+def jukebox_from_legacy(flat: Mapping[str, Any]) -> dict[str, Any]:
+    """A seção ``jukebox`` a partir de um documento antigo (canal e mensagem da Jukebox; sem canal, sem mensagem)."""
     controller = flat.get("player_controller") or {}
     channel = _id_text(controller.get("channel"))
     return {"channel": channel, "message_id": _id_text(controller.get("message_id")) if channel else None}
 
 
-def migrate_request(legacy: Mapping[str, Any] | None) -> dict[str, Any]:
-    """``request`` migrado do documento antigo do principal (``None`` = ele não tinha): canal e mensagem válidos; o bot do painel
+def migrate_jukebox(legacy: Mapping[str, Any] | None) -> dict[str, Any]:
+    """``jukebox`` migrada do documento antigo do principal (``None`` = ele não tinha): canal e mensagem válidos; o bot do painel
     ainda não foi eleito (``None``)."""
-    request = request_from_legacy(legacy or {})
-    return {**request, "panel_bot_id": None}
+    jukebox = jukebox_from_legacy(legacy or {})
+    return {**jukebox, "panel_bot_id": None}
 
 
-def changed_request(incoming: Mapping[str, Any], seen: Mapping[str, Any]) -> dict[str, Any]:
-    """Os campos do canal de pedidos que o escritor MUDOU em relação ao que leu (valor inválido levanta ``SettingError``)."""
+def changed_jukebox(incoming: Mapping[str, Any], seen: Mapping[str, Any]) -> dict[str, Any]:
+    """Os campos da Jukebox que o escritor MUDOU em relação ao que leu (valor inválido levanta ``SettingError``)."""
     controller = incoming.get("player_controller") or {}
     changes: dict[str, Any] = {}
-    for name in REQUEST_FIELDS:
+    for name in JUKEBOX_FIELDS:
         if name not in controller or controller[name] == seen.get(name):
             continue
         value = controller[name]
@@ -229,15 +242,20 @@ def changed_request(incoming: Mapping[str, Any], seen: Mapping[str, Any]) -> dic
     return changes
 
 
+request_from_legacy = jukebox_from_legacy
+migrate_request = migrate_jukebox
+changed_request = changed_jukebox
+
+
 def to_legacy(
-    base: Mapping[str, Any], settings: Mapping[str, Any], request: Mapping[str, Any] | None = None
+    base: Mapping[str, Any], settings: Mapping[str, Any], jukebox: Mapping[str, Any] | None = None
 ) -> dict[str, Any]:
-    """O documento no formato antigo: ``base`` (o documento por bot) com ``settings`` (e o canal de pedidos, se vier) por cima."""
+    """O documento no formato antigo: ``base`` (o documento por bot) com ``settings`` (e a Jukebox, se vier) por cima."""
     flat = deepcopy(dict(base))
     controller = flat.setdefault("player_controller", {})
-    if request is not None:
-        for name in REQUEST_FIELDS:
-            controller[name] = request.get(name)
+    if jukebox is not None:
+        for name in JUKEBOX_FIELDS:
+            controller[name] = jukebox.get(name)
     for name in LEGACY_FIELDS:
         value = deepcopy(settings[name])
         if name in _LEGACY_CONTROLLER_KEYS:

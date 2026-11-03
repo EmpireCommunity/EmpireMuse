@@ -19,7 +19,7 @@ NOT_FOUND_TITLE = "Servidor não encontrado"
 NOT_FOUND_MESSAGE = "Servidor não encontrado ou você não tem permissão para gerenciá-lo."
 MAX_BODY_BYTES = 16 * 1024
 HX_REQUEST = "HX-Request"
-CATEGORIES = ("Player", "Canal de pedidos", "DJ", "Aparência", "Links", "Geral")
+CATEGORIES = ("Player", "Jukebox", "DJ", "Aparência", "Links", "Geral")
 
 
 @dataclass(frozen=True)

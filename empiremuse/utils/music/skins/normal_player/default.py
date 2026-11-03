@@ -103,9 +103,6 @@ class DefaultSkin:
                 f"\n> -# {app_emoji(player.bot, 'music_notes')} **⠂** {player.tr('player.queue.count', count=qlenght)}"
             )
 
-        if player.keep_connected:
-            txt += "\n> -# ♾️ **⠂** `Modo 24/7 ativado`"
-
         txt += f"{vc_txt}\n"
 
         bar = asset_url("ui_rainbow_bar_3.gif")
@@ -319,9 +316,9 @@ class DefaultSkin:
         if not player.has_thread:
             data["components"][5].options.append(
                 disnake.SelectOption(
-                    label="Song-Request Thread",
+                    label="Jukebox Thread",
                     emoji=app_emoji(player.bot, "comment"),
-                    value=PlayerControls.song_request_thread,
+                    value=PlayerControls.jukebox_thread,
                     description=fit(player.tr("player.create_a_temporary_thread_to.description"), 100),
                 )
             )

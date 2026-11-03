@@ -50,7 +50,7 @@ def _cu_session_older_than_skin_grace(self) -> bool:
 
 
 async def _cu_static_session(self, inter: disnake.MessageInteraction = None) -> None:
-    panel = getattr(self.bot.pool, "request_panel", None)
+    panel = getattr(self.bot.pool, "jukebox_panel", None)
     if panel is not None and panel.players(self.guild_id):
         # outros players seguem tocando no canal único: o painel se refaz com eles, em vez do embed ocioso por cima de todos
         if inter is not None:
@@ -119,12 +119,12 @@ async def _cu_close_thread_message(self, inter: disnake.MessageInteraction = Non
             if (not self.static and _cu_session_older_than_skin_grace(self))
             else {"embed": disnake.Embed(description=self.command_log, color=self.bot.get_color(self.guild.me))},
         )
-        await _cu_archive_request_thread(self)
+        await _cu_archive_jukebox_thread(self)
     except Exception:
         logger.exception("Falha ao arquivar thread do servidor")
 
 
-async def _cu_archive_request_thread(self) -> None:
+async def _cu_archive_jukebox_thread(self) -> None:
     channel: disnake.Thread = self.bot.get_channel(self.message.id)
 
     if channel.parent.permissions_for(self.guild.me).send_messages_in_threads:

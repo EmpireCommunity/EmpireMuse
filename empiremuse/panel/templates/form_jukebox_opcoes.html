@@ -1,0 +1,21 @@
+{# Opções da Jukebox (spec final do dono): A ``settings.jukebox_auto_delete`` e B ``settings.jukebox_text_requests``.
+   Textos pelo ``_`` (catálogo panel.json), sempre em texto ou atributo entre aspas. #}
+{% set form_id = "form-jukebox-opcoes" %}
+<form id="form-jukebox-opcoes" class="form-config" method="post" action="{{ form.acao }}" hx-post="{{ form.acao }}" hx-target="this" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]">
+  {% module xsrf_form_html() %}
+  <input type="hidden" name="versao" value="{{ form.versao }}">
+  <input type="hidden" name="acao" value="opcoes">
+  <h2 class="subtitulo" id="titulo-jukebox-opcoes">{{ _("panel.jukebox.options.title") }}</h2>
+  {% include "_mensagem_form.html" %}
+  <label>
+    <input type="checkbox" name="jukebox_auto_delete" value="on"{% if form.valores.get("jukebox_auto_delete") %} checked{% end %} aria-describedby="ajuda-auto-delete">
+    {{ _("panel.jukebox.options.auto_delete.label") }}
+  </label>
+  <p class="nota" id="ajuda-auto-delete">{{ _("panel.jukebox.options.auto_delete.help") }}</p>
+  <label>
+    <input type="checkbox" name="jukebox_text_requests" value="on"{% if form.valores.get("jukebox_text_requests") %} checked{% end %} aria-describedby="ajuda-text-requests">
+    {{ _("panel.jukebox.options.text_requests.label") }}
+  </label>
+  <p class="nota" id="ajuda-text-requests">{{ _("panel.jukebox.options.text_requests.help") }}</p>
+  <button type="submit">{{ _("panel.jukebox.options.save") }}</button>
+</form>

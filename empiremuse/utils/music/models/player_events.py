@@ -28,6 +28,12 @@ class PlayerEventsMixin:
             if event.code == 1000:
                 return
 
+            if radio_id := getattr(self, "radio_id", None):
+                # rádio (item 8): a volta é só do ``RadioRunner`` (recuo 5 a 60 s com jitter, premium reconferido, limite do processo);
+                # o reconecta antigo de 3 a 5 s fixos abriria uma segunda volta, imediata e sem limite
+                self.bot.pool.radio.manager.note_disconnect(radio_id)
+                return
+
             if not self.guild.me or (
                 event.code == 4014 and event.reason.startswith("Disconnected") and not self.keep_connected
             ):
@@ -42,10 +48,6 @@ class PlayerEventsMixin:
             if event.code == 4022:
                 if self.keep_connected and vc:
                     await asyncio.sleep(5)
-                    self.set_command_log(
-                        emoji="⚠️",
-                        text=self.tr("player.if_you_want_to_disconnect", mention=str(vc.mention)),
-                    )
                     await self.connect(vc.id)
                     self.update = True
                 else:

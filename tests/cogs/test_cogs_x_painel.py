@@ -9,7 +9,7 @@ interações são dublês (``tests/support/canal_de_pedidos.py``) e os valores f
 import pytest
 
 from empiremuse.utils.music.interactions import ViewMode
-from tests.cogs.test_canal_de_pedidos_setup_reset import Scenario, configured
+from tests.cogs.test_jukebox_setup_reset import Scenario, configured
 from tests.support.modais import (
     URL_BASE,
     ModalBot,
@@ -51,10 +51,10 @@ class TestKI36ResetFalhaNoDiscord:
 
     # ---- RED: a falha no Discord preserva a configuração
 
-    def test_falha_ao_editar_a_mensagem_preserva_a_configuracao_no_banco(self, world):
-        configured(world).fail_edit = RuntimeError("falha simulada")
+    def test_falha_ao_apagar_o_painel_preserva_a_configuracao_no_banco(self, world):
+        configured(world).fail_delete = RuntimeError("falha simulada")
         run_reset(world)
-        assert world.j.of("message.edit"), "o /reset nem chegou à edição da mensagem que deveria falhar"
+        assert world.j.of("message.delete"), "o /jukebox reset nem chegou a apagar o painel que deveria falhar"
         assert world.j.of("db.update") == []
         assert (world.saved["channel"], world.saved["message_id"]) == ("22", "555"), (
             "KI-36: o Discord falhou, o canal continua de pé e o banco foi desconfigurado"
@@ -69,7 +69,7 @@ class TestKI36ResetFalhaNoDiscord:
             return None
         mensagem = configured(world)
         if falha == "editar_mensagem":
-            mensagem.fail_edit = RuntimeError("falha simulada")
+            mensagem.fail_delete = RuntimeError("falha simulada")
             return None
         world.text.fail_delete = RuntimeError("falha simulada")
         return "sim"

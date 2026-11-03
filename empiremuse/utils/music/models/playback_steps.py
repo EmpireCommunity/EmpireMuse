@@ -73,6 +73,11 @@ async def _pn_next_track(self, req):
         track = self.queue.popleft()
 
     except Exception:
+        if getattr(self, "radio_id", None) is not None:
+            # Rádio (ao vivo ou personalizada) toca só o que o runner mandou: fila vazia NÃO puxa autoplay nem entra em modo ocioso (o autoplay buscaria
+            # recomendações no YouTube e afins). Quem decide o que tocar de novo é o runner.
+            await self.stop()
+            return True
         try:
             track = None
 
