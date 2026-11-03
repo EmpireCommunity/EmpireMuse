@@ -131,6 +131,8 @@ class RelaySession:
     playing: bool = (
         False  # ``expect_flow`` já foi chamado: as conexões de agora são do PLAY, com a política de reconexão
     )
+    claims: int = 0  # quantas conexões já viraram a saída; NUNCA zera (``served`` zera no ``expect_flow``)
+    claim_id: int = 0  # o ``claims`` da conexão que é a saída agora
     flow_after: int = 0  # só o áudio de uma conexão DEPOIS desta conta como "chegou" (o loadtracks do Lavalink não prova que o play abriu)
     closed: asyncio.Event = field(default_factory=asyncio.Event, repr=False)  # o token foi revogado
     exhausted: bool = False  # a 7ª reconexão: o token não aceita mais nada
@@ -316,6 +318,8 @@ class RadioRelay:
         session.output = writer
         session.task = asyncio.current_task()
         session.claimed_serial = session.served
+        session.claims += 1
+        session.claim_id = session.claims
         session.free.clear()
         session.last_write = self._clock()
 
@@ -413,7 +417,9 @@ class RadioRelay:
             session.served = 0  # a contagem do play começa limpa: as conexões do loadtracks (até LOAD_CONSUMERS) não gastam a cota nem o intervalo
             session.accepts.clear()
             session.last_accept = None
-            session.flow_after = 0
+            session.flow_after = (
+                session.claims
+            )  # só uma conexão aceita DEPOIS daqui prova o play; um loadtracks ainda aberto não
             session.flowing.clear()
 
     async def wait_flowing(self, token: str, timeout: float) -> bool:
@@ -541,7 +547,7 @@ class RadioRelay:
         throttle = TitleThrottle()
         response = upstream.response
         last_audio = self._clock()
-        serial = session.claimed_serial
+        serial = session.claim_id
         reason = "cancelled"  # o que ficar assim é o cancelamento (take-over ou revogação)
         waiting = "upstream"  # onde está esperando: a estação ou o consumidor
         try:

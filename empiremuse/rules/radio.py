@@ -184,7 +184,7 @@ def check_source(kind: str, raw: object) -> dict[str, Any] | RuleError:
             or not all(isinstance(u, str) and _STATION_UUID.fullmatch(u) for u in stations)
         ):
             return RuleError(SOURCE_INVALID, "list")
-        if len(stations) >= 2:  # uma lista de uma estação só não tem por onde andar: nem se guarda
+        if stations:  # uma estação só ainda é a lista do seletor; anterior e próxima exigem 2 (``has_list``)
             source["list"] = list(stations)
     volume = raw.get("volume")
     if volume is not None:

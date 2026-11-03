@@ -87,4 +87,7 @@ async def pick_filter(cog: RadioCog, interaction: Any, tr: Any, radio: Any, node
     by = str(interaction.author.id)
     saved = await hub.store.set_list(radio.id, uuids[:LIST_MAX], expected_rev=fresh.rev, updated_by=by)
     await hub.store.set_filter(radio.id, node_id, expected_rev=saved.rev, updated_by=by)
+    sync = getattr(getattr(hub.manager.runner(radio.id), "ports", None), "sync_list", None)
+    if sync is not None:
+        sync(uuids[:LIST_MAX])  # as portas guardam a lista antiga: o seletor e o clique validam pela nova
     return tr("radio.panel.filter_applied", total=min(len(uuids), LIST_MAX))

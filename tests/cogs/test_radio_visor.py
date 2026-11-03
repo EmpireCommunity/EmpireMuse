@@ -356,7 +356,7 @@ def test_the_type_select_marks_the_current_filter_and_all_stations_when_there_is
 
 
 @pytest.mark.asyncio
-async def test_the_custom_payload_keeps_the_two_by_five_rows_and_uses_the_type_select():
+async def test_the_custom_payload_has_two_short_button_rows_and_uses_the_type_select():
     from empiremuse.rules.radio import PANEL_FILTER_SELECT_ID, PANEL_STATION_SELECT_ID
     from empiremuse.utils.radio.panel import type_select_options, visor_payload_async
     from empiremuse.utils.radio.visor import render_snapshot
@@ -365,9 +365,25 @@ async def test_the_custom_payload_keeps_the_two_by_five_rows_and_uses_the_type_s
     payload = await visor_payload_async(PT, snap, filter_options=type_select_options(PT, "f:genre"), custom=True)
 
     rows = payload["components"]
-    assert len(rows) == 4 and len(rows[0].children) == 5 and len(rows[1].children) == 5
+    assert (
+        len(rows) == 4 and len(rows[0].children) == 2 and len(rows[1].children) == 3
+    )  # só o que o cog atende na personalizada
     assert rows[2].children[0].custom_id == PANEL_STATION_SELECT_ID
     assert [o.value for o in rows[2].children[0].options] == [f"{i:024x}" for i in range(1, 4)]
     filter_select = rows[3].children[0]
     assert filter_select.custom_id == PANEL_FILTER_SELECT_ID and filter_select.placeholder.startswith("Tipo")
     assert payload["file"].fp.read() == render_snapshot(snap, PT, custom=True)
+
+
+def test_the_custom_visor_only_has_buttons_the_cog_answers_and_walks_the_stations():
+    """CodeRabbit #199: 6 dos 10 botões do visor da personalizada só devolviam erro, e anterior/próxima ESTAÇÃO nem apareciam."""
+    from empiremuse.cogs.radio import CUSTOM_ACTIONS, LIVE_ACTIONS
+    from empiremuse.rules.radio import panel_action
+    from empiremuse.utils.radio.panel import visor_payload
+
+    payload = visor_payload(PT, custom_snapshot(), filter_options=[], color=0, custom=True)
+
+    ids = [c.custom_id for row in payload["components"][:2] for c in row.children]
+    actions = {panel_action(i) for i in ids}
+    assert not (actions & LIVE_ACTIONS) and "next" not in actions
+    assert CUSTOM_ACTIONS <= actions and {"favorite", "random", "stop"} <= actions

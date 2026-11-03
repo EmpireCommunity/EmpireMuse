@@ -12,6 +12,7 @@ import logging
 from contextlib import suppress
 
 import disnake
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Optional
 
 from empiremuse.rules.radio import VOLUME_DEFAULT, Radio
@@ -232,6 +233,10 @@ class LiveRadioPorts(DiscordRadioPorts):
         self._view, self._shown, self._last_edit = LiveView(), None, None
         await self._release()
         self.update_panel(self._view)
+
+    def sync_list(self, uuids: Sequence[str]) -> None:
+        """A lista do filtro recém-aplicado vale já para o seletor e para anterior/próxima (sem reiniciar o fluxo)."""
+        self.station_list = tuple(uuids)
 
     def refresh_panel(self) -> None:
         """Refaz o painel na próxima janela (o select "Mais opções" volta ao título depois de uma escolha)."""

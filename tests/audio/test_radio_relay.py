@@ -780,6 +780,26 @@ class TestFlowAndReach:
             assert await waiter is True and r.reached(token) is True
 
     @pytest.mark.asyncio
+    async def test_audio_from_a_connection_claimed_before_expect_flow_never_counts_as_the_play(self):
+        """CodeRabbit #199: ``expect_flow`` zerava ``served`` e o loadtracks ainda aberto (serial 1..3) passava em ``serial > flow_after``."""
+        from unittest.mock import MagicMock
+
+        async with relay() as r:
+            token = r.register("http://radio.example:8000/live", codec="MP3", bitrate=128)
+            session = r._sessions[token]
+            session.served = 3
+            r._claim(session, MagicMock())  # a saída do loadtracks, ainda aberta
+            old = session.claim_id
+            session.task = None  # ``_claim`` guarda a tarefa do teste; a revogação do fim não pode cancelá-la
+
+            r.expect_flow(token)
+            assert not old > session.flow_after, "o áudio do loadtracks não pode marcar flowing"
+
+            r._claim(session, MagicMock())  # o take-over do play
+            assert session.claim_id > session.flow_after
+            session.task = None
+
+    @pytest.mark.asyncio
     async def test_a_token_that_never_gets_audio_times_out_and_is_not_playing(self):
         async with relay() as r:
             token = r.register("http://radio.example:8000/live", codec="MP3", bitrate=128)

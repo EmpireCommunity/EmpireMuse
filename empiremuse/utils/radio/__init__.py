@@ -85,6 +85,8 @@ class RadioHub:
         self.resolved._memory.clear()
         self.health._until.clear()
         self._notices.clear()
+        self.control.forget()
+        self.roles.forget()
 
     async def reload_station(self, station: Any) -> None:
         """Uma estação do servidor foi editada: cada rádio LIGADA que a toca recarrega o pool (a troca passa pelo recuo, sem prender quem editou)."""

@@ -264,3 +264,34 @@ class TestPanelHandlers:
         assert saved.source["list"] == list(reversed(ids))  # as mais ouvidas primeiro
         with pytest.raises(GenericError):
             await panel_handlers.pick_filter(cog, interaction, tr, saved, "inexistente")
+
+    @pytest.mark.asyncio
+    async def test_a_one_station_filter_keeps_its_list_and_the_running_ports_get_the_new_list(self):
+        """CodeRabbit #199: filtro com 1 estação perdia a lista (seletor vazio) e as portas ligadas seguiam com a lista antiga."""
+        from empiremuse.utils.radio import panel_handlers
+        from empiremuse.utils.radio.live_ports import LiveRadioPorts
+
+        w = build()
+        await premium(w)
+        ids = [uuid_of(n) for n in range(1, 4)]
+        radio = await configure(
+            w.hub,
+            guild_id=GUILD,
+            channel_id=CHANNEL,
+            bot_id=2,
+            kind="live",
+            source={"station": ids[0], "reserve": None, "list": ids},
+        )
+        hit = SimpleNamespace(station=SimpleNamespace(uuid=ids[1]), clickcount=1)
+        w.hub.directory.region = AsyncMock(return_value=SimpleNamespace(hits=(hit,)))
+        w.hub.locations = SimpleNamespace(node=lambda n: SimpleNamespace(id=n))
+        ports = SimpleNamespace(station_list=tuple(ids), sync_list=lambda u: LiveRadioPorts.sync_list(ports, u))
+        w.hub.manager.runner = lambda _id: SimpleNamespace(ports=ports)
+        cog = SimpleNamespace(hub=w.hub)
+
+        await panel_handlers.pick_filter(
+            cog, SimpleNamespace(author=SimpleNamespace(id=7)), lambda k, **kw: k, radio, "br"
+        )
+
+        assert (await w.hub.store.get(radio.id)).source["list"] == [ids[1]]
+        assert ports.station_list == (ids[1],)

@@ -462,20 +462,31 @@ def visor_payload(
     embed = disnake.Embed(color=color)
     embed.set_image(url=f"attachment://{VISOR_NAME}")
     embed.set_footer(text=fit(tr("visor.footer"), 2048))
-    row1 = [
-        _emoji_button(emojis, "backward", PANEL_PREVIOUS_ID),
-        _emoji_button(emojis, "volume_down", PANEL_VOLUME_DOWN_ID),
-        _emoji_button(emojis, "volume" if muted else "volume_mute", PANEL_MUTE_ID, danger=muted),
-        _emoji_button(emojis, "volume", PANEL_VOLUME_UP_ID),
-        _emoji_button(emojis, "skip", PANEL_NEXT_ID),
-    ]
-    row2 = [
-        _emoji_button(emojis, "star", PANEL_FAVORITE_ID),
-        _emoji_button(emojis, "notification", PANEL_INFO_ID),
-        _emoji_button(emojis, "refresh", PANEL_RECONNECT_ID),
-        _emoji_button(emojis, "shuffle", PANEL_RANDOM_ID),
-        _emoji_button(emojis, "stop", PANEL_STOP_ID, danger=True),
-    ]
+    if custom:  # só os botões que o cog atende na personalizada: andar pelas estações do servidor, favoritar, aleatória e desligar
+        row1 = [
+            _emoji_button(emojis, "backward", PANEL_STATION_PREVIOUS_ID),
+            _emoji_button(emojis, "skip", PANEL_STATION_NEXT_ID),
+        ]
+        row2 = [
+            _emoji_button(emojis, "star", PANEL_FAVORITE_ID),
+            _emoji_button(emojis, "shuffle", PANEL_RANDOM_ID),
+            _emoji_button(emojis, "stop", PANEL_STOP_ID, danger=True),
+        ]
+    else:
+        row1 = [
+            _emoji_button(emojis, "backward", PANEL_PREVIOUS_ID),
+            _emoji_button(emojis, "volume_down", PANEL_VOLUME_DOWN_ID),
+            _emoji_button(emojis, "volume" if muted else "volume_mute", PANEL_MUTE_ID, danger=muted),
+            _emoji_button(emojis, "volume", PANEL_VOLUME_UP_ID),
+            _emoji_button(emojis, "skip", PANEL_NEXT_ID),
+        ]
+        row2 = [
+            _emoji_button(emojis, "star", PANEL_FAVORITE_ID),
+            _emoji_button(emojis, "notification", PANEL_INFO_ID),
+            _emoji_button(emojis, "refresh", PANEL_RECONNECT_ID),
+            _emoji_button(emojis, "shuffle", PANEL_RANDOM_ID),
+            _emoji_button(emojis, "stop", PANEL_STOP_ID, danger=True),
+        ]
     options = list(filter_options)[:SELECT_LIMIT] or [disnake.SelectOption(label="—", value="none")]
     filter_select = disnake.ui.Select(
         placeholder=fit(tr("visor.select.type.placeholder" if custom else "visor.select.filter.placeholder"), 150),

@@ -348,6 +348,10 @@ class CustomRadioPorts(DiscordRadioPorts):
             pass
         self._wake.clear()
 
+    def wake_retry(self) -> None:
+        """O botão "reconectar" acorda a espera DESTAS portas (``_wake``), não a ``_retry_wake`` herdada, que o ``sleep`` daqui não escuta."""
+        self._wake.set()
+
     async def apply_station(self, radio: Radio) -> None:
         """A estação da rádio mudou (``set_custom_station``): descarta o sorteio velho; a próxima partida relê a estação."""
         self.radio = radio

@@ -190,3 +190,19 @@ async def test_the_custom_panel_uses_the_visor_with_types_and_the_favorites_entr
     select = payload["components"][-1].children[0]
     assert [o.value for o in select.options][-1] == "f:fav" and select.options[-1].default
     assert not any(o.default for o in select.options[:-1]) and payload["file"].filename.endswith(".png")
+
+
+@pytest.mark.asyncio
+async def test_the_reconnect_button_wakes_the_custom_radio_wait():
+    """CodeRabbit #199: ``wake_retry`` herdado sinalizava ``_retry_wake`` e o ``sleep`` da personalizada esperava ``_wake`` (recuo de até 10 min)."""
+    import asyncio
+
+    from empiremuse.utils.radio.custom_ports import CustomRadioPorts
+
+    ports = SimpleNamespace(_wake=asyncio.Event())
+    sleeper = asyncio.ensure_future(CustomRadioPorts.sleep(ports, 30))
+    await asyncio.sleep(0)
+
+    CustomRadioPorts.wake_retry(ports)
+
+    await asyncio.wait_for(sleeper, 1)

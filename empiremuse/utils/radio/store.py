@@ -312,7 +312,7 @@ class RadioStore:
         return checked
 
     async def set_list(self, radio_id: str, uuids: Sequence[str], *, expected_rev: int, updated_by: str = "") -> Radio:
-        """Troca só a LISTA de onde a estação anda (o filtro aplicado) numa rádio AO VIVO, sem mudar a estação no ar. Lista curta (menos de 2) a tira."""
+        """Troca só a LISTA de onde a estação anda (o filtro aplicado) numa rádio AO VIVO, sem mudar a estação no ar. Lista vazia a tira; com uma estação só ela vale para o seletor (anterior e próxima pedem 2)."""
         current = self._radio(await self._find(radio_id))
         if current is None:
             raise RadioNotFound
@@ -321,7 +321,7 @@ class RadioStore:
         if current.kind != KIND_LIVE or not current.source:
             raise RadioInvalid(RuleError(SOURCE_INVALID, "list"))
         source = {k: v for k, v in current.source.items() if k != "list"}
-        if len(uuids) >= 2:
+        if uuids:
             source["list"] = list(uuids)
         updated = dataclasses.replace(current, source=source, rev=current.rev + 1)
         checked = check_radio(to_document(updated))
