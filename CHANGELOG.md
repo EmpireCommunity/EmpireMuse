@@ -7,8 +7,10 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.3.0-rc.1] - 2026-11-03
+
 ### Alterado
-- Painel da rádio ao vivo agora é o visor aprovado (imagem gerada nas skins preta e branca, 2x5 botões só com emoji, selects de estação e de filtro); a personalizada segue no painel anterior. Emojis `volume_down` e `volume_mute` do kit media-player (mnauliady).
+- Painel da rádio ao vivo agora é o visor aprovado (imagem gerada nas skins preta e branca, 2x5 botões só com emoji, selects de estação e de filtro); a rádio personalizada usa o mesmo visor, adaptado (filtro por tipo de estação e favoritas de cada membro). Emojis `volume_down` e `volume_mute` do kit media-player (mnauliady).
 - **Textos do bot no idioma do servidor**: o gerenciador de favoritos e integrações, o editor de skins, o status do canal de voz, as views de fila/volume/paginação, os comandos de reprodução (volume, pausar, retomar, avançar, repetição, nightcore) e todas as skins do player deixaram de ter texto fixo em português: cada mensagem, botão, select e modal vem do catálogo (`en-US` e `pt-BR`) pelo tradutor do servidor. Um teste de guarda (`tests/i18n/test_no_hardcoded_pt.py`) falha se um texto em português voltar a ser fixado nesses módulos.
 - **Jukebox no painel**: a categoria "Canal de pedidos" virou **Jukebox** (`/painel/servidores/<id>/jukebox`; a rota antiga `/canal` só redireciona). Configurar num canal que já existe sempre apaga as mensagens dele, com confirmação antes (fórum e canal novo não apagam nada); a chave "Jukebox estrita" deu lugar às opções **Apagar as mensagens enviadas no canal** (`settings.jukebox_auto_delete`, migrada da antiga) e **Toda mensagem é um pedido** (`settings.jukebox_text_requests`, ligada por padrão); e **Redefinir a Jukebox** (o `/jukebox reset`) apaga o painel, limpa a configuração e devolve as opções aos padrões, mantendo o canal e as mensagens de quem usa.
 
@@ -763,7 +765,8 @@ O **EmpireMuse** é uma obra derivada e evolução contínua do projeto [MuseHea
 - **Ponto de partida do fork/bifurcação**: Commit upstream [`32f227e9`](https://github.com/zRitsu/MuseHeart-MusicBot/commit/32f227e96bca59d5e54f58f56f5fb7e804704b32) de 02/03/2026 (implementação do suporte ao protocolo DAVE com envio de `channelId` no payload de voz).
 - **Histórico anterior**: O histórico completo de commits, versões e contribuições anteriores a esse ponto de partida permanece preservado no repositório original do upstream.
 
-[Unreleased]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.3.0-rc.1...HEAD
+[2.3.0-rc.1]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.2.0...v2.3.0-rc.1
 [2.2.0]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.1.4...v2.2.0
 [2.1.4]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.1.3...v2.1.4
 [2.1.3]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.1.2...v2.1.3
