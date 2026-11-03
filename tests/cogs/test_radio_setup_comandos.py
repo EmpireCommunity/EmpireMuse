@@ -544,11 +544,14 @@ class TestStationChosenInThePanelAfterSetup:
         assert not waiting.source.get("station")
         other = "aaaaaaaa-2222-3333-4444-555555555555"
         station = Station(LIVE_STATION, "Rock FM", "http://stream.example:8000/x", "MP3", 128, "Brasil")
-        hits = tuple(
-            SimpleNamespace(station=SimpleNamespace(uuid=u), clickcount=n) for u, n in ((LIVE_STATION, 9), (other, 1))
+        hits = (
+            SimpleNamespace(station=station, clickcount=9),
+            SimpleNamespace(station=SimpleNamespace(uuid=other), clickcount=1),
         )
         w.hub.directory.region = AsyncMock(return_value=SimpleNamespace(hits=hits))
-        w.hub.directory.by_uuid = AsyncMock(return_value=station)
+        w.hub.directory.by_uuid = AsyncMock(
+            return_value=None
+        )  # balde global esgotado: o filtro não pode depender desta consulta
         w.hub.locations = SimpleNamespace(node=lambda n: SimpleNamespace(id=n))
         live_ports.source = True
         cog = SimpleNamespace(hub=w.hub, _authorized=lambda _i: Actor(user_id=7, manage_guild=True))
@@ -562,3 +565,33 @@ class TestStationChosenInThePanelAfterSetup:
         assert text == "radio.panel.filter_applied"
         assert saved.source["station"] == LIVE_STATION and saved.source["list"] == [LIVE_STATION, other]
         assert saved.filter == "br"
+
+    @pytest.mark.asyncio
+    async def test_a_failed_station_lookup_for_favorites_is_not_reported_as_no_results(self):
+        """CodeRabbit #199: ``by_uuid`` devolve ``None`` com o balde global esgotado; isso não é "sem resultados" e a rádio segue em espera."""
+        from types import SimpleNamespace
+
+        from empiremuse.utils.radio import panel_handlers
+        from empiremuse.utils.radio.actions import Actor
+        from empiremuse.utils.radio.panel_handlers import FAVORITES_ID
+        from tests.cogs.radio_config import LIVE_STATION
+        from tests.cogs.test_radio_ao_vivo import LivePorts
+
+        w, _ = await world_with_station()
+        live_ports = LivePorts()
+        live_ports.source = False
+        w.hub.manager.ports_factory = lambda radio: live_ports
+        await run_setup(w, kind="live")
+        await settle(w)
+        rid = radio_id(2, GUILD)
+        waiting = await w.hub.store.get(rid)
+        w.hub.favorites.list = AsyncMock(return_value=[SimpleNamespace(uuid=LIVE_STATION)])
+        w.hub.directory.by_uuid = AsyncMock(return_value=None)
+        cog = SimpleNamespace(hub=w.hub, _authorized=lambda _i: Actor(user_id=7, manage_guild=True))
+
+        text = await panel_handlers.pick_filter(
+            cog, SimpleNamespace(author=SimpleNamespace(id=7)), lambda k, **kw: k, waiting, FAVORITES_ID
+        )
+
+        assert text == "radio.live.not_found" != "radio.local.no_results"
+        assert not (await w.hub.store.get(rid)).source.get("station")

@@ -66,6 +66,7 @@ async def pick_filter(cog: RadioCog, interaction: Any, tr: Any, radio: Any, node
     hub = cog.hub
     if not isinstance(node_id, str):
         raise GenericError(tr("radio.panel.not_here"))
+    known: dict[str, Any] = {}  # as estações que o próprio filtro já trouxe (sem outra consulta ao diretório)
     if node_id == FAVORITES_ID:
         uuids = [f.uuid for f in await hub.favorites.list(radio.guild_id)]
     else:
@@ -79,6 +80,7 @@ async def pick_filter(cog: RadioCog, interaction: Any, tr: Any, radio: Any, node
             raise GenericError(tr("radio.owner.unavailable")) from None
         ranked = sorted(result.hits, key=lambda hit: hit.clickcount, reverse=True)
         uuids = [hit.station.uuid for hit in ranked if not hub.health.unavailable(hit.station.uuid)]
+        known = {hit.station.uuid: hit.station for hit in ranked}
     if not uuids:
         return tr("radio.local.no_results")
     fresh = await hub.store.get(radio.id)
@@ -89,9 +91,11 @@ async def pick_filter(cog: RadioCog, interaction: Any, tr: Any, radio: Any, node
         "station"
     ):  # recém-configurada (em espera, sem estação): o filtro dá a primeira, a mais ouvida que não está indisponível
         first = next((u for u in uuids if not hub.health.unavailable(u)), None)
-        station = await hub.directory.by_uuid(first) if first else None
-        if station is None:
+        if first is None:
             return tr("radio.local.no_results")
+        station = known.get(first) or await hub.directory.by_uuid(first)
+        if station is None:  # a consulta falhou (limite global do diretório, por exemplo): não é "sem resultados"
+            return tr("radio.live.not_found")
         saved = await actions.change_station(
             hub, radio_id=radio.id, station=station, actor=cog._authorized(interaction), station_list=uuids[:LIST_MAX]
         )
