@@ -538,5 +538,12 @@
   "radio.status.line": "- {channel}: {state}",
   "radio.status.no_premium": "Este servidor não tem o premium de rádio. Fale com o dono do bot.",
   "radio.status.none": "Nenhuma rádio configurada ainda. Use `/radio ligar`.",
-  "radio.status.paused_all": "⏸️ Todas as rádios estão pausadas pelo dono do bot por enquanto."
+  "radio.status.paused_all": "⏸️ Todas as rádios estão pausadas pelo dono do bot por enquanto.",
+  "jukebox.setup.purge.ask": "**{user}, configurar a Jukebox em {channel} apaga TODAS as mensagens desse canal (inclusive as fixadas). Confirme em {seconds}s.**",
+  "jukebox.setup.purge.confirm": "Confirmar e apagar",
+  "jukebox.setup.purge.cancel": "Cancelar",
+  "jukebox.setup.purge.author_only": "Só quem usou o comando pode confirmar.",
+  "jukebox.setup.purge.confirmed": "Confirmado, configurando a Jukebox...",
+  "jukebox.setup.purge.cancelled": "Operação cancelada.",
+  "jukebox.setup.purge.timeout": "Tempo esgotado: nada foi alterado."
 }

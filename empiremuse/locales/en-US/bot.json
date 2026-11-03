@@ -525,5 +525,12 @@
   "radio.status.line": "- {channel}: {state}",
   "radio.status.no_premium": "This server does not have radio premium. Ask the bot owner.",
   "radio.status.none": "No radio set up yet. Use `/radio ligar`.",
-  "radio.status.paused_all": "⏸️ All radios are paused by the bot owner for now."
+  "radio.status.paused_all": "⏸️ All radios are paused by the bot owner for now.",
+  "jukebox.setup.purge.ask": "**{user}, setting up the Jukebox in {channel} deletes ALL messages in that channel (pinned ones included). Confirm within {seconds}s.**",
+  "jukebox.setup.purge.confirm": "Confirm and delete",
+  "jukebox.setup.purge.cancel": "Cancel",
+  "jukebox.setup.purge.author_only": "Only the person who used the command can confirm.",
+  "jukebox.setup.purge.confirmed": "Confirmed, setting up the Jukebox...",
+  "jukebox.setup.purge.cancelled": "Operation cancelled.",
+  "jukebox.setup.purge.timeout": "Timed out: nothing was changed."
 }
