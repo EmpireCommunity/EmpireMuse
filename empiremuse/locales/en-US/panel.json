@@ -115,6 +115,7 @@
   "panel.radio.local.credit": "Location data: GeoNames, CC BY 4.0",
   "panel.radio.station.title": "Custom stations",
   "panel.radio.station.count": "stations",
+  "panel.radio.station.of": "of",
   "panel.radio.station.help": "A station is a source of music for the custom radio: one genre, up to 10 artists or up to 5 server playlists. The radio plays in random order, without repeating a track or an artist too soon.",
   "panel.radio.station.lastfm": "Genres and artists come from Last.fm.",
   "panel.radio.station.empty": "No station yet. Create the first one below.",

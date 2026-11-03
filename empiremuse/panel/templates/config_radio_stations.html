@@ -5,7 +5,7 @@
 <section id="estacoes-servidor" class="bloco-config bloco-largo" aria-labelledby="titulo-estacoes">
   <div class="links-cabecalho">
     <h2 class="subtitulo" id="titulo-estacoes">{{ _("panel.radio.station.title") }}</h2>
-    <p class="contagem-links"><strong>{{ estacoes.total }} de {{ estacoes.maximo }}</strong> {{ _("panel.radio.station.count") }}</p>
+    <p class="contagem-links"><strong>{{ estacoes.total }} {{ _("panel.radio.station.of") }} {{ estacoes.maximo }}</strong> {{ _("panel.radio.station.count") }}</p>
   </div>
   <p class="nota">{{ _("panel.radio.station.help") }}</p>
   <p class="nota credito-lastfm">{{ _("panel.radio.station.lastfm") }} <a href="{{ estacoes.lastfm_url }}" rel="noopener noreferrer" target="_blank">Powered by Last.fm<span class="visually-hidden"> (abre em outra aba)</span></a></p>
