@@ -109,6 +109,7 @@
     {% if prontos %}
     <section aria-labelledby="titulo-prontos">
       <h2 id="titulo-prontos">Bots disponíveis</h2>
+      {% if any(b["principal"] for b in prontos) %}
       <ul class="grade grade-principal">
         {% for bot in prontos %}{% if bot["principal"] %}
         <li class="cartao">
@@ -119,6 +120,7 @@
         </li>
         {% end %}{% end %}
       </ul>
+      {% end %}
       <ul class="grade">
         {% for bot in prontos %}{% if not bot["principal"] %}
         <li class="cartao">
