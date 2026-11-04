@@ -7,6 +7,9 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Corrigido
+- Página de status: os bots aparecem na ordem dos tokens, com o principal sozinho na primeira linha e os demais em linhas de 3; a página ganhou o favicon da marca.
+
 ## [2.3.0-rc.1] - 2026-11-03
 
 ### Alterado
