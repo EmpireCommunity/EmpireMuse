@@ -7,6 +7,8 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.3.0-rc.2] - 2026-11-04
+
 ### Corrigido
 - Página de status: os bots aparecem na ordem dos tokens, com o principal sozinho na primeira linha e os demais em linhas de 3; a página ganhou o favicon da marca.
 
@@ -768,7 +770,8 @@ O **EmpireMuse** é uma obra derivada e evolução contínua do projeto [MuseHea
 - **Ponto de partida do fork/bifurcação**: Commit upstream [`32f227e9`](https://github.com/zRitsu/MuseHeart-MusicBot/commit/32f227e96bca59d5e54f58f56f5fb7e804704b32) de 02/03/2026 (implementação do suporte ao protocolo DAVE com envio de `channelId` no payload de voz).
 - **Histórico anterior**: O histórico completo de commits, versões e contribuições anteriores a esse ponto de partida permanece preservado no repositório original do upstream.
 
-[Unreleased]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.3.0-rc.1...HEAD
+[Unreleased]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.3.0-rc.2...HEAD
+[2.3.0-rc.2]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.3.0-rc.1...v2.3.0-rc.2
 [2.3.0-rc.1]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.2.0...v2.3.0-rc.1
 [2.2.0]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.1.4...v2.2.0
 [2.1.4]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.1.3...v2.1.4
