@@ -121,6 +121,7 @@
         {% end %}{% end %}
       </ul>
       {% end %}
+      {% if any(not b["principal"] for b in prontos) %}
       <ul class="grade">
         {% for bot in prontos %}{% if not bot["principal"] %}
         <li class="cartao">
@@ -131,6 +132,7 @@
         </li>
         {% end %}{% end %}
       </ul>
+      {% end %}
     </section>
     {% end %}
 
