@@ -20,6 +20,7 @@ from packaging import version
 from empiremuse import paths
 from empiremuse.config_loader import load_config, resolve_port
 from empiremuse.rules.client_ip import client_ip_from_headers
+from empiremuse.rules.servers import is_main_identifier
 from empiremuse.rpc_protocol import (
     BOT_OPS,
     BOT_TO_USER_FIELDS,
@@ -122,12 +123,12 @@ class IndexHandler(tornado.web.RequestHandler):
         pending_bots = []
 
         if killing_state is not True:
-            # ordem dos tokens (a de carga do pool): o primeiro é o bot principal
+            # ordem dos tokens (a de carga do pool); o principal vem do contrato do pool, nunca da posição
             for bot in self.pool.bots:
                 if bot.is_ready():
                     ready_bots.append(
                         {
-                            "principal": bot is self.pool.bots[0],
+                            "principal": is_main_identifier(bot.identifier),
                             "nome": str(bot.user),
                             "avatar": bot.user.display_avatar.replace(size=256, static_format="png").url,
                             "servidores": len(bot.guilds),
