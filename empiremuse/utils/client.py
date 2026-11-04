@@ -546,14 +546,11 @@ class BotPool:
         return True
 
     def get_all_bots(self) -> list:
-        allbots = set()
-
+        """Os bots do pool na ordem do ``TOKEN`` (o principal primeiro), depois os exclusivos de servidor; sem repetidos."""
+        ordered = list(self.bots)
         for botlist in self.guild_bots.values():
-            allbots.update(botlist)
-
-        allbots.update(self.bots)
-
-        return list(allbots)
+            ordered.extend(botlist)
+        return list(dict.fromkeys(ordered))
 
     @property
     def database(self) -> Union[LocalDatabase, MongoDatabase]:
