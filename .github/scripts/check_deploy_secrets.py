@@ -1,7 +1,7 @@
 """Falha se uma chave de segredo em deploy/ ou nos *.example* tiver valor literal.
 
 Recusa também URL de webhook do Discord em qualquer chave.
-Aceita valor vazio, referência ``${NOME}``, ``${NOME:-}`` ou ``${NOME:?mensagem}`` (sem padrão literal).
+Aceita valor vazio, referência ``${NOME}``, ``${NOME:-}`` ou ``${NOME:?mensagem}`` (sem padrão literal), ou várias dessas referências separadas por um espaço.
 Booleano e número só valem nas chaves de ajuste listadas em ``NON_SECRET_SETTINGS``.
 """
 
@@ -12,7 +12,9 @@ from pathlib import Path
 
 SECRET_KEY = re.compile(r"(TOKEN|SECRET|PASS|KEY|MONGO|WEBHOOK|COOKIE|REFRESH|URI)", re.IGNORECASE)
 ASSIGNMENT = re.compile(r"^\s*(?:export\s+)?[\"']?([A-Za-z0-9_]+)[\"']?\s*[:=]\s*(.*?)\s*$")
-EMPTY_OR_REFERENCE = re.compile(r"""^(["']?)(|\$\{[A-Za-z_][A-Za-z0-9_]*(?::-|:\?[^}]*)?\})\1$""")
+REFERENCE = r"\$\{[A-Za-z_][A-Za-z0-9_]*(?::-|:\?[^}]*)?\}"
+# vazio, uma referência, ou várias separadas por um espaço (ex.: TOKEN com os tokens na ordem); nunca um valor literal
+EMPTY_OR_REFERENCE = re.compile(rf"""^(["']?)(|{REFERENCE}(?: {REFERENCE})*)\1$""")
 BOOLEAN_OR_NUMBER = re.compile(r"""^(["']?)(true|false|-?\d+)\1$""", re.IGNORECASE)
 # Chaves que casam com SECRET_KEY pelo nome mas são ajustes, não segredos: só nelas booleano e número são aceitos.
 NON_SECRET_SETTINGS = frozenset(

@@ -23,12 +23,9 @@ services:
     mem_limit: 2048m
     memswap_limit: 2048m
     environment:
-      # Tokens dos bots: um por variável, valores só no .env.
-      TOKEN: ${TOKEN:-}
-      TOKEN_2: ${TOKEN_2:-}
-      TOKEN_3: ${TOKEN_3:-}
-      TOKEN_4: ${TOKEN_4:-}
-      TOKEN_5: ${TOKEN_5:-}
+      # Tokens dos bots numa só variável, NA ORDEM: o primeiro é o principal, os demais seguem nessa ordem
+      # (o Docker não preserva a ordem entre variáveis separadas). Valores só no .env.
+      TOKEN: "${TOKEN:-} ${TOKEN_2:-} ${TOKEN_3:-} ${TOKEN_4:-} ${TOKEN_5:-}"
 
       # Segredos e credenciais: valores só no .env.
       OWNER_IDS: ${OWNER_IDS:-}

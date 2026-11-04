@@ -7,6 +7,9 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Corrigido
+- Modelos de compose: os tokens vão numa só variável `TOKEN`, na ordem; o primeiro é o principal. Com uma variável por token, o Docker embaralhava a ordem e nenhum bot era reconhecido como principal quando a variável não se chamava `TOKEN`.
+
 ## [2.3.0-rc.2] - 2026-11-04
 
 ### Corrigido
