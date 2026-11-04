@@ -122,10 +122,12 @@ class IndexHandler(tornado.web.RequestHandler):
         pending_bots = []
 
         if killing_state is not True:
-            for bot in sorted(self.pool.bots, key=lambda b: len(b.guilds)):
+            # ordem dos tokens (a de carga do pool): o primeiro é o bot principal
+            for bot in self.pool.bots:
                 if bot.is_ready():
                     ready_bots.append(
                         {
+                            "principal": bot is self.pool.bots[0],
                             "nome": str(bot.user),
                             "avatar": bot.user.display_avatar.replace(size=256, static_format="png").url,
                             "servidores": len(bot.guilds),

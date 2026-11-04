@@ -7,6 +7,7 @@
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#0b0a1f">
   <title>{{ nome_bot }} · Status</title>
+  {% if painel_url %}<link rel="icon" href="/painel/marca/favicon.ico" sizes="any">{% end %}
   <style>
     :root {
       --fundo: #0b0a1f; --superficie: #15133a; --elevada: #1e1b4b; --borda: #2e2a6b;
@@ -43,7 +44,9 @@
     h2 { font-size: 1.3rem; margin: 0 0 0.75rem; }
     .aviso { background: var(--superficie); border: 1px solid var(--borda); border-left: 4px solid var(--violeta); border-radius: 0.5rem; padding: 0.9rem 1.1rem; margin: 0; }
     .aviso-reinicio { font-size: clamp(1.3rem, 4vw, 2rem); font-weight: 600; }
-    .grade { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 1rem; }
+    .grade { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+    .grade + .grade { margin-top: 1rem; }
+    .grade-principal .cartao { grid-column: 2; }
     .cartao { background: var(--superficie); border: 1px solid var(--borda); border-radius: 0.75rem; padding: 1.1rem; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; text-align: center; }
     .cartao img { width: 96px; height: 96px; border-radius: 50%; }
     .cartao-nome { font-weight: 700; font-size: 1.1rem; overflow-wrap: anywhere; }
@@ -59,7 +62,12 @@
     .visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
     footer { border-top: 1px solid var(--borda); padding-block: 1.5rem; color: var(--suave); font-size: 0.9rem; }
     footer p { margin: 0.25rem 0; }
+    @media (max-width: 52rem) {
+      .grade { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .grade-principal .cartao { grid-column: 1 / -1; justify-self: center; width: min(100%, 20rem); }
+    }
     @media (max-width: 36rem) {
+      .grade { grid-template-columns: 1fr; }
       .topo { padding-block: 1.5rem 1rem; }
       .logo { width: 72px; height: 72px; }
       .acoes .botao { flex: 1 1 100%; text-align: center; }
@@ -101,15 +109,25 @@
     {% if prontos %}
     <section aria-labelledby="titulo-prontos">
       <h2 id="titulo-prontos">Bots disponíveis</h2>
-      <ul class="grade">
-        {% for bot in prontos %}
+      <ul class="grade grade-principal">
+        {% for bot in prontos %}{% if bot["principal"] %}
         <li class="cartao">
           <img src="{{ bot['avatar'] }}" alt="Avatar do bot {{ bot['nome'] }}" width="96" height="96">
           <span class="cartao-nome">{{ bot["nome"] }}</span>
           {% if bot["servidores"] %}<p class="cartao-info">Servidores: {{ bot["servidores"] }}</p>{% end %}
           <a class="botao" href="{{ bot['convite'] }}" rel="nofollow noopener noreferrer" target="_blank">Adicionar {{ bot["nome"] }}<span class="visually-hidden"> a um servidor (abre em outra aba)</span></a>
         </li>
-        {% end %}
+        {% end %}{% end %}
+      </ul>
+      <ul class="grade">
+        {% for bot in prontos %}{% if not bot["principal"] %}
+        <li class="cartao">
+          <img src="{{ bot['avatar'] }}" alt="Avatar do bot {{ bot['nome'] }}" width="96" height="96">
+          <span class="cartao-nome">{{ bot["nome"] }}</span>
+          {% if bot["servidores"] %}<p class="cartao-info">Servidores: {{ bot["servidores"] }}</p>{% end %}
+          <a class="botao" href="{{ bot['convite'] }}" rel="nofollow noopener noreferrer" target="_blank">Adicionar {{ bot["nome"] }}<span class="visually-hidden"> a um servidor (abre em outra aba)</span></a>
+        </li>
+        {% end %}{% end %}
       </ul>
     </section>
     {% end %}
