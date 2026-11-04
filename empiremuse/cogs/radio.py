@@ -62,6 +62,17 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
+def make_ports(pool: Any, radio: Any) -> Any:
+    """As portas do Discord do tipo da rádio. A personalizada usa SEMPRE as dela, também em espera (sem estação): é nelas que estão o painel do visor e o
+    seletor de estações do servidor. Só o legado ``{playlist}`` (R1, antes da migração da subida) segue nas portas de playlist."""
+    if radio.kind == "live":
+        return LiveRadioPorts(pool, radio)
+    if "playlist" in radio.source:
+        return DiscordRadioPorts(pool, radio)
+    return CustomRadioPorts(pool, radio)
+
+
 CUSTOM_ACTIONS = frozenset(
     {"station_previous", "station_next"}
 )  # só no painel da personalizada: anterior e próxima ESTAÇÃO do servidor
@@ -133,13 +144,7 @@ class Radio(RadioPrefixCommands, commands.Cog):
         if not self._only_main() or manager.ports_factory is not None:
             return
         pool = self.bot.pool
-        manager.ports_factory = lambda radio: (
-            LiveRadioPorts(pool, radio)
-            if radio.kind == "live"
-            else CustomRadioPorts(pool, radio)
-            if "station" in radio.source
-            else DiscordRadioPorts(pool, radio)
-        )
+        manager.ports_factory = lambda radio: make_ports(pool, radio)
         manager.chat_ports_factory = lambda radio: DiscordChatPorts(pool, radio)
         manager.start_ticker()
         try:

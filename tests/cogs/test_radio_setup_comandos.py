@@ -595,3 +595,60 @@ class TestStationChosenInThePanelAfterSetup:
 
         assert text == "radio.live.not_found" != "radio.local.no_results"
         assert not (await w.hub.store.get(rid)).source.get("station")
+
+
+class TestCustomRadioPanelAfterSetup:
+    """PROD (rc.2): a personalizada recém-configurada (sem estação) ganhava o painel ANTIGO e o dono não escolhia as estações."""
+
+    @pytest.mark.asyncio
+    async def test_a_custom_radio_in_standby_gets_the_custom_ports_and_the_legacy_playlist_keeps_its_own(self):
+        from empiremuse.cogs.radio import make_ports
+        from empiremuse.utils.radio.custom_ports import CustomRadioPorts
+        from empiremuse.utils.radio.discord_ports import DiscordRadioPorts
+
+        w, _ = await world_with_station()
+        await run_setup(w, kind="custom")
+        waiting = await w.hub.store.get(radio_id(2, GUILD))
+        assert waiting.kind == "custom" and not waiting.source
+
+        ports = make_ports(w.hub.pool if hasattr(w.hub, "pool") else SimpleNamespace(radio=w.hub), waiting)
+        legacy = make_ports(SimpleNamespace(radio=w.hub), SimpleNamespace(kind="custom", source={"playlist": "X"}))
+
+        assert isinstance(ports, CustomRadioPorts)
+        assert type(legacy) is DiscordRadioPorts
+
+    @pytest.mark.asyncio
+    async def test_the_standby_panel_has_the_station_select_and_picking_one_sets_it_and_plays(self):
+        from empiremuse.i18n import get_i18n
+        from empiremuse.rules.radio import PANEL_STATION_SELECT_ID
+        from empiremuse.utils.radio import custom_panel
+        from empiremuse.utils.radio.actions import Actor
+        from empiremuse.utils.radio.discord_ports import DiscordRadioPorts
+
+        w, rock = await world_with_station()
+        await run_setup(w, kind="custom")
+        rid = radio_id(2, GUILD)
+        waiting = await w.hub.store.get(rid)
+        ports = SimpleNamespace(
+            pool=SimpleNamespace(radio=w.hub), station=None, current=None, no_tracks=False, wall=lambda: 1.0
+        )
+        w.hub.manager.runner = lambda _id: None
+        tr = await get_i18n().for_guild(None)
+
+        payload = await DiscordRadioPorts._custom_visor_payload(
+            ports, SimpleNamespace(get_color=lambda me: 0), SimpleNamespace(me=None), waiting, tr
+        )
+        select = next(
+            c for row in payload["components"] for c in row.children if c.custom_id == PANEL_STATION_SELECT_ID
+        )
+        assert [o.value for o in select.options] == [rock.id] and not select.disabled
+
+        w.hub.manager.change_station = AsyncMock(return_value=True)
+        cog = SimpleNamespace(
+            hub=w.hub, _too_soon=lambda *a: False, _authorized=lambda _i: Actor(user_id=7, manage_guild=True)
+        )
+        text = await custom_panel.pick_station(cog, click_of(), lambda k, **kw: k, waiting, rock.id)
+
+        assert text == "radio.local.changed"
+        assert (await w.hub.store.get(rid)).source["station"] == rock.id
+        w.hub.manager.change_station.assert_awaited_once()
