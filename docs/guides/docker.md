@@ -194,7 +194,7 @@ Para esse cenário de implantação em arquivo único atrás do Traefik, o repos
 O compose com Traefik segue a receita genérica mantida no repositório [**docker-compose-cookbook (`composes/empiremuse`)**](https://github.com/Or4cu1o/docker-compose-cookbook/tree/main/composes/empiremuse):
 - O compose consolida todas as variáveis e padrões recomendados de forma *inline*, sem necessidade de overrides.
 - O `.env` gerencia apenas os segredos, domínio e tokens de bot.
-- **Múltiplos Bots (ordem dos tokens)**: no `.env`, mantenha um token por variável (`TOKEN=...`, `TOKEN_2=...`, até `TOKEN_5` ou mais), assim nenhum campo passa do limite de 256 caracteres. No compose, junte-as numa só variável, na ordem desejada: `TOKEN: "${TOKEN:-} ${TOKEN_2:-} ${TOKEN_3:-} ..."`. O primeiro token é o bot principal e os demais seguem essa ordem (página de status, painel e reservas). Variáveis separadas no compose não servem para isso: o Docker não preserva a ordem entre elas.
+- **Múltiplos Bots (ordem dos tokens)**: no `.env`, mantenha um token por variável (`TOKEN=...`, `TOKEN_2=...` até `TOKEN_5`; para mais bots, acrescente `TOKEN_6` etc. ao `.env` e à linha `TOKEN` do compose), assim nenhum campo passa do limite de 256 caracteres. No compose, junte-as numa só variável, na ordem desejada: `TOKEN: "${TOKEN:-} ${TOKEN_2:-} ${TOKEN_3:-} ..."`. O primeiro token é o bot principal e os demais seguem essa ordem (página de status, painel e reservas). Variáveis separadas no compose não servem para isso: o Docker não preserva a ordem entre elas.
 
 ---
 
