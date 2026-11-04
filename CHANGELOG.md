@@ -7,7 +7,11 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.3.0-rc.3] - 2026-11-04
+
 ### Corrigido
+- Rádio personalizada recém-configurada abria no painel antigo, sem a lista de estações: agora usa sempre o visor, também em espera, e escolher uma estação grava e começa a tocar.
+- A lista de bots (reservas do `/radio setup`, página de status) segue a ordem do `TOKEN`, sem repetidos.
 - Modelos de compose: os tokens vão numa só variável `TOKEN`, na ordem; o primeiro é o principal. Com uma variável por token, o Docker embaralhava a ordem e nenhum bot era reconhecido como principal quando a variável não se chamava `TOKEN`.
 
 ## [2.3.0-rc.2] - 2026-11-04
@@ -773,7 +777,8 @@ O **EmpireMuse** é uma obra derivada e evolução contínua do projeto [MuseHea
 - **Ponto de partida do fork/bifurcação**: Commit upstream [`32f227e9`](https://github.com/zRitsu/MuseHeart-MusicBot/commit/32f227e96bca59d5e54f58f56f5fb7e804704b32) de 02/03/2026 (implementação do suporte ao protocolo DAVE com envio de `channelId` no payload de voz).
 - **Histórico anterior**: O histórico completo de commits, versões e contribuições anteriores a esse ponto de partida permanece preservado no repositório original do upstream.
 
-[Unreleased]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.3.0-rc.2...HEAD
+[Unreleased]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.3.0-rc.3...HEAD
+[2.3.0-rc.3]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.3.0-rc.2...v2.3.0-rc.3
 [2.3.0-rc.2]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.3.0-rc.1...v2.3.0-rc.2
 [2.3.0-rc.1]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.2.0...v2.3.0-rc.1
 [2.2.0]: https://github.com/EmpireCommunity/EmpireMuse/compare/v2.1.4...v2.2.0
