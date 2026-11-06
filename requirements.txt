@@ -11,7 +11,7 @@ aiofiles
 empiremuse-jishaku @ https://github.com/EmpireCommunity/EmpireMuse-jishaku/releases/download/v2.6.6.post3/empiremuse_jishaku-2.6.6.post3-py3-none-any.whl
 packaging
 yt-dlp[default,curl-cffi]>=2025.08.11
-tornado>=6.4.2
+tornado>=6.6
 urllib3>=2.5.0
 async-timeout
 cachetools
