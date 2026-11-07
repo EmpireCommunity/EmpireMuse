@@ -477,7 +477,7 @@ async def _he_track_exception(self, event) -> None:
     cooldown = 10
     start_position = 0
 
-    if reject_no_stream(track, _he_cause_text(event)):
+    if track.info.get("extra", {}).get("resolved_by_search") is True and reject_no_stream(track, _he_cause_text(event)):
         # A seleção pode ter mudado sourceName (Last.fm): mantém a busca, sem voltar à URL do candidato morto.
         await self.resolve_track(track, force=True)
         if track.id:

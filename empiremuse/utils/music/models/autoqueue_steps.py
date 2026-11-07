@@ -574,11 +574,8 @@ def _rt_rejected(track) -> list:
 def reject_no_stream(track, message) -> bool:
     """O candidato escolhido para ``track`` não tem stream ("No playable stream"): recusa-o e solta a escolha para ``resolve_track`` ir ao próximo.
 
-    Só seleções marcadas como busca recebem até ``REJECTED_CANDIDATES_MAX`` trocas por faixa.
-    Sem a marca, com outro erro ou no teto, devolve ``False`` e a faixa falha como antes.
+    ``True`` se vale tentar de novo (até ``REJECTED_CANDIDATES_MAX`` por faixa); qualquer outro erro, ou o teto, é ``False`` e a faixa falha como antes.
     """
-    if track.info.get("extra", {}).get("resolved_by_search") is not True:
-        return False
     rejected = _rt_rejected(track)
     if not track.id or NO_STREAM_ERROR not in str(message or "") or len(rejected) >= REJECTED_CANDIDATES_MAX:
         return False

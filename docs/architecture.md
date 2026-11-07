@@ -238,7 +238,8 @@ Na reprodução comum, uma seleção feita por busca de provider registra `extra
 responder "No playable stream", o player rejeita o candidato e refaz a busca, com até três trocas por faixa;
 candidatos rejeitados também ficam fora do fallback. Resoluções pelo próprio link e faixas sem essa marca não
 recebem essa nova tentativa. A marca é atualizada em toda seleção, inclusive ao usar o cache, antes de aplicar os
-metadados do candidato (T-413, definição de Alicerce).
+metadados do candidato. O gate da marca vale só para a reprodução comum; a rádio personalizada mantém a troca
+de candidatos de seu cache, sem depender da marca (T-413, definição final de Alicerce após revisão de Crivo).
 
 ## 6. Cliente Lavalink embutido (`empiremuse/wavelink/`)
 

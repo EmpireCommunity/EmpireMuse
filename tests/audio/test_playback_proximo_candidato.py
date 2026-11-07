@@ -119,7 +119,7 @@ async def test_no_stream_failures_stop_when_candidates_or_retry_budget_run_out(c
     assert not player.queue
 
 
-@pytest.mark.parametrize("marker", [None, False])
+@pytest.mark.parametrize("marker", [None, False, 1, "true"])
 async def test_direct_or_unmarked_track_is_not_retried(marker):
     from empiremuse.utils.music.models.event_steps import _he_dispatch
     from tests.audio.test_playback_retry_youtube import fail
