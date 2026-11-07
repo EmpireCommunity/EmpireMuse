@@ -472,10 +472,12 @@ def _rt_provider_queries(self, track):
 
 
 def _rt_search_queries(self, track, force):
-    """Consultas de busca da faixa parcial; `None` quando ela não deve ser resolvida agora."""
+    """Consultas e se usam o link direto; `None` quando a faixa não deve ser resolvida agora."""
 
+    direct = False
     if track.info["sourceName"] == "http":
         search_queries = [track.uri or track.search_uri]
+        direct = True
     elif (
         track.info["sourceName"] == "youtube"
         and not force
@@ -492,10 +494,11 @@ def _rt_search_queries(self, track, force):
             and (not self.node.only_use_native_search_providers or track.info["sourceName"] in native_sources)
         ):
             search_queries = [track.uri]
+            direct = True
         else:
             search_queries = _rt_provider_queries(self, track)
 
-    return search_queries
+    return search_queries, direct
 
 
 def _rt_drop_youtube_providers(self):
@@ -571,8 +574,11 @@ def _rt_rejected(track) -> list:
 def reject_no_stream(track, message) -> bool:
     """O candidato escolhido para ``track`` não tem stream ("No playable stream"): recusa-o e solta a escolha para ``resolve_track`` ir ao próximo.
 
-    ``True`` se vale tentar de novo (até ``REJECTED_CANDIDATES_MAX`` por faixa); qualquer outro erro, ou o teto, é ``False`` e a faixa falha como antes.
+    Só seleções marcadas como busca recebem até ``REJECTED_CANDIDATES_MAX`` trocas por faixa.
+    Sem a marca, com outro erro ou no teto, devolve ``False`` e a faixa falha como antes.
     """
+    if track.info.get("extra", {}).get("resolved_by_search") is not True:
+        return False
     rejected = _rt_rejected(track)
     if not track.id or NO_STREAM_ERROR not in str(message or "") or len(rejected) >= REJECTED_CANDIDATES_MAX:
         return False
@@ -596,9 +602,8 @@ def _rt_pick_candidate(track, result, req):
     if req.first_result is None and result:
         req.first_result = result
 
-    req.tracks.extend(result)
-
     rejected = _rt_rejected(track)
+    req.tracks.extend(t for t in result if t.id not in rejected)
 
     for t in result:
         if t.is_stream or t.id in rejected:

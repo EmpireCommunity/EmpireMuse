@@ -234,6 +234,12 @@ Os métodos mais longos do player (KI-29b) seguem o mesmo padrão do `/play`: `i
 - **Rich Presence**: `LavalinkPlayer.process_rpc` monta o payload e `LavalinkPlayer._send_rpc_data` o envia por `ws_client`
   (`empiremuse/utils/music/models/player_state.py`).
 
+Na reprodução comum, uma seleção feita por busca de provider registra `extra.resolved_by_search` na faixa. Se o nó
+responder "No playable stream", o player rejeita o candidato e refaz a busca, com até três trocas por faixa;
+candidatos rejeitados também ficam fora do fallback. Resoluções pelo próprio link e faixas sem essa marca não
+recebem essa nova tentativa. A marca é atualizada em toda seleção, inclusive ao usar o cache, antes de aplicar os
+metadados do candidato (T-413, definição de Alicerce).
+
 ## 6. Cliente Lavalink embutido (`empiremuse/wavelink/`)
 
 Pacote local derivado do wavelink 0.9.x (`__version__` em `empiremuse/wavelink/__init__.py`, versão `0.9.15`; autor original EvieePy,

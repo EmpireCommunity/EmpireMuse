@@ -22,7 +22,10 @@ def candidate(identifier: str):
 
 def partial(rejected=()):
     return SimpleNamespace(
-        id=None, title="Сказка", duration=180_000, info={"extra": {"rejected": list(rejected)}, "sourceName": "last.fm"}
+        id=None,
+        title="Сказка",
+        duration=180_000,
+        info={"extra": {"rejected": list(rejected), "resolved_by_search": True}, "sourceName": "last.fm"},
     )
 
 

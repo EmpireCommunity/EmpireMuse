@@ -477,6 +477,15 @@ async def _he_track_exception(self, event) -> None:
     cooldown = 10
     start_position = 0
 
+    if reject_no_stream(track, _he_cause_text(event)):
+        # A seleção pode ter mudado sourceName (Last.fm): mantém a busca, sem voltar à URL do candidato morto.
+        await self.resolve_track(track, force=True)
+        if track.id:
+            self.queue.appendleft(track)
+            self.locked = False
+            await self.process_next()
+            return
+
     if _he_take_same_track_retry(self, event, track):
         resume_position = get_start_pos(self, track)  # antes da espera, para não contar os segundos parados
         self.queue.appendleft(track)
