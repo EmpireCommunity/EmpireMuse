@@ -103,6 +103,7 @@ YOUTUBE_OAUTH_REFRESH_TOKEN="1//04xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 ### Servidores Lavalink Externos (Remoto / VPS)
 
 Se o Lavalink roda em outro contêiner sob o nome `LOCAL`, configure o token no `application.yml` desse nó.
+
 Se você utiliza um nó Lavalink externo em outra máquina ou VPS (onde o bot não gerencia o processo Java local):
 - O bot não tem controle sobre o ambiente do servidor remoto;
 - Configure a variável `PLUGINS_YOUTUBE_OAUTH_REFRESH_TOKEN` diretamente nas variáveis de ambiente do serviço do seu servidor Lavalink ou no respectivo `application.yml` remoto.

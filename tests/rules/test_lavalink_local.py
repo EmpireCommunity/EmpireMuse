@@ -25,6 +25,7 @@ pytestmark = pytest.mark.critical
         ("alias.local", False),
         ("[localhost]", False),
         ("[127.0.0.1]", False),
+        (8090, False),
     ],
 )
 def test_loopback_gate_never_uses_dns(monkeypatch, host, allowed):

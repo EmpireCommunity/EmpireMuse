@@ -15,7 +15,7 @@ from empiremuse.panel.services.account_base import AccountContext, AccountSectio
 from empiremuse.panel.services.base import Args, first, flag
 from empiremuse.rules import limits
 from empiremuse.rules.errors import PREFIX_LENGTH, RuleError
-from empiremuse.rules.rpc import TOKEN_ALPHABET, TOKEN_LENGTH, generate_rpc_token
+from empiremuse.rules.rpc import generate_rpc_token
 from empiremuse.rules.settings import validate_prefix
 
 logger = logging.getLogger(__name__)

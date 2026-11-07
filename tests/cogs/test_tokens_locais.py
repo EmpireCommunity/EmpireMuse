@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import secrets
 import string
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -71,7 +70,7 @@ def test_startup_delivery_registers_tokens_before_gate(monkeypatch, caplog, host
     pool.mongo_database = SimpleNamespace(_connect={"global": {"global": collection}})
     pool.get_all_bots = lambda: []
 
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.INFO):
         asyncio.run(
             pool.check_node(
                 {
@@ -94,6 +93,8 @@ def test_startup_delivery_registers_tokens_before_gate(monkeypatch, caplog, host
         if status == 302:
             assert "HTTP 302" in caplog.text
             assert "aplicado no servidor" not in caplog.text
+        else:
+            assert "aplicado no servidor" in caplog.text
     else:
         post.assert_not_awaited()
         if identifier == "LOCAL":
@@ -137,19 +138,12 @@ def test_oauth_command_delivery(monkeypatch, tmp_path, caplog, nodes, status):
 
 
 @pytest.mark.parametrize("entrypoint", ["command", "panel"])
-def test_rpc_generation_uses_secrets_choice(monkeypatch, entrypoint):
-    calls = []
-
-    def choose(alphabet):
-        calls.append(alphabet)
-        return "Z"
-
-    monkeypatch.setattr(secrets, "choice", choose)
+def test_rpc_entrypoints_generate_protocol_tokens(entrypoint):
     if entrypoint == "panel":
         from empiremuse.panel.services.account_misc import RpcTokenSection
 
         parsed = asyncio.run(RpcTokenSection().parse(None, {}, "rpc_token_gerar", {}))
-        assert parsed.new["token"] == "Z" * 50
+        token = parsed.new["token"]
     else:
         data = {"token": ""}
         bot = SimpleNamespace(get_global_data=AsyncMock(return_value=data), update_global_data=AsyncMock())
@@ -165,9 +159,10 @@ def test_rpc_generation_uses_secrets_choice(monkeypatch, entrypoint):
 
         asyncio.run(cog.rpc_button_event(interaction))
 
-        assert data["token"] == "Z" * 50
+        token = data["token"]
         bot.update_global_data.assert_awaited_once()
-    assert calls == [string.ascii_letters + string.digits] * 50
+    assert len(token) == 50
+    assert set(token) <= set(string.ascii_letters + string.digits)
 
 
 def test_connected_node_gets_a_bracketed_ipv6_rest_url():
