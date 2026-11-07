@@ -5,6 +5,7 @@ import asyncio
 import datetime
 import os
 import random
+import secrets
 import string
 import logging
 from collections.abc import Iterable, Mapping
@@ -2004,7 +2005,7 @@ class RPCCog(commands.Cog):
             if data["token"]:
                 await self.close_presence(inter)
 
-            data["token"] = "".join(random.choice(string.ascii_letters + string.digits) for i in range(50))
+            data["token"] = "".join(secrets.choice(string.ascii_letters + string.digits) for i in range(50))
             await self.bot.update_global_data(id_=user_id, data=data, db_name=DBModel.users)
             msg = (
                 f"O token para usar no app de RPC (Rich Presence) foi gerado com sucesso!\n\n"

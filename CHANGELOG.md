@@ -7,6 +7,9 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Segurança
+- Hardening of RPC token generation and YouTube token delivery.
+
 ## [2.3.0-rc.3] - 2026-11-04
 
 ### Corrigido

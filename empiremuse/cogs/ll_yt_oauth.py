@@ -293,7 +293,11 @@ class YtOauthLL(commands.Cog):
                 with open(app_yml, "w") as file:
                     yaml.dump(yml_data, file)
 
-                if (node := self.bot.music.nodes.get("LOCAL")) and "youtube-plugin" in node.info["plugins"]:
+                if (
+                    (node := self.bot.music.nodes.get("LOCAL"))
+                    and node.host in ("127.0.0.1", "::1", "localhost")
+                    and "youtube-plugin" in node.info["plugins"]
+                ):
                     resp = await self.bot.session.post(
                         f"{node.rest_uri}/youtube",
                         headers=node._websocket.headers,

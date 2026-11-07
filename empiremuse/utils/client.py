@@ -812,6 +812,7 @@ class BotPool:
 
         if (
             data["identifier"] == "LOCAL"
+            and data["host"] in ("127.0.0.1", "::1", "localhost")
             and self.mongo_database
             and data["info"]["check_version"] > 3
             and [i for i in data["info"].get("plugins", {}) if i["name"] == "youtube-plugin"]
