@@ -226,7 +226,7 @@ A regra padrão de corte temporal (`--exclude-newer 2026-10-20T00:00:00Z`, o mes
 - **`certifi` (2026.10.23, corte `2026-10-23T12:00:00Z`)**: versão atualizada exigida como requisito estrito de dependência do `yt-dlp` (remove as raízes emSign da CA eMudhra);
 - **`brotli` (1.2.1, corte `2026-10-22T15:00:00Z`)**: versões anteriores continham vulnerabilidades conhecidas em rotinas de descompressão (PYSEC-2026-4322 e PYSEC-2026-4323); a versão 1.2.1 corrige falhas de segurança prévias;
 - **`brotlicffi` (1.2.1.0, corte `2026-10-22T17:00:00Z`)**: bindings CFFI correspondentes à biblioteca brotli atualizada;
-- **`tornado` (6.6, corte `2026-10-21T15:32:00Z`)**: atualização de segurança do alertas #2, #3 e #4 do Dependabot (PR #165); o release saiu um dia depois do corte geral.
+- **`tornado` (6.6, corte `2026-10-21T15:32:00Z`)**: atualização de segurança dos alertas #2, #3 e #4 do Dependabot (PR #165); o release saiu um dia depois do corte geral.
 - **Timestamps fixos no passado**: cada isenção é fixada em um instante passado, logo após o último arquivo do release travado, evitando o risco de que datas futuras quebrem a sincronia da CI caso novos releases saiam antes da virada do corte;
 - **Diretriz para alertas e releases**: alerta do Dependabot → regerar o lock com isenção pontual (`--exclude-newer-package`) do pacote corrigido; a cada novo release do bot → mover o `--exclude-newer` geral para ~7 dias antes da data de release;
 - **Versão do `uv`**: os lockfiles são regerados compulsoriamente com `uv==0.13.5` (versão fixada na esteira de CI), garantindo estabilidade e determinação dos hashes em qualquer plataforma.
