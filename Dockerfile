@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1
 ARG PYTHON_IMAGE=python:3.14-slim-trixie@sha256:c2aca8207dfb68e7d20fecb7fad7e145c5d79d2ff36712d416c144130606d71d
-ARG JRE_IMAGE=eclipse-temurin:25-jre@sha256:dbb43d81099eec91e0800226ed2296d03146ee7857165b95112372ad0d67e87f
+ARG JRE_IMAGE=eclipse-temurin:25.0.5_8-jre-resolute@sha256:b6e00330337143a2c1a20f1c1c693d4b6ce9a3c30ade8b9d03fc68cc9e3871e7
 ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.13.5@sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff
 
 # -----------------------------------------------------------------------------
-# Estágio JRE: Fornece o runtime Java 25 oficial do Eclipse Temurin
+# Estágio JRE: Fornece o runtime Java 25 oficial do Eclipse Temurin (25.0.5+8, Ubuntu 26.04)
 # -----------------------------------------------------------------------------
 FROM ${JRE_IMAGE} AS jre-stage
 
@@ -104,16 +104,18 @@ RUN sed -i \
 # Copiar JRE 25 oficial do Eclipse Temurin (apenas /opt/java/openjdk)
 COPY --from=jre-stage /opt/java/openjdk /opt/java/openjdk
 
-# Desconfiar, no cacerts da JRE, das raízes emSign que o certifi travado não tem (C1, ECC C3 e ECC G3; só a "emSign Root CA - G1"
-# fica, como no certifi). O keytool falha se o alias não existir, então o build quebra quando um Temurin futuro já as tiver
-# tirado (ou renomeado): aí confira e remova o alias. Remover o bloco quando o Temurin desconfiar delas.
+# O Temurin 25.0.5 já não confia, no cacerts da JRE, nas raízes emSign que o certifi travado não tem (C1, ECC C3 e ECC G3; só a
+# "emSign Root CA - G1" fica, como no certifi). Este passo garante que continua assim: o build quebra se algum desses aliases
+# voltar a existir num Temurin futuro; aí volte a removê-los com `keytool -delete -cacerts -storepass changeit -alias <alias>`.
 # "changeit" é a senha pública e padrão do cacerts, não um segredo.
 RUN set -e; \
     for alias in \
       "cn_emsign_root_ca__c1,o_emudhra_inc,ou_emsign_pki,c_us [jdk]" \
       "cn_emsign_ecc_root_ca__c3,o_emudhra_inc,ou_emsign_pki,c_us [jdk]" \
       "cn_emsign_ecc_root_ca__g3,o_emudhra_technologies_limited,ou_emsign_pki,c_in [jdk]"; do \
-      /opt/java/openjdk/bin/keytool -delete -cacerts -storepass changeit -alias "$alias"; \
+      if /opt/java/openjdk/bin/keytool -list -cacerts -storepass changeit -alias "$alias" >/dev/null 2>&1; then \
+        echo "A JRE voltou a confiar em $alias: remova-o do cacerts (keytool -delete)." >&2; exit 1; \
+      fi; \
     done
 
 # Copiar os binários do Lavalink validados

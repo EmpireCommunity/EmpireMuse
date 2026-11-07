@@ -7,6 +7,10 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Alterado
+- Imagem Docker: o JRE passa do Temurin 25.0.4.1 para o 25.0.5+8, com tag explícita (`25.0.5_8-jre-resolute`, a mesma distro Ubuntu 26.04) fixada por digest multi-arquitetura (amd64 e arm64) publicado há mais de 7 dias.
+- Imagem Docker: o Temurin 25.0.5 já não confia nas raízes emSign C1, ECC C3 e ECC G3, então o `keytool -delete` (que falharia com alias inexistente) virou uma verificação: o build quebra se alguma delas voltar ao `cacerts` da JRE.
+
 ## [2.3.0-rc.3] - 2026-11-04
 
 ### Corrigido
