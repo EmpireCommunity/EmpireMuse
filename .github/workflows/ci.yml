@@ -89,7 +89,7 @@ jobs:
           test -n "$python_version"
           scratch="$(mktemp -d)"
           trap 'rm -rf "$scratch"' EXIT
-          for platform in x86_64-manylinux_2_40 aarch64-manylinux_2_40 x86_64-pc-windows-msvc aarch64-apple-darwin; do
+          for platform in x86_64-manylinux_2_40 aarch64-manylinux_2_40 x86_64-pc-windows-msvc aarch64-apple-darwin x86_64-apple-darwin; do
             echo "::group::sdist-only em $platform (Python $python_version)"
             uv pip install --dry-run --require-hashes --no-deps --only-binary :all: --no-binary "$sdist_permitido" --build-constraint build-constraints.txt --python-version "$python_version" --python-platform "$platform" --target "$scratch/$platform" -r requirements-lock.txt -r requirements-dev-lock.txt
             echo "::endgroup::"
