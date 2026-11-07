@@ -7,6 +7,9 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Corrigido
+- Configuração e redefinição de rádios são coordenadas por servidor, preservando o limite de três e um canal por rádio em pedidos simultâneos. A entrada de um bot no servidor não grava configurações padrão.
+
 ## [2.3.0-rc.3] - 2026-11-04
 
 ### Corrigido
