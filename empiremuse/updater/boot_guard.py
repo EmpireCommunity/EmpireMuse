@@ -15,7 +15,7 @@ import logging
 import sys
 from pathlib import Path
 
-from empiremuse.updater.git_flow import EXIT_RESTART, Runner, UpdateError, restore_checkout, run_exec
+from empiremuse.updater.git_flow import EXIT_RESTART, Runner, UpdateError, restore_checkout, run_exec, safe_failure
 from empiremuse.updater.state import (
     GAVE_UP_ATTEMPTS,
     MAX_RESTORE_ATTEMPTS,
@@ -77,9 +77,11 @@ def run(
         asyncio.run(
             restore_checkout(Path(repo_dir), pending.prev_sha, pending.target_commit, python=python, runner=runner)
         )
-    except Exception:
+    except Exception as failure:
         # O pendente fica como está (applying/pending): o próximo boot tenta de novo, sem carregar um rolled_back falso.
-        logger.error("A reversão automática para o commit anterior falhou; confira o servidor.")
+        logger.error(
+            "A reversão automática para o commit anterior falhou (%s); confira o servidor.", safe_failure(failure)
+        )
         raise SystemExit(EXIT_RESTART) from None
     _save(runtime_dir, dataclasses.replace(attempt, status="rolled_back"))
     raise SystemExit(EXIT_RESTART)

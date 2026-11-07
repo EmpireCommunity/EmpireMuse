@@ -222,6 +222,8 @@ uv pip compile --generate-hashes --universal --exclude-newer 2026-10-20T00:00:00
 uv pip compile --generate-hashes --universal --exclude-newer 2026-10-20T00:00:00Z requirements-dev.txt -o requirements-dev-lock.txt
 ```
 
+> Se o lock de produção usar `--exclude-newer-package setuptools=...`, repita a mesma isenção no `uv pip compile` de `build-constraints.in`; senão o `build-constraints.txt` fica com uma versão diferente da que o lock resolve. Um pacote sdist novo no lock (sem wheel) só entra depois de o backend dele ser pinado em `build-constraints.in` e de o pacote entrar na lista permitida do passo "Lock de produção só tem sdist na lista permitida" do `ci.yml`.
+
 #### Justificativa das isenções pontuais de corte temporal
 
 A regra padrão de corte temporal (`--exclude-newer 2026-10-20T00:00:00Z`, o mesmo nos dois locks) previne ataques de supply chain exigindo que pacotes tenham pelo menos 7 dias de maturação pública no PyPI. Quatro exceções temporárias, só no lock de produção e com datas fixas no passado, foram homologadas:

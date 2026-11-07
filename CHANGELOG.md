@@ -10,6 +10,8 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 ### Alterado
 - Supply chain: o único sdist do lock de produção (`tinydb-serialization`) era construído com um `setuptools` sem versão, sem hash e fora do corte de 7 dias. Agora o Dockerfile e o CI instalam com `--build-constraint build-constraints.txt` (setuptools pinado por versão e hash, gerado com o mesmo corte do lock e conferido pelo passo de sincronia do CI).
 - Atualização automática por git (fora do Docker): a instalação das dependências passa `--build-constraint build-constraints.txt` e o `uv` virou obrigatório, porque o `pip` não confere o hash do backend de build; sem o `uv` a atualização é recusada antes de mexer em qualquer coisa. Guia `atualizar-lavalink.md` e `run.bat` com o mesmo comando do lock.
+- CI: novo passo falha se o lock de produção ganhar um pacote sem wheel fora da lista permitida (hoje só o `tinydb-serialization`) em linux x86_64, linux aarch64 e windows, porque o uv 0.13.5 instala o backend de build de um sdist não listado sem versão nem hash. A regra está em `build-constraints.in` e no `AGENTS.md`.
+- Atualização automática por git: a atualização exige o `build-constraints.txt` no código novo (falha fechada, sem gravar nada); só a reversão para um release antigo tolera a falta dele. A reversão dispensa o `uv` (e a reinstalação) quando lock e constraints são idênticos nos dois commits, e o `boot_guard` registra o motivo da falha. A mensagem de `uv` ausente fala do PATH do processo do bot.
 
 ## [2.3.0-rc.3] - 2026-11-04
 

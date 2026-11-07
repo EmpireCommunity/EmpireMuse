@@ -8,6 +8,7 @@ só grava as chamadas e delega ao ``run_exec`` real; o resto (``update-state.jso
 """
 
 import asyncio
+import dataclasses
 import json
 import logging
 import os
@@ -517,6 +518,23 @@ def test_without_uv_the_update_is_refused_before_touching_anything(
     assert not (tmp_path / "runtime" / "update-pending.json").exists()
 
 
+def test_an_update_whose_target_has_no_constraints_file_is_refused_before_touching_anything(
+    mundo, python_falso, gravador, tmp_path
+):
+    """Fail closed: o alvo sem build-constraints.txt (como o v2.0.0) não é aplicado; nada é gravado nem trocado."""
+    remoto, local = mundo
+    plano = planejar(remoto, local)
+    sem_arquivo = git(remoto, "rev-parse", "v2.0.0^{commit}")
+    plano = dataclasses.replace(plano, target_commit=sem_arquivo)
+
+    with pytest.raises(UpdateError, match="build-constraints.txt"):
+        aplicar(plano, local, python_falso, tmp_path, gravador)
+
+    assert head(local) == plano.prev_sha
+    assert not any("checkout" in [str(a) for a in argv] for argv, _ in gravador.chamadas)
+    assert not (tmp_path / "runtime" / "update-pending.json").exists()
+
+
 def test_a_failing_dependency_install_also_rolls_back(mundo, python_falso, gravador, tmp_path):
     """A 1ª instalação (a do alvo) falha; a reinstalação do lock anterior passa."""
     remoto, local = mundo
@@ -629,12 +647,13 @@ def test_a_failing_write_of_the_applying_mark_runs_no_git_and_reraises(
         raise OSError(28, "sem espaço")
 
     monkeypatch.setattr(git_flow, "write_pending", falha)
-    chamadas_antes = len(gravador.chamadas)
 
     with pytest.raises(OSError):
         aplicar(plano, local, python_falso, tmp_path, gravador)
 
-    assert head(local) == plano.prev_sha and len(gravador.chamadas) == chamadas_antes
+    # só o cat-file de leitura roda antes da marca; nenhum checkout nem instalação
+    assert head(local) == plano.prev_sha
+    assert not any("checkout" in [str(a) for a in argv] for argv, _ in gravador.chamadas)
     assert not (tmp_path / "runtime" / "update-pending.json").exists()
 
 
@@ -926,7 +945,7 @@ def test_the_restore_asks_git_for_the_files_the_target_added_without_following_r
 
     restore.restaurar(runner)
 
-    (diff,) = [c for c in chamadas if "diff" in c]
+    (diff,) = [c for c in chamadas if "diff" in c and "--name-only" in c]
     assert {"--name-only", "--no-renames", "--diff-filter=A", "-z"} <= set(diff)
     assert diff[-2:] == [restore.prev, restore.alvo]
     forcado = [c for c in chamadas if "checkout" in c]

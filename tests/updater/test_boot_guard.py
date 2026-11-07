@@ -60,8 +60,8 @@ def mundo(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
     repo.mkdir()
     git(repo, "init", "-q", "-b", "main")
-    anterior = commit(repo, {"app.txt": "antigo\n"}, "antigo")
-    ALVO_DO_CENARIO["sha"] = commit(repo, {"app.txt": "novo\n"}, "novo")
+    anterior = commit(repo, {"app.txt": "antigo\n", "requirements-lock.txt": "antigo\n"}, "antigo")
+    ALVO_DO_CENARIO["sha"] = commit(repo, {"app.txt": "novo\n", "requirements-lock.txt": "novo\n"}, "novo")
     git(repo, "checkout", "-q", "--detach", "HEAD")
     python = tmp_path / "python-falso"
     python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
@@ -142,7 +142,9 @@ def test_the_third_boot_rolls_back_marks_the_pending_and_exits_with_75(mundo):
     assert [codigo for args, codigo in gravador.resultados if e_instalacao(args)] == [
         0
     ]  # a reinstalação do lock deu certo
-    assert all(codigo == 0 for _, codigo in gravador.resultados)
+    assert all(
+        codigo == 0 for args, codigo in gravador.resultados if "--quiet" not in args
+    )  # o diff --quiet sai 1: o lock difere
 
 
 def test_a_failing_reinstall_during_the_rollback_still_exits_with_75_and_keeps_the_state(mundo):
@@ -158,6 +160,32 @@ def test_a_failing_reinstall_during_the_rollback_still_exits_with_75_and_keeps_t
     assert [codigo for args, codigo in gravador.resultados if e_instalacao(args)] == [1]
     gravado = em_disco(runtime)
     assert gravado["status"] == "pending" and gravado["boots"] == 3 and gravado["restore_attempts"] == 1
+
+
+def test_the_restore_skips_the_reinstall_when_lock_and_constraints_are_identical_and_needs_no_uv(mundo, monkeypatch):
+    """Lock e build-constraints iguais nos dois commits: o ambiente já é o anterior; sem uv a reversão funciona."""
+    repo, _, anterior, python = mundo
+    git(repo, "checkout", "-q", "--detach", ALVO_DO_CENARIO["sha"])
+    igual = commit(repo, {"app.txt": "outro\n", "requirements-lock.txt": "novo\n"}, "mesmo lock")
+    monkeypatch.setattr(shutil, "which", lambda *args, **kwargs: None)  # sem uv no PATH
+    gravador = Gravador()
+
+    asyncio.run(restore_checkout(repo, ALVO_DO_CENARIO["sha"], igual, python=python, runner=gravador))
+
+    assert git(repo, "rev-parse", "HEAD") == ALVO_DO_CENARIO["sha"]
+    assert not any(e_instalacao(args) for args in gravador.chamadas)
+
+
+def test_the_restore_without_uv_and_with_a_different_lock_fails_and_the_boot_guard_logs_why(mundo, monkeypatch, caplog):
+    repo, runtime, anterior, _ = mundo
+    write_pending(runtime, pendente(anterior, boots=2))
+    monkeypatch.setattr(shutil, "which", lambda *args, **kwargs: None)
+
+    with caplog.at_level(logging.ERROR), pytest.raises(SystemExit) as saida:
+        guardar(mundo, Gravador())
+
+    assert saida.value.code == EXIT_RESTART
+    assert "PATH do processo do bot" in caplog.text and "confira o servidor" in caplog.text
 
 
 def test_restore_checkout_treats_a_non_zero_reinstall_as_an_update_error(mundo):

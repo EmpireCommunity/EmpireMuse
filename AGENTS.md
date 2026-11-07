@@ -82,6 +82,7 @@ Estrutura essencial do código (consulte [`docs/architecture.md`](docs/architect
   uv pip install --require-hashes --build-constraint build-constraints.txt -r requirements-lock.txt
   cp .example.env .env
   ```
+- **Sdist no lock**: todo pacote do `requirements-lock.txt` sem wheel precisa ter o backend de build pinado em `build-constraints.in` (o uv 0.13.5 instala um backend não listado sem versão nem hash e sai com 0). Hoje só o `tinydb-serialization` (setuptools). O CI falha se aparecer outro sdist fora da lista permitida; para liberar, pine o backend, regere `build-constraints.txt` e atualize a lista no passo do `ci.yml`.
 - **Execução do Bot**:
   ```bash
   python -m empiremuse                   # ponto de entrada canônico (ou python main.py)
