@@ -7,6 +7,9 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Alterado
+- Dependências de desenvolvimento e CI: `pytest-asyncio` 1.4.0 → 1.4.1 (isenção pontual do corte de 7 dias no lock de desenvolvimento, a 1.4.1.post1 fica de fora até cumprir a quarentena) e `actions/setup-python` v7.0.0 → v7.1.0, fixada pelo SHA completo.
+
 ## [2.3.0-rc.3] - 2026-11-04
 
 ### Corrigido
