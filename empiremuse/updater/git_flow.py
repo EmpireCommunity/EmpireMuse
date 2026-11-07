@@ -52,6 +52,7 @@ logger = logging.getLogger(__name__)
 EXIT_RESTART = 75
 MAIN_REF = "refs/remotes/official/main"
 LOCK_FILE = "requirements-lock.txt"
+BUILD_CONSTRAINTS_FILE = "build-constraints.txt"
 CHANGELOG_FILE = "CHANGELOG.md"
 CHANGELOG_MAX_CHARS = 3500
 MAX_CHANGELOG_BYTES = 1024 * 1024
@@ -440,12 +441,27 @@ async def plan_git_update(
     return GitPlan(current, target, tag_object_sha, target_commit, prev_sha, changelog)
 
 
-async def _install_dependencies(runner: Runner, repo_dir: Path, python: str) -> None:
+def _require_uv() -> str:
+    """O ``uv`` é obrigatório: só ele confere o hash do backend de build dos sdists do lock (``--build-constraint``); o
+    ``pip`` não confere, e instalar sem essa proteção reabriria a janela de supply chain que o lock fecha."""
     uv = shutil.which("uv")
-    if uv:
-        command = [uv, "pip", "install", "--require-hashes", "-r", LOCK_FILE, "--python", python]
-    else:
-        command = [python, "-m", "pip", "install", "--require-hashes", "-r", LOCK_FILE]
+    if not uv:
+        raise UpdateError(
+            "o uv não está instalado neste servidor; a atualização foi recusada porque só ele confere o hash do backend "
+            "de build das dependências. Instale o uv e tente de novo."
+        )
+    return uv
+
+
+async def _install_dependencies(runner: Runner, repo_dir: Path, python: str) -> None:
+    command = [_require_uv(), "pip", "install", "--require-hashes", "-r", LOCK_FILE, "--python", python]
+    if (repo_dir / BUILD_CONSTRAINTS_FILE).is_file():
+        command += ["--build-constraint", BUILD_CONSTRAINTS_FILE]
+    else:  # árvore anterior a esse arquivo (por exemplo, a reversão para um release antigo): segue, mas avisa
+        logger.warning(
+            "update: %s ausente no clone; o backend de build dos sdists não terá versão nem hash",
+            BUILD_CONSTRAINTS_FILE,
+        )
     result = await runner(*command, cwd=repo_dir, env=minimal_env(os.environ), timeout=INSTALL_TIMEOUT)
     if result.returncode != 0:
         logger.warning("update: instalação das dependências falhou (código %s): %s", result.returncode, result.output)
@@ -643,6 +659,7 @@ async def apply_git_update(
         boots=0,
         status="applying",
     )
+    _require_uv()  # antes de gravar o pendente ou tocar no git: sem o uv nada muda
     write_pending(runtime_dir, applying)  # fora do try: se a escrita falhar, nenhum git roda e a árvore fica intacta
     try:
         await git(

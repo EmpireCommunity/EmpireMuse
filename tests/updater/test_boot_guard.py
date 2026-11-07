@@ -19,7 +19,7 @@ from empiremuse.updater import boot_guard
 from empiremuse.updater.git_flow import EXIT_RESTART, ExecResult, UpdateError, restore_checkout, run_exec
 from tests.support.alvo_git import ALVO_GIT
 from empiremuse.updater.state import PendingUpdate, pending_path, write_pending
-from tests.updater.test_git_flow import commit, git
+from tests.updater.test_git_flow import commit, git, instalar_uv_falso
 
 pytestmark = pytest.mark.critical
 
@@ -66,7 +66,7 @@ def mundo(tmp_path, monkeypatch):
     python = tmp_path / "python-falso"
     python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     python.chmod(0o755)
-    monkeypatch.setattr(shutil, "which", lambda *args, **kwargs: None)
+    instalar_uv_falso(tmp_path, monkeypatch)
     runtime = tmp_path / "runtime"
     runtime.mkdir()
     return repo, runtime, anterior, str(python)
@@ -137,7 +137,7 @@ def test_the_third_boot_rolls_back_marks_the_pending_and_exits_with_75(mundo):
     assert subprocess.run(["git", "-C", str(repo), "symbolic-ref", "-q", "HEAD"], capture_output=True).returncode != 0
     argvs = [[str(a) for a in args] for args in gravador.chamadas]
     assert any("checkout" in a and "--detach" in a and anterior in a for a in argvs)
-    assert any(a[0] == python and "pip" in a and "install" in a and "--require-hashes" in a for a in argvs)
+    assert any(python in a and "pip" in a and "install" in a and "--require-hashes" in a for a in argvs)
     assert em_disco(runtime)["status"] == "rolled_back" and em_disco(runtime)["prev_sha"] == anterior
     assert [codigo for args, codigo in gravador.resultados if e_instalacao(args)] == [
         0
@@ -227,7 +227,7 @@ def test_an_applying_mark_is_rolled_back_on_the_first_boot_without_counting(mund
     assert git(repo, "rev-parse", "HEAD") == anterior
     argvs = [[str(a) for a in args] for args in gravador.chamadas]
     assert any("checkout" in a and "--detach" in a and anterior in a for a in argvs)
-    assert any(a[0] == python and "pip" in a and "install" in a for a in argvs)  # reinstala o lock anterior
+    assert any(python in a and "pip" in a and "install" in a for a in argvs)  # reinstala o lock anterior
     gravado = em_disco(runtime)
     assert gravado["status"] == "rolled_back" and gravado["boots"] == 0 and gravado["prev_sha"] == anterior
 

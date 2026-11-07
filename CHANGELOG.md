@@ -9,6 +9,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ### Alterado
 - Supply chain: o único sdist do lock de produção (`tinydb-serialization`) era construído com um `setuptools` sem versão, sem hash e fora do corte de 7 dias. Agora o Dockerfile e o CI instalam com `--build-constraint build-constraints.txt` (setuptools pinado por versão e hash, gerado com o mesmo corte do lock e conferido pelo passo de sincronia do CI).
+- Atualização automática por git (fora do Docker): a instalação das dependências passa `--build-constraint build-constraints.txt` e o `uv` virou obrigatório, porque o `pip` não confere o hash do backend de build; sem o `uv` a atualização é recusada antes de mexer em qualquer coisa. Guia `atualizar-lavalink.md` e `run.bat` com o mesmo comando do lock.
 
 ## [2.3.0-rc.3] - 2026-11-04
 

@@ -108,7 +108,7 @@ O comando legado de atualização em tempo de execução via Git (`@bot update` 
 
 Para atualizar o EmpireMuse:
 - **Ambientes conteinerizados (Docker)**: Realize o pull da nova imagem/release oficial e recrie o contêiner.
-- **Desenvolvimento local**: Execute `git pull origin main` no terminal com a aplicação parada e atualize as dependências com `uv pip install -r requirements.txt`.
+- **Desenvolvimento local**: Execute `git pull origin main` no terminal com a aplicação parada e atualize as dependências com `uv pip install --require-hashes --build-constraint build-constraints.txt -r requirements-lock.txt`.
 
 ### Atualizar o JDK
 Quando for necessário atualizar a versão ou a release dos pacotes portáteis do JDK da BellSoft para novas versões homologadas:
