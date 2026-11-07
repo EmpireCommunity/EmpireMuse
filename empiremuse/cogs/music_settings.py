@@ -924,18 +924,28 @@ class MusicSettings(commands.Cog):
             description += "\n\n" + tr("jukebox.setup.warn_permissions", channel=channel.mention, permissions=names)
         embed = disnake.Embed(description=description, color=bot.get_color(guild.me))
 
+        warning_message = None
         if not inter.response.is_done():
             try:
-                await inter.response.edit_message(embed=embed, components=None)
+                warning_message = await inter.response.edit_message(embed=embed, components=None)
             except AttributeError:
-                await inter.send(embed=embed)
+                warning_message = await inter.send(embed=embed)
         try:
-            await inter.edit_original_message(embed=embed, components=None)
+            warning_message = await inter.edit_original_message(embed=embed, components=None)
         except AttributeError, disnake.InteractionNotEditable:
             try:
                 await inter.response.edit_message(embed=embed, components=None)
+                warning_message = await inter.original_message()
             except Exception:
-                await inter.send(embed=embed, ephemeral=True)
+                if isinstance(inter, CustomContext):
+                    warning_message = await inter.send(embed=embed, ephemeral=True)
+                else:
+                    warning_message = await inter.followup.send(embed=embed, ephemeral=True, wait=True)
+
+        if result.not_applied:
+            from empiremuse.music_cog.jukebox_messages import retain_jukebox_permissions_warning
+
+            await retain_jukebox_permissions_warning(interaction, warning_message)
 
     @commands.has_guild_permissions(manage_guild=True)
     @commands.bot_has_guild_permissions(manage_threads=True)

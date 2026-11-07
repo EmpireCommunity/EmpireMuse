@@ -13,7 +13,7 @@
   "panel.jukebox.options.text_requests.label": "Toda mensagem é um pedido",
   "panel.jukebox.options.text_requests.help": "Ligado, qualquer mensagem que não começa com o prefixo nem com / vira pedido. Desligado, só comandos funcionam: texto puro nunca é executado.",
   "panel.jukebox.options.save": "Salvar",
-  "panel.jukebox.setup.warn_permissions": "A Jukebox foi configurada em #{channel}, mas o bot não pôde ajustar as permissões desse canal: falta Gerenciar Permissões para ele lá. Ainda faltam para o bot: {permissions}. Conceda-as, ou dê Gerenciar Permissões ao bot, e configure de novo.",
+  "panel.jukebox.setup.warn_permissions": "A Jukebox foi configurada em #{channel}, mas o bot não pôde ajustar as permissões desse canal: falta Gerenciar Permissões para ele lá. Ainda faltam para o bot: {permissions}. Para o bot ajustá-las, abra Editar canal > Permissões > cargo do bot > Gerenciar permissões, ative essa permissão e configure de novo.",
   "panel.playlists.filter.legend": "Mostrar playlists de",
   "panel.playlists.scope.jukebox.label": "Jukebox",
   "panel.playlists.scope.radio.label": "Rádio",

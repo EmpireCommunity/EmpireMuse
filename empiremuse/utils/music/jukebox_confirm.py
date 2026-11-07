@@ -1,4 +1,4 @@
-"""Confirmação de ``/jukebox setup`` num canal que já existe: configurar apaga as mensagens do bot nele, então o autor confirma antes (botão, só o autor, 60 s)."""
+"""Confirmação de ``/jukebox setup`` num canal que já existe: configurar apaga as mensagens nele, exceto a própria mensagem do comando, então o autor confirma antes (botão, só o autor, 60 s)."""
 
 from __future__ import annotations
 
