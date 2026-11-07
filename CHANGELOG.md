@@ -7,6 +7,9 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Corrigido
+- Ao mover o próprio bot para outro canal de voz ou palco, o player atualiza o último canal e seu ID antes de acompanhar o status de voz, para que a retomada da sessão também use o novo canal.
+
 ## [2.3.0-rc.3] - 2026-11-04
 
 ### Corrigido

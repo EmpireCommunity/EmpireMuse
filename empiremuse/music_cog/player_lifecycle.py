@@ -326,6 +326,9 @@ class PlayerLifecycleMixin:
         if member.bot:
             # ignorar outros bots
             if player.bot.user.id == member.id:
+                if before.channel and after.channel and before.channel != after.channel:
+                    player._last_channel = after.channel
+                    player._last_channel_id = after.channel.id
                 await self._voice_status_follow_move(player, before, after)
 
             if player.bot.user.id == member.id and not after.channel:
