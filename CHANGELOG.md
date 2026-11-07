@@ -7,6 +7,9 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Alterado
+- CI: novo passo prova que `requirements-lock.txt` instala, com hashes obrigatórios, em linux x86_64 e aarch64 (Python 3.14), as plataformas da imagem de release. Um lock sem as distribuições de alguma delas passa a falhar no CI, não no build do release.
+
 ## [2.3.0-rc.3] - 2026-11-04
 
 ### Corrigido
