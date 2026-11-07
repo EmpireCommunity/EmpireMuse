@@ -106,7 +106,7 @@ COPY --from=jre-stage /opt/java/openjdk /opt/java/openjdk
 
 # O Temurin 25.0.5 já não confia, no cacerts da JRE, nas raízes emSign que o certifi travado não tem (C1, ECC C3 e ECC G3; só a
 # "emSign Root CA - G1" fica, como no certifi). Este passo garante que continua assim, e falha fechado: a listagem do cacerts tem
-# de funcionar (keytool, caminho e senha), a G1 tem de aparecer (prova que a listagem está completa) e nenhuma das três raízes pode
+# de funcionar (keytool e caminho), a G1 tem de aparecer (prova que a listagem está completa) e nenhuma das três raízes pode
 # aparecer. Confere as impressões digitais SHA-256, não os aliases, que podem ser renomeados. Se um Temurin futuro voltar a
 # confiar nelas, remova-as com `keytool -delete -cacerts -storepass changeit -alias <alias>`.
 # "changeit" é a senha pública e padrão do cacerts, não um segredo.
@@ -114,12 +114,12 @@ RUN set -e; \
     store="$(/opt/java/openjdk/bin/keytool -list -cacerts -storepass changeit)"; \
     printf '%s\n' "$store" | grep -qF "40:F6:AF:03:46:A9:9A:A1:CD:1D:55:5A:4E:9C:CE:62:C7:F9:63:46:03:EE:40:66:15:83:3D:C8:C8:D0:03:67" || \
       { echo "cacerts da JRE sem a emSign Root CA - G1: a listagem não é confiável." >&2; exit 1; }; \
-    for fingerprint in \
-      "12:56:09:AA:30:1D:A0:A2:49:B9:7A:82:39:CB:6A:34:21:6F:44:DC:AC:9F:39:54:B1:42:92:F2:E8:C8:60:8F" \
-      "BC:4D:80:9B:15:18:9D:78:DB:3E:1D:8C:F4:F9:72:6A:79:5D:A1:64:3C:A5:F1:35:8E:1D:DB:0E:DC:0D:7E:B3" \
-      "86:A1:EC:BA:08:9C:4A:8D:3B:BE:27:34:C6:12:BA:34:1D:81:3E:04:3C:F9:E8:A8:62:CD:5C:57:A3:6B:BE:6B"; do \
-      if printf '%s\n' "$store" | grep -qF "$fingerprint"; then \
-        echo "A JRE voltou a confiar numa raiz emSign ($fingerprint): remova-a do cacerts (keytool -delete)." >&2; exit 1; \
+    for entry in \
+      "emSign Root CA - C1=12:56:09:AA:30:1D:A0:A2:49:B9:7A:82:39:CB:6A:34:21:6F:44:DC:AC:9F:39:54:B1:42:92:F2:E8:C8:60:8F" \
+      "emSign ECC Root CA - C3=BC:4D:80:9B:15:18:9D:78:DB:3E:1D:8C:F4:F9:72:6A:79:5D:A1:64:3C:A5:F1:35:8E:1D:DB:0E:DC:0D:7E:B3" \
+      "emSign ECC Root CA - G3=86:A1:EC:BA:08:9C:4A:8D:3B:BE:27:34:C6:12:BA:34:1D:81:3E:04:3C:F9:E8:A8:62:CD:5C:57:A3:6B:BE:6B"; do \
+      if printf '%s\n' "$store" | grep -qF "${entry#*=}"; then \
+        echo "A JRE voltou a confiar na raiz ${entry%%=*} (${entry#*=}): remova-a do cacerts (keytool -delete)." >&2; exit 1; \
       fi; \
     done
 
