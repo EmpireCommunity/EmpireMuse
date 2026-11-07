@@ -79,7 +79,7 @@ Estrutura essencial do código (consulte [`docs/architecture.md`](docs/architect
   ```bash
   uv venv --python 3.14
   source .venv/bin/activate  # Windows: .venv\Scripts\activate
-  uv pip install --require-hashes -r requirements-lock.txt
+  uv pip install --require-hashes --build-constraint build-constraints.txt -r requirements-lock.txt
   cp .example.env .env
   ```
 - **Execução do Bot**:

@@ -22,7 +22,7 @@ cd EmpireMuse
 uv venv --python 3.14
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 
-uv pip install --require-hashes -r requirements-lock.txt
+uv pip install --require-hashes --build-constraint build-constraints.txt -r requirements-lock.txt
 ```
 
 Observações:
@@ -214,6 +214,9 @@ uv --version  # deve imprimir uv 0.13.5
 
 # Lock universal de produção
 uv pip compile --generate-hashes --universal --exclude-newer 2026-10-20T00:00:00Z --exclude-newer-package yt-dlp=2026-10-26T22:30:00Z --exclude-newer-package certifi=2026-10-23T12:00:00Z --exclude-newer-package brotli=2026-10-22T15:00:00Z --exclude-newer-package brotlicffi=2026-10-22T17:00:00Z requirements.txt -o requirements-lock.txt
+
+# Constraints do backend de build (setuptools, por versão e hash; vale para os sdists do lock)
+uv pip compile --generate-hashes --universal --exclude-newer 2026-10-20T00:00:00Z build-constraints.in -o build-constraints.txt
 
 # Lock universal de desenvolvimento
 uv pip compile --generate-hashes --universal --exclude-newer 2026-10-20T00:00:00Z requirements-dev.txt -o requirements-dev-lock.txt

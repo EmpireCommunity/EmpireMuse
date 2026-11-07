@@ -1,0 +1,3 @@
+# Backend de build dos sdists do lock (hoje só o tinydb-serialization, que não publica wheel). Gera build-constraints.txt,
+# que o uv usa em --build-constraint para pinar o setuptools por versão e hash. Mesmo corte do requirements-lock.txt.
+setuptools>=84.1.0
