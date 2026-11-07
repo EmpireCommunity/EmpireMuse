@@ -1167,7 +1167,7 @@
   "visor.select.type.all.description": "Every station of the server, whatever the type",
   "visor.select.type.all.label": "All stations",
   "visor.all_types": "ALL TYPES",
-  "jukebox.setup.purge.ask": "**{user}, setting up the Jukebox in {channel} deletes ALL messages in that channel (pinned ones included), except the command message itself. Confirm within {seconds}s.**",
+  "jukebox.setup.purge.ask": "**{user}, setting up the Jukebox in {channel} deletes ALL messages in that channel (pinned ones included), except the current Jukebox panel. Confirm within {seconds}s.**",
   "jukebox.setup.purge.confirm": "Confirm and delete",
   "jukebox.setup.purge.cancel": "Cancel",
   "jukebox.setup.purge.author_only": "Only the person who used the command can confirm.",

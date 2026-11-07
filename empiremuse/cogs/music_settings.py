@@ -925,21 +925,21 @@ class MusicSettings(commands.Cog):
         embed = disnake.Embed(description=description, color=bot.get_color(guild.me))
 
         warning_message = None
-        if not inter.response.is_done():
+        if isinstance(inter, CustomContext):
+            warning_message = await inter.send(embed=embed)
+        else:
+            if not inter.response.is_done():
+                try:
+                    await inter.response.edit_message(embed=embed, components=None)
+                except AttributeError:
+                    await inter.send(embed=embed)
             try:
-                warning_message = await inter.response.edit_message(embed=embed, components=None)
-            except AttributeError:
-                warning_message = await inter.send(embed=embed)
-        try:
-            warning_message = await inter.edit_original_message(embed=embed, components=None)
-        except AttributeError, disnake.InteractionNotEditable:
-            try:
-                await inter.response.edit_message(embed=embed, components=None)
-                warning_message = await inter.original_message()
-            except Exception:
-                if isinstance(inter, CustomContext):
-                    warning_message = await inter.send(embed=embed, ephemeral=True)
-                else:
+                warning_message = await inter.edit_original_message(embed=embed, components=None)
+            except AttributeError, disnake.InteractionNotEditable:
+                try:
+                    await inter.response.edit_message(embed=embed, components=None)
+                    warning_message = await inter.original_message()
+                except Exception:
                     warning_message = await inter.followup.send(embed=embed, ephemeral=True, wait=True)
 
         if result.not_applied:

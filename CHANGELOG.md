@@ -11,7 +11,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - O aviso de permissões do setup da Jukebox, no bot e no painel, indica o caminho no Discord para ativar Gerenciar permissões no cargo do bot (en-US e pt-BR). No bot, o aviso permanece por 120 s, inclusive com a limpeza automática ligada.
 
 ### Corrigido
-- A confirmação do setup da Jukebox esclarece que a própria mensagem do comando é preservada na limpeza do canal.
+- A confirmação do setup da Jukebox esclarece que o painel atual da Jukebox é preservado na limpeza do canal. A resposta final do setup por prefixo é enviada uma única vez, para que não sobre uma cópia do aviso após os 120 s.
 
 ## [2.3.0-rc.3] - 2026-11-04
 
