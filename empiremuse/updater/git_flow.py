@@ -481,9 +481,10 @@ async def _require_constraints_in_target(git: _Git, target_commit: str) -> None:
 
 
 async def _same_install_inputs(git: _Git, prev_sha: str, target_commit: str) -> bool:
-    """``True`` se o lock e o ``build-constraints.txt`` são idênticos nos dois commits (``git diff --quiet``): o ambiente
-    instalado já é o do commit anterior. Qualquer dúvida (erro do git inclusive) vale ``False``: reinstala."""
-    result = await git("diff", "--quiet", prev_sha, target_commit, "--", LOCK_FILE, BUILD_CONSTRAINTS_FILE)
+    """``True`` se o ``requirements-lock.txt`` é idêntico nos dois commits (``git diff --quiet``): o ambiente instalado já
+    é o do commit anterior. O ``build-constraints.txt`` fica de fora de propósito: ele decide COMO uma roda é construída,
+    não QUAIS pacotes a reversão precisa instalar. Qualquer dúvida (erro do git inclusive) vale ``False``: reinstala."""
+    result = await git("diff", "--quiet", prev_sha, target_commit, "--", LOCK_FILE)
     return result.returncode == 0
 
 
@@ -640,7 +641,7 @@ async def restore_checkout(
     )
     await _remove_target_additions(git, repo, await _added_paths(git, prev_sha, target_commit), target_commit)
     if await _same_install_inputs(git, prev_sha, target_commit):
-        logger.info("update: lock e build-constraints iguais nos dois commits; reinstalação dispensada na reversão")
+        logger.info("update: lock igual nos dois commits; reinstalação dispensada na reversão")
         return  # sem reinstalar não precisa do uv: a reversão funciona num servidor que ainda não o tem
     await _install_dependencies(runner, repo, python, constraints_required=False)
 

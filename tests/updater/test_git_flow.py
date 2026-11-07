@@ -64,13 +64,23 @@ def mundo(tmp_path, monkeypatch):
     git(remoto, "init", "-q", "-b", "main")
     commit(
         remoto,
-        {"pyproject.toml": PYPROJECT, "CHANGELOG.md": "# Changelog\n\n## [2.0.0]\n- base\n", "app.txt": "v2.0.0\n"},
+        {
+            "pyproject.toml": PYPROJECT,
+            "CHANGELOG.md": "# Changelog\n\n## [2.0.0]\n- base\n",
+            "app.txt": "v2.0.0\n",
+            "requirements-lock.txt": "lock-v2.0.0\n",
+        },
         "v2.0.0",
     )
     git(remoto, "tag", "-a", "v2.0.0", "-m", "2.0.0")
     commit(
         remoto,
-        {"CHANGELOG.md": CHANGELOG_21, "app.txt": "v2.1.0\n", "build-constraints.txt": "setuptools==1\n"},
+        {
+            "CHANGELOG.md": CHANGELOG_21,
+            "app.txt": "v2.1.0\n",
+            "build-constraints.txt": "setuptools==1\n",
+            "requirements-lock.txt": "lock-v2.1.0\n",
+        },
         "v2.1.0",
     )
     git(remoto, "tag", "-a", "v2.1.0", "-m", "2.1.0")
@@ -483,16 +493,18 @@ def test_a_failing_smoke_rolls_back_to_prev_sha_reinstalls_the_lock_and_leaves_n
 
 
 def test_the_rollback_reinstall_of_a_tree_without_the_constraints_file_goes_on_without_the_flag(
-    mundo, python_falso, gravador, tmp_path
+    mundo, python_falso, gravador, tmp_path, caplog
 ):
     """O v2.0.0 é anterior ao build-constraints.txt: a reversão tem de continuar funcionando, sem o flag."""
     remoto, local = mundo
     plano = planejar(remoto, local)
     (tmp_path / "smoke_falha").write_text("1", encoding="utf-8")
 
-    with pytest.raises(UpdateError):
+    with caplog.at_level(logging.WARNING, logger=git_flow.logger.name), pytest.raises(UpdateError):
         aplicar(plano, local, python_falso, tmp_path, gravador)
 
+    avisos = [r for r in caplog.records if r.name == git_flow.logger.name and r.levelno == logging.WARNING]
+    assert any("build-constraints.txt ausente" in r.getMessage() and "nem hash" in r.getMessage() for r in avisos)
     instalacoes = [
         [str(x) for x in a]
         for a, _ in gravador.chamadas

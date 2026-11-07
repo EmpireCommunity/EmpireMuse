@@ -222,7 +222,9 @@ uv pip compile --generate-hashes --universal --exclude-newer 2026-10-20T00:00:00
 uv pip compile --generate-hashes --universal --exclude-newer 2026-10-20T00:00:00Z requirements-dev.txt -o requirements-dev-lock.txt
 ```
 
-> Se o lock de produção usar `--exclude-newer-package setuptools=...`, repita a mesma isenção no `uv pip compile` de `build-constraints.in`; senão o `build-constraints.txt` fica com uma versão diferente da que o lock resolve. Um pacote sdist novo no lock (sem wheel) só entra depois de o backend dele ser pinado em `build-constraints.in` e de o pacote entrar na lista permitida do passo "Lock de produção só tem sdist na lista permitida" do `ci.yml`.
+> O pin do `build-constraints.txt` vale no momento em que a roda do sdist é construída. O uv reaproveita do cache uma roda já construída sem olhar o constraint; por isso o Docker constrói com `--no-cache`, e numa máquina que já construiu o `tinydb-serialization` antes desta mudança é preciso limpar uma vez (`uv cache clean tinydb-serialization`; `--refresh` não resolve). O CI não persiste o cache do uv entre execuções, e o passo que adultera o hash usa `--no-cache` de propósito.
+>
+> Se o lock de produção usar `--exclude-newer-package setuptools=...`, repita a mesma isenção no `uv pip compile` de `build-constraints.in`; senão o `build-constraints.txt` fica com uma versão diferente da que o lock resolve. Um pacote sdist novo em qualquer dos dois locks (sem wheel) só entra depois de o backend dele ser pinado em `build-constraints.in` e de o pacote entrar na lista permitida do passo "Locks só têm sdist na lista permitida" do `ci.yml`.
 
 #### Justificativa das isenções pontuais de corte temporal
 

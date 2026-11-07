@@ -75,24 +75,50 @@ jobs:
           uv pip compile --generate-hashes --universal --exclude-newer 2026-10-20T00:00:00Z build-constraints.in -o build-constraints.txt
           git diff --exit-code requirements-lock.txt requirements-dev-lock.txt build-constraints.txt
 
-      - name: Lock de produção só tem sdist na lista permitida (backend de build pinado)
+      - name: Locks só têm sdist na lista permitida (backend de build pinado)
         run: |
           # O uv 0.13.5 com --require-hashes instala o backend de build de um sdist SEM versão nem hash se ele não estiver
           # em build-constraints.txt, e sai com 0. Hoje o único sdist do lock é o tinydb-serialization (setuptools). Este
           # passo falha se o lock ganhar OUTRO pacote sem wheel (hatchling, flit-core, poetry-core...): --only-binary :all:
           # exige wheel de tudo, exceto da lista abaixo. Para liberar um sdist novo: pinar o backend dele em
           # build-constraints.in, regerar build-constraints.txt e só então acrescentar o pacote à lista.
-          # --dry-run não constrói nada; a resolução é universal, então cobre as três plataformas.
+          # Vale para os dois locks (os jobs instalam os dois com --build-constraint). --dry-run não constrói nada; as
+          # plataformas vêm do laço abaixo (a Docker, o Windows e o macOS do run.sh), cada uma com a sua resolução.
           sdist_permitido="tinydb-serialization"
           python_version="$(sed -n 's/^ARG PYTHON_IMAGE=python:\([0-9.]*\)-.*/\1/p' Dockerfile)"
           test -n "$python_version"
           scratch="$(mktemp -d)"
           trap 'rm -rf "$scratch"' EXIT
-          for platform in x86_64-manylinux_2_40 aarch64-manylinux_2_40 x86_64-pc-windows-msvc; do
+          for platform in x86_64-manylinux_2_40 aarch64-manylinux_2_40 x86_64-pc-windows-msvc aarch64-apple-darwin; do
             echo "::group::sdist-only em $platform (Python $python_version)"
-            uv pip install --dry-run --require-hashes --no-deps --only-binary :all: --no-binary "$sdist_permitido" --build-constraint build-constraints.txt --python-version "$python_version" --python-platform "$platform" --target "$scratch/$platform" -r requirements-lock.txt
+            uv pip install --dry-run --require-hashes --no-deps --only-binary :all: --no-binary "$sdist_permitido" --build-constraint build-constraints.txt --python-version "$python_version" --python-platform "$platform" --target "$scratch/$platform" -r requirements-lock.txt -r requirements-dev-lock.txt
             echo "::endgroup::"
           done
+
+      - name: Backend de build com hash adulterado é recusado (prova da imposição do hash)
+        run: |
+          # Prova executável, a cada CI, de que o uv confere o hash do backend de build do sdist: com uma cópia do
+          # build-constraints.txt com os hashes do setuptools trocados, a construção do tinydb-serialization TEM de
+          # falhar por "Hash mismatch"; com o arquivo real, TEM de passar. --no-cache é essencial: o uv reaproveita um
+          # wheel já construído sem olhar o constraint, e a prova não provaria nada.
+          python_version="$(sed -n 's/^ARG PYTHON_IMAGE=python:\([0-9.]*\)-.*/\1/p' Dockerfile)"
+          test -n "$python_version"
+          scratch="$(mktemp -d)"
+          trap 'rm -rf "$scratch"' EXIT
+          awk '/^tinydb-serialization==/{emit=1} emit{print} emit && !/\\$/{exit}' requirements-lock.txt > "$scratch/tds.txt"
+          test "$(grep -c -- '--hash=sha256:' "$scratch/tds.txt")" -ge 1
+          sed 's/sha256:[0-9a-f]\{8\}/sha256:00000000/g' build-constraints.txt > "$scratch/adulterado.txt"
+          cmp -s build-constraints.txt "$scratch/adulterado.txt" && { echo "a adulteração não mudou nada"; exit 1; }
+          construir() {
+            uv pip install --no-cache --require-hashes --no-deps --only-binary :all: --no-binary tinydb-serialization --build-constraint "$1" --python-version "$python_version" --python-platform x86_64-manylinux_2_40 --target "$2" -r "$scratch/tds.txt"
+          }
+          if saida="$(construir "$scratch/adulterado.txt" "$scratch/neg" 2>&1)"; then
+            echo "$saida"; echo "ERRO: o uv aceitou um backend de build com hash adulterado"; exit 1
+          fi
+          echo "$saida" | grep -Fq 'Hash mismatch for `setuptools' || { echo "$saida"; echo "ERRO: falhou por outro motivo"; exit 1; }
+          echo "hash adulterado recusado, como esperado"
+          construir build-constraints.txt "$scratch/pos"
+          test -d "$scratch/pos/tinydb_serialization"
 
       - name: Instalar dependências com hashes
         run: |

@@ -162,18 +162,72 @@ def test_a_failing_reinstall_during_the_rollback_still_exits_with_75_and_keeps_t
     assert gravado["status"] == "pending" and gravado["boots"] == 3 and gravado["restore_attempts"] == 1
 
 
-def test_the_restore_skips_the_reinstall_when_lock_and_constraints_are_identical_and_needs_no_uv(mundo, monkeypatch):
-    """Lock e build-constraints iguais nos dois commits: o ambiente já é o anterior; sem uv a reversão funciona."""
-    repo, _, anterior, python = mundo
-    git(repo, "checkout", "-q", "--detach", ALVO_DO_CENARIO["sha"])
-    igual = commit(repo, {"app.txt": "outro\n", "requirements-lock.txt": "novo\n"}, "mesmo lock")
+CONSTRAINTS = "setuptools==1\n"
+
+
+def dois_commits(repo, *, lock_antes="a\n", lock_depois="a\n", constraints_antes=None, constraints_depois=None):
+    """Dois commits seguidos com o lock e o build-constraints.txt dados (``None`` = o arquivo não existe)."""
+
+    def montar(numero, lock, constraints):
+        for nome in ("requirements-lock.txt", "build-constraints.txt"):
+            (repo / nome).unlink(missing_ok=True)
+        arquivos = {"requirements-lock.txt": lock, "marca.txt": f"{numero}\n"}
+        if constraints:
+            arquivos["build-constraints.txt"] = constraints
+        return commit(repo, arquivos, f"c{numero}")
+
+    return montar(1, lock_antes, constraints_antes), montar(2, lock_depois, constraints_depois)
+
+
+@pytest.mark.parametrize(
+    ("antes", "depois"),
+    [(CONSTRAINTS, CONSTRAINTS), (None, CONSTRAINTS), (CONSTRAINTS, None), (CONSTRAINTS, "setuptools==2\n")],
+    ids=["igual", "acrescentado", "removido", "diferente"],
+)
+def test_the_restore_skips_the_reinstall_when_the_lock_is_the_same_whatever_the_constraints_do(
+    mundo, monkeypatch, antes, depois
+):
+    """Só o lock decide o que reinstalar: o constraints diz como construir uma roda. Pular dispensa o uv."""
+    repo, _, _, python = mundo
+    prev, alvo = dois_commits(repo, constraints_antes=antes, constraints_depois=depois)
+    git(repo, "checkout", "-q", "--detach", alvo)
     monkeypatch.setattr(shutil, "which", lambda *args, **kwargs: None)  # sem uv no PATH
     gravador = Gravador()
 
-    asyncio.run(restore_checkout(repo, ALVO_DO_CENARIO["sha"], igual, python=python, runner=gravador))
+    asyncio.run(restore_checkout(repo, prev, alvo, python=python, runner=gravador))
 
-    assert git(repo, "rev-parse", "HEAD") == ALVO_DO_CENARIO["sha"]
+    assert git(repo, "rev-parse", "HEAD") == prev
     assert not any(e_instalacao(args) for args in gravador.chamadas)
+
+
+def test_the_restore_reinstalls_when_the_lock_differs_and_needs_uv(mundo, monkeypatch):
+    repo, _, _, python = mundo
+    prev, alvo = dois_commits(repo, lock_antes="a\n", lock_depois="b\n", constraints_antes=CONSTRAINTS)
+    git(repo, "checkout", "-q", "--detach", alvo)
+    gravador = Gravador()
+
+    asyncio.run(restore_checkout(repo, prev, alvo, python=python, runner=gravador))
+
+    assert any(e_instalacao(args) for args in gravador.chamadas)
+    monkeypatch.setattr(shutil, "which", lambda *args, **kwargs: None)
+    git(repo, "checkout", "-q", "--detach", alvo)
+    with pytest.raises(UpdateError, match="PATH do processo do bot"):
+        asyncio.run(restore_checkout(repo, prev, alvo, python=python, runner=Gravador()))
+
+
+def test_a_git_diff_error_on_the_comparison_fails_closed_and_reinstalls(mundo):
+    repo, _, _, python = mundo
+    prev, alvo = dois_commits(repo)  # lock igual: sem o erro, pularia
+    git(repo, "checkout", "-q", "--detach", alvo)
+
+    def diff_quebrado(args):
+        return ExecResult(128, "fatal") if "--quiet" in args else None
+
+    gravador = Gravador(diff_quebrado)
+
+    asyncio.run(restore_checkout(repo, prev, alvo, python=python, runner=gravador))
+
+    assert any(e_instalacao(args) for args in gravador.chamadas)
 
 
 def test_the_restore_without_uv_and_with_a_different_lock_fails_and_the_boot_guard_logs_why(mundo, monkeypatch, caplog):
