@@ -7,6 +7,9 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Corrigido
+- Os testes de OAuth do YouTube usam nós locais com host e porta, preservando a verificação de mascaramento e truncamento do corpo de erro HTTP 500.
+
 ### Segurança
 - O refreshToken do YouTube só é aplicado ao nó LOCAL da própria máquina; o token do RPC é gerado com fonte criptográfica. Conexões REST e WebSocket com nós IPv6 usam o endereço correto.
 
