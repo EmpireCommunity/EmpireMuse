@@ -216,16 +216,17 @@ uv --version  # deve imprimir uv 0.13.5
 uv pip compile --generate-hashes --universal --exclude-newer 2026-10-20T00:00:00Z --exclude-newer-package yt-dlp=2026-10-26T22:30:00Z --exclude-newer-package certifi=2026-10-23T12:00:00Z --exclude-newer-package brotli=2026-10-22T15:00:00Z --exclude-newer-package brotlicffi=2026-10-22T17:00:00Z --exclude-newer-package tornado=2026-10-21T15:32:00Z requirements.txt -o requirements-lock.txt
 
 # Lock universal de desenvolvimento
-uv pip compile --generate-hashes --universal --exclude-newer 2026-10-20T00:00:00Z requirements-dev.txt -o requirements-dev-lock.txt
+uv pip compile --generate-hashes --universal --exclude-newer 2026-10-20T00:00:00Z --exclude-newer-package pytest-asyncio=2026-10-25T21:06:00Z requirements-dev.txt -o requirements-dev-lock.txt
 ```
 
 #### Justificativa das isenções pontuais de corte temporal
 
-A regra padrão de corte temporal (`--exclude-newer 2026-10-20T00:00:00Z`, o mesmo nos dois locks) previne ataques de supply chain exigindo que pacotes tenham pelo menos 7 dias de maturação pública no PyPI. Cinco exceções temporárias, só no lock de produção e com datas fixas no passado, foram homologadas:
+A regra padrão de corte temporal (`--exclude-newer 2026-10-20T00:00:00Z`, o mesmo nos dois locks) previne ataques de supply chain exigindo que pacotes tenham pelo menos 7 dias de maturação pública no PyPI. Seis exceções temporárias, cinco no lock de produção e uma no de desenvolvimento, com datas fixas no passado, foram homologadas:
 - **`yt-dlp` (2026.10.26, corte `2026-10-26T22:30:00Z`)**: exceção temporária necessária para acompanhar atualizações contínuas de cifragem e contorno anti-bot do YouTube;
 - **`certifi` (2026.10.23, corte `2026-10-23T12:00:00Z`)**: versão atualizada exigida como requisito estrito de dependência do `yt-dlp` (remove as raízes emSign da CA eMudhra);
 - **`brotli` (1.2.1, corte `2026-10-22T15:00:00Z`)**: versões anteriores continham vulnerabilidades conhecidas em rotinas de descompressão (PYSEC-2026-4322 e PYSEC-2026-4323); a versão 1.2.1 corrige falhas de segurança prévias;
 - **`brotlicffi` (1.2.1.0, corte `2026-10-22T17:00:00Z`)**: bindings CFFI correspondentes à biblioteca brotli atualizada;
+- **`pytest-asyncio` (1.4.1, corte `2026-10-25T21:06:00Z`, só no lock de desenvolvimento)**: versão publicada em 2026-10-25, já com mais de 7 dias; o corte fica antes do `1.4.1.post1` (2026-11-01), que ainda não cumpriu a quarentena;
 - **`tornado` (6.6, corte `2026-10-21T15:32:00Z`)**: atualização de segurança dos alertas #2, #3 e #4 do Dependabot (PR #165); o release saiu um dia depois do corte geral.
 - **Timestamps fixos no passado**: cada isenção é fixada em um instante passado, logo após o último arquivo do release travado, evitando o risco de que datas futuras quebrem a sincronia da CI caso novos releases saiam antes da virada do corte;
 - **Diretriz para alertas e releases**: alerta do Dependabot → regerar o lock com isenção pontual (`--exclude-newer-package`) do pacote corrigido; a cada novo release do bot → mover o `--exclude-newer` geral para ~7 dias antes da data de release;
