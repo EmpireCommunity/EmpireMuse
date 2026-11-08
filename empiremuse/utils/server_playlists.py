@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, Optional
 import disnake
 
 from empiremuse.rules.errors import RuleError
-from empiremuse.rules.limits import MAX_SERVER_PLAYLISTS
+from empiremuse.rules.jukebox_select import SELECT_CAPACITY
 from empiremuse.rules.playlists import (
     ImportReport,
     SCOPE_JUKEBOX,
@@ -70,9 +70,7 @@ def _validated(item: Playlist, scope: str) -> Playlist | RuleError:
     return checked if isinstance(checked, RuleError) else checked._replace(order=item.order, scope=scope)
 
 
-def select_options(
-    bot, playlists: tuple[Playlist, ...], limit: int = MAX_SERVER_PLAYLISTS
-) -> list[disnake.SelectOption]:
+def select_options(bot, playlists: tuple[Playlist, ...], limit: int = SELECT_CAPACITY) -> list[disnake.SelectOption]:
     """As primeiras ``limit`` playlists por ordem como opções de select (o Discord aceita 25): nome, descrição cortada e o emoji (o ícone da playlist; sem ele, o da plataforma).
 
     O ``value`` é o nome; quem trata a escolha o resolve de novo no store, nunca confia no valor recebido.
@@ -86,7 +84,7 @@ def select_options(
             description=select_description(p.description) or None,
             emoji=p.icon or music_source_emoji_url(p.url, bot)[0],
         )
-        for p in playlists[:limit]
+        for p in playlists[: max(0, min(limit, SELECT_CAPACITY))]
     ]
 
 
@@ -102,11 +100,6 @@ async def safe_list(bot, gid: int, scope: str = SCOPE_JUKEBOX) -> tuple[Playlist
         return await bot.pool.servers.playlists.list(gid, scope=scope)
     except ServerConfigUnavailable, ServerConfigConflict, UnknownGuild:
         return ()
-
-
-async def load_select_options(bot, gid: int, scope: str = SCOPE_JUKEBOX) -> list[disnake.SelectOption]:
-    """As opções do select de playlists do servidor; sem playlists, ou com o store indisponível, a lista vazia (o select some)."""
-    return select_options(bot, await safe_list(bot, gid, scope))
 
 
 class ServerPlaylists:

@@ -181,7 +181,7 @@ class JukeboxPanel:
         from empiremuse.utils.others import send_idle_embed  # tarde: utils.others importa muita coisa
         from empiremuse.utils.music.interactions.jukebox_panel import render_panel
         from empiremuse.rules.playlists import genres_of
-        from empiremuse.utils.server_playlists import safe_list, select_options
+        from empiremuse.utils.server_playlists import safe_list
 
         panel_bot = await self.pool.servers.jukebox.panel_bot(guild_id)
         message = await fetch_panel_message(self.pool, guild_id)
@@ -203,7 +203,7 @@ class JukeboxPanel:
                 message.guild,
                 entries,
                 tr=await self.pool.i18n.for_guild(message.guild),
-                playlist_options=select_options(panel_bot, playlists),
+                playlists=playlists,
                 last_action=self._last_action(message.guild, pairs),
                 genres=genres_of(playlists)[:MAX_GENRE_OPTIONS],
             )

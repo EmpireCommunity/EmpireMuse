@@ -19,7 +19,7 @@ from empiremuse.utils.music.app_emojis import APP_EMOJIS
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
 from empiremuse.utils.music.converters import md_link
 from empiremuse.utils.music.errors import GenericError, ArgumentParsingError
-from empiremuse.utils.server_playlists import load_select_options
+from empiremuse.utils.music.guild_pin import load_guild_pin
 
 if TYPE_CHECKING:
     from empiremuse.utils.client import BotCore
@@ -446,19 +446,9 @@ async def send_idle_embed(
 
     components = []
 
-    opts = await load_select_options(bot, guild_id)
-
-    if opts:
-        components.append(
-            disnake.ui.Select(
-                placeholder=fit(tr("player.idle.server_songs_placeholder"), 150),
-                options=opts,
-                custom_id="player_guild_pin",
-                min_values=0,
-                max_values=1,
-                required=False,
-            )
-        )
+    select = await load_guild_pin(bot, tr, guild_id)
+    if select is not None:
+        components.append(select)
 
     components.extend(jukebox_buttons(bot, tr))
 
