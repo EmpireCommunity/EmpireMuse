@@ -22,7 +22,7 @@ cd EmpireMuse
 uv venv --python 3.14
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 
-uv pip install --require-hashes -r requirements-lock.txt
+uv pip install --require-hashes --build-constraint build-constraints.txt -r requirements-lock.txt
 ```
 
 Observações:
@@ -215,9 +215,16 @@ uv --version  # deve imprimir uv 0.13.5
 # Lock universal de produção
 uv pip compile --generate-hashes --universal --exclude-newer 2026-10-20T00:00:00Z --exclude-newer-package yt-dlp=2026-10-26T22:30:00Z --exclude-newer-package certifi=2026-10-23T12:00:00Z --exclude-newer-package brotli=2026-10-22T15:00:00Z --exclude-newer-package brotlicffi=2026-10-22T17:00:00Z --exclude-newer-package tornado=2026-10-21T15:32:00Z requirements.txt -o requirements-lock.txt
 
+# Constraints do backend de build (setuptools, por versão e hash; vale para os sdists do lock)
+uv pip compile --generate-hashes --universal --exclude-newer 2026-10-20T00:00:00Z build-constraints.in -o build-constraints.txt
+
 # Lock universal de desenvolvimento
 uv pip compile --generate-hashes --universal --exclude-newer 2026-10-20T00:00:00Z --exclude-newer-package pytest-asyncio=2026-10-25T21:06:00Z requirements-dev.txt -o requirements-dev-lock.txt
 ```
+
+> O pin do `build-constraints.txt` vale no momento em que a roda do sdist é construída. O uv reaproveita do cache uma roda já construída sem olhar o constraint; por isso o Docker constrói com `--no-cache`, e numa máquina que já construiu o `tinydb-serialization` antes desta mudança é preciso limpar uma vez (`uv cache clean tinydb-serialization`; `--refresh` não resolve). O CI não persiste o cache do uv entre execuções, e o passo que adultera o hash usa `--no-cache` de propósito.
+>
+> Se o lock de produção usar `--exclude-newer-package setuptools=...`, repita a mesma isenção no `uv pip compile` de `build-constraints.in`; senão o `build-constraints.txt` fica com uma versão diferente da que o lock resolve. Um pacote sdist novo em qualquer dos dois locks (sem wheel) só entra depois de o backend dele ser pinado em `build-constraints.in` e de o pacote entrar na lista permitida do passo "Locks só têm sdist na lista permitida" do `ci.yml`.
 
 #### Justificativa das isenções pontuais de corte temporal
 

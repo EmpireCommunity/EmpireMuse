@@ -19,7 +19,7 @@ from empiremuse.updater import boot_guard
 from empiremuse.updater.git_flow import EXIT_RESTART, ExecResult, UpdateError, restore_checkout, run_exec
 from tests.support.alvo_git import ALVO_GIT
 from empiremuse.updater.state import PendingUpdate, pending_path, write_pending
-from tests.updater.test_git_flow import commit, git
+from tests.updater.test_git_flow import commit, git, instalar_uv_falso
 
 pytestmark = pytest.mark.critical
 
@@ -60,13 +60,13 @@ def mundo(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
     repo.mkdir()
     git(repo, "init", "-q", "-b", "main")
-    anterior = commit(repo, {"app.txt": "antigo\n"}, "antigo")
-    ALVO_DO_CENARIO["sha"] = commit(repo, {"app.txt": "novo\n"}, "novo")
+    anterior = commit(repo, {"app.txt": "antigo\n", "requirements-lock.txt": "antigo\n"}, "antigo")
+    ALVO_DO_CENARIO["sha"] = commit(repo, {"app.txt": "novo\n", "requirements-lock.txt": "novo\n"}, "novo")
     git(repo, "checkout", "-q", "--detach", "HEAD")
     python = tmp_path / "python-falso"
     python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     python.chmod(0o755)
-    monkeypatch.setattr(shutil, "which", lambda *args, **kwargs: None)
+    instalar_uv_falso(tmp_path, monkeypatch)
     runtime = tmp_path / "runtime"
     runtime.mkdir()
     return repo, runtime, anterior, str(python)
@@ -137,12 +137,14 @@ def test_the_third_boot_rolls_back_marks_the_pending_and_exits_with_75(mundo):
     assert subprocess.run(["git", "-C", str(repo), "symbolic-ref", "-q", "HEAD"], capture_output=True).returncode != 0
     argvs = [[str(a) for a in args] for args in gravador.chamadas]
     assert any("checkout" in a and "--detach" in a and anterior in a for a in argvs)
-    assert any(a[0] == python and "pip" in a and "install" in a and "--require-hashes" in a for a in argvs)
+    assert any(python in a and "pip" in a and "install" in a and "--require-hashes" in a for a in argvs)
     assert em_disco(runtime)["status"] == "rolled_back" and em_disco(runtime)["prev_sha"] == anterior
     assert [codigo for args, codigo in gravador.resultados if e_instalacao(args)] == [
         0
     ]  # a reinstalação do lock deu certo
-    assert all(codigo == 0 for _, codigo in gravador.resultados)
+    assert all(
+        codigo == 0 for args, codigo in gravador.resultados if "--quiet" not in args
+    )  # o diff --quiet sai 1: o lock difere
 
 
 def test_a_failing_reinstall_during_the_rollback_still_exits_with_75_and_keeps_the_state(mundo):
@@ -158,6 +160,86 @@ def test_a_failing_reinstall_during_the_rollback_still_exits_with_75_and_keeps_t
     assert [codigo for args, codigo in gravador.resultados if e_instalacao(args)] == [1]
     gravado = em_disco(runtime)
     assert gravado["status"] == "pending" and gravado["boots"] == 3 and gravado["restore_attempts"] == 1
+
+
+CONSTRAINTS = "setuptools==1\n"
+
+
+def dois_commits(repo, *, lock_antes="a\n", lock_depois="a\n", constraints_antes=None, constraints_depois=None):
+    """Dois commits seguidos com o lock e o build-constraints.txt dados (``None`` = o arquivo não existe)."""
+
+    def montar(numero, lock, constraints):
+        for nome in ("requirements-lock.txt", "build-constraints.txt"):
+            (repo / nome).unlink(missing_ok=True)
+        arquivos = {"requirements-lock.txt": lock, "marca.txt": f"{numero}\n"}
+        if constraints:
+            arquivos["build-constraints.txt"] = constraints
+        return commit(repo, arquivos, f"c{numero}")
+
+    return montar(1, lock_antes, constraints_antes), montar(2, lock_depois, constraints_depois)
+
+
+@pytest.mark.parametrize(
+    ("antes", "depois"),
+    [(CONSTRAINTS, CONSTRAINTS), (None, CONSTRAINTS), (CONSTRAINTS, None), (CONSTRAINTS, "setuptools==2\n")],
+    ids=["igual", "acrescentado", "removido", "diferente"],
+)
+def test_the_restore_skips_the_reinstall_when_the_lock_is_the_same_whatever_the_constraints_do(
+    mundo, monkeypatch, antes, depois
+):
+    """Só o lock decide o que reinstalar: o constraints diz como construir uma roda. Pular dispensa o uv."""
+    repo, _, _, python = mundo
+    prev, alvo = dois_commits(repo, constraints_antes=antes, constraints_depois=depois)
+    git(repo, "checkout", "-q", "--detach", alvo)
+    monkeypatch.setattr(shutil, "which", lambda *args, **kwargs: None)  # sem uv no PATH
+    gravador = Gravador()
+
+    asyncio.run(restore_checkout(repo, prev, alvo, python=python, runner=gravador))
+
+    assert git(repo, "rev-parse", "HEAD") == prev
+    assert not any(e_instalacao(args) for args in gravador.chamadas)
+
+
+def test_the_restore_reinstalls_when_the_lock_differs_and_needs_uv(mundo, monkeypatch):
+    repo, _, _, python = mundo
+    prev, alvo = dois_commits(repo, lock_antes="a\n", lock_depois="b\n", constraints_antes=CONSTRAINTS)
+    git(repo, "checkout", "-q", "--detach", alvo)
+    gravador = Gravador()
+
+    asyncio.run(restore_checkout(repo, prev, alvo, python=python, runner=gravador))
+
+    assert any(e_instalacao(args) for args in gravador.chamadas)
+    monkeypatch.setattr(shutil, "which", lambda *args, **kwargs: None)
+    git(repo, "checkout", "-q", "--detach", alvo)
+    with pytest.raises(UpdateError, match="PATH do processo do bot"):
+        asyncio.run(restore_checkout(repo, prev, alvo, python=python, runner=Gravador()))
+
+
+def test_a_git_diff_error_on_the_comparison_fails_closed_and_reinstalls(mundo):
+    repo, _, _, python = mundo
+    prev, alvo = dois_commits(repo)  # lock igual: sem o erro, pularia
+    git(repo, "checkout", "-q", "--detach", alvo)
+
+    def diff_quebrado(args):
+        return ExecResult(128, "fatal") if "--quiet" in args else None
+
+    gravador = Gravador(diff_quebrado)
+
+    asyncio.run(restore_checkout(repo, prev, alvo, python=python, runner=gravador))
+
+    assert any(e_instalacao(args) for args in gravador.chamadas)
+
+
+def test_the_restore_without_uv_and_with_a_different_lock_fails_and_the_boot_guard_logs_why(mundo, monkeypatch, caplog):
+    repo, runtime, anterior, _ = mundo
+    write_pending(runtime, pendente(anterior, boots=2))
+    monkeypatch.setattr(shutil, "which", lambda *args, **kwargs: None)
+
+    with caplog.at_level(logging.ERROR), pytest.raises(SystemExit) as saida:
+        guardar(mundo, Gravador())
+
+    assert saida.value.code == EXIT_RESTART
+    assert "PATH do processo do bot" in caplog.text and "confira o servidor" in caplog.text
 
 
 def test_restore_checkout_treats_a_non_zero_reinstall_as_an_update_error(mundo):
@@ -227,7 +309,7 @@ def test_an_applying_mark_is_rolled_back_on_the_first_boot_without_counting(mund
     assert git(repo, "rev-parse", "HEAD") == anterior
     argvs = [[str(a) for a in args] for args in gravador.chamadas]
     assert any("checkout" in a and "--detach" in a and anterior in a for a in argvs)
-    assert any(a[0] == python and "pip" in a and "install" in a for a in argvs)  # reinstala o lock anterior
+    assert any(python in a and "pip" in a and "install" in a for a in argvs)  # reinstala o lock anterior
     gravado = em_disco(runtime)
     assert gravado["status"] == "rolled_back" and gravado["boots"] == 0 and gravado["prev_sha"] == anterior
 

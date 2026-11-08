@@ -52,6 +52,7 @@ logger = logging.getLogger(__name__)
 EXIT_RESTART = 75
 MAIN_REF = "refs/remotes/official/main"
 LOCK_FILE = "requirements-lock.txt"
+BUILD_CONSTRAINTS_FILE = "build-constraints.txt"
 CHANGELOG_FILE = "CHANGELOG.md"
 CHANGELOG_MAX_CHARS = 3500
 MAX_CHANGELOG_BYTES = 1024 * 1024
@@ -440,16 +441,51 @@ async def plan_git_update(
     return GitPlan(current, target, tag_object_sha, target_commit, prev_sha, changelog)
 
 
-async def _install_dependencies(runner: Runner, repo_dir: Path, python: str) -> None:
+def _require_uv() -> str:
+    """O ``uv`` é obrigatório: só ele confere o hash do backend de build dos sdists do lock (``--build-constraint``); o
+    ``pip`` não confere, e instalar sem essa proteção reabriria a janela de supply chain que o lock fecha."""
     uv = shutil.which("uv")
-    if uv:
-        command = [uv, "pip", "install", "--require-hashes", "-r", LOCK_FILE, "--python", python]
+    if not uv:
+        raise UpdateError(
+            "o uv não está no PATH do processo do bot (serviço systemd ou pm2 costuma ter um PATH mínimo, sem "
+            "~/.local/bin); a atualização foi recusada porque só ele confere o hash do backend de build das "
+            "dependências. Deixe o uv no PATH do processo e tente de novo."
+        )
+    return uv
+
+
+async def _install_dependencies(runner: Runner, repo_dir: Path, python: str, *, constraints_required: bool) -> None:
+    """``constraints_required``: na atualização o ``build-constraints.txt`` é obrigatório (falha fechada); só a reversão
+    para uma árvore antiga, anterior a esse arquivo, tolera a falta dele (e avisa)."""
+    command = [_require_uv(), "pip", "install", "--require-hashes", "-r", LOCK_FILE, "--python", python]
+    if (repo_dir / BUILD_CONSTRAINTS_FILE).is_file():
+        command += ["--build-constraint", BUILD_CONSTRAINTS_FILE]
+    elif constraints_required:
+        raise UpdateError(f"o código novo não traz o {BUILD_CONSTRAINTS_FILE}; a atualização foi recusada")
     else:
-        command = [python, "-m", "pip", "install", "--require-hashes", "-r", LOCK_FILE]
+        logger.warning(
+            "update: %s ausente no clone; o backend de build dos sdists não terá versão nem hash",
+            BUILD_CONSTRAINTS_FILE,
+        )
     result = await runner(*command, cwd=repo_dir, env=minimal_env(os.environ), timeout=INSTALL_TIMEOUT)
     if result.returncode != 0:
         logger.warning("update: instalação das dependências falhou (código %s): %s", result.returncode, result.output)
         raise UpdateError("a instalação das dependências falhou")
+
+
+async def _require_constraints_in_target(git: _Git, target_commit: str) -> None:
+    """O commit alvo precisa trazer o ``build-constraints.txt``: sem ele o backend de build dos sdists ficaria sem hash."""
+    result = await git("cat-file", "-e", f"{target_commit}:{BUILD_CONSTRAINTS_FILE}")
+    if result.returncode != 0:
+        raise UpdateError(f"o código novo não traz o {BUILD_CONSTRAINTS_FILE}; a atualização foi recusada")
+
+
+async def _same_install_inputs(git: _Git, prev_sha: str, target_commit: str) -> bool:
+    """``True`` se o ``requirements-lock.txt`` é idêntico nos dois commits (``git diff --quiet``): o ambiente instalado já
+    é o do commit anterior. O ``build-constraints.txt`` fica de fora de propósito: ele decide COMO uma roda é construída,
+    não QUAIS pacotes a reversão precisa instalar. Qualquer dúvida (erro do git inclusive) vale ``False``: reinstala."""
+    result = await git("diff", "--quiet", prev_sha, target_commit, "--", LOCK_FILE)
+    return result.returncode == 0
 
 
 async def _smoke_test(runner: Runner, repo_dir: Path, python: str) -> None:
@@ -604,7 +640,10 @@ async def restore_checkout(
         "checkout", "--force", "--detach", "--end-of-options", prev_sha, error="Não consegui voltar ao commit anterior."
     )
     await _remove_target_additions(git, repo, await _added_paths(git, prev_sha, target_commit), target_commit)
-    await _install_dependencies(runner, repo, python)
+    if await _same_install_inputs(git, prev_sha, target_commit):
+        logger.info("update: lock igual nos dois commits; reinstalação dispensada na reversão")
+        return  # sem reinstalar não precisa do uv: a reversão funciona num servidor que ainda não o tem
+    await _install_dependencies(runner, repo, python, constraints_required=False)
 
 
 async def apply_git_update(
@@ -643,6 +682,9 @@ async def apply_git_update(
         boots=0,
         status="applying",
     )
+    # Antes de gravar o pendente ou trocar a árvore: sem o uv, ou sem o build-constraints.txt no alvo, nada muda.
+    _require_uv()
+    await _require_constraints_in_target(git, plan.target_commit)
     write_pending(runtime_dir, applying)  # fora do try: se a escrita falhar, nenhum git roda e a árvore fica intacta
     try:
         await git(
@@ -652,7 +694,7 @@ async def apply_git_update(
             plan.target_commit,
             error="Não consegui trocar para o código novo.",
         )
-        await _install_dependencies(runner, repo_dir, python)
+        await _install_dependencies(runner, repo_dir, python, constraints_required=True)
         await _smoke_test(runner, repo_dir, python)
         pending = dataclasses.replace(applying, status="pending")
         write_pending(runtime_dir, pending)
@@ -668,7 +710,7 @@ async def apply_git_update(
     return pending
 
 
-def _safe_failure(failure: BaseException) -> str:
+def safe_failure(failure: BaseException) -> str:
     """Texto de log de uma falha: a mensagem só para ``UpdateError`` (escrita para o Discord, sem segredos); senão o tipo."""
     return str(failure) if isinstance(failure, UpdateError) else type(failure).__name__
 
@@ -701,8 +743,8 @@ async def _revert_or_keep(
         logger.error(
             "update: a reversão para %s falhou (%s); falha original: %s",
             plan.prev_sha,
-            _safe_failure(restore_failure),
-            _safe_failure(failure),
+            safe_failure(restore_failure),
+            safe_failure(failure),
         )
         if isinstance(failure, asyncio.CancelledError):
             raise failure from restore_failure

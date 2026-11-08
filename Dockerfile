@@ -70,8 +70,9 @@ COPY --from=uv-stage /uv /uvx /bin/
 RUN python -m venv --without-pip /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-COPY requirements-lock.txt /tmp/
-RUN uv pip install --python /opt/venv/bin/python --no-cache --require-hashes -r /tmp/requirements-lock.txt
+# O backend de build dos sdists do lock (tinydb-serialization) vem de build-constraints.txt, com versão e hash.
+COPY requirements-lock.txt build-constraints.txt /tmp/
+RUN uv pip install --python /opt/venv/bin/python --no-cache --require-hashes --build-constraint /tmp/build-constraints.txt -r /tmp/requirements-lock.txt
 
 # -----------------------------------------------------------------------------
 # Estágio 3: Imagem final de runtime (não-root, enxuta, código somente leitura)

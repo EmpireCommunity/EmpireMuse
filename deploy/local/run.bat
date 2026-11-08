@@ -74,7 +74,7 @@ if not exist ".venv" (
         exit /b 1
     )
 )
-uv pip install --python .venv\Scripts\python.exe --require-hashes -r requirements-lock.txt
+uv pip install --python .venv\Scripts\python.exe --require-hashes --build-constraint build-constraints.txt -r requirements-lock.txt
 if errorlevel 1 exit /b 1
 
 rem O Python do .venv direto: um ambiente virtual ativo no terminal não pode tomar o lugar dele.

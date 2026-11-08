@@ -1,0 +1,10 @@
+# Backend de build dos sdists do lock (hoje só o tinydb-serialization, que não publica wheel). Gera build-constraints.txt,
+# que o uv usa em --build-constraint para pinar o setuptools por versão e hash. Mesmo corte do requirements-lock.txt.
+setuptools>=84.1.0
+#
+# REGRA: todo pacote dos dois locks (produção e desenvolvimento) que só existe como sdist precisa ter o backend de build
+# listado AQUI (o uv 0.13.5 instala um backend não listado sem versão nem hash e sai com 0). A lista permitida está no
+# passo "Locks só têm sdist na lista permitida" do ci.yml, que confere os dois locks (hoje: tinydb-serialization ->
+# setuptools). Um sdist novo faz esse passo falhar até alguém acrescentar o backend dele neste arquivo, regerar
+# build-constraints.txt e incluir o pacote na lista do passo.
+# Uma isenção --exclude-newer-package setuptools=... usada no lock tem de ser repetida no compile deste arquivo.

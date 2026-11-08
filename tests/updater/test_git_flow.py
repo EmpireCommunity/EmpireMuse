@@ -8,6 +8,7 @@ só grava as chamadas e delega ao ``run_exec`` real; o resto (``update-state.jso
 """
 
 import asyncio
+import dataclasses
 import json
 import logging
 import os
@@ -63,11 +64,25 @@ def mundo(tmp_path, monkeypatch):
     git(remoto, "init", "-q", "-b", "main")
     commit(
         remoto,
-        {"pyproject.toml": PYPROJECT, "CHANGELOG.md": "# Changelog\n\n## [2.0.0]\n- base\n", "app.txt": "v2.0.0\n"},
+        {
+            "pyproject.toml": PYPROJECT,
+            "CHANGELOG.md": "# Changelog\n\n## [2.0.0]\n- base\n",
+            "app.txt": "v2.0.0\n",
+            "requirements-lock.txt": "lock-v2.0.0\n",
+        },
         "v2.0.0",
     )
     git(remoto, "tag", "-a", "v2.0.0", "-m", "2.0.0")
-    commit(remoto, {"CHANGELOG.md": CHANGELOG_21, "app.txt": "v2.1.0\n"}, "v2.1.0")
+    commit(
+        remoto,
+        {
+            "CHANGELOG.md": CHANGELOG_21,
+            "app.txt": "v2.1.0\n",
+            "build-constraints.txt": "setuptools==1\n",
+            "requirements-lock.txt": "lock-v2.1.0\n",
+        },
+        "v2.1.0",
+    )
     git(remoto, "tag", "-a", "v2.1.0", "-m", "2.1.0")
     git(remoto, "tag", "v2.5.0")  # leve: tem de ser ignorada
     local = tmp_path / "local"
@@ -354,14 +369,30 @@ exit 0
 """
 
 
+UV_FALSO = """#!/bin/sh
+d=$(dirname "$0")
+if [ "$1 $2" = "pip install" ] && [ -f "$d/pip_falha" ]; then rm -f "$d/pip_falha"; exit 1; fi
+exit 0
+"""
+
+
+def instalar_uv_falso(tmp_path, monkeypatch) -> Path:
+    """``uv`` falso no PATH do código testado (o updater exige o uv). A marca ``pip_falha`` fica AO LADO do script."""
+    script = tmp_path / "uv-falso"
+    script.write_text(UV_FALSO, encoding="utf-8")
+    script.chmod(0o755)
+    monkeypatch.setattr(shutil, "which", lambda *args, **kwargs: str(script))
+    return script
+
+
 @pytest.fixture
 def python_falso(tmp_path, monkeypatch):
-    """Interpretador falso e ``uv`` ausente (o caminho é ``python -m pip install``). As marcas de falha ficam AO LADO do script, porque o
+    """Interpretador falso e ``uv`` falso (``uv pip install``). As marcas de falha ficam AO LADO do script, porque o
     ambiente mínimo do contrato (V6) não repassa variáveis do teste ao processo."""
     script = tmp_path / "python-falso"
     script.write_text(PYTHON_FALSO, encoding="utf-8")
     script.chmod(0o755)
-    monkeypatch.setattr(shutil, "which", lambda *args, **kwargs: None)
+    instalar_uv_falso(tmp_path, monkeypatch)
     return script
 
 
@@ -388,7 +419,13 @@ def test_apply_leaves_head_detached_on_the_tag_commit_and_returns_the_pending_up
     assert head(local) == plano.target_commit
     assert subprocess.run(["git", "-C", str(local), "symbolic-ref", "-q", "HEAD"], capture_output=True).returncode != 0
     chamadas = [" ".join(str(a) for a in argv) for argv, _ in gravador.chamadas]
-    assert any("-m pip install" in c and "--require-hashes" in c and "requirements-lock.txt" in c for c in chamadas)
+    assert any(
+        "pip install" in c
+        and "--require-hashes" in c
+        and "requirements-lock.txt" in c
+        and "--build-constraint build-constraints.txt" in c
+        for c in chamadas
+    )
     assert any("import empiremuse.utils.client" in c for c in chamadas)
     assert any("-m compileall" in c and "empiremuse" in c for c in chamadas)
     assert (pendente.v, pendente.flow, pendente.boots, pendente.status) == (1, "git", 0, "pending")
@@ -430,7 +467,9 @@ def test_the_dependency_install_and_the_smoke_never_see_secrets(mundo, python_fa
 
     aplicar(plano, local, python_falso, tmp_path, gravador)
 
-    do_python = [(argv, env) for argv, env in gravador.chamadas if Path(str(argv[0])).name == "python-falso"]
+    do_python = [
+        (argv, env) for argv, env in gravador.chamadas if Path(str(argv[0])).name in {"python-falso", "uv-falso"}
+    ]
     assert len(do_python) == 3  # instalação, import e compileall
     for _, env in do_python:
         assert "valor-secreto" not in env.values()
@@ -450,6 +489,61 @@ def test_a_failing_smoke_rolls_back_to_prev_sha_reinstalls_the_lock_and_leaves_n
     assert head(local) == plano.prev_sha
     instalacoes = [a for a, _ in gravador.chamadas if "pip" in [str(x) for x in a] and "install" in [str(x) for x in a]]
     assert len(instalacoes) == 2  # a do alvo e a do lock anterior
+    assert not (tmp_path / "runtime" / "update-pending.json").exists()
+
+
+def test_the_rollback_reinstall_of_a_tree_without_the_constraints_file_goes_on_without_the_flag(
+    mundo, python_falso, gravador, tmp_path, caplog
+):
+    """O v2.0.0 é anterior ao build-constraints.txt: a reversão tem de continuar funcionando, sem o flag."""
+    remoto, local = mundo
+    plano = planejar(remoto, local)
+    (tmp_path / "smoke_falha").write_text("1", encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING, logger=git_flow.logger.name), pytest.raises(UpdateError):
+        aplicar(plano, local, python_falso, tmp_path, gravador)
+
+    avisos = [r for r in caplog.records if r.name == git_flow.logger.name and r.levelno == logging.WARNING]
+    assert any("build-constraints.txt ausente" in r.getMessage() and "nem hash" in r.getMessage() for r in avisos)
+    instalacoes = [
+        [str(x) for x in a]
+        for a, _ in gravador.chamadas
+        if "pip" in [str(x) for x in a] and "install" in [str(x) for x in a]
+    ]
+    assert "--build-constraint" in instalacoes[0] and "--build-constraint" not in instalacoes[1]
+
+
+def test_without_uv_the_update_is_refused_before_touching_anything(
+    mundo, python_falso, gravador, monkeypatch, tmp_path
+):
+    """O pip não confere o hash do backend de build dos sdists do lock: sem o uv nada roda, nem o git."""
+    remoto, local = mundo
+    plano = planejar(remoto, local)
+    monkeypatch.setattr(shutil, "which", lambda *args, **kwargs: None)
+    chamadas_antes = len(gravador.chamadas)
+
+    with pytest.raises(UpdateError, match="uv"):
+        aplicar(plano, local, python_falso, tmp_path, gravador)
+
+    assert head(local) == plano.prev_sha
+    assert len(gravador.chamadas) == chamadas_antes
+    assert not (tmp_path / "runtime" / "update-pending.json").exists()
+
+
+def test_an_update_whose_target_has_no_constraints_file_is_refused_before_touching_anything(
+    mundo, python_falso, gravador, tmp_path
+):
+    """Fail closed: o alvo sem build-constraints.txt (como o v2.0.0) não é aplicado; nada é gravado nem trocado."""
+    remoto, local = mundo
+    plano = planejar(remoto, local)
+    sem_arquivo = git(remoto, "rev-parse", "v2.0.0^{commit}")
+    plano = dataclasses.replace(plano, target_commit=sem_arquivo)
+
+    with pytest.raises(UpdateError, match="build-constraints.txt"):
+        aplicar(plano, local, python_falso, tmp_path, gravador)
+
+    assert head(local) == plano.prev_sha
+    assert not any("checkout" in [str(a) for a in argv] for argv, _ in gravador.chamadas)
     assert not (tmp_path / "runtime" / "update-pending.json").exists()
 
 
@@ -565,12 +659,13 @@ def test_a_failing_write_of_the_applying_mark_runs_no_git_and_reraises(
         raise OSError(28, "sem espaço")
 
     monkeypatch.setattr(git_flow, "write_pending", falha)
-    chamadas_antes = len(gravador.chamadas)
 
     with pytest.raises(OSError):
         aplicar(plano, local, python_falso, tmp_path, gravador)
 
-    assert head(local) == plano.prev_sha and len(gravador.chamadas) == chamadas_antes
+    # só o cat-file de leitura roda antes da marca; nenhum checkout nem instalação
+    assert head(local) == plano.prev_sha
+    assert not any("checkout" in [str(a) for a in argv] for argv, _ in gravador.chamadas)
     assert not (tmp_path / "runtime" / "update-pending.json").exists()
 
 
@@ -784,7 +879,7 @@ class CenarioRestore:
 
 @pytest.fixture
 def restore(tmp_path, monkeypatch):
-    monkeypatch.setattr(shutil, "which", lambda *args, **kwargs: None)
+    instalar_uv_falso(tmp_path, monkeypatch)
     cenario = CenarioRestore(tmp_path)
     git(cenario.repo, "checkout", "-q", "--detach", cenario.alvo)
     cenario.interromper()
@@ -862,7 +957,7 @@ def test_the_restore_asks_git_for_the_files_the_target_added_without_following_r
 
     restore.restaurar(runner)
 
-    (diff,) = [c for c in chamadas if "diff" in c]
+    (diff,) = [c for c in chamadas if "diff" in c and "--name-only" in c]
     assert {"--name-only", "--no-renames", "--diff-filter=A", "-z"} <= set(diff)
     assert diff[-2:] == [restore.prev, restore.alvo]
     forcado = [c for c in chamadas if "checkout" in c]
@@ -1100,7 +1195,7 @@ class CenarioGitattributesDoAlvo:
 
 @pytest.fixture
 def attr_do_alvo(tmp_path, monkeypatch):
-    monkeypatch.setattr(shutil, "which", lambda *args, **kwargs: None)
+    instalar_uv_falso(tmp_path, monkeypatch)
     return CenarioGitattributesDoAlvo(tmp_path)
 
 

@@ -65,7 +65,7 @@ if [ ! -d .venv ]; then
 elif ! .venv/bin/python -c 'import sys; raise SystemExit(sys.version_info < (3, 14))'; then
     erro "o .venv existente não usa o Python 3.14 ou mais novo. Apague a pasta .venv (rm -r .venv) e rode de novo; este script não apaga sozinho."
 fi
-uv pip install --python .venv/bin/python --require-hashes -r requirements-lock.txt
+uv pip install --python .venv/bin/python --require-hashes --build-constraint build-constraints.txt -r requirements-lock.txt
 
 # O Python do .venv direto: um ambiente virtual ativo no terminal não pode tomar o lugar dele.
 exec .venv/bin/python main.py
