@@ -27,6 +27,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - Na reprodução comum, faixas resolvidas por busca tentam o próximo candidato quando o áudio não está disponível, com limite de tentativas e sem repetir candidatos já recusados.
 - Os testes de OAuth do YouTube usam nós locais com host e porta, preservando a verificação de mascaramento e truncamento do corpo de erro HTTP 500.
 - Configuração e redefinição de rádios são coordenadas por servidor, preservando o limite de três e um canal por rádio em pedidos simultâneos. A entrada de um bot no servidor não grava configurações padrão.
+- Ao mover o próprio bot para outro canal de voz ou palco, o player atualiza o último canal e seu ID antes de acompanhar o status de voz, para que a retomada da sessão também use o novo canal.
 
 ## [2.3.0-rc.3] - 2026-11-04
 
