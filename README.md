@@ -45,7 +45,7 @@ Participe do nosso servidor oficial [Discord EmpireHUB](https://discord.gg/KgtyN
 - 📻 **Arquitetura Multi-instância (`BotPool`)**: Gerenciamento integrado de múltiplos bots no mesmo processo para balanceamento de canais de voz simultâneos.
 - 🌐 **Painel Web Integrado (`panel/`)**: Interface web moderna orientada a hipertexto (Tornado + htmx + Pico CSS) com autenticação Discord OAuth2 e PKCE para gerenciamento de configurações de servidores e preferências pessoais.
 - 🎧 **Múltiplas Fontes de Áudio**: Suporte a YouTube (com cliente TV, cifra remota e autenticação OAuth opcional contra bloqueios anti-bot), Spotify, Deezer e servidores Lavalink locais ou remotos.
-- 💬 **Jukebox**: Canal de texto ou fórum dedicado, com painel fixo, pedidos por mensagem e sincronização automática de status de voz e palco (`/jukebox setup`).
+- 💬 **Jukebox**: Canal de texto ou fórum dedicado, com painel fixo, pedidos por mensagem e sincronização automática de status de voz e palco (`/jukebox setup`). As playlists do servidor (até 100 por lista) aparecem no select do painel, em páginas.
 - 📻 **Radios**: Rádios ao vivo (Radio Browser, com filtro de local) e personalizadas (estações por gênero, artistas ou playlists) em canal de voz ou palco, para servidores liberados pelo dono (`/radio setup`). Veja o [guia das rádios](docs/guides/radio.md).
 - 📊 **Integrações e Presença**: Suporte a scrobble no [Last.fm](https://www.last.fm/) e integração via WebSocket com aplicativo desktop de [Rich Presence (RPC)](https://github.com/EmpireCommunity/EmpireMuse-RPC-app).
 - 🛡️ **Segurança e Resiliência**: Isolamento estrito de variáveis de ambiente do subprocesso Lavalink por allowlist, download de binários verificado por SHA-256 e políticas de cookies seguros (`__Host-`).

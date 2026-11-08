@@ -17,7 +17,7 @@
   "panel.playlists.filter.legend": "Mostrar playlists de",
   "panel.playlists.scope.jukebox.label": "Jukebox",
   "panel.playlists.scope.radio.label": "Rádio",
-  "panel.playlists.scope.jukebox.note": "Aparecem no player em espera e no menu de favoritos do servidor do comando /play, com filtro por gênero, e valem para todos os bots deste servidor. Nunca são fonte de rádio.",
+  "panel.playlists.scope.jukebox.note": "Até {max} playlists. Aparecem no select da Jukebox, em páginas e na ordem desta lista, no player em espera e no menu de favoritos do servidor do comando /play (com filtro por gênero), e valem para todos os bots deste servidor. Nunca são fonte de rádio.",
   "panel.playlists.scope.radio.note": "Só servem como fonte de uma estação de rádio personalizada (Rádios → estações). Nunca aparecem no /play, na Jukebox nem nos menus de música.",
   "panel.radio.nav": "Rádios",
   "panel.radio.title": "Rádios",
