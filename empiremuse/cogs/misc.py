@@ -6,7 +6,6 @@ import datetime
 import json
 import platform
 import logging
-from copy import deepcopy
 from itertools import cycle
 from os import getpid
 from random import shuffle
@@ -24,12 +23,11 @@ from empiremuse.rules.text import format_int, format_mib
 from empiremuse.rules.bot_roles import Peer, invite_order, main_missing_notice, notifier
 from empiremuse.utils import branding
 from empiremuse.utils.branding import asset_url
-from empiremuse.utils.db import DBModel, db_models
+from empiremuse.utils.db import DBModel
 from empiremuse.utils.guild_ban import bans_of
 from empiremuse.utils.music.checks import check_requester_channel
 from empiremuse.utils.music.converters import time_format, URL_REG, md_bracketed, md_link, fix_characters
 from empiremuse.utils.others import select_bot_pool, CustomContext, paginator
-from empiremuse.utils.servers import CONTROLLER_KEYS
 from empiremuse.utils.usage import usage_of
 from empiremuse.version import image_version, running_from_image
 
@@ -1087,19 +1085,6 @@ class GuildLog(commands.Cog):
             usage.record_guild("join", guild, bot=self.bot)
 
         self.roster_changed(guild.id)
-
-        try:
-            # Só o documento POR BOT (canal, mensagem e favoritos voltam ao padrão): a configuração do servidor, no documento
-            # único, não é lida nem gravada aqui, então um bot que entra não mexe nela (S-V5).
-            database = self.bot.pool.database
-            collection = str(self.bot.user.id)
-            guild_data = deepcopy(await database.get_data(guild.id, db_name=DBModel.guilds, collection=collection))
-            defaults = db_models[DBModel.guilds]["player_controller"]
-            for key in CONTROLLER_KEYS:
-                guild_data["player_controller"][key] = deepcopy(defaults[key])
-            await database.update_data(guild.id, guild_data, db_name=DBModel.guilds, collection=collection)
-        except Exception:
-            logger.exception("Falha ao tratar a entrada do bot no servidor")
 
         if not self.hook_url:
             return

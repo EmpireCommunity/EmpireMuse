@@ -102,6 +102,26 @@ def _is_panel_message(self, message: disnake.Message) -> bool:
     return False
 
 
+JUKEBOX_PERMISSIONS_WARNING_TTL_S = 120
+
+
+async def retain_jukebox_permissions_warning(ctx, message) -> None:
+    """O aviso de setup tem prazo próprio, inclusive quando o prefixo limpa as respostas ao terminar."""
+    if message is None:
+        return
+    if isinstance(ctx, CustomContext):
+        loop = asyncio.get_running_loop()
+        deadlines = getattr(ctx, "jukebox_warning_deadlines", None)
+        if deadlines is None:
+            deadlines = ctx.jukebox_warning_deadlines = {}
+        deadlines[message.id] = loop.time() + JUKEBOX_PERMISSIONS_WARNING_TTL_S
+        loop.call_later(JUKEBOX_PERMISSIONS_WARNING_TTL_S, deadlines.pop, message.id, None)
+    try:
+        await message.delete(delay=JUKEBOX_PERMISSIONS_WARNING_TTL_S)
+    except disnake.NotFound, disnake.Forbidden:
+        pass
+
+
 async def cleanup_jukebox_command_messages(cog, ctx: CustomContext, *, delay: int | None = None) -> None:
     """Apaga a mensagem do comando e as respostas enviadas em ``ctx`` (exceto a mensagem do painel)."""
     seen: set[int] = set()
@@ -114,6 +134,10 @@ async def cleanup_jukebox_command_messages(cog, ctx: CustomContext, *, delay: in
             if mid in seen:
                 continue
             seen.add(mid)
+        deadlines = getattr(ctx, "jukebox_warning_deadlines", {})
+        if deadlines.get(mid, 0) > asyncio.get_running_loop().time():
+            continue  # o aviso já tem seu próprio apagamento agendado
+        deadlines.pop(mid, None)
         await cog.delete_message(msg, delay=delay)
 
 

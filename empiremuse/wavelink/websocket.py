@@ -30,6 +30,7 @@ import aiohttp
 from .backoff import ExponentialBackoff
 from .events import *
 from .stats import Stats
+from empiremuse.rules.lavalink import node_authority
 from empiremuse.utils.safe_error import safe_error
 
 __log__ = logging.getLogger(__name__)
@@ -92,10 +93,10 @@ class WebSocket:
     async def _connect(self):
         await self.bot.wait_until_ready()
 
-        if self._node.version == 3:
-            base_uri = f"{self.host}:{self.port}"
-        else:
-            base_uri = f"{remove_suffix(self.host, '/')}:{self.port}/v4/websocket"
+        host = self.host if self._node.version == 3 else remove_suffix(self.host, "/")
+        base_uri = node_authority(host, self.port)
+        if self._node.version != 3:
+            base_uri += "/v4/websocket"
 
         try:
             if self.secure is True:

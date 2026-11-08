@@ -9,6 +9,22 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ### Corrigido
 - Ao mover o próprio bot para outro canal de voz ou palco, o player atualiza o último canal e seu ID antes de acompanhar o status de voz, para que a retomada da sessão também use o novo canal.
+### Segurança
+- `tornado` atualizado de 6.5.10 para 6.6 (alertas #2, #3 e #4 do Dependabot), com isenção pontual do corte temporal no lock de produção.
+- O refreshToken do YouTube só é aplicado ao nó LOCAL da própria máquina; o token do RPC é gerado com fonte criptográfica. Conexões REST e WebSocket com nós IPv6 usam o endereço correto.
+
+### Alterado
+- Imagem Docker: o JRE passa do Temurin 25.0.4.1 para o 25.0.5+8, com tag explícita (`25.0.5_8-jre-resolute`, a mesma distro Ubuntu 26.04) fixada por digest multi-arquitetura (amd64 e arm64) publicado há mais de 7 dias.
+- Imagem Docker: o Temurin 25.0.5 já não confia nas raízes emSign C1, ECC C3 e ECC G3, então o `keytool -delete` (que falharia com alias inexistente) virou uma verificação que falha fechada: o build quebra se a listagem do `cacerts` não funcionar, se a "emSign Root CA - G1" não aparecer ou se alguma das três raízes voltar (conferidas pela impressão digital SHA-256, não pelo alias).
+- CI: novo passo prova que `requirements-lock.txt` instala, com hashes obrigatórios, em linux x86_64 e aarch64 (Python 3.14), as plataformas da imagem de release. Um lock sem as distribuições de alguma delas passa a falhar no CI, não no build do release.
+- Dependências de desenvolvimento e CI: `pytest-asyncio` 1.4.0 → 1.4.1 (isenção pontual do corte de 7 dias no lock de desenvolvimento, a 1.4.1.post1 fica de fora até cumprir a quarentena) e `actions/setup-python` v7.0.0 → v7.1.0, fixada pelo SHA completo.
+- O aviso de permissões do setup da Jukebox, no bot e no painel, indica o caminho no Discord para ativar Gerenciar permissões no cargo do bot (en-US e pt-BR). No bot, o aviso permanece por 120 s, inclusive com a limpeza automática ligada.
+
+### Corrigido
+- A confirmação do setup da Jukebox esclarece que o painel atual da Jukebox é preservado na limpeza do canal. A resposta final do setup por prefixo é enviada uma única vez, para que não sobre uma cópia do aviso após os 120 s.
+- Na reprodução comum, faixas resolvidas por busca tentam o próximo candidato quando o áudio não está disponível, com limite de tentativas e sem repetir candidatos já recusados.
+- Os testes de OAuth do YouTube usam nós locais com host e porta, preservando a verificação de mascaramento e truncamento do corpo de erro HTTP 500.
+- Configuração e redefinição de rádios são coordenadas por servidor, preservando o limite de três e um canal por rádio em pedidos simultâneos. A entrada de um bot no servidor não grava configurações padrão.
 
 ## [2.3.0-rc.3] - 2026-11-04
 

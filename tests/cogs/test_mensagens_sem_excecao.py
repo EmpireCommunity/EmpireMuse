@@ -275,6 +275,8 @@ class TestLacunasDaMutacao:
             "plugins:\n  youtube:\n    oauth:\n      enabled: false\n", encoding="utf-8"
         )
         node = SimpleNamespace(
+            host="127.0.0.1",
+            port=2333,
             info={"plugins": ["youtube-plugin"]},
             rest_uri="http://127.0.0.1:2333",
             _websocket=SimpleNamespace(headers={}),
@@ -286,6 +288,12 @@ class TestLacunasDaMutacao:
         with caplog.at_level(logging.WARNING, logger="empiremuse.cogs.ll_yt_oauth"):
             await cog.oauth_command(ctx)
 
+        post.assert_awaited_once_with(
+            "http://127.0.0.1:2333/youtube",
+            headers={},
+            json={"refreshToken": "refresh-falso"},
+            allow_redirects=False,
+        )
         log = "\n".join(r.getMessage() for r in registros(caplog, "empiremuse.cogs.ll_yt_oauth"))
         assert "refresh-falso" not in log and "linha1 linha2 eco do token ***" in log
         assert "x" * 501 not in log and "…" in log
