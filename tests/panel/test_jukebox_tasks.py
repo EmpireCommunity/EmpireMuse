@@ -140,7 +140,7 @@ class SetupExecutionTest(TasksBase):
         text = html.unescape(re.sub(r"<[^>]+>", " ", body))
         assert state == "ok" and self.world.jukebox_doc["channel"] == "22"
         assert self.world.j.of("channel.edit") == [], "sem Gerenciar Permissões o canal não é editado"
-        assert "Gerenciar Permissões" in text and "Anexar Arquivos" in text and "<#" not in text
+        assert "Gerenciar permissões" in text and "Anexar Arquivos" in text and "<#" not in text
 
     def test_forum_creates_a_post_with_the_given_title_and_saves_the_post_id(self):
         self.run_setup(modo="existente", canal="55", titulo_forum="Pedidos do bot")

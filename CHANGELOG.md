@@ -14,6 +14,10 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - Imagem Docker: o Temurin 25.0.5 já não confia nas raízes emSign C1, ECC C3 e ECC G3, então o `keytool -delete` (que falharia com alias inexistente) virou uma verificação que falha fechada: o build quebra se a listagem do `cacerts` não funcionar, se a "emSign Root CA - G1" não aparecer ou se alguma das três raízes voltar (conferidas pela impressão digital SHA-256, não pelo alias).
 - CI: novo passo prova que `requirements-lock.txt` instala, com hashes obrigatórios, em linux x86_64 e aarch64 (Python 3.14), as plataformas da imagem de release. Um lock sem as distribuições de alguma delas passa a falhar no CI, não no build do release.
 - Dependências de desenvolvimento e CI: `pytest-asyncio` 1.4.0 → 1.4.1 (isenção pontual do corte de 7 dias no lock de desenvolvimento, a 1.4.1.post1 fica de fora até cumprir a quarentena) e `actions/setup-python` v7.0.0 → v7.1.0, fixada pelo SHA completo.
+- O aviso de permissões do setup da Jukebox, no bot e no painel, indica o caminho no Discord para ativar Gerenciar permissões no cargo do bot (en-US e pt-BR). No bot, o aviso permanece por 120 s, inclusive com a limpeza automática ligada.
+
+### Corrigido
+- A confirmação do setup da Jukebox esclarece que o painel atual da Jukebox é preservado na limpeza do canal. A resposta final do setup por prefixo é enviada uma única vez, para que não sobre uma cópia do aviso após os 120 s.
 
 ## [2.3.0-rc.3] - 2026-11-04
 

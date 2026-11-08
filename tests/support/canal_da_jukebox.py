@@ -484,7 +484,7 @@ class BaseInter:
     async def _edit_select(self, **kwargs):
         self.journal.add("select_message.edit", kwargs)
 
-    async def _delete_select(self):
+    async def _delete_select(self, *, delay=None):
         self.journal.add("select_message.delete")
 
     async def send(self, *args, **kwargs):
