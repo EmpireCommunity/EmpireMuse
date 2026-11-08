@@ -9,7 +9,6 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ### Segurança
 - `tornado` atualizado de 6.5.10 para 6.6 (alertas #2, #3 e #4 do Dependabot), com isenção pontual do corte temporal no lock de produção.
-
 ### Alterado
 - Imagem Docker: o JRE passa do Temurin 25.0.4.1 para o 25.0.5+8, com tag explícita (`25.0.5_8-jre-resolute`, a mesma distro Ubuntu 26.04) fixada por digest multi-arquitetura (amd64 e arm64) publicado há mais de 7 dias.
 - Imagem Docker: o Temurin 25.0.5 já não confia nas raízes emSign C1, ECC C3 e ECC G3, então o `keytool -delete` (que falharia com alias inexistente) virou uma verificação que falha fechada: o build quebra se a listagem do `cacerts` não funcionar, se a "emSign Root CA - G1" não aparecer ou se alguma das três raízes voltar (conferidas pela impressão digital SHA-256, não pelo alias).
@@ -29,7 +28,6 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - Página de status: os bots aparecem na ordem dos tokens, com o principal sozinho na primeira linha e os demais em linhas de 3; a página ganhou o favicon da marca.
 
 ## [2.3.0-rc.1] - 2026-11-03
-
 
 ### Alterado
 - Painel da rádio ao vivo agora é o visor aprovado (imagem gerada nas skins preta e branca, 2x5 botões só com emoji, selects de estação e de filtro); a rádio personalizada usa o mesmo visor, adaptado (filtro por tipo de estação e favoritas de cada membro). Emojis `volume_down` e `volume_mute` do kit media-player (mnauliady).
@@ -70,7 +68,6 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - **Jukebox (item 8, J1)**: o painel do canal da Jukebox volta sozinho se alguém o apagar (também em apagamento em massa e na subida do bot, no máximo um painel novo a cada 5 s por servidor). Com a limpeza automática ligada (`settings.jukebox_auto_delete`, padrão desligada; a chave fica no painel web), o texto que não é comando some em 60 s; a mensagem de comando e a resposta do bot ficam até o comando concluir. O painel nunca sai. O texto que não começa com o prefixo nem com `/` vira pedido, e a chave `settings.jukebox_text_requests` (padrão ligada) desliga isso: desligada, texto puro nunca é executado. O painel com 2 ou mais players ganha volume, barra de progresso (redesenhada a cada 15 s), o campo "Última ação", o botão **Fila** (25 músicas por página, resposta só sua) e um select de **gênero** das playlists do servidor (também só seu).
 - **Jukebox no painel**: a página Jukebox ganha as chaves "Apagar mensagens" (`settings.jukebox_auto_delete`, desligada por padrão) e "Texto vira pedido" (`settings.jukebox_text_requests`, ligada por padrão). Valem para todos os bots do servidor.
 
-
 ### Alterado
 - O canal de pedidos virou **Jukebox** (`/jukebox setup`, `/jukebox off` e `/jukebox thread`); o modo 24/7 saiu e as **Radios** o cobrem (`/radio setup`, `on`, `off` e `status`); `247` abre `radio`. A migração da subida passa a seção e as chaves de configuração de servidor para os nomes novos, uma vez e sem perder o original por 90 dias.
 
@@ -102,7 +99,6 @@ Idiomas: o bot passa a falar o idioma do servidor (`en-US` e `pt-BR`), com o com
 - **Idiomas no resto do player (item 21, F2)**: os blocos ANSI das skins, as dicas, o painel do canal de pedidos, o idle (o embed e o botão de pedir música), o status automático do canal, o log de ações do player e os botões de favoritos/last.fm do controller passam a sair no idioma do servidor, com as frases inteiras (plural por chave) no lugar dos pedaços. As dicas fixas são refeitas quando o idioma do servidor muda. O texto em pt-BR não mudou, com duas correções de passagem: o fim da lista de faixas deixa de sair "músicass" e o painel de pedidos fala "1 player ativo" no singular.
 - **Nomes das opções dos comandos em inglês**: a base de cada opção agora é em inglês (`query`, `position`, `play_now`...) e o pt-BR continua vendo o nome de hoje (`busca`, `posição`, `tocar_agora`...). Quem usa o Discord em outro idioma passa a ver a base em inglês.
 - **Idioma do servidor no painel**: a categoria Geral ganha o campo Idioma (automático ou um dos idiomas ligados); a troca vale em todos os bots do servidor. O painel passa a ler seus textos de `locales/<locale>/panel.json` (pt-BR até a F3).
-
 
 ### Alterado
 - **CI recusa `{% raw %}` e `{% autoescape %}` nos templates do painel** (`empiremuse/panel/templates/`), para o escape automático nunca ser desligado (a diretiva dividida em duas linhas também é pega).
@@ -139,7 +135,6 @@ Idiomas: o bot passa a falar o idioma do servidor (`en-US` e `pt-BR`), com o com
 - **MongoDB opcional em arquivo próprio e bot sem container**: novo `deploy/docker-compose.deps.yml` com só o MongoDB (sempre com autenticação, porta só em `127.0.0.1`, usuário root só na criação do banco), que sobe junto do bot em container (`-f deploy/docker-compose.yml -f deploy/docker-compose.deps.yml`) ou sozinho. Novos `deploy/local/run.sh` e `deploy/local/run.bat` rodam o bot sem container (não recomendado), com `uv` (que instala o Python 3.14), dependências por hash sem `sudo`, sem ler nem mostrar o `.env` e sem outro download; recusam rodar como root ou Administrador.
 - **Índice do `deploy/` e compose da Hostinger sem Traefik**: novo `deploy/README.md` diz qual arquivo usar em cada tipo de implantação (Docker, Traefik, VPS de arquivo único, Pterodactyl, Discloud e nós Lavalink externos) e se ele tem auto-update. O novo `deploy/docker-compose.hostinger-sem-traefik.yml` é o compose da Hostinger sem Traefik, com o painel só em `127.0.0.1:6000`, para quem expõe o painel por outro proxy com TLS. O `deploy/docker-compose.hostinger.yml` passa a refletir o limite de memória de 2048 MiB da produção.
 
-
 ### Alterado
 - **O campo `icon` deixou de ser `icons/<slug>.png`**: o formato antigo (imagem) foi descartado e o valor gravado em servidores que não for um emoji é ignorado ao ler (os dados no banco não são migrados). O ícone como capa da playlist, recortada em círculo, fica para uma versão futura.
 - **Emojis de aplicação com ícones da Flaticon (mnauliady)**: 21 dos 37 emojis de `assets/emojis/` (controles do player, setas, fila, busca, favorito, fixar, configurações, microfone do palco, volume, fones e outros) vieram do kit de ícones de mnauliady, em PNG 128x128 RGBA com os mesmos nomes de arquivo; `assets/SHA256SUMS` foi refeito. Os logotipos de plataformas e os emojis `bot`, `git`, `help`, `community_server` e `leftwards_arrow_with_hook` ficam como estavam. O `headset.gif` (animado) deu lugar ao `headset.png`. A atribuição consta no `CREDITS.md` e na seção de créditos do `README.md`.
@@ -166,7 +161,6 @@ Playlists e configuração únicas por servidor, bot principal e reservas, canal
 - **Playlists do servidor**: os links fixos de cada servidor viram uma lista única de playlists (nome, descrição, gêneros e ordem), a mesma para todos os bots do pool e com no máximo 25 itens. O novo `/playlists importar` aceita um arquivo que acompanha o bot, um anexo `.json` ou um texto colado e só acrescenta (nunca altera nem remove; repetidas por nome ou link e as que passam do limite vão para o relatório), e `/playlists exportar` gera o arquivo no mesmo formato. Só o dono do servidor, Administrador ou quem tem Gerenciar Servidor pode importar, exportar ou alterar a lista, pelo comando, pelo `/fav_manager` ou pelo painel. O menu do `/play` ganhou um filtro por gênero. O que o bot principal já tinha em links do servidor é copiado na primeira leitura de cada servidor. A lista oficial da comunidade (`data/playlists/playlists-empire.json`, com a descrição do formato em `data/playlists/README.md`) vem com o bot.
 - **Canal de pedidos único e painel multi-player**: o canal de pedidos passa a ser um por servidor, para todos os bots (a configuração do principal é copiada na primeira leitura). Só o bot do painel (o principal; sem ele, a primeira reserva presente) envia, edita e trata as mensagens do canal; quem toca o que foi pedido é o bot que já está na call de quem pediu, senão o primeiro livre. Com um player a mensagem continua sendo a skin dele; com dois ou mais vira uma lista (um bloco por player; call que `@everyone` não vê não mostra a faixa nem quem pediu), atualizada no máximo a cada 3 s. Os botões, o select de playlists e o pedido pelo modal agem sempre no player da call de quem apertou e avisam quem está fora de call. Se o bot do painel sai (ou o principal entra), o novo reenvia o painel. O painel web do canal usa a mesma configuração do servidor.
 
-
 ### Alterado
 - **Painel e `/fav_manager`: playlists do servidor**: a categoria Links do painel passou a gerenciar as playlists do servidor (lista única para todos os bots, sem seletor de bot), com gêneros e ordem, erros por campo, importação só-acrescenta com relatório e exportação no formato novo; o formulário leva a versão da lista e uma alteração feita em outro lugar pede recarregar a página. O menu `/fav_manager` do servidor usa a mesma lista.
 - **Testes do painel mais enxutos**: removidos 54 testes de baixo valor em `tests/panel` (texto de `.env.example`/CSS/templates, favicon, caracterização da página de status, micro-otimizações do cache de marca) e fundidas variantes repetidas, sem tirar nenhum teste de segurança. A cobertura do painel não muda.
@@ -191,7 +185,6 @@ Status automático do canal de voz ligado por padrão (com a opção permanente 
 
 ### Adicionado
 - **Status automático do canal de voz, ligado por padrão**: sempre que o bot entra num canal de voz, o status do canal passa a mostrar o emoji do provedor e `Tocando: Música - Artista`, e acompanha cada troca de faixa, sem ninguém rodar `/setvoicestatus` a cada sessão. O "permanente" é o modo automático: um valor por servidor, o mesmo para todos os bots do pool, ligado em todo servidor, **inclusive em quem tinha desligado antes** (o ajuste antigo não se distingue de "nunca configurou"). Para desligar de vez, use `/setvoicestatus` › permanente (texto vazio) ou o painel › Geral, onde a opção permanente é uma caixa de seleção mais o campo do modelo (vazio = modelo padrão). Modelos salvos continuam valendo; o modelo padrão é `{track.emoji} Tocando: {track.title} - {track.author}`. O modal permanente vem preenchido com o modelo em uso. O botão e o `/setvoicestatus <modelo>` mudam só a sessão atual, que volta ao permanente quando o bot sai, muda de canal ou reinicia. O palco continua só com o modo de sessão. O status é reaplicado a cada 5 minutos para desfazer edição manual do canal, e as trocas rápidas de faixa são coalescidas (no máximo um envio a cada 5 s por player e 2 por segundo por bot). Num canal sem a permissão Definir o Status do Canal de Voz o player mostra um único aviso.
-
 
 ### Alterado
 - **Trava dos comandos com o status ligado**: em canal de voz, `skip`, `skipto`, `back`, `voteskip`, `seek` e o forceplay do embed passam a esperar 5 s depois do início da faixa (eram 30 s); no palco continuam 120 s. O dono do bot segue isento.
@@ -234,7 +227,6 @@ Log centralizado com redação de segredos, `assets/` em subpastas e arte nova d
 - **Erros com contexto (item 7, fase P4)**: um erro inesperado de comando sai como `ERROR` com traceback, o código `ERR-XXXXXX` e o contexto do comando (nome, usuário, servidor e canal por ID, parâmetros resumidos por tipo; texto livre só como tamanho fora do `DEBUG`). Erros esperados do usuário (cooldown, permissão, argumento inválido) ficam em `DEBUG`.
 - **Exceções não tratadas no log**: as exceções do loop de eventos, das threads e do `sys.excepthook` saem no log de erros, com redação, desde o início da subida.
 - **Guia de logs**: novo `docs/guides/logs.md` (chaves, nível por servidor, arquivo e rotação, o que nunca é gravado, como investigar um `ERR-XXXXXX`) e o [ADR-0005](docs/adr/0005-logs-stdlib.md).
-
 
 ### Alterado
 - **`assets/` em subpastas e arte nova da marca**: as imagens passam a ficar em `assets/brand/`, `providers/` (ícones das plataformas e do Last.fm), `player/`, `skins/`, `ui/` (interface e tutoriais), `docs/` (imagens do README) e `emojis/`, com `SHA256SUMS` de caminhos relativos. `asset_url(nome)` e as chamadas não mudam, e uma imagem Docker passa a buscar as imagens pela tag da própria versão (`.../v<versão>/assets`), então uma versão publicada nunca perde as suas, mesmo que a `main` mude. Os arquivos soltos na raiz de `assets/` ficam por ora como cópias para quem roda a 2.1.0, que ainda os busca na `main`; eles saem numa versão futura (a 2.2.0), e quem hospeda o bot por conta própria na 2.1.0 deve atualizar antes.
@@ -289,7 +281,6 @@ Atualização da stack (Python 3.14, Java 25, PyMongo Async), atualização auto
 - **Compose de produção da VPS (`deploy/docker-compose.hostinger.yml` e `deploy/env.example.hostinger`)**: o compose de arquivo único usado na VPS da Hostinger (atrás do Traefik + Cloudflare) e o modelo do `.env` só com os segredos (valores vazios); ao usar, são renomeados para `docker-compose.yml` e `.env`.
 - **Auto-update no compose da Hostinger (item 18, fase P5)**: `deploy/docker-compose.hostinger.yml` ganha o serviço `updater-proxy` (único com o `docker.sock`, sem rede, somente leitura, sem capabilities, com limites de memória e processos), o `UPDATE_PROXY_SOCKET` e o volume `updater-sock` no bot (que nunca recebe o grupo do Docker). As duas imagens passam a usar `tag@sha256` com um marcador de zeros a trocar pelo `image-digest.txt` da release. `deploy/env.example.hostinger` ganha `DOCKER_GID` (obrigatório enquanto o proxy existir). O `Dockerfile` cria o diretório do socket com dono e modo restritos.
 - **Documentação do auto-update (item 18, fase P5)**: novo `docs/guides/auto-update.md` (modos, funcionamento, implantação passo a passo, unit do systemd para o modo git, códigos de saída 64 a 71 e limitações: Lavalink fora do ar, modo git e painel da Hostinger) e `docs/adr/0004-auto-update-proxy.md`. `docker.md` (seção 7), `release.md` (digest para o compose, seção 5.4), `architecture.md` (componente atualizador) e o `README.md` apontam para eles.
-
 
 ### Alterado
 - **Versão de teste reconhecida como versão atual (item 18, D13)**: a imagem Docker com versão `X.Y.Z-rc.N` passa a reconhecê-la como a sua versão atual, então um bot de teste pode usar o `update` para a próxima versão estável (por exemplo, `2.1.0-rc.2` → `2.1.0`). Os alvos continuam só estáveis (releases definitivas, tag `vX.Y.Z`): nunca um `rc`. Sem versão estável mais nova, o bot diz que está na versão de teste. `docs/guides/auto-update.md` descreve o caso.
@@ -351,7 +342,6 @@ Esta versão de manutenção restaura a reprodução de faixas do SoundCloud atr
 - **Preservação de Padrões da Imagem Docker no `.example.env`**:
   - Comentadas as variáveis `RUN_LOCAL_LAVALINK`, `LAVALINK_JAVA_PATH`, `LAVALINK_HOME` e `LAVALINK_OFFLINE` no `.example.env` para evitar que a cópia do arquivo de exemplo para `.env` sobrescreva os valores pré-configurados pela imagem oficial (`RUN_LOCAL_LAVALINK=true`, etc.) no Docker Compose.
   - Documentado no `.example.env` e em `docs/guides/docker.md` o comportamento das variáveis da imagem e a equivalência fora do Docker via `DEFAULT_CONFIG`.
-
 
 ### Alterado
 - **Refatoração interna do player (KI-29b)**: `PlayerEventsMixin.hook_events` (323 linhas), `PlayerStateMixin.cleanup` (195) e `PlayerAutoqueueMixin.resolve_track` (159) viram orquestradores curtos que chamam etapas de módulo (`event_steps.py`, `state_steps.py` e `autoqueue_steps.py`), na mesma ordem de efeitos, sem mudança de comportamento.
@@ -508,7 +498,6 @@ Esta versão representa uma reformulação ampla do [MuseHeart-MusicBot](https:/
   - Adição do módulo `empiremuse.paths` com distinção explícita entre `PROJECT_DIR` (raiz do repositório para estáticos `data/` e `assets/`), `PACKAGE_DIR` (pacote Python para código e `templates/status.html`) e `RUNTIME_DIR` (diretório de execução configurável via variável de ambiente `EMPIREMUSE_HOME`).
   - Implementação de guardas defensivas de cache no `BotPool.load_cache` com captura explícita de `(ModuleNotFoundError, AttributeError, pickle.UnpicklingError, EOFError)`, descartando caches corrompidos ou com referências a classes órfãs via logging defensivo sem interromper a inicialização do bot.
   - Testes automatizados estruturais e de caracterização em `tests/test_caminhos_c22.py` cobrindo roteamento de caminhos, diretório de trabalho do subprocesso e guardas de cache.
-
 
 ### Alterado
 - **Atualização e Homologação na Discloud (D-27)**: configuração testada e homologada em ambiente real da Discloud (plano Gold 1 GB: 335 MB parado, 383 MB tocando, Lavalink local v4 ok); adição de `APT=tools` para suporte a dependências git, documentação do Python 3.15 em `VERSION=latest`, preservação mandatória de `assets/` para runtime (`branding.asset_url`), restrição de `AUTORESTART` documentada para planos Platinum+ e orientação sobre YouTube OAuth em IPs de datacenter.
