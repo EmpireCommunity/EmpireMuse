@@ -556,7 +556,7 @@ class FakeSetup:
         self.calls = []  # ("configure"|"reset", guild_id, actor_id, kwargs)
         self.fail_with = None
 
-    async def options(self, guild_id):
+    async def options(self, guild_id, actor_id):
         return SetupOptions(tuple(self.bots.get(int(guild_id), ())), tuple(self.channels.get(int(guild_id), ())))
 
     def _refuse(self, code, key):
@@ -624,8 +624,6 @@ class FakeSetup:
         current = self.api.store.docs.get(radio_id)
         if current is None or current.guild_id != int(guild_id):
             raise RadioNotFound
-        if current.rev != rev:
-            raise RadioConflict
         del self.api.store.docs[radio_id]
 
 

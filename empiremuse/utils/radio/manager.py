@@ -200,6 +200,8 @@ class RadioManager:
             radio = await self.hub.store.ensure_clock(radio)
         except Exception as error:  # noqa: BLE001 - sem gravar a época a rádio ainda toca, só não sobrevive ao reinício
             logger.warning("Relógio virtual da rádio não gravado (%s)", type(error).__name__)
+        if await self.hub.store.get(radio.id) is None:
+            return  # apagada durante a ativação: nunca criar runner órfão
         runner = self._runner_for(radio)
         if runner is None:
             return

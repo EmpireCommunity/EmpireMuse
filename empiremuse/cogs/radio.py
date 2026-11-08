@@ -101,7 +101,7 @@ async def bot_autocomplete(inter: disnake.ApplicationCommandInteraction, current
     try:
         if await hub.premium.get(inter.guild_id) is None:
             return {fit(tr("radio.setup.auto.no_premium"), 100): NO_CHOICE}
-        options = await hub.setup.options(inter.guild_id)
+        options = await hub.setup.options(inter.guild_id, inter.author.id)
     except RadioUnavailable:
         return {}
     if not options.bots:

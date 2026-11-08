@@ -6,7 +6,7 @@ Uma função só para as duas superfícies: o ``/radio setup`` e ``/radio reset`
 - o servidor é premium e quem pede tem ``manage_guild`` (consultado no cache do bot agora, nunca no que o painel diz);
 - o bot é reserva do pool, não é o principal, está no servidor e pronto, e não está em call aqui (a não ser a rádio dele mesmo);
 - uma rádio por bot e por servidor, e no máximo ``MAX_PER_GUILD`` configuradas (as pausadas contam);
-- o canal é de voz ou de palco deste servidor, não é o da Jukebox, e o bot consegue ver, conectar e falar nele;
+- o ator vê e pode conectar no canal de voz/palco; ele não é o da Jukebox e o bot consegue ver, conectar e falar;
 - escrita com compare-and-set em ``rev``; numa rádio LIGADA trocar canal, bot ou tipo exige desligar antes.
 
 Recusas: ``RadioForbidden`` (premium ou manage_guild), ``RadioNotFound`` (rádio inexistente ou de outro servidor), ``RadioConflict`` (``rev``
@@ -18,9 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
-import datetime
 import logging
-import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -36,10 +34,8 @@ from empiremuse.rules.radio import (
     check_radio,
     radio_id,
     split_radio_id,
-    to_document,
 )
 from empiremuse.rules.servers import is_main_identifier
-from empiremuse.utils.radio.premium import GLOBAL_DB, RadioUnavailable
 from empiremuse.utils.radio.store import RadioConflict, RadioInvalid, RadioNotFound
 
 if TYPE_CHECKING:
@@ -61,8 +57,6 @@ CANNOT_CONNECT = "cannot_connect"
 RADIO_ON = "radio_on"
 CHANNEL_TAKEN = "channel_taken"
 
-CONFIG_BACKUP_DB = "config_backup"  # ``global.config_backup``: o documento da rádio que o reset apagou
-CONFIG_BACKUP_TTL_S = 30 * 24 * 3600
 CHANNEL_VOICE = "voice"
 CHANNEL_STAGE = "stage"
 
@@ -126,9 +120,11 @@ class RadioSetup:
             free.append(bot)
         return free
 
-    async def options(self, guild_id: int) -> SetupOptions:
+    async def options(self, guild_id: int, actor_id: int) -> SetupOptions:
         """Os reservas livres e os canais de voz e de palco que valem (a lista que o painel e o comando mostram; ``configure`` confere de novo)."""
-        guild_id = int(guild_id)
+        guild_id, actor_id = int(guild_id), int(actor_id)
+        if not await self._can_manage(guild_id, actor_id):
+            return SetupOptions(bots=(), channels=())
         existing = await self.hub.store.list_for_guild(guild_id)
         bots = tuple(
             (bot.user.id, str(bot.user.name)) for bot in self._free_reserves(guild_id, {r.bot_id for r in existing})
@@ -136,9 +132,11 @@ class RadioSetup:
         guild = self._guild(guild_id)
         jukebox = await jukebox_channel_of(self.pool, guild_id)
         channels: list[tuple[int, str, str]] = []
-        if guild is not None:
+        member = await self._member(guild, actor_id) if guild is not None else None
+        if member is not None:
             for channel in (*guild.voice_channels, *guild.stage_channels):
-                if channel.id != jukebox:
+                permissions = channel.permissions_for(member)
+                if channel.id != jukebox and permissions.view_channel and permissions.connect:
                     kind = CHANNEL_STAGE if isinstance(channel, disnake.StageChannel) else CHANNEL_VOICE
                     channels.append((channel.id, str(channel.name), kind))
         return SetupOptions(bots=bots, channels=tuple(channels))
@@ -167,14 +165,34 @@ class RadioSetup:
         guild = self._guild(guild_id)
         if guild is None:
             return False
+        member = await self._member(guild, actor_id)
+        if member is None:
+            return False
+        permissions = member.guild_permissions
+        return bool(permissions.manage_guild or permissions.administrator or guild.owner_id == actor_id)
+
+    @staticmethod
+    async def _member(guild: Any, actor_id: int) -> Any:
         member = guild.get_member(actor_id)
         if member is None:
             try:
                 member = await guild.fetch_member(actor_id)
             except disnake.HTTPException:
-                return False
-        permissions = member.guild_permissions
-        return bool(permissions.manage_guild or permissions.administrator or guild.owner_id == actor_id)
+                return None
+        return member
+
+    async def _actor_channel(self, guild_id: int, channel_id: int, actor_id: int) -> None:
+        """Não distinguir call oculta/sem connect de id inexistente; membro e canal vêm da mesma guild."""
+        guild = self._guild(guild_id)
+        channel = guild.get_channel(channel_id) if guild is not None else None
+        if not isinstance(channel, (disnake.VoiceChannel, disnake.StageChannel)):
+            raise RadioInvalid(RuleError(CHANNEL_KIND, "channel_id"))
+        member = await self._member(guild, actor_id)
+        if member is None:
+            raise RadioInvalid(RuleError(CHANNEL_KIND, "channel_id"))
+        permissions = channel.permissions_for(member)
+        if not (permissions.view_channel and permissions.connect):
+            raise RadioInvalid(RuleError(CHANNEL_KIND, "channel_id"))
 
     @staticmethod
     def _check_kind(kind: object) -> str:
@@ -199,7 +217,8 @@ class RadioSetup:
             raise RadioInvalid(RuleError(BOT_IN_CALL, "bot_id"))
         return bot
 
-    async def _check_channel(self, guild_id: int, channel_id: int, bot: Any) -> None:
+    async def _check_channel(self, guild_id: int, channel_id: int, bot: Any, actor_id: int) -> None:
+        await self._actor_channel(guild_id, channel_id, actor_id)
         guild = bot.get_guild(guild_id)
         channel = guild.get_channel(channel_id) if guild is not None else None
         if not isinstance(channel, (disnake.VoiceChannel, disnake.StageChannel)):
@@ -231,6 +250,8 @@ class RadioSetup:
             raise RadioInvalid(RuleError(CHANNEL_INVALID, "channel_id")) from None
         async with self._lock(guild_id):
             await self.check_actor(guild_id, actor_id)
+            # Antes de qualquer recusa que revele ocupação, Jukebox ou permissões do bot.
+            await self._actor_channel(guild_id, channel_id, actor_id)
             current = await self._current(guild_id, radio_id, rev)
             kind = self._check_kind(kind)
             existing = await self.hub.store.list_for_guild(guild_id)
@@ -254,13 +275,15 @@ class RadioSetup:
                 )  # uma rádio por canal: o ``on`` e o ``off`` acham a rádio pelo canal
             if current is None and len(existing) >= MAX_PER_GUILD:
                 raise RadioInvalid(RuleError(MAX_RADIOS, "bot_id"))
-            await self._check_channel(guild_id, channel_id, bot)
+            await self._check_channel(guild_id, channel_id, bot, actor_id)
             if current is not None and (current.channel_id, current.bot_id, current.kind) == wanted:
                 return current  # nada mudou: sem escrita, sem novo rev
             return await self._write(guild_id, actor_id, current, channel_id, bot_id, kind)
 
-    async def _current(self, guild_id: int, rid: Optional[str], rev: Optional[int]) -> Optional[Radio]:
-        """A rádio que o pedido muda: de OUTRO servidor é 404 (nunca se confirma que existe) e ``rev`` velho é conflito."""
+    async def _current(
+        self, guild_id: int, rid: Optional[str], rev: Optional[int], *, check_rev: bool = True
+    ) -> Optional[Radio]:
+        """A rádio que o pedido muda: de OUTRO servidor é 404 (nunca se confirma que existe) e ``rev`` velho é conflito fora do reset (`check_rev=False`)."""
         if rid is None:
             return None
         parts = split_radio_id(rid)
@@ -269,7 +292,7 @@ class RadioSetup:
         current = await self.hub.store.get(rid)
         if current is None:
             raise RadioNotFound
-        if rev is None or current.rev != rev:
+        if check_rev and (rev is None or current.rev != rev):
             raise RadioConflict
         return current
 
@@ -306,51 +329,21 @@ class RadioSetup:
     # ------------------------------------------------------------------ redefinir
 
     async def reset(self, guild_id: int, actor_id: int, radio_id: str, rev: Optional[int]) -> None:
-        """Pede só ``manage_guild`` (não o premium). Desliga (se ligada), apaga o painel da call, guarda uma cópia em ``global.config_backup`` (30 dias) e apaga o documento da rádio.
+        """Só ``manage_guild``, sem premium nem recusa por revisão velha. Apaga sem cópia e só depois para o runner.
 
         Ficam as estações do servidor, o premium, o ``radio_only`` do bot, a saúde das estações e as outras rádios.
         """
         guild_id, actor_id = int(guild_id), int(actor_id)
         async with self._lock(guild_id):
             await self.check_manager(guild_id, actor_id)
-            current = await self._current(guild_id, radio_id, rev)
+            current = await self._current(guild_id, radio_id, rev, check_rev=False)
             if current is None:
                 raise RadioNotFound
-            if current.enabled:
-                await self.hub.store.set_enabled(
-                    current.id, False, updated_by=str(actor_id)
-                )  # devolve a vaga (transição da R1)
-            await self.hub.manager.stop_radios(self.hub.manager.running_in(guild_id, current.channel_id))
+            try:
+                await self.hub.store.delete(current.id)
+            finally:
+                await self.hub.manager.stop_radios(self.hub.manager.running_in(guild_id, current.channel_id))
             await self._delete_panel(current)
-            await self._backup(current, actor_id)
-            await self.hub.store.delete(current.id)
-
-    async def _backup(self, radio: Radio, actor_id: int) -> None:
-        """A cópia do documento que o reset vai apagar. Sem a cópia gravada o documento NÃO é apagado (a falha sobe)."""
-        database = self.pool.database
-        now = time.time()
-        document = {
-            "radio": to_document(radio, updated_by=str(actor_id)),
-            "at": now,
-            "guild_id": str(radio.guild_id),
-            "expire_at": datetime.datetime.fromtimestamp(now + CONFIG_BACKUP_TTL_S, tz=datetime.timezone.utc),
-        }
-        try:
-            index = getattr(database, "ensure_event_indexes", None)
-            if index is not None:
-                await index(db_name=CONFIG_BACKUP_DB, collection=GLOBAL_DB)  # o TTL de ``expire_at``
-            saved = await database.save_doc_cas(
-                f"radio_reset:{radio.id}:{int(now)}",
-                document,
-                expected_rev=None,
-                db_name=CONFIG_BACKUP_DB,
-                collection=GLOBAL_DB,
-            )
-        except Exception as error:  # noqa: BLE001 - só o tipo vai ao log (R-12)
-            logger.warning("Cópia da rádio antes do reset não gravada (%s)", type(error).__name__)
-            raise RadioUnavailable from error
-        if not saved:
-            raise RadioConflict
 
     async def _delete_panel(self, radio: Radio) -> None:
         """Apaga a mensagem do painel da call, se ainda existe. Falha aqui (sem permissão, já apagada) nunca impede o reset."""
