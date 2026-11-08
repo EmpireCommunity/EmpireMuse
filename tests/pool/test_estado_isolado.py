@@ -1,6 +1,6 @@
 """F3-6 — ``BotPool``: nenhuma instância compartilha estado mutável com outra (achado da F3-2).
 
-``BotPool`` declara ``bots`` e ``guild_bots`` no corpo da classe ("valores só de referência"); o ``__init__`` cria os de
+``BotPool`` declara ``bots`` no corpo da classe ("valores só de referência"); o ``__init__`` cria os de
 cada instância. Declarações de classe mutáveis são uma armadilha (``cls.bots.append`` alteraria todos os pools) e não são
 mais necessárias: nenhum teste depende delas (conferido removendo as duas linhas numa cópia: a suíte inteira segue igual).
 Estes testes provam o que importa, o comportamento: instâncias independentes. O último é o único RED: a classe não deve
@@ -24,9 +24,7 @@ def isolado(monkeypatch, tmp_path):
 
 class TestInstanciasIndependentes:
     @pytest.mark.smoke
-    def test_bots_e_guild_bots_de_uma_instancia_nao_aparecem_na_outra(self, isolado):
+    def test_bots_de_uma_instancia_nao_aparecem_na_outra(self, isolado):
         a, b = BotPool(), BotPool()
         a.bots.append("bot-a")
-        a.guild_bots.setdefault("111", []).append("bot-a")
-        a.guild_bots["222"] = ["bot-a"]
-        assert b.bots == [] and b.guild_bots == {}
+        assert b.bots == []

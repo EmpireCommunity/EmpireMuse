@@ -8,6 +8,8 @@ passa pelo store (``utils/servers``): trava por servidor, ``rev`` +1 e compare-a
 
 from __future__ import annotations
 
+from empiremuse.rules.bot_tokens import Role, role_of
+
 import asyncio
 import logging
 import weakref
@@ -148,20 +150,18 @@ class ServerJukebox:
     # ------------------------------------------------------------------ o bot do painel
 
     def peers(self, gid: int) -> list[PanelPeer]:
-        """Os bots do pool que estão no servidor agora (bot exclusivo de OUTRO servidor não conta)."""
+        """Os bots do pool que estão no servidor agora, exceto os só-rádio."""
         found = []
         for bot in self.store.pool.get_all_bots():
-            exclusive = getattr(bot, "exclusive_guild_id", None)
-            if bot.user is None or bot.get_guild(gid) is None or (exclusive and exclusive != gid):
+            if bot.user is None or bot.get_guild(gid) is None:
                 continue
             if self._radio_only(bot):
                 continue  # item 8: o bot só-rádio nunca vira bot do painel da Jukebox
-            found.append(PanelPeer(bot.identifier, bot.user.id, bool(exclusive)))
+            found.append(PanelPeer(bot.identifier, bot.user.id))
         return found
 
     def _radio_only(self, bot: BotCore) -> bool:
-        roles = getattr(getattr(self.store.pool, "radio", None), "roles", None)
-        return bool(roles is not None and roles.is_radio_only(getattr(bot, "identifier", None)))
+        return role_of(getattr(bot, "identifier", None)) is Role.RADIO
 
     def _bot_by_id(self, bot_id: Optional[int]) -> Optional[BotCore]:
         return next((b for b in self.store.pool.get_all_bots() if b.user is not None and b.user.id == bot_id), None)

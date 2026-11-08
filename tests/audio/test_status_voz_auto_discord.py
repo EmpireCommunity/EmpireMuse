@@ -80,7 +80,7 @@ def pool_de(n: int, *, permissoes: list[bool] | None = None) -> tuple[list[BotDo
         bot.music.players[SERVIDOR] = jogador
         jogadores.append(jogador)
     for bot in bots:
-        bot.pool.get_guild_bots = lambda _gid, todos=bots: list(todos)
+        bot.pool.get_all_bots = lambda todos=bots: list(todos)
     return bots, jogadores, globais
 
 

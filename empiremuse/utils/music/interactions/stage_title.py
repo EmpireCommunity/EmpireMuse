@@ -225,7 +225,7 @@ class SetStageTitle(disnake.ui.View):
         """Texto liga o permanente com esse modelo; vazio desliga e mantém o modelo. Um valor por servidor para todo o pool."""
         guild: Optional[disnake.Guild] = None
 
-        for b in self.bot.pool.get_guild_bots(inter.guild_id):
+        for b in self.bot.pool.get_all_bots():
             if guild := b.get_guild(inter.guild_id):
                 break
 
@@ -264,7 +264,7 @@ class SetStageTitle(disnake.ui.View):
         blocked_channels = []
         log_key = "voice_status.log.permanent_on" if cfg.permanent else "voice_status.log.permanent_off"
 
-        for b in self.bot.pool.get_guild_bots(inter.guild_id):
+        for b in self.bot.pool.get_all_bots():
             try:
                 p = b.music.players[inter.guild_id]
             except KeyError:
@@ -300,7 +300,7 @@ class SetStageTitle(disnake.ui.View):
         """Liga (com ``text``) ou desliga o status só nesta sessão: volta ao permanente quando o bot sai do canal."""
         player: Optional[LavalinkPlayer] = None
 
-        for bot in self.bot.pool.get_guild_bots(inter.guild_id):
+        for bot in self.bot.pool.get_all_bots():
             try:
                 candidate = bot.music.players[inter.guild_id]
             except KeyError:

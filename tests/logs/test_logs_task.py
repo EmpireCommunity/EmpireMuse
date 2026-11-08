@@ -37,7 +37,6 @@ class Cenario:
         self.pool = BotPool.__new__(BotPool)
         self.pool.config = {"METRICS_INTERVAL": intervalo}
         self.pool.bots = []
-        self.pool.guild_bots = {}
         self.pool.metrics = MetricsCollector()
         self.pool.logs_task = None
         self.dormiu: list[float] = []
@@ -151,7 +150,7 @@ class TestCicloDeVida:
     def test_shutdown_cancels_the_logs_task(self):
         cancelada = []
         pool = BotPool.__new__(BotPool)
-        pool.bots, pool.guild_bots, pool.heartbeat_task, pool.nodes_expected = [], {}, None, False
+        pool.bots, pool.heartbeat_task, pool.nodes_expected = [], None, False
         pool.update_watch_task, pool.helper_watch_tasks = None, set()
         pool.logs_task = SimpleNamespace(cancel=lambda: cancelada.append(True))
         pool.lavalink_instance = None

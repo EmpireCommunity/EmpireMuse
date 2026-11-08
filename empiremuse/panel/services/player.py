@@ -28,7 +28,7 @@ def active_player(bot: Any, guild_id: int) -> Any:
 
 def guild_players(ctx: FormContext) -> list[Any]:
     """Players ativos do servidor em todos os bots do pool (a configuração é do servidor, não de um bot)."""
-    players = (active_player(bot, ctx.guild_id) for bot in ctx.pool.get_guild_bots(ctx.guild_id))
+    players = (active_player(bot, ctx.guild_id) for bot in ctx.pool.get_all_bots())
     return [player for player in players if player is not None]
 
 

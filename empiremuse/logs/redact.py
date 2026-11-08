@@ -21,7 +21,7 @@ from decimal import Decimal
 from fractions import Fraction
 from urllib.parse import quote
 
-from empiremuse.rules.owner_shell import MIN_SECRET_LENGTH, mask_secrets
+from empiremuse.rules.owner_shell import DISCORD_TOKEN_SHAPE, MIN_SECRET_LENGTH, mask_secrets
 
 REDACTED = "***"
 OMITTED = "[registro omitido: falha ao redigir]"
@@ -35,7 +35,6 @@ _LINE_BREAKS = re.compile(r"[\r\n\u2028\u2029]")
 # separadores de linha/parágrafo Unicode (\u2028-\u2029) e controles bidirecionais (\u202a-\u202e, \u2066-\u2069).
 _TEXT_CONTROLS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029\u202a-\u202e\u2066-\u2069]")
 
-_DISCORD_TOKEN = re.compile(r"[\w-]{23,28}\.[\w-]{6,7}\.[\w-]{27,}")
 _WEBHOOK_TOKEN = re.compile(r"(/api(?:/v\d+)?/webhooks/\d+/)[A-Za-z0-9._~-]+")
 _URL_USERINFO = re.compile(r"://[^/\s]*@")
 _QUERY_SECRET_NAMES = r"api_key|apikey|api_sig|sk|token|access_token|refresh_token|client_secret|password|key|signature"
@@ -127,7 +126,7 @@ def redact(text: str) -> str:
     secrets = _all_secrets
     if secrets:
         text = mask_secrets(text, secrets)
-    text = _DISCORD_TOKEN.sub(REDACTED, text)
+    text = DISCORD_TOKEN_SHAPE.sub(REDACTED, text)
     text = _WEBHOOK_TOKEN.sub(rf"\1{REDACTED}", text)
     text = _URL_USERINFO.sub(f"://{REDACTED}@", text)
     text = _QUERY_SECRET.sub(rf"\1{REDACTED}", text)

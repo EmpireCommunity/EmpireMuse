@@ -181,11 +181,11 @@ class PlayerMessageMixin:
         elif self.bot.intents.message_content and self.controller_mode:
             hints.append(self.tr("player.creating_a_thread_on_the"))
 
-        if len(self.bot.pool.get_guild_bots(self.guild.id)) > 1:
+        if len(self.bot.pool.get_all_bots()) > 1:
             bots_in_guild = 0
             bots_outside_guild = 0
 
-            for b in self.bot.pool.get_guild_bots(self.guild.id):
+            for b in self.bot.pool.get_all_bots():
                 if b == self.bot:
                     continue
 

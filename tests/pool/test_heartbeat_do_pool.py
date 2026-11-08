@@ -25,10 +25,9 @@ class BotFalso:
 bot = BotFalso
 
 
-def pool_com(bots=(), guild_bots=None, nodes_expected=False) -> BotPool:
+def pool_com(bots=(), nodes_expected=False) -> BotPool:
     pool = BotPool.__new__(BotPool)
     pool.bots = list(bots)
-    pool.guild_bots = guild_bots or {}
     pool.nodes_expected = nodes_expected
     pool.heartbeat_task = None
     return pool
@@ -48,9 +47,6 @@ def pool_com(bots=(), guild_bots=None, nodes_expected=False) -> BotPool:
         (pool_com([bot(True, False, False)], nodes_expected=True), False),
         (pool_com([bot(True, False, True)], nodes_expected=True), True),
         # bots_ready olha só pool.bots; os nós contam em qualquer bot (get_all_bots)
-        (pool_com([bot(True)], {"1": [bot(False, True)]}, nodes_expected=True), True),
-        (pool_com([bot(True)], {"1": [bot(False)]}), True),
-        (pool_com([], {"1": [bot(True, True)]}), False),
     ],
     ids=[
         "sem-bots",
@@ -60,9 +56,6 @@ def pool_com(bots=(), guild_bots=None, nodes_expected=False) -> BotPool:
         "nos-esperados-e-nenhum-no",
         "nos-indisponiveis",
         "um-no-disponivel",
-        "no-disponivel-em-bot-de-guilda",
-        "bot-de-guilda-nao-pronto-nao-conta",
-        "so-bot-de-guilda-nao-basta",
     ],
 )
 def test_pool_is_healthy(pool, saudavel):

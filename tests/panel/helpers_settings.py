@@ -233,7 +233,6 @@ class SettingsBot(FakeBot):
         }
         self.default_skin = self.default_static_skin = "default"
         self.identifier = "TOKEN" if int(bot_id) == 1 else f"TOKEN_{bot_id}"  # o bot 1 é o principal
-        self.exclusive_guild_id = None
 
     def get_channel(self, channel_id):
         self.calls["get_channel"] += 1
@@ -258,9 +257,6 @@ class SettingsPool(FakePool):
         self.guild_prefix_cache = {}
         self.user_prefix_cache = {}
         self.default_skin = self.default_static_skin = "default"
-
-    def get_guild_bots(self, guild_id):
-        return [b for b in self.bots if int(guild_id) in b.guilds]
 
     def get_all_bots(self):
         return list(self.bots)

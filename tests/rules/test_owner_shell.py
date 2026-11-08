@@ -37,7 +37,7 @@ def test_mascara_so_os_valores_de_segredo_com_tamanho_minimo():
         "MONGO": "ab",
         "RUN": True,
     }
-    ambiente = {"TOKEN_BOT_2": "tok-abcdef", "LAVALINK_NODE_1": "senha-do-no", "EMBED_COLOR": "8B5CF6"}
+    ambiente = {"TOKEN_RESERVE_2": "tok-abcdef", "LAVALINK_NODE_1": "senha-do-no", "EMBED_COLOR": "8B5CF6"}
     segredos = collect_secret_values(configuracao, ambiente)
     assert segredos == {"tok-abcdef", "sp-123456", "senha-do-no"}
 
@@ -47,3 +47,19 @@ def test_mascara_so_os_valores_de_segredo_com_tamanho_minimo():
 
 def test_mascara_o_valor_mais_longo_primeiro():
     assert mask_secrets("abcdef-extra", {"abcdef", "abcdef-extra"}) == MASK
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+def test_shell_masks_normalized_and_rejected_tokens_without_changing_common_text():
+    from empiremuse.rules.bot_tokens import load_bot_tokens
+    from empiremuse.rules.owner_shell import mask_shell_output
+    from tests.rules.test_bot_tokens import token
+
+    loaded = load_bot_tokens({"TOKEN": '"' + token() + '"', "TOKEN_RESERVE_X": token("b") + " " + token("c")})
+    assert loaded.issues[0].code == "FORMAT"
+    secrets = frozenset(bot.reveal() for bot in loaded.bots)
+    assert mask_shell_output(token(), secrets) == "***"
+    # A reserva rejeitada e um token legado nunca admitido no pool são cobertos pela forma.
+    assert mask_shell_output(token("b") + " " + token("d"), secrets) == "*** ***"
+    assert mask_shell_output("texto comum key=valor token=exemplo", secrets) == "texto comum key=valor token=exemplo"

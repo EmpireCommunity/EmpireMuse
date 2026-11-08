@@ -33,7 +33,7 @@ def visao(modo: str, nome: str, valor, onde: str):
         update_data=AsyncMock(),
         get_guild=lambda _id: guild,
         get_color=lambda *a: 0,
-        pool=SimpleNamespace(get_guild_bots=lambda _id: []),
+        pool=SimpleNamespace(get_all_bots=lambda: []),
     )
     v.data = {"fav_links": {}, "integration_links": {}}
     v.guild_data = {"player_controller": {"fav_links": {}}}

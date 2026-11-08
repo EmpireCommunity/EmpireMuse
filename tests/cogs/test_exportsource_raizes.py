@@ -12,7 +12,7 @@ from zipfile import ZipFile
 import pytest
 
 from empiremuse import paths
-from empiremuse.cogs.legacy_cmds import Owner
+from empiremuse.cogs.legacy_cmds import Owner, export_environment
 
 pytestmark = pytest.mark.critical
 
@@ -73,6 +73,27 @@ class TestLinksNoData:
 
         assert_sem_vazamento(entradas)
         assert list(entradas) == ["lavalink.ini"]
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize("alias", [False, True])
+def test_local_database_is_refused_even_through_a_symlink(docker, alias):
+    name = "local_database/x.json"
+    if alias:
+        (docker.data / "alias.json").symlink_to(docker.data / name)
+        name = "alias.json"
+    assert zipar([name, "lavalink.ini"]) == {"lavalink.ini": DO_DATA["lavalink.ini"]}
+
+
+@pytest.mark.regression
+def test_export_environment_only_accepts_explicit_prefixes():
+    from tests.rules.test_bot_tokens import token
+
+    selected = {
+        name: "value" for name in ("TOKEN", "token_reserve_x", "TOKEN_RADIO_2", "test_guilds_TOKEN", "lavalink_node_1")
+    }
+    other = {"OTHER_APP": token(), "TOKEN_" + "BOT_X": token("b")}
+    assert export_environment({**selected, **other}) == selected
 
 
 class TestForaDasRaizes:

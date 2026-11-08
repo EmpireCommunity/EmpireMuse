@@ -25,7 +25,7 @@ from empiremuse import paths
 from empiremuse.config_loader import DEFAULT_CONFIG, load_config
 from empiremuse.rules.errors import RuleError
 from empiremuse.rules.git_remote import sanitized_repo_url
-from empiremuse.rules.owner_shell import build_shell_env, collect_secret_values, mask_secrets
+from empiremuse.rules.owner_shell import build_shell_env, mask_secrets, mask_shell_output
 from empiremuse.rules.release import Version, changelog_section, changelog_sections
 from empiremuse.rules.settings import validate_prefix
 from empiremuse.updater.git_flow import (
@@ -61,7 +61,7 @@ from empiremuse.utils.music.errors import GenericError, NoVoice, code_suffix, lo
 from empiremuse.utils.music.interactions import SelectBotVoice
 from empiremuse.utils.music.lavalink_server_list import validated_server_list
 from empiremuse.utils.music.models import LavalinkPlayer
-from empiremuse.utils.others import CustomContext, string_to_file, token_regex, CommandArgparse, select_bot_pool
+from empiremuse.utils.others import CustomContext, string_to_file, CommandArgparse, select_bot_pool
 from empiremuse.utils.owner_panel import panel_command, PanelView
 from empiremuse.version import image_version
 
@@ -130,9 +130,19 @@ def is_export_refused(name: str) -> bool:
         roots.append(runtime_dir)
     if not any(root in path.parents for root in roots):
         return True
-    if path.name.lower() in EXPORT_REFUSED_NAMES:
+    if "local_database" in {part.lower() for part in path.parts} or path.name.lower() in EXPORT_REFUSED_NAMES:
         return True
     return path == dev_runtime or dev_runtime in path.parents
+
+
+def export_environment(source) -> dict:
+    """Variáveis extras da exportação: allowlist de nomes, sem inspecionar valores."""
+    return {
+        name: value
+        for name, value in source.items()
+        if name.lower() == "token"
+        or name.lower().startswith(("token_reserve_", "token_radio_", "test_guilds_", "lavalink_node_"))
+    }
 
 
 def format_git_log(data_list: list):
@@ -269,7 +279,7 @@ class Owner(commands.Cog):
         "discloud.config",
     ]
 
-    extra_dirs = ["local_database"]
+    extra_dirs = []
 
     def __init__(self, bot: BotCore):
         self.bot = bot
@@ -278,7 +288,7 @@ class Owner(commands.Cog):
 
     def secret_values(self) -> frozenset:
         """Valores de segredo conhecidos (configuração do bot e ambiente do processo) que nunca saem em claro."""
-        return collect_secret_values(self.bot.config, os.environ)
+        return self.bot.pool.secret_values()
 
     def log_owner_command(self, ctx, name: str, detail: str = ""):
         """Registra quem executou qual comando de owner (o horário vem do formato do log), sem a saída e sem segredos."""
@@ -1019,22 +1029,7 @@ class Owner(commands.Cog):
         SECRETS = dict(DEFAULT_CONFIG)
         SECRETS.update({"TOKEN": ""})
 
-        for env, value in os.environ.items():
-            if (e := env.lower()).startswith(("token_bot_", "test_guilds_", "lavalink_node_")) or e == "token":
-                SECRETS[env] = os.environ[env]
-                continue
-
-            if not isinstance(value, str):
-                continue
-
-            tokens = []
-
-            for string in value.split():
-                if re.findall(token_regex, value) and len(string) < 91:
-                    tokens.append(string)
-
-            if tokens:
-                SECRETS[env] = value
+        SECRETS.update(export_environment(os.environ))
 
         for i in SECRETS:
             try:
@@ -1242,7 +1237,7 @@ class Owner(commands.Cog):
             output, failed = str(e), True
 
         # A saída só vai por DM, com os segredos conhecidos mascarados; nunca para o canal.
-        output = mask_secrets(output, self.secret_values())
+        output = mask_shell_output(output, self.secret_values())
         content = f"```py\n{output}```"
         kwargs = {}
         if len(content) > 2000:
@@ -1279,7 +1274,7 @@ class Owner(commands.Cog):
         if bot.user.id not in ctx.author.voice.channel.voice_states:
             free_bots = []
 
-            for b in self.bot.pool.get_guild_bots(ctx.guild.id):
+            for b in self.bot.pool.get_all_bots():
                 if not b.bot_ready:
                     continue
 

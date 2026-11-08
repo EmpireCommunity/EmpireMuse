@@ -65,7 +65,12 @@ def bot_falso(identificador=BOT_ID, pronto=True, canal=True, usuario=True):
 
 
 def pool_com(*bots, saudavel=True):
-    return SimpleNamespace(bots=list(bots), get_all_bots=lambda: list(bots), pool_is_healthy=lambda: saudavel)
+    return SimpleNamespace(
+        bots=list(bots),
+        get_all_bots=lambda: list(bots),
+        secret_values=lambda: frozenset(),
+        pool_is_healthy=lambda: saudavel,
+    )
 
 
 @pytest.fixture

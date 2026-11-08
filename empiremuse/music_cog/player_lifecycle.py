@@ -372,7 +372,7 @@ class PlayerLifecycleMixin:
             pass
 
         if member.id == player.bot.user.id:
-            """for b in self.bot.pool.get_guild_bots(member.guild.id):
+            """for b in self.bot.pool.get_all_bots():
                 if b == player.bot:
                     if after.channel:
                         player._last_channel = after.channel
@@ -528,7 +528,7 @@ class PlayerLifecycleMixin:
                 if player.guild.me.voice and inter.author.id in player.guild.me.voice.channel.voice_states:
                     return [bot]
 
-        for b in self.bot.pool.get_guild_bots(guild.id):
+        for b in self.bot.pool.get_all_bots():
             if not b.bot_ready:
                 continue
 

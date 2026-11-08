@@ -17,11 +17,9 @@ pytestmark = pytest.mark.critical
 def build(*, radio_only=True):
     pool = SimpleNamespace(database=FakeDb(), i18n=get_i18n())
     pool.radio = RadioHub(pool)
-    if radio_only:
-        pool.radio.roles._radio_only = frozenset({"TOKEN_3"})
     channel = SimpleNamespace(id=55, send=AsyncMock())
     message = SimpleNamespace(channel=channel, guild=SimpleNamespace(id=1, preferred_locale="pt-BR"))
-    bot = SimpleNamespace(pool=pool, identifier="TOKEN_3")
+    bot = SimpleNamespace(pool=pool, identifier="TOKEN_RADIO_3" if radio_only else "TOKEN_RESERVE_3")
     return SimpleNamespace(bot=bot, pool=pool, message=message, channel=channel)
 
 
@@ -61,7 +59,7 @@ class TestNotice:
     async def test_no_notice_when_another_ready_bot_will_run_the_shared_prefix_command(self):  # CodeRabbit #180
         w = build()
         other = self.other_bot()
-        w.pool.get_guild_bots = lambda gid: [w.bot, other]
+        w.pool.get_all_bots = lambda: [w.bot, other]
 
         handled = await refuse_radio_only(w.bot, SimpleNamespace(valid=True), w.message)
 
@@ -71,10 +69,9 @@ class TestNotice:
     @pytest.mark.asyncio
     async def test_the_notice_stays_when_the_only_other_bots_are_radio_only_or_not_ready(self):
         w = build()
-        w.pool.radio.roles._radio_only = frozenset({"TOKEN_3", "TOKEN_4"})
-        w.pool.get_guild_bots = lambda gid: [
+        w.pool.get_all_bots = lambda: [
             w.bot,
-            self.other_bot(identifier="TOKEN_4"),  # também só-rádio
+            self.other_bot(identifier="TOKEN_RADIO_4"),  # também só-rádio
             self.other_bot(ready=False),  # ainda subindo
         ]
 
@@ -94,7 +91,7 @@ class TestNotice:
     )
     async def test_the_notice_stays_when_the_other_bot_cannot_actually_answer(self, other):  # CodeRabbit #180
         w = build()
-        w.pool.get_guild_bots = lambda gid: [w.bot, self.other_bot(**other)]
+        w.pool.get_all_bots = lambda: [w.bot, self.other_bot(**other)]
 
         await refuse_radio_only(w.bot, SimpleNamespace(valid=True), w.message)
 
@@ -103,7 +100,7 @@ class TestNotice:
     @pytest.mark.asyncio
     async def test_in_a_thread_the_notice_is_suppressed_when_the_other_bot_can_send_in_threads(self):
         w = build()
-        w.pool.get_guild_bots = lambda gid: [w.bot, self.other_bot(thread_parent=True)]
+        w.pool.get_all_bots = lambda: [w.bot, self.other_bot(thread_parent=True)]
 
         await refuse_radio_only(w.bot, SimpleNamespace(valid=True), w.message)
 
@@ -147,20 +144,18 @@ class TestJukeboxPanelElection:
     def test_a_radio_only_bot_never_becomes_the_jukebox_panel_bot(self):
         pool = SimpleNamespace(database=FakeDb(), i18n=get_i18n())
         pool.radio = RadioHub(pool)
-        pool.radio.roles._radio_only = frozenset({"TOKEN_2"})
 
         def bot(bot_id, identifier):
             return SimpleNamespace(
                 identifier=identifier,
                 user=SimpleNamespace(id=bot_id),
-                exclusive_guild_id=None,
                 get_guild=lambda gid: SimpleNamespace(id=gid),
             )
 
-        pool.get_all_bots = lambda: [bot(2, "TOKEN_2"), bot(3, "TOKEN_3")]
+        pool.get_all_bots = lambda: [bot(2, "TOKEN_RADIO_2"), bot(3, "TOKEN_RESERVE_3")]
         request = ServerJukebox(SimpleNamespace(pool=pool))
 
-        assert [peer.identifier for peer in request.peers(1)] == ["TOKEN_3"]
+        assert [peer.identifier for peer in request.peers(1)] == ["TOKEN_RESERVE_3"]
         assert request.elected_id(1) == 3  # sem o principal, a primeira reserva que NÃO é só-rádio
 
 
@@ -174,13 +169,12 @@ class TestPlainMention:
 
         pool = SimpleNamespace(database=FakeDb(), i18n=get_i18n())
         pool.radio = RadioHub(pool)
-        pool.radio.roles._radio_only = frozenset({"TOKEN_3"} if radio_only else set())
         bot = MagicMock()
-        bot.bot_ready, bot.appinfo, bot.exclusive_guild_id = True, object(), None
+        bot.bot_ready, bot.appinfo = True, object()
         bot.is_closed = lambda: False
         bot.music.players = {}
         bot.user = SimpleNamespace(id=99, mention="<@99>")
-        bot.identifier = "TOKEN_3"
+        bot.identifier = "TOKEN_RADIO_3" if radio_only else "TOKEN_RESERVE_3"
         bot.pool = pool
         bot.config = {"INTERACTION_COMMAND_ONLY": True, "INVITE_PERMISSIONS": 8, "ENABLE_SONGREQUEST_MENTION": False}
         bot.is_reserve = False

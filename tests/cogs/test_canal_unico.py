@@ -21,7 +21,7 @@ pytestmark = pytest.mark.critical
 GID, PANEL_CHANNEL, PANEL_MESSAGE = 111, 22, 555
 
 
-def make_bot(bot_id, identifier, *, call=None, ready=True, exclusive=None, in_guild=True, static=True, private=False):
+def make_bot(bot_id, identifier, *, call=None, ready=True, in_guild=True, static=True, private=False):
     """Um bot do pool: ``call`` = id da call onde ele toca (``None`` = livre; ``private`` = ``@everyone`` não vê a call)."""
     perms = SimpleNamespace(view_channel=not private, connect=not private)
     channel = SimpleNamespace(
@@ -42,7 +42,6 @@ def make_bot(bot_id, identifier, *, call=None, ready=True, exclusive=None, in_gu
         identifier=identifier,
         user=SimpleNamespace(id=bot_id, display_name=identifier),
         bot_ready=ready,
-        exclusive_guild_id=exclusive,
         music=SimpleNamespace(players={GID: player} if player else {}),
         get_guild=lambda gid: guild if in_guild and gid == GID else None,
         get_cog=lambda name: cog,
@@ -96,8 +95,8 @@ def test_a_request_goes_to_the_bot_in_the_callers_call_else_the_first_free_one(b
 
 @pytest.mark.parametrize(
     "unfit",
-    [{"ready": False}, {"exclusive": 999}, {"in_guild": False}],
-    ids=["not_ready", "exclusive_of_another_server", "not_in_the_server"],
+    [{"ready": False}, {"in_guild": False}],
+    ids=["not_ready", "not_in_the_server"],
 )
 def test_a_bot_that_cannot_serve_here_is_skipped_when_picking_a_free_one(unfit):
     pool = make_pool(make_bot(1, "TOKEN", **unfit), make_bot(2, "TOKEN_2"))

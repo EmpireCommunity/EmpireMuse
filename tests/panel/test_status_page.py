@@ -97,9 +97,9 @@ READY = (make_bot(111, "Bot Um", guilds=7),)
 class TestPoolStatus:
     def test_pending_and_failed_bots_are_reported(self, monkeypatch):
         pending = make_bot(222, "Bot Dois", ready=False)
-        body = page(monkeypatch, bots=(pending,), failed={"TOKEN_BOT_9": "Token inválido"})
+        body = page(monkeypatch, bots=(pending,), failed={"TOKEN_RESERVE_9": "Token inválido"})
         assert "id-Bot Dois" in body and "Recarregue a página" in body
-        assert "TOKEN_BOT_9" in body and "Token inválido" in body
+        assert "TOKEN_RESERVE_9" in body and "Token inválido" in body
 
 
 class TestLinks:

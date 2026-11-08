@@ -28,20 +28,11 @@ URL = "https://discord.com/oauth2/authorize?client_id=1"
 
 
 @pytest.mark.parametrize(
-    ("identifier", "exclusive", "configured", "is_main", "is_reserve"),
-    [
-        ("TOKEN", None, True, True, False),
-        ("TOKEN_1", None, True, True, False),
-        ("TOKEN_2", None, True, False, True),
-        ("TOKEN_2", 123, True, False, False),  # exclusivo de servidor não é nem principal nem reserva
-        ("TOKEN", 123, True, False, False),
-        ("TOKEN_2", None, False, False, False),  # sem token principal configurado ninguém é reserva
-    ],
+    ("identifier", "configured", "is_main", "is_reserve"),
+    [("TOKEN", True, True, False), ("TOKEN_RESERVE_2", True, False, True), ("TOKEN_RESERVE_2", False, False, False)],
 )
-def test_roles_of_a_bot(identifier, exclusive, configured, is_main, is_reserve):
-    bot = SimpleNamespace(
-        identifier=identifier, exclusive_guild_id=exclusive, pool=SimpleNamespace(main_configured=configured)
-    )
+def test_roles_of_a_bot(identifier, configured, is_main, is_reserve):
+    bot = SimpleNamespace(identifier=identifier, pool=SimpleNamespace(main_configured=configured))
     assert (BotCore.is_main.fget(bot), BotCore.is_reserve.fget(bot)) == (is_main, is_reserve)
 
 

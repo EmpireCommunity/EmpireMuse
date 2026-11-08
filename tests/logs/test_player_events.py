@@ -242,7 +242,7 @@ class TestVolume:
         console = Console(INFO)
         pool = BotPool.__new__(BotPool)
         pool.config = {"METRICS_INTERVAL": 300}
-        pool.bots, pool.guild_bots = [], {}
+        pool.bots = []
         pool.metrics = MetricsCollector()
         pool.logs_task = None
 

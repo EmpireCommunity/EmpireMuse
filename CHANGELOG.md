@@ -7,6 +7,11 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Breaking
+- Os tokens agora vêm um por variável: `TOKEN` (principal), `TOKEN_RESERVE_<NOME>` e `TOKEN_RADIO_<NOME>`. `TOKEN_BOT_*`, `TOKEN_1..n`, vários tokens em `TOKEN` e o `guild_bots.json` não são mais lidos. Migre o `.env` e o compose antes de atualizar; `TOKEN` ausente, inválido ou com mais de um token impede a subida. O `/update` não migra o compose.
+- Bots só-rádio passam a ser definidos pelo prefixo `TOKEN_RADIO_`; o comando de dono `radio bot` e a leitura de `bot_roles` foram removidos. Na escolha da rádio 24 h, os só-rádio aparecem antes das reservas.
+- O comando temporário `fixfavs` foi removido e `exportsource` recusa arquivos de `local_database`.
+
 ### Segurança
 - `tornado` atualizado de 6.5.10 para 6.6 (alertas #2, #3 e #4 do Dependabot), com isenção pontual do corte temporal no lock de produção.
 - O refreshToken do YouTube só é aplicado ao nó LOCAL da própria máquina; o token do RPC é gerado com fonte criptográfica. Conexões REST e WebSocket com nós IPv6 usam o endereço correto.

@@ -1,8 +1,7 @@
-"""Controles do dono da rádio (item 8, R1, R-1 e R-3): "pausar todas" e os bots só-rádio.
+"""Controles do dono da rádio (item 8, R1, R-1 e R-3): "pausar todas".
 
 - ``radio_control`` (documento único ``control``): ``paused_all`` é a válvula de segurança, porque não há teto global. Sobrevive a reinício.
   Enquanto o valor não foi lido do banco com sucesso, vale como pausado (falha fechada: sem saber, nenhuma rádio retoma por conta própria).
-- ``bot_roles`` (documento único ``roles``): ``radio_only`` = identificadores dos bots reservas dedicados a rádio. O principal nunca entra.
 
 Quem pode escrever é decidido por quem chama (comando de dono, só ``OWNER_IDS``); aqui só se guarda, com compare-and-set em ``rev``.
 """
@@ -14,7 +13,6 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Optional
 
-from empiremuse.rules.servers import is_main_identifier
 from empiremuse.utils.radio.premium import CAS_ATTEMPTS, GLOBAL_DB, RadioUnavailable
 
 if TYPE_CHECKING:
@@ -24,13 +22,6 @@ logger = logging.getLogger(__name__)
 
 CONTROL_DB = "radio_control"
 CONTROL_ID = "control"
-ROLES_DB = "bot_roles"
-ROLES_ID = "roles"
-MAX_ROLE_ENTRIES = 32
-
-
-class MainBotRefused(Exception):
-    """O bot principal não pode ser só-rádio."""
 
 
 class _Document:
@@ -114,49 +105,3 @@ class RadioControl(_Document):
                 except Exception as error:  # noqa: BLE001 - um ouvinte com defeito não impede os outros
                     logger.warning("Ouvinte de pausa geral falhou (%s)", type(error).__name__)
         return changed
-
-
-class BotRoles(_Document):
-    db_name = ROLES_DB
-    doc_id = ROLES_ID
-
-    def __init__(self, pool: BotPool) -> None:
-        super().__init__(pool)
-        self._radio_only: frozenset[str] = frozenset()
-
-    def is_radio_only(self, identifier: object) -> bool:
-        """O bot de ``identifier`` é só-rádio? (Leitura em memória; ``load`` atualiza.) O principal nunca é."""
-        return isinstance(identifier, str) and not is_main_identifier(identifier) and identifier in self._radio_only
-
-    @property
-    def radio_only(self) -> tuple[str, ...]:
-        return tuple(sorted(self._radio_only))
-
-    def forget(self) -> None:
-        """O documento foi apagado (``hardreset``): nenhum bot é só-rádio."""
-        self._radio_only = frozenset()
-
-    async def load(self) -> tuple[str, ...]:
-        doc = await self._read()
-        listed = doc.get("radio_only", []) if doc else []
-        self._radio_only = frozenset(
-            item for item in listed if isinstance(item, str) and item and not is_main_identifier(item)
-        )
-        return self.radio_only
-
-    async def add(self, identifier: str) -> tuple[str, ...]:
-        if is_main_identifier(identifier):
-            raise MainBotRefused
-        await self._mutate(
-            lambda body: {
-                **body,
-                "radio_only": sorted({*body.get("radio_only", []), identifier[:40]})[:MAX_ROLE_ENTRIES],
-            }
-        )
-        return await self.load()
-
-    async def remove(self, identifier: str) -> tuple[str, ...]:
-        await self._mutate(
-            lambda body: {**body, "radio_only": [i for i in body.get("radio_only", []) if i != identifier]}
-        )
-        return await self.load()

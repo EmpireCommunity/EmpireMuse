@@ -41,6 +41,7 @@ flowchart LR
 3. `BotPool.__init__` em `empiremuse/utils/client.py` carrega a configuração (`load_cfg` → `empiremuse.config_loader.load_config`),
    cria caches TTL, clientes Deezer/yt-dlp e restaura o cache de playlist em JSON de `local_database/` sob `RUNTIME_DIR` (`BotPool.load_cache` em `empiremuse/utils/client.py`); os caches do formato antigo não são lidos.
 4. `BotPool.setup` em `empiremuse/utils/client.py` executa, em ordem:
+   - valida `TOKEN` (principal obrigatório), `TOKEN_RESERVE_<NOME>` e `TOKEN_RADIO_<NOME>` em `rules/bot_tokens.py`, um token por variável. Falha do principal encerra a subida antes de qualquer serviço; registra os tokens normalizados antes dos avisos;
    - carrega as skins (`BotPool.load_skins` em `empiremuse/utils/client.py`);
    - monta a lista de nodes Lavalink: lista remota (`AUTO_DOWNLOAD_LAVALINK_SERVERLIST`), variáveis
      `LAVALINK_NODE_*` (JSON) e `lavalink.ini` em `RUNTIME_DIR` (`BotPool.setup` em `empiremuse/utils/client.py`);
@@ -49,10 +50,7 @@ flowchart LR
    - escolhe o banco: `MONGO` preenchido → `MongoDatabase`; caso contrário `LocalDatabase` (`BotPool.setup` em `empiremuse/utils/client.py`)
      — o `LocalDatabase` é sempre instanciado em `RUNTIME_DIR / "local_database"`;
    - cria `SpotifyClient` (se houver credenciais) e `LastFM` (`BotPool.setup` em `empiremuse/utils/client.py`);
-   - varre **todas** as variáveis de ambiente/config atrás de strings com formato de token do Discord
-     (`token_regex` em `empiremuse/utils/others.py`), de modo que qualquer chave pode conter um token (`BotPool.setup` em `empiremuse/utils/client.py`);
-   - cria um `BotCore` por token via `load_bot` em `BotPool.setup` (`empiremuse/utils/client.py`) e, opcionalmente, bots exclusivos de
-     servidor a partir de `guild_bots.json` em `RUNTIME_DIR` (`BotPool.setup` em `empiremuse/utils/client.py`);
+   - cria os bots admitidos na ordem principal, reservas e só-rádio;
    - sobe o servidor web com `web_app.start` (se `RUN_RPC_SERVER`) ou roda `run_bots` no loop (`BotPool.setup` em `empiremuse/utils/client.py`).
 5. Cada `BotCore` (`empiremuse/utils/client.py`, herda `commands.AutoShardedBot`) executa `initial_setup` depois do
    `on_ready`: carrega os cogs de `empiremuse.cogs`, sincroniza cooldowns e comandos de aplicação, registra `PanelView`
@@ -91,7 +89,7 @@ O `BotCore` também define `allowed_mentions` padrão sem `@everyone` nem cargos
 
 ### Estado compartilhado do pool
 
-`BotPool` guarda o que é comum a todos os bots: `bots` e `guild_bots` (`BotPool` em `empiremuse/utils/client.py`), a configuração,
+`BotPool` guarda o que é comum a todos os bots: `bots` (`BotPool` em `empiremuse/utils/client.py`), a configuração,
 os bancos (`BotPool.database` escolhe Mongo ou local em `empiremuse/utils/client.py`), caches (`playlist_cache`,
 `partial_track_cache`, `lyric_data_cache`), as skins e os clientes de integração. `BotCore` expõe esses
 objetos por *properties* (`BotCore` em `empiremuse/utils/client.py`).
@@ -391,7 +389,7 @@ O pacote `empiremuse/serialization/` centraliza a validação de esquema, codifi
 - No MongoDB: coleção `player_sessions_json` sob o banco do bot;
 
 Outros arquivos locais: `.app_commands_sync_data/<id>.json` (hash dos comandos já sincronizados,
-`BotCore.sync_app_commands` em `empiremuse/utils/client.py`), `guild_bots.json`, `auto_lavalink.ini` em `RUNTIME_DIR` e o cache de token do Spotify em
+`BotCore.sync_app_commands` em `empiremuse/utils/client.py`), `auto_lavalink.ini` em `RUNTIME_DIR` e o cache de token do Spotify em
 `RUNTIME_DIR / ".spotify_cache.json"` (respeitando `EMPIREMUSE_HOME`, com permissão restrita `0600` e gravação atômica; `spotify_cache_path()` em `empiremuse/utils/music/audio_sources/spotify.py`).
 
 ## 9. Integrações externas

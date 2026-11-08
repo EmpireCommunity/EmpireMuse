@@ -36,6 +36,15 @@ async def new_radio(w, *, bot_id=2, channel_id=CHANNEL, kind="custom"):
     )
 
 
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_radio_options_list_radio_bots_before_reserves_in_natural_order():
+    w = await setup_world(free_bots=(2, 10))
+    w.bots[1].identifier = "TOKEN_RESERVE_2"
+    w.bots[2].identifier = "TOKEN_RADIO_10"
+    assert [bot_id for bot_id, _ in (await w.hub.setup.options(GUILD)).bots] == [10, 2]
+
+
 def code_of(refused):
     return refused.value.error.code, refused.value.error.key
 
@@ -54,7 +63,7 @@ class TestConfigureCreates:
     @pytest.mark.asyncio
     async def test_it_lists_the_free_reserves_and_the_valid_channels(self):
         w = await setup_world(request_channel=OTHER_CHANNEL)
-        w.bots[2].get_guild(GUILD).me.voice = object()  # TOKEN_3 em call
+        w.bots[2].get_guild(GUILD).me.voice = object()  # TOKEN_RESERVE_3 em call
         await new_radio(w, bot_id=2)
 
         options = await w.hub.setup.options(GUILD)

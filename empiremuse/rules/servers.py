@@ -46,7 +46,7 @@ FLAG_FIELDS = (
     "jukebox_text_requests",
 )
 SKIN_MAX_LENGTH = 100
-MAIN_IDENTIFIERS = ("TOKEN", "TOKEN_1")  # o principal é o token principal, nunca o primeiro por ordem (contrato §3)
+MAIN_IDENTIFIERS = ("TOKEN",)  # o principal é o token principal, nunca o primeiro por ordem (contrato §3)
 
 _ROLE_ID = re.compile(r"[0-9]{1,20}")
 _LEGACY_CONTROLLER_KEYS = {"skin": "skin", "static_skin": "static_skin"}

@@ -111,19 +111,17 @@ async def test_a_reserve_bot_stays_silent_instead_of_raising_an_unexpected_check
 def test_hard_reset_also_forgets_the_pause_all_and_the_radio_only_bots_held_in_memory() -> None:
     """CodeRabbit #199: os documentos somem no hardreset, mas a pausa geral e os bots só-rádio ficavam na memória até reiniciar."""
     from empiremuse.utils.radio import RadioHub
-    from empiremuse.utils.radio.control import BotRoles, RadioControl
+    from empiremuse.utils.radio.control import RadioControl
 
-    control, roles = RadioControl(SimpleNamespace()), BotRoles(SimpleNamespace())
+    control = RadioControl(SimpleNamespace())
     control._paused = True
-    roles._radio_only = frozenset({"bot-2"})
     hub = SimpleNamespace(
         resolved=SimpleNamespace(_memory={}),
         health=SimpleNamespace(_until={}),
         _notices={},
         control=control,
-        roles=roles,
     )
 
     RadioHub.forget_all(hub)
 
-    assert control.paused_all is False and roles.radio_only == ()
+    assert control.paused_all is False

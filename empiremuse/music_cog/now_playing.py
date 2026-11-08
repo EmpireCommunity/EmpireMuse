@@ -52,7 +52,7 @@ class NowPlayingMixin:
     async def now_playing(self, inter: disnake.ApplicationCommandInteraction):
         player: Optional[LavalinkPlayer] = None
 
-        for bot in self.bot.pool.get_guild_bots(inter.guild_id):
+        for bot in self.bot.pool.get_all_bots():
             try:
                 p = bot.music.players[inter.guild_id]
             except KeyError:
@@ -84,7 +84,7 @@ class NowPlayingMixin:
                     await guild_text(self.bot, inter.guild, "legacy.now_playing.join_voice_server", command=slashcmd)
                 )
 
-            for bot in self.bot.pool.get_guild_bots(inter.guild_id):
+            for bot in self.bot.pool.get_all_bots():
                 for player_id in bot.music.players:
                     if player_id == inter.guild_id:
                         continue

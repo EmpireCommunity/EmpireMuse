@@ -38,6 +38,7 @@ from empiremuse.rules.radio import (
     split_radio_id,
     to_document,
 )
+from empiremuse.rules.bot_roles import radio_order
 from empiremuse.rules.servers import is_main_identifier
 from empiremuse.utils.radio.premium import GLOBAL_DB, RadioUnavailable
 from empiremuse.utils.radio.store import RadioConflict, RadioInvalid, RadioNotFound
@@ -112,11 +113,9 @@ class RadioSetup:
         free = []
         for bot in self._bots():
             guild = bot.get_guild(guild_id)
-            exclusive = getattr(bot, "exclusive_guild_id", None)
             if (
                 guild is None
                 or is_main_identifier(bot.identifier)
-                or (exclusive and exclusive != guild_id)
                 or not bot.bot_ready
                 or bot.user.id in taken
                 or guild_id in bot.music.players
@@ -124,7 +123,8 @@ class RadioSetup:
             ):
                 continue
             free.append(bot)
-        return free
+        by_identifier = {bot.identifier: bot for bot in free}
+        return [by_identifier[name] for name in radio_order(by_identifier)]
 
     async def options(self, guild_id: int) -> SetupOptions:
         """Os reservas livres e os canais de voz e de palco que valem (a lista que o painel e o comando mostram; ``configure`` confere de novo)."""
@@ -185,14 +185,7 @@ class RadioSetup:
     def _check_bot(self, guild_id: int, bot_id: int, *, current: Optional[Radio]) -> Any:
         bot = next((b for b in self._bots() if b.user.id == bot_id), None)
         guild = bot.get_guild(guild_id) if bot is not None else None
-        exclusive = getattr(bot, "exclusive_guild_id", None)
-        if (
-            bot is None
-            or guild is None
-            or is_main_identifier(bot.identifier)
-            or (exclusive and exclusive != guild_id)
-            or not bot.bot_ready
-        ):
+        if bot is None or guild is None or is_main_identifier(bot.identifier) or not bot.bot_ready:
             raise RadioInvalid(RuleError(RESERVE_ONLY, "bot_id"))
         own = current is not None and current.bot_id == bot_id
         if not own and (guild_id in bot.music.players or guild.me.voice):

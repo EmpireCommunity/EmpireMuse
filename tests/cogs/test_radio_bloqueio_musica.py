@@ -29,7 +29,6 @@ def make_bot(bot_id, identifier, *, call=None, radio=False):
         identifier=identifier,
         user=SimpleNamespace(id=bot_id),
         bot_ready=True,
-        exclusive_guild_id=None,
         music=SimpleNamespace(players={GID: player} if player else {}),
         get_guild=lambda gid: guild if gid == GID else None,
         pool=SimpleNamespace(i18n=SimpleNamespace(for_guild=AsyncMock(return_value=lambda key, **k: key))),
@@ -37,7 +36,7 @@ def make_bot(bot_id, identifier, *, call=None, radio=False):
 
 
 def pool_of(*bots):
-    return SimpleNamespace(get_all_bots=lambda: list(bots), get_guild_bots=lambda gid: list(bots))
+    return SimpleNamespace(get_all_bots=lambda: list(bots))
 
 
 def member(call=None):
@@ -56,7 +55,7 @@ class TestPlayerPermRefusesARadioPlayer:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("manage_channels", [True, False])
     async def test_nobody_not_even_manage_channels_commands_a_radio_player(self, manage_channels):
-        bot = make_bot(2, "TOKEN_2", call=100, radio=True)
+        bot = make_bot(2, "TOKEN_RESERVE_2", call=100, radio=True)
         player = bot.music.players[GID]
 
         with pytest.raises(GenericError) as refusal:
@@ -69,14 +68,17 @@ class TestPlayerPermRefusesARadioPlayer:
 
     @pytest.mark.asyncio
     async def test_a_normal_music_player_keeps_the_usual_rules(self):
-        bot = make_bot(2, "TOKEN_2", call=100, radio=False)
+        bot = make_bot(2, "TOKEN_RESERVE_2", call=100, radio=False)
 
         assert await checks.check_player_perm(inter_for(manage_channels=True), bot, None) is True
 
 
 class TestJukeboxPathsSkipRadioPlayers:
     def test_a_typed_request_or_button_never_resolves_to_the_radios_player(self):
-        radio_bot, music_bot = make_bot(2, "TOKEN_2", call=100, radio=True), make_bot(3, "TOKEN_3", call=200)
+        radio_bot, music_bot = (
+            make_bot(2, "TOKEN_RESERVE_2", call=100, radio=True),
+            make_bot(3, "TOKEN_RESERVE_3", call=200),
+        )
         pool = pool_of(radio_bot, music_bot)
 
         assert (
@@ -85,7 +87,7 @@ class TestJukeboxPathsSkipRadioPlayers:
         assert checks.resolve_player(pool, GID, member(200))[0] is music_bot
 
     def test_the_request_goes_to_a_free_bot_never_to_the_radio_bot(self):
-        radio_bot, free_bot = make_bot(2, "TOKEN_2", call=100, radio=True), make_bot(3, "TOKEN_3")
+        radio_bot, free_bot = make_bot(2, "TOKEN_RESERVE_2", call=100, radio=True), make_bot(3, "TOKEN_RESERVE_3")
         pool = pool_of(radio_bot, free_bot)
 
         assert checks.pick_request_bot(pool, GID, member(100)) is free_bot
@@ -95,3 +97,36 @@ class TestJukeboxPathsSkipRadioPlayers:
         assert checks.has_radio_player(make_bot(2, "T", call=100, radio=True), GID)
         assert not checks.has_radio_player(make_bot(3, "T3", call=100), GID)
         assert not checks.has_radio_player(make_bot(4, "T4"), GID)
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize("path", ["request", "available", "pool"])
+@pytest.mark.asyncio
+async def test_a_radio_token_never_enters_music_selection(path):
+    from empiremuse.rules.bot_tokens import load_bot_tokens
+    from tests.rules.test_bot_tokens import token
+
+    identifier = load_bot_tokens({"TOKEN": token(), "TOKEN_RADIO_2": token("b")}).bots[1].identifier
+    radio_bot = make_bot(2, identifier)
+    radio_bot.user.mention = "<@2>"
+    radio_bot.get_guild = MagicMock(wraps=radio_bot.get_guild)
+    pool = pool_of(radio_bot)
+    if path == "request":
+        assert checks.pick_request_bot(pool, GID, member(100)) is None
+    elif path == "available":
+        assert checks.get_available_bots_info(pool, GID, member(100)) == ("", [])
+    else:
+
+        class NextCandidate(Exception):
+            pass
+
+        reserve = make_bot(3, "TOKEN_RESERVE_Z")
+        reserve.get_guild = MagicMock(side_effect=NextCandidate)
+        pool = pool_of(radio_bot, reserve)
+        bot = SimpleNamespace(user=SimpleNamespace(id=1), pool=pool)
+        inter = SimpleNamespace(bot=bot, guild_id=GID, guild=SimpleNamespace(), author=member(100))
+        inter.author.voice.channel.voice_states = {}
+        with pytest.raises(NextCandidate):
+            await checks.check_pool_bots(inter)
+    if path != "request":
+        radio_bot.get_guild.assert_not_called()

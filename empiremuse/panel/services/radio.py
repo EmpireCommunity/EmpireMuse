@@ -111,7 +111,7 @@ class RadioPage:
     def bot_of(ctx: FormContext, radio: Any) -> Any:
         """O bot da rádio, só se ele está neste servidor (bot ainda sem ``user`` = não conectado: não conta)."""
         wanted = int(radio.bot_id)
-        for bot in ctx.pool.get_guild_bots(ctx.guild_id):
+        for bot in ctx.pool.get_all_bots():
             user = getattr(bot, "user", None)
             if user is not None and int(user.id) == wanted:
                 return bot

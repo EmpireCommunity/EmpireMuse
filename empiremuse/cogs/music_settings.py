@@ -1401,7 +1401,7 @@ class MusicSettings(commands.Cog):
         else:
             await inter.send(ephemeral=True, **kwargs)
 
-        for b in self.bot.pool.get_guild_bots(interaction.guild_id):
+        for b in self.bot.pool.get_all_bots():
             try:
                 player: LavalinkPlayer = b.music.players[inter.guild_id]
             except KeyError:
@@ -1537,7 +1537,7 @@ class MusicSettings(commands.Cog):
 
         channel = None
 
-        for bot in self.bot.pool.get_guild_bots(inter.guild_id):
+        for bot in self.bot.pool.get_all_bots():
             channel = bot.get_channel(invite.channel.id)
 
             if not channel:
@@ -1577,7 +1577,7 @@ class MusicSettings(commands.Cog):
             f"obter mais informações.`"
         )
 
-        for bot in self.bot.pool.get_guild_bots(inter.guild_id):
+        for bot in self.bot.pool.get_all_bots():
             try:
                 p = bot.music.players[inter.guild_id]
             except KeyError:
@@ -1856,7 +1856,7 @@ class RPCCog(commands.Cog):
 
         bot: Optional[BotCore] = None
 
-        for b in self.bot.pool.get_guild_bots(ctx.guild_id):
+        for b in self.bot.pool.get_all_bots():
             if not (bot_member := ctx.guild.get_member(b.user.id)):
                 continue
             if ctx.author.voice.channel.permissions_for(bot_member).manage_channels:
@@ -1929,7 +1929,7 @@ class RPCCog(commands.Cog):
     @commands.contexts(guild=True)
     async def rich_presence(self, inter: disnake.ApplicationCommandInteraction):
         if not self.bot.config["ENABLE_RPC_COMMAND"] and not any(
-            [await b.is_owner(inter.author) for b in self.bot.pool.get_guild_bots(inter.guild_id)]
+            [await b.is_owner(inter.author) for b in self.bot.pool.get_all_bots()]
         ):
             raise GenericError(
                 "**Este comando está desativado nas minhas configurações...**\n"
@@ -2075,7 +2075,7 @@ class RPCCog(commands.Cog):
             await inter.message.delete()
 
     async def close_presence(self, inter: Union[disnake.MessageInteraction, disnake.ModalInteraction]):
-        for b in self.bot.pool.get_guild_bots(inter.guild_id):
+        for b in self.bot.pool.get_all_bots():
             try:
                 player: LavalinkPlayer = b.music.players[inter.guild_id]
             except KeyError:

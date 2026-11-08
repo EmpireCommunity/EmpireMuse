@@ -15,7 +15,6 @@ from disnake.ext import commands
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.others import CustomContext
 from empiremuse.utils.radio import setup_flow
-from empiremuse.utils.radio.control import MainBotRefused
 from empiremuse.utils.radio.premium import RadioUnavailable
 
 if TYPE_CHECKING:
@@ -177,31 +176,3 @@ class RadioPrefixCommands:
             raise GenericError(tr("radio.owner.unavailable"))
         logger.info("Rádios: pausa geral %s", "desligada" if changed else "já estava desligada")
         await ctx.send(tr("radio.owner.resumed_all" if changed else "radio.owner.resumed_all_already"))
-
-    # ------------------------------------------------------------------ bots só-rádio
-
-    @radio_prefix.command(name="bot", hidden=True)
-    @commands.check(lambda ctx: ctx.cog.owner_check(ctx))
-    async def radio_bot(self, ctx: CustomContext, action: str = "", identifier: str = ""):
-        """``radio bot adicionar|remover <TOKEN_2>`` e ``radio bot listar``: os bots reservas dedicados a rádio."""
-        tr = await self._tr(ctx)
-        action = action.casefold()
-        try:
-            if action in LIST:
-                await self.hub.roles.load()
-                bots = ", ".join(f"`{i}`" for i in self.hub.roles.radio_only) or tr("radio.owner.none")
-                await ctx.send(tr("radio.owner.bots_list", bots=bots), allowed_mentions=disnake.AllowedMentions.none())
-                return
-            if action not in ADD + REMOVE or not identifier.isascii() or not 1 <= len(identifier) <= 40:
-                raise GenericError(tr("radio.owner.bots_usage"))
-            if action in ADD:
-                await self.hub.roles.add(identifier)
-            else:
-                await self.hub.roles.remove(identifier)
-            await ctx.send(
-                tr("radio.owner.bots_changed", bot=identifier), allowed_mentions=disnake.AllowedMentions.none()
-            )
-        except MainBotRefused:
-            raise GenericError(tr("radio.owner.main_refused"))
-        except RadioUnavailable:
-            raise GenericError(tr("radio.owner.unavailable"))

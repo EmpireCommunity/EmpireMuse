@@ -85,7 +85,6 @@ def make_bot(bot_id, identifier, *, online=True, guilds=(GID,)):
     return SimpleNamespace(
         user=SimpleNamespace(id=bot_id) if online else None,
         identifier=identifier,
-        exclusive_guild_id=None,
         player_skins={"default": 1},
         player_static_skins={"static": 1},
         get_guild=lambda gid: SimpleNamespace(roles=roles) if gid in guilds else None,
@@ -290,8 +289,8 @@ def test_legacy_view_outside_the_pool_uses_the_bot_own_data_without_creating_a_d
 # ---------------------------------------------------------------------- achados da revisão: principal determinístico, cache após erro
 
 
-@pytest.mark.parametrize("order", [("TOKEN", "TOKEN_1"), ("TOKEN_1", "TOKEN")])
-def test_main_bot_is_always_token_even_when_token_1_also_exists(world, order):
+@pytest.mark.parametrize("order", [("TOKEN", "TOKEN_RESERVE_1"), ("TOKEN_RESERVE_1", "TOKEN")])
+def test_main_bot_is_always_token_even_when_reserve_1_also_exists(world, order):
     bots = {identifier: make_bot(i, identifier) for i, identifier in enumerate(order, start=1)}
     world.pool.get_all_bots = lambda: [bots[identifier] for identifier in order]
     assert world.store.main_bot() is bots["TOKEN"]

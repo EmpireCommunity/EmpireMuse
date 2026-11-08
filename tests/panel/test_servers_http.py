@@ -135,7 +135,7 @@ class ServerListEscapingTest(ServersBase):
 
 
 class ServerDetailTest(ServersBase):
-    def test_authorized_detail_shows_guild_bots_links_to_real_categories_and_coming_soon_for_the_rest(self):
+    def test_authorized_detail_shows_pool_bots_links_to_real_categories_and_coming_soon_for_the_rest(self):
         response = self.page("/painel/servidores/100")
         body = response.body.decode()
         assert response.code == 200 and "Alfa" in body and "Bot Um" in body

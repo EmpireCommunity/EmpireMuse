@@ -49,7 +49,7 @@ class BotDeComandos:
             user_prefix_cache={},
             default_skin="classic",
             default_static_skin="simple",
-            get_guild_bots=lambda guild_id: [self],
+            get_all_bots=lambda: [self],
         )
         self.music = SimpleNamespace(players={})
         self.user = SimpleNamespace(id=7, name="Bot", display_name="Bot", mention="<@7>")
