@@ -114,8 +114,11 @@ class Cenario:
         self.mongo = SimpleNamespace(update_data=AsyncMock())
         self.sessao = SessaoFalsa()
         self.no_local = SimpleNamespace(
+            host="127.0.0.1",
+            port=8090,
+            identifier="LOCAL",
             info={"plugins": ["youtube-plugin"]},
-            rest_uri="http://no.exemplo.invalido",
+            rest_uri="http://127.0.0.1:8090",
             _websocket=SimpleNamespace(headers={}),
         )
         if com_efeitos:
