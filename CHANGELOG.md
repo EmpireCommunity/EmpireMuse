@@ -7,13 +7,9 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
-### Corrigido
-- Os testes de OAuth do YouTube usam nós locais com host e porta, preservando a verificação de mascaramento e truncamento do corpo de erro HTTP 500.
-
-### Segurança
-- O refreshToken do YouTube só é aplicado ao nó LOCAL da própria máquina; o token do RPC é gerado com fonte criptográfica. Conexões REST e WebSocket com nós IPv6 usam o endereço correto.
 ### Segurança
 - `tornado` atualizado de 6.5.10 para 6.6 (alertas #2, #3 e #4 do Dependabot), com isenção pontual do corte temporal no lock de produção.
+- O refreshToken do YouTube só é aplicado ao nó LOCAL da própria máquina; o token do RPC é gerado com fonte criptográfica. Conexões REST e WebSocket com nós IPv6 usam o endereço correto.
 
 ### Alterado
 - Imagem Docker: o JRE passa do Temurin 25.0.4.1 para o 25.0.5+8, com tag explícita (`25.0.5_8-jre-resolute`, a mesma distro Ubuntu 26.04) fixada por digest multi-arquitetura (amd64 e arm64) publicado há mais de 7 dias.
@@ -25,6 +21,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 ### Corrigido
 - A confirmação do setup da Jukebox esclarece que o painel atual da Jukebox é preservado na limpeza do canal. A resposta final do setup por prefixo é enviada uma única vez, para que não sobre uma cópia do aviso após os 120 s.
 - Na reprodução comum, faixas resolvidas por busca tentam o próximo candidato quando o áudio não está disponível, com limite de tentativas e sem repetir candidatos já recusados.
+- Os testes de OAuth do YouTube usam nós locais com host e porta, preservando a verificação de mascaramento e truncamento do corpo de erro HTTP 500.
 
 ## [2.3.0-rc.3] - 2026-11-04
 
