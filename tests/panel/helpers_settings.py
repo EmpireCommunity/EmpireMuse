@@ -232,7 +232,7 @@ class SettingsBot(FakeBot):
             for i, n in enumerate(("default", "green", "blue"))
         }
         self.default_skin = self.default_static_skin = "default"
-        self.identifier = "TOKEN" if int(bot_id) == 1 else f"TOKEN_{bot_id}"  # o bot 1 é o principal
+        self.identifier = "TOKEN" if int(bot_id) == 1 else f"TOKEN_RESERVE_{bot_id}"  # o bot 1 é o principal
 
     def get_channel(self, channel_id):
         self.calls["get_channel"] += 1

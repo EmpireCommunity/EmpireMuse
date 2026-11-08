@@ -18,6 +18,7 @@ from disnake.ext import commands
 from empiremuse import paths
 from empiremuse.i18n import localized
 from empiremuse.rules.text import format_int, format_mib
+from empiremuse.rules.bot_tokens import is_radio_only_identifier
 from empiremuse.rules.bot_roles import Peer, invite_order, main_missing_notice, notifier
 from empiremuse.utils import branding
 from empiremuse.utils.branding import asset_url
@@ -225,10 +226,14 @@ class Misc(commands.Cog):
         """
         pool = self.bot.pool
         main = pool.main_bot
-        if main is None or main.get_guild(guild.id) is not None:
+        if is_radio_only_identifier(self.bot.identifier) or main is None or main.get_guild(guild.id) is not None:
             return
 
-        here = {b.identifier for b in pool.bots if b.is_reserve and b.get_guild(guild.id) is not None}
+        here = {
+            b.identifier
+            for b in pool.bots
+            if b.is_reserve and not is_radio_only_identifier(b.identifier) and b.get_guild(guild.id) is not None
+        }
         if notifier(here | {self.bot.identifier}) != self.bot.identifier or guild.id in pool.join_notices:
             return
 
@@ -760,7 +765,7 @@ class Misc(commands.Cog):
                 if guild := bot.get_guild(inter.guild_id):
                     break
 
-        pool_bots = [b for b in self.bot.pool.bots if b.user is not None]
+        pool_bots = [b for b in self.bot.pool.bots if b.user is not None and not is_radio_only_identifier(b.identifier)]
         if guild:  # no servidor: só quem falta, na ordem de convite (o principal primeiro, depois as reservas)
             by_id = {b.user.id: b for b in pool_bots}
             order = invite_order([Peer(b.identifier, b.user.id, b.is_main) for b in pool_bots], ())

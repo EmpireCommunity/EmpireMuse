@@ -97,10 +97,7 @@ class IndexHandler(tornado.web.RequestHandler):
         self.set_header("X-Frame-Options", "DENY")
         self.set_header("Referrer-Policy", "same-origin")
 
-    def initialize(
-        self, pool: Optional[BotPool] = None, message: str = "", config: dict = None, panel_enabled: bool = False
-    ):
-        self.message = message
+    def initialize(self, pool: Optional[BotPool] = None, config: dict = None, panel_enabled: bool = False):
         self.panel_enabled = panel_enabled
         self.pool = pool
         self.config = config
@@ -149,7 +146,6 @@ class IndexHandler(tornado.web.RequestHandler):
             .load("status.html")
             .generate(
                 reiniciando=killing_state is True,
-                mensagem=self.message.split("\n") if self.message else [],
                 prontos=ready_bots,
                 pendentes=pending_bots,
                 falhas=[(str(k), str(v)) for k, v in self.pool.failed_bots.items()],
@@ -627,7 +623,7 @@ def _warn_if_exposed_without_auth(config: dict, bind_address: str) -> None:
         )
 
 
-def run_app(pool: BotPool, message: str = "", config: dict = None):
+def run_app(pool: BotPool, config: dict = None):
     if not config:
         try:
             config = pool.config
@@ -641,7 +637,7 @@ def run_app(pool: BotPool, message: str = "", config: dict = None):
             (
                 r"/",
                 IndexHandler,
-                {"pool": pool, "message": message, "config": config, "panel_enabled": panel_app is not None},
+                {"pool": pool, "config": config, "panel_enabled": panel_app is not None},
             ),
             (r"/ws", WebSocketHandler, {"config": config, "connections": set()}),
         ],
@@ -670,10 +666,10 @@ def _shutdown_panel(panel_app) -> None:
         logging.getLogger(__name__).warning("Falha ao encerrar as tarefas do painel (%s)", type(exc).__name__)
 
 
-def start(pool: BotPool, message="", config: dict = None):
+def start(pool: BotPool, config: dict = None):
     if not config:
         config = load_config()
-    panel_app = run_app(pool, message, config)
+    panel_app = run_app(pool, config=config)
     try:
         tornado.ioloop.IOLoop.instance().start()
     finally:

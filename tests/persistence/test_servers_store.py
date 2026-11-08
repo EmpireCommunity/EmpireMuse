@@ -94,7 +94,7 @@ def make_bot(bot_id, identifier, *, online=True, guilds=(GID,)):
 @pytest.fixture
 def world():
     banco = Banco()
-    bots = [make_bot(MAIN_ID, "TOKEN"), make_bot(RESERVE_ID, "TOKEN_2")]
+    bots = [make_bot(MAIN_ID, "TOKEN"), make_bot(RESERVE_ID, "TOKEN_RESERVE_2")]
     pool = SimpleNamespace(database=banco, get_all_bots=lambda: bots)
     return SimpleNamespace(banco=banco, bots=bots, pool=pool, store=ServerStore(pool))
 

@@ -28,7 +28,7 @@ def legacy(channel="12", message="34"):
 @pytest.fixture
 def world():
     banco = Banco()
-    bots = [make_bot(MAIN_ID, "TOKEN"), make_bot(RESERVE_ID, "TOKEN_2")]
+    bots = [make_bot(MAIN_ID, "TOKEN"), make_bot(RESERVE_ID, "TOKEN_RESERVE_2")]
     for bot in bots:
         bot.music = SimpleNamespace(players={})
     pool = SimpleNamespace(database=banco, get_all_bots=lambda: bots)
@@ -263,7 +263,7 @@ def test_with_nobody_in_the_server_the_panel_bot_is_none_and_the_database_is_nev
 def test_a_bot_that_is_not_in_the_server_is_not_the_panel_bot_and_costs_no_write(world):
     run(world.jukebox.elect(GID))
     saves = len(world.banco.saves)
-    outsider = SimpleNamespace(user=SimpleNamespace(id=4040), identifier="TOKEN_9")
+    outsider = SimpleNamespace(user=SimpleNamespace(id=4040), identifier="TOKEN_RESERVE_9")
     assert run(world.jukebox.is_panel_bot(GID, outsider)) is False and len(world.banco.saves) == saves
 
 

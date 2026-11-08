@@ -131,7 +131,7 @@ async def iniciar_servidor(tmp_path, monkeypatch):
             abertos.append(self)
 
         monkeypatch.setattr(TCPServer, "listen", escutar)
-        web_app.run_app(pool, "")
+        web_app.run_app(pool)
         return _Servidor(pool=pool, porta=escuta["porta"], escuta=escuta)
 
     yield iniciar

@@ -6,18 +6,15 @@ decisões e texto; quem sabe quais bots estão em qual servidor é o ``utils/cli
 
 from __future__ import annotations
 
-import re
 from collections.abc import Collection, Iterable
 from typing import NamedTuple
 
-from empiremuse.rules.bot_tokens import Role, role_of
+from empiremuse.rules.bot_tokens import Role, role_of, identifier_sort_key as identifier_sort_key
 from empiremuse.rules.usage import clean_text, render_text
 
 NOTICE_WINDOW_SECONDS = 24 * 60 * 60  # um aviso de "servidor sem o principal" por servidor a cada 24 h
 NAME_LIMIT = 40
 PREFIX_LIMIT = 5
-
-_NUMBER = re.compile(r"(\d+)")
 
 
 class Peer(NamedTuple):
@@ -26,11 +23,6 @@ class Peer(NamedTuple):
     identifier: str
     bot_id: int
     is_main: bool
-
-
-def identifier_sort_key(identifier: str) -> tuple:
-    """Ordem natural dos ``identifier`` (``TOKEN_RESERVE_2`` antes de ``TOKEN_RESERVE_10``)."""
-    return tuple((0, int(part)) if part.isdigit() else (1, part) for part in _NUMBER.split(identifier))
 
 
 def invite_order(peers: Iterable[Peer], in_guild: Collection[int]) -> list[Peer]:

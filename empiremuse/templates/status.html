@@ -1,4 +1,4 @@
-{# Página de status (GET /). Autoescape ligado: todo texto externo (mensagem do pool, nomes, falhas, prefixo) é escapado. #}
+{# Página de status (GET /). Autoescape ligado: todo texto externo (nomes, falhas, prefixo) é escapado. #}
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -99,12 +99,6 @@
     {% if reiniciando %}
     <p class="aviso aviso-reinicio" role="status">A aplicação será reiniciada em breve...</p>
     {% else %}
-
-    {% if mensagem %}
-    <section aria-label="Aviso">
-      <p class="aviso" role="status">{% for i, linha in enumerate(mensagem) %}{% if i %}<br>{% end %}{{ linha }}{% end %}</p>
-    </section>
-    {% end %}
 
     {% if prontos %}
     <section aria-labelledby="titulo-prontos">

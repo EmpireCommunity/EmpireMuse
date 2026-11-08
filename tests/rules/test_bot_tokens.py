@@ -6,7 +6,7 @@ import pickle
 
 import pytest
 
-from empiremuse.rules.bot_tokens import Role, describe, load_bot_tokens, role_of
+from empiremuse.rules.bot_tokens import Role, describe, load_bot_tokens, role_of, is_radio_only_identifier
 
 pytestmark = [pytest.mark.critical, pytest.mark.regression]
 
@@ -15,7 +15,7 @@ def token(letter="a"):
     return letter * 24 + "." + letter * 6 + "." + letter * 30
 
 
-@pytest.mark.parametrize("value", [None, "", " \t\r\n", 42])
+@pytest.mark.parametrize("value", [None, "", " \t\r\n", 42, "''", '""'])
 def test_missing_main_is_fatal_even_with_reserves(value):
     source = {"TOKEN_RESERVE_2": token("b")}
     if value is not None:
@@ -23,6 +23,13 @@ def test_missing_main_is_fatal_even_with_reserves(value):
     loaded = load_bot_tokens(source)
     assert loaded.fatal
     assert loaded.issues[0].code == "MISSING"
+
+
+@pytest.mark.parametrize("value", ["''", '""'])
+def test_empty_quoted_optional_tokens_are_ignored(value):
+    loaded = load_bot_tokens({"TOKEN": token(), "TOKEN_RESERVE_X": value, "TOKEN_RADIO_X": value})
+    assert not loaded.fatal and not loaded.issues
+    assert [bot.identifier for bot in loaded.bots] == ["TOKEN"]
 
 
 @pytest.mark.parametrize(
@@ -121,6 +128,7 @@ def test_bot_token_cannot_be_serialized(serialize):
 )
 def test_role_of(identifier, role):
     assert role_of(identifier) is role
+    assert is_radio_only_identifier(identifier) is (role is Role.RADIO)
 
 
 def test_radio_order():

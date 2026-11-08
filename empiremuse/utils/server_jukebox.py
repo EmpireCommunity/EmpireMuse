@@ -8,13 +8,12 @@ passa pelo store (``utils/servers``): trava por servidor, ``rev`` +1 e compare-a
 
 from __future__ import annotations
 
-from empiremuse.rules.bot_tokens import Role, role_of
-
 import asyncio
 import logging
 import weakref
 from typing import TYPE_CHECKING, NamedTuple, Optional
 
+from empiremuse.rules.bot_tokens import is_radio_only_identifier
 from empiremuse.rules.jukebox_panel import PanelPeer, elect_panel_bot
 from empiremuse.rules.servers import SECTION_JUKEBOX, SECTION_SETTINGS
 from empiremuse.utils.servers import ServerConfigConflict
@@ -161,7 +160,7 @@ class ServerJukebox:
         return found
 
     def _radio_only(self, bot: BotCore) -> bool:
-        return role_of(getattr(bot, "identifier", None)) is Role.RADIO
+        return is_radio_only_identifier(getattr(bot, "identifier", None))
 
     def _bot_by_id(self, bot_id: Optional[int]) -> Optional[BotCore]:
         return next((b for b in self.store.pool.get_all_bots() if b.user is not None and b.user.id == bot_id), None)

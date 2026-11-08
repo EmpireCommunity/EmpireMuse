@@ -52,9 +52,7 @@ def make_pool(config, bots=(), failed=None, killing=False, commit=""):
     )
 
 
-def get_index(
-    monkeypatch, *, message="", bots=(), failed=None, killing=False, commit="", path="/", ws=False, **overrides
-):
+def get_index(monkeypatch, *, bots=(), failed=None, killing=False, commit="", path="/", ws=False, **overrides):
     web_app = require("empiremuse.web_app")
     config = local_config(PORT=0, **overrides)
     pool = make_pool(config, bots, failed, killing, commit)
@@ -69,7 +67,7 @@ def get_index(
     monkeypatch.setattr(web_app.tornado.httpserver, "HTTPServer", Recorder)
 
     async def main():
-        web_app.run_app(pool, message, pool.config)
+        web_app.run_app(pool, config=pool.config)
         if ws:
             connection = await tornado.websocket.websocket_connect(f"ws://127.0.0.1:{seen['port']}/ws")
             connection.close()

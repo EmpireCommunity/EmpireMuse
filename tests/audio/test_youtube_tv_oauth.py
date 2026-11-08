@@ -159,6 +159,7 @@ def export_env(monkeypatch, tmp_path):
         return func(*args)
 
     bot = SimpleNamespace(
+        pool=SimpleNamespace(secret_values=lambda: frozenset()),
         config={"SOURCE_REPO": "https://example.test/repo.git", "EXTRA_HINTS": ""},
         loop=SimpleNamespace(run_in_executor=run_in_executor),
         get_color=lambda me: 0,

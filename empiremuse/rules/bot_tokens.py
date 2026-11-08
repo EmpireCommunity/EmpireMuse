@@ -60,7 +60,13 @@ def role_of(identifier: object) -> Role | None:
     return Role.RESERVE if match[1] == "RESERVE" else Role.RADIO
 
 
-def _sort_key(identifier: str) -> tuple:
+def is_radio_only_identifier(identifier: object) -> bool:
+    """Se o identificador pertence a um bot dedicado exclusivamente à rádio."""
+    return role_of(identifier) is Role.RADIO
+
+
+def identifier_sort_key(identifier: str) -> tuple:
+    """Ordem natural dos identificadores, como _2 antes de _10."""
     return tuple((0, int(part)) if part.isdigit() else (1, part) for part in _NUMBER.split(identifier))
 
 
@@ -76,7 +82,7 @@ def load_bot_tokens(source: Mapping[str, object]) -> TokenLoad:
                 if name.upper().startswith(prefix):
                     issues.append(TokenIssue("NAME", prefix))
                     break
-    accepted.sort(key=lambda item: (list(Role).index(item[1]), _sort_key(item[0])))
+    accepted.sort(key=lambda item: (list(Role).index(item[1]), identifier_sort_key(item[0])))
     bots: list[BotToken] = []
     seen: dict[str, str] = {}
     main_seen = False
@@ -91,6 +97,10 @@ def load_bot_tokens(source: Mapping[str, object]) -> TokenLoad:
             continue
         if len(value) >= 2 and value[0] in "\"'" and value[-1] == value[0]:
             value = value[1:-1]
+            if not value:
+                if role is Role.MAIN:
+                    main_seen = False
+                continue
         if not token_regex.fullmatch(value):
             issues.append(TokenIssue("FORMAT", name))
             continue

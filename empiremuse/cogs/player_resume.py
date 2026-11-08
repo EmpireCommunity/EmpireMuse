@@ -10,6 +10,8 @@ from typing import Union
 import disnake
 from disnake.ext import commands
 
+from empiremuse.logs.context import guild_extra
+from empiremuse.rules.bot_tokens import is_radio_only_identifier
 from empiremuse.rules.radio import radio_id
 from empiremuse.rules.voice_status import resolve_voice_status
 from empiremuse.serialization.schema import SchemaError
@@ -24,8 +26,6 @@ from empiremuse.utils.music.models import LavalinkPlayer
 from empiremuse.utils.music.models.player_voice import schedule_permanent_voice_status
 from empiremuse.utils.others import send_idle_embed, CustomContext
 
-from empiremuse.rules.bot_tokens import Role, role_of
-from empiremuse.logs.context import guild_extra
 
 logger = logging.getLogger("empiremuse.player")
 
@@ -231,7 +231,7 @@ class PlayerSession(commands.Cog):
         hub = getattr(getattr(self.bot, "pool", None), "radio", None)
         if hub is None:
             return False, False
-        if role_of(getattr(self.bot, "identifier", None)) is Role.RADIO:
+        if is_radio_only_identifier(getattr(self.bot, "identifier", None)):
             return True, True
         try:
             guild_id = int(data["_id"])

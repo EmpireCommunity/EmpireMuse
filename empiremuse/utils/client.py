@@ -51,7 +51,7 @@ from empiremuse.logs.errors import command_context, install_exception_handlers
 from empiremuse.logs.alarm import DegradationAlarm
 from empiremuse.logs.metrics import SUMMARY_PREFIX, MetricsCollector, NodeSample, format_summary
 from empiremuse.logs.metrics import process_stats as metrics_process_stats
-from empiremuse.rules.bot_tokens import Role, TokenLoad, describe, load_bot_tokens, role_of
+from empiremuse.rules.bot_tokens import TokenLoad, describe, load_bot_tokens, is_radio_only_identifier
 from empiremuse.rules.bot_roles import NOTICE_WINDOW_SECONDS, main_missing_hint
 from empiremuse.rules.git_remote import parse_remote_web_url, sanitized_repo_url
 from empiremuse.rules.owner_shell import collect_secret_values
@@ -1568,7 +1568,7 @@ class BotCore(commands.AutoShardedBot):
 
     def _is_radio_only(self) -> bool:
         """Este bot é dedicado a rádio (item 8)? Ele não responde nem à menção pura."""
-        return role_of(self.identifier) is Role.RADIO
+        return is_radio_only_identifier(self.identifier)
 
     @property
     def is_reserve(self) -> bool:

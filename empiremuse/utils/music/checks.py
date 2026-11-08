@@ -1,17 +1,16 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-from empiremuse.rules.bot_tokens import Role, role_of
-
-import logging
 import asyncio
 import contextlib
-from typing import Union, Optional, TYPE_CHECKING
+import logging
+from typing import TYPE_CHECKING, Optional, Union
 
 import disnake
 from disnake.ext import commands
 
 import empiremuse.wavelink as wavelink
+from empiremuse.rules.bot_tokens import is_radio_only_identifier
 from empiremuse.rules.jukebox_panel import choose_player
 from empiremuse.rules.voice_status import control_lock_seconds
 from empiremuse.utils.db import DBModel
@@ -61,7 +60,7 @@ def resolve_player(pool: BotPool, guild_id: int, member: disnake.Member) -> Opti
 
 def is_radio_only(pool: BotPool, bot: BotCore) -> bool:
     """O bot é dedicado a rádio (item 8)? Ele nunca atende pedido, ``/play`` nem sugestão de bot livre; o principal nunca é."""
-    return role_of(getattr(bot, "identifier", None)) is Role.RADIO
+    return is_radio_only_identifier(getattr(bot, "identifier", None))
 
 
 def has_radio_player(bot: BotCore, guild_id: int) -> bool:

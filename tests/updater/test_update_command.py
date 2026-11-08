@@ -61,6 +61,7 @@ def cog():
     pool = SimpleNamespace(
         update_lock=asyncio.Lock(),
         shutdown=AsyncMock(),
+        secret_values=lambda: frozenset(),
         config={"RUN_RPC_SERVER": False},
         update_ready_checked=False,
         update_watch_task=None,
