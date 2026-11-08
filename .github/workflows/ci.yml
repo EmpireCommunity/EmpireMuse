@@ -135,7 +135,7 @@ jobs:
           trap 'rm -rf "$scratch"' EXIT
           for platform in x86_64-manylinux_2_40 aarch64-manylinux_2_40; do
             echo "::group::requirements-lock.txt em $platform (Python $python_version)"
-            uv pip install --require-hashes --no-deps --only-binary :all: --no-binary tinydb-serialization --python-version "$python_version" --python-platform "$platform" --target "$scratch/$platform" -r requirements-lock.txt
+            uv pip install --require-hashes --no-deps --only-binary :all: --no-binary tinydb-serialization --build-constraint build-constraints.txt --python-version "$python_version" --python-platform "$platform" --target "$scratch/$platform" -r requirements-lock.txt
             echo "::endgroup::"
           done
 
