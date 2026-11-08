@@ -257,3 +257,32 @@ class TestTheRadioPlayerSwapsTheCandidate:
 
         assert w.ports.current == w.track  # o player toca a faixa etiquetada, o painel passa a mostrar ela
         w.ports._refresh_panel.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_cached_radio_track_swaps_candidates_without_a_search_marker(self):
+        from unittest.mock import AsyncMock
+
+        from empiremuse.utils.music.models.event_steps import _he_dispatch
+        from empiremuse.utils.radio.custom_ports import _tag
+        from empiremuse.utils.radio.custom_source import ResolvedTracks
+
+        w = self.make_world("b")
+        cache = ResolvedTracks(w.db, clock=lambda: 100.0)
+        w.ports.pool.radio.resolved = cache
+        w.ports.radio = SimpleNamespace(bot_id=1)
+        w.player.guild = SimpleNamespace(id=1)
+        w.player.node.build_track = AsyncMock()
+        w.player.resolve_track = AsyncMock(side_effect=w.player.resolve_track)
+        await cache.store(w.track, SimpleNamespace(id="a", info={"uri": "u", "sourceName": "soundcloud"}))
+        cached = await w.ports._from_cache(w.player, w.track)
+        assert cached is not None and "resolved_by_search" not in cached.info["extra"]
+        w.player.current = _tag(cached, w.track)
+
+        await _he_dispatch(w.player, self.make_event())
+
+        w.player.resolve_track.assert_awaited_once_with(cached)
+        w.player.process_next.assert_awaited_once()
+        assert w.player.queue == [cached] and cached.id == "b"
+        assert cached.info["extra"]["rejected"] == ["a"]
+        assert (await cache.get(w.track))["encoded"] == "b"
+        assert not await cache.failed(w.track)

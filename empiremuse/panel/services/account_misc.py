@@ -1,15 +1,13 @@
 """Seções da conta: prefixo pessoal (U-01), scrobble do Last.fm (U-04) e token do app de RPC (U-05).
 
-Espelham ``legacy_cmds.setuserprefix/resetuserprefix``, ``modules/lastfm.py`` e ``modules/music_settings.py``
+Espelham ``legacy_cmds.setuserprefix/resetuserprefix``, ``cogs/lastfm.py`` e ``cogs/music_settings.py``
 (``rpc``). O painel é mais estrito onde o briefing manda: o prefixo recusa espaços e caracteres de controle, e o token
-é gerado com ``secrets`` (o comando usa ``random``). ``sessionkey`` e o token nunca são lidos para a tela nem logados.
+é gerado com a mesma fonte criptográfica usada pelo comando. ``sessionkey`` e o token nunca são lidos para a tela nem logados.
 """
 
 from __future__ import annotations
 
 import logging
-import secrets
-import string
 import unicodedata
 from typing import Any, Optional
 
@@ -17,12 +15,11 @@ from empiremuse.panel.services.account_base import AccountContext, AccountSectio
 from empiremuse.panel.services.base import Args, first, flag
 from empiremuse.rules import limits
 from empiremuse.rules.errors import PREFIX_LENGTH, RuleError
+from empiremuse.rules.rpc import generate_rpc_token
 from empiremuse.rules.settings import validate_prefix
 
 logger = logging.getLogger(__name__)
 
-TOKEN_LENGTH = 50
-TOKEN_ALPHABET = string.ascii_letters + string.digits
 MSG_PREFIX_LENGTH = f"O prefixo deve ter de 1 a {limits.PREFIX_MAX_LENGTH} caracteres."
 MSG_PREFIX_CHARS = "O prefixo não pode conter espaços nem caracteres de controle."
 MSG_LASTFM_UNLINKED = "Nenhuma conta do Last.fm está vinculada. Vincule pelo Discord e tente novamente."
@@ -124,7 +121,7 @@ class RpcTokenSection(AccountSection):
         return None if await rpc_available(ctx) else Refusal(403, MSG_RPC_UNAVAILABLE)
 
     async def parse(self, ctx: AccountContext, doc: dict, action: str, args: Args) -> Parsed:
-        token = "".join(secrets.choice(TOKEN_ALPHABET) for _ in range(TOKEN_LENGTH))
+        token = generate_rpc_token()
         return Parsed({"token": token}, {}, {}, {"token_novo": token})
 
     def apply(self, doc: dict, new: dict[str, Any]) -> None:

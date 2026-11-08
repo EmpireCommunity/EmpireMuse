@@ -61,7 +61,7 @@ jobs:
           echo "Resultado da detecção de código: code=$CODE_CHANGED"
 
       - name: Configurar Python 3.14
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
 
@@ -70,8 +70,8 @@ jobs:
 
       - name: Verificar integridade e sincronia dos lockfiles
         run: |
-          uv pip compile --generate-hashes --universal --exclude-newer 2026-10-20T00:00:00Z --exclude-newer-package yt-dlp=2026-10-26T22:30:00Z --exclude-newer-package certifi=2026-10-23T12:00:00Z --exclude-newer-package brotli=2026-10-22T15:00:00Z --exclude-newer-package brotlicffi=2026-10-22T17:00:00Z requirements.txt -o requirements-lock.txt
-          uv pip compile --generate-hashes --universal --exclude-newer 2026-10-20T00:00:00Z requirements-dev.txt -o requirements-dev-lock.txt
+          uv pip compile --generate-hashes --universal --exclude-newer 2026-10-20T00:00:00Z --exclude-newer-package yt-dlp=2026-10-26T22:30:00Z --exclude-newer-package certifi=2026-10-23T12:00:00Z --exclude-newer-package brotli=2026-10-22T15:00:00Z --exclude-newer-package brotlicffi=2026-10-22T17:00:00Z --exclude-newer-package tornado=2026-10-21T15:32:00Z requirements.txt -o requirements-lock.txt
+          uv pip compile --generate-hashes --universal --exclude-newer 2026-10-20T00:00:00Z --exclude-newer-package pytest-asyncio=2026-10-25T21:06:00Z requirements-dev.txt -o requirements-dev-lock.txt
           uv pip compile --generate-hashes --universal --exclude-newer 2026-10-20T00:00:00Z build-constraints.in -o build-constraints.txt
           git diff --exit-code requirements-lock.txt requirements-dev-lock.txt build-constraints.txt
 
@@ -119,6 +119,25 @@ jobs:
           echo "hash adulterado recusado, como esperado"
           construir build-constraints.txt "$scratch/pos"
           test -d "$scratch/pos/tinydb_serialization"
+
+      - name: Lock de produção instala em linux x86_64 e aarch64 (hashes obrigatórios)
+        run: |
+          # A imagem de release é multiplataforma (release.yml) e instala o lock com --require-hashes (Dockerfile).
+          # --dry-run não baixa nem confere hashes; por isso instala de verdade em diretórios descartáveis.
+          # Python = o da imagem (ARG PYTHON_IMAGE do Dockerfile). Plataformas manylinux_2_40: o mais próximo
+          # da glibc 2.41 da imagem trixie que o uv aceita.
+          # --only-binary :all: impede que qualquer sdist rode código de pacote neste passo. Exceção única:
+          # tinydb-serialization não publica wheel e é construído do sdist com hash, como no passo de instalação
+          # e no Dockerfile. Uma nova dependência sem wheel faz este passo falhar de propósito.
+          python_version="$(sed -n 's/^ARG PYTHON_IMAGE=python:\([0-9.]*\)-.*/\1/p' Dockerfile)"
+          test -n "$python_version"
+          scratch="$(mktemp -d)"
+          trap 'rm -rf "$scratch"' EXIT
+          for platform in x86_64-manylinux_2_40 aarch64-manylinux_2_40; do
+            echo "::group::requirements-lock.txt em $platform (Python $python_version)"
+            uv pip install --require-hashes --no-deps --only-binary :all: --no-binary tinydb-serialization --python-version "$python_version" --python-platform "$platform" --target "$scratch/$platform" -r requirements-lock.txt
+            echo "::endgroup::"
+          done
 
       - name: Instalar dependências com hashes
         run: |
@@ -206,7 +225,7 @@ jobs:
           echo "Resultado da detecção de código: code=$CODE_CHANGED"
 
       - name: Configurar Python 3.15
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.15"
           allow-prereleases: true

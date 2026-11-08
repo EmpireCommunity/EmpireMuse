@@ -15,6 +15,8 @@ from typing import Any, Mapping, Optional
 from packaging import version
 from packaging.version import InvalidVersion, Version
 
+from empiremuse.rules.rpc import TOKEN_LENGTH
+
 RPC_KEY_HEADER = "X-RPC-Key"
 
 # Códigos de fechamento do WebSocket.
@@ -39,7 +41,7 @@ RATE_LIMIT_WINDOW = 10.0
 MIN_ID = 10**14  # 15 dígitos
 MAX_ID = 10**20  # exclusivo: no máximo 20 dígitos
 MAX_VERSION_LENGTH = 32
-TOKEN_LENGTHS = (0, 50)
+TOKEN_LENGTHS = (0, TOKEN_LENGTH)
 
 USER_OP = "rpc_update"
 BOT_OPS = frozenset({"update", "idle", "close"})

@@ -9,6 +9,7 @@ from disnake.ext import commands
 
 import empiremuse.wavelink as wavelink
 from empiremuse.i18n import localized
+from empiremuse.rules.lavalink import node_rest_uri
 from empiremuse.utils.client import BotCore
 from empiremuse.utils.safe_error import HTTPStatusError, safe_error
 from empiremuse.utils.music.checks import (
@@ -339,7 +340,7 @@ class NodesMixin:
 
         data = deepcopy(data)
 
-        data["rest_uri"] = ("https" if data.get("secure") else "http") + f"://{data['host']}:{data['port']}"
+        data["rest_uri"] = node_rest_uri(data["host"], data["port"], bool(data.get("secure")))
         # data['user_agent'] = self.bot.pool.current_useragent
         search = data.pop("search", True)
         node_website = data.pop("website", "")

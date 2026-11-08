@@ -13,6 +13,7 @@ from disnake.ext import commands
 
 from empiremuse import paths
 from empiremuse.logs import register_secret
+from empiremuse.rules.lavalink import is_loopback_host
 from empiremuse.rules.text import plain_snippet
 from empiremuse.utils.music.errors import GenericError, code_suffix, log_unexpected_error
 from empiremuse.utils.music.interactions import AskView
@@ -293,11 +294,16 @@ class YtOauthLL(commands.Cog):
                 with open(app_yml, "w") as file:
                     yaml.dump(yml_data, file)
 
-                if (node := self.bot.music.nodes.get("LOCAL")) and "youtube-plugin" in node.info["plugins"]:
+                node = self.bot.music.nodes.get("LOCAL")
+                local_node_allowed = node is not None and is_loopback_host(node.host)
+                if node is not None and not local_node_allowed:
+                    logger.warning("Refresh token do YouTube não aplicado ao nó [%s].", node.identifier)
+                if local_node_allowed and "youtube-plugin" in node.info["plugins"]:
                     resp = await self.bot.session.post(
                         f"{node.rest_uri}/youtube",
                         headers=node._websocket.headers,
                         json={"refreshToken": refresh_token},
+                        allow_redirects=False,
                     )
 
                     if resp.status != 204:
@@ -315,7 +321,9 @@ class YtOauthLL(commands.Cog):
                         txts.append("O refreshToken foi configurado automaticamente no servidor lavalink LOCAL")
 
                 else:
-                    txts.append("O refreshToken foi adicionado no application.yml com sucesso!")
+                    txts.append(
+                        "O refreshToken foi salvo no application.yml; não foi aplicado a nenhum nó em execução."
+                    )
 
             except Exception as e:
                 code = log_unexpected_error(logger, e, "salvar o refreshToken no application.yml")
