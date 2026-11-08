@@ -140,3 +140,26 @@ async def test_a_page_whose_playlists_were_deleted_is_replaced_with_a_message():
     edited = inter.edit_original_message.call_args.kwargs
     assert edited["components"] == [] and edited["content"]
     cog.play.callback.assert_not_awaited()
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "key",
+    [
+        "player.idle.server_songs_placeholder",
+        "player.panel.playlists.placeholder",
+        "player.play_a_song_playlist_from.placeholder",
+    ],
+)
+async def test_the_caller_keeps_its_hint_and_paginated_pages_keep_the_page_placeholder(key):
+    from empiremuse.utils.music.guild_pin import load_guild_pin
+
+    handler, inter, cog = world("jb:page:2")
+    handler.bot.pool.servers.playlists.list.return_value = playlists()[:1]
+    single = await load_guild_pin(handler.bot, tr, 1, placeholder_key=key)
+    assert single.placeholder == key
+    ephemeral = await load_guild_pin(handler.bot, tr, 1, placeholder_key="jukebox.select.page.placeholder")
+    assert ephemeral.placeholder == "jukebox.select.page.placeholder"
+    many = build_guild_pin(None, tr, playlists(), placeholder_key=key)
+    assert many.placeholder == "jukebox.select.page.placeholder"

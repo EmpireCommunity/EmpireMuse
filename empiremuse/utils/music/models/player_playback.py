@@ -266,7 +266,9 @@ class PlayerPlaybackMixin:
             )
         ]
 
-        select = await load_guild_pin(self.bot, self.tr, self.guild.id)
+        select = await load_guild_pin(
+            self.bot, self.tr, self.guild.id, placeholder_key="player.play_a_song_playlist_from.placeholder"
+        )
         if select is not None:
             components.append(select)
 

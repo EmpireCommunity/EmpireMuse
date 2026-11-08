@@ -130,7 +130,7 @@ def render_panel(
     ]
     if genres:
         components.append(disnake.ui.ActionRow(_genre_select(tr, genres)))
-    select = build_guild_pin(bot, tr, playlists)
+    select = build_guild_pin(bot, tr, playlists, placeholder_key="player.panel.playlists.placeholder")
     if select is not None:
         components.append(disnake.ui.ActionRow(select))
     return {"content": None, "embeds": [embed], "components": components}

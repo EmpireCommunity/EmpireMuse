@@ -379,7 +379,9 @@ class ControllerDispatchMixin:
             if not query.startswith("jb:page:") or not number.isascii() or not number.isdigit() or len(number) > 100:
                 await interaction.send(tr("player.the_selected_item_was_not"), ephemeral=True)
                 return
-            select = await load_guild_pin(self.bot, tr, interaction.guild_id, int(number))
+            select = await load_guild_pin(
+                self.bot, tr, interaction.guild_id, int(number), placeholder_key="jukebox.select.page.placeholder"
+            )
             components = []
             if select is not None:
                 select.custom_id = GUILD_PIN_PAGE

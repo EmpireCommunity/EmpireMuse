@@ -446,7 +446,7 @@ async def send_idle_embed(
 
     components = []
 
-    select = await load_guild_pin(bot, tr, guild_id)
+    select = await load_guild_pin(bot, tr, guild_id, placeholder_key="player.idle.server_songs_placeholder")
     if select is not None:
         components.append(select)
 

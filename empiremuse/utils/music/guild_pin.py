@@ -19,6 +19,8 @@ def build_guild_pin(
     playlists: Sequence[Playlist],
     page: int = 1,
     fixed_entries: Sequence[disnake.SelectOption] = (),
+    *,
+    placeholder_key: str = "player.idle.server_songs_placeholder",
 ) -> disnake.ui.Select | None:
     if not playlists and not fixed_entries:
         return None
@@ -36,7 +38,7 @@ def build_guild_pin(
     placeholder = (
         tr("jukebox.select.page.placeholder", p=layout.page, t=layout.pages)
         if layout.pages > 1
-        else tr("player.idle.server_songs_placeholder")
+        else tr(placeholder_key, p=layout.page, t=layout.pages)
     )
     return disnake.ui.Select(
         placeholder=fit(placeholder, 150),
@@ -49,9 +51,17 @@ def build_guild_pin(
 
 
 async def load_guild_pin(
-    bot, tr: Translator, guild_id: int, page: int = 1, fixed_entries: Sequence[disnake.SelectOption] = ()
+    bot,
+    tr: Translator,
+    guild_id: int,
+    page: int = 1,
+    fixed_entries: Sequence[disnake.SelectOption] = (),
+    *,
+    placeholder_key: str = "player.idle.server_songs_placeholder",
 ) -> disnake.ui.Select | None:
-    return build_guild_pin(bot, tr, await safe_list(bot, guild_id), page, fixed_entries)
+    return build_guild_pin(
+        bot, tr, await safe_list(bot, guild_id), page, fixed_entries, placeholder_key=placeholder_key
+    )
 
 
 def replace_guild_pin(message, select: disnake.ui.Select | None) -> list[disnake.ui.ActionRow]:
