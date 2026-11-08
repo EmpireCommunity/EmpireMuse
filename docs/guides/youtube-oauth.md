@@ -98,7 +98,6 @@ YOUTUBE_OAUTH_REFRESH_TOKEN="1//04xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 - **Isolamento de Ambiente e Injeção em Memória**: O processo do Lavalink local não herda as variáveis de ambiente arbitrárias do bot (`os.environ`). Ele é executado via `subprocess.Popen` com um ambiente restrito por *allowlist* (`lavalink_child_env`), contendo exclusivamente variáveis essenciais do sistema operacional e `SERVER_PORT`.
 - **Injeção Condicional do OAuth**: Quando a variável `YOUTUBE_OAUTH_REFRESH_TOKEN` é informada com um token válido, o bot injeta as propriedades do Spring (`PLUGINS_YOUTUBE_OAUTH_ENABLED=true`, `PLUGINS_YOUTUBE_OAUTH_REFRESH_TOKEN` e `PLUGINS_YOUTUBE_OAUTH_SKIP_INITIALIZATION=true`) exclusivamente no dicionário de ambiente isolado do subprocesso Java. Sem token configurado, nenhuma dessas três variáveis é passada ao Lavalink, mesmo se existirem no ambiente do bot.
 - **Zero Persistência em Arquivo**: O token **não** é gravado no `application.yml`, **não** é passado em argumentos de linha de comando e **não** é gravado nos logs do bot. Demais segredos do bot (tokens do Discord, credenciais de banco e chaves de sessão) permanecem estritamente isolados e inacessíveis ao processo do Lavalink.
-- **Proteção contra Vazamento em Backups**: O comando administrativo de suporte `@teubot exportsource` (em `modules/legacy_cmds.py`) mascara compulsoriamente a chave `YOUTUBE_OAUTH_REFRESH_TOKEN`, garantindo que arquivos `.zip` de código-fonte exportados nunca exponham a credencial.
 
 ### Servidores Lavalink Externos (Remoto / VPS)
 
