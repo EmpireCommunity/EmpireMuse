@@ -201,10 +201,12 @@ class RadioManager:
             radio = await self.hub.store.ensure_clock(radio)
         except Exception as error:  # noqa: BLE001 - segue só se a leitura seguinte confirmar o documento
             logger.warning("Relógio virtual da rádio não gravado (%s)", type(error).__name__)
-        # Leitura indisponível propaga. Não há await entre a confirmação e o registro do runner:
-        # no processo único, o reset não pode apagar o documento nesse intervalo.
+        # Leitura indisponível propaga. Após o último await, reconfere também ativações concorrentes.
+        # Nenhum await separa essas checagens do registro do runner no processo único.
         if await self.hub.store.get(radio.id) is None:
             return  # apagada durante a ativação: nunca criar runner órfão
+        if self.is_running(radio.id):
+            return
         runner = self._runner_for(radio)
         if runner is None:
             return
