@@ -121,11 +121,12 @@ class PlayerAutoqueueMixin:
         req = ResolveTrackState(check_duration=bool(track.duration))
 
         try:
-            search_queries = _rt_search_queries(self, track, force)
+            search = _rt_search_queries(self, track, force)
 
-            if search_queries is None:
+            if search is None:
                 return
 
+            search_queries, direct = search
             req.cached = _rt_cached_result(self, track)
 
             for query in search_queries:
@@ -155,6 +156,7 @@ class PlayerAutoqueueMixin:
                     return
 
             _rt_cache_selected_result(self, track, req)
+            track.info.setdefault("extra", {})["resolved_by_search"] = not direct
             _rt_apply_selected_track(track, req.selected_track)
 
         except Exception as e:

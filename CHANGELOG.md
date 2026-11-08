@@ -9,6 +9,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ### Segurança
 - `tornado` atualizado de 6.5.10 para 6.6 (alertas #2, #3 e #4 do Dependabot), com isenção pontual do corte temporal no lock de produção.
+
 ### Alterado
 - Imagem Docker: o JRE passa do Temurin 25.0.4.1 para o 25.0.5+8, com tag explícita (`25.0.5_8-jre-resolute`, a mesma distro Ubuntu 26.04) fixada por digest multi-arquitetura (amd64 e arm64) publicado há mais de 7 dias.
 - Imagem Docker: o Temurin 25.0.5 já não confia nas raízes emSign C1, ECC C3 e ECC G3, então o `keytool -delete` (que falharia com alias inexistente) virou uma verificação que falha fechada: o build quebra se a listagem do `cacerts` não funcionar, se a "emSign Root CA - G1" não aparecer ou se alguma das três raízes voltar (conferidas pela impressão digital SHA-256, não pelo alias).
@@ -18,6 +19,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ### Corrigido
 - A confirmação do setup da Jukebox esclarece que o painel atual da Jukebox é preservado na limpeza do canal. A resposta final do setup por prefixo é enviada uma única vez, para que não sobre uma cópia do aviso após os 120 s.
+- Na reprodução comum, faixas resolvidas por busca tentam o próximo candidato quando o áudio não está disponível, com limite de tentativas e sem repetir candidatos já recusados.
 
 ## [2.3.0-rc.3] - 2026-11-04
 
