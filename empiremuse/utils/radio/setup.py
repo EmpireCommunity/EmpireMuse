@@ -16,6 +16,7 @@ nem põe nome de canal ou de bot no log (R-12).
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import datetime
 import logging
@@ -91,6 +92,10 @@ class RadioSetup:
     def __init__(self, hub: RadioHub, pool: Any) -> None:
         self.hub = hub
         self.pool = pool
+        self._locks: dict[int, asyncio.Lock] = {}
+
+    def _lock(self, guild_id: int) -> asyncio.Lock:
+        return self._locks.setdefault(int(guild_id), asyncio.Lock())
 
     # ------------------------------------------------------------------ o que o Discord mostra
 
@@ -224,30 +229,35 @@ class RadioSetup:
             guild_id, actor_id, channel_id, bot_id = int(guild_id), int(actor_id), int(channel_id), int(bot_id)
         except TypeError, ValueError:
             raise RadioInvalid(RuleError(CHANNEL_INVALID, "channel_id")) from None
-        await self.check_actor(guild_id, actor_id)
-        current = await self._current(guild_id, radio_id, rev)
-        kind = self._check_kind(kind)
-        existing = await self.hub.store.list_for_guild(guild_id)
-        others = [r for r in existing if current is None or r.id != current.id]
-        wanted = (channel_id, bot_id, kind)
-        if current is not None and current.enabled and (current.channel_id, current.bot_id, current.kind) != wanted:
-            field = (
-                "channel_id" if current.channel_id != channel_id else "bot_id" if current.bot_id != bot_id else "kind"
-            )
-            raise RadioInvalid(RuleError(RADIO_ON, field))  # ligada: desligar antes de trocar canal, bot ou tipo
-        bot = self._check_bot(guild_id, bot_id, current=current)
-        if any(r.bot_id == bot_id for r in others):
-            raise RadioInvalid(RuleError(ONE_PER_BOT, "bot_id"))
-        if any(r.channel_id == channel_id for r in others):
-            raise RadioInvalid(
-                RuleError(CHANNEL_TAKEN, "channel_id")
-            )  # uma rádio por canal: o ``on`` e o ``off`` acham a rádio pelo canal
-        if current is None and len(existing) >= MAX_PER_GUILD:
-            raise RadioInvalid(RuleError(MAX_RADIOS, "bot_id"))
-        await self._check_channel(guild_id, channel_id, bot)
-        if current is not None and (current.channel_id, current.bot_id, current.kind) == wanted:
-            return current  # nada mudou: sem escrita, sem novo rev
-        return await self._write(guild_id, actor_id, current, channel_id, bot_id, kind)
+        async with self._lock(guild_id):
+            await self.check_actor(guild_id, actor_id)
+            current = await self._current(guild_id, radio_id, rev)
+            kind = self._check_kind(kind)
+            existing = await self.hub.store.list_for_guild(guild_id)
+            others = [r for r in existing if current is None or r.id != current.id]
+            wanted = (channel_id, bot_id, kind)
+            if current is not None and current.enabled and (current.channel_id, current.bot_id, current.kind) != wanted:
+                field = (
+                    "channel_id"
+                    if current.channel_id != channel_id
+                    else "bot_id"
+                    if current.bot_id != bot_id
+                    else "kind"
+                )
+                raise RadioInvalid(RuleError(RADIO_ON, field))  # ligada: desligar antes de trocar canal, bot ou tipo
+            bot = self._check_bot(guild_id, bot_id, current=current)
+            if any(r.bot_id == bot_id for r in others):
+                raise RadioInvalid(RuleError(ONE_PER_BOT, "bot_id"))
+            if any(r.channel_id == channel_id for r in others):
+                raise RadioInvalid(
+                    RuleError(CHANNEL_TAKEN, "channel_id")
+                )  # uma rádio por canal: o ``on`` e o ``off`` acham a rádio pelo canal
+            if current is None and len(existing) >= MAX_PER_GUILD:
+                raise RadioInvalid(RuleError(MAX_RADIOS, "bot_id"))
+            await self._check_channel(guild_id, channel_id, bot)
+            if current is not None and (current.channel_id, current.bot_id, current.kind) == wanted:
+                return current  # nada mudou: sem escrita, sem novo rev
+            return await self._write(guild_id, actor_id, current, channel_id, bot_id, kind)
 
     async def _current(self, guild_id: int, rid: Optional[str], rev: Optional[int]) -> Optional[Radio]:
         """A rádio que o pedido muda: de OUTRO servidor é 404 (nunca se confirma que existe) e ``rev`` velho é conflito."""
@@ -301,18 +311,19 @@ class RadioSetup:
         Ficam as estações do servidor, o premium, o ``radio_only`` do bot, a saúde das estações e as outras rádios.
         """
         guild_id, actor_id = int(guild_id), int(actor_id)
-        await self.check_manager(guild_id, actor_id)
-        current = await self._current(guild_id, radio_id, rev)
-        if current is None:
-            raise RadioNotFound
-        if current.enabled:
-            await self.hub.store.set_enabled(
-                current.id, False, updated_by=str(actor_id)
-            )  # devolve a vaga (transição da R1)
-        await self.hub.manager.stop_radios(self.hub.manager.running_in(guild_id, current.channel_id))
-        await self._delete_panel(current)
-        await self._backup(current, actor_id)
-        await self.hub.store.delete(current.id)
+        async with self._lock(guild_id):
+            await self.check_manager(guild_id, actor_id)
+            current = await self._current(guild_id, radio_id, rev)
+            if current is None:
+                raise RadioNotFound
+            if current.enabled:
+                await self.hub.store.set_enabled(
+                    current.id, False, updated_by=str(actor_id)
+                )  # devolve a vaga (transição da R1)
+            await self.hub.manager.stop_radios(self.hub.manager.running_in(guild_id, current.channel_id))
+            await self._delete_panel(current)
+            await self._backup(current, actor_id)
+            await self.hub.store.delete(current.id)
 
     async def _backup(self, radio: Radio, actor_id: int) -> None:
         """A cópia do documento que o reset vai apagar. Sem a cópia gravada o documento NÃO é apagado (a falha sobe)."""
