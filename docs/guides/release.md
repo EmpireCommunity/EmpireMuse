@@ -90,7 +90,7 @@ git push origin vX.Y.Z
 
 ### Passo 5: Implantar na VPS de Produção
 
-A produção roda na VPS da Hostinger (Docker Manager), com o compose de [`deploy/docker-compose.hostinger.yml`](../../deploy/docker-compose.hostinger.yml) (ver [`docker.md`](docker.md), seção 3.6):
+A produção roda na VPS da Hostinger (Docker Manager), com o compose de [`deploy/docker-compose.hostinger.yml`](../../deploy/docker-compose.hostinger.yml) (ou o [`deploy/docker-compose.hostinger-sem-traefik.yml`](../../deploy/docker-compose.hostinger-sem-traefik.yml), para quem não usa o Traefik; ver [`docker.md`](docker.md), seção 3.6):
 
 1. Confira a imagem publicada (seção 5);
 2. Com o auto-update ligado, o dono só manda o comando `update` (veja [`auto-update.md`](auto-update.md)). Na primeira implantação, ou sem o auto-update, atualize as duas linhas `image:` do compose na VPS (seção 5.4): a do bot como `    image: or4cu1o/empiremuse:X.Y.Z@sha256:<digest>` (4 espaços) e a do `updater-proxy` mantendo o prefixo, `docker.io/or4cu1o/empiremuse:X.Y.Z@sha256:<digest>` (se o bot ficar fora dessa forma, todo `update` falha com o código 65), guardando antes um backup do arquivo (`docker-compose.yml.bak-AAAAMMDD-HHMMSS`), e a do `deploy/docker-compose.hostinger.yml` no repositório no próximo PR;

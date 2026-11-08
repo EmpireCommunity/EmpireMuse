@@ -4,8 +4,6 @@ from __future__ import annotations
 import asyncio
 import datetime
 import os
-import random
-import string
 import logging
 from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, Any, Union, Optional
@@ -24,6 +22,7 @@ from empiremuse.rules.limits import (
     MAX_DJ_ROLES,
     VOLUMES,
 )
+from empiremuse.rules.rpc import TOKEN_LENGTH, generate_rpc_token
 from empiremuse.rules.servers import SettingError
 from empiremuse.rules.settings import add_dj_role as add_role, allowed_names
 from empiremuse.utils import branding
@@ -924,18 +923,28 @@ class MusicSettings(commands.Cog):
             description += "\n\n" + tr("jukebox.setup.warn_permissions", channel=channel.mention, permissions=names)
         embed = disnake.Embed(description=description, color=bot.get_color(guild.me))
 
-        if not inter.response.is_done():
+        warning_message = None
+        if isinstance(inter, CustomContext):
+            warning_message = await inter.send(embed=embed)
+        else:
+            if not inter.response.is_done():
+                try:
+                    await inter.response.edit_message(embed=embed, components=None)
+                except AttributeError:
+                    await inter.send(embed=embed)
             try:
-                await inter.response.edit_message(embed=embed, components=None)
-            except AttributeError:
-                await inter.send(embed=embed)
-        try:
-            await inter.edit_original_message(embed=embed, components=None)
-        except AttributeError, disnake.InteractionNotEditable:
-            try:
-                await inter.response.edit_message(embed=embed, components=None)
-            except Exception:
-                await inter.send(embed=embed, ephemeral=True)
+                warning_message = await inter.edit_original_message(embed=embed, components=None)
+            except AttributeError, disnake.InteractionNotEditable:
+                try:
+                    await inter.response.edit_message(embed=embed, components=None)
+                    warning_message = await inter.original_message()
+                except Exception:
+                    warning_message = await inter.followup.send(embed=embed, ephemeral=True, wait=True)
+
+        if result.not_applied:
+            from empiremuse.music_cog.jukebox_messages import retain_jukebox_permissions_warning
+
+            await retain_jukebox_permissions_warning(interaction, warning_message)
 
     @commands.has_guild_permissions(manage_guild=True)
     @commands.bot_has_guild_permissions(manage_threads=True)
@@ -2004,7 +2013,7 @@ class RPCCog(commands.Cog):
             if data["token"]:
                 await self.close_presence(inter)
 
-            data["token"] = "".join(random.choice(string.ascii_letters + string.digits) for i in range(50))
+            data["token"] = generate_rpc_token()
             await self.bot.update_global_data(id_=user_id, data=data, db_name=DBModel.users)
             msg = (
                 f"O token para usar no app de RPC (Rich Presence) foi gerado com sucesso!\n\n"
@@ -2017,7 +2026,7 @@ class RPCCog(commands.Cog):
             try:
                 data = await self.bot.get_global_data(id_=user_id, db_name=DBModel.users)
 
-                if len(data["token"]) == 50:
+                if len(data["token"]) == TOKEN_LENGTH:
                     kwargs["value"] = data["token"]
             except Exception:
                 pass
@@ -2031,8 +2040,8 @@ class RPCCog(commands.Cog):
                         label="Cole o token no campo abaixo:",
                         placeholder="Nota: Por medida de segurança, jamais inclua uma senha pessoal aqui!",
                         custom_id="token_input",
-                        min_length=50,
-                        max_length=50,
+                        min_length=TOKEN_LENGTH,
+                        max_length=TOKEN_LENGTH,
                         required=True,
                         **kwargs,
                     ),

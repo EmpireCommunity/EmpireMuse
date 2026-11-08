@@ -35,6 +35,7 @@ import empiremuse.wavelink as wavelink
 from empiremuse.serialization.cache import PLAYLIST_MAX_BYTES
 from empiremuse import paths
 from empiremuse.config_loader import load_config, resolve_port
+from empiremuse.rules.lavalink import is_loopback_host, node_rest_uri
 from empiremuse.health import (
     HEALTH_FILE_ENV,
     HEARTBEAT_INTERVAL,
@@ -758,7 +759,7 @@ class BotPool:
     async def check_node(self, data: dict):
         data = deepcopy(data)
 
-        data["rest_uri"] = ("https" if data.get("secure") else "http") + f"://{data['host']}:{data['port']}"
+        data["rest_uri"] = node_rest_uri(data["host"], data["port"], bool(data.get("secure")))
 
         try:
             max_retries = int(data.get("retries")) or 1
@@ -827,25 +828,32 @@ class BotPool:
                     for v in tokens.values():
                         if isinstance(v, str):
                             register_secret(v)
-                        try:
-                            async with ClientSession() as session:
-                                resp = await session.post(
-                                    f"{data['rest_uri']}/youtube", headers=headers, json={"refreshToken": v}
+                    if not is_loopback_host(data["host"]):
+                        node_logger.warning("Refresh token do YouTube não aplicado ao nó [%s].", data["identifier"])
+                    else:
+                        for v in tokens.values():
+                            try:
+                                async with ClientSession() as session:
+                                    resp = await session.post(
+                                        f"{data['rest_uri']}/youtube",
+                                        headers=headers,
+                                        json={"refreshToken": v},
+                                        allow_redirects=False,
+                                    )
+                                    if resp.status != 204:
+                                        raise HTTPStatusError(resp.status)
+                            except Exception as e:
+                                node_logger.warning(
+                                    "Falha ao aplicar o Youtube refreshToken no servidor lavalink: %s - %s",
+                                    data["identifier"],
+                                    safe_error(e),
                                 )
-                                if resp.status != 204:
-                                    resp.raise_for_status()
-                        except Exception as e:
-                            node_logger.warning(
-                                "Falha ao aplicar o Youtube refreshToken no servidor lavalink: %s - %s",
-                                data["identifier"],
-                                safe_error(e),
-                            )
-                            break
-                        else:
-                            node_logger.info(
-                                "Youtube refreshToken aplicado no servidor lavalink: %s", data["identifier"]
-                            )
-                            break
+                                break
+                            else:
+                                node_logger.info(
+                                    "Youtube refreshToken aplicado no servidor lavalink: %s", data["identifier"]
+                                )
+                                break
 
         for bot in self.get_all_bots():
             self.loop.create_task(self.connect_node(bot, data))
