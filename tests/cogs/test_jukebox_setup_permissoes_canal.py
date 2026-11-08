@@ -28,7 +28,7 @@ def test_the_existing_channel_without_manage_permissions_is_set_up_without_editi
     assert world.saved["channel"] == "22"  # configurou
     assert world.j.of("channel.edit") == []  # sem editar o canal
     text = world.final_embed_text()
-    assert "Gerenciar Permissões" in text or "Manage Permissions" in text
+    assert "Gerenciar permissões" in text or "Manage Permissions" in text
 
 
 def test_with_manage_permissions_the_channel_is_edited_and_there_is_no_warning(world):
