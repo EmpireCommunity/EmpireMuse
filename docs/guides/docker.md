@@ -9,7 +9,7 @@ Guia prático para execução do **EmpireMuse** em contêineres Docker utilizand
 A imagem Docker do EmpireMuse foi projetada para oferecer uma implantação simples, segura e auto-contida em uma única instância:
 
 - **Bot e Lavalink no mesmo contêiner**: O bot em Python 3.14 e o servidor de áudio Lavalink 4.2.2 rodam coordenados no mesmo contêiner, eliminando a complexidade de orquestrar múltiplos serviços.
-- **Runtime Java 25**: Inclui o JRE oficial do **Eclipse Temurin 25**, atendendo aos requisitos do Lavalink e seus plugins.
+- **Runtime Java 25**: Inclui o JRE oficial do **Eclipse Temurin 25.0.5** (Ubuntu 26.04), atendendo aos requisitos do Lavalink e seus plugins.
 - **Isolamento de rede local**: O Lavalink é vinculado estritamente ao endereço de loopback (`127.0.0.1` via `SERVER_ADDRESS`), comunicando-se exclusivamente com o bot via socket interno e nunca expondo portas de áudio para fora do contêiner.
 - **Segurança e privilégios mínimos**:
   - Usuário não-root dedicado com UID/GID fixo `10001:10001` (`empiremuse`) e shell restrito (`/usr/sbin/nologin`).
