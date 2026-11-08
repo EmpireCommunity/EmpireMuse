@@ -24,6 +24,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - O limite de playlists do servidor (Jukebox e rádio, por lista) passa de 25 para 100. O select de playlists da Jukebox (embed ocioso e painel com 2+ players) é paginado: "◀ Página anterior" e "Próxima página ▶" abrem a página pedida numa mensagem efêmera e o placeholder mostra "Página {p} de {t}". O menu "Favoritos do servidor" do `/play` mostra as 25 primeiras. `/jukebox playlists list` e `/radio playlists list` mostram todas, em mensagens de linhas inteiras (antes a lista longa era cortada no meio). A nota da página Playlists do painel informa o limite e a paginação.
 
 ### Corrigido
+- Falhas ao carregar ou atualizar a paginação da Jukebox passam pelo tratamento de erros das interações.
 - A confirmação do setup da Jukebox esclarece que o painel atual da Jukebox é preservado na limpeza do canal. A resposta final do setup por prefixo é enviada uma única vez, para que não sobre uma cópia do aviso após os 120 s.
 - Na reprodução comum, faixas resolvidas por busca tentam o próximo candidato quando o áudio não está disponível, com limite de tentativas e sem repetir candidatos já recusados.
 - Os testes de OAuth do YouTube usam nós locais com host e porta, preservando a verificação de mascaramento e truncamento do corpo de erro HTTP 500.

@@ -163,3 +163,21 @@ async def test_the_caller_keeps_its_hint_and_paginated_pages_keep_the_page_place
     assert ephemeral.placeholder == "jukebox.select.page.placeholder"
     many = build_guild_pin(None, tr, playlists(), placeholder_key=key)
     assert many.placeholder == "jukebox.select.page.placeholder"
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize("step, custom_id", [("load", GUILD_PIN), ("edit", GUILD_PIN_PAGE), ("send", GUILD_PIN)])
+async def test_pagination_failures_reach_the_interaction_error_handler(monkeypatch, step, custom_id):
+    handler, inter, cog = world("jb:page:2", custom_id)
+    error = RuntimeError("pagination unavailable")
+    handler.bot.dispatch = MagicMock()
+    if step == "load":
+        monkeypatch.setattr("empiremuse.music_cog.controller_dispatch.load_guild_pin", AsyncMock(side_effect=error))
+    elif step == "edit":
+        inter.edit_original_message.side_effect = error
+    else:
+        inter.followup.send.side_effect = error
+    await ControllerDispatchMixin.guild_pin(handler, inter)
+    handler.bot.dispatch.assert_called_once_with("interaction_player_error", inter, error)
+    cog.play.callback.assert_not_awaited()

@@ -379,25 +379,28 @@ class ControllerDispatchMixin:
             if not query.startswith("jb:page:") or not number.isascii() or not number.isdigit() or len(number) > 100:
                 await interaction.send(tr("player.the_selected_item_was_not"), ephemeral=True)
                 return
-            select = await load_guild_pin(
-                self.bot, tr, interaction.guild_id, int(number), placeholder_key="jukebox.select.page.placeholder"
-            )
-            components = []
-            if select is not None:
-                select.custom_id = GUILD_PIN_PAGE
-                components = [select]
-            if interaction.data.custom_id == GUILD_PIN_PAGE:
-                await interaction.edit_original_message(
-                    components=components, content=None if components else tr("player.the_selected_item_was_not")
+            try:
+                select = await load_guild_pin(
+                    self.bot, tr, interaction.guild_id, int(number), placeholder_key="jukebox.select.page.placeholder"
                 )
-            else:
-                first = await load_guild_pin(self.bot, tr, interaction.guild_id)
-                await interaction.edit_original_message(components=replace_guild_pin(interaction.message, first))
-                await interaction.followup.send(
-                    components=components,
-                    content=None if components else tr("player.the_selected_item_was_not"),
-                    ephemeral=True,
-                )
+                components = []
+                if select is not None:
+                    select.custom_id = GUILD_PIN_PAGE
+                    components = [select]
+                if interaction.data.custom_id == GUILD_PIN_PAGE:
+                    await interaction.edit_original_message(
+                        components=components, content=None if components else tr("player.the_selected_item_was_not")
+                    )
+                else:
+                    first = await load_guild_pin(self.bot, tr, interaction.guild_id)
+                    await interaction.edit_original_message(components=replace_guild_pin(interaction.message, first))
+                    await interaction.followup.send(
+                        components=components,
+                        content=None if components else tr("player.the_selected_item_was_not"),
+                        ephemeral=True,
+                    )
+            except Exception as error:
+                self.bot.dispatch("interaction_player_error", interaction, error)
             return
 
         # Sem prefixo = mensagem antiga. Somente jb: é reservado aos controles.
