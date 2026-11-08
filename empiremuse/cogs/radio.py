@@ -577,13 +577,13 @@ class Radio(RadioPrefixCommands, commands.Cog):
                 bot_free=free,
                 jukebox_channel_id=jukebox,
             )
+            await self.hub.manager.activate(
+                radio, wait=False
+            )  # a partida segue em segundo plano: sem prender a resposta ao token
         except Refused as refusal:
             raise GenericError(tr(f"radio.refused.{refusal.code}")) from None
         except RadioUnavailable:
             raise GenericError(tr("radio.owner.unavailable")) from None
-        await self.hub.manager.activate(
-            radio, wait=False
-        )  # a partida segue em segundo plano: sem prender a resposta ao token
         logger.info("radio.toggle: ligada (%d neste processo)", self.hub.manager.counts().on)
         return tr("radio.on.ready", channel=channel.mention, bot=f"<@{radio.bot_id}>")
 

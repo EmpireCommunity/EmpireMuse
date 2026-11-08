@@ -123,16 +123,16 @@ class RadioSetup:
     async def options(self, guild_id: int, actor_id: int) -> SetupOptions:
         """Os reservas livres e os canais de voz e de palco que valem (a lista que o painel e o comando mostram; ``configure`` confere de novo)."""
         guild_id, actor_id = int(guild_id), int(actor_id)
-        if not await self._can_manage(guild_id, actor_id):
+        try:
+            guild, member = await self.check_manager(guild_id, actor_id)
+        except RadioForbidden:
             return SetupOptions(bots=(), channels=())
         existing = await self.hub.store.list_for_guild(guild_id)
         bots = tuple(
             (bot.user.id, str(bot.user.name)) for bot in self._free_reserves(guild_id, {r.bot_id for r in existing})
         )
-        guild = self._guild(guild_id)
         jukebox = await jukebox_channel_of(self.pool, guild_id)
         channels: list[tuple[int, str, str]] = []
-        member = await self._member(guild, actor_id) if guild is not None else None
         if member is not None:
             for channel in (*guild.voice_channels, *guild.stage_channels):
                 permissions = channel.permissions_for(member)
@@ -149,27 +149,22 @@ class RadioSetup:
 
     # ------------------------------------------------------------------ as checagens
 
-    async def check_actor(self, guild_id: int, actor_id: int) -> None:
+    async def check_actor(self, guild_id: int, actor_id: int) -> tuple[Any, Any]:
         """Configurar e escolher estação: servidor premium e ``manage_guild`` de quem pede."""
         if await self.hub.premium.fresh(guild_id) is None:
             raise RadioForbidden(REASON_PREMIUM)
-        await self.check_manager(guild_id, actor_id)
+        return await self.check_manager(guild_id, actor_id)
 
-    async def check_manager(self, guild_id: int, actor_id: int) -> None:
-        """Só ``manage_guild``: o redefinir não pede premium (um servidor que o perdeu apaga a própria configuração; contrato §2)."""
-        if not await self._can_manage(guild_id, actor_id):
-            raise RadioForbidden(REASON_MANAGE_GUILD)
-
-    async def _can_manage(self, guild_id: int, actor_id: int) -> bool:
-        """``manage_guild`` de quem pede, agora, no servidor (o dono e administrador valem). Não achar o membro nega (fecha por padrão)."""
+    async def check_manager(self, guild_id: int, actor_id: int) -> tuple[Any, Any]:
+        """Só ``manage_guild``, sem premium. Devolve guild e membro resolvidos para as checagens desta chamada."""
         guild = self._guild(guild_id)
-        if guild is None:
-            return False
-        member = await self._member(guild, actor_id)
+        member = await self._member(guild, actor_id) if guild is not None else None
         if member is None:
-            return False
+            raise RadioForbidden(REASON_MANAGE_GUILD)
         permissions = member.guild_permissions
-        return bool(permissions.manage_guild or permissions.administrator or guild.owner_id == actor_id)
+        if not (permissions.manage_guild or permissions.administrator or guild.owner_id == actor_id):
+            raise RadioForbidden(REASON_MANAGE_GUILD)
+        return guild, member
 
     @staticmethod
     async def _member(guild: Any, actor_id: int) -> Any:
@@ -181,13 +176,15 @@ class RadioSetup:
                 return None
         return member
 
-    async def _actor_channel(self, guild_id: int, channel_id: int, actor_id: int) -> None:
+    async def _actor_channel(
+        self, guild_id: int, channel_id: int, actor_id: int, *, resolved_actor: tuple[Any, Any] | None = None
+    ) -> None:
         """Não distinguir call oculta/sem connect de id inexistente; membro e canal vêm da mesma guild."""
-        guild = self._guild(guild_id)
+        guild = resolved_actor[0] if resolved_actor is not None else self._guild(guild_id)
         channel = guild.get_channel(channel_id) if guild is not None else None
         if not isinstance(channel, (disnake.VoiceChannel, disnake.StageChannel)):
             raise RadioInvalid(RuleError(CHANNEL_KIND, "channel_id"))
-        member = await self._member(guild, actor_id)
+        member = resolved_actor[1] if resolved_actor is not None else await self._member(guild, actor_id)
         if member is None:
             raise RadioInvalid(RuleError(CHANNEL_KIND, "channel_id"))
         permissions = channel.permissions_for(member)
@@ -217,8 +214,10 @@ class RadioSetup:
             raise RadioInvalid(RuleError(BOT_IN_CALL, "bot_id"))
         return bot
 
-    async def _check_channel(self, guild_id: int, channel_id: int, bot: Any, actor_id: int) -> None:
-        await self._actor_channel(guild_id, channel_id, actor_id)
+    async def _check_channel(
+        self, guild_id: int, channel_id: int, bot: Any, actor_id: int, *, resolved_actor: tuple[Any, Any] | None = None
+    ) -> None:
+        await self._actor_channel(guild_id, channel_id, actor_id, resolved_actor=resolved_actor)
         guild = bot.get_guild(guild_id)
         channel = guild.get_channel(channel_id) if guild is not None else None
         if not isinstance(channel, (disnake.VoiceChannel, disnake.StageChannel)):
@@ -249,9 +248,9 @@ class RadioSetup:
         except TypeError, ValueError:
             raise RadioInvalid(RuleError(CHANNEL_INVALID, "channel_id")) from None
         async with self._lock(guild_id):
-            await self.check_actor(guild_id, actor_id)
+            resolved_actor = await self.check_actor(guild_id, actor_id)
             # Antes de qualquer recusa que revele ocupação, Jukebox ou permissões do bot.
-            await self._actor_channel(guild_id, channel_id, actor_id)
+            await self._actor_channel(guild_id, channel_id, actor_id, resolved_actor=resolved_actor)
             current = await self._current(guild_id, radio_id, rev)
             kind = self._check_kind(kind)
             existing = await self.hub.store.list_for_guild(guild_id)
@@ -275,7 +274,7 @@ class RadioSetup:
                 )  # uma rádio por canal: o ``on`` e o ``off`` acham a rádio pelo canal
             if current is None and len(existing) >= MAX_PER_GUILD:
                 raise RadioInvalid(RuleError(MAX_RADIOS, "bot_id"))
-            await self._check_channel(guild_id, channel_id, bot, actor_id)
+            await self._check_channel(guild_id, channel_id, bot, actor_id, resolved_actor=resolved_actor)
             if current is not None and (current.channel_id, current.bot_id, current.kind) == wanted:
                 return current  # nada mudou: sem escrita, sem novo rev
             return await self._write(guild_id, actor_id, current, channel_id, bot_id, kind)
@@ -331,6 +330,7 @@ class RadioSetup:
     async def reset(self, guild_id: int, actor_id: int, radio_id: str, rev: Optional[int]) -> None:
         """Só ``manage_guild``, sem premium nem recusa por revisão velha. Apaga sem cópia e só depois para o runner.
 
+        ``rev`` é aceito por compatibilidade com as telas e não é usado para decidir o reset.
         Ficam as estações do servidor, o premium, o ``radio_only`` do bot, a saúde das estações e as outras rádios.
         """
         guild_id, actor_id = int(guild_id), int(actor_id)
@@ -341,6 +341,7 @@ class RadioSetup:
                 raise RadioNotFound
             try:
                 await self.hub.store.delete(current.id)
+                logger.info("radio.reset: actor=%s guild=%s", actor_id, guild_id)
             finally:
                 await self.hub.manager.stop_radios(self.hub.manager.running_in(guild_id, current.channel_id))
             await self._delete_panel(current)

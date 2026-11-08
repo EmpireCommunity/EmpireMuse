@@ -58,3 +58,13 @@ class StaleResetHttpTest(SetupBase):
         response = self.reset_confirm(browser, radio, confirmation, actor_id="999")
         assert response.code == 200 and radio.id not in self.radio.store.docs
         assert self.radio.setup.calls[-1][2] == int(self.fake.user["id"])
+
+    def test_options_uses_the_guild_and_session_actor(self):
+        self.grant()
+        original = self.radio.setup.options
+        self.radio.setup.options = AsyncMock(side_effect=original)
+        response = self.logged_in().get(self.url() + "?actor_id=999")
+        assert response.code == 200
+        from tests.panel.test_radio_page import ALFA
+
+        self.radio.setup.options.assert_awaited_once_with(ALFA, int(self.fake.user["id"]))

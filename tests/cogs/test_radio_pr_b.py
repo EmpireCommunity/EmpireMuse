@@ -32,10 +32,14 @@ async def world(**kwargs):
 @pytest.mark.regression
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure", [False, True])
-async def test_reset_deletes_before_stopping_and_stops_even_when_delete_fails(failure):
+async def test_reset_deletes_before_stopping_and_stops_even_when_delete_fails(failure, caplog):
     w = await world()
-    radio = await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
+    radio = await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2, source={"playlist": "p"})
     radio = await w.hub.store.set_enabled(radio.id, True)
+    await w.hub.manager.activate(radio)
+    runner = w.hub.manager._runners[radio.id]
+    assert w.hub.manager.is_running(radio.id) and w.ports.played
+    caplog.set_level("INFO", logger="empiremuse.utils.radio.setup")
     events = []
     delete = w.db.delete_data
 
@@ -45,8 +49,12 @@ async def test_reset_deletes_before_stopping_and_stops_even_when_delete_fails(fa
             raise ConnectionError("banco indisponível")
         await delete(id_, db_name, collection)
 
+    real_stop = w.hub.manager.stop_radios
+
     async def stop(radios):
+        assert [r.id for r in radios] == [radio.id]
         events.append("stop")
+        await real_stop(radios)
 
     w.db.delete_data = delete_hook
     w.hub.manager.stop_radios = AsyncMock(side_effect=stop)
@@ -61,6 +69,10 @@ async def test_reset_deletes_before_stopping_and_stops_even_when_delete_fails(fa
         assert await w.hub.store.get(radio.id) is None
         w.hub.setup._delete_panel.assert_awaited_once()
     assert events == ["delete", "stop"]
+    assert runner.stopped and not w.hub.manager.is_running(radio.id) and w.ports.stops == 1
+    if not failure:
+        audits = [record for record in caplog.records if record.name == "empiremuse.utils.radio.setup"]
+        assert any(record.args == (ACTOR, GUILD) for record in audits)
     assert (await w.hub.premium.fresh(GUILD)).active == 0
     assert "config_backup" not in w.db.tables
 
@@ -139,10 +151,15 @@ async def test_visible_connectable_channel_is_allowed_for_an_admin_with_cache_fa
         guild.get_member = lambda uid: actor if cached else None
         guild.fetch_member = AsyncMock(return_value=actor)
     assert (await w.hub.setup.options(GUILD, ACTOR)).channels
+    if not cached:
+        w.bots[0].get_guild(GUILD).fetch_member.assert_awaited_once_with(ACTOR)
+        w.bots[0].get_guild(GUILD).fetch_member.reset_mock()
     radio = await w.hub.setup.configure(
         GUILD, ACTOR, radio_id=None, channel_id=CHANNEL, bot_id=2, kind="custom", rev=None
     )
     assert radio.channel_id == CHANNEL
+    if not cached:
+        w.bots[0].get_guild(GUILD).fetch_member.assert_awaited_once_with(ACTOR)
 
 
 @pytest.mark.asyncio
@@ -183,3 +200,60 @@ async def test_an_unchanged_configured_channel_is_rechecked_for_the_actor(missin
         )
     assert refused.value.error.code == "channel_kind"
     assert await w.hub.store.get(radio.id) == radio
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_on_reports_an_unavailable_activation_read_without_starting_a_runner(monkeypatch):
+    from empiremuse.utils.music.errors import GenericError
+    from empiremuse.i18n import get_i18n
+
+    w = await world()
+    await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2, source={"playlist": "p"})
+    original_clock = w.hub.store.ensure_clock
+
+    async def fail_after_clock(radio):
+        radio = await original_clock(radio)
+        monkeypatch.setattr(w.hub.store, "get", AsyncMock(side_effect=RadioUnavailable))
+        return radio
+
+    monkeypatch.setattr(w.hub.store, "ensure_clock", fail_after_clock)
+    tr = get_i18n().for_locale("pt-BR")
+    with pytest.raises(GenericError) as refused:
+        await w.cog._turn_on(w.inter.author, GUILD, tr, w.channel)
+    assert str(refused.value) == tr("radio.owner.unavailable")
+    assert not w.hub.manager._runners
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_failed_activation_read_does_not_prevent_the_remaining_boot_radios(monkeypatch):
+    w = await world()
+    for bot_id in (2, 3):
+        radio = await configure(
+            w.hub, guild_id=GUILD, channel_id=CHANNEL + bot_id, bot_id=bot_id, source={"playlist": "p"}
+        )
+        await w.hub.store.set_enabled(radio.id, True)
+    original_get, original_clock = w.hub.store.get, w.hub.store.ensure_clock
+    fail = set()
+
+    async def clock(radio):
+        radio = await original_clock(radio)
+        if radio.bot_id == 2:
+            fail.add(radio.id)
+        return radio
+
+    async def get(rid):
+        if rid in fail:
+            raise RadioUnavailable
+        return await original_get(rid)
+
+    monkeypatch.setattr(w.hub.store, "ensure_clock", clock)
+    monkeypatch.setattr(w.hub.store, "get", get)
+    try:
+        with pytest.raises(RadioUnavailable):
+            await w.hub.manager.resume_all()
+        assert not w.hub.manager.is_running(f"2:{GUILD}")
+        assert w.hub.manager.is_running(f"3:{GUILD}")
+    finally:
+        await w.hub.manager.close()

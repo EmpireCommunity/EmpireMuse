@@ -107,7 +107,7 @@ async def test_reset_waits_even_while_configure_is_checking_the_actor(monkeypatc
     async def hold_actor(*args):
         entered.set()
         await release.wait()
-        await check_actor(*args)
+        return await check_actor(*args)
 
     monkeypatch.setattr(w.hub.setup, "check_actor", hold_actor)
     creating = asyncio.create_task(new_radio(w))
