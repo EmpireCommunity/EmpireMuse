@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import disnake
 
-from empiremuse.rules.erasure import OWNER_GRANT_TTL_S, ErasureStatus
+from empiremuse.rules.erasure import OWNER_GRANT_TTL_S, ErasureStatus, grant_log_ref
 from empiremuse.rules.i18n import fit
 from empiremuse.utils.erasure import ErasureBusy, ErasureRateLimited
 from empiremuse.utils.erasure_grants import Grant, GrantLimited
@@ -164,7 +164,10 @@ class ErasureConfirmView(disnake.ui.View):
                 await interaction.response.edit_message(content=tr("erasure.grant_expired"), view=None)
                 return
         # ``edit_message`` reconhece a interação (3 s) e tira os botões; a varredura do serviço vem depois, sem prazo de resposta.
-        await interaction.response.edit_message(content=tr("erasure.running"), view=None)
+        # Se o ack falhar, o clique é genuíno e a concessão já é do titular: segue para o serviço e entrega o desfecho pela edição protegida.
+        await _guarded(
+            "aviso de andamento", interaction.response.edit_message(content=tr("erasure.running"), view=None)
+        )
         text = await run_erasure(pool, tr, interaction.author.id, grant=grant)
         await _guarded("resposta final", interaction.edit_original_message(content=text))
 
@@ -230,7 +233,7 @@ class OwnerRequestView(disnake.ui.View):
             "apagamento: pedido do dono emitido owner=%s target=%s grant=%s",
             self.owner_id,
             self.target.id,
-            grant.grant_id,
+            grant_log_ref(grant.grant_id),
             extra={"empiremuse_emit": True},
         )
         view: Optional[ErasureConfirmView] = None

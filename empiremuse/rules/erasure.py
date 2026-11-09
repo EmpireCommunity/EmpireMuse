@@ -269,3 +269,11 @@ def build_report(results: Mapping[str, StoreResult]) -> ErasureReport:
         counts={key: result.count for key, result in results.items()},
         failed=tuple(key for key, result in results.items() if not result.ok),
     )
+
+
+GRANT_LOG_REF_CHARS = 12
+
+
+def grant_log_ref(grant_id: str) -> str:
+    """Referência curta da concessão para o log: hash do código de resgate, nunca o código. Emissão e apagamento usam esta mesma função."""
+    return hashlib.sha256(grant_id.encode("utf-8")).hexdigest()[:GRANT_LOG_REF_CHARS]

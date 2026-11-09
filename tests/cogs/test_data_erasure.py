@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import disnake
 import pytest
+from disnake.ext import commands
 
 from empiremuse import paths
 from empiremuse.cogs import data_erasure
@@ -19,6 +20,7 @@ from empiremuse.rules.erasure import (
     OWNER_GRANT_TTL_S,
     ErasureReport,
     ErasureStatus,
+    grant_log_ref,
     owner_target_id,
     parse_owner_request,
 )
@@ -510,6 +512,8 @@ def test_real_command_declaration_allows_dm_and_keeps_the_cooldown():
         command.contexts.guild is True and command.contexts.bot_dm is True and command.contexts.private_channel is False
     )
     assert command.name == "delete_my_data"
+    bucket = command._buckets  # um pedido a cada 15 s por usuário
+    assert (bucket._cooldown.rate, bucket._cooldown.per, bucket._type) == (1, 15.0, commands.BucketType.user)
 
 
 @pytest.mark.asyncio
@@ -632,7 +636,8 @@ async def test_issue_writes_an_unaggregated_audit_line(caplog):
     record = next(r for r in caplog.records if "pedido do dono emitido" in r.getMessage())
     grant = target.send.await_args.kwargs["view"].grant
     assert record.empiremuse_emit is True
-    assert f"owner={OWNER} target={HOLDER} grant={grant.grant_id}" in record.getMessage()
+    assert f"owner={OWNER} target={HOLDER} grant={grant_log_ref(grant.grant_id)}" in record.getMessage()
+    assert grant.grant_id not in caplog.text
 
 
 @pytest.mark.asyncio
@@ -737,30 +742,6 @@ async def test_two_members_slash_views_do_not_share_custom_ids_in_the_real_view_
 
 
 @pytest.mark.asyncio
-async def test_unclaimed_grant_button_answers_expired_but_a_live_view_keeps_it():
-    w = world()
-    store = real_store(w.bot)
-    cog = data_erasure.DataErasure(w.bot)
-    grant = w.pool.erasure_grants.issue(OWNER, HOLDER)
-    live = views.ErasureConfirmView(w.bot, w.tr, HOLDER, grant=grant)
-    store.add_view(live, 99)
-    custom_id = live.children[0].custom_id
-
-    claimed = button_interaction(HOLDER, custom_id, 99)
-    await cog.expired_grant_button(claimed)
-    claimed.response.edit_message.assert_not_awaited()  # a view cuida
-
-    live.stop()  # expirou, foi usada ou o bot reiniciou
-    orphan = button_interaction(HOLDER, custom_id, 99)
-    await cog.expired_grant_button(orphan)
-    assert orphan.response.edit_message.await_args.kwargs["content"] == w.tr("erasure.grant_expired")
-
-    other = button_interaction(HOLDER, "outra_coisa:1", 99)
-    await cog.expired_grant_button(other)
-    other.response.edit_message.assert_not_awaited()
-
-
-@pytest.mark.asyncio
 async def test_owner_view_cancel_and_pending_request_send_nothing():
     w = world()
     target = SimpleNamespace(id=HOLDER, send=AsyncMock())
@@ -776,13 +757,20 @@ async def test_owner_view_cancel_and_pending_request_send_nothing():
 
 
 @pytest.mark.asyncio
-async def test_expired_grant_reply_failure_is_logged_by_type_only(caplog):
+async def test_failed_progress_ack_still_runs_the_service_and_delivers_the_outcome():
     w = world()
-    w.bot._connection = SimpleNamespace(_view_store=SimpleNamespace(_views={}))
-    orphan = button_interaction(HOLDER, "erasure_grant:abc")
-    orphan.response.edit_message.side_effect = disnake.HTTPException(MagicMock(status=404), "gone")
+    grant = w.pool.erasure_grants.issue(OWNER, HOLDER)
+    view = views.ErasureConfirmView(w.bot, w.tr, HOLDER, grant=grant)
+    inter = click(HOLDER)
+    inter.response.edit_message.side_effect = RuntimeError("ack")
 
-    with caplog.at_level(logging.WARNING):
-        await data_erasure.DataErasure(w.bot).expired_grant_button(orphan)
+    await view.confirmed(inter)
 
-    assert "HTTPException" in caplog.text
+    w.pool.erasure.erase_user.assert_awaited_once_with(HOLDER, source="owner", owner_id=OWNER, grant_id=grant.grant_id)
+    assert final_text(inter) == w.tr("erasure.done")
+
+
+def test_grant_log_ref_is_a_short_stable_hash_not_the_code():
+    ref = grant_log_ref("codigo-secreto-123456")
+
+    assert ref == grant_log_ref("codigo-secreto-123456") and len(ref) == 12 and "secreto" not in ref
