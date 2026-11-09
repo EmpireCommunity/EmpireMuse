@@ -13,7 +13,6 @@ import empiremuse.wavelink as wavelink
 from empiremuse.utils.music.converters import fix_characters, md_link, md_code
 from empiremuse.utils.music.errors import (
     code_suffix,
-    error_code_text,
     log_unexpected_error,
 )
 from empiremuse.utils.music.lastfm_tools import LastFmException
@@ -648,10 +647,4 @@ async def _rt_report_failure(self, track, e):
     error_code = log_unexpected_error(
         logger, e, f"obtenção de informação da PartialTrack {track.uri or track.search_uri}"
     )
-    embed = disnake.Embed(
-        description=f"**Falha ao obter informação de PartialTrack:\n{md_link(track.title, track.uri or track.search_uri, code=False)}**"
-        f"{error_code_text(error_code, self.tr)}\n"
-        f"**Servidor de música:** {md_code(self.node.identifier)}",
-        color=disnake.Colour.red(),
-    )
-    await self.report_error(embed, track)
+    await self.report_error(e, error_code)

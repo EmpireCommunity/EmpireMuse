@@ -16,7 +16,7 @@ from empiremuse.logs.console import ConsoleFormatter, FileFormatter
 from empiremuse.logs.redact import REDACTED, redact
 from empiremuse.logs.setup import configure_logging
 from empiremuse.logs.settings import LogSettings
-from tests.logs.apoio import registro
+from tests.logs.apoio import agora_utc, arquivo_do_log, registro
 
 pytestmark = pytest.mark.critical
 
@@ -27,9 +27,13 @@ SURROGATE = "\ud800"
 def destinos(tmp_path):
     console = io.StringIO()
     configure_logging(
-        LogSettings(logging.INFO, False, True, frozenset(), 300), [], stream=console, logs_dir=tmp_path / ".logs"
+        LogSettings(logging.INFO, False, True, frozenset(), 300),
+        [],
+        stream=console,
+        logs_dir=tmp_path / ".logs",
+        now=agora_utc,
     )
-    return SimpleNamespace(console=console, arquivo=tmp_path / ".logs" / "disnake.log")
+    return SimpleNamespace(console=console, arquivo=arquivo_do_log(tmp_path / ".logs"))
 
 
 def ler_arquivo(destinos) -> str:

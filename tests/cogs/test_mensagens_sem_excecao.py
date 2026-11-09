@@ -190,7 +190,6 @@ def montar_pedido(monkeypatch, erro: BaseException, *, webhook=False):
     webhook_cog = SimpleNamespace(
         webhook_max_concurrency=SimpleNamespace(acquire=AsyncMock(), release=AsyncMock()),
         send_webhook=AsyncMock(),
-        mask_token=lambda texto: texto.replace(TOKEN_FALSO, "mytoken"),
     )
     bot = SimpleNamespace(
         intents=SimpleNamespace(message_content=True),
@@ -301,7 +300,7 @@ class TestLacunasDaMutacao:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("gera", [True, False], ids=["com_codigo", "sem_codigo"])
-    async def test_jukebox_webhook_nome_do_anexo_e_token_mascarado(self, monkeypatch, gera):
+    async def test_jukebox_webhook_so_tipo_e_codigo(self, monkeypatch, gera):
         if gera:
             fixar_codigo(monkeypatch)
         else:
@@ -322,4 +321,11 @@ class TestLacunasDaMutacao:
 
         [(texto, nome)] = anexos
         assert nome == (f"error_traceback_jukebox_{CODIGO}.txt" if gera else "error_traceback_jukebox.txt")
-        assert TOKEN_FALSO not in texto and "mytoken" in texto
+        assert texto == f"Tipo da exceção: RuntimeError\nCódigo do erro: {CODIGO if gera else '-'}\n"
+        assert TOKEN_FALSO not in texto and "mytoken" not in texto
+        embed = cog.send_webhook.await_args.kwargs["embed"]
+        dump = "\n".join(
+            [embed.title or "", embed.description or "", embed.footer.text or ""] + [f.value for f in embed.fields]
+        )
+        assert mensagem.content not in dump and str(mensagem.author.id) not in dump and str(ctx.guild.id) not in dump
+        assert embed.footer.text is None and embed.author.name is None

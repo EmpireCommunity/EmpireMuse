@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import datetime
-import traceback
 from collections import deque
 from itertools import cycle
 from time import time
@@ -13,8 +12,9 @@ import disnake
 
 import empiremuse.wavelink as wavelink
 from empiremuse.i18n.payload import fit_payload
+from empiremuse.logs.webhook import minimal_embed, minimal_report_text
 from empiremuse.rules.voice_status import DEFAULT_VOICE_TEMPLATE
-from empiremuse.utils.music.converters import time_format, md_link, md_code
+from empiremuse.utils.music.converters import time_format, md_link
 from empiremuse.utils.music.skin_utils import skin_converter
 from empiremuse.utils.others import string_to_file
 from empiremuse.utils.usage import usage_of
@@ -23,7 +23,6 @@ if TYPE_CHECKING:
     from empiremuse.utils.client import BotCore
 
 from empiremuse.utils.music.models.tracks import (
-    PartialTrack,
     LavalinkTrack,
 )
 from empiremuse.utils.music.models.player_filters import PlayerFiltersMixin
@@ -256,38 +255,15 @@ class LavalinkPlayer(
         self.position_timestamp = state.get("time", 0)
         self.ping = state.get("ping", None)
 
-    async def report_error(
-        self, embed: disnake.Embed, track: Union[LavalinkTrack, PartialTrack], error: Exception = None
-    ):
+    async def report_error(self, error: BaseException | None, code: str = ""):
+        """Envia ao webhook de erro só o tipo da exceção e o código; faixa, link, servidor e canal não saem do host."""
         cog = self.bot.get_cog("Music")
 
         if cog and cog.error_report_queue:
-            embed.description += self.tr(
-                "player.source_server",
-                md_code=str(md_code(track.info["sourceName"])),
-                md_code_2=str(md_code(f"{self.guild.name} [{self.guild.id}]")),
-            )
+            error_kwargs = {"embed": minimal_embed("Falha de reprodução", code)}
 
-            try:
-                embed.description += self.tr(
-                    "player.channel",
-                    md_code=str(md_code(f"{self.guild.me.voice.channel.name} [{self.guild.me.voice.channel.id}]")),
-                )
-            except Exception:
-                pass
-
-            embed.description += f"**Data:** <t:{int(disnake.utils.utcnow().timestamp())}:F>"
-
-            if self.guild.icon:
-                embed.set_thumbnail(url=self.guild.icon.with_format("png").url)
-
-            error_kwargs = {"embed": embed}
-
-            if error:
-                error_kwargs["file"] = string_to_file(
-                    "".join(traceback.format_exception(type(error), error, error.__traceback__)),
-                    "error_partialtrack.txt",
-                )
+            if error is not None:
+                error_kwargs["file"] = string_to_file(minimal_report_text(error, code), "error_partialtrack.txt")
 
             await cog.error_report_queue.put(error_kwargs)
 

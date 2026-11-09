@@ -31,3 +31,27 @@ def test_load_config_converts_panel_types_from_environment(monkeypatch, tmp_path
     assert config["PANEL_INSECURE_COOKIES"] is True
     assert config["PANEL_SESSION_TTL_HOURS"] == 24
     assert config["PANEL_SESSION_IDLE_MINUTES"] == 30
+
+
+def test_log_retention_and_trusted_proxy_keys_have_defaults_and_convert(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    for key in ("LOG_RETENTION_DAYS", "LOG_RETENTION_HOLD", "PANEL_TRUSTED_PROXY_CIDRS"):
+        monkeypatch.delenv(key, raising=False)
+    import empiremuse.config_loader as module
+
+    padrao = module.load_config()
+    assert (padrao["LOG_RETENTION_DAYS"], padrao["LOG_RETENTION_HOLD"], padrao["PANEL_TRUSTED_PROXY_CIDRS"]) == (
+        183,
+        False,
+        "",
+    )
+
+    monkeypatch.setenv("LOG_RETENTION_HOLD", "true")
+    monkeypatch.setenv("LOG_RETENTION_DAYS", "365")
+    monkeypatch.setenv("PANEL_TRUSTED_PROXY_CIDRS", "192.0.2.0/24")
+    config = module.load_config()
+    assert (config["LOG_RETENTION_HOLD"], config["LOG_RETENTION_DAYS"], config["PANEL_TRUSTED_PROXY_CIDRS"]) == (
+        True,
+        "365",
+        "192.0.2.0/24",
+    )

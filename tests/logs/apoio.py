@@ -8,6 +8,7 @@ import logging
 import re
 import sys
 import threading
+from datetime import UTC, datetime
 from collections.abc import Callable
 
 SGR = re.compile(r"\x1b\[([0-9;]*)m")
@@ -49,6 +50,19 @@ def registro(
     return logging.getLogger(nome).makeRecord(
         nome, nivel, __file__, 1, mensagem, args or (), exc_info, extra=extra or None, sinfo=stack_info
     )
+
+
+AGORA_UTC = datetime(2026, 3, 15, 12, 0, tzinfo=UTC)
+
+
+def agora_utc() -> datetime:
+    """Relógio UTC fixo do arquivo de log diário: os testes não dependem do dia nem da meia-noite em que rodam."""
+    return AGORA_UTC
+
+
+def arquivo_do_log(pasta_de_logs):
+    """O arquivo de log do dia fixo de ``agora_utc`` numa pasta ``.logs``."""
+    return pasta_de_logs / f"disnake-{AGORA_UTC.date().isoformat()}.log"
 
 
 def excecao(texto: str, tipo: type[BaseException] = ValueError) -> tuple:
