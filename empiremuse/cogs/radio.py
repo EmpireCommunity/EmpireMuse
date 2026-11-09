@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Optional, Union
 import disnake
 from disnake.ext import commands
 
+from empiremuse.rules.radio_station import CREATE_KINDS
 from empiremuse.i18n import localized
 from empiremuse.rules.i18n import fit
 from empiremuse.rules.radio import (
@@ -153,6 +154,12 @@ class Radio(RadioPrefixCommands, commands.Cog):
             )  # as rádios de playlist viram estações do servidor ANTES de retomar (idempotente)
         except Exception as error:  # noqa: BLE001 - uma migração que falha não impede a subida: o legado segue tocando; só o tipo vai ao log (R-12)
             logger.warning("Migração das rádios para estações falhou (%s)", type(error).__name__)
+        from empiremuse.utils.radio import migrate_genres
+
+        try:
+            await migrate_genres.run(self.hub)
+        except Exception as error:  # noqa: BLE001 - sem marcador, a próxima subida retoma
+            logger.warning("Migração dos gêneros falhou (%s)", type(error).__name__)
         await self.hub.health.refresh()
         self.hub.health_checker.start()
         # com nova tentativa (30 s, 60 s... 5 min): uma falha passageira do banco na subida não deixa as rádios caídas até o restart
@@ -723,7 +730,7 @@ class Radio(RadioPrefixCommands, commands.Cog):
             default=None,
             name=localized("cmd.radio.station.create.opt.kind.name"),
             description=localized("cmd.radio.station.create.opt.kind.description"),
-            choices=["genre", "artists", "playlists"],
+            choices=list(CREATE_KINDS),
         ),
     ) -> None:
         await station_commands.create(self, inter, name, kind)

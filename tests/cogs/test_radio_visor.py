@@ -347,12 +347,14 @@ def test_the_type_select_marks_the_current_filter_and_all_stations_when_there_is
     from empiremuse.utils.radio.panel import ALL_TYPES_FILTER, type_select_options
 
     none = type_select_options(PT, None)
-    assert [o.value for o in none] == [ALL_TYPES_FILTER, "f:genre", "f:artists", "f:playlists"]
-    assert [o.default for o in none] == [True, False, False, False]
-    assert none[1].label == "Gênero" and type_select_options(EN, None)[1].label == "Genre"
+    assert [o.value for o in none] == [ALL_TYPES_FILTER, "f:international", "f:brazilian", "f:artists", "f:playlists"]
+    assert [o.default for o in none] == [True, False, False, False, False]
+    assert (
+        none[1].label == "Gêneros internacionais" and type_select_options(EN, None)[1].label == "International genres"
+    )
 
-    genre = type_select_options(PT, "f:genre")
-    assert [o.default for o in genre] == [False, True, False, False]
+    genre = type_select_options(PT, "f:international")
+    assert [o.default for o in genre] == [False, True, False, False, False]
 
 
 @pytest.mark.asyncio
@@ -362,7 +364,9 @@ async def test_the_custom_payload_has_two_short_button_rows_and_uses_the_type_se
     from empiremuse.utils.radio.visor import render_snapshot
 
     snap = custom_snapshot()
-    payload = await visor_payload_async(PT, snap, filter_options=type_select_options(PT, "f:genre"), custom=True)
+    payload = await visor_payload_async(
+        PT, snap, filter_options=type_select_options(PT, "f:international"), custom=True
+    )
 
     rows = payload["components"]
     assert (

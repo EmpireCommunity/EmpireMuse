@@ -366,7 +366,9 @@ class TestReset:
         w = await setup_world(free_bots=(2, 3))
         radio = await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
         other = await configure(w.hub, guild_id=GUILD, channel_id=OTHER_CHANNEL, bot_id=3)
-        station = await w.hub.stations.create(GUILD, {"name": "Rock", "kind": "genre", "source": {"genre": "rock"}})
+        station = await w.hub.stations.create(
+            GUILD, {"name": "Rock", "kind": "artists", "source": {"artists": ["Queen"]}}
+        )
 
         await w.hub.setup.reset(GUILD, ACTOR, radio.id, radio.rev)
 

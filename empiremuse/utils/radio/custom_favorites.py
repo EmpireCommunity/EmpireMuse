@@ -2,7 +2,7 @@
 quem clicou; o filtro "Favoritas" mostra as de quem o escolheu.
 
 Um documento por (servidor, membro) em ``global.radio_custom_favorites`` (``_id`` = ``<servidor>:<membro>``), com compare-and-set em ``rev``. Só guarda ids de
-estações do servidor (24 hex); estação apagada some da lista na leitura. No máximo 24 por membro. As favoritas da rádio AO VIVO são outras (por servidor).
+estações do servidor (24 hex) ou gêneros prontos (g:<id>); estação apagada some da lista na leitura. No máximo 24 por membro. As favoritas da rádio AO VIVO são outras (por servidor).
 """
 
 from __future__ import annotations

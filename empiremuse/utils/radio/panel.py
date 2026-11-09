@@ -419,7 +419,8 @@ def filter_select_options(
 
 ALL_TYPES_FILTER = "f:all"  # select 2 da personalizada: sem filtro de tipo (``Radio.filter = None``)
 TYPE_FILTERS: tuple[tuple[str, str, str], ...] = (  # value do select, chave do rótulo, emoji do bot
-    ("f:genre", "radio.station.kind.genre", "music_note"),
+    ("f:international", "radio.genre.ready.international", "music_note"),
+    ("f:brazilian", "radio.genre.ready.brazilian", "music_note"),
     ("f:artists", "radio.station.kind.artists", "microphone"),
     ("f:playlists", "radio.station.kind.playlists", "playlists"),
 )
@@ -428,8 +429,7 @@ TYPE_FILTERS: tuple[tuple[str, str, str], ...] = (  # value do select, chave do 
 def type_select_options(
     tr: Any, current: Optional[str], *, emojis: Emojis = fallback_emojis
 ) -> list[disnake.SelectOption]:
-    """As opções do select 2 da rádio PERSONALIZADA: ``Todas as estações`` e um tipo por linha (gênero, artistas, playlists do
-    servidor), com o filtro atual marcado. As favoritas da personalizada ainda não existem (decisão do dono pendente)."""
+    """Select 2: estações do servidor e os dois grupos de gêneros prontos."""
     options = [
         disnake.SelectOption(
             label=fit(tr("visor.select.type.all.label"), 100),

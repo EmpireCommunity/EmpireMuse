@@ -18,7 +18,7 @@ pytestmark = pytest.mark.critical
 async def world_with_station(**kwargs):
     w = build(**kwargs)
     await premium(w)
-    station = await w.hub.stations.create(GUILD, {"name": "Rock", "kind": "genre", "source": {"genre": "rock"}})
+    station = await w.hub.stations.create(GUILD, {"name": "Rock", "kind": "artists", "source": {"artists": ["Queen"]}})
     return w, station
 
 

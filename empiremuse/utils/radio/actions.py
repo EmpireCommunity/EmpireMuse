@@ -152,6 +152,8 @@ async def change_custom_station(hub: RadioHub, *, radio_id: str, station_id: str
         updated = await hub.store.set_custom_station(
             radio_id, station_id, expected_rev=current.rev, updated_by=str(actor.user_id)
         )
+    except NoPremium as error:
+        raise Refused(NO_PREMIUM) from error
     except RadioConflict as error:
         raise Refused(CHANGED) from error
     except RadioInvalid as error:

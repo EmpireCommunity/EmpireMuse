@@ -8,6 +8,7 @@ import pytest
 from empiremuse.rules.radio_station import KIND_ARTISTS, KIND_GENRE, KIND_PLAYLISTS, CustomStation
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.radio import custom_panel
+from empiremuse.utils.radio.stations import StationStore
 
 pytestmark = pytest.mark.critical
 
@@ -20,7 +21,7 @@ def st(n, kind):
     return CustomStation(id=f"{n:024x}", guild_id=1, name=f"E{n}", kind=kind, source={})
 
 
-STATIONS = [st(1, KIND_GENRE), st(2, KIND_ARTISTS), st(3, KIND_GENRE), st(4, KIND_PLAYLISTS)]
+STATIONS = [st(1, KIND_ARTISTS), st(2, KIND_PLAYLISTS), st(3, KIND_ARTISTS), st(4, KIND_PLAYLISTS)]
 
 
 def world(filter_id=None, active=1):
@@ -34,7 +35,13 @@ def world(filter_id=None, active=1):
 
     cog = SimpleNamespace(
         hub=SimpleNamespace(
-            stations=SimpleNamespace(list_for_guild=AsyncMock(return_value=STATIONS)),
+            stations=SimpleNamespace(
+                list_for_guild=AsyncMock(return_value=STATIONS),
+                list_builtin=lambda gid: StationStore.list_builtin(gid),
+                get=AsyncMock(
+                    side_effect=lambda gid, sid: next((s for s in STATIONS if s.id == sid and s.guild_id == gid), None)
+                ),
+            ),
             store=SimpleNamespace(get=AsyncMock(return_value=radio), set_filter=AsyncMock()),
         ),
         _too_soon=lambda *a: False,
@@ -48,13 +55,13 @@ def inter():
 
 
 def test_filtered_keeps_only_the_type_and_an_unknown_filter_means_all():
-    assert [s.name for s in custom_panel.filtered(STATIONS, "f:genre")] == ["E1", "E3"]
+    assert [s.name for s in custom_panel.filtered(STATIONS, "f:artists")] == ["E1", "E3"]
     assert len(custom_panel.filtered(STATIONS, None)) == 4 and len(custom_panel.filtered(STATIONS, "x")) == 4
 
 
 @pytest.mark.asyncio
 async def test_walking_stays_inside_the_filter_and_wraps(monkeypatch):
-    radio, cog, calls, change = world("f:genre", active=1)
+    radio, cog, calls, change = world("f:artists", active=1)
     monkeypatch.setattr(custom_panel.actions, "change_custom_station", change)
     await custom_panel.walk(cog, inter(), tr, radio, 1)
     await custom_panel.walk(cog, inter(), tr, radio, -1)
@@ -66,7 +73,7 @@ async def test_walking_stays_inside_the_filter_and_wraps(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_a_station_outside_the_filter_or_forged_is_refused(monkeypatch):
-    radio, cog, calls, change = world("f:genre")
+    radio, cog, calls, change = world("f:artists")
     monkeypatch.setattr(custom_panel.actions, "change_custom_station", change)
     for bad in (STATIONS[1].id, "forjado", None):
         with pytest.raises(GenericError):
@@ -78,9 +85,10 @@ async def test_a_station_outside_the_filter_or_forged_is_refused(monkeypatch):
 @pytest.mark.asyncio
 async def test_random_never_repeats_the_current_and_a_single_station_has_nowhere_to_go(monkeypatch):
     radio, cog, calls, change = world("f:playlists", active=4)
+    cog.hub.stations.list_for_guild.return_value = [STATIONS[3]]
     monkeypatch.setattr(custom_panel.actions, "change_custom_station", change)
     assert await custom_panel.random_station(cog, inter(), tr, radio) == "radio.panel.no_other_station"
-    radio, cog, calls, change = world("f:genre", active=1)
+    radio, cog, calls, change = world("f:artists", active=1)
     monkeypatch.setattr(custom_panel.actions, "change_custom_station", change)
     await custom_panel.random_station(cog, inter(), tr, radio)
     assert calls == [STATIONS[2].id]
@@ -100,7 +108,7 @@ async def test_the_type_filter_is_saved_without_changing_the_station_and_a_forge
 
 @pytest.mark.asyncio
 async def test_the_snapshot_lists_the_filtered_stations_with_the_station_name_and_track():
-    radio, cog, *_ = world("f:genre", active=3)
+    radio, cog, *_ = world("f:artists", active=3)
     ports = SimpleNamespace(
         station=STATIONS[2],
         current=SimpleNamespace(title="Faixa", artist="Cantor"),
@@ -116,7 +124,7 @@ async def test_the_snapshot_lists_the_filtered_stations_with_the_station_name_an
         2,
     )
     assert [o.name for o in snap.stations] == ["E1", "E3"] and snap.current_index == 1
-    assert snap.filter_path == ("radio.station.kind.genre",) and snap.state == "live"
+    assert snap.filter_path == ("radio.station.kind.artists",) and snap.state == "live"
 
 
 class FakeFavs:
@@ -206,3 +214,26 @@ async def test_the_reconnect_button_wakes_the_custom_radio_wait():
     CustomRadioPorts.wake_retry(ports)
 
     await asyncio.wait_for(sleeper, 1)
+
+
+@pytest.mark.asyncio
+async def test_genre_groups_are_selectable_favoritable_and_excluded_from_walk(monkeypatch):
+    from empiremuse.utils.radio.stations import StationStore
+
+    radio, cog, calls, change = world("f:international")
+    monkeypatch.setattr(custom_panel.actions, "change_custom_station", change)
+    assert len(await custom_panel.listed(cog.hub, radio)) == 21
+    await custom_panel.pick_station(cog, inter(), tr, radio, "g:rock")
+    assert calls == ["g:rock"]
+    calls.clear()
+    assert await custom_panel.walk(cog, inter(), tr, radio, 1) == "radio.panel.no_other_station"
+    assert await custom_panel.random_station(cog, inter(), tr, radio) == "radio.panel.no_other_station"
+    await custom_panel.pick_filter(cog, inter(), tr, radio, "f:brazilian")
+    cog.hub.store.set_filter.assert_awaited_with("r", "f:brazilian", expected_rev=3, updated_by="9")
+    radio.filter, radio.source = "f:fav:9", {"station": "g:rock"}
+    cog.hub.custom_favorites = FakeFavs()
+    cog.hub.stations.get = AsyncMock(side_effect=StationStore.builtin)
+    await custom_panel.favorite(cog, inter(), tr, radio)
+    assert cog.hub.custom_favorites.data[(1, 9)] == ["g:rock"]
+    assert [s.id for s in await custom_panel.listed(cog.hub, radio)] == ["g:rock"]
+    assert await custom_panel.walk(cog, inter(), tr, radio, 1) == "radio.panel.no_other_station"

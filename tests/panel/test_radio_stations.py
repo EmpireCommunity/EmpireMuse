@@ -82,9 +82,9 @@ class StationsPageTest(StationsBase):
         assert self.create_form(body) is not None and len(self.edit_forms(body)) == 3
         edit = next(f for f in self.edit_forms(body) if f.value("name") == "Duplas")
         assert edit.values("kind") == ["artists"] and edit.value("artists") == "Chitãozinho\nZezé"
-        assert edit.value("versao") == str(artists.rev) and len(edit.choices("genre")) == 1 + 33
-        assert edit.choices("genre")[1:4] == ["rock", "metal", "pop"] and edit.choices("genre")[-1] == "phonk_br"
-        assert '<optgroup label="Internacionais">' in body and '<optgroup label="Brasileiros">' in body
+        assert edit.value("versao") == str(artists.rev) and edit.choices("genre") == []
+        assert set(edit.choices("kind")) == {"artists", "playlists"}
+        assert "Gêneros internacionais" in body and "Gêneros brasileiros" in body
 
     def test_without_premium_the_section_and_the_posts_are_refused(self):
         self.radio.stations.seed(ALFA, "Madrugada")
@@ -169,7 +169,7 @@ class StationsCreateTest(StationsBase):
                 ("nome vazio", {"name": "   ", "kind": "genre", "genre": "rock"}, "name", "de 1 a 32"),
                 ("nome repetido", {"name": "madrugada", "kind": "genre", "genre": "rock"}, "name", "sem repetir"),
                 ("sem fonte", {"name": "Nova", "kind": None, "genre": "rock"}, "kind", "Escolha uma fonte"),
-                ("gênero fora do catálogo", {"name": "Nova", "kind": "genre", "genre": "funk"}, "genre", "da lista"),
+                ("gênero recusado", {"name": "Nova", "kind": "genre", "genre": "rock"}, "kind", "Escolha uma fonte"),
                 (
                     "11 artistas",
                     {"name": "Nova", "kind": "artists", "artists": "\n".join(f"A{i}" for i in range(11))},
@@ -284,7 +284,8 @@ class CustomRadioStationTest(StationsBase):
         form = next(
             f for f in parse_forms(self.page(browser)) if f.action and f.action.endswith(f"/{radio.id}/estacao")
         )
-        assert form.choices("estacao") == ["", a.id, b.id] and form.value("versao") == str(radio.rev)
+        assert form.choices("estacao")[:3] == ["", a.id, b.id] and form.value("versao") == str(radio.rev)
+        assert len(form.choices("estacao")) == 36 and "g:rock" in form.choices("estacao")
         response = self.submit(browser, self.url(), form, htmx=True, estacao=b.id, channel_id="9")
         body = response.body.decode()
         assert response.code == 200 and SAVED_TEXT in body and "<html" not in body.lower()

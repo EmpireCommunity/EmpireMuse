@@ -9,7 +9,7 @@ from empiremuse.rules.radio_genres import check_catalog, find_genre, genre_group
 from empiremuse.rules.radio_shuffle import Track, build_pool, next_pick, remember
 from empiremuse.rules.radio_station import (
     MAX_STATIONS_PER_GUILD,
-    STATION_GENRE_UNKNOWN,
+    STATION_KIND_INVALID,
     STATION_LIMIT,
     STATION_NAME_INVALID,
     STATION_NAME_TAKEN,
@@ -79,19 +79,23 @@ class TestStationDoc:
         name = kw.pop("name", "Minha")
         return check_station_doc({"name": name, "kind": kind, "source": source}, **kw)
 
-    def test_a_genre_station_is_accepted_and_the_name_is_normalized(self):
-        station = self.check("genre", {"genre": "rock"}, name="  Rock   Pesado ")
+    def test_an_artist_station_is_accepted_and_the_name_is_normalized(self):
+        station = self.check("artists", {"artists": ["Queen"]}, name="  Rock   Pesado ")
 
         assert isinstance(station, StationDoc)
-        assert (station.name, station.name_norm, station.source) == ("Rock Pesado", "rock pesado", {"genre": "rock"})
+        assert (station.name, station.name_norm, station.source) == (
+            "Rock Pesado",
+            "rock pesado",
+            {"artists": ["Queen"]},
+        )
 
     def test_two_sources_at_once_are_refused(self):
-        error = self.check("genre", {"genre": "rock", "artists": ["A"]})
+        error = self.check("artists", {"genre": "rock", "artists": ["A"]})
 
         assert (error.code, error.key) == (STATION_SOURCE_INVALID, "kind")
 
     def test_an_unknown_genre_is_refused(self):
-        assert self.check("genre", {"genre": "nope"}).code == STATION_GENRE_UNKNOWN
+        assert self.check("genre", {"genre": "rock"}).code == STATION_KIND_INVALID
 
     def test_eleven_artists_are_refused_and_ten_pass(self):
         many = [f"Artista {i}" for i in range(11)]
@@ -110,17 +114,19 @@ class TestStationDoc:
         assert (error.code, error.key, error.value) == (STATION_PLAYLIST_MISSING, "playlists", "Rock")
 
     def test_a_name_already_used_in_the_server_is_refused_ignoring_case(self):
-        assert self.check("genre", {"genre": "rock"}, name="MINHA", taken={"minha"}).code == STATION_NAME_TAKEN
+        assert self.check("artists", {"artists": ["Queen"]}, name="MINHA", taken={"minha"}).code == STATION_NAME_TAKEN
 
     def test_the_eleventh_station_is_refused(self):
-        error = self.check("genre", {"genre": "rock"}, count=MAX_STATIONS_PER_GUILD)
+        error = self.check("artists", {"artists": ["Queen"]}, count=MAX_STATIONS_PER_GUILD)
 
         assert (error.code, error.key) == (STATION_LIMIT, "limit")
-        assert not isinstance(self.check("genre", {"genre": "rock"}, count=MAX_STATIONS_PER_GUILD - 1), RuleError)
+        assert not isinstance(
+            self.check("artists", {"artists": ["Queen"]}, count=MAX_STATIONS_PER_GUILD - 1), RuleError
+        )
 
     @pytest.mark.parametrize("name", ["", "   ", "x" * 33, "a\u202eb", "a\nb", 5, None])
     def test_a_bad_name_is_refused(self, name):
-        assert self.check("genre", {"genre": "rock"}, name=name).code == STATION_NAME_INVALID
+        assert self.check("artists", {"artists": ["Queen"]}, name=name).code == STATION_NAME_INVALID
 
     def test_a_stored_document_round_trips_and_a_bad_one_is_refused(self):
         stored = {

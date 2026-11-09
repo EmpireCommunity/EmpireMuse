@@ -1,6 +1,6 @@
 """Regras puras das ESTAÇÕES do servidor para a rádio personalizada (item 8, R5, contrato §2): o documento, a validação e a ordem.
 
-Uma estação tem nome (único no servidor, sem diferenciar a caixa) e UMA fonte: um gênero do catálogo, uma lista de artistas ou playlists do servidor.
+Uma estação do servidor tem nome único e uma fonte de artistas ou playlists. Gêneros persistidos seguem legíveis para a migração; os prontos são virtuais.
 A mesma validação serve ao chat e ao painel web (``check_station_doc``). Aqui não há banco nem Discord; o que depende deles (nomes já usados, quantas
 estações o servidor tem, quais playlists existem) chega pronto em ``StationContext``. Nada aqui monta texto para o usuário (``RuleError.code`` estável).
 """
@@ -21,6 +21,7 @@ KIND_GENRE = "genre"
 KIND_ARTISTS = "artists"
 KIND_PLAYLISTS = "playlists"
 STATION_KINDS = (KIND_GENRE, KIND_ARTISTS, KIND_PLAYLISTS)
+CREATE_KINDS = (KIND_ARTISTS, KIND_PLAYLISTS)
 
 NAME_MAX = 32
 MAX_STATIONS_PER_GUILD = 10
@@ -90,7 +91,7 @@ def normalize_name(name: str) -> str:
 
 
 def valid_station_id(value: object) -> bool:
-    return isinstance(value, str) and _STATION_ID.fullmatch(value) is not None
+    return isinstance(value, str) and re.fullmatch(r"(?:[0-9a-f]{24}|g:[a-z][a-z0-9_]{1,23})", value) is not None
 
 
 def _names(raw: object, high: int, key: str, name_max: int = ARTIST_NAME_MAX) -> list[str] | RuleError:
@@ -156,7 +157,7 @@ def check_station_doc(
     if count >= MAX_STATIONS_PER_GUILD:
         return RuleError(STATION_LIMIT, FIELD_LIMIT, limit=MAX_STATIONS_PER_GUILD)
     kind = raw.get("kind")
-    if kind not in STATION_KINDS:
+    if kind not in CREATE_KINDS:
         return RuleError(STATION_KIND_INVALID, FIELD_KIND)
     source = check_source(kind, raw.get("source"), playlists=playlists, catalog=catalog or shipped_catalog())
     if isinstance(source, RuleError):
@@ -179,7 +180,7 @@ def from_document(raw: object) -> CustomStation | RuleError:
     if not isinstance(raw, Mapping):
         return RuleError(STATION_ID_INVALID, "id")
     station_id, guild_id = raw.get("_id"), _guild(raw.get("guild_id"))
-    if not isinstance(station_id, str) or not valid_station_id(station_id) or guild_id is None:
+    if not isinstance(station_id, str) or not _STATION_ID.fullmatch(station_id) or guild_id is None:
         return RuleError(STATION_ID_INVALID, "id")
     name = clean_title(raw.get("name"), 1, NAME_MAX)
     kind, source, rev = raw.get("kind"), raw.get("source"), raw.get("rev", 0)

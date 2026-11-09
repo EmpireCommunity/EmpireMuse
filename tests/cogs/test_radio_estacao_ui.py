@@ -43,7 +43,13 @@ def allow(interaction):
 
 def editor(hub, **over):
     args = dict(
-        author_id=AUTHOR, guild_id=GUILD, playlists=["Rock"], station=None, name="Minha", kind="genre", can_manage=allow
+        author_id=AUTHOR,
+        guild_id=GUILD,
+        playlists=["Rock"],
+        station=None,
+        name="Minha",
+        kind="artists",
+        can_manage=allow,
     )
     return StationEditor(hub, tr(), **{**args, **over})
 
@@ -108,51 +114,34 @@ class TestEveryClickIsAuthorizedNow:
         press.response.send_message.assert_not_awaited()
 
 
-class TestCreatingAGenreStation:
+class TestCreatingArtistStation:
     @pytest.mark.asyncio
-    async def test_picking_kind_group_and_genre_then_saving_creates_the_station(self):
+    async def test_saving_artists_creates_the_station(self):
         hub = make_hub()
         view = editor(hub)
-        group = next(iter(hub.stations.genre_groups()))[0]
-        genre = next(g for g in hub.stations.genres() if g.group == group)
-
-        await view._on_kind(click(values=["genre"]))
-        await view._on_group(click(values=[group]))
-        await view._on_genre(click(values=[genre.id]))
+        view.artists = ["Queen"]
         save = click()
         await view._on_save(save)
-
         stations = await hub.stations.list_for_guild(GUILD)
-        assert [(s.name, s.kind, s.source) for s in stations] == [("Minha", "genre", {"genre": genre.id})]
+        assert [(s.name, s.kind, s.source) for s in stations] == [("Minha", "artists", {"artists": ["Queen"]})]
         assert stations[0].updated_by == str(AUTHOR)
-        sent = save.edit_original_message.await_args.kwargs
-        assert "Minha" in sent["content"] and sent["view"] is None  # a tela fecha dizendo o nome salvo
+        assert save.edit_original_message.await_args.kwargs["view"] is None
 
     @pytest.mark.asyncio
-    async def test_a_genre_the_select_never_offered_is_ignored_and_saving_without_a_source_writes_nothing(self):
+    async def test_a_forged_genre_selection_cannot_change_the_kind(self):
         hub = make_hub()
         view = editor(hub)
-        group = next(iter(hub.stations.genre_groups()))[0]
-        other_group_genre = next(g for g in hub.stations.genres() if g.group != group)
-        await view._on_group(click(values=[group]))
-
-        await view._on_genre(click(values=[other_group_genre.id]))  # forjado: de outro grupo
-        await view._on_genre(click(values=["nao_existe"]))
+        await view._on_kind(click(values=["genre"]))
         await view._on_save(click())
-
-        assert view.genre is None and await hub.stations.list_for_guild(GUILD) == []
+        assert view.kind == "artists" and await hub.stations.list_for_guild(GUILD) == []
+        assert {o.value for o in view.children[0].options} == {"artists", "playlists"}
 
     @pytest.mark.asyncio
     async def test_an_invalid_station_is_shown_as_an_error_and_not_saved(self):
         hub = make_hub()
-        view = editor(hub, name="   ")  # nome vazio: as regras recusam
-        group = next(iter(hub.stations.genre_groups()))[0]
-        genre = next(g for g in hub.stations.genres() if g.group == group)
-        await view._on_group(click(values=[group]))
-        await view._on_genre(click(values=[genre.id]))
+        view = editor(hub, name="   ")
+        view.artists = ["Queen"]
         save = click()
-
         await view._on_save(save)
-
         assert await hub.stations.list_for_guild(GUILD) == []
-        assert save.edit_original_message.await_args.kwargs["view"] is view  # a tela fica para corrigir
+        assert save.edit_original_message.await_args.kwargs["view"] is view

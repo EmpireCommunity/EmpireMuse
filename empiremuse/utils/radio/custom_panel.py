@@ -1,8 +1,8 @@
 """O painel da rádio PERSONALIZADA no desenho do visor: o retrato (mesmo ``RadioPanelSnapshot`` da ao vivo) e os cliques dos dois selects.
 
-Select 1 = as estações do servidor do filtro aplicado; select 2 = filtro por TIPO da estação (``f:genre``, ``f:artists``, ``f:playlists``). O filtro
-fica gravado em ``Radio.filter`` (lembrado por rádio); sem filtro (``f:all`` o esquece) = todas as estações do servidor. "Favoritas" ainda não existe aqui (decisão do dono pendente).
-O valor de um select NUNCA é confiado: a estação tem de ser do servidor e estar no filtro; o filtro tem de ser um dos tipos.
+Select 1 = estações do filtro aplicado; select 2 = artistas/playlists do servidor,
+gêneros internacionais/brasileiros ou favoritas. Anterior/Próxima e aleatória só
+percorrem estações do servidor (Q6). Valores externos são reconferidos no uso.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from collections.abc import Collection
 from typing import TYPE_CHECKING, Any
 
+from empiremuse.rules.radio_genres import shipped_catalog
 from empiremuse.rules.radio import VOLUME_DEFAULT, Radio, station_neighbor
 from empiremuse.rules.radio_station import KIND_ARTISTS, KIND_GENRE, KIND_PLAYLISTS, CustomStation
 from empiremuse.rules.text import external_text
@@ -34,7 +35,8 @@ if TYPE_CHECKING:
 
 NAME_LIMIT = 80
 ALL_FILTER = "f:all"  # 'Todas as estações': esquece o filtro
-TYPE_FILTERS = {"f:genre": KIND_GENRE, "f:artists": KIND_ARTISTS, "f:playlists": KIND_PLAYLISTS}
+TYPE_FILTERS = {"f:artists": KIND_ARTISTS, "f:playlists": KIND_PLAYLISTS}
+GENRE_FILTERS = {"f:international": "international", "f:brazilian": "brazilian"}
 QUALITY_GOOD = "good"  # a estação personalizada não tem taxa nem teste: o ponto é sempre o de "boa"
 
 
@@ -58,15 +60,23 @@ def filtered(
     if favorites_owner(filter_id) is not None:
         by_id = {s.id: s for s in stations}
         return [by_id[i] for i in favorite_ids if i in by_id]
+    group = GENRE_FILTERS.get(filter_id or "")
+    if group:
+        ids = {g.id for g in shipped_catalog() if g.group == group}
+        return [s for s in stations if s.id.startswith("g:") and s.source.get("genre") in ids]
     kind = TYPE_FILTERS.get(filter_id or "")
-    return [s for s in stations if kind is None or s.kind == kind]
+    return [s for s in stations if not s.id.startswith("g:") and (kind is None or s.kind == kind)]
 
 
 async def listed(hub: Any, radio: Radio) -> list[CustomStation]:
     """A lista de estações do filtro aplicado da rádio (lê as favoritas do membro só quando o filtro é o delas)."""
     owner = favorites_owner(radio.filter)
     ids = await hub.custom_favorites.list(radio.guild_id, owner) if owner is not None else ()
-    return filtered(await hub.stations.list_for_guild(radio.guild_id), radio.filter, ids)
+    return filtered(
+        (await hub.stations.list_for_guild(radio.guild_id)) + hub.stations.list_builtin(radio.guild_id),
+        radio.filter,
+        ids,
+    )
 
 
 async def custom_snapshot(hub: Any, radio: Radio, ports: Any, runner: Any, *, locale: str, tr: Any = None) -> Any:
@@ -76,16 +86,34 @@ async def custom_snapshot(hub: Any, radio: Radio, ports: Any, runner: Any, *, lo
     station = ports.station
     owner = favorites_owner(radio.filter)
     favorite_ids = await hub.custom_favorites.list(radio.guild_id, owner) if owner is not None else []
-    listed = filtered(await hub.stations.list_for_guild(radio.guild_id), radio.filter, favorite_ids)
+    listed = filtered(
+        (await hub.stations.list_for_guild(radio.guild_id)) + hub.stations.list_builtin(radio.guild_id),
+        radio.filter,
+        favorite_ids,
+    )
     active = station.id if station is not None else ""
     position, window = _window([s.id for s in listed], active)
     by_id = {s.id: s for s in listed}
     index = {s.id: i + 1 for i, s in enumerate(listed)}
-    options = tuple(StationOption(index[i], i, by_id[i].name, 0, "", QUALITY_GOOD) for i in window)
+    options = tuple(
+        StationOption(
+            index[i],
+            i,
+            tr(f"radio.genre.{by_id[i].source['genre']}") if tr and i.startswith("g:") else by_id[i].name,
+            0,
+            "",
+            QUALITY_GOOD,
+        )
+        for i in window
+    )
     kind = TYPE_FILTERS.get(radio.filter or "")
     label = ""
     if tr is not None:
-        label = tr(f"radio.station.kind.{kind}") if kind else (tr("radio.panel.custom.favorites") if owner else "")
+        label = (
+            tr(f"radio.genre.ready.{GENRE_FILTERS[radio.filter]}")
+            if radio.filter in GENRE_FILTERS
+            else (tr(f"radio.station.kind.{kind}") if kind else (tr("radio.panel.custom.favorites") if owner else ""))
+        )
     current = ports.current
     playing = current is not None and not ports.no_tracks
     muted = bool(
@@ -96,7 +124,11 @@ async def custom_snapshot(hub: Any, radio: Radio, ports: Any, runner: Any, *, lo
     return RadioPanelSnapshot(
         radio_id=radio.id,
         skin=radio.skin,
-        station_name=station.name if station else "—",
+        station_name=(
+            tr(f"radio.genre.{station.source['genre']}") if tr and station.id.startswith("g:") else station.name
+        )
+        if station
+        else "—",
         country="",
         codec="",
         bitrate_kbps=0,
@@ -142,7 +174,7 @@ async def _listed(cog: RadioCog, radio: Radio) -> list[CustomStation]:
 
 async def walk(cog: RadioCog, interaction: Any, tr: Any, radio: Radio, step: int) -> str:
     """Anterior e próxima: a vizinha na lista do filtro (dá a volta)."""
-    listed = await _listed(cog, radio)
+    listed = [s for s in await _listed(cog, radio) if not s.id.startswith("g:")]
     neighbor = station_neighbor([s.id for s in listed], radio.source.get("station"), step)
     if neighbor is None:
         return tr("radio.panel.no_other_station")
@@ -152,7 +184,7 @@ async def walk(cog: RadioCog, interaction: Any, tr: Any, radio: Radio, step: int
 async def random_station(cog: RadioCog, interaction: Any, tr: Any, radio: Radio) -> str:
     """Uma estação aleatória da lista do filtro, diferente da atual."""
     current = radio.source.get("station")
-    options = [s for s in await _listed(cog, radio) if s.id != current]
+    options = [s for s in await _listed(cog, radio) if s.id != current and not s.id.startswith("g:")]
     if not options:
         return tr("radio.panel.no_other_station")
     return await _change(cog, interaction, tr, radio, random.choice(options))
@@ -169,9 +201,9 @@ async def pick_station(cog: RadioCog, interaction: Any, tr: Any, radio: Radio, s
 async def pick_filter(cog: RadioCog, interaction: Any, tr: Any, radio: Radio, value: object) -> str:
     """Select 2: grava o tipo como filtro da rádio SEM trocar a estação no ar. Tipo sem estações no servidor é recusado com o motivo."""
     kind = TYPE_FILTERS.get(value) if isinstance(value, str) else None
-    if kind is None and value not in (ALL_FILTER, FAVORITES_VALUE):
+    if kind is None and value not in (ALL_FILTER, FAVORITES_VALUE, *GENRE_FILTERS):
         raise GenericError(tr("radio.panel.not_here"))
-    stations = await cog.hub.stations.list_for_guild(radio.guild_id)
+    stations = (await cog.hub.stations.list_for_guild(radio.guild_id)) + cog.hub.stations.list_builtin(radio.guild_id)
     wanted: str | None = None if value == ALL_FILTER else value
     if (
         value == FAVORITES_VALUE
@@ -182,7 +214,7 @@ async def pick_filter(cog: RadioCog, interaction: Any, tr: Any, radio: Radio, va
         if not total:
             return tr("radio.panel.favorites_empty")
     else:
-        total = sum(1 for s in stations if kind is None or s.kind == kind)
+        total = len(filtered(stations, wanted))
     if not total:
         return tr("radio.local.no_results")
     fresh = await cog.hub.store.get(radio.id)
@@ -195,8 +227,7 @@ async def pick_filter(cog: RadioCog, interaction: Any, tr: Any, radio: Radio, va
 async def favorite(cog: RadioCog, interaction: Any, tr: Any, radio: Radio) -> str:
     """A estrela: liga/desliga a estação NO AR nas favoritas de quem clicou (por membro, nunca do servidor)."""
     station_id = radio.source.get("station")
-    stations = await cog.hub.stations.list_for_guild(radio.guild_id)
-    station = next((s for s in stations if s.id == station_id), None)
+    station = await cog.hub.stations.get(radio.guild_id, station_id)
     if station is None:
         raise GenericError(tr("radio.panel.no_other_station"))
     result = await cog.hub.custom_favorites.toggle(radio.guild_id, interaction.author.id, station.id)

@@ -1172,5 +1172,7 @@
   "jukebox.setup.purge.author_only": "Only the person who used the command can confirm.",
   "jukebox.setup.purge.confirmed": "Confirmed, setting up the Jukebox...",
   "jukebox.setup.purge.cancelled": "Operation cancelled.",
-  "jukebox.setup.purge.timeout": "Timed out: nothing was changed."
+  "jukebox.setup.purge.timeout": "Timed out: nothing was changed.",
+  "radio.genre.ready.international": "International genres",
+  "radio.genre.ready.brazilian": "Brazilian genres"
 }

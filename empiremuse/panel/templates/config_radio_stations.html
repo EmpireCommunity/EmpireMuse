@@ -9,6 +9,12 @@
   </div>
   <p class="nota">{{ _("panel.radio.station.help") }}</p>
   <p class="nota credito-lastfm">{{ _("panel.radio.station.lastfm") }} <a href="{{ estacoes.lastfm_url }}" rel="noopener noreferrer" target="_blank">Powered by Last.fm<span class="visually-hidden"> (abre em outra aba)</span></a></p>
+  {% for grupo, generos in estacoes.builtin_groups %}
+  <details>
+    <summary>{{ grupo }}</summary>
+    <ul role="list">{% for genero in generos %}<li>{{ genero }}</li>{% end %}</ul>
+  </details>
+  {% end %}
   {% if estacoes.rows %}
   <ul class="lista-links lista-estacoes-servidor" role="list">
     {% for item in estacoes.rows %}

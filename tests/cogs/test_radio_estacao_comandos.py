@@ -99,6 +99,11 @@ class TestStationCommandGate:
         assert await view.interaction_check(click) is False
         click.response.send_message.assert_awaited_once_with("radio.refused.no_premium", ephemeral=True)
 
+    @pytest.mark.asyncio
+    async def test_a_cached_slash_cannot_create_a_genre_station(self):
+        with pytest.raises(GenericError, match="Tipo de estação inválido"):
+            await station_commands.create(make_cog(), make_inter(), "Rock", "genre")
+
     def test_the_cooldown_is_one_use_per_five_seconds_per_server(self):
         mapping = station_commands.STATION_COOLDOWN
         assert (mapping._cooldown.rate, mapping._cooldown.per) == (1, 5)

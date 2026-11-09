@@ -153,3 +153,5 @@ Agradecimentos especiais aos projetos de código aberto que tornam o EmpireMuse 
 ### Tokens dos bots
 
 Configure um token por variável: `TOKEN` é o principal obrigatório; `TOKEN_RESERVE_<NOME>` atende música e rádio; `TOKEN_RADIO_<NOME>` é só-rádio. O nome aceita 1 a 32 caracteres A-Z, 0-9 e _. Ausência ou formato inválido no principal impede a inicialização. Migre o `.env` e o compose antes de atualizar: `/update` não migra o compose. Consulte [o guia Docker](docs/guides/docker.md) para os nomes explícitos dos composes Hostinger.
+
+As rádios personalizadas oferecem 33 gêneros prontos com premium, além de estações do servidor por artistas ou playlists. Os gêneros ficam no seletor da rádio 24 h e em consulta no painel. A atualização substitui os gêneros antigos na subida, sem backup; veja o [guia de rádio](docs/guides/radio.md).

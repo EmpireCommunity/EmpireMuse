@@ -65,11 +65,12 @@ Na call a rádio mantém um **painel** com os botões pausar, próxima e desliga
 
 ## Estações personalizadas
 
-Uma estação tem um **nome** (1 a 32 caracteres, único no servidor) e **uma** fonte:
+Os **33 gêneros prontos** são virtuais, disponíveis com premium em **Gêneros internacionais** (21) e **Gêneros brasileiros** (12) no seletor da rádio 24 h. A página de estações do painel permite consultá-los; eles não podem ser criados, editados ou apagados. Anterior/Próxima e a escolha aleatória continuam somente nas estações do servidor; os gêneros são escolhidos pelo seletor.
+
+Uma estação do servidor tem um **nome** (1 a 32 caracteres, único no servidor) e **uma** fonte:
 
 | Fonte | O que é | Limite |
 | :--- | :--- | :--- |
-| Gênero | um dos 33 gêneros do catálogo, em dois grupos: **Internacionais** (21, como Rock, Pop, Hip-hop, Eletrônica, Lo-fi, Jazz e K-pop) e **Brasileiros** (12, como Sertanejo, Funk Brasileiro, Pagode e Samba, Forró, MPB e Rock Nacional) | 1 gênero |
 | Artistas | uma lista de nomes de artistas | 1 a 10 nomes de até 64 caracteres |
 | Playlists | playlists do servidor (as mesmas do `/play` e do painel) | 1 a 5 playlists |
 
@@ -79,6 +80,7 @@ Uma estação tem um **nome** (1 a 32 caracteres, único no servidor) e **uma** 
 - **Playlists que sumiram:** se a playlist de uma estação for apagada, a estação mostra "sem faixas".
 - **Artista digitado:** se o Last.fm não reconhece o nome, ele aparece com ⚠️ nas duas interfaces. O salvamento não é bloqueado.
 - **Troca de estação na call:** os botões ⏮ e ⏭ do painel trocam para a estação anterior ou seguinte do servidor (por ordem de nome), e há um botão para pular a faixa. Valem só para quem está na call do bot.
+- **Migração dos gêneros antigos:** na subida, as referências das rádios e das favoritas passam ao gênero pronto de mesmo id (`g:<id>`). A estação antiga é apagada depois, sem backup. Conflitos de gravação preservam a estação para a próxima subida; repetir a migração é seguro. Gênero fora do catálogo é removido e a rádio conserva a referência antiga, mostrando estação sem faixas. Documentos sem identidade válida ficam inertes.
 - **Quem configurou antes:** uma rádio personalizada que tocava uma playlist passa a usar uma estação de playlists com o mesmo nome, criada sozinha na subida do bot.
 
 ## O que o bot faz sozinho

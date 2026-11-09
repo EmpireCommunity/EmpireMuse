@@ -442,13 +442,13 @@ class FakeStations:
     def genre_groups(self):
         return GENRE_GROUPS
 
-    def seed(self, guild_id, name, kind="genre", source=None, *, rev=1, unknown=()):
+    def seed(self, guild_id, name, kind="artists", source=None, *, rev=1, unknown=()):
         station = CustomStation(
             secrets.token_hex(12),
             int(guild_id),
             name,
             kind,
-            dict(source or {"genre": "lofi"}),
+            dict(source or {"artists": ["Queen"]}),
             rev,
             "seed",
             datetime.now(timezone.utc),
@@ -469,7 +469,7 @@ class FakeStations:
         if name.casefold() in taken:
             raise RadioInvalid(RuleError("station_name_taken", "name"))
         kind = raw.get("kind")
-        if kind not in STATION_KINDS:
+        if kind not in ("artists", "playlists"):
             raise RadioInvalid(RuleError("station_kind", "kind"))
         source = dict(raw.get("source") or {})
         if set(source) != {kind}:
