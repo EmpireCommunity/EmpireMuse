@@ -2,12 +2,18 @@
 
 Para quem opera a VPS de produção (Hostinger, Docker Manager, Traefik compartilhado). **Nada aqui é aplicado pelo CI nem pelo `/update`**: cada passo roda numa janela combinada, com o OK explícito do dono. Os arquivos versionados estão em [`deploy/traefik/`](../../deploy/traefik/) e [`deploy/host/`](../../deploy/host/).
 
+## Padrão do deploy da instância hospedada
+
+Na instância hospedada (VPS com Docker Manager e Traefik compartilhado), o **`logrotate` é pré-requisito padrão do host**: ele aplica a retenção de 183 dias do registro de acesso. O passo a passo é a seção 4: instalar o pacote, copiar [`deploy/host/logrotate-traefik-access`](../../deploy/host/logrotate-traefik-access) para `/etc/logrotate.d/traefik-access` e verificar (`logrotate -d`, o timer e, no dia seguinte, a rotação). Numa VPS existente isso só ocorre dentro da janela da seção 4, com o OK datado do dono e a C6 pronta.
+
+**Quem hospeda por conta própria sem essa pilha não precisa dele.** Sem o Traefik compartilhado e o registro em arquivo, nada aqui é obrigatório: use a rotação do seu ambiente ou fique só com o `json-file` do Docker.
+
 ## 1. O que cada peça faz
 
 | Peça | Arquivo | Efeito | Depende de |
 | :--- | :--- | :--- | :--- |
 | Registro de acesso (IP, data e hora, método, status) | [`deploy/traefik/accesslog-flags.txt`](../../deploy/traefik/accesslog-flags.txt) | O Traefik grava `/var/log/traefik/access.log` (JSON) no host, só com os campos listados | Nada |
-| Retenção do registro | [`deploy/host/logrotate-traefik-access`](../../deploy/host/logrotate-traefik-access) | Rotação diária e `maxage 183`: a cópia com mais de 183 dias é apagada | `logrotate` instalado no host |
+| Retenção do registro | [`deploy/host/logrotate-traefik-access`](../../deploy/host/logrotate-traefik-access) | Rotação diária e `maxage 183`: a cópia com mais de 183 dias é apagada | `logrotate` no host (padrão da instância hospedada, ver acima) |
 | Poda do `spring.log` do Lavalink | [`deploy/host/lavalink-log-prune.sh`](../../deploy/host/lavalink-log-prune.sh), `.service` e `.timer` | Apaga as cópias `spring.log.AAAA-MM-DD.N.gz` com mais de 30 dias | Nada |
 | Log do bot em arquivo | `LOG_FILE` e `LOG_RETENTION_DAYS` em [`docker-compose.hostinger.yml`](../../deploy/docker-compose.hostinger.yml) | Arquivo em `/data/.logs/`, podado aos 183 dias | **E4a** (código do bot, PR à parte) |
 
@@ -17,7 +23,7 @@ O `json-file` do Docker (10 MB x 3) continua como conveniência de depuração e
 
 Só ficam `StartUTC`, `ClientHost`, `RequestHost`, `RequestMethod`, `DownstreamStatus`, `RouterName` e o cabeçalho `Cf-Connecting-Ip` (no JSON, `request_Cf-Connecting-Ip`), mais os campos de sistema do JSON (`time`, `level`, `msg`). Tudo o mais é descartado, inclusive `ClientAddr` e `ClientPort` (endereço e porta da **Cloudflare**, não do visitante), `RequestPath` (leva a query) e todos os outros cabeçalhos.
 
-**Qual IP vale para um pedido legal:** o de **`request_Cf-Connecting-Ip`**, que a Cloudflare define na borda. `ClientHost` vem do cabeçalho `X-Forwarded-For`, e a Cloudflare **acrescenta** ao valor que o cliente mandou, então o primeiro item pode ter sido forjado pelo visitante; use-o só como apoio. Se os dois divergirem numa linha, **registre a diferença e não use `ClientHost` como o IP**: a divergência não prova forja (proxies corporativos também mandam `X-Forwarded-For`). O IP é o do `Cf-Connecting-Ip`, e só vale com a opção "Pseudo IPv4" (Overwrite Headers) da Cloudflare **desligada**, porque ela troca o valor do cabeçalho por um IPv4 fictício para visitantes IPv6: o dono confere no painel da Cloudflare na janela. O valor do `Cf-Connecting-Ip` só é confiável enquanto a origem recebe tráfego apenas da Cloudflare (condição C1, abaixo).
+**Qual IP vale para um pedido legal:** o de **`request_Cf-Connecting-Ip`**, que a Cloudflare define na borda. `ClientHost` vem do cabeçalho `X-Forwarded-For`, e a Cloudflare **acrescenta** ao valor que o cliente mandou, então o primeiro item pode ter sido forjado pelo visitante; use-o só como apoio. Se os dois divergirem numa linha, **registre a diferença e não use `ClientHost` como o IP**: a divergência não prova forja (proxies corporativos também mandam `X-Forwarded-For`). O IP é o do `Cf-Connecting-Ip`, e só vale com a opção "Pseudo IPv4" (Overwrite Headers) da Cloudflare **desligada**, porque ela troca o valor do cabeçalho por um IPv4 fictício para visitantes IPv6: confirme isso no painel da Cloudflare em cada janela. O valor do `Cf-Connecting-Ip` só é confiável enquanto a origem recebe tráfego apenas da Cloudflare (condição C1, abaixo).
 
 ## 2. Pré-requisitos da janela e dependências
 
@@ -25,8 +31,8 @@ Só ficam `StartUTC`, `ClientHost`, `RequestHost`, `RequestMethod`, `DownstreamS
 
 - **OK do dono para guardar IPs de visitantes de TODOS os projetos** atrás do Traefik compartilhado por 183 dias, num arquivo no host. O registro é global ao Traefik, não só do EmpireMuse.
 - **Alerta de disco ativo (C6, seção 7).** O arquivo não tem teto de tamanho; sem o alerta, uma inundação de requisições pode encher o disco do host.
-- **"Pseudo IPv4" (Overwrite Headers) desligado na Cloudflare**, conferido pelo dono no painel; ligado, o `Cf-Connecting-Ip` não é o IP real de visitantes IPv6.
-- OK do dono para a derrubada de 15 a 60 s da porta 443 de todos os projetos (seção 4) e para a instalação do `logrotate`, se faltar.
+- **"Pseudo IPv4" (Overwrite Headers) desligado na Cloudflare**: item de conferência de **toda** janela, feito pelo dono no painel; ligado, o `Cf-Connecting-Ip` não é o IP real de visitantes IPv6.
+- **OK datado do dono** para a janela, incluindo a derrubada de 15 a 60 s da porta 443 de todos os projetos (seção 4). A instalação do `logrotate` nesta VPS acontece **só dentro** dessa janela, nunca antes.
 
 **Ordem e dependências:**
 
@@ -63,7 +69,7 @@ Recriar o contêiner `traefik` (necessário para aplicar flags e volume) corta *
 ### Passos
 
 1. **Host, pasta e arquivo do registro** (antes de recriar): `install -d -m 0750 -o root -g root /var/log/traefik` e `install -m 0640 -o root -g root /dev/null /var/log/traefik/access.log`. Sem isso o Docker cria a pasta 0755 e o Traefik cria o arquivo com modo mais aberto.
-2. **Host, `logrotate`**: confira `command -v logrotate`. Se faltar, `apt install logrotate` (Debian, GPL-2+, mantido pelo Debian) também ativa o `logrotate.timer` e **passa a rotacionar os outros logs do host** que já têm configuração em `/etc/logrotate.d/`, conforme as regras do pacote: é um efeito para o dono aprovar.
+2. **Host, `logrotate`** (pré-requisito padrão, ver a seção "Padrão do deploy" acima): confira `command -v logrotate` e `systemctl list-timers logrotate.timer`. Se faltar, `apt install logrotate` (Debian, GPL-2+, mantido pelo Debian). O pacote ativa o `logrotate.timer` e passa a rotacionar também os outros logs do host que já têm configuração em `/etc/logrotate.d/`, conforme as regras dele.
 3. **Host, configuração**: copie `deploy/host/logrotate-traefik-access` para `/etc/logrotate.d/traefik-access` (root, 0644). Confira: `logrotate -d /etc/logrotate.d/traefik-access` (só simula; deve citar "old logs are removed after 183 days").
 4. **Traefik**: no compose do Traefik, acrescente as flags de `deploy/traefik/accesslog-flags.txt` ao `command:` e a linha de volume ao serviço `traefik`. Antes de recriar, rode `docker compose config -q` com o compose editado e revise a diferença. Depois, no Docker Manager: atualizar/recriar só o serviço `traefik`.
 5. **Verifique na hora** (sem imprimir IPs):
