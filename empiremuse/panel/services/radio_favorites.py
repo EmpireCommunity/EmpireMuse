@@ -3,7 +3,8 @@ e Adicionar pelo seletor de local.
 
 Quem vê e quem age: só quem gerencia o servidor. A página já exige o ``GuildAccess`` do painel; aqui o bloco some para
 quem não passa em ``can_manage_guild`` (defesa em profundidade) e o store (``RadioFavorites.add/remove``) reconfere o
-ator em toda escrita. O ator é o usuário da SESSÃO (``ctx.user_id``): nenhum campo do corpo escolhe ator nem servidor (o
+ator em toda escrita. A lista de estações por local lê o diretório e exige premium (contrato §6, como a busca): sem
+premium nada vai ao diretório, e a lista salva e o Remover seguem valendo. O ator é o usuário da SESSÃO (``ctx.user_id``): nenhum campo do corpo escolhe ator nem servidor (o
 servidor é o da rota, já autorizado). A estação a adicionar é relida pelo diretório (``by_uuid``) e o nome nunca vem do
 formulário. ``FavoriteForbidden`` → 403, estação não encontrada → 404 (refazer), banco ou diretório fora → 503 (tentar de
 novo). Nomes externos só passam como texto (autoescape) depois da função única de texto externo. Nenhum log leva uuid ou
@@ -133,7 +134,12 @@ class ServerFavoritesPage:
         tree = tree_of(ctx)
         local = self.local.view(tree, node, PANEL_LOCALE, guild_locale_of(ctx)) if tree is not None else None
         if tree is not None and node is not None and getattr(node, "final", False) and tr is not None:
-            results, hint, paging = await self._results(ctx, node, page, {f.uuid for f in favorites}, tr)
+            if (
+                await ctx.pool.radio.premium.get(ctx.guild_id) is None
+            ):  # sem premium: nada vai ao diretório (balde global)
+                hint = tr("panel.radio.premium.none")
+            else:
+                results, hint, paging = await self._results(ctx, node, page, {f.uuid for f in favorites}, tr)
         return FavoritesView(
             acao=f"{action}/{FAVORITES_PATH}",
             acao_local=f"{action}/{FAVORITES_PATH}/local",

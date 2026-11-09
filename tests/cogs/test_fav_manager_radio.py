@@ -14,6 +14,8 @@ from empiremuse.i18n import get_i18n
 from empiremuse.rules.radio_stations import Station, check_station
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.music.interactions import FavMenuView, ViewMode
+from empiremuse.utils.music.interactions import fav_menu_server
+from empiremuse.utils.music.interactions.fav_menu_radio import fit_lines
 from empiremuse.utils.music.interactions.fav_menu_server import ServerRadioFavoritesView, open_server_favorites
 from empiremuse.utils.radio import RadioHub
 from empiremuse.utils.radio.favorites import FavoriteForbidden
@@ -78,6 +80,7 @@ class FakeInter:
         self.message = SimpleNamespace(flags=SimpleNamespace(ephemeral=ephemeral))
         self.calls, self.sent = [], []
         self.response = SimpleNamespace(defer=self._defer, edit_message=self._edit_message)
+        self.followup = SimpleNamespace(send=self._followup_send)
 
     async def _defer(self, **kwargs):
         self.calls.append(("defer", kwargs))
@@ -90,6 +93,10 @@ class FakeInter:
 
     async def send(self, content=None, **kwargs):
         self.calls.append(("send", {"content": content, **kwargs}))
+        self.sent.append({"content": content, **kwargs})
+
+    async def _followup_send(self, content=None, **kwargs):
+        self.calls.append(("followup", {"content": content, **kwargs}))
         self.sent.append({"content": content, **kwargs})
 
     def calls_named(self, name):
@@ -401,3 +408,49 @@ async def test_headings_and_confirmation_show_the_translated_text_never_the_raw_
     assert "(2/24)" in texts[0] and "(1/10)" in texts[0] and "(1/24)" in texts[1]
     assert "1 favoritas do servidor?" in texts[1]
     assert all("radio.favorites." not in text for text in texts)
+
+
+async def test_a_long_station_list_is_never_cut_without_saying_how_many_are_hidden(world):
+    """O cabeçalho conta 24; a tela mostra N linhas e avisa ``+M``; N + M é sempre o total (nada de corte calado)."""
+    await world.seed(stations=range(1, 25), filters=())
+    _, inter = await open_radio(world)
+    (content,) = inter.calls_named("edit_original_message")
+    text = content["content"]
+
+    shown = text.count("📻 ") - 1  # o título do modo também leva 📻
+    hidden = int(text.split("> … +")[1].split("\n")[0])
+    assert "(24/24)" in text and hidden > 0 and shown + hidden == 24
+    assert len(text) <= 2000
+
+
+async def test_a_short_list_has_no_hidden_marker():
+    lines = [f"> ` {n:02} ` 📻 Rádio {n}" for n in range(1, 4)]
+    assert "…" not in fit_lines(lines, 800)
+
+
+async def test_the_server_gate_answers_the_click_before_the_slow_member_lookup(world, monkeypatch):
+    """O gate pode levar até 5 s por bot e o Discord dá 3 s: o clique é adiado antes dele, recusa e confirmação vão por follow-up."""
+    await world.hub.favorites.add(GUILD, ADMIN, station(1))
+    view = (await open_server(world)).sent[0]["view"]
+    view.current = uuid(1)
+    order = []
+    real = fav_menu_server.can_manage_guild
+
+    async def slow_gate(pool, guild_id, user_id):
+        order.append(("gate", [kind for kind, _ in click.calls]))
+        return await real(pool, guild_id, user_id)
+
+    monkeypatch.setattr(fav_menu_server, "can_manage_guild", slow_gate)
+    for callback in (view.ask_clear_callback, view.remove_callback):
+        order.clear()
+        click = FakeInter(ADMIN)
+        await callback(click)
+        assert order and order[0] == ("gate", ["defer"])  # já tinha respondido (adiado) quando o gate rodou
+
+    world.managers.discard(ADMIN)
+    for callback in (view.ask_clear_callback, view.remove_callback):
+        click = FakeInter(ADMIN)
+        await callback(click)
+        assert click.calls_named("followup")[0]["ephemeral"] is True  # a recusa vai por follow-up, nunca por inter.send
+        assert click.calls_named("followup")[0]["content"] == world.tr("radio.refused.no_manage_guild")
+        assert not click.calls_named("send")

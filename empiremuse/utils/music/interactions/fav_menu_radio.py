@@ -19,7 +19,7 @@ from empiremuse.rules.i18n import fit
 from empiremuse.rules.text import external_text
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.music.interactions.common import ViewMode
-from empiremuse.utils.others import CustomContext, paginator
+from empiremuse.utils.others import CustomContext
 from empiremuse.utils.radio.premium import RadioUnavailable
 from empiremuse.utils.radio.user_favorites import USER_FILTERS_MAX, USER_LIVE_FAVORITES_MAX
 
@@ -30,6 +30,25 @@ TEXT_NAME_LIMIT = 40
 TEXT_LIST_MAX_SIZE = 800
 
 RadioOperation = Callable[[Any, int], Awaitable[bool]]
+
+
+def fit_lines(lines: list[str], budget: int) -> str:
+    """As linhas que cabem em ``budget`` caracteres; o resto vira uma linha final ``> … +N``, nunca um corte calado.
+
+    O cabeçalho diz ``total/máximo``: a tela não pode mostrar menos itens do que ele conta sem avisar. O ``+N`` não tem
+    palavra de idioma. O select logo abaixo continua oferecendo todas as opções.
+    """
+    shown: list[str] = []
+    used = 0
+    for line in lines:
+        if used + len(line) + 1 > budget:
+            break
+        shown.append(line)
+        used += len(line) + 1
+    hidden = len(lines) - len(shown)
+    if hidden:
+        shown.append(f"> … +{hidden}")
+    return "\n".join(shown) + "\n"
 
 
 class FavMenuRadioMixin:
@@ -146,17 +165,17 @@ class FavMenuRadioMixin:
             return txt + tr("radio.owner.unavailable") + "\n"
         txt += tr("radio.favorites.stations.heading", total=len(self.radio_stations), max=USER_LIVE_FAVORITES_MAX)
         if self.radio_stations:
-            lines = (
+            lines = [
                 f"> ` {n:02} ` 📻 {external_text(s.name, TEXT_NAME_LIMIT, markdown=False)}"
                 for n, s in enumerate(self.radio_stations, 1)
-            )
-            txt += paginator("\n".join(lines), max_size=TEXT_LIST_MAX_SIZE)[0] + "\n"
+            ]
+            txt += fit_lines(lines, TEXT_LIST_MAX_SIZE)
         else:
             txt += tr("radio.favorites.stations.empty")
         txt += tr("radio.favorites.filters.heading", total=len(self.radio_filters), max=USER_FILTERS_MAX)
         if self.radio_filters:
-            lines = (f"> ` {n:02} ` 📌 {label}" for n, (_, label) in enumerate(self.radio_filters, 1))
-            txt += paginator("\n".join(lines), max_size=TEXT_LIST_MAX_SIZE)[0] + "\n"
+            lines = [f"> ` {n:02} ` 📌 {label}" for n, (_, label) in enumerate(self.radio_filters, 1)]
+            txt += fit_lines(lines, TEXT_LIST_MAX_SIZE)
         else:
             txt += tr("radio.favorites.filters.empty")
         return txt + tr("radio.favorites.private_note")

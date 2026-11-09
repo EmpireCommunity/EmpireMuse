@@ -138,13 +138,14 @@ class ServerRadioFavoritesView(disnake.ui.View):
         )
 
     async def ask_clear_callback(self, inter: disnake.MessageInteraction) -> None:
+        await inter.response.defer()  # o gate pode levar até 5 s por bot e o Discord dá 3 s: responde antes de conferir
         if not await can_manage_guild(
             self.pool, self.guild_id, inter.author.id
         ):  # o gate no clique, não só ao desenhar
-            await inter.send(self.tr("radio.refused.no_manage_guild"), ephemeral=True)
+            await inter.followup.send(self.tr("radio.refused.no_manage_guild"), ephemeral=True)
             return
         self.confirming = True
-        await inter.response.edit_message(content=self.build_txt(), view=self, allowed_mentions=NO_MENTIONS)
+        await inter.edit_original_message(content=self.build_txt(), view=self, allowed_mentions=NO_MENTIONS)
 
     async def cancel_clear_callback(self, inter: disnake.MessageInteraction) -> None:
         self.confirming = False
@@ -166,12 +167,12 @@ class ServerRadioFavoritesView(disnake.ui.View):
     async def _change(self, inter: disnake.MessageInteraction, operation, log_key: str, fmt: dict[str, str]) -> None:
         """Remove ou limpa como quem clicou. ``FavoriteForbidden`` e ``RadioUnavailable`` viram texto; nada vaza ao log."""
         favorites = self.pool.radio.favorites
+        await inter.response.defer()  # antes do gate: ele pode passar dos 3 s que o Discord dá para a primeira resposta
         if not await can_manage_guild(
             self.pool, self.guild_id, inter.author.id
         ):  # o gate no clique, não só ao desenhar
-            await inter.send(self.tr("radio.refused.no_manage_guild"), ephemeral=True)
+            await inter.followup.send(self.tr("radio.refused.no_manage_guild"), ephemeral=True)
             return
-        await inter.response.defer()
         try:
             changed = await operation(favorites)
             self.stations = list(await favorites.list(self.guild_id))

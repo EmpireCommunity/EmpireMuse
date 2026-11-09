@@ -42,6 +42,7 @@ class FavoritesBase(RadioBase):
         self.fav_db = FakeDb()
         pool_like = SimpleNamespace(database=self.fav_db, get_all_bots=self.pool.get_all_bots)
         self.radio.favorites = RadioFavorites(pool_like)
+        self.radio.premium.grant(ALFA)  # a lista por local lê o diretório, que exige premium
         self.radio.directory.stations.update({uuid(n): station(n) for n in range(1, 40)})
         self.radio.directory.stations[uuid(1)] = station(1, HOSTILE)
         return app
@@ -288,6 +289,22 @@ class FavoritesLocalTest(FavoritesBase):
         forms = acao_forms(body, "adicionar")
         assert [f.value("estacao") for f in forms] == [uuid(2)] and "Já é favorita" in body
         assert forms[0].value("node") == SP and forms[0].has("_xsrf")
+
+    def test_without_premium_the_leaf_never_reaches_the_directory_but_the_saved_list_stays(self):
+        """Sem premium o balde global do diretório não é gasto; a lista salva e o Remover seguem valendo."""
+        del self.radio.premium.docs[ALFA]
+        self.add_direct(3)
+        self.radio.directory.region_hits = [station(2)]
+        browser = self.logged_in()
+        response = self.local(browser, SP)
+        body = response.body.decode()
+        assert response.code == 200 and self.radio.directory.region_calls == []
+        assert "não tem rádios liberadas" in body and acao_forms(body, "adicionar") == []
+        assert self.radio.directory.region_calls == []
+        assert [f.value("estacao") for f in acao_forms(self.page(browser), "remover")] == [
+            uuid(3)
+        ]  # a lista salva continua
+        assert self.act(browser, "remover", 3).code == 200 and self.saved() == []  # e remover não pede premium
 
     def test_navigating_the_levels_never_calls_the_directory(self):
         response = self.local(self.logged_in(), "c:BR")
