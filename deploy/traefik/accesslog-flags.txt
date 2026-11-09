@@ -1,6 +1,7 @@
 # Registro de acesso do Traefik em arquivo: lista de flags, sem contexto, para acrescentar ao `command:` do serviço do
 # Traefik (mantenha --accesslog=true e --accesslog.format=json). Passo a passo: docs/runbook/log-retention.md.
-# Tudo o que não está na lista de "keep" é descartado (defaultmode=drop), inclusive a query e os cabeçalhos.
+# Tudo o que não está na lista de "keep" é descartado (defaultmode=drop), inclusive o caminho com a query (RequestPath) e os
+# cabeçalhos. Não use flags de versões novas do Traefik aqui (ex.: queryparameters): flag desconhecida impede o proxy de subir.
 --accesslog.filepath=/var/log/traefik/access.log
 --accesslog.fields.defaultmode=drop
 --accesslog.fields.names.StartUTC=keep
@@ -11,7 +12,6 @@
 --accesslog.fields.names.RouterName=keep
 --accesslog.fields.headers.defaultmode=drop
 --accesslog.fields.headers.names.Cf-Connecting-Ip=keep
---accesslog.fields.queryparameters.defaultmode=drop
 
 # Volume do mesmo serviço (pasta do host criada antes, ver o runbook):
 /var/log/traefik:/var/log/traefik

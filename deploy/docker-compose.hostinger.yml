@@ -87,10 +87,11 @@ services:
       PRESENCE_INTERVAL: "900"
       INVITE_PERMISSIONS: "2533601240804560"
       ENABLE_LOGGER: "false"
-      # Log do bot em arquivo no volume /data (.logs/). A poda por LOG_RETENTION_DAYS (183 dias) vem da E4a: só suba
-      # estas duas linhas com uma imagem que a traga (docs/runbook/log-retention.md).
-      LOG_FILE: "on"
-      LOG_RETENTION_DAYS: "183"
+      # Log do bot em arquivo no volume /data (.logs/): DESLIGADO aqui até haver imagem com a E4a (a imagem fixada abaixo
+      # ainda não poda por idade e ignora LOG_RETENTION_DAYS). Ao fixar uma imagem que a traga, descomente as duas linhas
+      # (docs/runbook/log-retention.md).
+      # LOG_FILE: "on"
+      # LOG_RETENTION_DAYS: "183"
       GIT_DIR: "./.git"
       GUILD_DEAFEN_WARN: "true"
       LAVALINK_SERVER_LIST: "https://raw.githubusercontent.com/EmpireCommunity/EmpireMuse/main/data/lavalink_servers.ini"

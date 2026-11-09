@@ -15,7 +15,7 @@ Na instância hospedada (VPS com Docker Manager e Traefik compartilhado), o **`l
 | Registro de acesso (IP, data e hora, método, status) | [`deploy/traefik/accesslog-flags.txt`](../../deploy/traefik/accesslog-flags.txt) | O Traefik grava `/var/log/traefik/access.log` (JSON) no host, só com os campos listados | Nada |
 | Retenção do registro | [`deploy/host/logrotate-traefik-access`](../../deploy/host/logrotate-traefik-access) | Rotação diária e `maxage 183`: a cópia com mais de 183 dias é apagada | `logrotate` no host (padrão da instância hospedada, ver acima) |
 | Poda do `spring.log` do Lavalink | [`deploy/host/lavalink-log-prune.sh`](../../deploy/host/lavalink-log-prune.sh), `.service` e `.timer` | Apaga as cópias `spring.log.AAAA-MM-DD.N.gz` com mais de 30 dias | Nada |
-| Log do bot em arquivo | `LOG_FILE` e `LOG_RETENTION_DAYS` em [`docker-compose.hostinger.yml`](../../deploy/docker-compose.hostinger.yml) | Arquivo em `/data/.logs/`, podado aos 183 dias | **E4a** (código do bot, PR à parte) |
+| Log do bot em arquivo | `LOG_FILE` e `LOG_RETENTION_DAYS` (comentadas) em [`docker-compose.hostinger.yml`](../../deploy/docker-compose.hostinger.yml) | Arquivo em `/data/.logs/`, podado aos 183 dias | **E4a** (código do bot, PR à parte) |
 
 O `json-file` do Docker (10 MB x 3) continua como conveniência de depuração e **não é o registro**.
 
@@ -37,7 +37,7 @@ Só ficam `StartUTC`, `ClientHost`, `RequestHost`, `RequestMethod`, `DownstreamS
 **Ordem e dependências:**
 
 - Traefik, `logrotate` e Lavalink **não dependem de código novo** e podem entrar antes da E4a.
-- **Bot (`LOG_FILE=on` e `LOG_RETENTION_DAYS=183`) depende da E4a.** Hoje o código só tem o arquivo `disnake.log` de 5 MB x 3 (cerca de 20 MB) e ignora `LOG_RETENTION_DAYS`. Subir as linhas antes da E4a começa a gravar IDs em arquivo, mas **não cumpre os 183 dias**. Suba as linhas do compose junto da imagem que traga a E4a.
+- **Bot (`LOG_FILE=on` e `LOG_RETENTION_DAYS=183`) depende da E4a.** Hoje o código só tem o arquivo `disnake.log` de 5 MB x 3 (cerca de 20 MB) e ignora `LOG_RETENTION_DAYS`. Subir as linhas antes da E4a começa a gravar IDs em arquivo, mas **não cumpre os 183 dias**. Por isso as duas linhas estão **comentadas** nos compose da Hostinger: descomente-as no mesmo commit que fixar a imagem com a E4a.
 - A E4a também traz o webhook de erro mínimo (C7) e a confiança no IP do painel (`PANEL_TRUSTED_PROXY_CIDRS`).
 
 ## 3. Condições C1 a C7
@@ -47,7 +47,7 @@ Só ficam `StartUTC`, `ClientHost`, `RequestHost`, `RequestMethod`, `DownstreamS
 | C1 | Confiança no IP de origem (m3 do T-439) | Ver o registro privado do contrato; sem detalhe neste repositório | Contrato e Decisions privados |
 | C2 | Cópias do provedor e janela do Atlas | **Precisa do dono** | Seção 8 |
 | C3 | Traefik em arquivo + `logrotate`, verificado no dia seguinte | **Em arquivos**; exige a C6 pronta | `deploy/traefik/accesslog-flags.txt`, `deploy/host/logrotate-traefik-access`; seção 4 |
-| C4 | `LOG_FILE=on` e `LOG_RETENTION_DAYS=183` no compose | **Em arquivos** (efeito só com a E4a) | Os dois compose da Hostinger; seção 6 |
+| C4 | `LOG_FILE=on` e `LOG_RETENTION_DAYS=183` no compose | **Em arquivos, comentadas** até a imagem com a E4a | Os dois compose da Hostinger; seção 6 |
 | C5 | Retenção do `spring.log` e conferência do conteúdo | **Em arquivos** (30 dias) + **conferência no runbook**; se trouxer ID, 183 dias (decisão do dono) | Seção 5 |
 | C6 | Alertas do host (disco, `logrotate`, escrita do registro) | **Runbook; pré-requisito da janela do C3**; o canal do alerta **precisa do dono** | Seção 7 |
 | C7 | Expurgo do canal do webhook de erro a cada 183 dias | **Runbook** | Seção 9 |
@@ -90,7 +90,7 @@ Retire do compose do Traefik as flags e o volume e recrie o serviço: os acessos
    - Tokens do Google (OAuth do YouTube): `grep -cE 'ya29\.[0-9A-Za-z_-]{20,}|1//[0-9A-Za-z_-]{20,}|AIza[0-9A-Za-z_-]{35}' spring.log`.
    - Zero nos dois: segue 30 dias. IDs acima de zero: o dono decide entre 30 e 183 dias e o `spring.log` passa a ser tratado como log de segurança. **Token acima de zero: pare e avise o Regente** (a credencial está em texto no disco; ver `youtube-oauth.md`).
 2. Instale (sem ligar o timer): `lavalink-log-prune.sh` em `/usr/local/sbin/` (root, 0755); `.service` e `.timer` em `/etc/systemd/system/`. Para 183 dias, edite o `ExecStart` do `.service` para `/usr/local/sbin/lavalink-log-prune.sh <pasta> 183`.
-3. **Confirme o usuário do serviço**: `stat -c '%u:%g' <pasta>` deve dar o dono do volume (`10001:10001` no `.service`); se for outro, ajuste `User=` e `Group=`. O serviço roda como esse usuário, não como root. A capability `CAP_DAC_READ_SEARCH` serve para atravessar a pasta do Docker, mas **também permite ler qualquer arquivo do host**; por isso o serviço fica com `ProtectSystem=strict`, `ProtectHome=true` e o script só faz `find` nessa pasta. Teste antes de ligar o timer (a lista vai para o terminal): `systemd-run --pipe --wait -p User=10001 -p Group=10001 -p AmbientCapabilities=CAP_DAC_READ_SEARCH -p CapabilityBoundingSet=CAP_DAC_READ_SEARCH -E DRY_RUN=1 /usr/local/sbin/lavalink-log-prune.sh`. Se não alcançar a pasta, **não ligue** o timer e avise o Regente.
+3. **Confirme o usuário do serviço**: `stat -c '%u:%g' <pasta>` deve dar o dono do volume (`10001:10001` no `.service`); se for outro, ajuste `User=` e `Group=`. O serviço roda como esse usuário, não como root. A capability `CAP_DAC_READ_SEARCH` serve para atravessar a pasta do Docker, mas **também permite ler qualquer arquivo do host**; por isso o serviço fica com `ProtectSystem=strict`, `ProtectHome=true` e o script só faz `find` nessa pasta. Confirme também que o usuário e o grupo resolvem no host (`getent passwd 10001; getent group 10001`; o systemd aceita o número, e o teste abaixo usa o mesmo `User=`): se o teste falhar por usuário ou grupo, **não ligue** o timer. Teste antes de ligar o timer, repetindo as restrições da unit (a lista vai para o terminal): `systemd-run --pipe --wait -p User=10001 -p Group=10001 -p AmbientCapabilities=CAP_DAC_READ_SEARCH -p CapabilityBoundingSet=CAP_DAC_READ_SEARCH -p NoNewPrivileges=true -p PrivateTmp=true -p ProtectHome=true -p ProtectSystem=strict -p ReadWritePaths=<pasta> -E DRY_RUN=1 /usr/local/sbin/lavalink-log-prune.sh`. Depois de instalar a unit (passo 4), o primeiro disparo real roda com o `.service` de verdade: leia o `journalctl` dele antes de confiar no timer. Se não alcançar a pasta, **não ligue** o timer e avise o Regente.
 4. Leia a lista do teste do passo 3 (só as cópias com mais de 30 dias entram), depois `systemctl daemon-reload && systemctl enable --now empiremuse-lavalink-log-prune.timer`.
 5. Verifique no dia seguinte: `systemctl list-timers empiremuse-lavalink-log-prune.timer` e `journalctl -u empiremuse-lavalink-log-prune.service` (lista o que apagou).
 
@@ -98,7 +98,7 @@ O script recusa uma pasta que não seja o caminho canônico (qualquer link simb�
 
 ## 6. Janela: bot (C4, com a E4a)
 
-Com a imagem que traga a E4a (digest conforme [`release.md`](../guides/release.md)), as linhas `LOG_FILE: "on"` e `LOG_RETENTION_DAYS: "183"` do compose da Hostinger passam a valer; elas já estão no arquivo. Recriar o `empiremuse` derruba o bot e o painel por instantes (deploy normal). Confira: `docker exec empiremuse ls -la /data/.logs` mostra `disnake-AAAA-MM-DD.log` (modo 0600) e a pasta 0700. A suspensão legal do bot (`LOG_RETENTION_HOLD`) é da E4a.
+Com a imagem que traga a E4a (digest conforme [`release.md`](../guides/release.md)), as linhas `LOG_FILE: "on"` e `LOG_RETENTION_DAYS: "183"` do compose da Hostinger passam a valer; elas estão comentadas no arquivo: **descomente-as no mesmo commit que fixar essa imagem** (sem a E4a, ligá-las grava IDs sem poda por idade). Recriar o `empiremuse` derruba o bot e o painel por instantes (deploy normal). Confira: `docker exec empiremuse ls -la /data/.logs` mostra `disnake-AAAA-MM-DD.log` (modo 0600) e a pasta 0700. A suspensão legal do bot (`LOG_RETENTION_HOLD`) é da E4a.
 
 ## 7. Alertas do host (C6): pré-requisito da janela do Traefik
 
