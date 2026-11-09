@@ -651,3 +651,31 @@ async def test_favorite_confirmation_keeps_exactly_one_markdown_escape(server):
     text = said(press)
     assert "Rock\\_FM" in text
     assert text.count("\\") == 1
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_favorite_answer_survives_a_failed_read_after_the_saved_toggle():
+    from empiremuse.rules.radio import PANEL_FAVORITE_ID
+    from empiremuse.utils.radio.premium import RadioUnavailable
+
+    w = await TestWalking.live_world()
+    store = w.hub.user_favorites
+    real_stations = store.stations
+    calls = []
+
+    async def stations(user):
+        calls.append(user)
+        if len(calls) > 1:  # a leitura depois da gravação
+            raise RadioUnavailable
+        return await real_stations(user)
+
+    store.stations = stations
+    press = click(PANEL_FAVORITE_ID)
+    await w.cog.radio_panel_click(press)
+
+    assert "entrou nas SUAS favoritas" in said(press)
+    assert len(calls) == 2
+    del store.stations
+    assert [f.uuid for f in await store.stations(7)] == [MAIN]

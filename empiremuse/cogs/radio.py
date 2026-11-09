@@ -321,7 +321,7 @@ class Radio(RadioPrefixCommands, commands.Cog):
             await reply(content=tr("radio.panel.muted" if muted else "radio.panel.unmuted"))
         elif action == "favorite":  # ao vivo: favoritas pessoais; personalizada: favoritas de QUEM clicou
             if radio.kind == KIND_LIVE:
-                await reply(content=await self._favorite(interaction, tr, radio))
+                await reply(content=await self._favorite(interaction, tr, radio, runner))
             else:
                 await reply(content=await custom_panel.favorite(self, interaction, tr, radio))
         elif action == "info":
@@ -426,7 +426,7 @@ class Radio(RadioPrefixCommands, commands.Cog):
     async def _station_of(self, radio: Any) -> Station | None:
         return await self.hub.directory.by_uuid(radio.source["station"])
 
-    async def _favorite(self, interaction: Any, tr: Any, radio: Any) -> str:
+    async def _favorite(self, interaction: Any, tr: Any, radio: Any, runner: Any = None) -> str:
         if self._too_soon(radio.id, "lookup", LOOKUP_GAP_S):
             return tr("radio.panel.wait")
         before = await self.hub.user_favorites.stations(interaction.author.id)
@@ -434,8 +434,15 @@ class Radio(RadioPrefixCommands, commands.Cog):
             result = await self.hub.user_favorites.toggle_station(interaction.author.id, radio.source["station"])
         except FavoriteNotFound:
             return tr("radio.live.not_found")
-        after = await self.hub.user_favorites.stations(interaction.author.id)
-        name = next((f.name for f in [*before, *after] if f.uuid == radio.source["station"]), "")
+        uuid = radio.source["station"]
+        try:
+            after = await self.hub.user_favorites.stations(interaction.author.id)
+        except RadioUnavailable:
+            # A mudança já foi gravada: repetir o clique a desfaria. Só o nome fica sem a segunda leitura (sem dado pessoal no log).
+            logger.warning("Favoritas pessoais: leitura após a gravação falhou; respondendo com o resultado da troca")
+            after = []
+        known_names = getattr(getattr(runner, "ports", None), "_names", {})
+        name = next((f.name for f in [*before, *after] if f.uuid == uuid), "") or known_names.get(uuid) or uuid
         # As chaves existentes da personalizada já descrevem uma favorita pessoal.
         return tr(
             f"radio.panel.custom.favorite_{result.value}",
