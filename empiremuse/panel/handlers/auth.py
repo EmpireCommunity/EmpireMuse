@@ -93,7 +93,8 @@ class LoginHandler(AuthHandler):
         state = secrets.token_urlsafe(STATE_BYTES)
         verifier, challenge = make_pkce_pair()
         next_path = safe_next_path(self.get_argument("next", ""))
-        attempt_id = self.application.settings["attempt_store"].create(state, verifier, next_path)
+        consent = next_path == ERASE_PATH
+        attempt_id = self.application.settings["attempt_store"].create(state, verifier, next_path, consent)
         self.set_signed_cookie(
             self.cookie_name(LOGIN_COOKIE),
             attempt_id,
@@ -102,7 +103,7 @@ class LoginHandler(AuthHandler):
             **self.cookie_kwargs(),
         )
         # Só o caminho de apagar dados pede consentimento de novo: o login silencioso (``prompt=none``) não prova presença de ninguém.
-        prompt = PROMPT_CONSENT if next_path == ERASE_PATH else PROMPT_NONE
+        prompt = PROMPT_CONSENT if consent else PROMPT_NONE
         self.redirect(oauth.authorize_url(state, challenge, prompt))
 
 
@@ -129,7 +130,7 @@ class CallbackHandler(AuthHandler):
         if identity is None:
             self.render_error(502, *_MSG_DISCORD)
             return
-        self._start_session(*identity)
+        self._start_session(*identity, consented=attempt.consent)
         self.redirect(attempt.next_path)
 
     def _take_attempt(self) -> Optional[LoginAttempt]:
@@ -160,10 +161,10 @@ class CallbackHandler(AuthHandler):
         except DiscordOAuthError as exc:
             logger.warning("Não foi possível revogar o token do Discord: %s", exc)
 
-    def _start_session(self, user, guilds) -> None:
+    def _start_session(self, user, guilds, *, consented: bool) -> None:
         store = self.application.settings["session_store"]
         store.destroy(self.session_id)  # nunca reaproveita um id anterior (sem fixação de sessão)
-        session_id = store.create(user, guilds)
+        session_id = store.create(user, guilds, consented=consented)
         self.set_signed_cookie(self.cookie_name(SESSION_COOKIE), session_id, expires_days=None, **self.cookie_kwargs())
 
 

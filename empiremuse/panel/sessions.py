@@ -44,6 +44,7 @@ class Session:
     guilds: tuple[ManagedGuild, ...]
     created_at: float
     last_seen: float
+    consented_at: Optional[float] = None  # só quando o login saiu com ``prompt=consent`` (apagar dados exige isso)
 
 
 class SessionStore:
@@ -60,7 +61,7 @@ class SessionStore:
         self._sessions: OrderedDict[str, Session] = OrderedDict()
         self._next_sweep = clock() + SWEEP_INTERVAL_SECONDS
 
-    def create(self, user: PanelUser, guilds: tuple[ManagedGuild, ...]) -> str:
+    def create(self, user: PanelUser, guilds: tuple[ManagedGuild, ...], consented: bool = False) -> str:
         now = self._clock()
         self._sweep(now)
         own = [sid for sid, s in self._sessions.items() if s.user.id == user.id]
@@ -69,7 +70,9 @@ class SessionStore:
         while len(self._sessions) >= MAX_SESSIONS_TOTAL:
             self._sessions.popitem(last=False)
         session_id = secrets.token_urlsafe(SESSION_ID_BYTES)
-        self._sessions[session_id] = Session(user, tuple(guilds), created_at=now, last_seen=now)
+        self._sessions[session_id] = Session(
+            user, tuple(guilds), created_at=now, last_seen=now, consented_at=now if consented else None
+        )
         return session_id
 
     def get(self, session_id: Optional[str]) -> Optional[Session]:
@@ -113,6 +116,7 @@ class LoginAttempt:
     code_verifier: str
     next_path: str
     expires_at: float
+    consent: bool = False  # o login saiu com ``prompt=consent``: decidido no início, nunca relido do callback
 
 
 class LoginAttemptStore:
@@ -122,14 +126,14 @@ class LoginAttemptStore:
         self._clock = clock
         self._attempts: OrderedDict[str, LoginAttempt] = OrderedDict()
 
-    def create(self, state: str, code_verifier: str, next_path: str) -> str:
+    def create(self, state: str, code_verifier: str, next_path: str, consent: bool = False) -> str:
         now = self._clock()
         while self._attempts and (
             len(self._attempts) >= MAX_PENDING_ATTEMPTS or next(iter(self._attempts.values())).expires_at <= now
         ):
             self._attempts.popitem(last=False)
         attempt_id = secrets.token_urlsafe(SESSION_ID_BYTES)
-        self._attempts[attempt_id] = LoginAttempt(state, code_verifier, next_path, now + ATTEMPT_TTL_SECONDS)
+        self._attempts[attempt_id] = LoginAttempt(state, code_verifier, next_path, now + ATTEMPT_TTL_SECONDS, consent)
         return attempt_id
 
     def consume(self, attempt_id: Optional[str]) -> Optional[LoginAttempt]:

@@ -4,7 +4,7 @@ Contrato ``apagar-dados-contrato.md`` §3.2. Este serviço **não segura o lock 
 (``pool.user_locks``) é um ``asyncio.Lock`` não reentrante e ``erase_user`` o pega sozinho; segurá-lo aqui travaria na primeira chamada.
 Por isso a conferência do pedido (login recente e palavra ``APAGAR``) acontece antes da chamada, fora do lock; o XSRF é do Tornado.
 
-Quem chama lê ``user_id`` e ``created_at`` da sessão **antes** (o passo 2 do apagamento destrói todas as sessões do membro) e não consulta
+Quem chama lê ``user_id`` e ``consented_at`` da sessão **antes** (o passo 2 do apagamento destrói todas as sessões do membro) e não consulta
 a sessão depois. Os textos daqui nunca mostram contagens nem nomes de armazenamento e o de ``PARTIAL`` não promete que repetir resolve.
 """
 
@@ -17,7 +17,7 @@ from enum import StrEnum
 from math import ceil
 from typing import TYPE_CHECKING, Optional
 
-from empiremuse.rules.erasure import ErasureStatus, login_is_recent
+from empiremuse.rules.erasure import ErasureStatus, consent_is_recent
 from empiremuse.utils.erasure import ErasureBusy, ErasureRateLimited
 
 if TYPE_CHECKING:
@@ -65,16 +65,16 @@ class EraseOutcome:
 
 class AccountEraseService:
     def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
-        self._clock = clock  # o mesmo relógio do ``SessionStore``: ``created_at`` vem dele
+        self._clock = clock  # o mesmo relógio do ``SessionStore``: ``consented_at`` vem dele
 
-    def login_is_recent(self, created_at: float) -> bool:
-        return login_is_recent(created_at, self._clock())
+    def consent_is_recent(self, consented_at: Optional[float]) -> bool:
+        return consent_is_recent(consented_at, self._clock())
 
     async def erase(
-        self, pool: BotPool, *, user_id: int, created_at: float, confirmation: Optional[str]
+        self, pool: BotPool, *, user_id: int, consented_at: Optional[float], confirmation: Optional[str]
     ) -> EraseOutcome:
-        """Confere login recente e a palavra de confirmação, e só então apaga. ``user_id`` é sempre o da sessão."""
-        if not self.login_is_recent(created_at):
+        """Confere o login recente com consentimento e a palavra de confirmação, e só então apaga. ``user_id`` é sempre o da sessão."""
+        if not self.consent_is_recent(consented_at):
             return EraseOutcome(EraseResult.LOGIN_REQUIRED)
         if confirmation != CONFIRMATION_WORD:
             return EraseOutcome(EraseResult.BAD_CONFIRMATION, MSG_BAD_CONFIRMATION)

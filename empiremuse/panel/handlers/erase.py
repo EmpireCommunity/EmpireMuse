@@ -9,7 +9,7 @@ Costura com o template ``conta_apagar.html`` (do Vitral): este handler renderiza
 * ``mensagem``: texto pronto para mostrar (vazio no formulário inicial); nunca leva contagem, valor nem nome de armazenamento;
 * ``palavra_confirmacao``: o texto a digitar (``APAGAR``); o formulário é um ``POST`` a ``/painel/conta/apagar`` com o campo ``confirmacao`` e
   ``{% module xsrf_form_html() %}``;
-* ``login_recente``: ``False`` quando o login tem mais de 30 min: o template NÃO mostra o formulário, só o aviso e o link para
+* ``login_recente``: ``False`` quando não há login com consentimento nos últimos 30 min (login silencioso ou antigo): o template NÃO mostra o formulário, só o aviso e o link para
   ``/painel/login?next=/painel/conta/apagar`` (o POST com login antigo responde 303 de volta ao GET e não apaga nada).
 """
 
@@ -61,7 +61,7 @@ class AccountEraseHandler(AuthenticatedHandler):
         )
 
     def get(self) -> None:
-        self._page(200, None, "", self.erasure.login_is_recent(self.session.created_at))
+        self._page(200, None, "", self.erasure.consent_is_recent(self.session.consented_at))
 
     async def post(self) -> None:  # type: ignore[override]
         if len(self.request.body) > MAX_BODY_BYTES:
@@ -72,11 +72,11 @@ class AccountEraseHandler(AuthenticatedHandler):
             self.render_error(429, "Muitas requisições", _MSG_RATE)
             return
         # A sessão é lida AQUI, uma vez: o apagamento destrói todas as sessões do membro e depois dele ela não é consultada.
-        user_id, created_at = int(self.session.user.id), self.session.created_at
+        user_id, consented_at = int(self.session.user.id), self.session.consented_at
         confirmation = (decode_args(self).get(CONFIRMATION_FIELD) or [""])[0]
         try:
             outcome = await self.erasure.erase(
-                self.application.settings["pool"], user_id=user_id, created_at=created_at, confirmation=confirmation
+                self.application.settings["pool"], user_id=user_id, consented_at=consented_at, confirmation=confirmation
             )
         except Exception:
             self.forget_session()  # o passo 2 pode ter destruído a sessão antes do erro

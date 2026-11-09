@@ -17,7 +17,7 @@ import tornado.web
 from empiremuse.panel.handlers.settings import WRITE_LIMIT_PER_MINUTE
 from empiremuse.panel.services.account_erase import AccountEraseService
 from empiremuse.panel.handlers.servers import MAX_BODY_BYTES
-from empiremuse.rules.erasure import ERASE_MAX_SESSION_AGE_S, ErasureReport, ErasureStatus, login_is_recent
+from empiremuse.rules.erasure import ERASE_MAX_SESSION_AGE_S, ErasureReport, ErasureStatus, consent_is_recent
 from empiremuse.utils.db import LocalDatabase, global_db_models
 from empiremuse.utils.erasure import ErasureBusy, ErasureRateLimited, ErasureService, ErasureTombstones
 from empiremuse.utils.user_locks import UserLocks
@@ -73,6 +73,17 @@ class EraseBase(HttpBase):
         doc.update(custom_prefix=f"p{uid % 10}", fav_links={"Rock": "https://example.com/rock"})
         await self.real_db.update_data(uid, doc, db_name="users", collection="global")
         await self.real_local.update_data(uid, {"tracks": [{"query": "x"}]}, db_name="users", collection="scrobbles")
+
+    def logged_in(self):
+        """Login com consentimento (``next`` = tela de apagar, ``prompt=consent``): o único que libera apagar."""
+        browser = self.browser()
+        assert self.login(browser, next_=URL).code == 302
+        return browser
+
+    def silent_login(self, next_=None):
+        browser = self.browser()
+        assert self.login(browser, next_=next_).code == 302
+        return browser
 
     def stored(self, uid):
         return (
@@ -144,9 +155,54 @@ class EraseGateTest(EraseBase):
         assert f'href="{URL}"' in browser.get("/painel/conta").body.decode()
 
     def test_only_the_erase_path_asks_discord_for_consent_every_other_login_stays_silent(self):
-        for next_, prompt in ((URL, "consent"), ("/painel/conta", "none"), (None, "none"), (URL + "x", "none")):
+        silent = (
+            "/painel/conta",
+            None,
+            URL + "x",
+            "//evil.example/painel/conta/apagar",
+            "https://evil.example/painel/conta/apagar",
+            "/painel/../painel/conta/apagar",
+        )
+        for next_, prompt in [(URL, "consent"), *[(other, "none") for other in silent]]:
             _, params = self.start_login(self.browser(), next_)
             assert params["prompt"] == prompt, next_
+
+    def test_silent_login_inside_30_minutes_sees_the_link_not_the_form_and_cannot_erase(self):
+        for next_ in (None, "/painel/conta"):
+            browser = self.silent_login(next_)
+            body = browser.get(URL).body.decode()
+            assert FORM_APAGAR.search(body) is None and f'href="{LOGIN_LINK}"' in body, next_
+            response = self.post_erase(browser)
+            assert response.code == 303 and response.headers["Location"] == URL, next_
+            assert self.stored(UID) and self.stored_queue(UID) and self.session_alive(browser)
+
+    def test_silent_login_after_an_old_consent_does_not_bring_the_form_back(self):
+        self.logged_in()  # consentimento de agora a pouco
+        self.clock.advance(ERASE_MAX_SESSION_AGE_S + 1)
+        browser = self.silent_login()
+        assert FORM_APAGAR.search(browser.get(URL).body.decode()) is None
+        assert self.post_erase(browser).code == 303 and self.stored(UID)
+
+    def test_consented_at_is_written_only_by_a_consent_login_and_a_new_session_never_inherits_it(self):
+        store = self.pool.panel_sessions
+        self.logged_in()
+        self.silent_login()
+        flags = sorted(session.consented_at is not None for session in store._sessions.values())
+        assert flags == [False, True]
+
+    def test_a_tampered_next_at_the_callback_cannot_mark_consent(self):
+        browser = self.browser()
+        _, params = self.start_login(browser, "/painel/conta")  # o consentimento é decidido aqui, no início do fluxo
+        assert self.callback(browser, params["state"], next="/painel/conta/apagar").code == 302
+        assert FORM_APAGAR.search(browser.get(URL).body.decode()) is None
+        assert self.post_erase(browser).code == 303 and self.stored(UID)
+
+    def test_after_a_consent_login_the_form_works_even_if_a_silent_session_came_first(self):
+        silent = self.silent_login()
+        assert self.post_erase(silent).code == 303
+        browser = self.logged_in()
+        assert FORM_APAGAR.search(browser.get(URL).body.decode()) is not None
+        assert self.post_erase(browser).code == 200 and not self.stored(UID)
 
     def test_anonymous_is_sent_to_login_and_nothing_is_erased(self):
         browser = self.browser()
@@ -302,10 +358,11 @@ class EraseFlowTest(EraseBase):
 
 @pytest.mark.parametrize(
     ("age_s", "recent"),
-    [(0, True), (ERASE_MAX_SESSION_AGE_S, True), (ERASE_MAX_SESSION_AGE_S + 1, False)],
+    [(0, True), (ERASE_MAX_SESSION_AGE_S, True), (ERASE_MAX_SESSION_AGE_S + 1, False), (None, False)],
 )
-def test_login_is_recent_up_to_30_minutes(age_s, recent):
-    assert login_is_recent(5000.0 - age_s, 5000.0) is recent
+def test_login_with_consent_is_recent_up_to_30_minutes_and_a_silent_one_never_is(age_s, recent):
+    consented_at = None if age_s is None else 5000.0 - age_s
+    assert consent_is_recent(consented_at, 5000.0) is recent
 
 
 def test_erase_user_that_takes_the_user_lock_itself_completes_through_the_service():
@@ -322,7 +379,7 @@ def test_erase_user_that_takes_the_user_lock_itself_completes_through_the_servic
 
         pool.erasure = SimpleNamespace(erase_user=erase_user)
         service = AccountEraseService(clock=lambda: 100.0)
-        outcome = await asyncio.wait_for(service.erase(pool, user_id=7, created_at=100.0, confirmation="APAGAR"), 2)
+        outcome = await asyncio.wait_for(service.erase(pool, user_id=7, consented_at=100.0, confirmation="APAGAR"), 2)
         return outcome, done
 
     outcome, done = asyncio.run(scenario())

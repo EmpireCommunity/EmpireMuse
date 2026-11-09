@@ -104,7 +104,7 @@ formulário ou da URL é ignorado. O bot de entrada é o primeiro bot pronto do 
 503 ("Painel indisponível no momento") sem ler nem gravar.
 
 **Apagar meus dados** (`GET/POST /painel/conta/apagar`, `panel/handlers/erase.py` e `panel/services/account_erase.py`): o POST exige XSRF, o limite
-de escrita do painel, a palavra `APAGAR` digitada e login feito há no máximo 30 minutos (`ERASE_MAX_SESSION_AGE_S`). Com login antigo o GET não mostra
+de escrita do painel, a palavra `APAGAR` digitada e um login com consentimento (`prompt=consent`, registrado em `Session.consented_at`) feito há no máximo 30 minutos (`ERASE_MAX_SESSION_AGE_S`). Sem isso (login silencioso ou antigo) o GET não mostra
 formulário (só o aviso e o link para `/painel/login?next=/painel/conta/apagar`; esse login usa `prompt=consent`, os demais seguem `prompt=none`) e o POST
 responde 303 ao GET sem apagar nada. O alvo é sempre o usuário da sessão. O serviço chama
 `pool.erasure.erase_user(..., source="panel")` **sem segurar o lock do usuário** (a função o pega sozinha), lê `user_id` e `created_at` antes

@@ -26,11 +26,6 @@ OWNER_GRANTS_PER_HOUR = 10
 RATE_WINDOW_S = 3600
 
 
-def login_is_recent(created_at: float, now: float, max_age_s: float = ERASE_MAX_SESSION_AGE_S) -> bool:
-    """Login recente o bastante para apagar pelo painel (§3.2): a sessão tem no máximo ``max_age_s`` de idade."""
-    return now - created_at <= max_age_s
-
-
 ANONYMIZED = "deleted"
 SNOWFLAKE_MIN_DIGITS = 17
 SNOWFLAKE_MAX_DIGITS = 20
@@ -161,6 +156,14 @@ USER_FIELD_DEFAULTS: Mapping[str, Any] = {
     "lastfm.sessionkey": "",
 }
 _LASTFM_SCROBBLE = "lastfm.scrobble"
+
+
+def consent_is_recent(consented_at: float | None, now: float, max_age_s: float = ERASE_MAX_SESSION_AGE_S) -> bool:
+    """O login com consentimento (``prompt=consent``) é recente o bastante para apagar pelo painel (§3.2).
+
+    ``consented_at`` é ``None`` quando a sessão nasceu de um login silencioso: esse nunca autoriza apagar.
+    """
+    return consented_at is not None and now - consented_at <= max_age_s
 
 
 def _get_path(doc: Mapping[str, Any], path: str) -> Any:
