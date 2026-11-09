@@ -14,6 +14,8 @@ import ipaddress
 from collections.abc import Mapping
 
 CLOUDFLARE_IP_HEADER = "CF-Connecting-IP"
+# IP no lugar de um par que não deu para ler: um valor só, que não é endereço de ninguém.
+UNKNOWN_PEER = "unknown"
 # Padrão de PANEL_TRUSTED_PROXY_CIDRS: loopback e redes privadas (cobre o Traefik na rede interna do compose).
 DEFAULT_TRUSTED_PROXY_CIDRS = (
     "127.0.0.0/8",
@@ -62,43 +64,77 @@ def client_ip_from_headers(headers: Mapping[str, str], trust_proxy: bool, fallba
 
 
 def parse_trusted_proxy_cidrs(raw: object) -> tuple[tuple[IPNetwork, ...], tuple[str, ...]]:
-    """``PANEL_TRUSTED_PROXY_CIDRS`` (lista separada por vírgula) em redes e entradas inválidas.
+    """``PANEL_TRUSTED_PROXY_CIDRS`` (lista separada por vírgula) em redes e avisos (texto fixo, sem os valores digitados).
 
-    Vazio ou ausente usa o padrão (loopback e redes privadas). Entrada inválida é ignorada e devolvida em ``invalid``; se nenhuma
-    sobrar, vale o padrão, nunca "confiar em ninguém por engano" nem "confiar em tudo".
+    Vazio ou ausente usa o padrão (loopback e redes privadas). Com entradas, só elas valem; entrada inválida é ignorada e, se TODAS
+    forem inválidas, a lista fica VAZIA (nenhum proxy confiável: o IP do visitante cai para o IP do par), nunca o padrão. Avisa também de
+    bits de host (``10.0.0.5/8`` vira ``10.0.0.0/8``) e de rede que cobre todo o endereçamento (``0.0.0.0/0``, ``::/0``).
+    Uma tupla vazia significa o mesmo em todo o código: ninguém é confiável.
     """
     items = [item.strip() for item in str(raw or "").split(",") if item.strip()]
+    if not items:
+        return tuple(ipaddress.ip_network(cidr) for cidr in DEFAULT_TRUSTED_PROXY_CIDRS), ()
     networks: list[IPNetwork] = []
-    invalid: list[str] = []
+    invalid = host_bits = 0
     for item in items:
         try:
-            networks.append(ipaddress.ip_network(item, strict=False))
+            networks.append(ipaddress.ip_network(item, strict=True))
         except ValueError:
-            invalid.append(item)
+            try:
+                networks.append(ipaddress.ip_network(item, strict=False))
+                host_bits += 1
+            except ValueError:
+                invalid += 1
+    warnings: list[str] = []
+    if invalid:
+        warnings.append(f"PANEL_TRUSTED_PROXY_CIDRS: {invalid} entrada(s) inválida(s) foram ignoradas.")
+    if host_bits:
+        warnings.append(
+            f"PANEL_TRUSTED_PROXY_CIDRS: {host_bits} entrada(s) com bits de host; vale a rede correspondente."
+        )
     if not networks:
-        networks = [ipaddress.ip_network(cidr) for cidr in DEFAULT_TRUSTED_PROXY_CIDRS]
-    return tuple(networks), tuple(invalid)
+        warnings.append("PANEL_TRUSTED_PROXY_CIDRS: nenhuma entrada válida; nenhum proxy será confiável.")
+    if any(network.prefixlen == 0 for network in networks):
+        warnings.append(
+            "PANEL_TRUSTED_PROXY_CIDRS cobre todo o endereçamento: qualquer cliente pode forjar o IP do visitante."
+        )
+    return tuple(networks), tuple(warnings)
+
+
+def peer_address(peer: str | None) -> str | None:
+    """O IP do par TCP em forma canônica, sem escopo IPv6 (``fe80::1%eth0``) e com IPv4 mapeado como IPv4; ``None`` se não for IP."""
+    if not peer:
+        return None
+    try:
+        address = ipaddress.ip_address(peer.split("%", 1)[0].strip())
+    except ValueError:
+        return None
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+        address = address.ipv4_mapped
+    return str(address)
 
 
 def peer_is_trusted(peer: str | None, networks: tuple[IPNetwork, ...]) -> bool:
     """Se o IP do par TCP está numa das redes confiáveis. Par ausente ou malformado nunca é confiável."""
-    canonical = _valid_ip(peer) if peer else None
+    canonical = peer_address(peer)
     if canonical is None:
         return False
     address = ipaddress.ip_address(canonical)
-    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
-        address = address.ipv4_mapped  # ::ffff:10.0.0.2 é o mesmo par que 10.0.0.2
     return any(address.version == network.version and address in network for network in networks)
 
 
 def resolve_client_ip(
     headers: Mapping[str, str], peer: str | None, fallback: str | None, networks: tuple[IPNetwork, ...]
-) -> str | None:
+) -> str:
     """O IP do visitante com ``PANEL_TRUST_PROXY`` ligado.
 
-    Par TCP confiável: ``CF-Connecting-IP`` válido, senão ``fallback`` (o IP que o servidor já resolveu). Par fora das redes
-    confiáveis: o próprio IP do par (``peer``), ignorando o cabeçalho e também o ``X-Forwarded-For``/``X-Real-IP`` que o servidor aplicou.
+    Par TCP confiável: ``CF-Connecting-IP`` válido, senão ``fallback`` (o IP que o servidor já resolveu a partir de um proxy confiável).
+    Par fora das redes confiáveis: SEMPRE o IP do par (sem escopo), nunca o ``fallback``, que já pode carregar o valor de um
+    ``X-Forwarded-For``/``X-Real-IP`` forjado. Sem par legível devolve ``UNKNOWN_PEER`` (valor fixo, para o limite por IP não confiar em nada).
     """
-    if not peer_is_trusted(peer, networks):
-        return (_valid_ip(peer) if peer else None) or fallback
-    return client_ip_from_headers(headers, True, fallback)
+    canonical = peer_address(peer)
+    if canonical is None:
+        return UNKNOWN_PEER
+    if not peer_is_trusted(canonical, networks):
+        return canonical
+    return client_ip_from_headers(headers, True, fallback) or canonical

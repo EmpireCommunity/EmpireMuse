@@ -2,7 +2,6 @@
 import logging
 import asyncio
 import datetime
-import traceback
 from typing import Union, Optional
 
 import disnake

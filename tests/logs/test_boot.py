@@ -32,7 +32,7 @@ from empiremuse.utils.music import local_lavalink
 from tests.logs.test_secret_sources import fabrica, no_json, runtime, sem_rede  # noqa: F401 - fixtures reaproveitadas
 from tests.support.raiz import RAIZ
 
-from tests.logs.apoio import arquivo_do_log
+from tests.logs.apoio import agora_utc, arquivo_do_log
 
 pytestmark = pytest.mark.critical
 
@@ -380,7 +380,11 @@ def lavalink_com_stderr(tmp_path, monkeypatch):
         )
         console = io.StringIO()
         configure_logging(
-            LogSettings(logging.INFO, False, arquivo, frozenset(), 300), [], stream=console, logs_dir=tmp_path / ".logs"
+            LogSettings(logging.INFO, False, arquivo, frozenset(), 300),
+            [],
+            stream=console,
+            logs_dir=tmp_path / ".logs",
+            now=agora_utc,
         )
         local_lavalink.run_lavalink(
             lavalink_java_path="java", lavalink_home=str(tmp_path / "lavalink"), lavalink_offline=True
@@ -421,7 +425,11 @@ class TestIntegracaoDaSubida:
     def destinos(self, tmp_path):
         console = io.StringIO()
         configure_logging(
-            LogSettings(logging.INFO, False, True, frozenset(), 300), [], stream=console, logs_dir=tmp_path / ".logs"
+            LogSettings(logging.INFO, False, True, frozenset(), 300),
+            [],
+            stream=console,
+            logs_dir=tmp_path / ".logs",
+            now=agora_utc,
         )
         return SimpleNamespace(console=console, arquivo=arquivo_do_log(tmp_path / ".logs"))
 

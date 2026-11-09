@@ -14,7 +14,7 @@ import pytest
 from empiremuse.logs.setup import LIBRARY_LOGGERS, configure_logging, flush_logging, tick_logging
 from empiremuse.logs.settings import LogSettings, parse_log_settings
 from empiremuse.utils.file_log import DailyRetentionFileHandler
-from tests.logs.apoio import arquivo_do_log, Espiao, Relogio
+from tests.logs.apoio import agora_utc, arquivo_do_log, Espiao, Relogio
 
 pytestmark = pytest.mark.critical
 
@@ -58,6 +58,7 @@ def instalar(raiz, console, relogio, tmp_path):
             segredos,
             stream=extra.pop("stream", console),
             logs_dir=extra.pop("logs_dir", tmp_path / ".logs"),
+            now=agora_utc,
             clock=relogio,
             **extra,
         )
@@ -95,10 +96,20 @@ class TestHandlers:
 
 
 class TestNivelDaRaiz:
-    def test_the_root_follows_the_configured_level(self, instalar, raiz):
-        instalar(ajustes(nivel=logging.WARNING))
+    @pytest.mark.parametrize(
+        ("nivel", "esperado"),
+        [
+            (logging.DEBUG, logging.DEBUG),
+            (logging.INFO, logging.INFO),
+            (logging.WARNING, logging.INFO),
+            (logging.ERROR, logging.INFO),
+        ],
+    )
+    def test_the_root_follows_the_configured_level_but_never_above_info(self, instalar, raiz, nivel, esperado):
+        """Acima de INFO o root ainda cria INFO para a linha de auditoria chegar ao ``LevelGate``, que descarta o resto."""
+        instalar(ajustes(nivel=nivel))
 
-        assert raiz.level == logging.WARNING
+        assert raiz.level == esperado
 
     def test_the_root_is_debug_when_there_are_debug_guilds(self, instalar, raiz):
         instalar(ajustes(nivel=logging.INFO, guildas={A}))

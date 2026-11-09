@@ -34,7 +34,7 @@ class PanelSettings:
     session_ttl_hours: int = 12
     session_idle_minutes: int = 60
     trust_proxy: bool = False
-    trusted_proxy_networks: tuple[IPNetwork, ...] = ()
+    trusted_proxy_networks: tuple[IPNetwork, ...] = field(default_factory=lambda: parse_trusted_proxy_cidrs(None)[0])
     insecure_cookies: bool = False
 
     @property
@@ -110,9 +110,9 @@ def load_panel_settings(config: Mapping[str, Any]) -> PanelSettings:
     if not oauth_secret:
         raise PanelConfigError("PANEL_OAUTH_CLIENT_SECRET é obrigatório com o painel ativo.")
 
-    networks, invalid_cidrs = parse_trusted_proxy_cidrs(config.get("PANEL_TRUSTED_PROXY_CIDRS"))
-    if invalid_cidrs:
-        logger.warning("PANEL_TRUSTED_PROXY_CIDRS: %d entrada(s) inválida(s) foram ignoradas.", len(invalid_cidrs))
+    networks, cidr_warnings = parse_trusted_proxy_cidrs(config.get("PANEL_TRUSTED_PROXY_CIDRS"))
+    for warning in cidr_warnings:
+        logger.warning("%s", warning)
 
     return PanelSettings(
         enabled=True,

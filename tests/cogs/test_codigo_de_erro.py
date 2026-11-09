@@ -43,7 +43,6 @@ def handler(monkeypatch) -> ErrorHandler:
     h.components = []
     h.webhook_max_concurrency = SimpleNamespace(acquire=AsyncMock(), release=AsyncMock())
     h.send_webhook = AsyncMock()
-    h.build_report_embed = MagicMock(side_effect=lambda ctx: disnake.Embed(title="Ocorreu um erro em um servidor:"))
     monkeypatch.setattr(error_handler.asyncio, "sleep", AsyncMock())
     return h
 

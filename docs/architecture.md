@@ -85,7 +85,7 @@ O log do processo é configurado num ponto só, por `configure_logging` (chamado
 | `boot.py`, `metrics.py` | Relatório de subida por etapas e resumo periódico de métricas (em memória, sem rede) |
 | `errors.py`, `hooks.py` | Contexto de comando (IDs e parâmetros resumidos por tipo) e tratadores de exceção não tratada (loop, threads, `sys.excepthook`) |
 
-O `BotCore` também define `allowed_mentions` padrão sem `@everyone` nem cargos, e o webhook de erro (`empiremuse/cogs/error_handler.py`) envia o traceback pelo mesmo redator.
+O `BotCore` também define `allowed_mentions` padrão sem `@everyone` nem cargos, e o webhook de erro (`empiremuse/logs/webhook.py`, usado por todo remetente) envia só o tipo da exceção e o código `ERR-XXXXXX`.
 
 ### Estado compartilhado do pool
 

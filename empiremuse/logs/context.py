@@ -92,7 +92,8 @@ class LevelGate(logging.Filter):
     """Abaixo de ``level`` só passa o DEBUG de um logger nosso, no contexto de um servidor em ``debug_guilds``.
 
     O DEBUG de bibliotecas fora do ``LIBRARY_LOGGERS`` (``requests``, ``charset_normalizer``...) nunca passa só por estar dentro do
-    contexto de um servidor em debug. Não formata nada: lê o nível, o nome e o servidor do registro.
+    contexto de um servidor em debug. Registro marcado com ``empiremuse_emit=True`` (auditoria, que também não é agregada) passa sempre.
+    Não formata nada: lê o nível, o nome e o servidor do registro.
     """
 
     def __init__(self, level: int, debug_guilds: frozenset[int]) -> None:
@@ -104,6 +105,10 @@ class LevelGate(logging.Filter):
         try:
             if record.levelno >= self.level:
                 return True
+            if getattr(record, "empiremuse_emit", None) is True:
+                return (
+                    True  # linha de auditoria (``extra={"empiremuse_emit": True}``): LOG_LEVEL=ERROR não apaga o rastro
+                )
             if not self.debug_guilds:
                 return False
             if record.name != OWN_LOGGER and not record.name.startswith(OWN_LOGGER + "."):

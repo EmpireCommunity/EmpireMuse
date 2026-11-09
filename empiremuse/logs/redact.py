@@ -38,7 +38,8 @@ _TEXT_CONTROLS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029\u202a-\u2
 _WEBHOOK_TOKEN = re.compile(r"(/api(?:/v\d+)?/webhooks/\d+/)[A-Za-z0-9._~-]+")
 _URL_USERINFO = re.compile(r"://[^/\s]*@")
 _QUERY_SECRET_NAMES = r"api_key|apikey|api_sig|sk|token|access_token|refresh_token|client_secret|password|key|signature"
-_QUERY_SECRET = re.compile(rf"([?&](?:{_QUERY_SECRET_NAMES})=)[^&#\s'\")]*", re.IGNORECASE)
+# ``code`` e ``state`` (retorno do OAuth) só valem em query de URL: num dicionário ``code`` é código de erro comum.
+_QUERY_SECRET = re.compile(rf"([?&](?:{_QUERY_SECRET_NAMES}|code|state)=)[^&#\s'\")]*", re.IGNORECASE)
 _DICT_SECRET_NAMES = rf"{_QUERY_SECRET_NAMES}|sessionkey|session_key|authorization"
 _DICT_SECRET = re.compile(
     rf"""(?P<prefix>(?P<q1>['"])(?:{_DICT_SECRET_NAMES})(?P=q1)\s*:\s*)(?:(?P<sq>')(?:[^'\\]|\\.)*+'|(?P<dq>")(?:[^"\\]|\\.)*+")""",

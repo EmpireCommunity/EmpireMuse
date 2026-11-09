@@ -8,7 +8,7 @@ import sys
 import pytest
 
 from empiremuse.utils import file_log
-from tests.logs.apoio import arquivo_do_log
+from tests.logs.apoio import agora_utc, arquivo_do_log
 
 ID = "1234567890123456"
 TOKEN = "AbC-dEf_123.xYz-SECRETO-token_do_webhook"
@@ -17,7 +17,7 @@ POSIX = pytest.mark.skipif(sys.platform == "win32", reason="modos de arquivo POS
 
 @pytest.fixture
 def handler(tmp_path):
-    criado = file_log.build_file_log_handler(tmp_path / ".logs")
+    criado = file_log.build_file_log_handler(tmp_path / ".logs", now=agora_utc)
     yield criado
     criado.close()
 

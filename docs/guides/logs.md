@@ -42,7 +42,7 @@ No Docker o arquivo vem desligado por padrão, e os composes de produção ligam
 
 A poda apaga **somente** arquivo cujo nome casa exatamente com `disnake-AAAA-MM-DD.log` (ou `access-AAAA-MM-DD.log`), que é arquivo comum (link simbólico, pasta e qualquer outro nome ficam) e cuja data **do nome** é mais velha que `LOG_RETENTION_DAYS` (o padrão é 183 dias, cerca de 6 meses). A data vem do nome, nunca da data de modificação, então copiar ou restaurar um backup não adia a poda. A poda roda na subida, na troca de dia e a cada hora no ciclo de manutenção do log (`tick_logging`).
 
-`LOG_RETENTION_HOLD=true` **pausa a poda por inteiro** (ordem de guarda de registros, Marco Civil art. 15 §2). Procedimento: com a ordem em mãos, ligue o `LOG_RETENTION_HOLD`, reinicie, copie para um local restrito os arquivos pedidos, registre a ordem e a cópia no runbook de operação e só desligue o `LOG_RETENTION_HOLD` quando a ordem acabar. Com a suspensão ligada o bot avisa na subida e os arquivos se acumulam (até 64 MiB por dia). Esta é a retenção só do **bot**; o registro de acesso do proxy (Traefik) e os demais armazenamentos têm a retenção própria descrita no contrato de apagar dados.
+`LOG_RETENTION_HOLD=true` **pausa a poda por inteiro** (ordem de guarda de registros, Marco Civil art. 15 §2). Procedimento: com a ordem em mãos, ligue o `LOG_RETENTION_HOLD`, reinicie, copie para um local restrito os arquivos pedidos, registre a ordem e a cópia no runbook de operação e só desligue o `LOG_RETENTION_HOLD` quando a ordem acabar. Com a suspensão ligada o bot avisa na subida e os arquivos se acumulam (até 64 MiB por dia). **Atenção:** os arquivos do formato antigo (`disnake.log` e `disnake.log.1` a `.3`) **não são podados** (o nome não segue o padrão, e a poda só apaga o que reconhece); apague-os à mão depois de atualizar. Esta é a retenção só do **bot**; o registro de acesso do proxy (Traefik) e os demais armazenamentos têm a retenção própria descrita no contrato de apagar dados.
 
 ---
 
@@ -86,8 +86,8 @@ O `AUTO_ERROR_REPORT_WEBHOOK` copia o aviso de cada erro inesperado para um cana
 
 - **todo remetente** ao webhook (comandos, jukebox, reprodução e o aviso de falha de faixa) segue a mesma regra; abaixo, o que cada parte leva;
 - o **anexo** leva só o tipo da exceção e o código `ERR-XXXXXX`; o texto da exceção e o traceback completo **não saem do host** e ficam no arquivo de log, que tem retenção (procure pelo código, seção 4);
-- o **embed** leva o nome do servidor e dos canais, o comando e as opções resumidas, mas **nunca** `user_id`, `guild_id`, `channel_id`, nome ou avatar do autor;
-- o **modal** "Reportar erro" (botão manual) grava o texto livre sem nome, ID nem avatar de quem reportou.
+- o **embed** leva só um título fixo e o código do erro: **nunca** nome ou ID de usuário, servidor ou canal, comando, opções, texto da mensagem, ícone ou avatar;
+- o **modal** "Reportar erro" (botão manual) leva só o texto livre que o próprio membro digitou (e o print opcional), sem autor, sem ícone e sem servidor.
 
 **Expurgo manual:** apague o conteúdo do canal do webhook a cada **183 dias** (rotina do runbook de operação), já que o Discord não aplica prazo. Se não quiser manter essa rotina, deixe o `AUTO_ERROR_REPORT_WEBHOOK` e o `ERROR_REPORT_WEBHOOK` vazios.
 
@@ -133,6 +133,6 @@ O dono consulta **onde, como e quando** o bot foi usado, sem o log de arquivo e 
 
 ## 8. IP do visitante atrás do proxy (`PANEL_TRUSTED_PROXY_CIDRS`)
 
-Com `PANEL_TRUST_PROXY=true` o painel, a página de status e o relé RPC usam o IP do cabeçalho `CF-Connecting-IP` (para o limite de tentativas do login e para os registros). O cabeçalho só vale se quem abriu a conexão (o **par TCP**, medido antes de qualquer cabeçalho) estiver em `PANEL_TRUSTED_PROXY_CIDRS`. O padrão, com a variável vazia, é loopback e redes privadas, o que cobre o Traefik na rede interna do compose. Conexão de fora da lista usa o próprio IP do par e ignora o `CF-Connecting-IP`, o `X-Forwarded-For` e o `X-Real-IP`; assim um cliente que alcance a porta sem passar pelo proxy não escolhe o IP que fica registrado. Entrada inválida é ignorada com um aviso; se nada válido sobrar, vale o padrão.
+Com `PANEL_TRUST_PROXY=true` o painel, a página de status e o relé RPC usam o IP do cabeçalho `CF-Connecting-IP` (para o limite de tentativas do login e para os registros). O cabeçalho só vale se quem abriu a conexão (o **par TCP**, medido antes de qualquer cabeçalho) estiver em `PANEL_TRUSTED_PROXY_CIDRS`. O padrão, com a variável vazia, é loopback e redes privadas, o que cobre o Traefik na rede interna do compose. Conexão de fora da lista usa o próprio IP do par e ignora o `CF-Connecting-IP`, o `X-Forwarded-For` e o `X-Real-IP`; assim um cliente que alcance a porta sem passar pelo proxy não escolhe o IP que fica registrado. Entrada inválida é ignorada com um aviso e, **se todas forem inválidas, nenhum proxy é confiável** (o IP vira o do par; nunca o padrão). Há avisos também para entrada com bits de host (`10.0.0.5/8` vale `10.0.0.0/8`) e para `0.0.0.0/0` ou `::/0` (confia em qualquer um). Se o IP do par não puder ser lido, o IP do visitante fica como `unknown` e sai um aviso.
 
 Isto **não substitui** a regra de rede: o bot não deve publicar a porta, e só o proxy (aceitando apenas as faixas da Cloudflare) deve alcançá-la. Ela fica no deploy.

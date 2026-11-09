@@ -5,6 +5,8 @@ from collections import deque
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
+import re
+
 import pytest
 
 import empiremuse.wavelink as wavelink
@@ -122,6 +124,8 @@ async def test_a_second_all_clients_failure_reports_and_skips_the_track():
     await _he_dispatch(player, fail(player, ALL_CLIENTS))
 
     player.report_error.assert_awaited_once()
+    evento, codigo = player.report_error.await_args.args
+    assert isinstance(evento, wavelink.TrackException) and re.fullmatch(r"ERR-[0-9A-F]{6}|", codigo)
     assert track in player.failed_tracks
     assert track not in player.queue
     player.process_next.assert_awaited_once()

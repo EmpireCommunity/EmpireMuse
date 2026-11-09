@@ -383,7 +383,7 @@ def _he_mirror_not_found_embed(self, track):
     ).set_thumbnail(track.thumb)
 
 
-async def _he_report_exception(self, embed, track, error_format) -> None:
+async def _he_report_exception(self, event, track, error_format, error_code) -> None:
     logger.debug(
         "Erro ao reproduzir a música: %s | nó: %s\n%s",
         track.uri or track.search_uri,
@@ -391,7 +391,7 @@ async def _he_report_exception(self, embed, track, error_format) -> None:
         error_format,
     )
 
-    await self.report_error(embed, track)
+    await self.report_error(event, error_code)
 
 
 def _he_cause_text(event) -> str:
@@ -460,7 +460,7 @@ async def _he_track_exception(self, event) -> None:
     error_format = pprint.pformat(event.data)
 
     async def send_report():
-        await _he_report_exception(self, embed, track, error_format)
+        await _he_report_exception(self, event, track, error_format, error_code)
 
     if event.node.identifier != self.node.identifier:
         await send_report()

@@ -12,7 +12,7 @@ import pytest
 
 from empiremuse.logs.console import CATEGORY_EMOJI, ConsoleFormatter, FileFormatter
 from empiremuse.logs.settings import LogSettings
-from tests.logs.apoio import SGR, registro, sem_cor, sequencias_sgr
+from tests.logs.apoio import agora_utc, SGR, registro, sem_cor, sequencias_sgr
 
 pytestmark = pytest.mark.critical
 
@@ -159,6 +159,7 @@ class TestFormatterQueLevanta:
             [],
             stream=io.StringIO(),
             logs_dir=tmp_path / ".logs",
+            now=agora_utc,
         )
         return configurar
 

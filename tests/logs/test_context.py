@@ -142,3 +142,33 @@ class TestLevelGate:
         self.gate().filter(record)
 
         assert chamadas == []
+
+
+class TestLevelGateAuditoria:
+    """Linha de auditoria (``extra={"empiremuse_emit": True}``) passa mesmo com ``LOG_LEVEL=ERROR``; o resto abaixo do nível não."""
+
+    def test_a_marked_record_passes_below_the_level_and_an_unmarked_one_does_not(self):
+        gate = LevelGate(ERROR, frozenset())
+
+        assert gate.filter(registro("auditoria", nivel=INFO, empiremuse_emit=True)) is True
+        assert gate.filter(registro("rotina", nivel=INFO)) is False
+        assert gate.filter(registro("rotina", nivel=INFO, empiremuse_emit=False)) is False
+        assert gate.filter(registro("rotina", nivel=INFO, empiremuse_emit="yes")) is False  # só o True literal vale
+
+    def test_end_to_end_at_error_level_the_audit_line_is_written_each_time_and_routine_info_is_not(self):
+        import io
+
+        from empiremuse.logs.setup import configure_logging
+        from empiremuse.logs.settings import LogSettings
+        from tests.logs.apoio import Relogio
+
+        saida = io.StringIO()
+        configure_logging(LogSettings(ERROR, False, False, frozenset(), 300), [], stream=saida, clock=Relogio())
+        log = logging.getLogger("empiremuse.auditoria_teste")
+
+        for _ in range(3):
+            log.info("linha de auditoria", extra={"empiremuse_emit": True})
+        log.info("rotina comum")
+
+        texto = saida.getvalue()
+        assert texto.count("linha de auditoria") == 3 and "rotina comum" not in texto

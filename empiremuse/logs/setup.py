@@ -141,7 +141,9 @@ def configure_logging(
         _aggregator = aggregator
 
         _debug_guilds = settings.debug_guilds
-        root.setLevel(logging.DEBUG if settings.debug_guilds else settings.level)
+        # Com LOG_LEVEL=ERROR o root ainda cria registros INFO: é o que deixa a linha de auditoria (``empiremuse_emit=True``) chegar ao
+        # LevelGate, que descarta o resto. Abaixo de INFO só com servidores em debug.
+        root.setLevel(logging.DEBUG if settings.debug_guilds else min(settings.level, logging.INFO))
         for name in LIBRARY_LOGGERS:
             logging.getLogger(name).setLevel(logging.WARNING)
         if file_error is not None:  # depois do addHandler: o aviso sai pelo console já configurado

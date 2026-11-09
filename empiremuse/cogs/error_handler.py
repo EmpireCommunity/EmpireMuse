@@ -12,7 +12,7 @@ from disnake.ext import commands
 from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.logs.errors import command_context
 from empiremuse.logs.redact import sanitize_value, scrub
-from empiremuse.logs.webhook import minimal_report_text
+from empiremuse.logs.webhook import minimal_embed, minimal_report_text, user_report_embed
 from empiremuse.rules.error_code import safe_error_code
 from empiremuse.utils.music.converters import URL_REG, fix_characters
 from empiremuse.utils.music.errors import parse_error, PoolException, error_code_text
@@ -58,12 +58,10 @@ class ErrorHandler(commands.Cog):
                 disnake.ui.Button(label="Servidor de suporte", url=self.bot.config["SUPPORT_SERVER"], emoji="💻")
             )
 
-    def report_embed_with_code(self, ctx, code: str) -> disnake.Embed:
-        """Embed do relatório do webhook, com o código do erro quando houver."""
-        embed = self.build_report_embed(ctx)
-        if code:
-            embed.add_field(name="Código do erro:", value=f"`{code}`", inline=False)
-        return embed
+    @staticmethod
+    def report_embed_with_code(code: str) -> disnake.Embed:
+        """Embed do relatório do webhook: só o título fixo e o código do erro (ver ``logs.webhook``)."""
+        return minimal_embed("Ocorreu um erro em um servidor:", code)
 
     @staticmethod
     def traceback_filename(kind: str, code: str) -> str:
@@ -219,7 +217,7 @@ class ErrorHandler(commands.Cog):
             acquired = True
 
             await self.send_webhook(
-                embed=self.report_embed_with_code(inter, code),
+                embed=self.report_embed_with_code(code),
                 file=string_to_file(
                     self.minimal_webhook_report(error, code), self.traceback_filename("interaction", code)
                 ),
@@ -401,7 +399,7 @@ class ErrorHandler(commands.Cog):
             acquired = True
 
             await self.send_webhook(
-                embed=self.report_embed_with_code(ctx, code),
+                embed=self.report_embed_with_code(code),
                 file=string_to_file(
                     self.minimal_webhook_report(error, code), self.traceback_filename("prefixed", code)
                 ),
@@ -475,13 +473,12 @@ class ErrorHandler(commands.Cog):
             )
             return
 
-        embed = disnake.Embed(
-            color=self.bot.get_color(inter.guild.me),
-            description=inter.text_values["error_details"],
-            title="Report de erro",
+        embed = user_report_embed(
+            inter.text_values["error_details"],
+            inter.message.embeds[0].description,
+            image_url,
+            self.bot.get_color(inter.guild.me),
         )
-
-        embed.add_field(name="Log:", value=inter.message.embeds[0].description)
 
         await inter.response.edit_message(
             embed=disnake.Embed(
@@ -491,96 +488,7 @@ class ErrorHandler(commands.Cog):
             view=None,
         )
 
-        # Sem autor (nome, ID, avatar) nem ID de servidor: o texto livre do modal fica no Discord sem prazo.
-        guild_txt = f"Servidor: {_safe_text(inter.guild.name)}"
-
-        try:
-            embed.set_footer(text=guild_txt, icon_url=inter.guild.icon.with_static_format("png").url)
-        except AttributeError:
-            embed.set_footer(text=guild_txt)
-
-        if image_url:
-            embed.set_image(url=image_url)
-
         await self.send_webhook(embed=embed)
-
-    def build_report_embed(self, ctx):
-        embed = disnake.Embed(title="Ocorreu um erro em um servidor:", timestamp=disnake.utils.utcnow())
-
-        try:
-            bot = ctx.bot
-        except AttributeError:
-            bot = self.bot
-
-        if ctx.guild:
-            embed.colour = bot.get_color(ctx.guild.me)
-            embed.add_field(
-                name="Servidor:",
-                inline=False,
-                value=f"```\n{_safe_text(ctx.guild.name)}```",
-            )
-
-            embed.add_field(
-                name="Canal de texto:",
-                inline=False,
-                value=f"```\n{_safe_text(ctx.channel.name)}```",
-            )
-
-            if vc := ctx.author.voice:
-                embed.add_field(
-                    name="Canal de voz (user):",
-                    inline=False,
-                    value=f"```\n{_safe_text(vc.channel.name)}"
-                    + (f" ({len(vc.channel.voice_states)}/{vc.channel.user_limit})" if vc.channel.user_limit else "")
-                    + "```",
-                )
-
-            if vcbot := ctx.guild.me.voice:
-                if vc and vcbot.channel != vc.channel:
-                    embed.add_field(
-                        name="Canal de voz (bot):",
-                        inline=False,
-                        value=f"```\n{_safe_text(vcbot.channel.name)}"
-                        + (
-                            f" ({len(vcbot.channel.voice_states)}/{vcbot.channel.user_limit})"
-                            if vcbot.channel.user_limit
-                            else ""
-                        )
-                        + "```",
-                    )
-            if ctx.guild.icon:
-                embed.set_thumbnail(url=ctx.guild.icon.with_static_format("png").url)
-
-        else:
-            embed.colour = self.bot.get_color()
-            embed.add_field(name="Servidor:", inline=False, value="```\n(sem dados do servidor)```")
-
-        # Sem rodapé de autor, sem ID de usuário, servidor ou canal: o relatório fica no Discord sem prazo.
-
-        try:
-            embed.description = f"**Slash Command:**```\n{ctx.data.name}``` "
-
-            if ctx.filled_options:
-                # Resumo por tipo (V-L4): str(Attachment) é a URL assinada da CDN, str(Member) é o nome e o texto livre pode ter segredo.
-                params = command_context(ctx, level=logging.ERROR)["params"]
-                # As crases do texto não fecham o bloco de código.
-                options = "\n".join(f"{k} -> {v}" for k, v in params.items())[:DESCRIPTION_TEXT_LIMIT].replace("`", "'")
-                embed.description += "**Options**```\n" + options + "```"
-
-        except AttributeError:
-            if self.bot.intents.message_content and not ctx.author.bot:
-                try:
-                    message = ctx.message
-                    type_ = "Comando"
-                except AttributeError:
-                    message = ctx
-                    type_ = "Mensagem"
-
-                # O texto do usuário passa pelo saneamento e pelo redator único; as crases não fecham o bloco de código.
-                content = scrub(str(message.content), DESCRIPTION_TEXT_LIMIT).replace("`", "'")
-                embed.description = f"**{type_}:**```\n{content}```"
-
-        return embed
 
     async def send_webhook(
         self, content: str = None, embed: Optional[disnake.Embed] = None, file: Optional[disnake.File] = None

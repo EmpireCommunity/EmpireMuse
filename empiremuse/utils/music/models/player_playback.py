@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import datetime
-import traceback
 from time import time
 from typing import Union, TYPE_CHECKING
 

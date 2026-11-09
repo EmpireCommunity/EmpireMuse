@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import datetime
-import traceback
 from collections import deque
 from itertools import cycle
 from time import time
@@ -257,16 +256,14 @@ class LavalinkPlayer(
         self.position_timestamp = state.get("time", 0)
         self.ping = state.get("ping", None)
 
-    async def report_error(
-        self, embed: disnake.Embed, track: Union[LavalinkTrack, PartialTrack], error: Exception = None, code: str = ""
-    ):
-        """Envia ao webhook de erro só o tipo da exceção e o código; ``embed`` e ``track`` (título, link, servidor) não saem do host."""
+    async def report_error(self, error: BaseException | None, code: str = ""):
+        """Envia ao webhook de erro só o tipo da exceção e o código; faixa, link, servidor e canal não saem do host."""
         cog = self.bot.get_cog("Music")
 
         if cog and cog.error_report_queue:
             error_kwargs = {"embed": minimal_embed("Falha de reprodução", code)}
 
-            if error:
+            if error is not None:
                 error_kwargs["file"] = string_to_file(minimal_report_text(error, code), "error_partialtrack.txt")
 
             await cog.error_report_queue.put(error_kwargs)

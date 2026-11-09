@@ -23,6 +23,7 @@ LOG_FILE_PREFIX = "disnake"
 LOG_DAY_MAX_BYTES = 64 * 1024 * 1024
 LOG_DIR_MODE = 0o700
 LOG_FILE_MODE = 0o600
+logger = logging.getLogger(__name__)
 PRUNE_INTERVAL = timedelta(hours=1)
 TRUNCATED_MARKER = "log do dia truncado: teto diário de bytes atingido; o resto do dia é descartado"
 
@@ -99,10 +100,16 @@ class DailyRetentionFileHandler(logging.FileHandler):
         flags = (
             os.O_CREAT | os.O_APPEND | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0)
         )  # link simbólico no nome do dia não é seguido
-        os.close(os.open(self.baseFilename, flags, LOG_FILE_MODE))
-        with suppress(OSError):  # Windows ignora o modo; falhar no chmod não pode impedir o log
-            os.chmod(self.baseFilename, LOG_FILE_MODE)
-        return super()._open()
+        fd = os.open(self.baseFilename, flags, LOG_FILE_MODE)
+        try:
+            with suppress(
+                OSError, AttributeError
+            ):  # Windows não tem fchmod/ignora o modo; falhar aqui não pode impedir o log
+                os.fchmod(fd, LOG_FILE_MODE)  # no mesmo descritor: nenhuma troca do nome entre abrir e mudar o modo
+            return os.fdopen(fd, self.mode, encoding=self.encoding, errors=self.errors)
+        except BaseException:
+            os.close(fd)
+            raise
 
     def _switch_to(self, moment: datetime) -> None:
         """Passa a escrever no arquivo do dia de ``moment``: fecha o anterior, mede o que já há e poda."""
@@ -152,11 +159,15 @@ class DailyRetentionFileHandler(logging.FileHandler):
 
     def _drop_rest_of_day(self) -> None:
         if not self._truncated:
-            self._truncated = True
+            self._truncated = True  # antes do aviso: o aviso volta a este handler e já cai no "resto do dia"
             marker = self.format(
                 logging.LogRecord(__name__, logging.WARNING, __file__, 0, TRUNCATED_MARKER, None, None)
             )
             self._write(marker + "\n", 0)
+            logger.warning(
+                "Log do dia truncado: o teto diário de %d bytes foi atingido; o resto do dia é descartado.",
+                self.max_day_bytes,
+            )
 
     def _write(self, data: str, size: int) -> None:
         if self.stream is None:

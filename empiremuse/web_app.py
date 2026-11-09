@@ -19,7 +19,7 @@ from packaging import version
 
 from empiremuse import paths
 from empiremuse.config_loader import load_config, resolve_port
-from empiremuse.rules.client_ip import IPNetwork, parse_trusted_proxy_cidrs, resolve_client_ip
+from empiremuse.rules.client_ip import UNKNOWN_PEER, IPNetwork, resolve_client_ip
 from empiremuse.rules.servers import is_main_identifier
 from empiremuse.rpc_protocol import (
     BOT_OPS,
@@ -581,9 +581,15 @@ def make_router(main_app: tornado.web.Application, panel_app: Optional[tornado.w
 
 
 def _tcp_peer_ip(request: tornado.httputil.HTTPServerRequest) -> str | None:
-    """O IP que abriu a conexão TCP, antes de o ``xheaders`` do servidor reescrever ``remote_ip`` (``None`` se não der para saber)."""
-    context = getattr(request.connection, "context", None)
-    return getattr(context, "_orig_remote_ip", None)
+    """O IP que abriu a conexão TCP, lido do socket (API pública), antes de o ``xheaders`` reescrever ``remote_ip``.
+
+    ``None`` se não der para ler (conexão sem socket, já fechada ou soquete Unix).
+    """
+    try:
+        name = request.connection.stream.socket.getpeername()  # type: ignore[union-attr]
+        return str(name[0]) if isinstance(name, tuple) else None
+    except AttributeError, OSError, IndexError:
+        return None
 
 
 class ClientIpRouter(tornado.routing.Router):
@@ -595,17 +601,21 @@ class ClientIpRouter(tornado.routing.Router):
     """
 
     def __init__(
-        self, inner: tornado.routing.Router, trust_proxy: bool, trusted_networks: tuple[IPNetwork, ...] | None = None
+        self, inner: tornado.routing.Router, trust_proxy: bool, trusted_networks: tuple[IPNetwork, ...]
     ) -> None:
         self.inner = inner
         self.trust_proxy = trust_proxy
-        self.trusted_networks = trusted_networks if trusted_networks is not None else parse_trusted_proxy_cidrs("")[0]
+        self.trusted_networks = trusted_networks  # tupla vazia = ninguém é confiável (o mesmo sentido de PanelSettings)
+        self._warned_unknown_peer = False
 
     def find_handler(self, request: tornado.httputil.HTTPServerRequest, **kwargs):
         if self.trust_proxy:
             request.remote_ip = resolve_client_ip(
                 request.headers, _tcp_peer_ip(request), request.remote_ip, self.trusted_networks
             )
+            if request.remote_ip == UNKNOWN_PEER and not self._warned_unknown_peer:
+                self._warned_unknown_peer = True
+                logger.warning("Não foi possível ler o IP do par TCP; o IP do visitante fica como %s.", UNKNOWN_PEER)
         return self.inner.find_handler(request, **kwargs)
 
 

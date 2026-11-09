@@ -7,7 +7,7 @@ import pytest
 import tornado.httputil
 import tornado.routing
 
-from empiremuse.rules.client_ip import parse_trusted_proxy_cidrs
+from empiremuse.rules.client_ip import UNKNOWN_PEER, parse_trusted_proxy_cidrs
 from empiremuse.web_app import ClientIpRouter
 
 pytestmark = pytest.mark.regression
@@ -28,15 +28,29 @@ class Interno(tornado.routing.Router):
         return "handler"
 
 
+PADRAO = parse_trusted_proxy_cidrs("")[0]
+
+
+def conexao_com_par(par: Any) -> SimpleNamespace:
+    """Conexão cujo socket diz o par TCP (``getpeername``, como o do Tornado), antes de qualquer cabeçalho."""
+
+    def getpeername() -> Any:
+        if isinstance(par, Exception):
+            raise par
+        return par
+
+    return SimpleNamespace(stream=SimpleNamespace(socket=SimpleNamespace(getpeername=getpeername)))
+
+
 def passar_pelo_roteador(
-    trust_proxy: bool, cabecalhos: dict[str, str], par: str | None = PROXY, redes: Any = None
+    trust_proxy: bool, cabecalhos: dict[str, str], par: Any = (PROXY, 40000), redes: Any = PADRAO
 ) -> tuple[str | None, Any]:
     interno = Interno()
-    conexao = SimpleNamespace(
-        context=SimpleNamespace(_orig_remote_ip=par)
-    )  # o contexto real do Tornado guarda o par antes do xheaders
     requisicao = tornado.httputil.HTTPServerRequest(
-        method="GET", uri="/painel/login", headers=tornado.httputil.HTTPHeaders(cabecalhos), connection=conexao
+        method="GET",
+        uri="/painel/login",
+        headers=tornado.httputil.HTTPHeaders(cabecalhos),
+        connection=conexao_com_par(par),
     )
     requisicao.remote_ip = BORDA  # já resolvido pelo servidor (xheaders), antes do roteamento
     delegate = ClientIpRouter(interno, trust_proxy, redes).find_handler(requisicao)
@@ -64,40 +78,72 @@ def test_sem_proxy_confiavel_o_cabecalho_forjado_e_ignorado() -> None:
 def test_par_fora_das_redes_confiaveis_fica_com_o_proprio_ip_mesmo_com_cabecalhos_forjados() -> None:
     forjados = {"CF-Connecting-IP": VISITANTE, "X-Forwarded-For": "198.51.100.1", "X-Real-IP": "198.51.100.1"}
 
-    assert passar_pelo_roteador(True, forjados, par="192.0.2.50")[0] == "192.0.2.50"
+    assert passar_pelo_roteador(True, forjados, par=("192.0.2.50", 1))[0] == "192.0.2.50"
+
+
+def test_par_ipv6_com_escopo_perde_o_escopo() -> None:
+    assert passar_pelo_roteador(True, {"CF-Connecting-IP": VISITANTE}, par=("fe80::1%eth0", 1, 0, 2))[0] == "fe80::1"
 
 
 def test_lista_configurada_vale_no_roteador() -> None:
     redes = parse_trusted_proxy_cidrs("192.0.2.0/24")[0]
 
-    assert passar_pelo_roteador(True, {"CF-Connecting-IP": VISITANTE}, par="192.0.2.50", redes=redes)[0] == VISITANTE
-    assert passar_pelo_roteador(True, {"CF-Connecting-IP": VISITANTE}, par=PROXY, redes=redes)[0] == PROXY
+    assert (
+        passar_pelo_roteador(True, {"CF-Connecting-IP": VISITANTE}, par=("192.0.2.50", 1), redes=redes)[0] == VISITANTE
+    )
+    assert passar_pelo_roteador(True, {"CF-Connecting-IP": VISITANTE}, par=(PROXY, 1), redes=redes)[0] == PROXY
 
 
-def test_conexao_sem_contexto_do_tornado_nao_e_confiavel() -> None:
+def test_lista_vazia_significa_ninguem_confiavel() -> None:
+    assert passar_pelo_roteador(True, {"CF-Connecting-IP": VISITANTE}, redes=())[0] == PROXY
+
+
+@pytest.mark.parametrize(
+    "par", [OSError(107, "fechado"), AttributeError("sem socket"), "/run/sock", ("lixo", 1)], ids=str
+)
+def test_par_ilegivel_usa_o_valor_fixo_e_avisa_uma_vez(par: Any, caplog: pytest.LogCaptureFixture) -> None:
+    interno = Interno()
+    roteador = ClientIpRouter(interno, True, PADRAO)
+    for _ in range(2):
+        requisicao = tornado.httputil.HTTPServerRequest(
+            method="GET",
+            uri="/",
+            headers=tornado.httputil.HTTPHeaders({"CF-Connecting-IP": VISITANTE, "X-Real-IP": VISITANTE}),
+            connection=conexao_com_par(par),
+        )
+        requisicao.remote_ip = VISITANTE  # o que o xheaders teria posto vindo de um cabeçalho forjado
+        with caplog.at_level("WARNING", logger="empiremuse.web_app"):
+            roteador.find_handler(requisicao)
+
+    assert interno.ips == [UNKNOWN_PEER, UNKNOWN_PEER]
+    assert caplog.text.count("IP do par TCP") == 1
+
+
+def test_conexao_sem_stream_nao_e_confiavel() -> None:
     interno = Interno()
     requisicao = tornado.httputil.HTTPServerRequest(
         method="GET", uri="/", headers=tornado.httputil.HTTPHeaders({"CF-Connecting-IP": VISITANTE})
     )
     requisicao.remote_ip = BORDA
-    ClientIpRouter(interno, True).find_handler(requisicao)
+    ClientIpRouter(interno, True, PADRAO).find_handler(requisicao)
 
-    assert interno.ips == [BORDA]
+    assert interno.ips == [UNKNOWN_PEER]
 
 
-def test_o_par_tcp_vem_do_contexto_real_do_tornado() -> None:
-    """Se uma versão do Tornado renomear ``_orig_remote_ip``, este teste falha em vez de o painel deixar de confiar no proxy."""
+def test_o_par_tcp_vem_do_socket_real() -> None:
+    """Socket TCP de verdade: ``getpeername`` do servidor é o IP do cliente, mesmo que o ``xheaders`` reescreva ``remote_ip``."""
     import socket
-
-    import tornado.httpserver
 
     from empiremuse.web_app import _tcp_peer_ip
 
-    with socket.socket(socket.AF_INET) as sock:
-        contexto = tornado.httpserver._HTTPRequestContext(SimpleNamespace(socket=sock), (PROXY, 40000), "http")  # type: ignore[arg-type]
-        contexto._apply_xheaders(tornado.httputil.HTTPHeaders({"X-Real-IP": VISITANTE}))
-        requisicao = tornado.httputil.HTTPServerRequest(
-            method="GET", uri="/", connection=SimpleNamespace(context=contexto)
-        )
+    with socket.socket() as servidor:
+        servidor.bind(("127.0.0.1", 0))
+        servidor.listen(1)
+        with socket.create_connection(servidor.getsockname()) as cliente:
+            aceito, _ = servidor.accept()
+            with aceito:
+                conexao = SimpleNamespace(stream=SimpleNamespace(socket=aceito))
+                requisicao = tornado.httputil.HTTPServerRequest(method="GET", uri="/", connection=conexao)
+                requisicao.remote_ip = VISITANTE  # reescrito pelo xheaders
 
-        assert contexto.remote_ip == VISITANTE and _tcp_peer_ip(requisicao) == PROXY
+                assert _tcp_peer_ip(requisicao) == "127.0.0.1" == cliente.getsockname()[0]

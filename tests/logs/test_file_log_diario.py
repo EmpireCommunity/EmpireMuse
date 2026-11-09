@@ -250,3 +250,40 @@ class TestRedacao:
         finally:
             handler.close()
         assert isinstance(handler, logging.Handler)
+
+
+class TestRelogioPadraoEAviso:
+    def test_o_relogio_padrao_e_utc(self, monkeypatch):
+        chamadas = []
+
+        class Falso(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                chamadas.append(tz)
+                return AGORA
+
+        monkeypatch.setattr(file_log, "datetime", Falso)
+
+        assert file_log._utc_now() == AGORA and chamadas == [UTC]
+
+    def test_o_teto_diario_avisa_uma_vez_no_log_geral(self, tmp_path, caplog):
+        handler = DailyRetentionFileHandler(tmp_path / ".logs", now=Relogio(), max_day_bytes=300)
+        try:
+            with caplog.at_level(logging.WARNING, logger="empiremuse.utils.file_log"):
+                for i in range(50):
+                    handler.handle(registro(f"inundação {i}"))
+        finally:
+            handler.close()
+
+        assert caplog.text.count("Log do dia truncado") == 1
+
+    @POSIX
+    def test_o_modo_vem_do_mesmo_descritor_mesmo_com_umask_aberta(self, tmp_path):
+        antigo = os.umask(0)
+        try:
+            handler = DailyRetentionFileHandler(tmp_path / ".logs", now=Relogio())
+            handler.close()
+        finally:
+            os.umask(antigo)
+
+        assert stat.S_IMODE((tmp_path / ".logs" / nome(0)).stat().st_mode) == 0o600

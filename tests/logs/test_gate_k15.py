@@ -20,7 +20,7 @@ from empiremuse.rules.error_code import ERROR_CODE_RE
 from empiremuse.utils.music.models import event_steps, helpers
 from empiremuse.utils.music.models.event_steps import MIRROR_NOT_FOUND_CAUSES, _he_log_exception
 from empiremuse.utils.music.models.helpers import log_lavalink_failure
-from tests.logs.apoio import arquivo_do_log, Relogio
+from tests.logs.apoio import agora_utc, arquivo_do_log, Relogio
 from tests.logs.test_logs_loop_resumo import PYTHON, Bot, Cenario, no_com_stats, pings
 from tests.logs.test_player_events import excecao, jogador
 
@@ -93,6 +93,7 @@ class Destinos:
             [],
             stream=self.console,
             logs_dir=tmp_path / ".logs",
+            now=agora_utc,
             clock=self.relogio,
         )
         self.arquivo = arquivo_do_log(tmp_path / ".logs")

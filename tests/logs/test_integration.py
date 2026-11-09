@@ -13,7 +13,16 @@ import pytest
 
 from empiremuse.logs.setup import configure_logging, flush_logging, tick_logging
 from empiremuse.logs.settings import LogSettings
-from tests.logs.apoio import arquivo_do_log, Relogio, excecao, registro, sem_cor, token_discord, token_webhook
+from tests.logs.apoio import (
+    agora_utc,
+    arquivo_do_log,
+    Relogio,
+    excecao,
+    registro,
+    sem_cor,
+    token_discord,
+    token_webhook,
+)
 
 pytestmark = pytest.mark.critical
 
@@ -52,6 +61,7 @@ def montar(tmp_path, relogio):
             segredos,
             stream=console,
             logs_dir=tmp_path / ".logs",
+            now=agora_utc,
             clock=relogio,
         )
         return Destinos(console, arquivo_do_log(tmp_path / ".logs"))
