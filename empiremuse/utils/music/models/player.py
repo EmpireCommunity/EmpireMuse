@@ -13,6 +13,7 @@ import disnake
 
 import empiremuse.wavelink as wavelink
 from empiremuse.i18n.payload import fit_payload
+from empiremuse.logs.webhook import minimal_embed, minimal_report_text
 from empiremuse.rules.voice_status import DEFAULT_VOICE_TEMPLATE
 from empiremuse.utils.music.converters import time_format, md_link, md_code
 from empiremuse.utils.music.skin_utils import skin_converter
@@ -257,37 +258,16 @@ class LavalinkPlayer(
         self.ping = state.get("ping", None)
 
     async def report_error(
-        self, embed: disnake.Embed, track: Union[LavalinkTrack, PartialTrack], error: Exception = None
+        self, embed: disnake.Embed, track: Union[LavalinkTrack, PartialTrack], error: Exception = None, code: str = ""
     ):
+        """Envia ao webhook de erro só o tipo da exceção e o código; ``embed`` e ``track`` (título, link, servidor) não saem do host."""
         cog = self.bot.get_cog("Music")
 
         if cog and cog.error_report_queue:
-            embed.description += self.tr(
-                "player.source_server",
-                md_code=str(md_code(track.info["sourceName"])),
-                md_code_2=str(md_code(f"{self.guild.name} [{self.guild.id}]")),
-            )
-
-            try:
-                embed.description += self.tr(
-                    "player.channel",
-                    md_code=str(md_code(f"{self.guild.me.voice.channel.name} [{self.guild.me.voice.channel.id}]")),
-                )
-            except Exception:
-                pass
-
-            embed.description += f"**Data:** <t:{int(disnake.utils.utcnow().timestamp())}:F>"
-
-            if self.guild.icon:
-                embed.set_thumbnail(url=self.guild.icon.with_format("png").url)
-
-            error_kwargs = {"embed": embed}
+            error_kwargs = {"embed": minimal_embed("Falha de reprodução", code)}
 
             if error:
-                error_kwargs["file"] = string_to_file(
-                    "".join(traceback.format_exception(type(error), error, error.__traceback__)),
-                    "error_partialtrack.txt",
-                )
+                error_kwargs["file"] = string_to_file(minimal_report_text(error, code), "error_partialtrack.txt")
 
             await cog.error_report_queue.put(error_kwargs)
 

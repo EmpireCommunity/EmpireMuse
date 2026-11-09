@@ -1,4 +1,4 @@
-"""Configuração do log (item 7): lê as chaves ``LOG_*`` e ``METRICS_INTERVAL`` numa estrutura imutável, sem logar nada."""
+"""Configuração do log (item 7): lê as chaves ``LOG_*`` (inclusive retenção e suspensão legal) e ``METRICS_INTERVAL`` numa estrutura imutável, sem logar nada."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from empiremuse.rules.log_retention import DEFAULT_RETENTION_DAYS, parse_retention_days
 from empiremuse.version import running_from_image
 
 LEVELS = {"DEBUG": logging.DEBUG, "INFO": logging.INFO, "WARNING": logging.WARNING, "ERROR": logging.ERROR}
@@ -25,6 +26,8 @@ class LogSettings:
     file: bool
     debug_guilds: frozenset[int]
     metrics_interval: int
+    retention_days: int = DEFAULT_RETENTION_DAYS
+    retention_hold: bool = False
 
 
 def _text(config: Mapping[str, object], key: str, default: str) -> str:
@@ -100,6 +103,13 @@ def _metrics_interval(config: Mapping[str, object], warnings: list[str]) -> int:
     return max(seconds, MIN_METRICS_INTERVAL)
 
 
+def _retention_days(config: Mapping[str, object], warnings: list[str]) -> int:
+    days, warning = parse_retention_days(config.get("LOG_RETENTION_DAYS"))
+    if warning:
+        warnings.append(warning)
+    return days
+
+
 def parse_log_settings(config: Mapping[str, object], environ: Mapping[str, str]) -> tuple[LogSettings, list[str]]:
     """Lê as chaves do log; devolve as configurações e os avisos (logados só depois de configurar o log).
 
@@ -112,5 +122,7 @@ def parse_log_settings(config: Mapping[str, object], environ: Mapping[str, str])
         file=_file(config, environ, warnings),
         debug_guilds=_debug_guilds(config, warnings),
         metrics_interval=_metrics_interval(config, warnings),
+        retention_days=_retention_days(config, warnings),
+        retention_hold=_truthy(config.get("LOG_RETENTION_HOLD")),
     )
     return settings, warnings

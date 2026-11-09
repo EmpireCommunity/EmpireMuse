@@ -51,6 +51,12 @@ def registro(
     )
 
 
+def arquivo_do_log(pasta_de_logs):
+    """O arquivo de log do dia (``disnake-AAAA-MM-DD.log``) numa pasta ``.logs``: o nome muda com a data, então vem por padrão."""
+    achados = sorted(pasta_de_logs.glob("disnake-*.log"))
+    return achados[-1] if achados else pasta_de_logs / "disnake-ausente.log"
+
+
 def excecao(texto: str, tipo: type[BaseException] = ValueError) -> tuple:
     """``exc_info`` real de uma exceção levantada e capturada (com traceback)."""
     try:

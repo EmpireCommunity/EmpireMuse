@@ -19,7 +19,7 @@ from packaging import version
 
 from empiremuse import paths
 from empiremuse.config_loader import load_config, resolve_port
-from empiremuse.rules.client_ip import client_ip_from_headers
+from empiremuse.rules.client_ip import IPNetwork, parse_trusted_proxy_cidrs, resolve_client_ip
 from empiremuse.rules.servers import is_main_identifier
 from empiremuse.rpc_protocol import (
     BOT_OPS,
@@ -580,20 +580,32 @@ def make_router(main_app: tornado.web.Application, panel_app: Optional[tornado.w
     return panel_make_router(main_app, panel_app)
 
 
+def _tcp_peer_ip(request: tornado.httputil.HTTPServerRequest) -> str | None:
+    """O IP que abriu a conexão TCP, antes de o ``xheaders`` do servidor reescrever ``remote_ip`` (``None`` se não der para saber)."""
+    context = getattr(request.connection, "context", None)
+    return getattr(context, "_orig_remote_ip", None)
+
+
 class ClientIpRouter(tornado.routing.Router):
     """Ponto único do IP do visitante para o painel, a página de status e o relé ``/ws`` (tudo lê ``request.remote_ip``).
 
-    Com proxy confiável, ``CF-Connecting-IP`` (válido) vira o IP da requisição; sem ele vale o que o ``xheaders`` do
-    servidor já resolveu. Sem proxy confiável o cabeçalho é ignorado, porque um cliente direto poderia forjá-lo.
+    Com proxy confiável, ``CF-Connecting-IP`` (válido) vira o IP da requisição, mas só se o par TCP estiver em
+    ``PANEL_TRUSTED_PROXY_CIDRS``; um par fora da lista fica com o próprio IP, mesmo que mande o cabeçalho (ou o ``X-Forwarded-For``).
+    Sem proxy confiável o cabeçalho é ignorado, porque um cliente direto poderia forjá-lo.
     """
 
-    def __init__(self, inner: tornado.routing.Router, trust_proxy: bool) -> None:
+    def __init__(
+        self, inner: tornado.routing.Router, trust_proxy: bool, trusted_networks: tuple[IPNetwork, ...] | None = None
+    ) -> None:
         self.inner = inner
         self.trust_proxy = trust_proxy
+        self.trusted_networks = trusted_networks if trusted_networks is not None else parse_trusted_proxy_cidrs("")[0]
 
     def find_handler(self, request: tornado.httputil.HTTPServerRequest, **kwargs):
         if self.trust_proxy:
-            request.remote_ip = client_ip_from_headers(request.headers, True, request.remote_ip)
+            request.remote_ip = resolve_client_ip(
+                request.headers, _tcp_peer_ip(request), request.remote_ip, self.trusted_networks
+            )
         return self.inner.find_handler(request, **kwargs)
 
 
@@ -606,12 +618,12 @@ def _build_panel(pool: BotPool, config: dict):
         settings = load_panel_settings(config)
     except PanelConfigError as e:
         logging.getLogger("empiremuse.panel").warning("Painel web desativado por configuração inválida: %s", e)
-        return None, False
+        return None, False, ()
 
     panel_app = build_panel_app(pool, settings)
     if panel_app:
         logging.getLogger("empiremuse.panel").info("Painel web ativo em %s/painel/", settings.base_url)
-    return panel_app, settings.trust_proxy
+    return panel_app, settings.trust_proxy, settings.trusted_proxy_networks
 
 
 def _warn_if_exposed_without_auth(config: dict, bind_address: str) -> None:
@@ -630,7 +642,7 @@ def run_app(pool: BotPool, config: dict = None):
         except IndexError:
             pass
 
-    panel_app, trust_proxy = _build_panel(pool, config)
+    panel_app, trust_proxy, trusted_networks = _build_panel(pool, config)
 
     app = tornado.web.Application(
         [
@@ -648,7 +660,9 @@ def run_app(pool: BotPool, config: dict = None):
 
     trusted = bool(panel_app and trust_proxy)
     server = tornado.httpserver.HTTPServer(
-        ClientIpRouter(make_router(app, panel_app), trusted), xheaders=trusted, max_body_size=MAX_BODY_SIZE
+        ClientIpRouter(make_router(app, panel_app), trusted, trusted_networks),
+        xheaders=trusted,
+        max_body_size=MAX_BODY_SIZE,
     )
     bind_address = config.get("WEB_BIND_ADDRESS") or DEFAULT_BIND_ADDRESS
     _warn_if_exposed_without_auth(config, bind_address)

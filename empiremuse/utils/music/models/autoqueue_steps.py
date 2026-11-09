@@ -654,4 +654,4 @@ async def _rt_report_failure(self, track, e):
         f"**Servidor de música:** {md_code(self.node.identifier)}",
         color=disnake.Colour.red(),
     )
-    await self.report_error(embed, track)
+    await self.report_error(embed, track, e, error_code)

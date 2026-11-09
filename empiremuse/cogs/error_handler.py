@@ -11,7 +11,8 @@ from disnake.ext import commands
 
 from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.logs.errors import command_context
-from empiremuse.logs.redact import MAX_TRACEBACK_CHARS, sanitize_value, scrub
+from empiremuse.logs.redact import sanitize_value, scrub
+from empiremuse.logs.webhook import minimal_report_text
 from empiremuse.rules.error_code import safe_error_code
 from empiremuse.utils.music.converters import URL_REG, fix_characters
 from empiremuse.utils.music.errors import parse_error, PoolException, error_code_text
@@ -69,16 +70,10 @@ class ErrorHandler(commands.Cog):
         """Nome do anexo do traceback; o código (só hexadecimal e hífen) entra no nome para achar o relatório."""
         return f"error_traceback_{kind}_{code}.txt" if code else f"error_traceback_{kind}.txt"
 
-    def mask_token(self, text: str) -> str:
-        token = self.bot.http.token
-        return text.replace(token, "mytoken") if token else text
-
-    def clean_for_webhook(self, text: str) -> str:
-        """Texto do relatório do webhook: o token deste bot mascarado e, em seguida, o saneamento e o redator único do log.
-
-        Assim o traceback mandado ao webhook não leva a senha de um nó, a URI do Mongo nem o token de outro bot, e o ESC é saneado.
-        """
-        return scrub(self.mask_token(text), MAX_TRACEBACK_CHARS)
+    @staticmethod
+    def minimal_webhook_report(error: BaseException, code: str) -> str:
+        """Anexo do webhook: SÓ o tipo da exceção e o código (ver ``logs.webhook``); o traceback fica no arquivo de log."""
+        return minimal_report_text(error, code)
 
     def log_unexpected_error(self, error: BaseException, origin: str, ctx: object = None) -> str:
         """Registra o erro inesperado com o traceback completo (só no log do servidor) e devolve o código dele.
@@ -226,7 +221,7 @@ class ErrorHandler(commands.Cog):
             await self.send_webhook(
                 embed=self.report_embed_with_code(inter, code),
                 file=string_to_file(
-                    self.clean_for_webhook(full_error_msg), self.traceback_filename("interaction", code)
+                    self.minimal_webhook_report(error, code), self.traceback_filename("interaction", code)
                 ),
             )
 
@@ -407,7 +402,9 @@ class ErrorHandler(commands.Cog):
 
             await self.send_webhook(
                 embed=self.report_embed_with_code(ctx, code),
-                file=string_to_file(self.clean_for_webhook(full_error_msg), self.traceback_filename("prefixed", code)),
+                file=string_to_file(
+                    self.minimal_webhook_report(error, code), self.traceback_filename("prefixed", code)
+                ),
             )
 
             await asyncio.sleep(20)
@@ -494,14 +491,8 @@ class ErrorHandler(commands.Cog):
             view=None,
         )
 
-        try:
-            user_avatar = inter.author.avatar.with_static_format("png").url
-        except AttributeError:
-            user_avatar = inter.author.avatar.url
-
-        embed.set_author(name=f"Erro reportado: {inter.author} - {inter.author.id}", icon_url=user_avatar)
-
-        guild_txt = f"Servidor: {inter.guild.name} [{inter.guild.id}]"
+        # Sem autor (nome, ID, avatar) nem ID de servidor: o texto livre do modal fica no Discord sem prazo.
+        guild_txt = f"Servidor: {_safe_text(inter.guild.name)}"
 
         try:
             embed.set_footer(text=guild_txt, icon_url=inter.guild.icon.with_static_format("png").url)
@@ -526,13 +517,13 @@ class ErrorHandler(commands.Cog):
             embed.add_field(
                 name="Servidor:",
                 inline=False,
-                value=f"```\n{_safe_text(ctx.guild.name)}\nID: {ctx.guild.id}```",
+                value=f"```\n{_safe_text(ctx.guild.name)}```",
             )
 
             embed.add_field(
                 name="Canal de texto:",
                 inline=False,
-                value=f"```\n{_safe_text(ctx.channel.name)}\nID: {ctx.channel.id}```",
+                value=f"```\n{_safe_text(ctx.channel.name)}```",
             )
 
             if vc := ctx.author.voice:
@@ -541,7 +532,7 @@ class ErrorHandler(commands.Cog):
                     inline=False,
                     value=f"```\n{_safe_text(vc.channel.name)}"
                     + (f" ({len(vc.channel.voice_states)}/{vc.channel.user_limit})" if vc.channel.user_limit else "")
-                    + f"\nID: {vc.channel.id}```",
+                    + "```",
                 )
 
             if vcbot := ctx.guild.me.voice:
@@ -555,23 +546,16 @@ class ErrorHandler(commands.Cog):
                             if vcbot.channel.user_limit
                             else ""
                         )
-                        + f"\nID: {vcbot.channel.id}```",
+                        + "```",
                     )
             if ctx.guild.icon:
                 embed.set_thumbnail(url=ctx.guild.icon.with_static_format("png").url)
 
         else:
             embed.colour = self.bot.get_color()
-            try:
-                guild_id = ctx.guild_id
-            except AttributeError:
-                guild_id = ctx.guild.id
-            embed.add_field(name="Servidor [ID]:", inline=False, value=f"```\n{guild_id}```")
+            embed.add_field(name="Servidor:", inline=False, value="```\n(sem dados do servidor)```")
 
-        embed.set_footer(
-            text=f"{_safe_text(ctx.author)} [{ctx.author.id}]",
-            icon_url=ctx.author.display_avatar.with_static_format("png").url,
-        )
+        # Sem rodapé de autor, sem ID de usuário, servidor ou canal: o relatório fica no Discord sem prazo.
 
         try:
             embed.description = f"**Slash Command:**```\n{ctx.data.name}``` "

@@ -10,6 +10,7 @@ from typing import Union, TYPE_CHECKING
 import disnake
 from rapidfuzz import fuzz
 
+from empiremuse.logs.webhook import minimal_embed, minimal_report_text
 from empiremuse.rules.i18n import fit
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.converters import md_link
@@ -129,13 +130,10 @@ class PlayerPlaybackMixin:
 
             cog = self.bot.get_cog("ErrorHandler")
             if cog:
-                embed.add_field(name=self.tr("player.server"), value=f"{self.guild.name} [{self.guild.id}]")
                 try:
                     await cog.send_webhook(
-                        embed=embed,
-                        file=string_to_file(
-                            "".join(traceback.format_exception(type(e), e, e.__traceback__)), "error_traceback_ytdl.txt"
-                        ),
+                        embed=minimal_embed("Erro de reprodução", req.error_code),
+                        file=string_to_file(minimal_report_text(e, req.error_code), "error_traceback_ytdl.txt"),
                     )
                 except Exception:
                     logger.exception("Falha em _process_next")

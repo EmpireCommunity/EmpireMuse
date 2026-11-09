@@ -68,7 +68,7 @@ class TestQuebrasDeLinhaNoNome:
 
         for valor in blocos_de_nome(embed):
             interior = valor.removeprefix("```\n").removesuffix("```")
-            assert len(interior.split("\n")) == 2, valor
+            assert len(interior.split("\n")) == 1, valor  # só o nome: sem linha de ID, e a quebra do nome virou ⏎
             assert "\r" not in valor and "⏎" in valor
 
 
@@ -85,7 +85,7 @@ class TestLimitesDoDiscord:
         embed = self.embed_hostil()
 
         assert all(len(f.value) <= LIMITE_CAMPO for f in embed.fields)
-        assert len(embed.footer.text) <= LIMITE_RODAPE
+        assert embed.footer.text is None  # sem rodapé de autor
         assert len(embed.description or "") <= LIMITE_DESCRICAO
         assert len(embed) <= LIMITE_TOTAL
 

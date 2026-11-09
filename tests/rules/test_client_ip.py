@@ -44,3 +44,81 @@ def test_cabecalho_ausente_mantem_o_ip_ja_resolvido() -> None:
 
 def test_nome_do_cabecalho_nao_diferencia_maiusculas() -> None:
     assert client_ip_from_headers({"cf-connecting-ip": "203.0.113.7"}, True, BORDA) == "203.0.113.7"
+
+
+# ----- T21: o cabeçalho só vale com o par TCP em rede confiável (PANEL_TRUSTED_PROXY_CIDRS) -----
+
+from empiremuse.rules.client_ip import parse_trusted_proxy_cidrs, peer_is_trusted, resolve_client_ip  # noqa: E402
+
+PADRAO = parse_trusted_proxy_cidrs("")[0]
+SO_A_REDE_X = parse_trusted_proxy_cidrs("198.51.100.0/24, 2001:db8:abcd::/48")[0]
+
+
+@pytest.mark.critical
+@pytest.mark.parametrize(
+    ("par", "cabecalho", "esperado"),
+    [
+        ("172.18.0.2", "203.0.113.7", "203.0.113.7"),  # Traefik na rede privada do compose
+        ("10.0.0.5", "2001:db8::7", "2001:db8::7"),
+        ("127.0.0.1", "203.0.113.7", "203.0.113.7"),
+        ("::1", "203.0.113.7", "203.0.113.7"),
+        ("fd00::2", "203.0.113.7", "203.0.113.7"),
+        ("::ffff:10.0.0.2", "203.0.113.7", "203.0.113.7"),  # IPv4 mapeado em IPv6 é o mesmo par
+        ("172.18.0.2", "lixo", BORDA),  # par confiável, cabeçalho malformado: vale o IP já resolvido
+        ("172.18.0.2", None, BORDA),
+        ("203.0.113.9", "198.51.100.1", "203.0.113.9"),  # par público forjando o cabeçalho: vale o par
+        ("2001:db8::9", "198.51.100.1", "2001:db8::9"),
+        ("172.32.0.1", "198.51.100.1", "172.32.0.1"),  # logo fora de 172.16.0.0/12
+        ("::ffff:203.0.113.9", "198.51.100.1", "::ffff:203.0.113.9"),
+        (None, "198.51.100.1", BORDA),  # par desconhecido nunca é confiável
+        ("não é ip", "198.51.100.1", BORDA),
+    ],
+)
+def test_cf_connecting_ip_so_vale_com_o_par_na_lista_padrao(par, cabecalho, esperado) -> None:
+    cabecalhos = {} if cabecalho is None else {"CF-Connecting-IP": cabecalho}
+
+    assert resolve_client_ip(cabecalhos, par, BORDA, PADRAO) == esperado
+
+
+@pytest.mark.critical
+@pytest.mark.parametrize(
+    ("par", "confiavel"),
+    [
+        ("198.51.100.7", True),
+        ("2001:db8:abcd::1", True),
+        ("10.0.0.1", False),
+        ("198.51.101.7", False),
+        ("127.0.0.1", False),
+    ],
+)
+def test_lista_configurada_substitui_o_padrao(par, confiavel) -> None:
+    assert peer_is_trusted(par, SO_A_REDE_X) is confiavel
+
+
+@pytest.mark.parametrize(
+    ("bruto", "entradas", "invalidas"),
+    [
+        (None, 6, 0),
+        ("", 6, 0),
+        (" , ,", 6, 0),
+        ("198.51.100.0/24, 10.0.0.5/8", 2, 0),
+        ("198.51.100.0/24, lixo, 300.1.1.1/8", 1, 2),
+        ("lixo", 6, 1),  # nada válido sobra: vale o padrão, nunca "ninguém" nem "todos"
+    ],
+)
+def test_parse_trusted_proxy_cidrs(bruto, entradas, invalidas) -> None:
+    redes, invalidos = parse_trusted_proxy_cidrs(bruto)
+
+    assert len(redes) == entradas and len(invalidos) == invalidas
+
+
+def test_painel_le_as_redes_confiaveis_e_avisa_de_entrada_invalida_sem_citar_o_valor(caplog) -> None:
+    from empiremuse.panel.settings import load_panel_settings
+    from tests.panel.helpers import local_config
+
+    with caplog.at_level("WARNING", logger="empiremuse.panel.settings"):
+        settings = load_panel_settings(local_config(PANEL_TRUSTED_PROXY_CIDRS="198.51.100.0/24, valor-invalido-xyz"))
+
+    assert [str(rede) for rede in settings.trusted_proxy_networks] == ["198.51.100.0/24"]
+    assert "1 entrada" in caplog.text and "valor-invalido-xyz" not in caplog.text
+    assert load_panel_settings(local_config()).trusted_proxy_networks == PADRAO

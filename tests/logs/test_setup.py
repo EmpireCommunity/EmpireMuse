@@ -5,7 +5,6 @@ O console é um ``StringIO``; o arquivo vai para ``tmp_path``; o relógio do agr
 
 import io
 import logging
-import logging.handlers
 import os
 import stat
 import sys
@@ -14,7 +13,8 @@ import pytest
 
 from empiremuse.logs.setup import LIBRARY_LOGGERS, configure_logging, flush_logging, tick_logging
 from empiremuse.logs.settings import LogSettings, parse_log_settings
-from tests.logs.apoio import Espiao, Relogio
+from empiremuse.utils.file_log import DailyRetentionFileHandler
+from tests.logs.apoio import arquivo_do_log, Espiao, Relogio
 
 pytestmark = pytest.mark.critical
 
@@ -84,7 +84,7 @@ class TestHandlers:
         consoles, arquivos = instalar(ajustes(arquivo=True))
 
         assert len(consoles) == 1 and len(arquivos) == 1
-        assert isinstance(arquivos[0], logging.handlers.RotatingFileHandler)
+        assert isinstance(arquivos[0], DailyRetentionFileHandler)
 
     @pytest.mark.parametrize("com_arquivo", [False, True])
     def test_the_filter_chain_is_the_same_and_in_the_contract_order(self, instalar, com_arquivo):
@@ -168,7 +168,7 @@ class TestArquivoB19:
     def test_the_file_exists_with_mode_0600_and_the_folder_0700(self, instalar, tmp_path):
         instalar(ajustes(arquivo=True))
 
-        arquivo = tmp_path / ".logs" / "disnake.log"
+        arquivo = arquivo_do_log(tmp_path / ".logs")
         assert arquivo.is_file()
         assert stat.S_IMODE(arquivo.stat().st_mode) == 0o600 and stat.S_IMODE(arquivo.parent.stat().st_mode) == 0o700
 
@@ -186,7 +186,7 @@ class TestSegredosEAgregador:
 
         logging.getLogger("empiremuse.teste").warning("usando senha-do-configure-logging-1 agora")
 
-        for texto in (console.getvalue(), (tmp_path / ".logs" / "disnake.log").read_text(encoding="utf-8")):
+        for texto in (console.getvalue(), (arquivo_do_log(tmp_path / ".logs")).read_text(encoding="utf-8")):
             assert "senha-do-configure-logging-1" not in texto and "***" in texto
 
     def test_flush_logging_emits_the_pending_repeat_count_in_both_destinations(self, instalar, console, tmp_path):
@@ -196,5 +196,5 @@ class TestSegredosEAgregador:
 
         flush_logging()
 
-        for texto in (console.getvalue(), (tmp_path / ".logs" / "disnake.log").read_text(encoding="utf-8")):
+        for texto in (console.getvalue(), (arquivo_do_log(tmp_path / ".logs")).read_text(encoding="utf-8")):
             assert texto.count("repetida 2×") == 1

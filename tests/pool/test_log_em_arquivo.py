@@ -1,7 +1,6 @@
-"""O log em arquivo do bot (``.logs/disnake.log``): rotativo, em append, sem token de webhook e privado ao dono."""
+"""O log em arquivo do bot (``.logs/disnake-AAAA-MM-DD.log``): diário, em append, sem token de webhook e privado ao dono."""
 
 import logging
-import logging.handlers
 import os
 import stat
 import sys
@@ -9,6 +8,7 @@ import sys
 import pytest
 
 from empiremuse.utils import file_log
+from tests.logs.apoio import arquivo_do_log
 
 ID = "1234567890123456"
 TOKEN = "AbC-dEf_123.xYz-SECRETO-token_do_webhook"
@@ -35,7 +35,7 @@ class TestRedacaoDeTokenDeWebhook:
         handler.handle(registro("POST %s retornou 204", url))
         handler.flush()
 
-        texto = (tmp_path / ".logs" / "disnake.log").read_text(encoding="utf-8")
+        texto = arquivo_do_log(tmp_path / ".logs").read_text(encoding="utf-8")
         assert TOKEN not in texto
         assert f"/webhooks/{ID}/*** retornou 204" in texto
 
@@ -46,7 +46,7 @@ class TestRedacaoDeTokenDeWebhook:
             handler.handle(registro("erro", exc_info=sys.exc_info()))
         handler.flush()
 
-        texto = (tmp_path / ".logs" / "disnake.log").read_text(encoding="utf-8")
+        texto = arquivo_do_log(tmp_path / ".logs").read_text(encoding="utf-8")
         assert TOKEN not in texto and "RuntimeError" in texto
 
     def test_mensagem_sem_webhook_nao_e_alterada(self):
@@ -64,10 +64,8 @@ class TestRedacaoDeTokenDeWebhook:
 
 @POSIX
 class TestPermissoes:
-    def test_o_arquivo_recriado_na_rotacao_continua_privado(self, handler, tmp_path):
+    def test_o_arquivo_do_dia_e_privado_e_a_pasta_tambem(self, handler, tmp_path):
         handler.handle(registro("antes"))
-        handler.doRollover()
-        handler.handle(registro("depois"))
 
-        assert stat.S_IMODE(os.stat(tmp_path / ".logs" / "disnake.log").st_mode) == 0o600
-        assert stat.S_IMODE(os.stat(tmp_path / ".logs" / "disnake.log.1").st_mode) == 0o600
+        assert stat.S_IMODE(os.stat(arquivo_do_log(tmp_path / ".logs")).st_mode) == 0o600
+        assert stat.S_IMODE(os.stat(tmp_path / ".logs").st_mode) == 0o700

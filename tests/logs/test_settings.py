@@ -147,3 +147,36 @@ class TestIntervaloDasMetricas:
         settings, avisos = ler({"METRICS_INTERVAL": valor})
 
         assert settings.metrics_interval == esperado and avisos == []
+
+
+class TestRetencao:
+    """T18: ``LOG_RETENTION_DAYS`` (padrão 183, limites 30-730) e ``LOG_RETENTION_HOLD``."""
+
+    def test_defaults(self):
+        settings, avisos = ler()
+
+        assert (settings.retention_days, settings.retention_hold) == (183, False) and avisos == []
+
+    @pytest.mark.parametrize(
+        ("valor", "dias", "avisa"),
+        [
+            (183, 183, False),
+            ("365", 365, False),
+            ("30", 30, False),
+            ("730", 730, False),
+            ("abc", 183, True),
+            (5, 30, True),
+            (900, 730, True),
+        ],
+    )
+    def test_dias_com_limites_e_aviso(self, valor, dias, avisa):
+        settings, avisos = ler({"LOG_RETENTION_DAYS": valor})
+
+        assert settings.retention_days == dias and bool(avisos) is avisa
+
+    @pytest.mark.parametrize(
+        ("valor", "esperado"),
+        [("true", True), ("on", True), (True, True), ("false", False), ("", False), (None, False)],
+    )
+    def test_suspensao_legal(self, valor, esperado):
+        assert ler({"LOG_RETENTION_HOLD": valor})[0].retention_hold is esperado

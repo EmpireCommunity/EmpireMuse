@@ -2,7 +2,7 @@
 
 Guia do operador sobre o log do EmpireMuse: o que aparece no console e no arquivo, como ajustar o detalhe, o que nunca é gravado e como investigar um erro. A decisão de projeto está no [ADR-0005](../adr/0005-logs-stdlib.md); os módulos, em [`architecture.md`](../architecture.md).
 
-A telemetria é **local**: console e arquivo, sem serviço externo de métricas ou de log. A única saída para fora do host é opcional e escolha sua: com `AUTO_ERROR_REPORT_WEBHOOK` (ou `ERROR_REPORT_WEBHOOK`, no botão manual) o relatório de um erro, com traceback, contexto do comando e dados do servidor, é enviado a um canal do Discord. Ele passa pelo mesmo redator (seção 4), mas use um canal privado.
+A telemetria é **local**: console e arquivo, sem serviço externo de métricas ou de log. A única saída para fora do host é opcional e escolha sua: com `AUTO_ERROR_REPORT_WEBHOOK` (ou `ERROR_REPORT_WEBHOOK`, no botão manual) um relatório **mínimo** do erro é enviado a um canal do Discord: o tipo da exceção e o código `ERR-XXXXXX`, sem traceback, sem ID de usuário, de servidor ou de canal (seção 4). Use um canal privado.
 
 ---
 
@@ -15,25 +15,34 @@ Todas ficam no `.env` (modelo comentado em `.example.env`). `NO_COLOR` é lida s
 | `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, `ERROR` | `INFO` | Nível do console e do arquivo. Valor inválido vira `INFO`, com um aviso na subida. |
 | `LOG_COLOR` | `on`, `off` | `on` | Cor por severidade **só no console** (nunca no arquivo). `LOG_COLOR=off` ou `NO_COLOR` não vazia desligam. |
 | `LOG_FILE` | `auto`, `on`, `off` | `auto` | Arquivo de log. `auto` liga fora da imagem Docker e desliga dentro dela. |
+| `LOG_RETENTION_DAYS` | dias, de 30 a 730 | `183` | Idade máxima dos arquivos de log (seção 1.2). Texto inválido usa 183; número fora da faixa vai para o limite mais próximo, com aviso. |
+| `LOG_RETENTION_HOLD` | `true`, `false` | `false` | Suspensão legal: com `true` a poda não apaga nada (seção 1.3). |
 | `LOG_DEBUG_GUILDS` | IDs separados por vírgula | vazio | Servidores que registram em `DEBUG` mesmo com `LOG_LEVEL=INFO`. No máximo 50 IDs. |
 | `METRICS_INTERVAL` | segundos | `300` | Intervalo do resumo periódico. Mínimo 60 (de 1 a 59 vira 60); `0` desliga o resumo. |
 | `COMMAND_LOG` | `true`, `false` | `false` | Registra os comandos de quem não é dono (seção 5). |
 | `USAGE_RETENTION_DAYS` | dias, de 1 a 365 | `30` | Retenção do registro de uso e dos eventos de reprodução (seção 7). Inválido ou menor que 1 usa 30. |
 | `ENABLE_LOGGER` | `true`, `false` | `false` | Sinônimo antigo de `LOG_FILE=on`; nunca desliga nada. |
+| `PANEL_TRUSTED_PROXY_CIDRS` | redes (CIDR) separadas por vírgula | vazio (loopback e redes privadas) | Quem pode mandar o `CF-Connecting-IP` com `PANEL_TRUST_PROXY=true` (seção 8). |
 
 ### 1.1 Nível e `LOG_DEBUG_GUILDS`
 
 Em `INFO`, o console só mostra **problemas e o resumo periódico**: início e fim de faixa, comandos e eventos de rotina ficam em `DEBUG`. Isso mantém o console legível com centenas de servidores tocando.
 
-Para investigar **um** servidor, ponha o ID dele em `LOG_DEBUG_GUILDS` e reinicie o bot: só os registros do EmpireMuse nesse servidor sobem para `DEBUG`; o restante continua em `INFO`. O `LOG_LEVEL=DEBUG` global é temporário: com muitos servidores ele enche o arquivo rotativo em minutos.
+Para investigar **um** servidor, ponha o ID dele em `LOG_DEBUG_GUILDS` e reinicie o bot: só os registros do EmpireMuse nesse servidor sobem para `DEBUG`; o restante continua em `INFO`. O `LOG_LEVEL=DEBUG` global é temporário: com muitos servidores ele enche o teto diário do arquivo (64 MiB) em minutos.
 
 As bibliotecas externas (disnake, aiohttp, pymongo, etc.) ficam sempre em `WARNING`.
 
 ### 1.2 Arquivo e rotação
 
-O arquivo é `RUNTIME_DIR/.logs/disnake.log`, com permissão 0600 (pasta 0700). Ele gira a **5 MB com 3 cópias**, então ocupa no máximo cerca de 20 MB. O nível do arquivo é o `LOG_LEVEL`, o mesmo do console, e o conteúdo é o mesmo, só sem cor, sem emoji e com a data completa (dá para usar `grep`).
+O arquivo do dia é `RUNTIME_DIR/.logs/disnake-AAAA-MM-DD.log` (data em **UTC**), com permissão 0600 (pasta 0700). Ele troca à meia-noite UTC e fica em append, então os códigos `ERR-XXXXXX` sobrevivem a um reinício. Cada dia tem um **teto de 64 MiB**: passado o teto, o bot escreve uma linha `log do dia truncado` e descarta o resto do dia (o dia seguinte é normal); o teto nunca apaga arquivo. O nível do arquivo é o `LOG_LEVEL`, o mesmo do console, e o conteúdo é o mesmo, só sem cor, sem emoji e com a data completa (dá para usar `grep`).
 
-No Docker o arquivo vem desligado: o log sai pelo console e o driver `json-file` do compose já limita (10 MB × 3). Para ter o arquivo na imagem, use `LOG_FILE=on` e monte um volume em `RUNTIME_DIR`.
+No Docker o arquivo vem desligado por padrão, e os composes de produção ligam com `LOG_FILE=on` (`/data` é volume). O driver `json-file` do Docker (10 MB × 3) continua como conveniência de depuração e **não é o registro**: ele gira por tamanho (cobre poucos dias) e some quando o contêiner é recriado.
+
+### 1.3 Retenção e suspensão legal
+
+A poda apaga **somente** arquivo cujo nome casa exatamente com `disnake-AAAA-MM-DD.log` (ou `access-AAAA-MM-DD.log`), que é arquivo comum (link simbólico, pasta e qualquer outro nome ficam) e cuja data **do nome** é mais velha que `LOG_RETENTION_DAYS` (o padrão é 183 dias, cerca de 6 meses). A data vem do nome, nunca da data de modificação, então copiar ou restaurar um backup não adia a poda. A poda roda na subida, na troca de dia e a cada hora no ciclo de manutenção do log (`tick_logging`).
+
+`LOG_RETENTION_HOLD=true` **pausa a poda por inteiro** (ordem de guarda de registros, Marco Civil art. 15 §2). Procedimento: com a ordem em mãos, ligue o `LOG_RETENTION_HOLD`, reinicie, copie para um local restrito os arquivos pedidos, registre a ordem e a cópia no runbook de operação e só desligue o `LOG_RETENTION_HOLD` quando a ordem acabar. Com a suspensão ligada o bot avisa na subida e os arquivos se acumulam (até 64 MiB por dia). Esta é a retenção só do **bot**; o registro de acesso do proxy (Traefik) e os demais armazenamentos têm a retenção própria descrita no contrato de apagar dados.
 
 ---
 
@@ -66,14 +75,21 @@ Valores de segredo com menos de 6 caracteres não são mascarados por valor (os 
 ## 4. Investigar um Erro (`ERR-XXXXXX`)
 
 1. O usuário informa o código `ERR-XXXXXX` que o bot mostrou.
-2. Procure o código: `grep ERR-XXXXXX .logs/disnake.log` (ou `docker logs <container> | grep ERR-XXXXXX`).
+2. Procure o código: `grep ERR-XXXXXX .logs/disnake-*.log` (ou `docker logs <container> | grep ERR-XXXXXX`).
 3. A linha traz o traceback e o contexto do comando: nome, `user_id`, `guild_id`, `channel_id` e os parâmetros **resumidos por tipo**. Modelos do Discord aparecem como `Tipo(id=…)`, anexos só como tipo e tamanho, e **texto livre só como tamanho** (`str(len=N)`). O valor, redigido e truncado, só aparece em `DEBUG` ou com o servidor em `LOG_DEBUG_GUILDS`. Parâmetro com nome de segredo sai como `***`.
 
 Erros esperados do usuário (cooldown, permissão, argumento inválido) ficam em `DEBUG`.
 
 ### Webhook de erro
 
-O `AUTO_ERROR_REPORT_WEBHOOK` guarda o histórico de erros fora do disco. O traceback enviado passa pelo mesmo saneamento e pelo mesmo redator do log: antes só o token do bot era mascarado, agora vale tudo o que está na seção 3.
+O `AUTO_ERROR_REPORT_WEBHOOK` copia o aviso de cada erro inesperado para um canal do Discord, onde ele **não tem prazo**. Por isso o relatório é mínimo:
+
+- **todo remetente** ao webhook (comandos, jukebox, reprodução e o aviso de falha de faixa) segue a mesma regra; abaixo, o que cada parte leva;
+- o **anexo** leva só o tipo da exceção e o código `ERR-XXXXXX`; o texto da exceção e o traceback completo **não saem do host** e ficam no arquivo de log, que tem retenção (procure pelo código, seção 4);
+- o **embed** leva o nome do servidor e dos canais, o comando e as opções resumidas, mas **nunca** `user_id`, `guild_id`, `channel_id`, nome ou avatar do autor;
+- o **modal** "Reportar erro" (botão manual) grava o texto livre sem nome, ID nem avatar de quem reportou.
+
+**Expurgo manual:** apague o conteúdo do canal do webhook a cada **183 dias** (rotina do runbook de operação), já que o Discord não aplica prazo. Se não quiser manter essa rotina, deixe o `AUTO_ERROR_REPORT_WEBHOOK` e o `ERROR_REPORT_WEBHOOK` vazios.
 
 Exceções não tratadas (do loop, de threads e do `sys.excepthook`) também saem no log de erros, com redação, desde o começo da subida.
 
@@ -87,7 +103,7 @@ Com `COMMAND_LOG=true`, cada comando de quem não é dono gera uma linha `INFO` 
 - o nome qualificado do comando;
 - as opções resumidas como na seção 4. Em comandos de prefixo, o resto da mensagem sai só como `str(len=N)`, **salvo nos servidores de `LOG_DEBUG_GUILDS`**: ali o texto livre (opções e resto da mensagem de prefixo, até 100 caracteres por parâmetro e 500 no conjunto, redigido e saneado) sai também em `INFO`, no console e no arquivo.
 
-IDs são dado pessoal (LGPD). Mantenha o `COMMAND_LOG` desligado quando não precisar, e lembre que a retenção é a da rotação do arquivo (seção 1.2) e a do driver de log do Docker.
+IDs são dado pessoal (LGPD). Mantenha o `COMMAND_LOG` desligado quando não precisar, e lembre que a retenção é a do arquivo diário (`LOG_RETENTION_DAYS`, seções 1.2 e 1.3) e a do driver de log do Docker.
 
 ---
 
@@ -112,3 +128,11 @@ O dono consulta **onde, como e quando** o bot foi usado, sem o log de arquivo e 
 **Painel do dono (`servers`):** "Ver uso" responde só a você (efêmero) com o resumo dos últimos 7 dias, os canais mais usados e os 15 últimos eventos. "Banir" pede o motivo (opcional) e uma confirmação, grava o banimento e faz **todos** os bots do pool saírem do servidor. "Banidos" lista os servidores banidos e desbane. Os botões só respondem a quem abriu o painel e continua sendo dono do bot.
 
 **Lista de banidos:** uma só para todo o pool (coleção `banned_guilds` do banco global: ID, nome no momento do ban, data e motivo). Todo bot a consulta ao entrar em um servidor e ao ficar pronto; um ban ou desban feito no painel de qualquer bot vale para todos. Um servidor banido que readiciona o bot é abandonado na hora, sem boas-vindas, sem aviso no webhook de entrada/saída e com uma única linha de log.
+
+---
+
+## 8. IP do visitante atrás do proxy (`PANEL_TRUSTED_PROXY_CIDRS`)
+
+Com `PANEL_TRUST_PROXY=true` o painel, a página de status e o relé RPC usam o IP do cabeçalho `CF-Connecting-IP` (para o limite de tentativas do login e para os registros). O cabeçalho só vale se quem abriu a conexão (o **par TCP**, medido antes de qualquer cabeçalho) estiver em `PANEL_TRUSTED_PROXY_CIDRS`. O padrão, com a variável vazia, é loopback e redes privadas, o que cobre o Traefik na rede interna do compose. Conexão de fora da lista usa o próprio IP do par e ignora o `CF-Connecting-IP`, o `X-Forwarded-For` e o `X-Real-IP`; assim um cliente que alcance a porta sem passar pelo proxy não escolhe o IP que fica registrado. Entrada inválida é ignorada com um aviso; se nada válido sobrar, vale o padrão.
+
+Isto **não substitui** a regra de rede: o bot não deve publicar a porta, e só o proxy (aceitando apenas as faixas da Cloudflare) deve alcançá-la. Ela fica no deploy.

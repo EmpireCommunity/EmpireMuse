@@ -12,7 +12,7 @@ import pytest
 
 from empiremuse.logs.setup import configure_logging, flush_logging, tick_logging
 from empiremuse.logs.settings import LogSettings
-from tests.logs.apoio import Relogio
+from tests.logs.apoio import arquivo_do_log, Relogio
 
 pytestmark = pytest.mark.critical
 
@@ -56,7 +56,7 @@ def instalar(raiz: logging.Logger, console: io.StringIO, relogio: Relogio, tmp_p
 
 def saidas(console: io.StringIO, tmp_path: Path) -> list[str]:
     """O texto que chegou ao console e ao arquivo (nesta ordem)."""
-    return [console.getvalue(), (tmp_path / ".logs" / "disnake.log").read_text(encoding="utf-8")]
+    return [console.getvalue(), (arquivo_do_log(tmp_path / ".logs")).read_text(encoding="utf-8")]
 
 
 class TestDescartado:

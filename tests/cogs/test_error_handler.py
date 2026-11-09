@@ -128,11 +128,11 @@ class TestInteracao:
 
 class TestComandoDePrefixo:
     @pytest.mark.asyncio
-    async def test_no_report_do_webhook_o_detalhe_fica_e_o_token_nao(self, handler, arquivos_do_webhook):
+    async def test_no_report_do_webhook_so_o_tipo_e_o_codigo_saem_do_host(self, handler, arquivos_do_webhook):
         handler.bot.config["AUTO_ERROR_REPORT_WEBHOOK"] = "https://discord.com/api/webhooks/1/segredo"
 
         await handler.on_legacy_command_error(_Contexto(True), _erro_de_disco())
 
         handler.send_webhook.assert_awaited_once()
         relatorio = "\n".join(arquivos_do_webhook)
-        assert CAMINHO in relatorio and TOKEN_FALSO not in relatorio
+        assert "OSError" in relatorio and CAMINHO not in relatorio and TOKEN_FALSO not in relatorio

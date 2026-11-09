@@ -13,6 +13,9 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - O comando temporário `fixfavs` foi removido.
 
 ### Segurança
+- Log em arquivo do bot com retenção por idade: `.logs/disnake-AAAA-MM-DD.log` (UTC, teto de 64 MiB por dia), podado após `LOG_RETENTION_DAYS` (183 por padrão; aceita 30 a 730) pelo nome do arquivo, com `LOG_RETENTION_HOLD=true` para suspender a poda por ordem de guarda. Substitui a rotação por tamanho (5 MB × 3) e o `LOG_RETENTION_DAYS` do compose passa a valer.
+- O webhook de erro passa a receber só o tipo da exceção e o código `ERR-XXXXXX` de todos os remetentes (comandos, jukebox e reprodução; o traceback fica no arquivo de log), sem ID de usuário, servidor ou canal, sem conteúdo do pedido e com o modal de reporte sem o autor.
+- `PANEL_TRUST_PROXY`: o `CF-Connecting-IP` só vale quando o par TCP está em `PANEL_TRUSTED_PROXY_CIDRS` (padrão: loopback e redes privadas); fora disso vale o IP do par.
 - Backend J3: favoritas do servidor passam a exigir ator com Gerenciar Servidor, administrador ou dono também no store. A estrela da rádio 24 h guarda favoritas pessoais; o menu conserva a ação administrativa do servidor.
 - Configuração de rádios: só oferece e aceita canais que o ator consegue ver e conectar, tanto no Discord quanto no painel web.
 - Removido o comando administrativo `exportsource`: o código público já está disponível no GitHub, sem necessidade de exportar arquivos da instalação pelo bot.

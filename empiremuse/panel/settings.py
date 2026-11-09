@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping
 from urllib.parse import urlsplit
 
+from empiremuse.rules.client_ip import IPNetwork, parse_trusted_proxy_cidrs
+
 logger = logging.getLogger(__name__)
 
 COOKIE_SECRET_MIN_LENGTH = 32
@@ -32,6 +34,7 @@ class PanelSettings:
     session_ttl_hours: int = 12
     session_idle_minutes: int = 60
     trust_proxy: bool = False
+    trusted_proxy_networks: tuple[IPNetwork, ...] = ()
     insecure_cookies: bool = False
 
     @property
@@ -107,6 +110,10 @@ def load_panel_settings(config: Mapping[str, Any]) -> PanelSettings:
     if not oauth_secret:
         raise PanelConfigError("PANEL_OAUTH_CLIENT_SECRET é obrigatório com o painel ativo.")
 
+    networks, invalid_cidrs = parse_trusted_proxy_cidrs(config.get("PANEL_TRUSTED_PROXY_CIDRS"))
+    if invalid_cidrs:
+        logger.warning("PANEL_TRUSTED_PROXY_CIDRS: %d entrada(s) inválida(s) foram ignoradas.", len(invalid_cidrs))
+
     return PanelSettings(
         enabled=True,
         base_url=base_url,
@@ -116,5 +123,6 @@ def load_panel_settings(config: Mapping[str, Any]) -> PanelSettings:
         session_ttl_hours=_bounded_int(config, "PANEL_SESSION_TTL_HOURS", 12, SESSION_TTL_HOURS_RANGE),
         session_idle_minutes=_bounded_int(config, "PANEL_SESSION_IDLE_MINUTES", 60, SESSION_IDLE_MINUTES_RANGE),
         trust_proxy=bool(config.get("PANEL_TRUST_PROXY", False)),
+        trusted_proxy_networks=networks,
         insecure_cookies=insecure_cookies,
     )

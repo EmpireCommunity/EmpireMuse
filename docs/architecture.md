@@ -78,7 +78,7 @@ O log do processo é configurado num ponto só, por `configure_logging` (chamado
 
 | Módulo | Responsabilidade |
 |---|---|
-| `settings.py`, `setup.py` | Lê `LOG_LEVEL`, `LOG_COLOR`, `LOG_FILE`, `LOG_DEBUG_GUILDS` e `METRICS_INTERVAL`; monta os handlers (console e arquivo rotativo) e fixa as bibliotecas externas em `WARNING` |
+| `settings.py`, `setup.py` | Lê `LOG_LEVEL`, `LOG_COLOR`, `LOG_FILE`, `LOG_DEBUG_GUILDS`, `LOG_RETENTION_DAYS`, `LOG_RETENTION_HOLD` e `METRICS_INTERVAL`; monta os handlers (console e arquivo diário podado por idade, `LOG_RETENTION_DAYS` e `LOG_RETENTION_HOLD`) e fixa as bibliotecas externas em `WARNING` |
 | `context.py`, `console.py` | Contexto de bot e servidor; formatadores (cor e emoji só no console) |
 | `redact.py` | Redator único: saneia caracteres de controle, mascara segredos, limita o tamanho e calcula a impressão digital do traceback |
 | `aggregate.py` | Agrega avisos e erros repetidos em janelas de 60 s, preservando o código `ERR-…` |

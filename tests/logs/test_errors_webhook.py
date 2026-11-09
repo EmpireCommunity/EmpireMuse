@@ -2,7 +2,8 @@
 """Item 7, P4 — B22 (V-L1, [!]2 aprovado): o traceback mandado ao webhook de erro passa pelo saneamento e pelo redator único.
 
 O arquivo do webhook (``string_to_file``) não pode conter a senha de um nó, a URI do Mongo nem o token de OUTRO bot do pool; ESC é saneado.
-Hoje só o token deste bot é mascarado (``mask_token``).
+Desde o E4a o anexo leva só o tipo da exceção e o código (``tests/logs/test_webhook_minimo.py``); estes testes seguem como
+guarda: mesmo que o conteúdo do anexo volte a crescer, nenhum segredo pode estar nele.
 """
 
 import pytest

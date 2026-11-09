@@ -8,6 +8,7 @@ from typing import Union, Optional
 import disnake
 from disnake.ext import commands
 
+from empiremuse.logs.webhook import minimal_embed, minimal_report_text
 from empiremuse.rules.jukebox_panel import (
     AUTO_DELETE_DELAY_SECONDS,
     PENDING_COMMAND_CAP_SECONDS,
@@ -640,61 +641,10 @@ async def _sr_error_webhook(self, req):
     await max_concurrency.acquire(message)
 
     try:
-        full_error_msg = cog.mask_token(
-            "".join(traceback.format_exception(type(has_exception), has_exception, has_exception.__traceback__))
-        )
-
-        embed = disnake.Embed(
-            title="Ocorreu um erro em um servidor (Jukebox):",
-            timestamp=disnake.utils.utcnow(),
-            description=f"Erro inesperado no pedido de música.{error_code_text(error_code)}",
-        )
-
-        embed.set_footer(
-            text=f"{message.author} [{message.author.id}]",
-            icon_url=message.author.display_avatar.with_static_format("png").url,
-        )
-
-        embed.add_field(
-            name="Servidor:",
-            inline=False,
-            value=f"```\n{disnake.utils.escape_markdown(ctx.guild.name)}\nID: {ctx.guild.id}```",
-        )
-
-        embed.add_field(name="Conteúdo do pedido de música:", inline=False, value=f"```\n{message.content}```")
-
-        embed.add_field(
-            name="Canal de texto:",
-            inline=False,
-            value=f"```\n{disnake.utils.escape_markdown(ctx.channel.name)}\nID: {ctx.channel.id}```",
-        )
-
-        if vc := ctx.author.voice:
-            embed.add_field(
-                name="Canal de voz (user):",
-                inline=False,
-                value=f"```\n{disnake.utils.escape_markdown(vc.channel.name)}"
-                + (f" ({len(vc.channel.voice_states)}/{vc.channel.user_limit})" if vc.channel.user_limit else "")
-                + f"\nID: {vc.channel.id}```",
-            )
-
-        if vcbot := ctx.guild.me.voice:
-            if vcbot.channel != vc.channel:
-                embed.add_field(
-                    name="Canal de voz (bot):",
-                    inline=False,
-                    value=f"{vc.channel.name}"
-                    + (f" ({len(vc.channel.voice_states)}/{vc.channel.user_limit})" if vc.channel.user_limit else "")
-                    + f"\nID: {vc.channel.id}```",
-                )
-
-        if ctx.guild.icon:
-            embed.set_thumbnail(url=ctx.guild.icon.with_static_format("png").url)
-
         await cog.send_webhook(
-            embed=embed,
+            embed=minimal_embed("Ocorreu um erro em um servidor (Jukebox):", error_code),
             file=string_to_file(
-                full_error_msg,
+                minimal_report_text(has_exception, error_code),
                 f"error_traceback_jukebox_{error_code}.txt" if error_code else "error_traceback_jukebox.txt",
             ),
         )

@@ -32,6 +32,8 @@ from empiremuse.utils.music import local_lavalink
 from tests.logs.test_secret_sources import fabrica, no_json, runtime, sem_rede  # noqa: F401 - fixtures reaproveitadas
 from tests.support.raiz import RAIZ
 
+from tests.logs.apoio import arquivo_do_log
+
 pytestmark = pytest.mark.critical
 
 LOAD_MODULES_REAL = client.BotCore.load_modules  # antes de qualquer teste trocar o ``BotCore`` por um dublê
@@ -421,7 +423,7 @@ class TestIntegracaoDaSubida:
         configure_logging(
             LogSettings(logging.INFO, False, True, frozenset(), 300), [], stream=console, logs_dir=tmp_path / ".logs"
         )
-        return SimpleNamespace(console=console, arquivo=tmp_path / ".logs" / "disnake.log")
+        return SimpleNamespace(console=console, arquivo=arquivo_do_log(tmp_path / ".logs"))
 
     def textos(self, destinos):
         return [destinos.console.getvalue(), destinos.arquivo.read_text(encoding="utf-8")]
@@ -465,7 +467,7 @@ SONDA_DO_VIGIL = [
 class TestLinhasDistintasDoJava:
     def textos(self, lavalink_com_stderr, tmp_path, linhas):
         console = lavalink_com_stderr(linhas, arquivo=True)
-        return console, (tmp_path / ".logs" / "disnake.log").read_text(encoding="utf-8")
+        return console, (arquivo_do_log(tmp_path / ".logs")).read_text(encoding="utf-8")
 
     def test_six_distinct_lines_give_six_lines_in_each_destination_and_no_repeat_summary(
         self, lavalink_com_stderr, tmp_path
@@ -619,7 +621,7 @@ class TestLinhasLongasDoJava:
 
     def textos(self, lavalink_com_stderr, tmp_path, linhas):
         console = lavalink_com_stderr(linhas, arquivo=True)
-        return console, (tmp_path / ".logs" / "disnake.log").read_text(encoding="utf-8")
+        return console, (arquivo_do_log(tmp_path / ".logs")).read_text(encoding="utf-8")
 
     def test_two_long_lines_that_differ_only_after_the_256th_character_are_two_records(
         self, lavalink_com_stderr, tmp_path
