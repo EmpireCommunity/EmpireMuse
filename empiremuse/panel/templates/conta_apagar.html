@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block titulo %}Apagar meus dados{% end %}
+
+{# ESQUELETO DO FORJA (E3 backend): o Vitral substitui este arquivo pelo template final. Variáveis: resultado (None|"ok"|"partial"|"erro"), mensagem, palavra_confirmacao, login_recente. #}
+{% block conteudo %}
+<section aria-labelledby="titulo-apagar">
+  <h1 id="titulo-apagar">Apagar meus dados</h1>
+  {% if mensagem %}<p class="aviso" role="status">{{ mensagem }}</p>{% end %}
+  {% if resultado in ("ok", "partial") %}
+    <p><a role="button" href="/painel/">Voltar ao início</a></p>
+  {% else %}
+    {% if not login_recente %}<p class="nota">Por segurança, você vai entrar de novo com o Discord antes de apagar.</p>{% end %}
+    <form method="post" action="/painel/conta/apagar">
+      {% module xsrf_form_html() %}
+      <label for="apagar-confirmacao">Digite {{ palavra_confirmacao }} para confirmar</label>
+      <input id="apagar-confirmacao" type="text" name="confirmacao" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <button type="submit">Apagar tudo</button>
+    </form>
+    <p><a href="/painel/conta">Cancelar</a></p>
+  {% end %}
+</section>
+{% end %}

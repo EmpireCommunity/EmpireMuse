@@ -19,6 +19,7 @@ from empiremuse.panel.handlers.account import AccountHandler, FavoritesExportHan
 from empiremuse.panel.handlers.auth import CallbackHandler, LoginHandler, LogoutHandler
 from empiremuse.panel.handlers.base import NotFoundHandler, PanelStaticHandler
 from empiremuse.panel.handlers.brand import BRAND_ROUTE, BrandHandler
+from empiremuse.panel.handlers.erase import ERASE_PATH, AccountEraseHandler
 from empiremuse.panel.handlers.pages import HealthHandler, IndexHandler, RedirectToIndexHandler
 from empiremuse.panel.handlers.servers import ServerDetailHandler, ServersHandler
 from empiremuse.panel.handlers.jukebox import JukeboxHandler, JukeboxTaskHandler, LegacyChannelHandler
@@ -41,6 +42,7 @@ from empiremuse.panel.handlers.settings import WRITE_LIMIT_PER_MINUTE, LinksExpo
 from empiremuse.panel.oauth import DiscordOAuthClient, make_client_provider
 from empiremuse.panel.ratelimit import RateLimiter
 from empiremuse.panel.services.account import AccountService
+from empiremuse.panel.services.account_erase import AccountEraseService
 from empiremuse.panel.services.jukebox import JukeboxService
 from empiremuse.panel.services.radio_setup import RadioSetupService
 from empiremuse.panel.services.service import SettingsService
@@ -94,6 +96,7 @@ def build_panel_app(
             (PANEL_PREFIX + "/logout", LogoutHandler),
             (PANEL_PREFIX + "/conta", AccountHandler),
             (PANEL_PREFIX + "/conta/favoritos/exportar", FavoritesExportHandler),
+            (ERASE_PATH, AccountEraseHandler),
             (PANEL_PREFIX + "/servidores", ServersHandler),
             (PANEL_PREFIX + r"/servidores/([^/]+)", ServerDetailHandler),
             (PANEL_PREFIX + r"/servidores/([^/]+)/links/exportar", LinksExportHandler),
@@ -137,6 +140,7 @@ def build_panel_app(
         authorizer=GuildAuthorizer(pool, clock=clock),
         settings_service=settings_service,
         account_service=AccountService(settings_service),
+        account_erase_service=AccountEraseService(clock=clock),
         task_runner=task_runner,
         jukebox_service=JukeboxService(task_runner, settings_service, settings.cookie_secret, clock),
         radio_setup_service=RadioSetupService(settings.cookie_secret, clock),

@@ -103,6 +103,13 @@ sessão** (`bot.get_global_data/update_global_data(user_id, db_name=DBModel.user
 formulário ou da URL é ignorado. O bot de entrada é o primeiro bot pronto do pool; sem bot pronto, GET e POST respondem
 503 ("Painel indisponível no momento") sem ler nem gravar.
 
+**Apagar meus dados** (`GET/POST /painel/conta/apagar`, `panel/handlers/erase.py` e `panel/services/account_erase.py`): o POST exige XSRF, o limite
+de escrita do painel, a palavra `APAGAR` digitada e login feito há no máximo 30 minutos (`ERASE_MAX_SESSION_AGE_S`; senão redireciona a
+`/painel/login?next=/painel/conta/apagar` e nada é apagado). O alvo é sempre o usuário da sessão. O serviço chama
+`pool.erasure.erase_user(..., source="panel")` **sem segurar o lock do usuário** (a função o pega sozinha), lê `user_id` e `created_at` antes
+da chamada, limpa o cookie `painel_sessao` e não consulta a sessão depois. Todas as respostas saem com `Cache-Control: no-store`. O template
+`conta_apagar.html` recebe `resultado`, `mensagem`, `palavra_confirmacao` e `login_recente` (ver a docstring do handler).
+
 | Arquivo | Conteúdo |
 | :--- | :--- |
 | `panel/services/account_base.py` | `AccountContext`, `AccountSection` (contrato de cada seção), limite efetivo (0 = ilimitado; dono isento) |
