@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import stat
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Union
@@ -40,6 +41,15 @@ def has_saved_queue(user_id: Union[int, str]) -> bool:
     return saved_queue_path(user_id).is_file()
 
 
+def _is_file_or_link(path: Path) -> bool:
+    """Arquivo regular ou link simbólico (sem segui-lo, nem quebrado). Só a ausência é "não"; qualquer outro ``OSError`` sobe (``is_file`` o engoliria)."""
+    try:
+        mode = os.lstat(path).st_mode
+    except FileNotFoundError:
+        return False
+    return stat.S_ISREG(mode) or stat.S_ISLNK(mode)
+
+
 def saved_queue_files(user_id: Union[int, str]) -> list[Path]:
     """Os arquivos do membro que ``delete_saved_queues`` apaga e que existem agora: o JSON, o ``.pkl`` antigo e o temporário órfão.
 
@@ -54,7 +64,7 @@ def saved_queue_files(user_id: Union[int, str]) -> list[Path]:
         candidates += [json_dir / name for name in os.listdir(json_dir) if saved_queue_tmp_matches(name, uid)]
     except FileNotFoundError:
         pass
-    return [path for path in candidates if path.is_symlink() or path.is_file()]
+    return [path for path in candidates if _is_file_or_link(path)]
 
 
 def delete_saved_queues(user_id: Union[int, str]) -> int:

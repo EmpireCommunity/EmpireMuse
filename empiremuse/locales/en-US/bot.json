@@ -720,6 +720,7 @@
   "fav.add.url.label": "Link/Url:",
   "fav.add.no_valid_link": "**No valid link found:** {value}",
   "fav.add.name_taken": "You already have a favorite with that name.",
+  "fav.erased_while_saving": "Your data was erased while you were doing this, so nothing was saved. Do it again if you want.",
   "fav.add.saved": "**Link saved/updated successfully in your favorites!\nIt will show up in the following places:** ```\n- When using the /play command (selecting it in the search autocomplete)\n- When clicking the player's play favorite button.\n- When using the play command (prefixed) without a name or link.```",
   "fav.save.quota_full": "**There is no room to add new favorites (remove one and try again).**",
   "fav.save.invalid_name": "**The given name is invalid: use {low} to {high} characters, without control characters.**",

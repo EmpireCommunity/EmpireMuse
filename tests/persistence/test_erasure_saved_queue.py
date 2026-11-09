@@ -192,3 +192,44 @@ async def test_t22_arquivo_que_sempre_volta_vira_partial(mundo, pastas, monkeypa
     relatorio = await mundo.service.erase_user(ALVO, source="slash")
 
     assert relatorio.status is ErasureStatus.PARTIAL and relatorio.failed == ("saved_queue",)
+
+
+def test_t22_link_simbolico_quebrado_com_o_nome_do_alvo_tambem_e_removido(pastas, tmp_path):
+    json_dir, _ = pastas
+    (json_dir / f"{ALVO}.json").symlink_to(tmp_path / "nao-existe")  # o destino não existe: is_file() daria falso
+
+    assert delete_saved_queues(ALVO) == 1 and not (json_dir / f"{ALVO}.json").is_symlink()
+
+
+def test_t22_oserror_ao_conferir_o_arquivo_sobe_em_vez_de_ser_engolido_como_ausente(pastas, monkeypatch):
+    json_dir, _ = pastas
+    _escrever(json_dir, f"{ALVO}.json")
+    real = os.lstat
+
+    def lstat_sem_permissao(caminho, *args, **kwargs):
+        if str(caminho).endswith(f"{ALVO}.json"):
+            raise PermissionError("detalhe-do-disco-secreto")
+        return real(caminho, *args, **kwargs)
+
+    monkeypatch.setattr(os, "lstat", lstat_sem_permissao)
+
+    with pytest.raises(PermissionError):  # ``is_file`` diria "não existe" e o dado ficaria sem ninguém saber
+        delete_saved_queues(ALVO)
+
+
+@pytest.mark.asyncio
+async def test_t22_oserror_ao_conferir_o_arquivo_vira_partial_saved_queue(mundo, pastas, monkeypatch):
+    json_dir, _ = pastas
+    _escrever(json_dir, f"{ALVO}.json")
+    real = os.lstat
+
+    def lstat_sem_permissao(caminho, *args, **kwargs):
+        if str(caminho).endswith(f"{ALVO}.json"):
+            raise PermissionError("detalhe-do-disco-secreto")
+        return real(caminho, *args, **kwargs)
+
+    monkeypatch.setattr(os, "lstat", lstat_sem_permissao)
+
+    relatorio = await mundo.service.erase_user(ALVO, source="slash")
+
+    assert relatorio.status is ErasureStatus.PARTIAL and relatorio.failed == ("saved_queue",)

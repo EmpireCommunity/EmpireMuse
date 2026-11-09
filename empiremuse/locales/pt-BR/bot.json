@@ -733,6 +733,7 @@
   "fav.add.url.label": "Link/Url:",
   "fav.add.no_valid_link": "**Nenhum link válido encontrado:** {value}",
   "fav.add.name_taken": "Você já tem um favorito com esse nome.",
+  "fav.erased_while_saving": "Seus dados foram apagados enquanto você fazia isso, então nada foi salvo. Refaça a ação se quiser.",
   "fav.add.saved": "**Link salvo/atualizado com sucesso nos seus favoritos!\nEle vai aparecer nas seguintes ocasições:** ```\n- Ao usar o comando /play (selecionando no preenchimento automático da busca)\n- Ao clicar no botão de tocar favorito do player.\n- Ao usar o comando play (prefixed) sem nome ou link.```",
   "fav.save.quota_full": "**Não há espaço disponível para adicionar novos favorito (remova algum e tente novamente).**",
   "fav.save.invalid_name": "**O nome informado é inválido: use de {low} a {high} caracteres, sem caracteres de controle.**",

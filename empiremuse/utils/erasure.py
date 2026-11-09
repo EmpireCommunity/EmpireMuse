@@ -396,7 +396,8 @@ class ErasureService:
             text, args = text + " failed=%s", [*args, ",".join(report.failed)]
         if source == "owner":
             text, args = text + " owner=%s grant=%s", [*args, owner_id, grant_id]
-        logger.warning(text, *args)
+        # ``empiremuse_emit``: o agregador de logs junta WARNING de mesmo template; sem isto a 2ª execução em 60 s perderia ID, estado e contagens
+        logger.warning(text, *args, extra={"empiremuse_emit": True})
 
     # ------------------------------------------------------------------ passada 2
 

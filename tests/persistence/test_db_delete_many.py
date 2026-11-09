@@ -88,3 +88,14 @@ def test_botpool_traz_lock_de_usuario_sepultura_e_servico_ligados_e_sem_loja_de_
     assert pool_real.erasure.tombstones is pool_real.erasure_tombstones
     assert pool_real.panel_sessions is None
     assert pool_real.erasure_tombstones._ttl == max(600, 2 * pool_real.config["DBCACHE_TTL"])
+
+
+@pytest.mark.asyncio
+async def test_local_iter_data_com_filtro_devolve_so_os_documentos_do_updated_by(tmp_path):
+    banco = LocalDatabase(str(tmp_path / "db"))
+    for id_, autor in (("a", "45"), ("b", "145"), ("c", "45"), ("d", "system")):
+        await banco.update_data(id_, {"rev": 1, "updated_by": autor}, db_name="radios", collection=BANCO)
+
+    achados = [d["_id"] async for d in banco.iter_data(db_name="radios", collection=BANCO, filter={"updated_by": "45"})]
+
+    assert sorted(achados) == ["a", "c"]

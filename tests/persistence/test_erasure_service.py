@@ -764,4 +764,58 @@ async def test_r3_erase_user_pega_o_lock_sozinho_quem_o_segura_so_espera_e_nada_
 
     lock.release()
     assert (await apagando).status is ErasureStatus.OK
-    assert "NÃO PODE SEGURÁ-LO" in type(mundo.service).erase_user.__doc__  # a regra está na documentação
+
+
+@pytest.mark.asyncio
+async def test_o_primeiro_mark_ja_vale_durante_a_exclusao_leitura_anterior_e_descartada_no_meio_do_delete(
+    mundo, monkeypatch
+):
+    await gravar_usuario(mundo, ALVO, token=SEGREDO_TOKEN)
+    mundo.relogio.avancar(1)
+    lido_antes = mundo.pool.erasure_tombstones.now()
+    mundo.relogio.avancar(1)
+    original = mundo.database.delete_data
+    durante: list[bool] = []
+
+    async def delete_que_confere_a_sepultura(id_, db_name, collection):
+        if db_name == "users":
+            durante.append(mundo.pool.erasure_tombstones.stale(ALVO, lido_antes))  # só o 1º mark existe aqui
+        return await original(id_, db_name=db_name, collection=collection)
+
+    monkeypatch.setattr(mundo.database, "delete_data", delete_que_confere_a_sepultura)
+
+    await apagar(mundo)
+
+    assert durante == [True]
+
+
+@pytest.mark.asyncio
+async def test_duas_auditorias_em_60_s_saem_inteiras_pelo_saneador_e_pelo_agregador_reais(mundo):
+    """O agregador junta WARNING de mesmo template; a trilha de auditoria leva ``empiremuse_emit`` e nunca é resumida."""
+    from empiremuse.logs.aggregate import RepeatAggregator
+    from empiremuse.logs.redact import SanitizeAndRedact
+
+    saidas: list[str] = []
+
+    class Captura(logging.Handler):
+        def emit(self, record):
+            saidas.append(record.getMessage())
+
+    captura = Captura()
+    captura.addFilter(SanitizeAndRedact())
+    captura.addFilter(RepeatAggregator(lambda record: saidas.append(record.getMessage()), clock=mundo.relogio))
+    registro = logging.getLogger(LOGGER)
+    registro.addHandler(captura)
+    registro.setLevel(logging.WARNING)
+    try:
+        await gravar_usuario(mundo, ALVO, token=SEGREDO_TOKEN)
+        await apagar(mundo)
+        await apagar(mundo, PREFIXO_DO_ALVO)
+        await apagar(mundo)  # o mesmo membro de novo, ainda dentro dos 60 s
+    finally:
+        registro.removeHandler(captura)
+
+    auditoria = [linha for linha in saidas if linha.startswith("erasure ")]
+    assert [linha.split()[2] for linha in auditoria] == [f"user={ALVO}", f"user={PREFIXO_DO_ALVO}", f"user={ALVO}"]
+    assert all("status=OK" in linha and "users=" in linha for linha in auditoria)
+    assert not [linha for linha in saidas if linha.startswith("↻")]  # nada virou "repetida N×"

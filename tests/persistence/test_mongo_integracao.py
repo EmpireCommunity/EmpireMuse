@@ -93,6 +93,14 @@ async def _ciclo_apagar_dados():
         assert restantes == ["1:145"]
         assert await banco.delete_many([], db_name=colecao, collection=nome) == 0
 
+        # iter_data com filtro (anonimização do updated_by): só os documentos do autor, sem varrer o resto
+        for id_, autor in (("a", "45"), ("b", "145"), ("c", "45")):
+            await banco.update_data(id_, {"rev": 1, "updated_by": autor}, db_name="radios", collection=nome)
+        filtrados = [
+            d["_id"] async for d in banco.iter_data(db_name="radios", collection=nome, filter={"updated_by": "45"})
+        ]
+        assert sorted(filtrados) == ["a", "c"]
+
         # compare-and-set: documento novo só se não existe; troca só se o rev bate
         assert await banco.save_doc_cas("r", {"rev": 1, "x": 1}, expected_rev=None, db_name=colecao, collection=nome)
         assert not await banco.save_doc_cas("r", {"rev": 9}, expected_rev=None, db_name=colecao, collection=nome)

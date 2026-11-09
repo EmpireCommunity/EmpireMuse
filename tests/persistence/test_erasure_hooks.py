@@ -570,6 +570,7 @@ async def test_lastfm_comando_captura_o_read_at_no_inicio_e_aborta_se_apagaram_d
     async def usuario_desvincula_e_os_dados_sao_apagados(self):
         self.clear_session = True
         await apagar(mundo)
+        mundo.relogio.avancar(1)  # o fim da exclusão fica antes do que vier depois: só um read_at do INÍCIO é velho
 
     monkeypatch.setattr(LastFMView, "wait", usuario_desvincula_e_os_dados_sao_apagados)
 
@@ -740,3 +741,141 @@ async def test_r2_preenchedor_do_scrobble_lido_entre_o_mark_e_o_delete_nao_enche
 
     assert mundo.pool.lastfm_sessions == {}
     fm.update_nowplaying.assert_not_called()
+
+
+def _comando_do_lastfm(mundo, monkeypatch, *, doc, get_global_data=None, user_info=None):
+    from empiremuse.cogs.lastfm import LastFMView
+
+    ler = get_global_data or AsyncMock(side_effect=lambda *a, **k: deepcopy(doc))
+    gravar_ = AsyncMock()
+    fm = SimpleNamespace(api_key="AK", get_token=AsyncMock(return_value="TK"), user_info=user_info)
+    cog = _cog(
+        mundo,
+        get_global_data=ler,
+        update_global_data=gravar_,
+        get_cog=lambda nome: None,
+        get_color=lambda *a: 0,
+        last_fm=fm,
+        loop=SimpleNamespace(create_task=Mock()),
+    )
+    interacao = SimpleNamespace(
+        author=SimpleNamespace(id=ALVO),
+        guild=None,
+        permissions=SimpleNamespace(embed_links=True),
+        response=SimpleNamespace(defer=AsyncMock()),
+        edit_original_message=AsyncMock(),
+    )
+
+    async def sem_espera(self):
+        return None
+
+    monkeypatch.setattr(LastFMView, "wait", sem_espera)
+    return cog, interacao, gravar_
+
+
+@pytest.mark.asyncio
+async def test_lastfm_comando_apagado_durante_a_leitura_o_read_at_e_o_de_antes_e_o_blank_out_nao_grava(
+    mundo, monkeypatch
+):
+    doc = deepcopy(global_db_models["users"])  # sem chave: o caminho que limpa usuário e chave e grava
+    leituras = []
+
+    async def le_e_o_apagamento_acontece(user_id, *, db_name):
+        leituras.append(True)
+        await apagar(mundo)
+        mundo.relogio.avancar(1)
+        return deepcopy(doc)
+
+    cog, interacao, gravar_ = _comando_do_lastfm(
+        mundo, monkeypatch, doc=doc, get_global_data=le_e_o_apagamento_acontece
+    )
+
+    await LastFmCog.lastfm.callback(cog, interacao)
+
+    assert leituras and gravar_.await_count == 0  # read_at foi capturado ANTES da leitura: o documento lido é velho
+
+
+@pytest.mark.asyncio
+async def test_lastfm_comando_apagado_durante_o_user_info_o_blank_out_do_codigo_9_nao_grava(mundo, monkeypatch):
+    from empiremuse.utils.music.lastfm_tools import LastFmException
+
+    doc = documento_com_chave = deepcopy(global_db_models["users"])
+    documento_com_chave["lastfm"]["sessionkey"] = CHAVE
+
+    async def user_info_que_demora(chave):
+        await apagar(mundo)  # os dados somem enquanto o Last.fm responde
+        mundo.relogio.avancar(1)
+        raise LastFmException({"error": 9, "message": "sessão inválida"})
+
+    cog, interacao, gravar_ = _comando_do_lastfm(mundo, monkeypatch, doc=doc, user_info=user_info_que_demora)
+
+    await LastFmCog.lastfm.callback(cog, interacao)
+
+    assert gravar_.await_count == 0  # sem o if stale o documento velho voltaria ao banco
+
+
+# ------------------------------------------------------------------------------------------------ revisão T-481c
+
+
+@pytest.mark.asyncio
+async def test_r2_save_link_apagado_durante_a_gravacao_nao_enche_o_cache_do_lastfm(mundo):
+    await gravar_usuario(mundo, ALVO, lastfm_sessionkey=CHAVE)
+    cog, visao, interacao = _fluxo(mundo, chave="NOVA", usuario="novo")
+    lido_em = mundo.pool.erasure_tombstones.now()
+    grava = cog.bot.update_global_data
+
+    async def grava_e_o_apagamento_acontece(user_id, *, data, db_name):
+        await grava(user_id, data=data, db_name=db_name)
+        mundo.pool.erasure_tombstones.mark(ALVO)
+
+    cog.bot.update_global_data = grava_e_o_apagamento_acontece
+
+    assert await cog._save_link(interacao, visao, None, lido_em) is False
+
+    assert mundo.pool.lastfm_sessions == {}
+    interacao.edit_original_message.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_r2_modal_de_integracao_apagado_durante_a_consulta_externa_nao_grava_e_avisa(mundo, monkeypatch):
+    from empiremuse.utils.music.interactions import fav_modals
+
+    await gravar_usuario(mundo, ALVO, token="T" * 50)
+    gravacoes = AsyncMock()
+    modal = fav_modals.FavModalAdd.__new__(fav_modals.FavModalAdd)
+    traduzir = await get_i18n().for_guild(None)
+    modal.view = SimpleNamespace(
+        tr=traduzir,
+        bot=SimpleNamespace(
+            pool=mundo.pool,
+            get_global_data=lambda *a, **k: mundo.database.get_data(
+                ALVO, db_name="users", collection="global", default_model=global_db_models
+            ),
+            update_global_data=gravacoes,
+            get_cog=lambda nome: SimpleNamespace(
+                fav_import_export_cd=SimpleNamespace(
+                    get_bucket=lambda inter: SimpleNamespace(update_rate_limit=lambda: None)
+                )
+            ),
+        ),
+    )
+
+    async def consulta_externa_demorada(inter, url, source):
+        await apagar(mundo)  # os dados somem enquanto o serviço externo responde
+        mundo.relogio.avancar(1)
+        return {"title": "Canal", "url": "https://x/canal", "avatar": None}
+
+    monkeypatch.setattr(modal, "_lookup_profile", consulta_externa_demorada, raising=False)
+    monkeypatch.setattr(fav_modals, "_profile_source", lambda url: "youtube")
+    monkeypatch.setattr(fav_modals, "quota_for", AsyncMock(return_value=10))
+    interacao = SimpleNamespace(
+        author=SimpleNamespace(id=ALVO),
+        response=SimpleNamespace(defer=AsyncMock()),
+        text_values={"user_integration_url": "https://www.youtube.com/@canal"},
+        edit_original_message=AsyncMock(),
+    )
+
+    assert await modal._add_integration(interacao) is False
+
+    gravacoes.assert_not_awaited()
+    assert interacao.edit_original_message.await_args.kwargs["content"] == traduzir("fav.erased_while_saving")

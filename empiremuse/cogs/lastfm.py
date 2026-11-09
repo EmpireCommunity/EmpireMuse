@@ -540,6 +540,11 @@ class LastFmCog(commands.Cog):
             return False
 
         await self.bot.update_global_data(user_id, data=fresh, db_name=DBModel.users)
+        if tombstones.stale(
+            user_id, fresh_read_at
+        ):  # apagado durante a gravação: não enche o cache (``lastfm_sessions``)
+            await self._abort_erased(inter, view, msg)
+            return False
         if view.clear_session:
             self.bot.pool.lastfm_sessions.pop(user_id, None)
         else:
