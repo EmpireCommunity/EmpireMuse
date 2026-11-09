@@ -52,6 +52,7 @@ class UserBansCog(commands.Cog, name="UserBans"):
         if prepared.view is not None:
             prepared.view.sent_message = sent  # type: ignore[attr-defined]
 
+    @commands.is_owner()
     @panel_command(description="Banir ou desbanir um usuário.", emoji="🔨", alt_name="Banir/desbanir usuário")
     async def userbans(self, ctx: Union[disnake.MessageInteraction, commands.Context]):
         """Entrada do painel do dono. Só ``env_owner_ids`` (``is_owner`` também chega aqui, pela equipe da aplicação: não basta)."""
