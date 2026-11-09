@@ -24,6 +24,7 @@ from empiremuse.rules.user_ban import (
     USER_BANS_BOOT_WAIT_S,
     USER_BANS_RETRY_S,
     UserBanRecord,
+    WarningLimiter,
     is_blocked,
     new_user_ban_record,
     user_ban_from_doc,
@@ -87,6 +88,7 @@ class UserBans:
         self._warned_unloaded = False
         self._lock = asyncio.Lock()
         self._retry_task: asyncio.Task | None = None
+        self._warnings = WarningLimiter()  # Q13: um só para o pool inteiro (N bots não dão N avisos)
 
     @property
     def loaded(self) -> bool:
@@ -96,6 +98,10 @@ class UserBans:
     def is_blocked(self, user_id: object, *, exempt: bool = False) -> bool:
         """Regra única do portão (``rules.user_ban.is_blocked``); sem I/O e nunca recarrega sozinha."""
         return is_blocked(user_id, self._records, self._owners, exempt=exempt)
+
+    def allow_warning(self, user_id: int) -> bool:
+        """Pode avisar este banido em mensagem de canal agora? No máximo 1 por usuário por hora, em todos os bots."""
+        return self._warnings.allow(user_id)
 
     def records(self) -> list[UserBanRecord]:
         """Os banimentos, do mais recente para o mais antigo."""

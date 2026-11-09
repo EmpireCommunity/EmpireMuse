@@ -71,7 +71,6 @@ from empiremuse.utils.app_profile import sync_app_profile
 from empiremuse.utils.guild_ban import GuildBans
 from empiremuse.utils.user_ban import UserBans, user_bans_of
 from empiremuse.utils.user_ban_gate import install_interaction_gate
-from empiremuse.rules.user_ban import WarningLimiter
 from empiremuse.utils.radio import RadioHub
 from empiremuse.utils.radio.notice import refuse_radio_only
 from empiremuse.utils.jukebox_panel import JukeboxPanel
@@ -1532,7 +1531,6 @@ class BotCore(commands.AutoShardedBot):
         self._clear_commands_task: Optional[asyncio.Task] = None
 
         self.env_owner_ids.update(parse_owner_ids(self.config["OWNER_IDS"]))
-        self._blocked_warnings = WarningLimiter()  # Q13: 1 aviso por usuário por hora, por bot
 
     async def on_error(self, event_method: str, *args, **kwargs):
         """Exceção em um tratador de evento: ERROR com o traceback no log de erros (o padrão do disnake imprimiria no stderr)."""
@@ -1802,9 +1800,12 @@ class BotCore(commands.AutoShardedBot):
 
     async def _refuse_blocked_message(self, message: disnake.Message) -> None:
         """Mensagem de banido: nada é processado. Só uma mensagem endereçada ao bot recebe aviso, no máximo 1 por usuário por hora (Q13)."""
-        if not await self._is_addressed_to_bot(message) or not self._blocked_warnings.allow(message.author.id):
+        bans = user_bans_of(self)
+        if bans is None or not await self._is_addressed_to_bot(message):
             return
-        if not await self.can_send_message(message):
+        if not await self.can_send_message(message):  # antes de gastar a cota: sem permissão, o aviso não conta
+            return
+        if not bans.allow_warning(message.author.id):  # Q13: 1 por usuário por hora em TODO o pool (um limitador só)
             return
         tr = self.pool.i18n.for_locale(self.pool.i18n.resolve(None, message.guild.preferred_locale))
         try:
