@@ -439,3 +439,10 @@ class TestArgumentosNaoTexto:
         record = passar(registro("%s / %r", ValueError("a\nb"), ValueError("c\nd")))
 
         assert "\n" not in record.getMessage()
+
+
+def test_code_e_state_de_query_oauth_sao_mascarados_mas_code_de_dicionario_nao():
+    url = "https://exemplo.invalido/painel/callback?code=abc123XYZ&state=st4t3S3gr3d0&x=1"
+
+    assert "abc123XYZ" not in redact(url) and "st4t3S3gr3d0" not in redact(url) and "x=1" in redact(url)
+    assert "'code': 'ERR-1'" in redact("{'code': 'ERR-1'}")

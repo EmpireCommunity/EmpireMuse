@@ -140,9 +140,11 @@ async def _pc_lastfm(self, req):
     interaction = req.interaction
 
     await interaction.response.defer(ephemeral=True, with_message=True)
+    tombstones = self.bot.pool.erasure_tombstones
+    read_at = tombstones.now()  # antes de ler (gancho d)
     user_data = await self.bot.get_global_data(interaction.author.id, db_name=DBModel.users)
 
-    if not user_data["lastfm"]["sessionkey"]:
+    async def no_account() -> bool:
         try:
             cmd = (
                 f"</lastfm:"
@@ -161,7 +163,13 @@ async def _pc_lastfm(self, req):
         )
         return True
 
+    if not user_data["lastfm"]["sessionkey"]:
+        return await no_account()
+
     user_data["lastfm"]["scrobble"] = not user_data["lastfm"]["scrobble"]
+    if tombstones.stale(interaction.author.id, read_at):  # dados apagados depois da leitura: o vínculo não existe mais
+        return await no_account()
+
     self.bot.pool.lastfm_sessions[interaction.author.id] = user_data["lastfm"]
     await self.bot.update_global_data(interaction.author.id, user_data, db_name=DBModel.users)
     lastfm = user_data["lastfm"]

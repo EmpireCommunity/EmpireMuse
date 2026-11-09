@@ -708,6 +708,7 @@ class PlayEnqueueMixin:
             force_play=force_play,
             ephemeral=ephemeral,
             user_data=user_data,
+            user_read_at=req.user_read_at,
             player=player,
             log_text=log_text,
             emoji=emoji,

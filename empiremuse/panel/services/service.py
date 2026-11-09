@@ -23,6 +23,7 @@ from empiremuse.panel.services.base import (
     first,
     version_of,
 )
+from empiremuse.utils.user_locks import USERS_SCOPE, UserLocks
 
 logger = logging.getLogger(__name__)
 
@@ -39,14 +40,20 @@ class Outcome(NamedTuple):
 class SettingsService:
     """Regras de leitura/escrita dos formulários. Dados só via ``bot.get_data/update_data`` (e as versões globais)."""
 
-    def __init__(self) -> None:
+    def __init__(self, user_locks: Optional[UserLocks] = None) -> None:
         self._locks: "weakref.WeakValueDictionary[tuple[str, int], Lock]" = weakref.WeakValueDictionary()
+        self._user_locks = user_locks if user_locks is not None else UserLocks()
 
     def lock(self, scope: str, guild_id: int) -> Lock:
-        """Lock do escopo ``(id do bot | \"global\", servidor)``, compartilhado com as tarefas da Jukebox."""
+        """Lock do escopo ``(id do bot | \"global\", servidor)``, compartilhado com as tarefas da Jukebox.
+
+        O escopo ``"users"`` (a conta do usuário) é o lock de ``pool.user_locks``, o mesmo do apagamento de dados.
+        """
         return self._lock(scope, guild_id)
 
     def _lock(self, scope: str, guild_id: int) -> Lock:
+        if scope == USERS_SCOPE:
+            return self._user_locks.lock(guild_id)
         key = (scope, guild_id)
         lock = self._locks.get(key)
         if lock is None:

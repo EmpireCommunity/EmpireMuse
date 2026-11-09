@@ -63,6 +63,8 @@ DEFAULT_CONFIG = {
     "LOG_COLOR": "on",
     "LOG_FILE": "auto",
     "LOG_DEBUG_GUILDS": "",
+    "LOG_RETENTION_DAYS": 183,
+    "LOG_RETENTION_HOLD": False,
     "METRICS_INTERVAL": 300,
     "USAGE_RETENTION_DAYS": 30,
     "KILL_ON_429": True,
@@ -137,6 +139,7 @@ DEFAULT_CONFIG = {
     "PANEL_SESSION_TTL_HOURS": 12,
     "PANEL_SESSION_IDLE_MINUTES": 60,
     "PANEL_TRUST_PROXY": False,
+    "PANEL_TRUSTED_PROXY_CIDRS": "",
     "PANEL_INSECURE_COOKIES": False,
     ##################################################
     ### Sistema de música - Local lavalink stuffs: ###
@@ -341,6 +344,7 @@ def load_config():
         "PANEL_INSECURE_COOKIES",
         "AUTO_DOWNLOAD_LAVALINK_SERVERLIST",
         "ENABLE_LOGGER",
+        "LOG_RETENTION_HOLD",
         "GUILD_DEAFEN_WARN",
         "ENABLE_DISCORD_URLS_PLAYBACK",
         "PLAYER_SESSIONS_MONGODB",

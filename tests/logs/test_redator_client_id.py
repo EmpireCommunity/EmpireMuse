@@ -16,6 +16,8 @@ from empiremuse.logs.setup import configure_logging
 from empiremuse.logs.settings import LogSettings
 from empiremuse.rules.owner_shell import collect_secret_values
 
+from tests.logs.apoio import agora_utc
+
 pytestmark = pytest.mark.critical
 
 ID_PUBLICO = "198765432109876543"  # só o formato de um snowflake
@@ -53,6 +55,7 @@ class TestConfigMaisEnviron:
             collect_secret_values(config, ambiente),
             stream=console,
             logs_dir=tmp_path / ".logs",
+            now=agora_utc,
         )
         logging.getLogger("empiremuse.painel").warning("oauth id=%s secret=%s", ID_PUBLICO, SECRET)
 

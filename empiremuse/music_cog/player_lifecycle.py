@@ -42,7 +42,10 @@ class PlayerLifecycleMixin:
         warn_message: str = "",
         user_data: dict = None,
         reg_query: dict = None,
+        user_read_at: float = None,
     ):
+        tombstones = self.bot.pool.erasure_tombstones
+
         if not player.current:
             if warn_message:
                 player.set_command_log(emoji="⚠️", text=warn_message)
@@ -63,7 +66,10 @@ class PlayerLifecycleMixin:
             player.update = True
 
         if reg_query is not None:
-            if not user_data:
+            if user_data:
+                read_at = user_read_at  # ``None`` (hora da leitura desconhecida) falha fechado em ``stale``
+            else:
+                read_at = tombstones.now()  # antes de ler (gancho a)
                 user_data = await self.bot.get_global_data(inter.author.id, db_name=DBModel.users)
 
             try:
@@ -75,6 +81,9 @@ class PlayerLifecycleMixin:
                 user_data["last_tracks"].pop(0)
 
             user_data["last_tracks"].append(reg_query)
+
+            if tombstones.stale(inter.author.id, read_at):  # apagamento depois da leitura: descarta sem gravar
+                return
 
             await self.bot.update_global_data(inter.author.id, user_data, db_name=DBModel.users)
 

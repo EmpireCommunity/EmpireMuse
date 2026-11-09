@@ -78,14 +78,14 @@ O log do processo é configurado num ponto só, por `configure_logging` (chamado
 
 | Módulo | Responsabilidade |
 |---|---|
-| `settings.py`, `setup.py` | Lê `LOG_LEVEL`, `LOG_COLOR`, `LOG_FILE`, `LOG_DEBUG_GUILDS` e `METRICS_INTERVAL`; monta os handlers (console e arquivo rotativo) e fixa as bibliotecas externas em `WARNING` |
+| `settings.py`, `setup.py` | Lê `LOG_LEVEL`, `LOG_COLOR`, `LOG_FILE`, `LOG_DEBUG_GUILDS`, `LOG_RETENTION_DAYS`, `LOG_RETENTION_HOLD` e `METRICS_INTERVAL`; monta os handlers (console e arquivo diário podado por idade, `LOG_RETENTION_DAYS` e `LOG_RETENTION_HOLD`) e fixa as bibliotecas externas em `WARNING` |
 | `context.py`, `console.py` | Contexto de bot e servidor; formatadores (cor e emoji só no console) |
 | `redact.py` | Redator único: saneia caracteres de controle, mascara segredos, limita o tamanho e calcula a impressão digital do traceback |
 | `aggregate.py` | Agrega avisos e erros repetidos em janelas de 60 s, preservando o código `ERR-…` |
 | `boot.py`, `metrics.py` | Relatório de subida por etapas e resumo periódico de métricas (em memória, sem rede) |
 | `errors.py`, `hooks.py` | Contexto de comando (IDs e parâmetros resumidos por tipo) e tratadores de exceção não tratada (loop, threads, `sys.excepthook`) |
 
-O `BotCore` também define `allowed_mentions` padrão sem `@everyone` nem cargos, e o webhook de erro (`empiremuse/cogs/error_handler.py`) envia o traceback pelo mesmo redator.
+O `BotCore` também define `allowed_mentions` padrão sem `@everyone` nem cargos, e o webhook de erro (`empiremuse/logs/webhook.py`, usado por todo remetente) envia só o tipo da exceção e o código `ERR-XXXXXX`.
 
 ### Estado compartilhado do pool
 

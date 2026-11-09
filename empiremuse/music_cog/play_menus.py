@@ -235,7 +235,7 @@ class PlayMenusMixin:
                     user_data["integration_links"][k] = v
                     update = True
 
-                if update:
+                if update and not self.bot.pool.erasure_tombstones.stale(inter.author.id, req.user_read_at):
                     await self.bot.update_global_data(inter.author.id, user_data, db_name=DBModel.users)
 
                 emoji, platform = music_source_emoji_url(v["url"], self.bot)

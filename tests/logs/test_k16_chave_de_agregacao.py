@@ -19,7 +19,7 @@ from empiremuse.logs.settings import LogSettings
 from empiremuse.music_cog.nodes import NodesMixin
 from empiremuse.utils.music.models.player_events import PlayerEventsMixin
 from empiremuse.wavelink import node as node_module
-from tests.logs.apoio import Relogio
+from tests.logs.apoio import agora_utc, arquivo_do_log, Relogio
 from tests.logs.test_player_events import cog_de_nos, no_fisico
 from tests.pool.test_logs_sem_segredo import node_falso
 
@@ -37,9 +37,10 @@ class Destinos:
             [],
             stream=self.console,
             logs_dir=tmp_path / ".logs",
+            now=agora_utc,
             clock=self.relogio,
         )
-        self.arquivo = tmp_path / ".logs" / "disnake.log"
+        self.arquivo = arquivo_do_log(tmp_path / ".logs")
 
     def textos(self) -> list[str]:
         flush_logging()

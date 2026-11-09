@@ -72,6 +72,14 @@ def playlists_error_text(error: RuleError) -> str:
     return error_message(error)
 
 
+async def _erased_meanwhile(view, inter: disnake.ModalInteraction, read_at: float) -> bool:
+    """Os dados do membro foram apagados depois da leitura de ``read_at`` (ou a leitura é velha demais)? Então nada é gravado e ele é avisado."""
+    if not view.bot.pool.erasure_tombstones.stale(inter.author.id, read_at):
+        return False
+    await inter.edit_original_message(content=view.tr("fav.erased_while_saving"))
+    return True
+
+
 class FavModalImport(disnake.ui.Modal):
     """Importar favoritos do membro (anexo ``.json`` ou texto colado, lidos por ``rules/playlists``) ou integrações (JSON colado).
 
@@ -229,6 +237,10 @@ class FavModalImport(disnake.ui.Modal):
                 return False
             clean_data[clean_name] = url
 
+        read_at = (
+            self.view.bot.pool.erasure_tombstones.now()
+        )  # antes de ler (e de qualquer espera): ver ``_erased_meanwhile``
+
         work = deepcopy(await self.view.bot.get_global_data(inter.author.id, db_name=DBModel.users))
 
         limit = await quota_for(self.view.bot, inter.author, "MAX_USER_FAVS")
@@ -240,6 +252,8 @@ class FavModalImport(disnake.ui.Modal):
             return False
 
         work["fav_links"] = merged
+        if await _erased_meanwhile(self.view, inter, read_at):
+            return False
         self.view.data = work  # só depois de todas as checagens: uma recusa não altera a tela
 
         await self.view.bot.update_global_data(inter.author.id, self.view.data, db_name=DBModel.users)
@@ -277,6 +291,10 @@ class FavModalImport(disnake.ui.Modal):
 
         await inter.response.defer(ephemeral=True)
 
+        read_at = (
+            self.view.bot.pool.erasure_tombstones.now()
+        )  # antes de ler (e de qualquer espera): ver ``_erased_meanwhile``
+
         work = deepcopy(await self.view.bot.get_global_data(inter.author.id, db_name=DBModel.users))
 
         limit = await quota_for(self.view.bot, inter.author, "MAX_USER_INTEGRATIONS")
@@ -288,6 +306,8 @@ class FavModalImport(disnake.ui.Modal):
             return False
 
         work["integration_links"] = merged
+        if await _erased_meanwhile(self.view, inter, read_at):
+            return False
         self.view.data = work  # só depois de todas as checagens: uma recusa não altera a tela
 
         await self.view.bot.update_global_data(inter.author.id, self.view.data, db_name=DBModel.users)
@@ -368,6 +388,10 @@ class FavModalAdd(disnake.ui.Modal):
 
             await inter.response.defer(ephemeral=True)
 
+            read_at = (
+                self.view.bot.pool.erasure_tombstones.now()
+            )  # antes de ler (e de qualquer espera): ver ``_erased_meanwhile``
+
             work = deepcopy(await self.view.bot.get_global_data(inter.author.id, db_name=DBModel.users))
 
             name_max = name_limit(self.view.bot.config["USER_FAV_MAX_NAME_LENGTH"])
@@ -390,6 +414,8 @@ class FavModalAdd(disnake.ui.Modal):
                 return
 
             work["fav_links"] = saved
+            if await _erased_meanwhile(self.view, inter, read_at):
+                return
             self.view.data = work  # só depois de todas as checagens: uma recusa não altera a tela
 
             await self.view.bot.update_global_data(inter.author.id, self.view.data, db_name=DBModel.users)
@@ -422,6 +448,10 @@ class FavModalAdd(disnake.ui.Modal):
             await inter.response.defer(ephemeral=True, with_message=True)
         except disnake.HTTPException, disnake.InteractionResponded:
             pass
+
+        read_at = (
+            self.view.bot.pool.erasure_tombstones.now()
+        )  # antes de ler (e de qualquer espera): ver ``_erased_meanwhile``
 
         work = deepcopy(await self.view.bot.get_global_data(inter.author.id, db_name=DBModel.users))
 
@@ -472,6 +502,8 @@ class FavModalAdd(disnake.ui.Modal):
             return False
 
         work["integration_links"] = saved.entries
+        if await _erased_meanwhile(self.view, inter, read_at):
+            return False
         self.view.data = work  # só depois de todas as checagens: uma recusa não altera a tela
 
         await self.view.bot.update_global_data(inter.author.id, self.view.data, db_name=DBModel.users)

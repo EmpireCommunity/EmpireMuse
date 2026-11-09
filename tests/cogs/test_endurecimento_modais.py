@@ -17,6 +17,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from empiremuse.utils.erasure import ErasureTombstones
 from empiremuse.rules import settings, urls
 from empiremuse.rules.errors import RuleError
 from empiremuse.utils.music.interactions import ViewMode
@@ -125,7 +126,9 @@ class BotEspiao(ModalBot):
 
         self.deezer = SimpleNamespace(get_user_info=consulta_deezer)
         self.spotify = SimpleNamespace(get_user_info=consulta_spotify)
-        self.pool = SimpleNamespace(ytdl=SimpleNamespace(extract_info=consulta_ytdl))
+        self.pool = SimpleNamespace(
+            ytdl=SimpleNamespace(extract_info=consulta_ytdl), erasure_tombstones=ErasureTombstones()
+        )
 
     def get_cog(self, nome):
         def baldes(inter):
