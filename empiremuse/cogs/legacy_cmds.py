@@ -23,6 +23,7 @@ from empiremuse.rules.git_remote import sanitized_repo_url
 from empiremuse.rules.owner_shell import build_shell_env, mask_secrets, mask_shell_output
 from empiremuse.rules.release import Version, changelog_section, changelog_sections
 from empiremuse.rules.settings import validate_prefix
+from empiremuse.rules.usage import render_text
 from empiremuse.updater.git_flow import (
     EXIT_RESTART,
     UpdateError,
@@ -66,6 +67,7 @@ logger = logging.getLogger(__name__)
 
 # Trecho máximo do comando que vai para o log de execução de comandos de owner.
 MAX_LOGGED_COMMAND_LENGTH = 200
+DISPLAY_NAME_LIMIT = 32  # o Discord limita o nome de exibição a 32 caracteres
 
 # Saída máxima (em caracteres) lida do histórico do git.
 MAX_GIT_READ_OUTPUT = 4 * 1024 * 1024
@@ -268,7 +270,8 @@ class Owner(commands.Cog):
             await message.channel.send(tr("erasure.owner.not_found"))
             return
         self.log_owner_command(message, OWNER_COMMAND_NAME, f"pedido de apagamento id={target.id}")
-        name = disnake.utils.escape_markdown(disnake.utils.escape_mentions(target.display_name))
+        # Nome de terceiros: ``render_text`` tira controle e bidi, corta e escapa markdown e ``@`` (nome só de caracteres invisíveis cai no ID)
+        name = render_text(target.display_name, DISPLAY_NAME_LIMIT) or str(target.id)
         embed = disnake.Embed(description=tr("erasure.owner.ask", name=name, id=target.id))
         embed.set_thumbnail(url=target.display_avatar.url)
         await message.channel.send(

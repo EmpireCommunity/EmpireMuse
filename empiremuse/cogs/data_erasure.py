@@ -10,8 +10,9 @@ Regras que valem para as duas portas:
 * O serviço é lento (varre coleções): o clique reconhece a interação ANTES de chamá-lo (``edit_message`` com o texto de andamento).
 * O membro NUNCA vê contagens nem texto de exceção: um texto fixo por desfecho. O texto de ``PARTIAL`` não promete que repetir resolve.
 
-Costura com o Vitral (views e textos): os rótulos e as mensagens são só as chaves ``erasure.*`` (``erasure_text`` abaixo); a lógica dos
-botões fica nas classes ``ErasureConfirmView`` e ``OwnerRequestView``, que o Vitral pode redesenhar sem tocar nas decisões.
+Textos: só as chaves ``erasure.*`` dos catálogos. A DM do titular (``erasure.owner.dm`` e os rótulos ``erasure.owner.dm_*``) sai no idioma de
+reserva, porque antes do clique não há locale do titular: por isso esses três textos são bilíngues e iguais nos dois catálogos. Depois do
+clique a interação traz o idioma do titular e todas as respostas passam a usá-lo.
 """
 
 from __future__ import annotations
@@ -98,22 +99,30 @@ class ErasureConfirmView(disnake.ui.View):
         super().__init__(timeout=CONFIRM_TIMEOUT_S if grant is None else None)
         self.bot, self.tr, self.holder_id, self.grant, self.origin = bot, tr, holder_id, grant, origin
         suffix = f":{grant.grant_id}" if grant else ""
+        # Na DM do titular o idioma ainda é desconhecido: os rótulos são bilíngues (``erasure.owner.dm_*``); no slash, o idioma de quem pediu.
         confirm = disnake.ui.Button(
-            label=fit(tr("erasure.confirm"), BUTTON_LABEL_LIMIT),
+            label=fit(tr("erasure.owner.dm_confirm" if grant else "erasure.confirm"), BUTTON_LABEL_LIMIT),
             style=disnake.ButtonStyle.danger,
             custom_id=(GRANT_CONFIRM_ID if grant else CONFIRM_ID) + suffix,
         )
         cancel = disnake.ui.Button(
-            label=fit(tr("erasure.cancel"), BUTTON_LABEL_LIMIT),
+            label=fit(tr("erasure.owner.dm_cancel" if grant else "erasure.cancel"), BUTTON_LABEL_LIMIT),
+            style=disnake.ButtonStyle.secondary,
             custom_id=(GRANT_CANCEL_ID if grant else CANCEL_ID) + suffix,
         )
         confirm.callback, cancel.callback = self.confirmed, self.cancelled
         self.add_item(confirm)
         self.add_item(cancel)
 
+    def reply_translator(self, interaction: disnake.MessageInteraction):
+        """Idioma do Discord de quem clicou: na DM do titular é o primeiro momento em que ele é conhecido."""
+        return translator_for(self.bot.pool, interaction.locale)
+
     async def interaction_check(self, interaction: disnake.MessageInteraction) -> bool:
         if interaction.author.id != self.holder_id:
-            await interaction.response.send_message(self.tr("erasure.not_yours"), ephemeral=True)
+            await interaction.response.send_message(
+                self.reply_translator(interaction)("erasure.not_yours"), ephemeral=True
+            )
             return False
         return True
 
@@ -121,21 +130,24 @@ class ErasureConfirmView(disnake.ui.View):
         self.stop()
         if self.grant is not None:
             self.bot.pool.erasure_grants.revoke(self.grant.grant_id)
-        await interaction.response.edit_message(content=self.tr("erasure.cancelled"), view=None)
+        await interaction.response.edit_message(
+            content=self.reply_translator(interaction)("erasure.cancelled"), view=None
+        )
 
     async def confirmed(self, interaction: disnake.MessageInteraction) -> None:
         self.stop()
         pool = self.bot.pool
+        tr = self.reply_translator(interaction)
         grant = None
         if self.grant is not None:
             # Uso único, titular exato, 24 h: quem não é o titular nunca chega aqui (``interaction_check``) e a concessão se gasta só agora.
             grant = pool.erasure_grants.redeem(self.grant.grant_id, interaction.author.id)
             if grant is None:
-                await interaction.response.edit_message(content=self.tr("erasure.grant_expired"), view=None)
+                await interaction.response.edit_message(content=tr("erasure.grant_expired"), view=None)
                 return
         # ``edit_message`` reconhece a interação (3 s) e tira os botões; a varredura do serviço vem depois, sem prazo de resposta.
-        await interaction.response.edit_message(content=self.tr("erasure.running"), view=None)
-        text = await run_erasure(pool, self.tr, interaction.author.id, grant=grant)
+        await interaction.response.edit_message(content=tr("erasure.running"), view=None)
+        text = await run_erasure(pool, tr, interaction.author.id, grant=grant)
         await interaction.edit_original_message(content=text)
 
     async def on_timeout(self) -> None:
@@ -160,7 +172,9 @@ class OwnerRequestView(disnake.ui.View):
             custom_id="erasure_owner_send",
         )
         cancel = disnake.ui.Button(
-            label=fit(tr("erasure.cancel"), BUTTON_LABEL_LIMIT), custom_id="erasure_owner_cancel"
+            label=fit(tr("erasure.cancel"), BUTTON_LABEL_LIMIT),
+            style=disnake.ButtonStyle.secondary,
+            custom_id="erasure_owner_cancel",
         )
         send.callback, cancel.callback = self.send_request, self.cancelled
         self.add_item(send)

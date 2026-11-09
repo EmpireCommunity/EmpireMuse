@@ -52,9 +52,10 @@ def world(status=ErasureStatus.OK, counts=None):
     return SimpleNamespace(pool=pool, bot=bot, clock=clock, tr=get_i18n().for_locale("pt-BR"))
 
 
-def click(user_id):
+def click(user_id, locale=disnake.Locale.pt_BR):
     return SimpleNamespace(
         author=SimpleNamespace(id=user_id),
+        locale=locale,
         response=SimpleNamespace(edit_message=AsyncMock(), send_message=AsyncMock()),
         edit_original_message=AsyncMock(),
     )
@@ -444,6 +445,45 @@ async def test_listener_shows_the_resolved_user_to_the_owner_and_does_not_erase(
     assert "123456789012345678" in kwargs["embed"].description and "Ana" in kwargs["embed"].description
     w.pool.erasure.erase_user.assert_not_awaited()
     cog.log_owner_command.assert_called_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("display_name", "expected_in_text", "forbidden_in_text"),
+    [
+        ("@everyone", "@\u200beveryone", "@everyone"),
+        ("**Ana**", "\\*\\*Ana\\*\\*", "**Ana**"),
+        ("\u202e\u200b", "**123456789012345678** (`123456789012345678`)", "\u202e"),  # só invisíveis: cai no ID
+    ],
+)
+async def test_listener_renders_the_target_name_as_untrusted_text(display_name, expected_in_text, forbidden_in_text):
+    target = SimpleNamespace(
+        id=123456789012345678,
+        bot=False,
+        display_name=display_name,
+        display_avatar=SimpleNamespace(url="https://cdn.example/a.png"),
+    )
+    _, cog, message = listener_world(target=target)
+
+    await cog.erasure_request_dm(message)
+
+    description = message.channel.send.await_args.kwargs["embed"].description
+    assert expected_in_text in description and forbidden_in_text not in description
+
+
+@pytest.mark.asyncio
+async def test_holder_dm_buttons_are_bilingual_and_the_replies_use_the_clicker_locale():
+    w = world()
+    fallback = w.pool.i18n.for_locale(None)  # a DM sai no idioma de reserva: o titular ainda não clicou
+    grant = w.pool.erasure_grants.issue(OWNER, HOLDER)
+    view = data_erasure.ErasureConfirmView(w.bot, fallback, HOLDER, grant=grant)
+    labels = [item.label for item in view.children]
+    assert all(" · " in label for label in labels)  # os dois idiomas no próprio rótulo
+
+    inter = click(HOLDER, locale=disnake.Locale.pt_BR)
+    await view.confirmed(inter)
+
+    assert final_text(inter) == w.tr("erasure.done")  # ``w.tr`` é o pt-BR; o de reserva seria o en-US
 
 
 def test_owner_audit_line_is_never_aggregated(caplog):
