@@ -1,7 +1,7 @@
 """Configuração das rádios pelo painel (contrato-nomes-radios §4.3): tipo, canal, bot reserva e redefinir.
 
 Uma função só para o Discord e o painel, do Turbine em ``utils/radio/setup.py``, exposta pelo hub como
-``pool.radio.setup``: ``options(guild_id)`` (os bots reserva livres e os canais de voz/palco que valem),
+``pool.radio.setup``: ``options(guild_id, actor_id)`` (os bots reserva livres e os canais de voz/palco que valem),
 ``configure(guild_id, actor_id, *, radio_id, channel_id, bot_id, kind, rev)`` e ``reset(guild_id, actor_id, radio_id, rev)``.
 As checagens (premium para criar e configurar, ``manage_guild`` de quem faz, só reserva livre, uma rádio por bot, máximo 3,
 canal de voz ou palco que não é o da Jukebox e onde o bot conecta e fala, rádio ligada exige desligar antes, CAS em
@@ -100,7 +100,7 @@ class RadioSetupService:
         return ctx.pool.radio.setup
 
     async def options(self, ctx: FormContext) -> Any:
-        return await self.api(ctx).options(ctx.guild_id)
+        return await self.api(ctx).options(ctx.guild_id, int(ctx.user_id))
 
     # ------------------------------------------------------------------ formulário
 
@@ -264,21 +264,19 @@ class RadioSetupService:
         sent = first(args, "versao")
         if sent is None or not REV.fullmatch(sent):
             return STATUS_INVALID, view(message=VERSION_TEXT, kind=KIND_ERROR)
-        if int(sent) != int(radio.rev):
-            return STATUS_CONFLICT, view(message=CONFLICT_TEXT, kind=KIND_ERROR)
         step = first(args, "acao") or ""
         if step == ACTION_RESET:
             return STATUS_OK, self.confirmation(ctx, radio, action, names)
         if step != ACTION_CONFIRM:
             return STATUS_INVALID, view(message=INVALID_TEXT, kind=KIND_ERROR)
         token = first(args, "token") or ""
-        status = self.tokens.check(token, ctx.user_id, ctx.guild_id, TOKEN_SCOPE, f"{radio.id}:{radio.rev}")
+        status = self.tokens.check(token, ctx.user_id, ctx.guild_id, TOKEN_SCOPE, f"{radio.id}:{int(sent)}")
         if status == "outro":
             return STATUS_CONFLICT, view(message=CONFLICT_TEXT, kind=KIND_ERROR)
         if status is not None:
             return STATUS_INVALID, view(message=tr(MSG_TOKEN_KEY), kind=KIND_ERROR)
         try:
-            await self.api(ctx).reset(ctx.guild_id, int(ctx.user_id), str(radio.id), int(radio.rev))
+            await self.api(ctx).reset(ctx.guild_id, int(ctx.user_id), str(radio.id), int(sent))
         except RadioNotFound:
             return STATUS_NOT_FOUND, None
         except RadioForbidden as exc:

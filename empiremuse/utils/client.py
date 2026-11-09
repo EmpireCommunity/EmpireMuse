@@ -68,7 +68,6 @@ from empiremuse.utils.guild_ban import GuildBans
 from empiremuse.utils.radio import RadioHub
 from empiremuse.utils.radio.notice import refuse_radio_only
 from empiremuse.utils.jukebox_panel import JukeboxPanel
-from empiremuse.utils.migrations import radios_release
 from empiremuse.utils.servers import ServerStore
 from empiremuse.rules.usage import KIND_PREFIX, KIND_SLASH
 from empiremuse.utils.usage import UsageRecorder, usage_of
@@ -1447,10 +1446,6 @@ class BotPool:
         # Catálogos de idioma: estritos (``en-US``/``pt-BR`` quebrado derruba a subida, release quebrada), e a migração do idioma dos
         # servidores que já existiam roda uma vez, DEPOIS do ``load`` e ANTES dos bots (I-12). Falha da migração fica para a próxima subida.
         self.i18n.load()
-        try:
-            self.loop.run_until_complete(radios_release.run(self))
-        except Exception:
-            logger.exception("Falha ao executar a migração radios_release")
         try:
             self.loop.run_until_complete(self.servers.migrate_language())
         except Exception:
