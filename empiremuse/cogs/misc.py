@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import datetime
-import json
 import platform
 import logging
 from itertools import cycle
@@ -11,7 +10,6 @@ from os import getpid
 from random import shuffle
 from typing import TYPE_CHECKING
 
-import aiofiles
 import disnake
 import psutil
 from aiohttp import ClientSession
@@ -20,6 +18,7 @@ from disnake.ext import commands
 from empiremuse import paths
 from empiremuse.i18n import localized
 from empiremuse.rules.text import format_int, format_mib
+from empiremuse.rules.bot_tokens import is_radio_only_identifier
 from empiremuse.rules.bot_roles import Peer, invite_order, main_missing_notice, notifier
 from empiremuse.utils import branding
 from empiremuse.utils.branding import asset_url
@@ -33,20 +32,6 @@ from empiremuse.version import image_version, running_from_image
 
 if TYPE_CHECKING:
     from empiremuse.utils.client import BotCore
-
-
-def remove_blank_spaces(d):
-    for k, v in list(d.items()):
-        new_k = k.strip()
-        if new_k != k:
-            d[new_k] = d.pop(k)
-
-        if isinstance(v, str):
-            new_v = v.strip()
-            if new_v != v:
-                d[new_k] = new_v
-        elif isinstance(v, dict):
-            remove_blank_spaces(v)
 
 
 logger = logging.getLogger(__name__)
@@ -241,10 +226,14 @@ class Misc(commands.Cog):
         """
         pool = self.bot.pool
         main = pool.main_bot
-        if main is None or main.get_guild(guild.id) is not None:
+        if is_radio_only_identifier(self.bot.identifier) or main is None or main.get_guild(guild.id) is not None:
             return
 
-        here = {b.identifier for b in pool.bots if b.is_reserve and b.get_guild(guild.id) is not None}
+        here = {
+            b.identifier
+            for b in pool.bots
+            if b.is_reserve and not is_radio_only_identifier(b.identifier) and b.get_guild(guild.id) is not None
+        }
         if notifier(here | {self.bot.identifier}) != self.bot.identifier or guild.id in pool.join_notices:
             return
 
@@ -776,7 +765,7 @@ class Misc(commands.Cog):
                 if guild := bot.get_guild(inter.guild_id):
                     break
 
-        pool_bots = [b for b in self.bot.pool.bots if b.user is not None]
+        pool_bots = [b for b in self.bot.pool.bots if b.user is not None and not is_radio_only_identifier(b.identifier)]
         if guild:  # no servidor: só quem falta, na ordem de convite (o principal primeiro, depois as reservas)
             by_id = {b.user.id: b for b in pool_bots}
             order = invite_order([Peer(b.identifier, b.user.id, b.is_main) for b in pool_bots], ())
@@ -876,7 +865,7 @@ class Misc(commands.Cog):
 
         bot = self.bot
 
-        for b in self.bot.pool.get_guild_bots(inter.guild_id):
+        for b in self.bot.pool.get_all_bots():
             if guild := b.get_guild(inter.guild_id):
                 bot = b
                 break
@@ -962,42 +951,6 @@ class Misc(commands.Cog):
             embeds[-1].set_footer(text=f"Solicitado por: {inter.author}", icon_url=requester)
 
         await inter.send(embeds=embeds, ephemeral=True)
-
-    @commands.is_owner()
-    @commands.max_concurrency(1, commands.BucketType.default)
-    @commands.command(
-        hidden=True,
-        description="Comando temporário para corrigir favoritos com espaços em branco "
-        "que ocasionam erros em algumas situações.",
-    )
-    async def fixfavs(self, ctx: CustomContext):
-        backup_dir = paths.RUNTIME_DIR / "local_database" / "fixfavs_backup"
-        if not backup_dir.is_dir():
-            backup_dir.mkdir(parents=True, exist_ok=True)
-
-        async with ctx.typing():
-            # os links fixos dos servidores agora são as playlists do documento único (item 17): só os favoritos pessoais aqui
-            documents = self.bot.pool.database.iter_data(collection="global", db_name=DBModel.users)
-
-            async for data in self._backup_each(documents, backup_dir / "user_favs.json"):
-                remove_blank_spaces(data["fav_links"])
-                await self.bot.update_global_data(id_=data["_id"], data=data, db_name=DBModel.users)
-
-            await ctx.send("os favoritos foram corrigidos com sucesso!")
-
-    @staticmethod
-    async def _backup_each(documents, path):
-        """Entrega cada documento do cursor DEPOIS de gravar no backup (lista JSON) como ele estava; sem montar a lista toda."""
-        async with aiofiles.open(path, "w") as f:
-            await f.write("[")
-            first = True
-            try:
-                async for data in documents:
-                    await f.write(("" if first else ",") + "\n" + json.dumps(data, indent=4))
-                    first = False
-                    yield data
-            finally:
-                await f.write("\n]")
 
     async def cog_check(self, ctx):
         return await check_requester_channel(ctx)

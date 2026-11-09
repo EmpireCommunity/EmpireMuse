@@ -1,15 +1,16 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-import logging
 import asyncio
 import contextlib
-from typing import Union, Optional, TYPE_CHECKING
+import logging
+from typing import TYPE_CHECKING, Optional, Union
 
 import disnake
 from disnake.ext import commands
 
 import empiremuse.wavelink as wavelink
+from empiremuse.rules.bot_tokens import is_radio_only_identifier
 from empiremuse.rules.jukebox_panel import choose_player
 from empiremuse.rules.voice_status import control_lock_seconds
 from empiremuse.utils.db import DBModel
@@ -59,8 +60,7 @@ def resolve_player(pool: BotPool, guild_id: int, member: disnake.Member) -> Opti
 
 def is_radio_only(pool: BotPool, bot: BotCore) -> bool:
     """O bot é dedicado a rádio (item 8)? Ele nunca atende pedido, ``/play`` nem sugestão de bot livre; o principal nunca é."""
-    roles = getattr(getattr(pool, "radio", None), "roles", None)
-    return bool(roles is not None and roles.is_radio_only(getattr(bot, "identifier", None)))
+    return is_radio_only_identifier(getattr(bot, "identifier", None))
 
 
 def has_radio_player(bot: BotCore, guild_id: int) -> bool:
@@ -79,9 +79,6 @@ def pick_request_bot(pool: BotPool, guild_id: int, member: disnake.Member) -> Op
         if not bot.user or not bot.bot_ready or (guild := bot.get_guild(guild_id)) is None or is_radio_only(pool, bot):
             continue
         if has_radio_player(bot, guild_id):
-            continue
-        exclusive = getattr(bot, "exclusive_guild_id", None)
-        if exclusive and exclusive != guild_id:
             continue
         if guild.me is not None and guild.me.voice is None:
             return bot
@@ -136,7 +133,7 @@ async def check_requester_channel(ctx: CustomContext):
 
         raise GenericError(error_msg, self_delete=True, delete_original=15)
 
-    for bot in ctx.bot.pool.get_guild_bots(ctx.guild_id):
+    for bot in ctx.bot.pool.get_all_bots():
         if bot == ctx.bot:
             continue
 
@@ -192,7 +189,7 @@ async def check_pool_bots(
         if isinstance(inter, disnake.ModalInteraction):
             return update_attr(inter, inter.bot, inter.guild)
 
-    if len((guild_bots := inter.bot.pool.get_guild_bots(inter.guild_id))) < 2 and inter.guild:
+    if len((all_bots := inter.bot.pool.get_all_bots())) < 2 and inter.guild:
         return update_attr(inter, inter.bot, inter.guild)
 
     if not inter.guild_id:
@@ -275,7 +272,7 @@ async def check_pool_bots(
 
     bot_in_guild = False
 
-    for bot in sorted(guild_bots, key=lambda b: b.identifier):
+    for bot in sorted(all_bots, key=lambda b: b.identifier):
         if not bot.bot_ready or is_radio_only(inter.bot.pool, bot) or has_radio_player(bot, inter.guild_id):
             continue
 
@@ -691,7 +688,7 @@ def get_available_bots_info(pool: BotPool, guild_id: int, member: disnake.Member
 
     voice_channels = set()
 
-    for b in pool.get_guild_bots(guild_id):
+    for b in pool.get_all_bots():
         if not b.bot_ready or is_radio_only(pool, b):
             continue
 
@@ -863,7 +860,7 @@ def can_connect(
             raise GenericError(guild_text_sync(guild, "legacy.checks.channel_full", channel=channel.mention))
 
     if bot:
-        for b in bot.pool.get_guild_bots(channel.guild.id):
+        for b in bot.pool.get_all_bots():
             if b == bot:
                 continue
             if b.bot_ready and b.user.id in channel.voice_states:

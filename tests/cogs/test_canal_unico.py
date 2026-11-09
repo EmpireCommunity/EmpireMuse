@@ -21,7 +21,7 @@ pytestmark = pytest.mark.critical
 GID, PANEL_CHANNEL, PANEL_MESSAGE = 111, 22, 555
 
 
-def make_bot(bot_id, identifier, *, call=None, ready=True, exclusive=None, in_guild=True, static=True, private=False):
+def make_bot(bot_id, identifier, *, call=None, ready=True, in_guild=True, static=True, private=False):
     """Um bot do pool: ``call`` = id da call onde ele toca (``None`` = livre; ``private`` = ``@everyone`` não vê a call)."""
     perms = SimpleNamespace(view_channel=not private, connect=not private)
     channel = SimpleNamespace(
@@ -42,7 +42,6 @@ def make_bot(bot_id, identifier, *, call=None, ready=True, exclusive=None, in_gu
         identifier=identifier,
         user=SimpleNamespace(id=bot_id, display_name=identifier),
         bot_ready=ready,
-        exclusive_guild_id=exclusive,
         music=SimpleNamespace(players={GID: player} if player else {}),
         get_guild=lambda gid: guild if in_guild and gid == GID else None,
         get_cog=lambda name: cog,
@@ -64,17 +63,17 @@ def member(call=None):
 
 @pytest.mark.parametrize(
     ("caller_call", "expected"),
-    [(100, "TOKEN"), (200, "TOKEN_2"), (300, None), (None, None)],
+    [(100, "TOKEN"), (200, "TOKEN_RESERVE_2"), (300, None), (None, None)],
     ids=["first_bots_call", "second_bots_call", "call_without_player", "not_in_a_call"],
 )
 def test_resolve_player_returns_the_player_of_the_callers_call_and_never_another(caller_call, expected):
-    pool = make_pool(make_bot(2, "TOKEN_2", call=200), make_bot(1, "TOKEN", call=100))
+    pool = make_pool(make_bot(2, "TOKEN_RESERVE_2", call=200), make_bot(1, "TOKEN", call=100))
     resolved = resolve_player(pool, GID, member(caller_call))
     assert (resolved[0].identifier if resolved else None) == expected
 
 
 def test_a_bot_without_a_player_or_logged_out_is_never_chosen():
-    free, logged_out = make_bot(1, "TOKEN"), make_bot(2, "TOKEN_2", call=200)
+    free, logged_out = make_bot(1, "TOKEN"), make_bot(2, "TOKEN_RESERVE_2", call=200)
     logged_out.user = None
     assert resolve_player(make_pool(free, logged_out), GID, member(200)) is None
 
@@ -82,10 +81,10 @@ def test_a_bot_without_a_player_or_logged_out_is_never_chosen():
 @pytest.mark.parametrize(
     ("bots", "caller_call", "expected"),
     [
-        ([(1, "TOKEN", 100), (2, "TOKEN_2", None)], 100, "TOKEN"),  # o que já está na call de quem pediu
-        ([(1, "TOKEN", 100), (2, "TOKEN_2", None)], None, "TOKEN_2"),  # senão o 1º livre
-        ([(1, "TOKEN", None), (2, "TOKEN_2", None)], None, "TOKEN"),  # ordem do identifier
-        ([(1, "TOKEN", 100), (2, "TOKEN_2", 200)], 300, None),  # todos ocupados em outras calls
+        ([(1, "TOKEN", 100), (2, "TOKEN_RESERVE_2", None)], 100, "TOKEN"),  # o que já está na call de quem pediu
+        ([(1, "TOKEN", 100), (2, "TOKEN_RESERVE_2", None)], None, "TOKEN_RESERVE_2"),  # senão o 1º livre
+        ([(1, "TOKEN", None), (2, "TOKEN_RESERVE_2", None)], None, "TOKEN"),  # ordem do identifier
+        ([(1, "TOKEN", 100), (2, "TOKEN_RESERVE_2", 200)], 300, None),  # todos ocupados em outras calls
     ],
 )
 def test_a_request_goes_to_the_bot_in_the_callers_call_else_the_first_free_one(bots, caller_call, expected):
@@ -96,12 +95,12 @@ def test_a_request_goes_to_the_bot_in_the_callers_call_else_the_first_free_one(b
 
 @pytest.mark.parametrize(
     "unfit",
-    [{"ready": False}, {"exclusive": 999}, {"in_guild": False}],
-    ids=["not_ready", "exclusive_of_another_server", "not_in_the_server"],
+    [{"ready": False}, {"in_guild": False}],
+    ids=["not_ready", "not_in_the_server"],
 )
 def test_a_bot_that_cannot_serve_here_is_skipped_when_picking_a_free_one(unfit):
-    pool = make_pool(make_bot(1, "TOKEN", **unfit), make_bot(2, "TOKEN_2"))
-    assert pick_request_bot(pool, GID, member(None)).identifier == "TOKEN_2"
+    pool = make_pool(make_bot(1, "TOKEN", **unfit), make_bot(2, "TOKEN_RESERVE_2"))
+    assert pick_request_bot(pool, GID, member(None)).identifier == "TOKEN_RESERVE_2"
 
 
 # ---------------------------------------------------------------------- S7: só o bot do painel trata o que é digitado
@@ -152,7 +151,7 @@ async def test_a_store_that_fails_means_not_the_panel_bot_better_to_ignore_than_
 def click(*, call, panel_bot=True, message_id=PANEL_MESSAGE):
     """Um clique no painel recebido pelo bot ``TOKEN`` (o do painel); a pessoa está na ``call`` dada."""
     me = make_bot(1, "TOKEN", call=100)
-    other = make_bot(2, "TOKEN_2", call=200)
+    other = make_bot(2, "TOKEN_RESERVE_2", call=200)
     request = SimpleNamespace(
         get=AsyncMock(return_value=SimpleNamespace(message_id=PANEL_MESSAGE)),
         is_panel_bot=AsyncMock(return_value=panel_bot),
@@ -232,7 +231,7 @@ def request_inter(author_call, channel_id=PANEL_CHANNEL):
 
 def executor_world(me=None, other=None):
     me = me or make_bot(1, "TOKEN")
-    other = other or make_bot(2, "TOKEN_2", call=200)
+    other = other or make_bot(2, "TOKEN_RESERVE_2", call=200)
     me.pool = make_pool(me, other)
     request = SimpleNamespace(get=AsyncMock(return_value=SimpleNamespace(channel=PANEL_CHANNEL)))
     me.pool.servers = SimpleNamespace(jukebox=request)
@@ -246,7 +245,7 @@ def executor_world(me=None, other=None):
 async def test_the_modal_is_resolved_again_on_submit_so_a_changed_call_acts_on_the_new_players_bot():  # S7b
     dispatch, me, other = executor_world()
 
-    first = request_inter(200)  # quando abriu o modal estava na call do TOKEN_2...
+    first = request_inter(200)  # quando abriu o modal estava na call do TOKEN_RESERVE_2...
     assert await dispatch.request_executor(first) is other.cog and first.music_bot is other
 
     second = request_inter(None)  # ...ao enviar já saiu: ninguém toca para ele, o 1º livre atende (o próprio TOKEN)
@@ -259,7 +258,7 @@ async def test_outside_the_shared_channel_nothing_is_rerouted_and_with_every_bot
     elsewhere = request_inter(200, channel_id=999)
     assert await dispatch.request_executor(elsewhere) is dispatch and not hasattr(elsewhere, "music_bot")
 
-    busy_dispatch, _, _ = executor_world(make_bot(1, "TOKEN", call=100), make_bot(2, "TOKEN_2", call=200))
+    busy_dispatch, _, _ = executor_world(make_bot(1, "TOKEN", call=100), make_bot(2, "TOKEN_RESERVE_2", call=200))
     with pytest.raises(GenericError):
         await busy_dispatch.request_executor(request_inter(300))
 
@@ -312,14 +311,14 @@ def panel_world(*bots):
 
 
 def test_only_static_players_that_are_not_closing_count_and_the_list_takes_over_with_two_or_more():
-    one, two = make_bot(1, "TOKEN", call=100), make_bot(2, "TOKEN_2", call=200)
+    one, two = make_bot(1, "TOKEN", call=100), make_bot(2, "TOKEN_RESERVE_2", call=200)
     panel, _ = panel_world(two, one)
-    assert [b.identifier for b, _ in panel.players(GID)] == ["TOKEN", "TOKEN_2"] and panel.takes_over(GID)
+    assert [b.identifier for b, _ in panel.players(GID)] == ["TOKEN", "TOKEN_RESERVE_2"] and panel.takes_over(GID)
 
     two.music.players[GID].static = False
     assert not panel.takes_over(GID)
     two.music.players[GID].static, one.music.players[GID].is_closing = True, True
-    assert [b.identifier for b, _ in panel.players(GID)] == ["TOKEN_2"] and not panel.takes_over(GID)
+    assert [b.identifier for b, _ in panel.players(GID)] == ["TOKEN_RESERVE_2"] and not panel.takes_over(GID)
 
 
 @pytest.mark.asyncio
@@ -360,7 +359,7 @@ async def test_a_failing_draw_is_logged_by_type_only_and_never_raises(caplog):
 @pytest.mark.asyncio
 async def test_resending_is_done_by_the_panel_bot_and_the_new_message_id_is_saved(monkeypatch):
     sent = SimpleNamespace(id=777)
-    panel_bot = make_bot(2, "TOKEN_2")
+    panel_bot = make_bot(2, "TOKEN_RESERVE_2")
     old = SimpleNamespace(delete=AsyncMock())
     channel = SimpleNamespace(get_partial_message=lambda mid: old)
     panel_bot.get_channel = lambda cid: channel
@@ -381,7 +380,7 @@ async def test_resending_is_done_by_the_panel_bot_and_the_new_message_id_is_save
 
 @pytest.mark.asyncio
 async def test_a_roster_change_only_re_elects_the_handoff_is_scheduled_by_the_election_itself():
-    panel, pool = panel_world(make_bot(2, "TOKEN_2"))
+    panel, pool = panel_world(make_bot(2, "TOKEN_RESERVE_2"))
     panel.resend, panel.handoff = AsyncMock(), AsyncMock()
 
     await panel.on_roster_change(GID)
@@ -472,7 +471,7 @@ async def test_forget_schedules_a_refresh_for_the_server():
 
 @pytest.mark.asyncio
 async def test_two_simultaneous_resends_send_one_panel_and_the_second_gets_the_existing_one(monkeypatch):
-    panel_bot = make_bot(2, "TOKEN_2")
+    panel_bot = make_bot(2, "TOKEN_RESERVE_2")
     panel_bot.get_channel = lambda cid: SimpleNamespace(id=cid)
     panel, pool = panel_world(panel_bot)
     pool.servers.jukebox.get.return_value = SimpleNamespace(channel=PANEL_CHANNEL, message_id=None, current=1)
@@ -501,7 +500,7 @@ async def test_two_simultaneous_resends_send_one_panel_and_the_second_gets_the_e
 
 @pytest.mark.asyncio
 async def test_a_panel_message_from_a_different_author_is_replaced_not_reused(monkeypatch):
-    panel_bot = make_bot(2, "TOKEN_2")
+    panel_bot = make_bot(2, "TOKEN_RESERVE_2")
     old_author_message = SimpleNamespace(id=444, author=SimpleNamespace(id=1))  # o painel do bot que saiu
     deleted = AsyncMock()
     channel = SimpleNamespace(id=PANEL_CHANNEL, get_partial_message=lambda mid: SimpleNamespace(delete=deleted))
@@ -527,7 +526,7 @@ async def test_a_panel_message_from_a_different_author_is_replaced_not_reused(mo
 async def test_a_config_conflict_while_resending_deletes_the_new_message_and_raises(monkeypatch):
     from empiremuse.utils.servers import ServerConfigConflict
 
-    panel_bot = make_bot(2, "TOKEN_2")
+    panel_bot = make_bot(2, "TOKEN_RESERVE_2")
     panel_bot.get_channel = lambda cid: SimpleNamespace(id=cid)
     panel, pool = panel_world(panel_bot)
     pool.servers.jukebox.get.return_value = SimpleNamespace(channel=PANEL_CHANNEL, message_id=None, current=1)
@@ -711,7 +710,7 @@ async def test_a_routed_click_is_marked_so_the_other_bot_does_not_drop_it_for_no
 
 
 def players_with_two_bots():
-    me, other = make_bot(1, "TOKEN", call=100), make_bot(2, "TOKEN_2", call=200)
+    me, other = make_bot(1, "TOKEN", call=100), make_bot(2, "TOKEN_RESERVE_2", call=200)
     for bot in (me, other):
         player = bot.music.players[GID]
         player.setup_hints, player.setup_features = MagicMock(), MagicMock()
@@ -768,7 +767,7 @@ async def test_one_failing_player_does_not_stop_the_others_from_being_rebound(ca
     from empiremuse.utils.music import jukebox_channel
 
     me, other, panel = players_with_two_bots()
-    third = make_bot(3, "TOKEN_3", call=300)
+    third = make_bot(3, "TOKEN_RESERVE_3", call=300)
     third.music.players[GID].setup_hints = MagicMock(side_effect=RuntimeError("falhou"))
     third.music.players[GID].setup_features = MagicMock()
     panel.players = lambda gid: [
@@ -789,7 +788,7 @@ async def test_one_failing_player_does_not_stop_the_others_from_being_rebound(ca
 
 
 def static_players_world(*, resent, newest=None):
-    one, two = make_bot(1, "TOKEN", call=100), make_bot(2, "TOKEN_2", call=200)
+    one, two = make_bot(1, "TOKEN", call=100), make_bot(2, "TOKEN_RESERVE_2", call=200)
     for bot in (one, two):
         bot.music.players[GID].message = "mensagem antiga"
         bot.music.players[GID].last_data = {"skin": "antiga"}
@@ -847,7 +846,7 @@ async def test_drawing_the_list_resets_each_players_cache_so_going_back_to_one_p
     from empiremuse.utils.music.interactions import jukebox_panel as ui
     from empiremuse.utils import server_playlists
 
-    one, two = make_bot(1, "TOKEN", call=100), make_bot(2, "TOKEN_2", call=200)
+    one, two = make_bot(1, "TOKEN", call=100), make_bot(2, "TOKEN_RESERVE_2", call=200)
     for bot in (one, two):
         bot.music.players[GID].last_data = {"skin": "antiga"}
     panel, pool = panel_world(one, two)

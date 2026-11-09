@@ -129,7 +129,7 @@ class TestSetupCommand:
         w, _ = await world_with_station()
 
         with pytest.raises(GenericError):
-            await run_setup(w, bot="TOKEN_2")
+            await run_setup(w, bot="TOKEN_RESERVE_2")
 
 
 class TestStationSelectIsOnlyForWhoOpenedIt:

@@ -167,7 +167,7 @@ class SkinEditorPersistMixin:
 
     async def _reload_guild_players(self, guild_id: int):
         """Aplica as skins recém-gravadas aos players ativos do servidor em todos os bots do pool."""
-        for bot in self.bot.pool.get_guild_bots(guild_id):
+        for bot in self.bot.pool.get_all_bots():
             try:
                 player = bot.music.players[guild_id]
             except KeyError:

@@ -58,7 +58,6 @@ def make_bot(bot_id, identifier, channel, *, ready=True, in_voice=False, manage_
         identifier=identifier,
         user=SimpleNamespace(id=bot_id, name=f"Bot {bot_id}"),
         bot_ready=ready,
-        exclusive_guild_id=None,
         music=SimpleNamespace(players={}),
         get_guild=lambda gid: guild if gid == GUILD else None,
         destroy=player_calls,
@@ -72,7 +71,7 @@ def build(
     channel = make_channel(manage_messages=manage_messages)
     bots = [
         make_bot(1, "TOKEN", channel, manage_guild=manage_guild),
-        *(make_bot(n, f"TOKEN_{n}", channel, manage_guild=manage_guild) for n in free_bots),
+        *(make_bot(n, f"TOKEN_RESERVE_{n}", channel, manage_guild=manage_guild) for n in free_bots),
     ]
     pool = SimpleNamespace(database=db, i18n=get_i18n(), get_all_bots=lambda: bots)
     pool.radio = RadioHub(pool)
@@ -272,7 +271,7 @@ class TestLigar:
     @pytest.mark.asyncio
     async def test_the_fixed_bot_already_in_a_call_is_not_swapped_for_another(self):
         w = build()
-        w.bots[1].get_guild(GUILD).me.voice = object()  # TOKEN_2, o bot da rádio, ocupado
+        w.bots[1].get_guild(GUILD).me.voice = object()  # TOKEN_RESERVE_2, o bot da rádio, ocupado
         await premium(w)
 
         with pytest.raises(GenericError) as refusal:

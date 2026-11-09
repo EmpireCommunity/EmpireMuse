@@ -18,7 +18,7 @@ class SkinEditorPreviewMixin:
 
     def build_embeds(self) -> dict:
         player = None
-        for b in self.bot.pool.get_guild_bots(self.ctx.guild_id):
+        for b in self.bot.pool.get_all_bots():
             try:
                 player = b.music.players[self.ctx.guild_id]
                 break

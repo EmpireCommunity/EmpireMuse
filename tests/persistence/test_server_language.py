@@ -27,7 +27,10 @@ def stored(**settings):
 @pytest.fixture
 def world():
     banco = Banco()
-    bots = [make_bot(MAIN_ID, "TOKEN", guilds=(GID, OTHER, THIRD)), make_bot(RESERVE_ID, "TOKEN_2", guilds=(GID,))]
+    bots = [
+        make_bot(MAIN_ID, "TOKEN", guilds=(GID, OTHER, THIRD)),
+        make_bot(RESERVE_ID, "TOKEN_RESERVE_2", guilds=(GID,)),
+    ]
     pool = SimpleNamespace(database=banco, get_all_bots=lambda: bots)
     return SimpleNamespace(banco=banco, store=ServerStore(pool))
 

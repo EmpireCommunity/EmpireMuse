@@ -18,7 +18,7 @@ from empiremuse import paths
 from empiremuse.config_loader import load_config
 from empiremuse.rules.errors import RuleError
 from empiremuse.rules.git_remote import sanitized_repo_url
-from empiremuse.rules.owner_shell import build_shell_env, collect_secret_values, mask_secrets
+from empiremuse.rules.owner_shell import build_shell_env, mask_secrets, mask_shell_output
 from empiremuse.rules.release import Version, changelog_section, changelog_sections
 from empiremuse.rules.settings import validate_prefix
 from empiremuse.updater.git_flow import (
@@ -217,7 +217,7 @@ class Owner(commands.Cog):
 
     def secret_values(self) -> frozenset:
         """Valores de segredo conhecidos (configuração do bot e ambiente do processo) que nunca saem em claro."""
-        return collect_secret_values(self.bot.config, os.environ)
+        return self.bot.pool.secret_values()
 
     def log_owner_command(self, ctx, name: str, detail: str = ""):
         """Registra quem executou qual comando de owner (o horário vem do formato do log), sem a saída e sem segredos."""
@@ -989,7 +989,7 @@ class Owner(commands.Cog):
             output, failed = str(e), True
 
         # A saída só vai por DM, com os segredos conhecidos mascarados; nunca para o canal.
-        output = mask_secrets(output, self.secret_values())
+        output = mask_shell_output(output, self.secret_values())
         content = f"```py\n{output}```"
         kwargs = {}
         if len(content) > 2000:
@@ -1026,7 +1026,7 @@ class Owner(commands.Cog):
         if bot.user.id not in ctx.author.voice.channel.voice_states:
             free_bots = []
 
-            for b in self.bot.pool.get_guild_bots(ctx.guild.id):
+            for b in self.bot.pool.get_all_bots():
                 if not b.bot_ready:
                     continue
 

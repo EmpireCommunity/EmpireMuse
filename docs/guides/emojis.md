@@ -6,7 +6,7 @@ Os botões, menus e mensagens do EmpireMuse usam ícones próprios (plataformas 
 
 ## 1. Como Funciona
 
-1. Ao ficar pronto, **cada bot principal** (`TOKEN` e `TOKEN_BOT_*`) envia para a **própria aplicação** no Discord as imagens da pasta `assets/emojis/*.png` que ainda não existem lá.
+1. Ao ficar pronto, **cada bot do pool**, incluindo os só-rádio, envia para a **própria aplicação** no Discord as imagens da pasta `assets/emojis/*.png` que ainda não existem lá.
 2. Isso acontece uma vez por inicialização do processo e é seguro repetir: um emoji que já existe com o mesmo nome é usado como está, e o bot **só cria o que falta**. Ele nunca apaga nem altera nenhum emoji da aplicação, nem os que não são dele.
 3. Cada mensagem usa os emojis do bot que a envia: um emoji de aplicação só aparece quando quem manda a mensagem é a própria aplicação.
 
@@ -36,11 +36,3 @@ O dono pode trocar os ícones das plataformas de música por outros emojis com u
 As chaves são os nomes das fontes (`youtube`, `soundcloud`, `spotify`, `deezer`, `applemusic`, `twitch`, `jiosaavn`, `tidal`, `youtubemusic`, `last.fm`, `bandcamp`). O valor do `emojis.json` **vence** o emoji de aplicação e a reserva Unicode. Hoje só a chave `music_sources` é lida.
 
 ---
-
-## 3. Bots de Servidor (`APP_EMOJIS_GUILD_BOTS`)
-
-| Chave | Padrão | O que faz |
-| :--- | :--- | :--- |
-| `APP_EMOJIS_GUILD_BOTS` | `false` | Com `true`, os bots **de servidor** do `guild_bots.json` também enviam os emojis para a aplicação deles. |
-
-Por padrão só os bots principais enviam emojis; os bots de servidor usam a reserva Unicode e não chamam a API. Ligue a chave só se **você controla as aplicações** desses bots: o `guild_bots.json` pode conter bots de outras pessoas, e ligar a chave cria até 64 emojis em cada uma delas, ocupando parte do limite de 2000 que o dono daquele bot não escolheu ocupar.

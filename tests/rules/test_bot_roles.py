@@ -17,14 +17,18 @@ pytestmark = pytest.mark.critical
 URL = "https://discord.com/oauth2/authorize?client_id=1"
 MAIN, R2, R3, R10 = (
     Peer("TOKEN", 1, True),
-    Peer("TOKEN_2", 2, False),
-    Peer("TOKEN_3", 3, False),
-    Peer("TOKEN_10", 10, False),
+    Peer("TOKEN_RESERVE_2", 2, False),
+    Peer("TOKEN_RESERVE_3", 3, False),
+    Peer("TOKEN_RESERVE_10", 10, False),
 )
 
 
 def test_identifiers_sort_naturally_not_lexically():
-    assert sorted(["TOKEN_10", "TOKEN_3", "TOKEN_2"], key=identifier_sort_key) == ["TOKEN_2", "TOKEN_3", "TOKEN_10"]
+    assert sorted(["TOKEN_RESERVE_10", "TOKEN_RESERVE_3", "TOKEN_RESERVE_2"], key=identifier_sort_key) == [
+        "TOKEN_RESERVE_2",
+        "TOKEN_RESERVE_3",
+        "TOKEN_RESERVE_10",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -46,7 +50,12 @@ def test_main_comes_first_by_role_not_by_name():
 
 
 @pytest.mark.parametrize(
-    ("identifiers", "who"), [(["TOKEN_10", "TOKEN_2", "TOKEN_3"], "TOKEN_2"), (["TOKEN_3"], "TOKEN_3"), ([], None)]
+    ("identifiers", "who"),
+    [
+        (["TOKEN_RESERVE_10", "TOKEN_RESERVE_2", "TOKEN_RESERVE_3"], "TOKEN_RESERVE_2"),
+        (["TOKEN_RESERVE_3"], "TOKEN_RESERVE_3"),
+        ([], None),
+    ],
 )
 def test_only_the_lowest_identifier_notifies(identifiers, who):
     assert notifier(identifiers) == who

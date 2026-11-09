@@ -7,6 +7,11 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Breaking
+- Os tokens agora vêm um por variável: `TOKEN` (principal), `TOKEN_RESERVE_<NOME>` e `TOKEN_RADIO_<NOME>`. `TOKEN_BOT_*`, `TOKEN_1..n`, vários tokens em `TOKEN` e o `guild_bots.json` não são mais lidos. Migre o `.env` e o compose antes de atualizar; `TOKEN` ausente, inválido ou com mais de um token impede a subida. O `/update` não migra o compose.
+- Bots só-rádio passam a ser definidos pelo prefixo `TOKEN_RADIO_`; o comando de dono `radio bot` e a leitura de `bot_roles` foram removidos. Na escolha da rádio 24 h, os só-rádio aparecem antes das reservas.
+- O comando temporário `fixfavs` foi removido e `exportsource` recusa arquivos de `local_database`.
+
 ### Segurança
 - Removido o comando administrativo `exportsource`: o código público já está disponível no GitHub, sem necessidade de exportar arquivos da instalação pelo bot.
 - `tornado` atualizado de 6.5.10 para 6.6 (alertas #2, #3 e #4 do Dependabot), com isenção pontual do corte temporal no lock de produção.
@@ -24,6 +29,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - Atualização automática por git: a atualização exige o `build-constraints.txt` no código novo (falha fechada, sem gravar nada); só a reversão para um release antigo tolera a falta dele. A reversão dispensa o `uv` (e a reinstalação) quando o `requirements-lock.txt` é idêntico nos dois commits (o constraints só diz como construir, não o que instalar), e o `boot_guard` registra o motivo da falha. A mensagem de `uv` ausente fala do PATH do processo do bot. Quem instala por git deve rodar `uv cache clean tinydb-serialization` uma vez antes da primeira atualização depois desta versão: o uv reaproveita do cache uma roda já construída, sem o pin do backend de build.
 
 ### Corrigido
+- Bots só-rádio ficam fora dos avisos e convites de música; aspas vazias na configuração de tokens contam como ausência. O log do auxiliar de atualização mascara também tokens pelo formato antes de ser enviado ao dono.
 - A confirmação do setup da Jukebox esclarece que o painel atual da Jukebox é preservado na limpeza do canal. A resposta final do setup por prefixo é enviada uma única vez, para que não sobre uma cópia do aviso após os 120 s.
 - Na reprodução comum, faixas resolvidas por busca tentam o próximo candidato quando o áudio não está disponível, com limite de tentativas e sem repetir candidatos já recusados.
 - Os testes de OAuth do YouTube usam nós locais com host e porta, preservando a verificação de mascaramento e truncamento do corpo de erro HTTP 500.

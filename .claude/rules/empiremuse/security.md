@@ -16,7 +16,7 @@ paths:
 
 ## 1. Segredos do projeto
 
-- São segredos: `TOKEN`, `TOKEN_BOT_*`, `MONGO`, `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`,
+- São segredos: `TOKEN`, `TOKEN_RESERVE_*`, `TOKEN_RADIO_*`, `MONGO`, `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`,
   `LASTFM_KEY`, `LASTFM_SECRET`, senhas de nós Lavalink, URLs de webhook (`*_WEBHOOK`) e
   tokens OAuth (por exemplo, o `refreshToken` do YouTube).
 - Exceção única: `PANEL_OAUTH_CLIENT_ID` é público (vai em toda URL de autorização) e fica fora da

@@ -194,7 +194,7 @@ Para esse cenário de implantação em arquivo único atrás do Traefik, o repos
 O compose com Traefik segue a receita genérica mantida no repositório [**docker-compose-cookbook (`composes/empiremuse`)**](https://github.com/Or4cu1o/docker-compose-cookbook/tree/main/composes/empiremuse):
 - O compose consolida todas as variáveis e padrões recomendados de forma *inline*, sem necessidade de overrides.
 - O `.env` gerencia apenas os segredos, domínio e tokens de bot.
-- **Múltiplos Bots (ordem dos tokens)**: no `.env`, mantenha um token por variável (`TOKEN=...`, `TOKEN_2=...` até `TOKEN_5`; para mais bots, acrescente `TOKEN_6` etc. ao `.env` e à linha `TOKEN` do compose), assim nenhum campo passa do limite de 256 caracteres. No compose, junte-as numa só variável, na ordem desejada: `TOKEN: "${TOKEN:-} ${TOKEN_2:-} ${TOKEN_3:-} ..."`. O primeiro token é o bot principal e os demais seguem essa ordem (página de status, painel e reservas). Variáveis separadas no compose não servem para isso: o Docker não preserva a ordem entre elas.
+- **Múltiplos bots**: use um token por variável: `TOKEN` (principal obrigatório), `TOKEN_RESERVE_<NOME>` (música e rádio) e `TOKEN_RADIO_<NOME>` (só-rádio). O nome aceita 1 a 32 caracteres A-Z, 0-9 e _. O pool ordena principal, reservas e só-rádio, com ordem natural em cada grupo. Os composes Hostinger não usam `env_file`: só recebem `TOKEN`, `TOKEN_RESERVE_1..4` e `TOKEN_RADIO_1..2`; nomes adicionais exigem uma linha explícita em `environment`. Migre o `.env` e o compose antes de atualizar: `/update` não migra o compose.
 
 ---
 
