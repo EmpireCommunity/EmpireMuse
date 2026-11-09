@@ -1,0 +1,54 @@
+{# Favoritas do servidor (J3; fragmento htmx). Variável: favoritas (FavoritesView: acao, acao_local, itens[uuid, nome], total, maximo, cheia, mensagem, mensagem_tipo, local|None, resultados, dica, paginacao, slug). Só quem gerencia o servidor chega aqui (a página esconde o bloco dos demais). Adicionar escolhe a estação pelo seletor de local; o nome é relido no servidor. Nada em href/src. Textos pelo ``_``. #}
+{% set form = favoritas %}
+{% set form_id = "radio-favoritas" %}
+<section id="radio-favoritas" class="bloco-config bloco-largo" aria-labelledby="titulo-radio-favoritas">
+  {% include "_mensagem_form.html" %}
+  <div class="links-cabecalho">
+    <h2 class="subtitulo" id="titulo-radio-favoritas">{{ _("panel.radio.favorites.title") }}</h2>
+    <p class="contagem-links">{{ _("panel.radio.favorites.count", total=favoritas.total, max=favoritas.maximo) }}</p>
+  </div>
+  <p class="nota">{{ _("panel.radio.favorites.help") }}</p>
+  {% if favoritas.itens %}
+  <ul class="lista-links" role="list">
+    {% for indice, item in enumerate(favoritas.itens) %}
+    <li class="item-link">
+      <div class="item-link-texto">
+        <strong class="item-link-nome">{{ item.nome }}</strong>
+      </div>
+      <div class="item-link-acoes">
+        <form id="form-radio-favorita-remover-{{ indice }}" method="post" action="{{ favoritas.acao }}" hx-post="{{ favoritas.acao }}" hx-target="#radio-favoritas" hx-swap="outerHTML" hx-confirm="{{ _('panel.radio.favorites.confirm_remove', station=item.nome) }}" hx-disabled-elt="find button[type=submit]">
+          {% module xsrf_form_html() %}
+          <input type="hidden" name="acao" value="remover">
+          <input type="hidden" name="estacao" value="{{ item.uuid }}">
+          <button type="submit" class="secondary outline botao-perigo">{{ _("panel.radio.favorites.remove") }}<span class="visually-hidden"> {{ item.nome }}</span></button>
+        </form>
+      </div>
+    </li>
+    {% end %}
+  </ul>
+  {% else %}
+  <p class="nota">{{ _("panel.radio.favorites.empty") }}</p>
+  {% end %}
+
+  <h3 class="subtitulo">{{ _("panel.radio.favorites.add_title") }}</h3>
+  {% if favoritas.cheia %}
+  <p class="nota">{{ _("panel.radio.favorites.full", max=favoritas.maximo) }}</p>
+  {% elif favoritas.local %}
+  <form class="form-config form-local" method="get" action="{{ favoritas.acao_local }}" aria-labelledby="titulo-local-favoritas">
+    <fieldset class="opcoes cascata-local">
+      <legend id="titulo-local-favoritas">{{ _("panel.radio.local.title") }}</legend>
+      <p class="nota">{{ _("panel.radio.favorites.add_help") }}</p>
+      <div id="local-favoritas" class="cascata-niveis">
+        {% set vivo = favoritas %}
+        {% include "_radio_local.html" %}
+      </div>
+      <button type="submit" class="secondary">{{ _("panel.radio.local.show") }}</button>
+    </fieldset>
+  </form>
+  <div id="estacoes-favoritas" aria-live="polite">
+    {% include "_radio_favoritas_estacoes.html" %}
+  </div>
+  {% else %}
+  <p class="nota">{{ _("panel.radio.favorites.no_tree") }}</p>
+  {% end %}
+</section>

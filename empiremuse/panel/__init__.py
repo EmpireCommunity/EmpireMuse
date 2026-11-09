@@ -22,6 +22,7 @@ from empiremuse.panel.handlers.brand import BRAND_ROUTE, BrandHandler
 from empiremuse.panel.handlers.pages import HealthHandler, IndexHandler, RedirectToIndexHandler
 from empiremuse.panel.handlers.servers import ServerDetailHandler, ServersHandler
 from empiremuse.panel.handlers.jukebox import JukeboxHandler, JukeboxTaskHandler, LegacyChannelHandler
+from empiremuse.panel.handlers.radio_favorites import RadioFavoritesHandler, RadioFavoritesLocalHandler
 from empiremuse.panel.handlers.radio_logo import LOGO_ROUTE, RadioLogoHandler
 from empiremuse.panel.handlers.radio import (
     RadioChatHandler,
@@ -102,6 +103,8 @@ def build_panel_app(
             (PANEL_PREFIX + r"/servidores/([0-9]{1,20})/radios/nova", RadioNewHandler),
             (PANEL_PREFIX + r"/servidores/([0-9]{1,20})/radios/([^/]+)/config", RadioConfigHandler),
             (PANEL_PREFIX + r"/servidores/([0-9]{1,20})/radios/([^/]+)/reset", RadioResetHandler),
+            (PANEL_PREFIX + r"/servidores/([^/]+)/radios/favoritas", RadioFavoritesHandler),
+            (PANEL_PREFIX + r"/servidores/([^/]+)/radios/favoritas/local", RadioFavoritesLocalHandler),
             (PANEL_PREFIX + r"/servidores/([^/]+)/radios/estacoes", RadioStationsHandler),
             (PANEL_PREFIX + r"/servidores/([^/]+)/radios/estacoes/([0-9a-f]{24})", RadioStationItemHandler),
             (PANEL_PREFIX + r"/servidores/([^/]+)/radios/([^/]+)/estacoes", RadioStationSearchHandler),

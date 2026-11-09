@@ -1,0 +1,60 @@
+{# Rádios favoritas (fragmento htmx). Variável: estado (acao, mensagem, mensagem_tipo, disponivel, indisponivel, estacoes[uuid, nome], filtros[node, rotulo]). Só Remover; a lista é só da sessão. Textos pelo ``_``. #}
+{% set form = estado %}
+{% set form_id = "conta-radios" %}
+{% if estado.disponivel %}
+<section id="conta-radios" class="bloco-config bloco-largo" aria-labelledby="titulo-conta-radios">
+  {% include "_mensagem_form.html" %}
+  <h2 class="subtitulo" id="titulo-conta-radios">{{ _("panel.account.radio.title") }}</h2>
+  <p class="nota">{{ _("panel.account.radio.help") }}</p>
+  {% if estado.indisponivel %}
+  <p class="aviso aviso-erro" role="alert">{{ _("panel.account.radio.unavailable") }}</p>
+  {% else %}
+
+  <h3 class="subtitulo">{{ _("panel.account.radio.stations") }}</h3>
+  {% if estado.estacoes %}
+  <ul class="lista-links" role="list">
+    {% for indice, item in enumerate(estado.estacoes) %}
+    <li class="item-link">
+      <div class="item-link-texto">
+        <strong class="item-link-nome">{{ item.nome }}</strong>
+      </div>
+      <div class="item-link-acoes">
+        <form id="form-conta-radio-estacao-remover-{{ indice }}" method="post" action="{{ estado.acao }}" hx-post="{{ estado.acao }}" hx-target="#conta-radios" hx-swap="outerHTML" hx-confirm="{{ _('panel.account.radio.confirm_station', name=item.nome) }}" hx-disabled-elt="find button[type=submit]">
+          {% module xsrf_form_html() %}
+          <input type="hidden" name="acao" value="radio_estacao_remover">
+          <input type="hidden" name="estacao" value="{{ item.uuid }}">
+          <button type="submit" class="secondary outline botao-perigo">{{ _("panel.account.radio.remove") }}<span class="visually-hidden"> {{ item.nome }}</span></button>
+        </form>
+      </div>
+    </li>
+    {% end %}
+  </ul>
+  {% else %}
+  <p class="nota">{{ _("panel.account.radio.stations_empty") }}</p>
+  {% end %}
+
+  <h3 class="subtitulo">{{ _("panel.account.radio.filters") }}</h3>
+  {% if estado.filtros %}
+  <ul class="lista-links" role="list">
+    {% for indice, item in enumerate(estado.filtros) %}
+    <li class="item-link">
+      <div class="item-link-texto">
+        <strong class="item-link-nome">{{ item.rotulo }}</strong>
+      </div>
+      <div class="item-link-acoes">
+        <form id="form-conta-radio-filtro-remover-{{ indice }}" method="post" action="{{ estado.acao }}" hx-post="{{ estado.acao }}" hx-target="#conta-radios" hx-swap="outerHTML" hx-confirm="{{ _('panel.account.radio.confirm_filter', name=item.rotulo) }}" hx-disabled-elt="find button[type=submit]">
+          {% module xsrf_form_html() %}
+          <input type="hidden" name="acao" value="radio_filtro_remover">
+          <input type="hidden" name="filtro" value="{{ item.node }}">
+          <button type="submit" class="secondary outline botao-perigo">{{ _("panel.account.radio.remove") }}<span class="visually-hidden"> {{ item.rotulo }}</span></button>
+        </form>
+      </div>
+    </li>
+    {% end %}
+  </ul>
+  {% else %}
+  <p class="nota">{{ _("panel.account.radio.filters_empty") }}</p>
+  {% end %}
+  {% end %}
+</section>
+{% end %}

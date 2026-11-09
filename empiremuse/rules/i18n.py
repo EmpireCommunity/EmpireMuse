@@ -116,6 +116,7 @@ COMMAND_GROUPS: Mapping[str, str] = {
     "queue.shuffle": "music",
     "radio": "music",
     "radio.desligar": "music",
+    "radio.favorites": "music",
     "radio.ligar": "music",
     "radio.off": "music",
     "radio.on": "music",

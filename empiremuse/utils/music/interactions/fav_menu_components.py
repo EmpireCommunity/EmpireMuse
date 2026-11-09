@@ -22,6 +22,10 @@ class FavMenuComponentsMixin:
         if not self.light_mode:
             self._add_mode_select()
 
+        if self.mode == ViewMode.radio_favorites:
+            self.add_radio_components()  # só Remover e Limpar; sem Adicionar, Importar nem Tocar (fav_menu_radio)
+            return
+
         if self.mode == ViewMode.fav_manager:
             self._add_fav_select()
 
@@ -65,6 +69,16 @@ class FavMenuComponentsMixin:
                 default=self.mode == ViewMode.integrations_manager,
             )
         )
+
+        if self.radio_available():
+            mode_select.append_option(
+                disnake.SelectOption(
+                    label=fit(self.tr("radio.favorites.mode.label"), 100),
+                    value=f"fav_view_mode_{ViewMode.radio_favorites}",
+                    emoji="📻",
+                    default=self.mode == ViewMode.radio_favorites,
+                )
+            )
 
         if len(mode_select.options) < 2:
             mode_select.disabled = True
