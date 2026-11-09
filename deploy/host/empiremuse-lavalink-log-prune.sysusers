@@ -1,0 +1,6 @@
+# Usuário e grupo de sistema sem login para a poda do spring.log do Lavalink (empiremuse-lavalink-log-prune.service).
+# Os IDs 10001:10001 são os do dono do volume de dados (o mesmo uid do bot). Instalar como
+# /etc/sysusers.d/empiremuse-lavalink-log-prune.conf e aplicar com systemd-sysusers (idempotente; passo do runbook).
+# Sem diretório pessoal e com shell nologin. Se o ID já existir com outro nome, o systemd-sysusers avisa e não altera.
+g empiremuse-prune 10001
+u empiremuse-prune 10001:empiremuse-prune "Poda de logs do EmpireMuse" - /usr/sbin/nologin

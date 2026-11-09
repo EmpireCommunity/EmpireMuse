@@ -27,7 +27,7 @@ Arquivos para aplicar **à mão, numa janela e com o OK do dono**; o passo a pas
 | :--- | :--- |
 | [`traefik/accesslog-flags.txt`](traefik/accesslog-flags.txt) | Lista de flags e volume para o Traefik compartilhado: registro de acesso em arquivo, só com os campos necessários |
 | [`host/logrotate-traefik-access`](host/logrotate-traefik-access) | `/etc/logrotate.d/` (padrão do host da instância hospedada): rotação diária e `maxage 183` do registro de acesso |
-| [`host/lavalink-log-prune.sh`](host/lavalink-log-prune.sh), `host/empiremuse-lavalink-log-prune.{service,timer}` | Poda diária das cópias antigas do `spring.log` do Lavalink |
+| [`host/lavalink-log-prune.sh`](host/lavalink-log-prune.sh), `host/empiremuse-lavalink-log-prune.{service,timer,sysusers}` | Poda diária das cópias antigas do `spring.log` do Lavalink |
 
 O `docker-compose.traefik.yml` é só um complemento do `docker-compose.yml`: nunca o suba sozinho.
 
