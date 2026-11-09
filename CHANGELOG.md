@@ -10,7 +10,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 ### Breaking
 - Os tokens agora vêm um por variável: `TOKEN` (principal), `TOKEN_RESERVE_<NOME>` e `TOKEN_RADIO_<NOME>`. `TOKEN_BOT_*`, `TOKEN_1..n`, vários tokens em `TOKEN` e o `guild_bots.json` não são mais lidos. Migre o `.env` e o compose antes de atualizar; `TOKEN` ausente, inválido ou com mais de um token impede a subida. O `/update` não migra o compose.
 - Bots só-rádio passam a ser definidos pelo prefixo `TOKEN_RADIO_`; o comando de dono `radio bot` e a leitura de `bot_roles` foram removidos. Na escolha da rádio 24 h, os só-rádio aparecem antes das reservas.
-- O comando temporário `fixfavs` foi removido e `exportsource` recusa arquivos de `local_database`.
+- O comando temporário `fixfavs` foi removido.
 
 ### Segurança
 - Configuração de rádios: só oferece e aceita canais que o ator consegue ver e conectar, tanto no Discord quanto no painel web.
@@ -19,6 +19,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - O refreshToken do YouTube só é aplicado ao nó LOCAL da própria máquina; o token do RPC é gerado com fonte criptográfica. Conexões REST e WebSocket com nós IPv6 usam o endereço correto.
 
 ### Alterado
+- Links de convite do Discord passam a usar https://empirecommunity.org/discord.
 - O reset de rádio apaga sempre a configuração, inclusive com tela de revisão antiga, sem guardar cópia; primeiro apaga o documento e depois para o runner, que também é parado se a exclusão falhar; nesse caso, a configuração pode permanecer no banco.
 - Removidas a migração de subida `radios_release` e a gravação em `migration_backup`. Quem atualiza de uma versão anterior à release de Rádios e Jukebox perde o canal de pedidos e o painel antigos da Jukebox: configure de novo. Não há cópia automática; o reset de rádio também deixa de guardar cópia em `config_backup`.
 - Imagem Docker: o JRE passa do Temurin 25.0.4.1 para o 25.0.5+8, com tag explícita (`25.0.5_8-jre-resolute`, a mesma distro Ubuntu 26.04) fixada por digest multi-arquitetura (amd64 e arm64) publicado há mais de 7 dias.

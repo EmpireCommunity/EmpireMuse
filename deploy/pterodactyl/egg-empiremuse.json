@@ -303,7 +303,7 @@
             "name": "Link do servidor de suporte",
             "description": "Endereço de convite para suporte exibido aos usuários nos comandos informativos.",
             "env_variable": "SUPPORT_SERVER",
-            "default_value": "https://discord.gg/KgtyNg9U6H",
+            "default_value": "https://empirecommunity.org/discord",
             "user_viewable": true,
             "user_editable": true,
             "rules": "required|string"

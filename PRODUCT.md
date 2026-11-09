@@ -38,7 +38,7 @@ Funcionalidades exclusivas, não vistas em outros bots (confirmado pelo dono). A
 
 ## Brand Commitments
 
-- Nome: EmpireMuse. Comunidade: EmpireHUB (Discord `discord.gg/KgtyNg9U6H`). Obra derivada do MuseHeart-MusicBot (zRitsu, GPL-2.0), com crédito mantido.
+- Nome: EmpireMuse. Comunidade: EmpireHUB (Discord `https://empirecommunity.org/discord`). Obra derivada do MuseHeart-MusicBot (zRitsu, GPL-2.0), com crédito mantido.
 - Paleta "Nebulosa" (`docs/identidade-visual.md`): fundo `#0B0A1F`, azul `#3B82F6`, violeta `#8B5CF6` (cor principal e padrão dos embeds), magenta `#C026D3`, vermelho `#E11D48`.
 - Assets oficiais em `assets/brand/` (logo-256.png, logo.svg, avatar.png, banner.png, avatares/, favicon.ico); ícones de plataformas em `assets/providers/`; emojis de aplicação em `assets/emojis/`.
 - Preferência declarada pelo dono para o painel web (registrada sem expandir): "página bonita, responsiva, dinâmica; gosto de efeito glass, aero, efeitos de transição modernos; criatividade é bem-vinda; sem restrições" além da marca existente.

@@ -82,7 +82,7 @@ LAVALINK_PLUGIN_SHA256 = {
     "soundy-plugin-1.1.0.jar": "9568b5930969346b1afba89df8c0c6d373c2b553e087af09fb3c190f252a3cc9",
 }
 LAVALINK_SERVER_LIST_URL = RAW_BASE_URL + "/data/lavalink_servers.ini"
-SUPPORT_SERVER_URL = "https://discord.gg/KgtyNg9U6H"
+SUPPORT_SERVER_URL = "https://empirecommunity.org/discord"
 EMBED_COLOR_HEX = "8B5CF6"  # violeta da paleta Nebulosa
 UPSTREAM_NAME = "MuseHeart-MusicBot"
 UPSTREAM_AUTHOR = "zRitsu"

@@ -4,5 +4,5 @@ contact_links:
     url: https://github.com/EmpireCommunity/EmpireMuse/security/advisories/new
     about: Por favor, utilize o relato privado de vulnerabilidades do GitHub para reportar falhas de segurança de forma responsável. Não utilize issues públicas para falhas de segurança.
   - name: Suporte e dúvidas (Discord EmpireHUB)
-    url: https://discord.gg/KgtyNg9U6H
+    url: https://empirecommunity.org/discord
     about: Tire dúvidas, obtenha ajuda na configuração do bot e acompanhe as novidades em nosso servidor oficial no Discord.
