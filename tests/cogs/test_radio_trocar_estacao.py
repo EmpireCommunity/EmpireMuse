@@ -672,10 +672,12 @@ async def test_favorite_answer_survives_a_failed_read_after_the_saved_toggle():
         return await real_stations(user)
 
     store.stations = stations
+    w.ports._names = {MAIN: "Rádio 11"}  # nome já conhecido do play
     press = click(PANEL_FAVORITE_ID)
     await w.cog.radio_panel_click(press)
 
     assert "entrou nas SUAS favoritas" in said(press)
     assert len(calls) == 2
+    assert "Rádio 11" in said(press) and MAIN not in said(press)
     del store.stations
     assert [f.uuid for f in await store.stations(7)] == [MAIN]
