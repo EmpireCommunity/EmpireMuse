@@ -33,8 +33,13 @@ PT = get_i18n().for_locale("pt-BR")
 EN = get_i18n().for_locale("en-US")
 
 
+RELOGIO = SimpleNamespace(t=0.0)  # relógio da cota de avisos (Q13), zerado a cada lista
+
+
 def banidos(*ids, owners=(DONO,)):
+    RELOGIO.t = 0.0
     bans = UserBans(SimpleNamespace(), owners=frozenset(owners))
+    bans._warnings = WarningLimiter(clock=lambda: RELOGIO.t)
     bans._records = {uid: UserBanRecord(uid, 1, MOTIVO, DONO) for uid in ids}
     bans._loaded = True
     return bans
@@ -169,12 +174,13 @@ async def test_a_banned_user_never_reaches_a_callback_and_gets_a_short_ephemeral
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("em_dm", [True, False], ids=["dm", "servidor"])
 @pytest.mark.parametrize("tipo", [2, 3, 4, 5])
 @pytest.mark.parametrize("quem", [COMUM, DONO, DONO_DA_APP])
-async def test_common_users_and_owners_pass_through_the_real_parser(tipo, quem):
+async def test_common_users_and_owners_pass_through_the_real_parser(tipo, quem, em_dm):
     bot = novo_bot(banidos(BANIDO))
 
-    bot.enviar(payload(tipo, quem))
+    bot.enviar(payload(tipo, quem, em_dm=em_dm))  # em servidor o ID vem de ``member.user.id``
     await assentar()
 
     assert chegou_ao_callback(bot, tipo)
@@ -304,7 +310,7 @@ class Chegou(Exception):
 
 
 def bot_de_mensagens(bans, *, reserva=False):
-    relogio = SimpleNamespace(t=0.0)
+    relogio = RELOGIO
     self = SimpleNamespace(
         bot_ready=True,
         appinfo=object(),
@@ -314,7 +320,6 @@ def bot_de_mensagens(bans, *, reserva=False):
         user=SimpleNamespace(id=BOT_ID, mention=f"<@{BOT_ID}>"),
         music=SimpleNamespace(players={}),
         config={"ENABLE_SONGREQUEST_MENTION": True},
-        _blocked_warnings=WarningLimiter(clock=lambda: relogio.t),
         get_prefix=AsyncMock(return_value="!!"),
         can_send_message=AsyncMock(return_value=True),
         get_context=AsyncMock(side_effect=Chegou),
@@ -570,6 +575,7 @@ def clique(autor, locale=disnake.Locale.pt_BR):
             send_message=AsyncMock(), edit_message=AsyncMock(), defer=AsyncMock(), send_modal=AsyncMock()
         ),
         followup=SimpleNamespace(send=AsyncMock()),
+        edit_original_message=AsyncMock(),
     )
 
 
@@ -604,7 +610,7 @@ async def test_the_owner_sees_the_resolved_user_and_the_confirmation_bans_and_au
     await view.confirmed(ok)
 
     assert w.bans.is_blocked(COMUM)
-    assert ok.response.edit_message.await_args.kwargs["content"] == PT(
+    assert ok.edit_original_message.await_args.kwargs["content"] == PT(
         "erasure.ban.owner.banned", name="Fulano", id=COMUM
     )
     assert MOTIVO not in caplog.text  # R8.9: o log não leva o motivo
@@ -618,14 +624,14 @@ async def test_a_second_ban_confirmation_says_already_banned_and_unban_works():
     await w.cog.owner_ban_dm(msg)
     repetido = clique(DONO)
     await msg.channel.send.await_args.kwargs["view"].confirmed(repetido)
-    assert repetido.response.edit_message.await_args.kwargs["content"] == PT("erasure.ban.owner.already")
+    assert repetido.edit_original_message.await_args.kwargs["content"] == PT("erasure.ban.owner.already")
 
     msg = dm(DONO, f"!!unbanuser {COMUM}")
     await w.cog.owner_ban_dm(msg)
     liberar = clique(DONO)
     await msg.channel.send.await_args.kwargs["view"].confirmed(liberar)
     assert not w.bans.is_blocked(COMUM)
-    assert liberar.response.edit_message.await_args.kwargs["content"] == PT(
+    assert liberar.edit_original_message.await_args.kwargs["content"] == PT(
         "erasure.ban.owner.unbanned", name="Fulano", id=COMUM
     )
     assert (await w.bans.unban(DONO, COMUM)) is False
@@ -641,7 +647,7 @@ async def test_a_database_error_in_the_confirmation_is_a_fixed_text_and_nothing_
 
     await msg.channel.send.await_args.kwargs["view"].confirmed(c)
 
-    assert c.response.edit_message.await_args.kwargs["content"] == PT("erasure.ban.owner.write_failed")
+    assert c.edit_original_message.await_args.kwargs["content"] == PT("erasure.ban.owner.write_failed")
     assert not w.bans.is_blocked(COMUM)
 
 
@@ -782,3 +788,169 @@ async def test_save_scrobble_never_receives_the_banned_user():
 
     cog.save_scrobble.assert_awaited_once()
     assert [u.id for u in cog.save_scrobble.await_args.kwargs["users"]] == [COMUM]
+
+
+# ------------------------------------------------------------------------------- T-513: respostas reais e confirmação
+
+
+def resposta_real():
+    """``InteractionResponse`` REAL do disnake com o adaptador HTTP falso: ``embed=None`` viraria ``embeds=[None]`` e quebraria aqui."""
+    from disnake.interactions.base import InteractionResponse
+    from disnake.webhook.async_ import async_context
+
+    adaptador = SimpleNamespace(create_interaction_response=AsyncMock())
+    async_context.set(adaptador)
+    pai = SimpleNamespace(
+        id=1, token="t", _session=None, _state=SimpleNamespace(allowed_mentions=None, store_view=MagicMock())
+    )
+    return InteractionResponse(pai), adaptador
+
+
+def modal_submetido(autor, id_texto, motivo=""):
+    resposta, adaptador = resposta_real()
+    inter = SimpleNamespace(
+        author=SimpleNamespace(id=autor),
+        text_values={views.ID_FIELD: id_texto, views.REASON_FIELD: motivo},
+        response=resposta,
+    )
+    return inter, adaptador
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("autor", "id_texto", "esperado"),
+    [
+        pytest.param(DONO_DA_APP, str(COMUM), "erasure.not_yours", id="não é dono do .env"),
+        pytest.param(DONO, "abc", "erasure.owner.invalid_id", id="ID inválido"),
+        pytest.param(DONO, str(DONO), "erasure.ban.owner.target_owner", id="alvo dono"),
+    ],
+)
+async def test_every_modal_refusal_goes_through_the_real_interaction_response(autor, id_texto, esperado):
+    w = mundo_do_dono()
+    inter, adaptador = modal_submetido(autor, id_texto)
+
+    await views.UserBanModal(w.bot, PT, "ban").callback(inter)
+
+    dados = adaptador.create_interaction_response.await_args.kwargs["data"]
+    assert dados["content"] == PT(esperado) and dados["flags"] == 64
+    assert "embeds" not in dados and "components" not in dados  # só os campos preenchidos
+
+
+@pytest.mark.asyncio
+async def test_the_modal_confirmation_goes_through_the_real_response_with_embed_view_and_no_mentions():
+    w = mundo_do_dono()
+    w.alvo.display_name = "@everyone **Fulano**"
+    inter, adaptador = modal_submetido(DONO, str(COMUM), "[link](http://x) @here")
+
+    await views.UserBanModal(w.bot, PT, "ban").callback(inter)
+
+    dados = adaptador.create_interaction_response.await_args.kwargs["data"]
+    descricao = dados["embeds"][0]["description"]
+    assert dados["components"] and dados["flags"] == 64
+    assert dados["allowed_mentions"] == {"parse": []}  # nada notifica ninguém
+    assert "@everyone" not in descricao and "@here" not in descricao  # render_text: ``@`` desarmado
+    assert "\\*\\*Fulano\\*\\*" in descricao and "\\[link\\]" in descricao  # markdown escapado (nome e motivo)
+
+
+def confirmacao_do_dono(w, *, acao="ban"):
+    return views.UserBanConfirmView(w.bot, PT, DONO, acao, COMUM, "Fulano", "motivo")
+
+
+@pytest.mark.asyncio
+async def test_another_env_owner_cannot_click_someone_elses_confirmation():
+    w = mundo_do_dono()
+    w.bot.env_owner_ids = {DONO, 100000000000000007}
+    view = confirmacao_do_dono(w)
+
+    assert await view.interaction_check(clique(100000000000000007)) is False  # outro dono do .env
+    assert await view.interaction_check(clique(DONO)) is True
+
+
+@pytest.mark.asyncio
+async def test_the_owner_is_acknowledged_before_the_write_and_gets_the_final_text_after_it():
+    w = mundo_do_dono()
+    ordem = []
+    original = w.bans.ban
+
+    async def ban_lento(*args):
+        ordem.append(("ban", view.is_finished()))  # a view já parou: um segundo clique não repete
+        return await original(*args)
+
+    w.bans.ban = ban_lento
+    view = confirmacao_do_dono(w)
+    c = clique(DONO)
+    c.response.edit_message.side_effect = lambda **kw: ordem.append(("ack", kw["content"]))
+    c.edit_original_message = AsyncMock(side_effect=lambda **kw: ordem.append(("final", kw["content"])))
+
+    await view.confirmed(c)
+
+    assert [o[0] for o in ordem] == ["ack", "ban", "final"]
+    assert ordem[0][1] == PT("erasure.ban.owner.working") and ordem[1][1] is True
+    assert ordem[2][1] == PT("erasure.ban.owner.banned", name="Fulano", id=COMUM)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("quebra", "partes"),
+    [
+        ("sessoes", ["erasure.ban.owner.failed_sessions"]),
+        ("rpc", ["erasure.ban.owner.failed_rpc"]),
+        ("ambos", ["erasure.ban.owner.failed_sessions", "erasure.ban.owner.failed_rpc"]),
+    ],
+)
+async def test_a_partial_ban_is_shown_to_the_owner_with_what_failed(quebra, partes):
+    w = mundo_do_dono()
+    if quebra in ("sessoes", "ambos"):
+        w.bans.pool.panel_sessions = SimpleNamespace(destroy_user=MagicMock(side_effect=RuntimeError("x")))
+    if quebra in ("rpc", "ambos"):
+        w.bans._rpc_closer = MagicMock(side_effect=RuntimeError("x"))
+    c = clique(DONO)
+    c.edit_original_message = AsyncMock()
+
+    await confirmacao_do_dono(w).confirmed(c)
+
+    final = c.edit_original_message.await_args.kwargs["content"]
+    assert final == PT("erasure.ban.owner.partial", failed=", ".join(PT(k) for k in partes))
+    assert w.bans.is_blocked(COMUM)
+
+
+@pytest.mark.asyncio
+async def test_a_failed_acknowledgement_still_delivers_the_result():
+    w = mundo_do_dono()
+    c = clique(DONO)
+    c.response.edit_message.side_effect = disnake.HTTPException(MagicMock(status=500), "x")
+    c.edit_original_message = AsyncMock()
+
+    await confirmacao_do_dono(w).confirmed(c)
+
+    assert w.bans.is_blocked(COMUM) and c.edit_original_message.await_count == 1
+
+
+# ------------------------------------------------------------------------------- Q13: um limitador para o pool
+
+
+@pytest.mark.asyncio
+async def test_two_bots_in_the_pool_give_one_warning_per_user_per_hour():
+    bans = banidos(BANIDO)
+    um, outro = bot_de_mensagens(bans), bot_de_mensagens(bans)
+    primeira, segunda = mensagem(BANIDO, "!!play x"), mensagem(BANIDO, "!!play x")
+
+    await BotCore.on_message(um, primeira)
+    await BotCore.on_message(outro, segunda)
+
+    primeira.reply.assert_awaited_once()
+    segunda.reply.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_warning_without_permission_does_not_spend_the_quota():
+    bans = banidos(BANIDO)
+    sem_permissao, com_permissao = bot_de_mensagens(bans), bot_de_mensagens(bans)
+    sem_permissao.can_send_message.return_value = False
+    perdida, valida = mensagem(BANIDO, "!!play x"), mensagem(BANIDO, "!!play x")
+
+    await BotCore.on_message(sem_permissao, perdida)
+    await BotCore.on_message(com_permissao, valida)
+
+    perdida.reply.assert_not_awaited()
+    valida.reply.assert_awaited_once()  # o outro bot ainda pôde avisar

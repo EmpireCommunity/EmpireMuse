@@ -127,10 +127,9 @@ def test_ban_target_error(alvo, esperado):
     [
         ("!!banuser 123 abuso repetido", BanCommand("ban", "123", "abuso repetido")),
         ("!!banuser 123", BanCommand("ban", "123", "")),
-        (
-            "!!banuser\t123\tmotivo",
-            BanCommand("ban", "123\tmotivo", ""),
-        ),  # só espaço separa o motivo; o ID inválido é recusado depois
+        ("!!banuser\t123\tmotivo", BanCommand("ban", "123", "motivo")),  # a tabulação também separa
+        ("!!banuser  123 \t dois   espaços", BanCommand("ban", "123", "dois   espaços")),
+        ("!!banuser 123\nsegunda linha", BanCommand("ban", "123", "segunda linha")),
         ("!!unbanuser 123 qualquer coisa", BanCommand("unban", "123", "")),
         ("!!banuser", BanCommand("ban", "", "")),
         ("!!banuserx 123", None),

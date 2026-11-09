@@ -28,11 +28,12 @@ class BancoQueFalha(LocalDatabase):
     def __init__(self, caminho):
         super().__init__(caminho)
         self.falha: set[str] = set()
-        self.pausa: asyncio.Event | None = None
+        self.pausa_primeira: asyncio.Event | None = None  # só a PRIMEIRA leitura espera
 
     async def query_data(self, *args, **kwargs):
-        if self.pausa is not None:
-            await self.pausa.wait()
+        pausa, self.pausa_primeira = self.pausa_primeira, None
+        if pausa is not None:
+            await pausa.wait()
         if "query" in self.falha:
             raise ConnectionError("banco fora")
         return await super().query_data(*args, **kwargs)
@@ -167,20 +168,43 @@ async def test_a_failed_unban_keeps_the_user_blocked(mundo):
 
 
 @pytest.mark.asyncio
-async def test_a_ban_during_the_load_is_not_lost(mundo):
-    """m-E1: carga e ban sob o mesmo lock; o ban que chega durante a recarga não some da memória."""
-    mundo.banco.pausa = asyncio.Event()
+async def test_a_ban_and_a_reban_during_the_load_are_serialized_and_not_lost(mundo):
+    """m-E1/m-E3: a primeira leitura espera; ban e reban concorrentes aguardam o lock; solta-se a carga e só um ban vale, nada some."""
+    pausa = mundo.banco.pausa_primeira = asyncio.Event()
     carga = asyncio.ensure_future(mundo.bans.ensure_loaded())
     await asyncio.sleep(0)  # a carga segura o lock e espera o banco
-    ban = asyncio.ensure_future(mundo.bans.ban(DONO, ALVO, "corrida"))
+    ban = asyncio.ensure_future(mundo.bans.ban(DONO, ALVO, "primeiro"))
+    reban = asyncio.ensure_future(mundo.bans.ban(OUTRO, ALVO, "segundo"))
     await asyncio.sleep(0)
-    assert not ban.done()
+    assert not ban.done() and not reban.done() and not mundo.bans.is_blocked(ALVO)
 
-    mundo.banco.pausa.set()
+    pausa.set()
+    await carga
+    resultados = await asyncio.gather(ban, reban, return_exceptions=True)
+
+    assert [type(r).__name__ for r in resultados] == ["BanResult", "AlreadyBanned"]
+    assert mundo.bans.is_blocked(ALVO) and [r.by for r in mundo.bans.records()] == [DONO]
+    assert (await doc(mundo.banco, ALVO))["by"] == DONO
+    reinicio = mundo.novo()
+    await reinicio.ensure_loaded()
+    assert reinicio.is_blocked(ALVO)  # a recarga do banco também enxerga o ban
+
+
+@pytest.mark.asyncio
+async def test_a_load_that_started_before_the_ban_never_overwrites_it(mundo):
+    """Leitura antiga solta DEPOIS do ban terminar: o ban gravado antes não pode sumir da memória (cenário do molde sem lock)."""
+    await mundo.bans.ban(DONO, ALVO, "")
+    outra = mundo.novo()
+    pausa = mundo.banco.pausa_primeira = asyncio.Event()
+    carga = asyncio.ensure_future(outra.ensure_loaded())
+    await asyncio.sleep(0)
+    ban = asyncio.ensure_future(outra.ban(DONO, OUTRO, ""))
+    await asyncio.sleep(0)
+    pausa.set()
     await carga
     await ban
 
-    assert mundo.bans.is_blocked(ALVO) and [r.user_id for r in mundo.bans.records()] == [ALVO]
+    assert outra.is_blocked(ALVO) and outra.is_blocked(OUTRO)
 
 
 @pytest.mark.asyncio
@@ -207,7 +231,8 @@ async def test_boot_without_database_opens_without_list_and_retries_until_it_loa
 
     async def dormir(segundos):
         pausas.append(segundos)
-        mundo.banco.falha.discard("query")  # o banco volta durante a espera
+        if len(pausas) >= 2:
+            mundo.banco.falha.discard("query")  # o banco só volta na segunda espera: a primeira tentativa também falha
 
     bans = mundo.novo(sleep=dormir)
     assert await bans.boot() is False
@@ -216,7 +241,7 @@ async def test_boot_without_database_opens_without_list_and_retries_until_it_loa
 
     await bans._retry_task
 
-    assert bans.loaded and bans.is_blocked(ALVO) and pausas == [60.0]
+    assert bans.loaded and bans.is_blocked(ALVO) and pausas == [60.0, 60.0]  # tentou mais de uma vez
     bans.stop()
 
 

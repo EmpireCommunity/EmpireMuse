@@ -120,3 +120,22 @@ async def test_send_rpc_data_skips_the_banned_user_without_even_reading_the_data
 
     assert [e["user"] for e in enviados] == [livre]
     assert [c.kwargs["id_"] for c in bot.get_global_data.await_args_list] == [livre]
+
+
+def test_a_banned_id_is_refused_before_the_registration_changes_anything():
+    """Uma conexão que JÁ registrou e reenvia a lista com um ID banido: o portão vem antes de ``_forget_users`` e ``_replace_session``."""
+    chamadas = []
+    handler = web_app.WebSocketHandler.__new__(web_app.WebSocketHandler)
+    handler.is_blocked = lambda user_id: user_id == 200000000000000002
+    handler._disconnect = lambda motivo: chamadas.append(("disconnect", motivo))
+    handler._forget_users = lambda: chamadas.append("forget")
+    handler._replace_session = lambda user_id: chamadas.append(("replace", user_id))
+    handler._relay_registration = lambda data: chamadas.append("relay")
+    handler.user_ids = [100000000000000001]  # já registrada antes
+
+    handler._register_user(
+        {"user_ids": [100000000000000001, 200000000000000002], "token": "t" * 50, "version": "99.0.0"}
+    )
+
+    assert chamadas == [("disconnect", RPC_BLOCKED_REASON)]
+    assert handler.user_ids == [100000000000000001]
