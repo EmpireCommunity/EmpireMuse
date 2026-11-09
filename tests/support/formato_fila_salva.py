@@ -21,6 +21,7 @@ from empiremuse.cogs.music import Music
 from empiremuse.i18n.service import get_i18n
 from empiremuse.music_cog import play_command  # depois de ``Music``: importar a Cog recarrega os mixins
 from empiremuse.utils.client import BotPool
+from empiremuse.utils.erasure import ErasureTombstones
 from tests.support.formatos_reais import (
     DONO,
     INSTANTE,
@@ -93,7 +94,9 @@ def montar_cenario(faixas_atual, faixas_fila):
         default_prefix="!!",
         config={"ENABLE_DISCORD_URLS_PLAYBACK": False},
         pool=SimpleNamespace(
-            i18n=get_i18n(), process_track_cls=lambda *args, **kwargs: BotPool.process_track_cls(None, *args, **kwargs)
+            i18n=get_i18n(),
+            erasure_tombstones=ErasureTombstones(),
+            process_track_cls=lambda *args, **kwargs: BotPool.process_track_cls(None, *args, **kwargs),
         ),
     )
 

@@ -61,6 +61,7 @@ class PlayState:
         "txt",
         "urls",
         "user_data",
+        "user_read_at",
         "voice_channel",
         "warn_message",
     )
@@ -127,5 +128,6 @@ class PlayState:
         self.txt = None
         self.urls = None
         self.user_data = None
+        self.user_read_at = None
         self.voice_channel = None
         self.warn_message = None

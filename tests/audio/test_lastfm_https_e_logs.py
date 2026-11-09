@@ -14,6 +14,7 @@ import pytest
 
 from empiremuse.i18n.service import get_i18n
 from empiremuse.cogs.lastfm import LastFmCog, LastFMView
+from empiremuse.utils.erasure import ErasureTombstones
 from empiremuse.utils.music import lastfm_tools
 from empiremuse.utils.music.lastfm_tools import LastFM
 from empiremuse.utils.safe_error import HTTPStatusError, safe_error
@@ -121,7 +122,9 @@ async def test_a_scrobble_http_failure_logs_the_status_without_url_or_traceback(
 ) -> None:
     cog = LastFmCog.__new__(LastFmCog)
     cog.bot = SimpleNamespace(
-        pool=SimpleNamespace(lastfm_sessions={7: {"scrobble": True, "sessionkey": "sk"}}),
+        pool=SimpleNamespace(
+            lastfm_sessions={7: {"scrobble": True, "sessionkey": "sk"}}, erasure_tombstones=ErasureTombstones()
+        ),
         last_fm=SimpleNamespace(update_nowplaying=AsyncMock(side_effect=erro)),
     )
     player = SimpleNamespace(guild=SimpleNamespace(me=SimpleNamespace(voice=True)), lastfm_users={})

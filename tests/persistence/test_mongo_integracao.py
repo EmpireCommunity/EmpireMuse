@@ -73,3 +73,45 @@ async def _ciclo():
 
 def test_mongo_database_round_trip_against_a_real_mongod():
     asyncio.run(_ciclo())
+
+
+async def _ciclo_apagar_dados():
+    """``delete_many`` e ``save_doc_cas`` (apagar meus dados, E1) contra o mongod real: o CI não roda este arquivo."""
+    banco = MongoDatabase(URI, timeout=5)
+    nome = f"litmus_{uuid.uuid4().hex}"
+    colecao = "radio_custom_favorites"
+    try:
+        for id_ in ("1:45", "2:45", "1:145"):
+            await banco.update_data(id_, {"rev": 1}, db_name=colecao, collection=nome)
+        banco.cache[f"{nome}:{colecao}:1:45"] = {"velho": True}
+
+        apagados = await banco.delete_many(["1:45", "2:45", "9:45", "1:45"], db_name=colecao, collection=nome)
+
+        assert apagados == 2  # o inexistente e o repetido não contam
+        assert f"{nome}:{colecao}:1:45" not in banco.cache
+        restantes = [d["_id"] async for d in banco.iter_data(db_name=colecao, collection=nome)]
+        assert restantes == ["1:145"]
+        assert await banco.delete_many([], db_name=colecao, collection=nome) == 0
+
+        # iter_data com filtro (anonimização do updated_by): só os documentos do autor, sem varrer o resto
+        for id_, autor in (("a", "45"), ("b", "145"), ("c", "45")):
+            await banco.update_data(id_, {"rev": 1, "updated_by": autor}, db_name="radios", collection=nome)
+        filtrados = [
+            d["_id"] async for d in banco.iter_data(db_name="radios", collection=nome, filter={"updated_by": "45"})
+        ]
+        assert sorted(filtrados) == ["a", "c"]
+
+        # compare-and-set: documento novo só se não existe; troca só se o rev bate
+        assert await banco.save_doc_cas("r", {"rev": 1, "x": 1}, expected_rev=None, db_name=colecao, collection=nome)
+        assert not await banco.save_doc_cas("r", {"rev": 9}, expected_rev=None, db_name=colecao, collection=nome)
+        assert not await banco.save_doc_cas("r", {"rev": 3, "x": 2}, expected_rev=7, db_name=colecao, collection=nome)
+        assert await banco.save_doc_cas("r", {"rev": 2, "x": 2}, expected_rev=1, db_name=colecao, collection=nome)
+        guardado = await banco.find_doc("r", db_name=colecao, collection=nome)
+        assert (guardado["rev"], guardado["x"]) == (2, 2)
+    finally:
+        await banco._connect.drop_database(nome)
+        await banco._connect.close()
+
+
+def test_mongo_delete_many_and_save_doc_cas_against_a_real_mongod():
+    asyncio.run(_ciclo_apagar_dados())
