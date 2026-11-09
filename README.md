@@ -149,3 +149,7 @@ Agradecimentos especiais aos projetos de código aberto que tornam o EmpireMuse 
 - [Pythonista Guild](https://github.com/PythonistaGuild) pela biblioteca WaveLink;
 - À comunidade e equipe do servidor **EmpireHUB** pelo apoio contínuo;
 - Ícones de 48 dos emojis do bot (`assets/emojis/`, lista no [CREDITS.md](CREDITS.md)): <a href="https://www.flaticon.com/free-icons/user-interface" title="user interface icons">User interface icons created by mnauliady - Flaticon</a>.
+
+### Tokens dos bots
+
+Configure um token por variável: `TOKEN` é o principal obrigatório; `TOKEN_RESERVE_<NOME>` atende música e rádio; `TOKEN_RADIO_<NOME>` é só-rádio. O nome aceita 1 a 32 caracteres A-Z, 0-9 e _. Ausência ou formato inválido no principal impede a inicialização. Migre o `.env` e o compose antes de atualizar: `/update` não migra o compose. Consulte [o guia Docker](docs/guides/docker.md) para os nomes explícitos dos composes Hostinger.

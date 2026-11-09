@@ -5,7 +5,6 @@ from types import SimpleNamespace
 import pytest
 
 from empiremuse.utils.radio import RadioHub
-from empiremuse.utils.radio.control import MainBotRefused
 from empiremuse.utils.radio.premium import RadioUnavailable
 from tests.persistence.test_radio_store import FakeDb
 
@@ -78,40 +77,3 @@ class TestPauseAll:
         with pytest.raises(RadioUnavailable):
             await world.hub.control.load()
         assert world.hub.control.paused_all is True
-
-
-class TestRadioOnlyBots:
-    @pytest.mark.asyncio
-    async def test_add_remove_and_list(self, world):
-        roles = world.hub.roles
-
-        assert await roles.add("TOKEN_3") == ("TOKEN_3",)
-        assert await roles.add("TOKEN_2") == ("TOKEN_2", "TOKEN_3")
-        assert roles.is_radio_only("TOKEN_3") and not roles.is_radio_only("TOKEN_4")
-        assert await roles.remove("TOKEN_3") == ("TOKEN_2",)
-
-    @pytest.mark.asyncio
-    async def test_the_main_bot_can_never_be_radio_only(self, world):
-        for main in ("TOKEN", "TOKEN_1"):
-            with pytest.raises(MainBotRefused):
-                await world.hub.roles.add(main)
-        world.db.tables["bot_roles"] = {
-            "roles": {"_id": "roles", "radio_only": ["TOKEN", "TOKEN_2"], "rev": 1}
-        }  # adulterado
-
-        await world.hub.roles.load()
-
-        assert world.hub.roles.radio_only == ("TOKEN_2",) and not world.hub.roles.is_radio_only("TOKEN")
-
-    @pytest.mark.asyncio
-    async def test_the_list_survives_a_restart_and_garbage_entries_are_dropped(self, world):
-        await world.hub.roles.add("TOKEN_2")
-        world.db.tables["bot_roles"]["roles"]["radio_only"] += [5, "", None]
-
-        again = restarted(world)
-        await again.roles.load()
-
-        assert again.roles.radio_only == ("TOKEN_2",)
-
-    def test_a_non_string_identifier_is_never_radio_only(self, world):
-        assert world.hub.roles.is_radio_only(None) is False and world.hub.roles.is_radio_only(3) is False

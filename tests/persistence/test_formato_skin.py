@@ -93,7 +93,7 @@ class BotDeSkins:
         self.escritas = []  # ``(id_, db_name)`` de cada gravação
         self.banco = None  # o que foi persistido na última gravação (cópia): é o que sobrevive a um reinício
         self.music = SimpleNamespace(players={SERVIDOR: jogador for jogador in list(jogadores)[:1]})
-        self.pool = SimpleNamespace(get_guild_bots=lambda guild_id: [self], guild_prefix_cache={}, i18n=get_i18n())
+        self.pool = SimpleNamespace(get_all_bots=lambda: [self], guild_prefix_cache={}, i18n=get_i18n())
         self.config = {"DEFAULT_PREFIX": "!!", "IGNORE_SKINS": "", "IGNORE_STATIC_SKINS": ""}
         self.user = SimpleNamespace(
             id=1,

@@ -1,7 +1,7 @@
 """Item 7 (P1, Turbine) — B2 / V-L2: toda fonte de segredo "aprendida" chega ao redator por ``register_secret``.
 
 O ``collect_secret_values`` só vê o valor INTEIRO de variáveis com nome de segredo (``LAVALINK_NODE_*`` é um JSON): a senha de dentro dele,
-as do ``lavalink.ini``, da lista baixada, os tokens do ``guild_bots.json``, os ``refresh_tokens`` do Mongo e a senha do Lavalink local
+as do ``lavalink.ini``, da lista baixada, os tokens dos bots, os ``refresh_tokens`` do Mongo e a senha do Lavalink local
 precisam ser registradas. O teste roda o ``BotPool.setup`` REAL (bots, rede e Java dublados) e olha o efeito no ``redact``: o valor sai
 mascarado, inclusive na forma URL-encoded. Os valores não têm formato de token, para só o registro poder mascará-los.
 """
@@ -132,18 +132,6 @@ class TestSenhasDeNo:
         pool.setup()
 
         assert_mascarado(senha)
-
-
-class TestTokensDosBotsDeServidor:
-    def test_the_tokens_of_guild_bots_json_are_registered(self, fabrica, runtime):
-        token_a, token_b = "token-do-bot-exclusivo-E5", "token-do-bot-exclusivo-F6"
-        (runtime / "guild_bots.json").write_text(json.dumps({"111": [token_a], "222": [token_b]}), encoding="utf-8")
-        pool = fabrica()
-        assert_ainda_nao_mascarado(token_a, token_b)
-
-        pool.setup()
-
-        assert_mascarado(token_a, token_b)
 
 
 class TestRefreshTokensDoMongo:

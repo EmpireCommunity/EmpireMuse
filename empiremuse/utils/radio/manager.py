@@ -349,7 +349,6 @@ class RadioManager:
         """Reconcilia o banco e põe na fila global as rádios ligadas. Devolve quantas foram enfileiradas."""
         report = await self.hub.store.reconcile()
         await self.hub.control.load()
-        await self.hub.roles.load()
         radios = await self.hub.store.list_enabled()
         unavailable = None
         for radio in radios:

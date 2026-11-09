@@ -25,7 +25,7 @@ async def test_guild_join_never_reads_or_writes_settings_and_keeps_notifications
         update_data=AsyncMock(side_effect=update),
     )
     bot = SimpleNamespace(
-        identifier="TOKEN_2",
+        identifier="TOKEN_RESERVE_2",
         user=SimpleNamespace(id=2, name="Reserva"),
         pool=SimpleNamespace(database=database),
         update_appinfo=AsyncMock(),

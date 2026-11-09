@@ -26,7 +26,6 @@ Os comandos do dono são de prefixo e ocultos:
 | `radio-premium listar` | Lista os servidores com premium. |
 | `radio-pause-all` (alias `radio-pausar-todas`) | Para **todas** as rádios do processo (válvula de segurança). |
 | `radio-resume-all` (alias `radio-retomar-todas`) | Volta de onde parou, aos poucos (2 por vez, 1 s entre elas). |
-| `radio-bot adicionar\|remover <TOKEN_2>`, `radio-bot listar` | Define quais bots reserva são **só de rádio**. O principal não pode. |
 
 Detalhes:
 
@@ -150,3 +149,5 @@ Depois que a migração R5 rodar, voltar para uma versão **anterior à release 
 - Não há limite global de rádios: o controle é o premium e a pausa geral.
 - **Uso comercial do Last.fm:** hoje o premium é concedido sem cobrança. Se um dia ele for vendido, é preciso fechar acordo com o Last.fm (partners@last.fm) **antes**, porque os termos de uso da API não cobrem uso comercial.
 - Fora desta versão: URL informada pelo usuário, estações HLS, rádio no bot principal, Spotify e YouTube Music como fonte de gênero ou de artistas, e busca ou fila do usuário na rádio.
+
+Bots só-rádio são definidos por `TOKEN_RADIO_<NOME>` no ambiente, sem configuração no banco. A escolha de bot na rádio 24 h lista os só-rádio antes das reservas; o principal nunca pode ser escolhido.

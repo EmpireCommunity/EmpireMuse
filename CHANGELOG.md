@@ -7,8 +7,14 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Breaking
+- Os tokens agora vêm um por variável: `TOKEN` (principal), `TOKEN_RESERVE_<NOME>` e `TOKEN_RADIO_<NOME>`. `TOKEN_BOT_*`, `TOKEN_1..n`, vários tokens em `TOKEN` e o `guild_bots.json` não são mais lidos. Migre o `.env` e o compose antes de atualizar; `TOKEN` ausente, inválido ou com mais de um token impede a subida. O `/update` não migra o compose.
+- Bots só-rádio passam a ser definidos pelo prefixo `TOKEN_RADIO_`; o comando de dono `radio bot` e a leitura de `bot_roles` foram removidos. Na escolha da rádio 24 h, os só-rádio aparecem antes das reservas.
+- O comando temporário `fixfavs` foi removido e `exportsource` recusa arquivos de `local_database`.
+
 ### Segurança
 - Configuração de rádios: só oferece e aceita canais que o ator consegue ver e conectar, tanto no Discord quanto no painel web.
+- Removido o comando administrativo `exportsource`: o código público já está disponível no GitHub, sem necessidade de exportar arquivos da instalação pelo bot.
 - `tornado` atualizado de 6.5.10 para 6.6 (alertas #2, #3 e #4 do Dependabot), com isenção pontual do corte temporal no lock de produção.
 - O refreshToken do YouTube só é aplicado ao nó LOCAL da própria máquina; o token do RPC é gerado com fonte criptográfica. Conexões REST e WebSocket com nós IPv6 usam o endereço correto.
 
@@ -28,6 +34,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 ### Corrigido
 - Ativações concorrentes da mesma rádio reutilizam um único runner.
 - Rádios: falhas de leitura na ativação recebem resposta no comando e não impedem a tentativa das demais rádios na retomada; o reset registra ator e servidor na auditoria.
+- Bots só-rádio ficam fora dos avisos e convites de música; aspas vazias na configuração de tokens contam como ausência. O log do auxiliar de atualização mascara também tokens pelo formato antes de ser enviado ao dono.
 - A confirmação do setup da Jukebox esclarece que o painel atual da Jukebox é preservado na limpeza do canal. A resposta final do setup por prefixo é enviada uma única vez, para que não sobre uma cópia do aviso após os 120 s.
 - Na reprodução comum, faixas resolvidas por busca tentam o próximo candidato quando o áudio não está disponível, com limite de tentativas e sem repetir candidatos já recusados.
 - Os testes de OAuth do YouTube usam nós locais com host e porta, preservando a verificação de mascaramento e truncamento do corpo de erro HTTP 500.

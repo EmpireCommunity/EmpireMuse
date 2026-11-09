@@ -27,7 +27,9 @@ def run(coro):
 
 def cog_e_contexto():
     cog = Owner.__new__(Owner)
-    cog.bot = SimpleNamespace(config={"TOKEN": SEGREDO})
+    cog.bot = SimpleNamespace(
+        config={"TOKEN": SEGREDO}, pool=SimpleNamespace(secret_values=lambda: frozenset({SEGREDO}))
+    )
     ctx = MagicMock()
     ctx.author.id = 42
     ctx.author.send = AsyncMock()
@@ -39,11 +41,11 @@ def cog_e_contexto():
 
 
 def test_o_subprocesso_nao_enxerga_o_env_do_processo(monkeypatch):
-    monkeypatch.setenv("TOKEN_BOT_9", SEGREDO)
+    monkeypatch.setenv("TOKEN_RESERVE_9", SEGREDO)
 
     saida = run(run_command(f'"{sys.executable}" -c "import os; print(sorted(os.environ))"'))
 
-    assert "TOKEN_BOT_9" not in saida and SEGREDO not in saida
+    assert "TOKEN_RESERVE_9" not in saida and SEGREDO not in saida
 
 
 def test_git_continua_funcionando_com_o_env_minimo():
@@ -86,6 +88,27 @@ def test_log_de_execucao_registra_autor_e_comando_sem_segredo(monkeypatch, caplo
     registro = caplog.text
     assert "usuário=42" in registro and "comando=shell" in registro and "curl" in registro
     assert SEGREDO not in registro and "saída qualquer" not in registro
+
+
+@pytest.mark.critical
+def test_normalized_quoted_token_is_masked_in_shell_and_owner_command_log(monkeypatch, caplog):
+    from empiremuse.rules.bot_tokens import load_bot_tokens
+    from empiremuse.utils import client
+    from tests.rules.test_bot_tokens import token
+
+    monkeypatch.setattr(client.os, "environ", {})
+    pool = client.BotPool.__new__(client.BotPool)
+    pool.config = {"TOKEN": '"' + token() + '"'}
+    pool._token_load = load_bot_tokens(pool.config)
+    cog, ctx = cog_e_contexto()
+    cog.bot.pool = pool
+    monkeypatch.setattr(legacy_cmds, "run_command", AsyncMock(return_value=token()))
+    with caplog.at_level(logging.WARNING, logger=legacy_cmds.logger.name):
+        run(Owner.shell.callback(cog, ctx, command="echo " + token()))
+    assert token() not in caplog.text
+    assert "***" in caplog.text
+    content = ctx.author.send.await_args.kwargs["content"]
+    assert token() not in content and "***" in content
 
 
 def _bot_jishaku(ligado, owner_ids):

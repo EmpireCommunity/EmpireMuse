@@ -25,7 +25,7 @@ def response(done=False):
 def cog(*, bots=()):
     pool = SimpleNamespace(
         i18n=get_i18n(),
-        get_guild_bots=lambda gid: list(bots),
+        get_all_bots=lambda: list(bots),
         enqueue_playlist_embed_cooldown=SimpleNamespace(
             get_bucket=lambda inter: SimpleNamespace(update_rate_limit=lambda: 5)
         ),

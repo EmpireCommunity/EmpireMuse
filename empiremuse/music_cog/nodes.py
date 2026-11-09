@@ -93,7 +93,7 @@ class NodesMixin:
     @commands.cooldown(1, 5, commands.BucketType.guild)
     async def playeruptime(self, ctx: CustomContext):
         uptime_info = []
-        for bot in self.bot.pool.get_guild_bots(ctx.guild.id):
+        for bot in self.bot.pool.get_all_bots():
             try:
                 player = bot.music.players[ctx.guild.id]
                 uptime_info.append(

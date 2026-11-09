@@ -51,6 +51,7 @@ from empiremuse.logs.errors import command_context, install_exception_handlers
 from empiremuse.logs.alarm import DegradationAlarm
 from empiremuse.logs.metrics import SUMMARY_PREFIX, MetricsCollector, NodeSample, format_summary
 from empiremuse.logs.metrics import process_stats as metrics_process_stats
+from empiremuse.rules.bot_tokens import TokenLoad, describe, load_bot_tokens, is_radio_only_identifier
 from empiremuse.rules.bot_roles import NOTICE_WINDOW_SECONDS, main_missing_hint
 from empiremuse.rules.git_remote import parse_remote_web_url, sanitized_repo_url
 from empiremuse.rules.owner_shell import collect_secret_values
@@ -89,7 +90,7 @@ from empiremuse.utils.music.models import (
     CustomYTDL,
 )
 from empiremuse.utils.music.remote_lavalink_serverlist import get_lavalink_servers
-from empiremuse.utils.others import CustomContext, token_regex, sort_dict_recursively
+from empiremuse.utils.others import CustomContext, sort_dict_recursively
 from empiremuse.utils.owner_panel import PanelView
 from empiremuse.web_app import WSClient, start
 
@@ -107,18 +108,6 @@ PLAYLIST_REFRESH_READY_WAIT = 300  # s que a migração dos ícones espera os bo
 
 def _playlist_cache_file():
     return paths.RUNTIME_DIR / "local_database" / "playlist_cache.json"
-
-
-def read_guild_bots() -> Dict[str, List[str]]:
-    """Tokens dos bots exclusivos de servidor (``guild_bots.json`` no RUNTIME_DIR); vazio se o arquivo não existe."""
-    try:
-        with open(paths.RUNTIME_DIR / "guild_bots.json") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return {}
-    except Exception:
-        logger.exception("Falha ao ler o guild_bots.json")
-        return {}
 
 
 def _node_sample(identifier: str, node) -> NodeSample:
@@ -244,7 +233,7 @@ class BotPool:
 
     def __init__(self):
         self.bots: List[BotCore] = []
-        self.guild_bots: Dict[str, List[BotCore]] = {}
+        self._token_load = TokenLoad((), (), False)
         self.exit_code: int = 0
         self.user_prefix_cache = {}
         self.guild_prefix_cache = {}
@@ -503,9 +492,6 @@ class BotPool:
         except asyncio.TimeoutError:
             pass
 
-    def get_guild_bots(self, guild_id: int) -> list:
-        return self.bots + self.guild_bots.get(str(guild_id), [])
-
     @property
     def main_configured(self) -> bool:
         """Há um token principal configurado (logado, logando ou que falhou)? Sem ele ninguém é reserva: todos agem como sempre."""
@@ -515,7 +501,7 @@ class BotPool:
 
     @property
     def main_bot(self) -> Optional[BotCore]:
-        """O bot principal (token principal, logado) ou ``None``. Os bots exclusivos de servidor ficam fora."""
+        """O bot principal (token principal, logado) ou ``None``."""
         return self.servers.main_bot() if self.servers is not None else None
 
     def main_can_serve(self, guild_id: int, channel_id: Optional[int] = None) -> bool:
@@ -546,11 +532,14 @@ class BotPool:
         return True
 
     def get_all_bots(self) -> list:
-        """Os bots do pool na ordem do ``TOKEN`` (o principal primeiro), depois os exclusivos de servidor; sem repetidos."""
-        ordered = list(self.bots)
-        for botlist in self.guild_bots.values():
-            ordered.extend(botlist)
-        return list(dict.fromkeys(ordered))
+        """Bots na ordem estável: principal, reservas, só-rádio."""
+        return list(dict.fromkeys(self.bots))
+
+    def token_secrets(self) -> frozenset[str]:
+        return frozenset(bot.reveal() for bot in self._token_load.bots)
+
+    def secret_values(self) -> frozenset[str]:
+        return collect_secret_values(self.config, os.environ) | self.token_secrets()
 
     @property
     def database(self) -> Union[LocalDatabase, MongoDatabase]:
@@ -1072,12 +1061,21 @@ class BotPool:
         for log_warning in log_warnings:  # logados só agora, já com o log configurado
             boot.step("Configuração do log", "warn", log_warning)
 
+        self._token_load = load_bot_tokens({**os.environ, **self.config})
+        for bot_token in self._token_load.bots:
+            register_secret(bot_token.reveal())
+        if self._token_load.fatal:
+            boot.step("Tokens", "fail", "; ".join(describe(issue) for issue in self._token_load.issues))
+            self.exit_code = 1
+            return
+        for issue in self._token_load.issues:
+            boot.step("Tokens", "warn", describe(issue))
+        boot.step(
+            "Tokens",
+            "ok",
+            f"{len(self._token_load.bots)} bot(s): " + ", ".join(bot.identifier for bot in self._token_load.bots),
+        )
         self.load_skins()
-        # O collect_secret_values só vê o valor INTEIRO de variáveis com nome de segredo: os tokens dos bots de servidor
-        # (guild_bots.json) são registrados à parte, e as senhas dos nós mais abaixo, depois de montada a lista.
-        for guild_bot_tokens in read_guild_bots().values():
-            for guild_bot_token in guild_bot_tokens:
-                register_secret(guild_bot_token)
 
         log_ignored_legacy_data()  # depois do arquivo de log, para o aviso constar nele
 
@@ -1215,37 +1213,9 @@ class BotPool:
         if self.config["LASTFM_KEY"] and self.config["LASTFM_SECRET"]:
             self.last_fm = LastFM(api_key=self.config["LASTFM_KEY"], api_secret=self.config["LASTFM_SECRET"])
 
-        all_tokens = {}
+        all_tokens = {bot.identifier: bot.reveal() for bot in self._token_load.bots}
 
-        for k, v in dict(os.environ, **self.config).items():
-            if not isinstance(v, str):
-                continue
-
-            if not (tokens := token_regex.findall(v)):
-                continue
-
-            if len(tokens) > 1:
-                counter = 1
-                for t in tokens:
-                    if t in all_tokens.values():
-                        continue
-
-                    all_tokens[f"{k}_{counter}"] = t
-                    counter += 1
-
-            elif (token := tokens.pop()) not in all_tokens.values():
-                all_tokens[k] = token
-
-        def load_bot(bot_name: str, token: str, guild_id: str = None, load_modules_log: bool = False):
-            try:
-                token = token.split().pop()
-            except AttributeError, IndexError:
-                pass
-
-            if not token:
-                boot.step(f"Bot {bot_name}", "warn", "ignorado (token não informado)")
-                return
-
+        def load_bot(bot_name: str, token: str, load_modules_log: bool = False):
             try:
                 test_guilds = list([int(i) for i in self.config[f"TEST_GUILDS_{bot_name}"].split("||")])
             except Exception:
@@ -1320,9 +1290,6 @@ class BotPool:
                 except KeyError:
                     allow_private = False
 
-                if inter.bot.exclusive_guild_id and inter.guild_id != inter.bot.exclusive_guild_id:
-                    raise GenericError("Esse servidor não está autorizado para usar meus comandos...")
-
                 # Um só gancho para o COMMAND_LOG (opt-in, com IDs e opções resumidas) e para o registro de uso (sempre ligado, só
                 # o nome do comando e onde foi usado: nunca o usuário nem os valores das opções).
                 usage = usage_of(inter.bot) if inter.guild else None
@@ -1358,7 +1325,7 @@ class BotPool:
                 if not allow_private and not isinstance(inter.guild, disnake.Guild):
                     available_bot = False
 
-                    for b in inter.bot.pool.get_guild_bots(inter.guild_id):
+                    for b in inter.bot.pool.get_all_bots():
                         if (
                             b.appinfo
                             and (b.appinfo.bot_public or await b.is_owner(inter.author))
@@ -1455,11 +1422,7 @@ class BotPool:
 
             bot.loop.create_task(initial_setup())
 
-            if guild_id:
-                bot.exclusive_guild_id = int(guild_id)
-                self.guild_bots.setdefault(guild_id, []).append(bot)
-            else:
-                self.bots.append(bot)
+            self.bots.append(bot)
 
         if len(all_tokens) > 1:
             self.single_bot = False
@@ -1492,49 +1455,27 @@ class BotPool:
             load_bot(k, v, load_modules_log=load_modules_log)
             load_modules_log = False
 
-        for guild_id, guildbotsdata in read_guild_bots().items():
-            for n, guildbottoken in enumerate(guildbotsdata):
-                load_bot(f"{guild_id}_{n}", guildbottoken, guild_id, load_modules_log=load_modules_log)
-                load_modules_log = False
-
-        message = ""
-
         self.loop.create_task(self.setup_pool_extras())
         self.playlist_icons_task = self.loop.create_task(self.migrate_playlist_icons())
         # Em tarefa de fundo (nunca atrasa a subida) e guardada no pool para o shutdown cancelar como as outras.
         self.version_check_task = self.loop.create_task(check_new_version())
 
-        if not self.bots:
-            message = (
-                "O token do bot não foi configurado devidamente! Confira se o token foi configurado na "
-                "ENV/ENVIRONMENT ou no arquivo .env"
-            )
-            boot.step("Bots", "fail", message)
-            message = f"\n\n{message}"
-
-        else:
-            if start_local:
-                self.loop.create_task(self.start_lavalink())
-
-            if self.spotify and not self.spotify.spotify_cache:
-                self.spotify_token_task = self.loop.create_task(self.refresh_spotify_token())
-
-            self.node_check(LAVALINK_SERVERS, start_local=start_local)
+        if start_local:
+            self.loop.create_task(self.start_lavalink())
+        if self.spotify and not self.spotify.spotify_cache:
+            self.spotify_token_task = self.loop.create_task(self.refresh_spotify_token())
+        self.node_check(LAVALINK_SERVERS, start_local=start_local)
 
         if self.config["RUN_RPC_SERVER"]:
             self.cache_updater_task = self.loop.create_task(self.cache_updater())
 
-            if not message:
-                self.loop.create_task(self.run_bots(self.get_all_bots()))
-                self.loop.create_task(self.connect_rpc_ws())
+            self.loop.create_task(self.run_bots(self.get_all_bots()))
+            self.loop.create_task(self.connect_rpc_ws())
 
             try:
-                start(self, message=message)
+                start(self)
             except KeyboardInterrupt:
                 return
-
-        elif message:
-            raise Exception(message)
 
         else:
             self.cache_updater_task = self.loop.create_task(self.cache_updater())
@@ -1556,7 +1497,6 @@ class BotCore(commands.AutoShardedBot):
         self.color = kwargs.pop("embed_color", None)
         self.identifier = kwargs.pop("identifier", "")
         self.appinfo: Optional[disnake.AppInfo] = None
-        self.exclusive_guild_id: Optional[int] = None
         self.bot_ready = False
         self.uptime = disnake.utils.utcnow()
         self.env_owner_ids = set()
@@ -1618,18 +1558,17 @@ class BotCore(commands.AutoShardedBot):
 
     @property
     def is_main(self) -> bool:
-        """O bot principal (token principal), nunca um bot exclusivo de servidor."""
-        return is_main_identifier(self.identifier) and not self.exclusive_guild_id
+        """O bot principal, identificado por TOKEN."""
+        return is_main_identifier(self.identifier)
 
     def _is_radio_only(self) -> bool:
         """Este bot é dedicado a rádio (item 8)? Ele não responde nem à menção pura."""
-        hub = getattr(self.pool, "radio", None)
-        return bool(hub is not None and hub.roles.is_radio_only(self.identifier))
+        return is_radio_only_identifier(self.identifier)
 
     @property
     def is_reserve(self) -> bool:
-        """Reserva: do pool, não é o principal, não é exclusivo de servidor e há um token principal configurado."""
-        return not self.exclusive_guild_id and not is_main_identifier(self.identifier) and self.pool.main_configured
+        """Bot adicional do pool, com um principal configurado."""
+        return not is_main_identifier(self.identifier) and self.pool.main_configured
 
     def main_invite_url(self) -> Optional[str]:
         """Convite do principal montado aqui (nunca de texto de fora); ``None`` se ele não existe ou não é público."""
@@ -1848,9 +1787,6 @@ class BotCore(commands.AutoShardedBot):
         if not message.guild:
             return
 
-        if self.exclusive_guild_id and message.guild.id != self.exclusive_guild_id:
-            return
-
         try:
             player: LavalinkPlayer = self.music.players[message.guild.id]
             if player.text_channel == message.channel and not message.flags.ephemeral:
@@ -2046,9 +1982,7 @@ class BotCore(commands.AutoShardedBot):
     ):
         try:
             if isinstance(channel.parent, disnake.ForumChannel):
-                if channel.owner_id in (
-                    bot.user.id for bot in self.pool.get_guild_bots(channel.guild.id) if bot.bot_ready
-                ):
+                if channel.owner_id in (bot.user.id for bot in self.pool.get_all_bots() if bot.bot_ready):
                     if raise_error is False:
                         return False
 
@@ -2089,9 +2023,6 @@ class BotCore(commands.AutoShardedBot):
             return []
 
         if not inter.guild_id:
-            return []
-
-        if self.exclusive_guild_id and inter.guild_id != self.exclusive_guild_id:
             return []
 
         await super().on_application_command_autocomplete(inter)

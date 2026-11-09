@@ -74,7 +74,7 @@ Antes de solicitar a revisão de um Pull Request, certifique-se de preencher o m
 
 - [ ] **Testes e Validação**: CI verde (lint, formatação, compilação de bytecode e suíte rodam no CI e não se repetem localmente) e testes manuais descritos no PR. Testes novos só para o que merece (ver [`.claude/rules/empiremuse/testing.md`](../.claude/rules/empiremuse/testing.md)).
 - [ ] **Changelog Atualizado**: Registro resumido das alterações incluído na seção `[Unreleased]` de [`CHANGELOG.md`](../CHANGELOG.md).
-- [ ] **Sem Segredos ou Credenciais**: Nenhuma chave de API, token de bot (`TOKEN`, `TOKEN_BOT_*`), senha ou dado sensível foi incluído no histórico ou nos arquivos.
+- [ ] **Sem Segredos ou Credenciais**: Nenhuma chave de API, token de bot (`TOKEN`, `TOKEN_RESERVE_*`, `TOKEN_RADIO_*`), senha ou dado sensível foi incluído no histórico ou nos arquivos.
 - [ ] **Revisão de Segurança Obrigatória**: Caso a alteração envolva entrada de dados de usuário, processamento de rede/RPC/WebSocket, leitura/escrita de arquivos ou operações no banco de dados, certifique-se de que foram seguidas as diretrizes de [`SECURITY.md`](SECURITY.md) (política e relato responsável) e o checklist técnico em [`.claude/rules/empiremuse/security.md`](../.claude/rules/empiremuse/security.md).
 - [ ] **Padrão de Código**: Código aderente às regras de formatação, sem criação de blocos `except:` genéricos sem tratamento.
 - [ ] **Commits Padronizados**: Mensagens de commit seguindo o formato Conventional Commits.

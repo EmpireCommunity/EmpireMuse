@@ -68,7 +68,6 @@ GROUPS = {
             "status": set(),
             "reset": {"redefinir"},
             "premium": set(),
-            "bot": set(),
             "pauseall": {"pausartodas"},
             "resumeall": {"retomartodas"},
         },
@@ -124,6 +123,6 @@ def test_the_247_and_nonstop_commands_are_gone_as_commands(registry):
 
 
 def test_the_owner_commands_of_the_radio_are_hidden_subcommands_not_top_level(registry):
-    for name in ("premium", "bot", "pauseall", "resumeall"):
+    for name in ("premium", "pauseall", "resumeall"):
         assert name not in registry
         assert next(c for c in registry["radio"].commands if c.name == name).hidden

@@ -80,7 +80,7 @@ class ListenAlongForm(SettingsForm):
     def _channel_name(self, ctx: FormContext, channel_id: str) -> Optional[str]:
         if not DIGITS.fullmatch(channel_id):
             return None
-        for bot in ctx.pool.get_guild_bots(ctx.guild_id):
+        for bot in ctx.pool.get_all_bots():
             channel = bot.get_channel(int(channel_id))
             if channel is not None:
                 return str(channel.name)
@@ -106,7 +106,7 @@ class ListenAlongForm(SettingsForm):
 
     async def effects(self, ctx: FormContext, current: dict[str, Any], new: dict[str, Any]) -> None:
         removed = {int(key) for key in current["listen_along_invites"] if key not in new["listen_along_invites"]}
-        for bot in ctx.pool.get_guild_bots(ctx.guild_id):
+        for bot in ctx.pool.get_all_bots():
             player = active_player(bot, ctx.guild_id)
             if player is not None:
                 await self._clear_player(player, removed)

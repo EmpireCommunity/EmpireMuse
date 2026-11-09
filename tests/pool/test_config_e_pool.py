@@ -164,12 +164,12 @@ class TestKI13RateLimitSemMatarOProcesso:
         assert capturado.value is erro, "KI-13: o erro original deveria ser propagado"
 
 
-# ============================================================================ KI-11 — guild_bots
+# ============================================================================ Inicialização com bots falsos
 
 
 @pytest.fixture
 def pool_com_bots_falsos(runtime, monkeypatch):
-    """Roda o BotPool.setup REAL com BotCore dublado e o loop principal neutralizado; o guild_bots.json fica no RUNTIME_DIR."""
+    """Roda o BotPool.setup REAL com BotCore dublado e o loop principal neutralizado."""
     monkeypatch.setenv("RUN_LOCAL_LAVALINK", "false")  # sem Java: o setup não pode subir o Lavalink local
     monkeypatch.setenv("RUN_RPC_SERVER", "false")  # o padrão (True) sobe um servidor tornado na porta do painel
     monkeypatch.setenv("TOKEN", TOKEN_FALSO)  # o setup só reconhece valores com FORMATO de token do Discord

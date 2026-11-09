@@ -708,7 +708,7 @@ class SelectBotVoice(disnake.ui.View):
             )
 
         else:
-            for b in self.inter.bot.pool.get_guild_bots(self.guild.id):
+            for b in self.inter.bot.pool.get_all_bots():
                 if not b.bot_ready:
                     continue
 
@@ -764,9 +764,7 @@ class SelectBotVoice(disnake.ui.View):
         tr = await guild_translator(getattr(self.inter, "bot", None), self.guild)
 
         try:
-            bot = [
-                b for b in self.inter.bot.pool.get_guild_bots(inter.guild_id) if b.bot_ready and b.user.id == bot_id
-            ][0]
+            bot = [b for b in self.inter.bot.pool.get_all_bots() if b.bot_ready and b.user.id == bot_id][0]
         except IndexError:
             await inter.send(tr("views.bot_voice.gone", mention=f"<@{bot_id}>"), ephemeral=True)
             await self.update_message()

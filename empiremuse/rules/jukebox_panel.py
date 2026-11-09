@@ -34,11 +34,10 @@ PAUSED = "paused"
 
 
 class PanelPeer(NamedTuple):
-    """Um bot que está no servidor, visto pela eleição: ``exclusive`` = bot exclusivo de servidor (só entra se não há mais ninguém)."""
+    """Um bot que está no servidor, visto pela eleição: identificado pelo nome da variável."""
 
     identifier: str
     bot_id: int
-    exclusive: bool = False
 
 
 class PanelEntry(NamedTuple):
@@ -59,10 +58,8 @@ class PanelEntry(NamedTuple):
 
 
 def elect_panel_bot(peers: Iterable[PanelPeer]) -> int | None:
-    """Id do bot do painel: o principal se está no servidor; senão a 1ª reserva (ordem natural do ``identifier``); por último um exclusivo."""
-    ordered = sorted(
-        peers, key=lambda p: (p.exclusive, not is_main_identifier(p.identifier), identifier_sort_key(p.identifier))
-    )
+    """Id do bot do painel: o principal se está no servidor; senão a 1ª reserva (ordem natural do ``identifier``)."""
+    ordered = sorted(peers, key=lambda p: (not is_main_identifier(p.identifier), identifier_sort_key(p.identifier)))
     return ordered[0].bot_id if ordered else None
 
 
