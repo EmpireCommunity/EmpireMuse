@@ -9,16 +9,15 @@ Costura com o template ``conta_apagar.html`` (do Vitral): este handler renderiza
 * ``mensagem``: texto pronto para mostrar (vazio no formulário inicial); nunca leva contagem, valor nem nome de armazenamento;
 * ``palavra_confirmacao``: o texto a digitar (``APAGAR``); o formulário é um ``POST`` a ``/painel/conta/apagar`` com o campo ``confirmacao`` e
   ``{% module xsrf_form_html() %}``;
-* ``login_recente``: ``False`` quando o login tem mais de 30 min (o POST vai redirecionar ao login; o template pode avisar).
+* ``login_recente``: ``False`` quando o login tem mais de 30 min: o template NÃO mostra o formulário, só o aviso e o link para
+  ``/painel/login?next=/painel/conta/apagar`` (o POST com login antigo responde 303 de volta ao GET e não apaga nada).
 """
 
 from __future__ import annotations
 
 from typing import Optional
-from urllib.parse import urlencode
 
-from empiremuse.panel.handlers.base import SESSION_COOKIE
-from empiremuse.panel.handlers.servers import LOGIN_PATH, MAX_BODY_BYTES, AuthenticatedHandler, decode_args
+from empiremuse.panel.handlers.servers import MAX_BODY_BYTES, AuthenticatedHandler, decode_args
 from empiremuse.panel.services.account_erase import (
     CONFIRMATION_WORD,
     AccountEraseService,
@@ -80,17 +79,18 @@ class AccountEraseHandler(AuthenticatedHandler):
                 self.application.settings["pool"], user_id=user_id, created_at=created_at, confirmation=confirmation
             )
         except Exception:
-            self.clear_panel_cookie(SESSION_COOKIE)  # o passo 2 pode ter destruído a sessão antes do erro
+            self.forget_session()  # o passo 2 pode ter destruído a sessão antes do erro
             raise
         self._respond(outcome)
 
     def _respond(self, outcome: EraseOutcome) -> None:
         if outcome.result is EraseResult.LOGIN_REQUIRED:
-            self.redirect(f"{LOGIN_PATH}?{urlencode({'next': ERASE_PATH}, safe='/')}")
+            # 303 de volta ao GET: ele não oferece formulário, só o link para entrar de novo (um POST seguido de 302 ao Discord
+            # esbarraria no ``form-action 'self'`` da CSP, e o login silencioso não prova presença).
+            self.redirect(ERASE_PATH, status=303)
             return
         if outcome.erased:
-            self.clear_panel_cookie(SESSION_COOKIE)
-            self._current_session = None  # o topo da página sai deslogado: a sessão não existe mais
+            self.forget_session()
             self._page(200, _RESULT_NAME[outcome.result], outcome.message, False)
             return
         if outcome.retry_after_s:

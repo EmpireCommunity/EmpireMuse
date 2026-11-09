@@ -11,14 +11,14 @@
   {% if resultado in ("ok", "partial") %}
     {# A sessão já acabou: o topo sai deslogado e não há mais o que confirmar nem cancelar. #}
     <p class="mensagem-form {% if resultado == 'ok' %}mensagem-sucesso{% else %}mensagem-erro{% end %}" role="{% if resultado == 'ok' %}status{% else %}alert{% end %}">{{ mensagem }}</p>
-    <p class="nota">O que já foi enviado ao Last.fm continua lá. Para encerrar o acesso do bot à sua conta, revogue em <a href="https://www.last.fm/settings/applications" rel="noopener noreferrer">last.fm/settings/applications</a>.</p>
+    <p class="nota">Se você vinculou o Last.fm, o que já foi enviado continua lá. Para encerrar o acesso do bot à sua conta do Last.fm, revogue em <a href="https://www.last.fm/settings/applications" rel="noopener noreferrer">last.fm/settings/applications</a>.</p>
     <p><a role="button" href="/painel/">Voltar ao início</a></p>
   {% else %}
     {% if resultado == "erro" and mensagem %}
     <p class="mensagem-form mensagem-erro" role="alert">{{ mensagem }}</p>
     {% end %}
 
-    <p class="lead">Vamos apagar tudo o que o bot guarda sobre você. Antes de continuar, confira o que sai e o que fica.</p>
+    <p class="lead">Vamos apagar os dados que o bot guarda sobre você. Alguns registros ficam por um tempo. Antes de continuar, confira o que sai e o que fica.</p>
 
     <section class="bloco-config bloco-largo" aria-labelledby="titulo-apagar-sai">
       <h2 class="subtitulo" id="titulo-apagar-sai">O que será apagado</h2>
@@ -46,8 +46,12 @@
       <h2 class="subtitulo" id="titulo-apagar-confirmar">Confirmar</h2>
       <p><strong>Não dá para desfazer.</strong> Quer apagar mesmo?</p>
       {% if not login_recente %}
-      <p class="aviso-info" role="note">Por segurança, ao confirmar você vai entrar de novo com o Discord e voltar a esta página. Nada é apagado antes disso.</p>
-      {% end %}
+      <p class="aviso-info" role="note">Por segurança, você precisa entrar de novo com o Discord antes de apagar seus dados. Nada é apagado até lá.</p>
+      <div class="acoes-apagar">
+        <a role="button" class="secondary" href="/painel/conta">Cancelar</a>
+        <a role="button" href="/painel/login?next=/painel/conta/apagar">Entrar de novo com o Discord</a>
+      </div>
+      {% else %}
       <form id="form-apagar" class="form-config" method="post" action="/painel/conta/apagar">
         {% module xsrf_form_html() %}
         <label for="apagar-confirmacao">Digite <strong>{{ palavra_confirmacao }}</strong> (em maiúsculas) para confirmar</label>
@@ -57,6 +61,7 @@
           <button type="submit" class="botao-perigo-cheio">Apagar tudo</button>
         </div>
       </form>
+      {% end %}
     </section>
   {% end %}
 </section>

@@ -104,8 +104,9 @@ formulário ou da URL é ignorado. O bot de entrada é o primeiro bot pronto do 
 503 ("Painel indisponível no momento") sem ler nem gravar.
 
 **Apagar meus dados** (`GET/POST /painel/conta/apagar`, `panel/handlers/erase.py` e `panel/services/account_erase.py`): o POST exige XSRF, o limite
-de escrita do painel, a palavra `APAGAR` digitada e login feito há no máximo 30 minutos (`ERASE_MAX_SESSION_AGE_S`; senão redireciona a
-`/painel/login?next=/painel/conta/apagar` e nada é apagado). O alvo é sempre o usuário da sessão. O serviço chama
+de escrita do painel, a palavra `APAGAR` digitada e login feito há no máximo 30 minutos (`ERASE_MAX_SESSION_AGE_S`). Com login antigo o GET não mostra
+formulário (só o aviso e o link para `/painel/login?next=/painel/conta/apagar`; esse login usa `prompt=consent`, os demais seguem `prompt=none`) e o POST
+responde 303 ao GET sem apagar nada. O alvo é sempre o usuário da sessão. O serviço chama
 `pool.erasure.erase_user(..., source="panel")` **sem segurar o lock do usuário** (a função o pega sozinha), lê `user_id` e `created_at` antes
 da chamada, limpa o cookie `painel_sessao` e não consulta a sessão depois. Todas as respostas saem com `Cache-Control: no-store`. O template
 `conta_apagar.html` recebe `resultado`, `mensagem`, `palavra_confirmacao` e `login_recente` (ver a docstring do handler).
@@ -116,6 +117,8 @@ da chamada, limpa o cookie `painel_sessao` e não consulta a sessão depois. Tod
 | `panel/services/account.py` | `AccountService`: versão otimista, lock `("users", user_id)`, gravação por cópia profunda, auditoria |
 | `panel/services/account_misc.py` | Prefixo pessoal, scrobble do Last.fm e token do app de RPC |
 | `panel/services/account_links.py` | Favoritos (`fav_links`), rádios favoritas (`global.radio_user`, J3) e integrações (`integration_links`) |
+| `panel/handlers/erase.py` | `AccountEraseHandler`: `GET/POST /painel/conta/apagar` (E3); login antigo: o GET mostra só o link para entrar de novo e o POST responde 303 |
+| `panel/services/account_erase.py` | `AccountEraseService`: login recente, palavra `APAGAR` e chamada a `pool.erasure.erase_user` sem segurar o lock |
 | `panel/handlers/account.py` | `AccountHandler` (página e `POST` por `acao`) e `FavoritesExportHandler` |
 
 - **Ações** (campo oculto `acao`): `prefixo`, `favorito_adicionar`, `favorito_editar`, `favorito_remover`,

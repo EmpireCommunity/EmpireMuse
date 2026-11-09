@@ -24,6 +24,13 @@ OWNER_GRANT_TTL_S = 86400
 OWNER_GRANTS_PER_HOUR = 10
 
 RATE_WINDOW_S = 3600
+
+
+def login_is_recent(created_at: float, now: float, max_age_s: float = ERASE_MAX_SESSION_AGE_S) -> bool:
+    """Login recente o bastante para apagar pelo painel (§3.2): a sessão tem no máximo ``max_age_s`` de idade."""
+    return now - created_at <= max_age_s
+
+
 ANONYMIZED = "deleted"
 SNOWFLAKE_MIN_DIGITS = 17
 SNOWFLAKE_MAX_DIGITS = 20

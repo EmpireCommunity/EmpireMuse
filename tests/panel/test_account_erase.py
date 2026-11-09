@@ -6,6 +6,7 @@ dublê no lugar de ``pool.erasure``. A fase de recheck (60 s depois) roda na hor
 
 import asyncio
 import copy
+import re
 import shutil
 import tempfile
 from types import SimpleNamespace
@@ -15,7 +16,8 @@ import tornado.web
 
 from empiremuse.panel.handlers.settings import WRITE_LIMIT_PER_MINUTE
 from empiremuse.panel.services.account_erase import AccountEraseService
-from empiremuse.rules.erasure import ERASE_MAX_SESSION_AGE_S, ErasureReport, ErasureStatus
+from empiremuse.panel.handlers.servers import MAX_BODY_BYTES
+from empiremuse.rules.erasure import ERASE_MAX_SESSION_AGE_S, ErasureReport, ErasureStatus, login_is_recent
 from empiremuse.utils.db import LocalDatabase, global_db_models
 from empiremuse.utils.erasure import ErasureBusy, ErasureRateLimited, ErasureService, ErasureTombstones
 from empiremuse.utils.user_locks import UserLocks
@@ -28,7 +30,8 @@ from tests.panel.test_settings_http import HttpBase
 pytestmark = pytest.mark.critical
 
 URL = "/painel/conta/apagar"
-LOGIN_REDIRECT = "/painel/login?next=/painel/conta/apagar"
+LOGIN_LINK = "/painel/login?next=/painel/conta/apagar"
+FORM_APAGAR = re.compile(r'<form id="form-apagar".*?</form>', re.DOTALL)
 SESSION_COOKIE = "painel_sessao"
 
 
@@ -82,8 +85,8 @@ class EraseBase(HttpBase):
             is not None
         )
 
-    def post_erase(self, browser, *, confirmacao="APAGAR", extra=(), gap=4, **kw):
-        return self.post_raw(browser, URL, [("confirmacao", confirmacao), *extra], gap=gap, **kw)
+    def post_erase(self, browser, *, confirmacao="APAGAR", extra=(), gap=4, query="", **kw):
+        return self.post_raw(browser, URL + query, [("confirmacao", confirmacao), *extra], gap=gap, **kw)
 
     def session_alive(self, browser):
         return browser.get("/painel/conta").code == 200
@@ -112,7 +115,11 @@ class EraseGateTest(EraseBase):
         response = self.logged_in().get(URL)
         body = response.body.decode()
         assert response.code == 200 and response.headers["Cache-Control"] == "no-store"
-        assert 'name="confirmacao"' in body and 'name="_xsrf"' in body and "APAGAR" in body
+        form = FORM_APAGAR.search(body)  # o logout do topo também tem _xsrf: só vale o do formulário de apagar
+        assert form is not None, "a página deve oferecer o formulário de apagar"
+        fragment = form.group(0)
+        assert 'name="_xsrf"' in fragment and 'method="post"' in fragment and f'action="{URL}"' in fragment
+        assert 'name="confirmacao"' in fragment and "APAGAR" in fragment
         assert self.stored(UID)
 
     def test_get_lists_what_goes_and_what_stays_with_an_empty_field_and_no_counts(self):
@@ -126,17 +133,26 @@ class EraseGateTest(EraseBase):
         assert 'value=""' in body and "banimento" not in body
         assert "entrar de novo" not in body, "login recente: sem o aviso"
 
-    def test_get_warns_when_the_login_is_too_old_and_the_account_page_links_to_the_screen(self):
+    def test_get_with_a_stale_login_shows_no_form_only_the_notice_and_the_login_link(self):
         browser = self.logged_in()
         self.clock.advance(ERASE_MAX_SESSION_AGE_S + 1)
-        assert "entrar de novo com o Discord" in browser.get(URL).body.decode()
+        body = browser.get(URL).body.decode()
+        assert FORM_APAGAR.search(body) is None and 'name="confirmacao"' not in body
+        assert "Por segurança, você precisa entrar de novo com o Discord antes de apagar seus dados." in body
+        assert "Nada é apagado até lá." in body and "Entrar de novo com o Discord" in body
+        assert f'href="{LOGIN_LINK}"' in body
         assert f'href="{URL}"' in browser.get("/painel/conta").body.decode()
+
+    def test_only_the_erase_path_asks_discord_for_consent_every_other_login_stays_silent(self):
+        for next_, prompt in ((URL, "consent"), ("/painel/conta", "none"), (None, "none"), (URL + "x", "none")):
+            _, params = self.start_login(self.browser(), next_)
+            assert params["prompt"] == prompt, next_
 
     def test_anonymous_is_sent_to_login_and_nothing_is_erased(self):
         browser = self.browser()
         assert browser.get(URL).code == 302
-        response = self.post_erase(browser, token=False)
-        assert response.code in (302, 403)
+        response = self.post_erase(browser)  # com um token XSRF válido: quem barra é a falta de sessão, não o XSRF
+        assert response.code == 302 and response.headers["Location"].startswith("/painel/login")
         assert self.stored(UID) and self.stored(OTHER_UID)
 
     def test_post_without_xsrf_is_403_and_erases_nothing(self):
@@ -154,16 +170,25 @@ class EraseGateTest(EraseBase):
             assert 'name="confirmacao"' in response.body.decode()
         assert self.stored(UID) and self.stored_queue(UID) and self.session_alive(browser)
 
-    def test_login_older_than_30_minutes_redirects_to_login_and_erases_nothing(self):
+    def test_login_older_than_30_minutes_answers_303_to_the_page_and_erases_nothing(self):
         browser = self.logged_in()
+        calls = self.use_stub(outcome=ErasureReport(ErasureStatus.OK, {}, ()))
         response = self.post_erase(browser, gap=ERASE_MAX_SESSION_AGE_S + 1)
-        assert response.code == 302 and response.headers["Location"] == LOGIN_REDIRECT
+        assert response.code == 303 and response.headers["Location"] == URL
         assert response.headers["Cache-Control"] == "no-store"
-        assert self.stored(UID) and self.stored_queue(UID)
+        assert calls == [] and self.stored(UID) and self.stored_queue(UID) and self.session_alive(browser)
+
+    def test_body_over_the_limit_is_413_and_erases_nothing(self):
+        browser = self.logged_in()
+        calls = self.use_stub(outcome=ErasureReport(ErasureStatus.OK, {}, ()))
+        response = self.post_erase(browser, extra=[("lixo", "x" * MAX_BODY_BYTES)])
+        assert response.code == 413 and calls == [] and self.stored(UID) and self.session_alive(browser)
 
     def test_body_user_id_is_ignored_and_only_the_session_user_is_erased(self):
         browser = self.logged_in()
-        response = self.post_erase(browser, extra=[("user_id", str(OTHER_UID)), ("id", str(OTHER_UID))])
+        response = self.post_erase(
+            browser, extra=[("user_id", str(OTHER_UID)), ("id", str(OTHER_UID))], query=f"?user_id={OTHER_UID}"
+        )
         assert response.code == 200
         assert not self.stored(UID) and self.stored(OTHER_UID) and self.stored_queue(OTHER_UID)
 
@@ -190,6 +215,14 @@ class EraseOutcomesTest(EraseBase):
         assert "apagamos parte" in body and "4242" not in body and "radios" not in body
         assert "tente" not in body and "novamente" not in body, "PARTIAL não promete que repetir resolve"
         assert SESSION_COOKIE not in browser.cookies
+
+    def test_unexpected_error_still_ends_the_session_and_clears_the_cookie(self):
+        browser = self.logged_in()
+        self.use_stub(outcome=RuntimeError("falha inesperada"))
+        response = self.post_erase(browser)
+        assert response.code == 500 and "falha inesperada" not in response.body.decode()
+        assert SESSION_COOKIE not in browser.cookies and browser.get("/painel/conta").code == 302
+        assert self.pool.panel_sessions.destroy_user(str(UID)) == 0, "a sessão do pedido foi destruída no store"
 
     def test_rate_limited_keeps_the_session_and_answers_429_with_retry_after(self):
         browser = self.logged_in()
@@ -231,6 +264,7 @@ class EraseFlowTest(EraseBase):
         )  # serviço real: se o painel segurasse o lock, o teste estouraria o tempo em vez de passar
         body = response.body.decode()
         assert response.code == 200 and "Seus dados foram apagados" in body and "Cancelar" not in body
+        assert "usuario-nome" not in body, "a tela final sai deslogada"
         assert response.headers["Cache-Control"] == "no-store"
         cleared = [h for h in response.headers.get_list("Set-Cookie") if h.startswith(SESSION_COOKIE + "=")]
         assert cleared and cleared[0].startswith(f'{SESSION_COOKIE}="";'), cleared
@@ -258,7 +292,7 @@ class EraseFlowTest(EraseBase):
 
     def test_fresh_login_after_a_stale_redirect_completes_the_erasure(self):
         browser = self.logged_in()
-        assert self.post_erase(browser, gap=ERASE_MAX_SESSION_AGE_S + 1).code == 302
+        assert self.post_erase(browser, gap=ERASE_MAX_SESSION_AGE_S + 1).code == 303
         assert self.login(browser, next_="/painel/conta/apagar").headers["Location"] == URL
         assert self.post_erase(browser).code == 200 and not self.stored(UID)
 
@@ -271,13 +305,11 @@ class EraseFlowTest(EraseBase):
     [(0, True), (ERASE_MAX_SESSION_AGE_S, True), (ERASE_MAX_SESSION_AGE_S + 1, False)],
 )
 def test_login_is_recent_up_to_30_minutes(age_s, recent):
-    now = [5000.0]
-    service = AccountEraseService(clock=lambda: now[0])
-    assert service.login_is_recent(now[0] - age_s) is recent
+    assert login_is_recent(5000.0 - age_s, 5000.0) is recent
 
 
-def test_service_checks_run_before_the_erasure_and_never_hold_the_lock():
-    """Direto no serviço: sem lock aqui, ``erase_user`` real conclui; com o lock preso por fora, ele só espera e termina."""
+def test_erase_user_that_takes_the_user_lock_itself_completes_through_the_service():
+    """Direto no serviço: um ``erase_user`` que pega o lock (como o real) conclui, porque o serviço do painel não o segura antes."""
 
     async def scenario():
         pool = SimpleNamespace(user_locks=UserLocks())

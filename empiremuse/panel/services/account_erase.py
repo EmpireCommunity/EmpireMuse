@@ -17,7 +17,7 @@ from enum import StrEnum
 from math import ceil
 from typing import TYPE_CHECKING, Optional
 
-from empiremuse.rules.erasure import ERASE_MAX_SESSION_AGE_S, ErasureStatus
+from empiremuse.rules.erasure import ErasureStatus, login_is_recent
 from empiremuse.utils.erasure import ErasureBusy, ErasureRateLimited
 
 if TYPE_CHECKING:
@@ -68,7 +68,7 @@ class AccountEraseService:
         self._clock = clock  # o mesmo relógio do ``SessionStore``: ``created_at`` vem dele
 
     def login_is_recent(self, created_at: float) -> bool:
-        return self._clock() - created_at <= ERASE_MAX_SESSION_AGE_S
+        return login_is_recent(created_at, self._clock())
 
     async def erase(
         self, pool: BotPool, *, user_id: int, created_at: float, confirmation: Optional[str]

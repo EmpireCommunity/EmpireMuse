@@ -9,9 +9,12 @@ import secrets
 from typing import Optional
 
 from empiremuse.panel.handlers.base import SESSION_COOKIE, PanelHandler
+from empiremuse.panel.handlers.erase import ERASE_PATH
 from empiremuse.panel.handlers.pages import INDEX_PATH
 from empiremuse.panel.oauth import (
     DiscordOAuthClient,
+    PROMPT_CONSENT,
+    PROMPT_NONE,
     DiscordOAuthError,
     make_pkce_pair,
     parse_managed_guilds,
@@ -98,7 +101,9 @@ class LoginHandler(AuthHandler):
             max_age=ATTEMPT_COOKIE_MAX_AGE,
             **self.cookie_kwargs(),
         )
-        self.redirect(oauth.authorize_url(state, challenge))
+        # Só o caminho de apagar dados pede consentimento de novo: o login silencioso (``prompt=none``) não prova presença de ninguém.
+        prompt = PROMPT_CONSENT if next_path == ERASE_PATH else PROMPT_NONE
+        self.redirect(oauth.authorize_url(state, challenge, prompt))
 
 
 class CallbackHandler(AuthHandler):
