@@ -27,7 +27,14 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import disnake
 
-from empiremuse.rules.erasure import OWNER_GRANT_TTL_S, ErasureStatus, grant_log_ref
+from empiremuse.rules.erasure import (  # noqa: F401 - CONFIRM_ID, CANCEL_ID e GRANT_PREFIX são reexportados (fonte única em rules)
+    CANCEL_ID,
+    CONFIRM_ID,
+    GRANT_PREFIX,
+    OWNER_GRANT_TTL_S,
+    ErasureStatus,
+    grant_log_ref,
+)
 from empiremuse.rules.i18n import fit
 from empiremuse.utils.erasure import ErasureBusy, ErasureRateLimited
 from empiremuse.utils.erasure_grants import Grant, GrantLimited
@@ -42,9 +49,6 @@ OWNER_REQUEST_TIMEOUT_S = 60.0
 BUTTON_LABEL_LIMIT = 80
 SECONDS_PER_MINUTE = 60
 NONCE_BYTES = 6
-GRANT_PREFIX = "erasure_grant"  # confirmar e cancelar da DM do titular: ``erasure_grant:<código>`` e ``erasure_grant_cancel:<código>``
-CONFIRM_ID = "erasure_confirm"
-CANCEL_ID = "erasure_cancel"
 OWNER_SEND_ID = "erasure_owner_send"
 OWNER_CANCEL_ID = "erasure_owner_cancel"
 
