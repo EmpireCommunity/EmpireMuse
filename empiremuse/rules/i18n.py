@@ -82,6 +82,7 @@ COMMAND_GROUPS: Mapping[str, str] = {
     "jukebox.reset": "settings",
     "jukebox.setup": "settings",
     "jukebox.thread": "settings",
+    "delete_my_data": "settings",
     "language": "settings",
     "lastfm": "lastfm",
     "listenalong": "settings",

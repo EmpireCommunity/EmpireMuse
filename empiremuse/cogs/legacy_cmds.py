@@ -16,6 +16,8 @@ from disnake.http import Route
 import empiremuse.wavelink as wavelink
 from empiremuse import paths
 from empiremuse.config_loader import load_config
+from empiremuse.cogs.data_erasure import OwnerRequestView
+from empiremuse.rules.erasure import OWNER_COMMAND_NAME, owner_target_id, parse_owner_request
 from empiremuse.rules.errors import RuleError
 from empiremuse.rules.git_remote import sanitized_repo_url
 from empiremuse.rules.owner_shell import build_shell_env, mask_secrets, mask_shell_output
@@ -223,7 +225,14 @@ class Owner(commands.Cog):
         """Registra quem executou qual comando de owner (o horário vem do formato do log), sem a saída e sem segredos."""
         detail = mask_secrets(detail, self.secret_values())[:MAX_LOGGED_COMMAND_LENGTH]
         # warning: a trilha de auditoria precisa sair mesmo com ENABLE_LOGGER desligado (o nível padrão é WARNING)
-        logger.warning("comando de owner: usuário=%s comando=%s detalhe=%r", ctx.author.id, name, detail)
+        # ``empiremuse_emit``: o agregador junta WARNING de mesmo template; sem isto a trilha de auditoria do dono perderia linhas
+        logger.warning(
+            "comando de owner: usuário=%s comando=%s detalhe=%r",
+            ctx.author.id,
+            name,
+            detail,
+            extra={"empiremuse_emit": True},
+        )
 
     @commands.Cog.listener("on_command")
     async def log_jishaku_command(self, ctx: CustomContext):
@@ -232,6 +241,41 @@ class Owner(commands.Cog):
             return
         if await self.bot.is_owner(ctx.author):
             self.log_owner_command(ctx, "jishaku", ctx.message.content)
+
+    @commands.Cog.listener("on_message")
+    async def erasure_request_dm(self, message: disnake.Message) -> None:
+        """``apagardados <id>`` (§3.4): SÓ no privado do dono com o bot. O clique do dono nunca apaga: ele só envia a DM de concessão ao titular."""
+        if not isinstance(message.channel, disnake.DMChannel) or message.author.id not in self.bot.env_owner_ids:
+            return  # primeira linha: qualquer outra coisa é ignorada em silêncio, sem resposta a ninguém
+        argument = parse_owner_request(message.content, self.bot.default_prefix)
+        if argument is None:
+            return
+        tr = self.bot.pool.i18n.for_locale(None)
+        target_id = owner_target_id(argument)
+        if target_id is None:
+            await message.channel.send(tr("erasure.owner.invalid_id"))
+            return
+        try:
+            target = await self.bot.fetch_user(target_id)
+        except disnake.NotFound:
+            await message.channel.send(tr("erasure.owner.not_found"))
+            return
+        except disnake.HTTPException as error:
+            logger.warning("apagardados: fetch_user falhou (%s)", type(error).__name__)
+            await message.channel.send(tr("erasure.owner.lookup_failed"))
+            return
+        if target.bot:
+            await message.channel.send(tr("erasure.owner.not_found"))
+            return
+        self.log_owner_command(message, OWNER_COMMAND_NAME, f"pedido de apagamento id={target.id}")
+        name = disnake.utils.escape_markdown(disnake.utils.escape_mentions(target.display_name))
+        embed = disnake.Embed(description=tr("erasure.owner.ask", name=name, id=target.id))
+        embed.set_thumbnail(url=target.display_avatar.url)
+        await message.channel.send(
+            embed=embed,
+            view=OwnerRequestView(self.bot, tr, message.author.id, target),
+            allowed_mentions=disnake.AllowedMentions.none(),
+        )
 
     def format_log(self, data: list):
         return "\n".join(

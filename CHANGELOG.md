@@ -13,6 +13,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - O comando temporário `fixfavs` foi removido.
 
 ### Segurança
+- Backend E2: `/apagar_meus_dados` (`/delete_my_data`) apaga os dados do próprio membro com um clique de confirmação (texto fixo por categoria, sem contagens), também em DM. O comando do dono `apagardados <id>`, só no privado dos `OWNER_IDS`, não apaga: envia ao titular uma DM com concessão de uso único (24 h) e só o clique do titular apaga. A trilha de auditoria de comandos do dono deixa de ser agregada pelo log.
 - Backend J3: favoritas do servidor passam a exigir ator com Gerenciar Servidor, administrador ou dono também no store. A estrela da rádio 24 h guarda favoritas pessoais; o menu conserva a ação administrativa do servidor.
 - Configuração de rádios: só oferece e aceita canais que o ator consegue ver e conectar, tanto no Discord quanto no painel web.
 - Removido o comando administrativo `exportsource`: o código público já está disponível no GitHub, sem necessidade de exportar arquivos da instalação pelo bot.

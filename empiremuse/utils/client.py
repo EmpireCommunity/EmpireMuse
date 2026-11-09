@@ -65,6 +65,7 @@ from empiremuse.version import image_version
 from empiremuse.utils.safe_error import HTTPStatusError, safe_error
 from empiremuse.utils.db import MongoDatabase, LocalDatabase, get_prefix, DBModel, global_db_models
 from empiremuse.utils.erasure import ErasureService, ErasureTombstones
+from empiremuse.utils.erasure_grants import OwnerGrants
 from empiremuse.utils.user_locks import UserLocks
 from empiremuse.utils.app_profile import sync_app_profile
 from empiremuse.utils.guild_ban import GuildBans
@@ -273,6 +274,7 @@ class BotPool:
         self.erasure_tombstones = ErasureTombstones(tombstone_seconds(self.config["DBCACHE_TTL"]))
         self.panel_sessions: Optional[Any] = None  # ``SessionStore`` do painel, registrado por ``build_panel_app``
         self.erasure = ErasureService(self)
+        self.erasure_grants = OwnerGrants()
         self.player_skins = {}
         self.player_static_skins = {}
         self.default_skin = self.config.get("DEFAULT_SKIN", "default")

@@ -24,6 +24,10 @@ OWNER_GRANT_TTL_S = 86400
 OWNER_GRANTS_PER_HOUR = 10
 
 RATE_WINDOW_S = 3600
+# Q1 (decidida): nome do comando por locale, num só lugar. O cog declara o comando pelas chaves ``cmd.delete_my_data.*`` dos catálogos,
+# que repetem estes valores (um teste confere); renomear é mudar aqui e nos dois catálogos.
+ERASE_COMMAND_NAMES = {"pt-BR": "apagar_meus_dados", "en-US": "delete_my_data"}
+OWNER_COMMAND_NAME = "apagardados"  # comando do dono (§3.4): só no privado, só OWNER_IDS
 ANONYMIZED = "deleted"
 SNOWFLAKE_MIN_DIGITS = 17
 SNOWFLAKE_MAX_DIGITS = 20
@@ -105,6 +109,28 @@ def is_snowflake(text: str) -> bool:
     if not isinstance(text, str) or not (text.isascii() and text.isdigit()):
         return False
     return SNOWFLAKE_MIN_DIGITS <= len(text) <= SNOWFLAKE_MAX_DIGITS and int(text) < SNOWFLAKE_LIMIT
+
+
+def parse_owner_request(content: str, prefix: str) -> str | None:
+    """Comando do dono (§3.4): ``<prefixo padrão>apagardados <id>``, casamento exato (maiúsculas contam, nada de alias).
+
+    ``None`` = a mensagem não é este comando (ignorar em silêncio). Texto = o argumento ainda por validar (pode ser vazio ou ter lixo);
+    ``owner_target_id`` o valida. Só a primeira linha vale: mensagem com várias linhas ou palavras a mais não vira ID.
+    """
+    head = f"{prefix}{OWNER_COMMAND_NAME}"
+    if not prefix or not content.startswith(head):
+        return None
+    rest = content[len(head) :]
+    if rest and not rest[0].isspace():
+        return None  # ``apagardadosx``: outro comando
+    return rest.strip()
+
+
+def owner_target_id(argument: str) -> int | None:
+    """ID inteiro positivo, só dígitos ASCII, snowflake de 17 a 20 dígitos, sem zero à esquerda; senão ``None``."""
+    if not is_snowflake(argument) or argument[0] == "0":
+        return None
+    return int(argument)
 
 
 @dataclass(frozen=True)

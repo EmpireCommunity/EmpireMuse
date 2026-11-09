@@ -482,5 +482,7 @@
   "cmd.setguildprefix.usage": "{prefix}{cmd} [server id] {lt}prefix{gt}\nEx: {prefix}{cmd} 1155223334455667788 >>\nNote: Use the command without specifying a prefix to remove it.",
   "cmd.loop_mode.usage": "{prefix}{cmd} <1-10|current|queue|off>\nEx 1: {prefix}{cmd} 1\nEx 2: {prefix}{cmd} queue",
   "cmd.radio.reset.opt.channel.description": "Channel of the radio to reset (only channels with a radio). No channel/bot: all.",
-  "cmd.radio.reset.opt.channel.name": "channel"
+  "cmd.radio.reset.opt.channel.name": "channel",
+  "cmd.delete_my_data.description": "Delete your personal data stored by the bot.",
+  "cmd.delete_my_data.name": "delete_my_data"
 }
