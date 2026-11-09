@@ -157,8 +157,10 @@ def parse_ban_command(content: str, prefix: str) -> BanCommand | None:
         rest = body[len(name) :]
         if rest and rest[0] not in " \t":
             continue
-        target, _, reason = rest.strip(" \t").partition(" ")
-        return BanCommand(action, target, reason.strip(" \t") if action == BAN_ACTION else "")
+        words = rest.strip(" \t").split(None, 1)  # espaço ou tabulação separam, como diz a docstring
+        target = words[0] if words else ""
+        reason = words[1].strip(" \t") if len(words) > 1 else ""
+        return BanCommand(action, target, reason if action == BAN_ACTION else "")
     return None
 
 
