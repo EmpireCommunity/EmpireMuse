@@ -12,7 +12,7 @@ import secrets
 from dataclasses import replace
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from typing import NamedTuple, Optional
+from typing import Any, NamedTuple, Optional
 
 import disnake
 
@@ -20,7 +20,7 @@ from empiremuse.rules.errors import RuleError
 from empiremuse.rules.radio import KIND_LIVE, Radio, check_chat, check_radio, default_chat, radio_id
 from empiremuse.rules.radio import radio_id as radio_id_of
 from empiremuse.rules.errors import RuleError as _RuleError  # noqa: F401 - reexport para os testes
-from empiremuse.rules.radio_stations import valid_uuid
+from empiremuse.rules.radio_stations import Station, valid_uuid
 from empiremuse.utils.radio.premium import Premium, RadioUnavailable
 from empiremuse.utils.radio.setup import RadioForbidden, SetupOptions
 from empiremuse.utils.radio.store import RadioConflict, RadioInvalid, RadioNotFound
@@ -191,6 +191,7 @@ class FakeDirectory:
         self.stations = {}
         self.calls = []
         self.by_uuid_calls = []
+        self.strict_error = None
         self.region_hits = []
         self.region_partial = False
         self.region_calls = []  # (node.id, key)
@@ -211,6 +212,13 @@ class FakeDirectory:
 
     async def by_uuid(self, uuid):
         self.by_uuid_calls.append(uuid)
+        return self.stations.get(uuid)
+
+    async def by_uuid_strict(self, uuid: str) -> Optional[Station]:
+        """Como o real: ausência é ``None``; falha do diretório levanta ``DirectoryError`` (armada em ``strict_error``)."""
+        self.by_uuid_calls.append(uuid)
+        if self.strict_error is not None:
+            raise self.strict_error
         return self.stations.get(uuid)
 
 
@@ -311,6 +319,10 @@ class FakeTree:
             chain.append(node)
             node = self.nodes.get(node.parent) if node.parent else None
         return list(reversed(chain))
+
+    def label(self, node: Any, locale: str) -> str:
+        """Como a árvore real: o rótulo do nó para as migalhas do caminho."""
+        return node.name
 
     def children(self, parent, locale, *, guild_locale=None):
         self.calls.append((parent, locale, guild_locale))

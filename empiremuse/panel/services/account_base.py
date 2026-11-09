@@ -58,6 +58,7 @@ class AccountSection:
 
     key = ""
     actions: tuple[str, ...] = ()
+    own_store = False  # True: os dados não estão no documento do usuário; a seção implementa ``submit_own``
 
     @property
     def template(self) -> str:
@@ -89,6 +90,10 @@ class AccountSection:
         raise NotImplementedError
 
     def apply(self, doc: dict, new: dict[str, Any]) -> None:
+        raise NotImplementedError
+
+    async def submit_own(self, service: Any, ctx: AccountContext, action: str, args: Args) -> Any:
+        """Só para ``own_store``: grava no armazenamento da própria seção e devolve o ``AccountOutcome``."""
         raise NotImplementedError
 
     async def before_store(self, ctx: AccountContext, doc: dict) -> None:

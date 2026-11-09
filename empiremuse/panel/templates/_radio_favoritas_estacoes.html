@@ -1,0 +1,38 @@
+{# Estações do local escolhido para adicionar às favoritas do servidor (J3). Variável: favoritas (resultados[uuid, nome, pais, codec, bitrate, ja_favorita, indisponivel], dica, paginacao, acao, acao_local). Cada botão envia só ``estacao=<uuid>`` (o nome é relido no servidor) e o nó/página para voltar à mesma lista. Sem URL de fluxo. #}
+{% if favoritas.dica %}<p class="nota">{{ favoritas.dica }}</p>{% end %}
+{% if favoritas.resultados %}
+<ul class="lista-links lista-estacoes" role="list">
+  {% for indice, estacao in enumerate(favoritas.resultados) %}
+  <li class="item-link item-estacao">
+    <div class="item-link-texto">
+      <strong class="item-link-nome">{{ estacao.nome }}</strong>
+      <span class="item-link-url">{{ estacao.pais }} · {{ estacao.codec }} {{ estacao.bitrate }} kbps{% if estacao.indisponivel %} · ⛔ {{ _("panel.radio.live.unavailable") }}{% end %}</span>
+    </div>
+    <div class="item-link-acoes">
+      {% if estacao.ja_favorita %}
+      <span class="nota">{{ _("panel.radio.favorites.saved") }}</span>
+      {% else %}
+      <form id="form-radio-favorita-adicionar-{{ indice }}" method="post" action="{{ favoritas.acao }}" hx-post="{{ favoritas.acao }}" hx-target="#radio-favoritas" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]">
+        {% module xsrf_form_html() %}
+        <input type="hidden" name="acao" value="adicionar">
+        <input type="hidden" name="estacao" value="{{ estacao.uuid }}">
+        {% if favoritas.paginacao %}
+        <input type="hidden" name="node" value="{{ favoritas.paginacao.node }}">
+        <input type="hidden" name="pagina" value="{{ favoritas.paginacao.page }}">
+        {% end %}
+        <button type="submit"{% if estacao.indisponivel %} disabled{% end %}>{{ _("panel.radio.favorites.add") }}<span class="visually-hidden"> {{ estacao.nome }}</span></button>
+      </form>
+      {% end %}
+    </div>
+  </li>
+  {% end %}
+</ul>
+{% end %}
+{% if favoritas.paginacao and favoritas.paginacao.pages > 1 %}
+{% set pg = favoritas.paginacao %}
+<nav class="paginacao" aria-label="{{ _('panel.radio.local.pages_label') }}">
+  {% if pg.page > 1 %}<a href="{{ favoritas.acao_local }}?node={{ url_escape(pg.node) }}&amp;pagina={{ pg.page - 1 }}" hx-get="{{ favoritas.acao_local }}?node={{ url_escape(pg.node) }}&amp;pagina={{ pg.page - 1 }}" hx-target="#local-favoritas" hx-swap="innerHTML">{{ _("panel.radio.local.prev") }}</a>{% end %}
+  <span>{{ _("panel.radio.local.page", page=pg.page, pages=pg.pages) }}</span>
+  {% if pg.page < pg.pages %}<a href="{{ favoritas.acao_local }}?node={{ url_escape(pg.node) }}&amp;pagina={{ pg.page + 1 }}" hx-get="{{ favoritas.acao_local }}?node={{ url_escape(pg.node) }}&amp;pagina={{ pg.page + 1 }}" hx-target="#local-favoritas" hx-swap="innerHTML">{{ _("panel.radio.local.next") }}</a>{% end %}
+</nav>
+{% end %}

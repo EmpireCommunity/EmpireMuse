@@ -108,7 +108,7 @@ formulário ou da URL é ignorado. O bot de entrada é o primeiro bot pronto do 
 | `panel/services/account_base.py` | `AccountContext`, `AccountSection` (contrato de cada seção), limite efetivo (0 = ilimitado; dono isento) |
 | `panel/services/account.py` | `AccountService`: versão otimista, lock `("users", user_id)`, gravação por cópia profunda, auditoria |
 | `panel/services/account_misc.py` | Prefixo pessoal, scrobble do Last.fm e token do app de RPC |
-| `panel/services/account_links.py` | Favoritos (`fav_links`) e integrações (`integration_links`) |
+| `panel/services/account_links.py` | Favoritos (`fav_links`), rádios favoritas (`global.radio_user`, J3) e integrações (`integration_links`) |
 | `panel/handlers/account.py` | `AccountHandler` (página e `POST` por `acao`) e `FavoritesExportHandler` |
 
 - **Ações** (campo oculto `acao`): `prefixo`, `favorito_adicionar`, `favorito_editar`, `favorito_remover`,
@@ -123,6 +123,7 @@ formulário ou da URL é ignorado. O bot de entrada é o primeiro bot pronto do 
   `USER_FAV_MAX_NAME_LENGTH`/`USER_FAV_MAX_URL_LENGTH`, grava só o trecho que casa com `URL_REG.match` e valida todos os
   itens. `MAX_USER_FAVS` e `MAX_USER_INTEGRATIONS` são lidos de `bot.config` a cada requisição (0 = ilimitado; o dono do bot
   é isento; sobrescrever um nome existente não ocupa vaga). Editar nunca renomeia.
+- **Rádios favoritas (J3)**: estações e locais salvos do próprio usuário (`pool.radio.user_favorites`), só **Remover** (`radio_estacao_remover` com `estacao=<uuid>`, `radio_filtro_remover` com `filtro=<id do nó>`). Dado pessoal: o usuário é sempre o da sessão (`user_id` do corpo é ignorado), exige sessão e XSRF, a lista nunca aparece para outro usuário e nenhum log leva usuário, estação ou local. Os dados ficam fora do documento do usuário (`own_store`), sem versão: remover é idempotente (200 com "já não estava"). Banco fora do ar: a página segue e o bloco pede para tentar de novo; o POST é 503. Sem `pool.radio` a seção não existe.
 - **Integrações**: listar, remover e importar (texto-URL ou `{url, avatar}`; URL ≤ 150, só o trecho que casa; título ≤ 90).
   O painel nunca faz requisição externa; sempre grava objeto `{url[, avatar]}`.
 - **Last.fm**: "vinculada" = `sessionkey` não vazia (o valor nunca é copiado para a tela, para a versão, para o log nem para

@@ -42,6 +42,7 @@ from empiremuse.panel.services.radio_live import (
     LiveView,
     list_state,
 )
+from empiremuse.panel.services.radio_favorites import FavoritesView, ServerFavoritesPage
 from empiremuse.panel.services.radio_local import NODE_FIELD, PAGE_FIELD, NODE_LIMIT, parse_page, resolve_node, tree_of
 from empiremuse.panel.services.radio_stations import (
     ACTION_DELETE,
@@ -86,6 +87,7 @@ class RadiosHandler(SettingsHandler):
 
     page = RadioPage()
     stations = StationsPage()
+    favorites_page = ServerFavoritesPage()  # "Favoritas do servidor" (J3): só quem gerencia o servidor vê
 
     async def get(self, guild_id: str) -> None:  # type: ignore[override]
         try:
@@ -123,9 +125,12 @@ class RadiosHandler(SettingsHandler):
         nova: Optional[Formulario] = None,
         config: Optional[Formulario] = None,
         redefinir: Optional[ResetView] = None,
+        favoritas: Optional[FavoritesView] = None,
     ) -> None:
         tr = panel_translator(ctx.pool)
         premium = await ctx.pool.radio.premium.get(ctx.guild_id)
+        if favoritas is None:
+            favoritas = await self.favorites_page.view(ctx, action, tr=tr)
         editable = can_write(premium)
         rows = await self.page.rows(ctx, action, editable, tr)
         if redefinir is not None and redefinir.removida:  # a rádio acabou de ser redefinida: já não está na lista
@@ -153,6 +158,7 @@ class RadiosHandler(SettingsHandler):
             estacoes=stations,
             nova=nova,
             mostrar_nova=editable,
+            favoritas=favoritas,
         )
 
     @property

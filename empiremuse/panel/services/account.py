@@ -13,7 +13,7 @@ import logging
 from typing import Any, NamedTuple, Optional
 
 from empiremuse.panel.services.account_base import ACCOUNT_PATH, AccountContext, AccountSection, Parsed
-from empiremuse.panel.services.account_links import FavoritesSection, IntegrationsSection
+from empiremuse.panel.services.account_links import FavoritesSection, IntegrationsSection, RadioFavoritesSection
 from empiremuse.panel.services.account_misc import LastFmSection, PrefixSection, RpcTokenSection
 from empiremuse.panel.services.base import (
     CONFLICT_TEXT,
@@ -47,6 +47,7 @@ class AccountService:
         self.sections: tuple[AccountSection, ...] = (
             PrefixSection(),
             FavoritesSection(),
+            RadioFavoritesSection(),
             IntegrationsSection(),
             LastFmSection(),
             RpcTokenSection(),
@@ -104,6 +105,8 @@ class AccountService:
     # ------------------------------------------------------------------ escrita
 
     async def submit(self, section: AccountSection, ctx: AccountContext, action: str, args: Args) -> AccountOutcome:
+        if section.own_store:  # dados fora do documento do usuário (ex.: rádios favoritas): a seção decide
+            return await section.submit_own(self, ctx, action, args)
         async with self._locks.lock(USERS_LOCK_SCOPE, ctx.user_id):
             doc = await self.load(ctx)
             refusal = await section.guard(ctx, doc, action)
@@ -118,6 +121,13 @@ class AccountService:
             if parsed.errors:
                 return await self._invalid(section, ctx, doc, parsed)
             return await self._save(section, ctx, doc, action, parsed)
+
+    async def finish_own(
+        self, section: AccountSection, ctx: AccountContext, status: int, message: str, kind: str
+    ) -> AccountOutcome:
+        """Resposta de uma seção com armazenamento próprio: a seção relida, com a mensagem do resultado."""
+        form = await self.build(section, ctx, await self.load(ctx), message=message, kind=kind)
+        return AccountOutcome(status, form)
 
     async def _fail(
         self, status: int, section: AccountSection, ctx: AccountContext, doc: dict, *, message: str

@@ -34,6 +34,7 @@ from empiremuse.rules.radio import (
 from empiremuse.rules.radio_stations import Station
 from empiremuse.rules.text import external_text
 from empiremuse.utils.music.errors import GenericError
+from empiremuse.utils.music.interactions.fav_menu_server import open_server_favorites
 from empiremuse.utils import playlists_commands
 from empiremuse.rules.playlists import SCOPE_RADIO
 from empiremuse.utils.others import CustomContext
@@ -51,7 +52,8 @@ from empiremuse.utils.radio.actions import Actor, Refused
 from empiremuse.utils.radio.custom_ports import CustomRadioPorts
 from empiremuse.utils.radio.discord_ports import DiscordChatPorts, DiscordRadioPorts
 from empiremuse.utils.radio.live_ports import LiveRadioPorts
-from empiremuse.utils.radio.favorites import MAX_FAVORITES
+from empiremuse.utils.radio.favorites import MAX_FAVORITES, FavoriteForbidden, FavoriteNotFound
+from empiremuse.utils.radio.perms import can_manage_guild
 from empiremuse.utils.radio.picker import RadioPicker, VolumePicker
 from empiremuse.utils.radio.premium import RadioUnavailable
 from empiremuse.utils.radio.prefix_commands import RADIO_COOLDOWN, RadioPrefixCommands, is_env_owner  # noqa: F401
@@ -317,9 +319,9 @@ class Radio(RadioPrefixCommands, commands.Cog):
                 return
             await runner.set_admin_pause(muted)
             await reply(content=tr("radio.panel.muted" if muted else "radio.panel.unmuted"))
-        elif action == "favorite":  # ao vivo: favoritas do SERVIDOR; personalizada: favoritas de QUEM clicou
+        elif action == "favorite":  # ao vivo: favoritas pessoais; personalizada: favoritas de QUEM clicou
             if radio.kind == KIND_LIVE:
-                await reply(content=await self._favorite(interaction, tr, radio))
+                await reply(content=await self._favorite(interaction, tr, radio, runner))
             else:
                 await reply(content=await custom_panel.favorite(self, interaction, tr, radio))
         elif action == "info":
@@ -355,7 +357,7 @@ class Radio(RadioPrefixCommands, commands.Cog):
         if action == "stations":
             await self._open_station_picker(interaction, tr, radio)
         elif action == "favorite":
-            await reply(content=await self._favorite(interaction, tr, radio))
+            await reply(content=await self._favorite_server(interaction, tr, radio))
         elif action == "volume":
             await self._open_volume_picker(interaction, tr, radio, runner)
         elif action == "info":
@@ -424,15 +426,47 @@ class Radio(RadioPrefixCommands, commands.Cog):
     async def _station_of(self, radio: Any) -> Station | None:
         return await self.hub.directory.by_uuid(radio.source["station"])
 
-    async def _favorite(self, interaction: Any, tr: Any, radio: Any) -> str:
+    async def _favorite(self, interaction: Any, tr: Any, radio: Any, runner: Any = None) -> str:
+        if self._too_soon(radio.id, "lookup", LOOKUP_GAP_S):
+            return tr("radio.panel.wait")
+        before = await self.hub.user_favorites.stations(interaction.author.id)
+        try:
+            result = await self.hub.user_favorites.toggle_station(interaction.author.id, radio.source["station"])
+        except FavoriteNotFound:
+            return tr("radio.live.not_found")
+        uuid = radio.source["station"]
+        try:
+            after = await self.hub.user_favorites.stations(interaction.author.id)
+        except RadioUnavailable:
+            # A mudança já foi gravada: repetir o clique a desfaria. Só o nome fica sem a segunda leitura (sem dado pessoal no log).
+            logger.warning("Favoritas pessoais: leitura após a gravação falhou; respondendo com o resultado da troca")
+            after = []
+        known_names = getattr(getattr(runner, "ports", None), "_names", {})
+        name = next((f.name for f in [*before, *after] if f.uuid == uuid), "") or known_names.get(uuid) or uuid
+        # As chaves existentes da personalizada já descrevem uma favorita pessoal.
+        return tr(
+            f"radio.panel.custom.favorite_{result.value}",
+            station=external_text(name, NAME_LIMIT, markdown=False),
+            max=MAX_FAVORITES,
+        )
+
+    async def _favorite_server(self, interaction: Any, tr: Any, radio: Any) -> str:
+        actor_id = interaction.author.id
+        if not await can_manage_guild(self.bot.pool, radio.guild_id, actor_id):
+            return tr("radio.refused.no_manage_guild")
         if self._too_soon(radio.id, "lookup", LOOKUP_GAP_S):
             return tr("radio.panel.wait")
         station = await self._station_of(radio)
         if station is None:
             return tr("radio.live.not_found")
-        result = await self.hub.favorites.add(radio.guild_id, station)
+        try:
+            result = await self.hub.favorites.add(radio.guild_id, actor_id, station)
+        except FavoriteForbidden:
+            return tr("radio.refused.no_manage_guild")
         return tr(
-            f"radio.panel.favorite_{result.value}", station=external_text(station.name, NAME_LIMIT), max=MAX_FAVORITES
+            f"radio.panel.favorite_{result.value}",
+            station=external_text(station.name, NAME_LIMIT, markdown=False),
+            max=MAX_FAVORITES,
         )
 
     async def _info(self, tr: Any, radio: Any) -> str:
@@ -482,6 +516,11 @@ class Radio(RadioPrefixCommands, commands.Cog):
         if bucket is not None and (retry := bucket.update_rate_limit()):
             raise GenericError(tr("radio.cooldown", seconds=int(retry) + 1))
         return tr
+
+    @radio.sub_command(name="favoritas", description=localized("cmd.radio.favorites.description"))
+    async def radio_favoritas(self, inter: disnake.ApplicationCommandInteraction) -> None:
+        tr = await self._gate(inter)
+        await open_server_favorites(inter, tr, self.bot.pool)
 
     @radio.sub_command(name="setup", description=localized("cmd.radio.setup.description"))
     async def radio_setup(
