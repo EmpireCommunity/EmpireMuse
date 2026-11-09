@@ -319,6 +319,17 @@ class LocalDatabase(BaseDB):
         except KeyError:
             pass
 
+    async def delete_many(self, ids: Iterable[str], *, db_name: str, collection: str) -> int:
+        """Apaga os documentos de ``ids`` (id ausente não é erro) e esvazia as chaves do cache; devolve quantos existiam."""
+        table = self._connect[collection][db_name]
+        deleted = 0
+        for id_ in dict.fromkeys(str(i) for i in ids):
+            if table.find_one({"_id": id_}):
+                table.delete_one({"_id": id_})
+                deleted += 1
+            self.cache.pop(f"{collection}:{db_name}:{id_}", None)
+        return deleted
+
 
 class MongoDatabase(BaseDB):
     def __init__(self, token: str, timeout=30, cache_maxsize=1000, cache_ttl=300):
@@ -491,6 +502,16 @@ class MongoDatabase(BaseDB):
         except KeyError:
             pass
         return await self._connect[collection][db_name].delete_one({"_id": str(id_)})
+
+    async def delete_many(self, ids: Iterable[str], *, db_name: str, collection: str) -> int:
+        """Apaga os documentos de ``ids`` (id ausente não é erro) e esvazia as chaves do cache; devolve quantos foram apagados."""
+        unique = list(dict.fromkeys(str(i) for i in ids))
+        for id_ in unique:
+            self.cache.pop(f"{collection}:{db_name}:{id_}", None)
+        if not unique:
+            return 0
+        result = await self._connect[collection][db_name].delete_many({"_id": {"$in": unique}})
+        return int(result.deleted_count)
 
 
 def update_values(d: dict, u: collections.abc.Mapping) -> dict:

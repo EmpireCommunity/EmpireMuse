@@ -18,6 +18,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - Removido o comando administrativo `exportsource`: o código público já está disponível no GitHub, sem necessidade de exportar arquivos da instalação pelo bot.
 - `tornado` atualizado de 6.5.10 para 6.6 (alertas #2, #3 e #4 do Dependabot), com isenção pontual do corte temporal no lock de produção.
 - O refreshToken do YouTube só é aplicado ao nó LOCAL da própria máquina; o token do RPC é gerado com fonte criptográfica. Conexões REST e WebSocket com nós IPv6 usam o endereço correto.
+- Núcleo do apagamento dos dados de um membro (`ErasureService`, sem comando nem tela ainda): apaga o perfil, a fila de scrobbles, a fila salva (`/save_queue`), as favoritas de rádio e a lista pessoal de rádio, troca o ID em `updated_by` das rádios dos servidores por `deleted`, esvazia os caches, derruba a conexão do app de Rich Presence e encerra as sessões do painel, com limites por hora, um relatório (`OK` ou `PARTIAL`) e uma verificação final. Uma gravação feita com dados lidos antes do apagamento, ou lidos há mais de 10 minutos, é descartada. Os logs de acesso e de segurança não são tocados. A gravação da conta no painel e o apagamento passam a usar o mesmo lock por usuário.
 
 ### Alterado
 - Telas J3 das favoritas de rádio: o `/fav_manager` ganha o modo "Rádios favoritas" (Remover e Limpar estações e filtros pessoais, sempre em mensagem efêmera), a gerência das favoritas do servidor (`open_server_favorites`, para o `/radio favoritas`) tem Remover e Limpar com confirmação, e o painel web ganha "Rádios favoritas" em Minha conta (só Remover) e "Favoritas do servidor" em Rádios (Remover com confirmação e Adicionar pelo seletor de local). Textos novos em pt-BR e en-US; o Tocar e a estrela do player ficam para a J2a. O comando `/radio favoritas` abre a gerência efêmera e reconfere Gerenciar Servidor, administrador ou dono em execução.
@@ -41,6 +42,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 ### Corrigido
 - Confirmações de favoritas pessoais e do servidor preservam um único escape de markdown nos nomes de estação do diretório.
 - Favoritas pessoais de rádio distinguem estação ausente de falha no diretório ou limite de consultas: a consulta estrita preserva a reserva de fichas e responde indisponibilidade sem gravar dados.
+- "Desvincular" no `/lastfm` agora também apaga o nome de usuário do Last.fm guardado (antes só a chave), e o fluxo de vincular ou desvincular aborta, sem gravar nada, se os dados do membro forem apagados (ou o fluxo demorar demais) enquanto ele o fazia; ao concluir, relê o documento e grava só os campos do Last.fm, sem desfazer um favorito adicionado nesse meio tempo.
 - Falhas ao carregar ou atualizar a paginação da Jukebox passam pelo tratamento de erros das interações.
 - Ativações concorrentes da mesma rádio reutilizam um único runner.
 - Rádios: falhas de leitura na ativação recebem resposta no comando e não impedem a tentativa das demais rádios na retomada; o reset registra ator e servidor na auditoria.

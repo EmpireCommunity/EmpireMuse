@@ -89,6 +89,13 @@ class SessionStore:
         if session_id:
             self._sessions.pop(session_id, None)
 
+    def destroy_user(self, user_id: str) -> int:
+        """Destrói todas as sessões do usuário (e só as dele); devolve quantas eram."""
+        mine = [sid for sid, session in self._sessions.items() if session.user.id == str(user_id)]
+        for sid in mine:
+            del self._sessions[sid]
+        return len(mine)
+
     def _is_expired(self, session: Session, now: float) -> bool:
         return now - session.created_at >= self._ttl or now - session.last_seen > self._idle
 

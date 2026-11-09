@@ -30,10 +30,11 @@ from empiremuse.panel.services.base import (
     version_of,
 )
 from empiremuse.panel.services.service import STATUS_CONFLICT, STATUS_INVALID, STATUS_OK, SettingsService
+from empiremuse.utils.user_locks import USERS_SCOPE
 
 logger = logging.getLogger(__name__)
 
-USERS_LOCK_SCOPE = "users"
+USERS_LOCK_SCOPE = USERS_SCOPE
 
 
 class AccountOutcome(NamedTuple):

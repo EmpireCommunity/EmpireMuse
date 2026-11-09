@@ -1062,3 +1062,41 @@ async def test_conexao_alem_do_limite_e_fechada_com_1013(iniciar_servidor, sessa
     await asyncio.sleep(ASSENTAR)
     de_novo = await _conectar(servidor, sessao)
     assert await _fechamento(de_novo, ASSENTAR) is None, "o limite não foi liberado quando uma conexão fechou"
+
+
+@pytest.mark.asyncio
+async def test_close_rpc_for_fecha_so_a_conexao_do_usuario(iniciar_servidor, sessao):
+    """T9 (apagar dados): a conexão aberta do usuário cai com ``CLOSE_REFUSED`` e sai de ``users_ws``; a de outro usuário fica."""
+    servidor = iniciar_servidor()
+    alvo, outro = _snowflake(), _snowflake()
+    ws_alvo = await _registrar_usuario(servidor, sessao, [alvo], _token_do_app())
+    ws_outro = await _registrar_usuario(servidor, sessao, [outro], _token_do_app())
+
+    assert web_app.close_rpc_for(alvo) is True
+
+    assert await _fechamento(ws_alvo) == rpc_protocol.CLOSE_REFUSED
+    assert await _fechamento(ws_outro, ASSENTAR) is None
+    assert alvo not in web_app.users_ws and outro in web_app.users_ws
+    assert web_app.close_rpc_for(alvo) is False  # sem conexão: nada a fechar, nem erro
+
+
+def test_close_rpc_for_com_a_conexao_ja_fechada_nao_levanta_e_ainda_a_remove(monkeypatch):
+    """T9: ``write_message`` numa conexão que já caiu levanta ``WebSocketClosedError``; o fechamento segue e a entrada sai."""
+    import tornado.websocket
+
+    chamadas = []
+
+    class ConexaoCaida:
+        def write_message(self, *_):
+            raise tornado.websocket.WebSocketClosedError
+
+        def _forget_users(self):
+            chamadas.append("esquece")
+
+        def _reject(self, code, reason):
+            chamadas.append(("fecha", code))
+
+    monkeypatch.setitem(web_app.users_ws, 4242, ConexaoCaida())
+
+    assert web_app.close_rpc_for(4242) is True
+    assert chamadas == ["esquece", ("fecha", rpc_protocol.CLOSE_REFUSED)]

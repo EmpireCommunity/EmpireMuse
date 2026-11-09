@@ -414,6 +414,24 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                 )
 
 
+def close_rpc_for(user_id: int) -> bool:
+    """Fecha a conexão RPC aberta do usuário (apagar o token no banco não derruba uma conexão já autenticada).
+
+    A conexão inteira cai, inclusive para outros ids que ela tenha registrado: o app reconecta, e cada id volta a se
+    autenticar pelo token que tem no banco. Devolve se havia conexão. Outras conexões não são tocadas.
+    """
+    connection = users_ws.get(user_id)
+    if connection is None:
+        return False
+    try:
+        connection.write_message(json.dumps({"op": "disconnect", "reason": "Dados apagados."}))
+    except tornado.websocket.WebSocketClosedError:
+        pass
+    connection._forget_users()
+    connection._reject(CLOSE_REFUSED, "Desconectado.")
+    return True
+
+
 class WSClient:
     def __init__(self, url: str, pool: BotPool):
         self.url: str = url

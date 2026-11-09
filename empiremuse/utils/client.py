@@ -19,7 +19,7 @@ from copy import deepcopy
 from importlib import import_module
 from pathlib import Path
 from subprocess import check_output
-from typing import Optional, Union, List, Dict
+from typing import Any, Optional, Union, List, Dict
 
 import aiohttp
 import disnake
@@ -53,6 +53,7 @@ from empiremuse.logs.metrics import SUMMARY_PREFIX, MetricsCollector, NodeSample
 from empiremuse.logs.metrics import process_stats as metrics_process_stats
 from empiremuse.rules.bot_tokens import TokenLoad, describe, load_bot_tokens, is_radio_only_identifier
 from empiremuse.rules.bot_roles import NOTICE_WINDOW_SECONDS, main_missing_hint
+from empiremuse.rules.erasure import tombstone_seconds
 from empiremuse.rules.git_remote import parse_remote_web_url, sanitized_repo_url
 from empiremuse.rules.owner_shell import collect_secret_values
 from empiremuse.rules.servers import is_main_identifier
@@ -63,6 +64,8 @@ from empiremuse.utils import branding
 from empiremuse.version import image_version
 from empiremuse.utils.safe_error import HTTPStatusError, safe_error
 from empiremuse.utils.db import MongoDatabase, LocalDatabase, get_prefix, DBModel, global_db_models
+from empiremuse.utils.erasure import ErasureService, ErasureTombstones
+from empiremuse.utils.user_locks import UserLocks
 from empiremuse.utils.app_profile import sync_app_profile
 from empiremuse.utils.guild_ban import GuildBans
 from empiremuse.utils.radio import RadioHub
@@ -266,6 +269,10 @@ class BotPool:
         self.lavalink_connect_queue = {}
         self.last_fm: Optional[LastFM] = None
         self.lastfm_sessions = {}
+        self.user_locks = UserLocks()
+        self.erasure_tombstones = ErasureTombstones(tombstone_seconds(self.config["DBCACHE_TTL"]))
+        self.panel_sessions: Optional[Any] = None  # ``SessionStore`` do painel, registrado por ``build_panel_app``
+        self.erasure = ErasureService(self)
         self.player_skins = {}
         self.player_static_skins = {}
         self.default_skin = self.config.get("DEFAULT_SKIN", "default")

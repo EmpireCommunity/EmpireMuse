@@ -80,7 +80,9 @@ def build_panel_app(
     if not settings.enabled:
         return None
 
-    settings_service = SettingsService()
+    settings_service = SettingsService(getattr(pool, "user_locks", None))
+    session_store = SessionStore(settings, clock=clock)
+    pool.panel_sessions = session_store  # o apagamento de dados destrói as sessões do membro (``destroy_user``)
     task_runner = TaskRunner(clock=clock)
     return tornado.web.Application(
         [
@@ -128,7 +130,7 @@ def build_panel_app(
         log_function=_log_request,
         panel_settings=settings,
         pool=pool,
-        session_store=SessionStore(settings, clock=clock),
+        session_store=session_store,
         attempt_store=LoginAttemptStore(clock=clock),
         rate_limiter=RateLimiter(clock=clock),
         oauth_provider=make_client_provider(pool, settings, oauth_client),
