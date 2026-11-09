@@ -14,7 +14,7 @@ import empiremuse.wavelink as wavelink
 from empiremuse.i18n.payload import fit_payload
 from empiremuse.logs.webhook import minimal_embed, minimal_report_text
 from empiremuse.rules.voice_status import DEFAULT_VOICE_TEMPLATE
-from empiremuse.utils.music.converters import time_format, md_link, md_code
+from empiremuse.utils.music.converters import time_format, md_link
 from empiremuse.utils.music.skin_utils import skin_converter
 from empiremuse.utils.others import string_to_file
 from empiremuse.utils.usage import usage_of
@@ -23,7 +23,6 @@ if TYPE_CHECKING:
     from empiremuse.utils.client import BotCore
 
 from empiremuse.utils.music.models.tracks import (
-    PartialTrack,
     LavalinkTrack,
 )
 from empiremuse.utils.music.models.player_filters import PlayerFiltersMixin

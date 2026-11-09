@@ -11,6 +11,7 @@ import disnake
 from empiremuse.logs.redact import scrub
 
 NAME_LIMIT = 100
+DETAILS_LIMIT = 4000  # descrição do embed: 4096 no Discord
 
 __all__ = ["minimal_embed", "minimal_report_text", "user_report_embed"]
 
@@ -36,7 +37,7 @@ def user_report_embed(
 
     Sem autor (nome, ID, avatar), sem rodapé e sem ``icon_url``: nada que ligue o relatório a uma pessoa ou a um servidor.
     """
-    embed = disnake.Embed(color=color, description=details, title="Report de erro")
+    embed = disnake.Embed(color=color, description=scrub(details, DETAILS_LIMIT), title="Report de erro")
     embed.add_field(name="Log:", value=log_text or "-")
     if image_url:
         embed.set_image(url=image_url)

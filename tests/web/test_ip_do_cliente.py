@@ -147,3 +147,46 @@ def test_o_par_tcp_vem_do_socket_real() -> None:
                 requisicao.remote_ip = VISITANTE  # reescrito pelo xheaders
 
                 assert _tcp_peer_ip(requisicao) == "127.0.0.1" == cliente.getsockname()[0]
+
+
+@pytest.mark.asyncio
+async def test_servidor_tornado_local_entrega_o_par_real_pela_cadeia_connection_stream_socket() -> None:
+    """HTTPServer de verdade: ``request.connection.stream.socket`` existe e dá o par TCP, com ``xheaders`` reescrevendo ``remote_ip``."""
+    import tornado.httpserver
+    import tornado.httpclient
+    import tornado.netutil
+
+    visto: dict[str, str | None] = {}
+
+    class Espiao(tornado.routing.Router):
+        def find_handler(self, request: tornado.httputil.HTTPServerRequest, **kwargs: Any) -> Any:
+            from empiremuse.web_app import _tcp_peer_ip
+
+            visto["par"], visto["remote_ip"] = _tcp_peer_ip(request), request.remote_ip
+
+            class Resposta(tornado.httputil.HTTPMessageDelegate):
+                def finish(self) -> None:
+                    request.connection.write_headers(
+                        tornado.httputil.ResponseStartLine("HTTP/1.1", 200, "OK"),
+                        tornado.httputil.HTTPHeaders({"Content-Length": "0"}),
+                    )
+                    request.connection.finish()
+
+                def on_connection_close(self) -> None:
+                    pass
+
+            return Resposta()
+
+    sockets = tornado.netutil.bind_sockets(0, "127.0.0.1")
+    servidor = tornado.httpserver.HTTPServer(Espiao(), xheaders=True)
+    servidor.add_sockets(sockets)
+    porta = sockets[0].getsockname()[1]
+    try:
+        resposta = await tornado.httpclient.AsyncHTTPClient().fetch(
+            f"http://127.0.0.1:{porta}/", headers={"X-Real-IP": VISITANTE}
+        )
+    finally:
+        servidor.stop()
+
+    assert resposta.code == 200
+    assert visto == {"par": "127.0.0.1", "remote_ip": VISITANTE}  # o par é o real; o xheaders reescreveu só o remote_ip

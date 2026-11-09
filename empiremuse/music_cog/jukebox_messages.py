@@ -625,7 +625,6 @@ class JukeboxMessagesMixin:
 
 async def _sr_error_webhook(self, req):
     """Envia o relatório do erro inesperado para o webhook configurado."""
-    ctx = req.ctx
     error_code = req.error_code
     has_exception = req.has_exception
     message = req.message

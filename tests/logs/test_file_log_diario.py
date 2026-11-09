@@ -276,14 +276,16 @@ class TestRelogioPadraoEAviso:
             handler.close()
 
         assert caplog.text.count("Log do dia truncado") == 1
+        assert all(
+            getattr(r, "empiremuse_emit", False) is True for r in caplog.records if "truncado" in r.getMessage()
+        )  # auditoria: nunca agregada
 
     @POSIX
-    def test_o_modo_vem_do_mesmo_descritor_mesmo_com_umask_aberta(self, tmp_path):
-        antigo = os.umask(0)
-        try:
-            handler = DailyRetentionFileHandler(tmp_path / ".logs", now=Relogio())
-            handler.close()
-        finally:
-            os.umask(antigo)
+    def test_arquivo_do_dia_ja_existente_com_modo_largo_vira_0600(self, tmp_path):
+        pasta = tmp_path / ".logs"
+        criar(pasta, nome(0))
+        os.chmod(pasta / nome(0), 0o644)  # o arquivo já existia com modo largo: só o fchmod conserta
+        handler = DailyRetentionFileHandler(pasta, now=Relogio())
+        handler.close()
 
         assert stat.S_IMODE((tmp_path / ".logs" / nome(0)).stat().st_mode) == 0o600

@@ -167,6 +167,7 @@ class DailyRetentionFileHandler(logging.FileHandler):
             logger.warning(
                 "Log do dia truncado: o teto diário de %d bytes foi atingido; o resto do dia é descartado.",
                 self.max_day_bytes,
+                extra={"empiremuse_emit": True},  # um aviso só: não passa pelo agregador nem pelo filtro de nível
             )
 
     def _write(self, data: str, size: int) -> None:

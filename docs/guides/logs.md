@@ -87,7 +87,7 @@ O `AUTO_ERROR_REPORT_WEBHOOK` copia o aviso de cada erro inesperado para um cana
 - **todo remetente** ao webhook (comandos, jukebox, reprodução e o aviso de falha de faixa) segue a mesma regra; abaixo, o que cada parte leva;
 - o **anexo** leva só o tipo da exceção e o código `ERR-XXXXXX`; o texto da exceção e o traceback completo **não saem do host** e ficam no arquivo de log, que tem retenção (procure pelo código, seção 4);
 - o **embed** leva só um título fixo e o código do erro: **nunca** nome ou ID de usuário, servidor ou canal, comando, opções, texto da mensagem, ícone ou avatar;
-- o **modal** "Reportar erro" (botão manual) leva só o texto livre que o próprio membro digitou (e o print opcional), sem autor, sem ícone e sem servidor.
+- o **modal** "Reportar erro" (botão manual) leva só o texto livre que o próprio membro digitou (e o print opcional), sem autor, sem ícone e sem servidor. O campo **Log** do modal repete o texto do erro que o bot mostrou ao membro (sem traceback, só a mensagem genérica e o código), e o texto livre passa pelo redator antes de sair.
 
 **Expurgo manual:** apague o conteúdo do canal do webhook a cada **183 dias** (rotina do runbook de operação), já que o Discord não aplica prazo. Se não quiser manter essa rotina, deixe o `AUTO_ERROR_REPORT_WEBHOOK` e o `ERROR_REPORT_WEBHOOK` vazios.
 

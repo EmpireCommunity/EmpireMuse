@@ -285,4 +285,16 @@ class TestRemetentesDeReproducao:
         await _rt_report_failure(jogador, faixa, erro)
 
         (passado, codigo), _ = jogador.report_error.await_args
-        assert passado is erro and CODIGO.fullmatch(codigo or "ERR-000000")
+        assert passado is erro and CODIGO.fullmatch(codigo)
+
+
+def test_texto_livre_do_membro_passa_pelo_redator_antes_de_sair() -> None:
+    from empiremuse.logs.redact import register_secret
+    from empiremuse.logs.webhook import user_report_embed
+
+    segredo = "".join(["senha-colada-", "no-modal-T488d"])
+    register_secret(segredo)
+
+    embed = user_report_embed(f"travou, meu token é {segredo}", "log", None, 0)
+
+    assert segredo not in dump(embed) and "travou" in dump(embed)

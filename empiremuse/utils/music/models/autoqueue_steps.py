@@ -13,7 +13,6 @@ import empiremuse.wavelink as wavelink
 from empiremuse.utils.music.converters import fix_characters, md_link, md_code
 from empiremuse.utils.music.errors import (
     code_suffix,
-    error_code_text,
     log_unexpected_error,
 )
 from empiremuse.utils.music.lastfm_tools import LastFmException

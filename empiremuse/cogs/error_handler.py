@@ -26,22 +26,7 @@ from empiremuse.utils.ephemeral import ERROR_TTL_S, cleanup_later
 logger = logging.getLogger(__name__)
 
 # Erro inesperado: o usuário nunca vê repr, traceback, caminho de arquivo nem configuração interna; o detalhe completo
-# vai para o log do servidor e para o webhook de erro.
-
-
-# Limites do Discord: nome de servidor, canal e usuário até 100; descrição do embed até 4096 (sobra para as crases e o título).
-NAME_LIMIT = 100
-DESCRIPTION_TEXT_LIMIT = 4000
-
-
-def _safe_text(text: object) -> str:
-    """Nome de servidor, canal ou autor para o embed do relatório.
-
-    O saneamento e o redator vêm antes de ``fix_characters`` (que troca ``_``, ``*`` e ``[`` e esconderia um segredo
-    registrado do redator) e de novo depois dele, para conferir o nome na forma final; as quebras de linha viram ``⏎``
-    para o nome não forjar uma linha ``ID:`` no bloco de código.
-    """
-    return scrub(fix_characters(scrub(sanitize_value(str(text)), NAME_LIMIT)), NAME_LIMIT)[:NAME_LIMIT]
+# vai para o log do servidor; o webhook de erro recebe só o tipo da exceção e o código.
 
 
 class ErrorHandler(commands.Cog):
