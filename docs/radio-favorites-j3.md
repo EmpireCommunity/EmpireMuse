@@ -1,7 +1,6 @@
 # Backend J3: interface para integração
 
-T-473, contrato Jukebox rev. 3.2. Esta unidade é parcial: Vitral integra as telas
-na mesma branch, antes das revisões de Alicerce, Sentinela e Crivo. Não publicar
+T-473, contrato Jukebox rev. 3.2. Backend e telas integrados na mesma branch, com revisões finais de Alicerce, Sentinela e Crivo. Não publicar
 J3 antes do inventário e da Política atualizados, e do pré-requisito E1 de exclusão.
 
 ## Pessoal: `pool.radio.user_favorites`
@@ -21,7 +20,7 @@ outro tipo levanta `TypeError`. Nunca aceitar identidade do corpo, custom_id ou 
 
 Limites: `USER_LIVE_FAVORITES_MAX = 24`, `USER_FILTERS_MAX = 10`, em
 `utils/radio/user_favorites.py`. `Toggled` é reusado de `custom_favorites.py`.
-Estações guardam só uuid e nome limpo; o nome é relido por `directory.by_uuid`.
+Estações guardam só uuid e nome limpo; o nome é relido por `directory.by_uuid_strict`.
 A retirada de estação já salva não depende do diretório. Filtros guardam somente
 `{node}`; desconhecidos somem da leitura, árvore desligada oculta a lista, mas
 ambos continuam removíveis. Remover e limpar são idempotentes, inclusive ausentes.
@@ -29,6 +28,9 @@ ambos continuam removíveis. Remover e limpar são idempotentes, inclusive ausen
 Erros de `favorites.py`: `FavoriteNotFound` (sem payload) indica estação/local
 inválido ou ausente no toggle; não há quarto resultado. `RadioUnavailable`, de
 `premium.py`, indica banco, diretório indisponível ou tentativas CAS esgotadas.
+A consulta estrita preserva `SEARCH_RESERVE`: falhas de rede e balde sem ficha levantam
+`DirectoryError`, convertido em `RadioUnavailable` pelo store. `by_uuid` continua
+tolerante para os chamadores existentes; novas gravações devem usar a porta estrita.
 A UI deve oferecer refazer para não encontrado e tentar novamente para indisponível;
 no painel, usar respectivamente 404 e 503, conforme contrato. Remoções não levantam
 `FavoriteNotFound`. As recusas não escrevem nem tentam CAS.
@@ -49,7 +51,7 @@ sem payload, mapeia para `radio.refused.no_manage_guild` (403 no painel).
 A tela mantém sua checagem e o store reconfere o ator em toda operação de escrita.
 `RadioUnavailable` continua sendo indisponibilidade do banco ou CAS esgotado.
 
-## Superfícies e integração pendente
+## Superfícies integradas
 
 `cogs/radio.py::_favorite` atende a estrela pessoal da 24 h e `_favorite_server`
 atende o menu administrativo; ambos respondem pelo fluxo efêmero existente.
@@ -58,7 +60,7 @@ a do servidor usa `radio.panel.favorite_{added,already,full}`. Estação não en
 usa `radio.live.not_found`; indisponibilidade usa `radio.owner.unavailable`.
 O visor público continua usando somente as favoritas do servidor.
 
-Telas entregues pela UI (Vitral, T-474): `/fav_manager` modo "Rádios favoritas" (`fav_menu_radio.py`, Remover/Limpar de estações e filtros, sempre efêmero: num menu público abre uma mensagem efêmera nova), a gerência `/radio favoritas` (`fav_menu_server.py`, `open_server_favorites(inter, tr, pool)`, Remover e Limpar com confirmação), Minha conta › Rádios favoritas (só Remover) e Rádios › Favoritas do servidor no painel (Remover com confirmação, Adicionar pelo seletor de local, estados 200/403/404/409/422/503). **Gancho que falta, de quem é o comando:** `cogs/radio.py` registrar `/radio favoritas` chamando `open_server_favorites`. O gerenciamento de filtros pessoais está no mesmo modo do `/fav_manager`.
+Telas entregues pela UI (Vitral, T-474): `/fav_manager` modo "Rádios favoritas" (`fav_menu_radio.py`, Remover/Limpar de estações e filtros, sempre efêmero: num menu público abre uma mensagem efêmera nova), a gerência `/radio favoritas` (`fav_menu_server.py`, `open_server_favorites(inter, tr, pool)`, Remover e Limpar com confirmação), Minha conta › Rádios favoritas (só Remover) e Rádios › Favoritas do servidor no painel (Remover com confirmação, Adicionar pelo seletor de local, estados 200/403/404/409/422/503). `cogs/radio.py` registra `/radio favoritas`, aplica o defer efêmero e o cooldown do grupo e chama `open_server_favorites`; o helper reconfere a autorização real antes de ler a lista do servidor. O gerenciamento de filtros pessoais está no mesmo modo do `/fav_manager`.
 Listas pessoais e filtros só em efêmero ou página da própria conta: nunca em
 visão administrativa, voto, log ou mensagem pública. Painel exige sessão e XSRF;
 ignore `user_id` enviado no corpo. Não adicionar Tocar nem estrela no player nesta

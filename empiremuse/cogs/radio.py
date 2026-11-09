@@ -34,6 +34,7 @@ from empiremuse.rules.radio import (
 from empiremuse.rules.radio_stations import Station
 from empiremuse.rules.text import external_text
 from empiremuse.utils.music.errors import GenericError
+from empiremuse.utils.music.interactions.fav_menu_server import open_server_favorites
 from empiremuse.utils import playlists_commands
 from empiremuse.rules.playlists import SCOPE_RADIO
 from empiremuse.utils.others import CustomContext
@@ -437,7 +438,9 @@ class Radio(RadioPrefixCommands, commands.Cog):
         name = next((f.name for f in [*before, *after] if f.uuid == radio.source["station"]), "")
         # As chaves existentes da personalizada já descrevem uma favorita pessoal.
         return tr(
-            f"radio.panel.custom.favorite_{result.value}", station=external_text(name, NAME_LIMIT), max=MAX_FAVORITES
+            f"radio.panel.custom.favorite_{result.value}",
+            station=external_text(name, NAME_LIMIT, markdown=False),
+            max=MAX_FAVORITES,
         )
 
     async def _favorite_server(self, interaction: Any, tr: Any, radio: Any) -> str:
@@ -454,7 +457,9 @@ class Radio(RadioPrefixCommands, commands.Cog):
         except FavoriteForbidden:
             return tr("radio.refused.no_manage_guild")
         return tr(
-            f"radio.panel.favorite_{result.value}", station=external_text(station.name, NAME_LIMIT), max=MAX_FAVORITES
+            f"radio.panel.favorite_{result.value}",
+            station=external_text(station.name, NAME_LIMIT, markdown=False),
+            max=MAX_FAVORITES,
         )
 
     async def _info(self, tr: Any, radio: Any) -> str:
@@ -504,6 +509,11 @@ class Radio(RadioPrefixCommands, commands.Cog):
         if bucket is not None and (retry := bucket.update_rate_limit()):
             raise GenericError(tr("radio.cooldown", seconds=int(retry) + 1))
         return tr
+
+    @radio.sub_command(name="favoritas", description=localized("radio.local.favorites"))
+    async def radio_favoritas(self, inter: disnake.ApplicationCommandInteraction) -> None:
+        tr = await self._gate(inter)
+        await open_server_favorites(inter, tr, self.bot.pool)
 
     @radio.sub_command(name="setup", description=localized("cmd.radio.setup.description"))
     async def radio_setup(

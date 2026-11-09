@@ -31,7 +31,9 @@ def world():
     db = MemoryDb()
     hub = RadioHub(SimpleNamespace(database=db))
     hub.directory = SimpleNamespace(
-        by_uuid=AsyncMock(side_effect=lambda value: station(int(value[-12:]), "@everyone https://evil.example Rádio"))
+        by_uuid_strict=AsyncMock(
+            side_effect=lambda value: station(int(value[-12:]), "@everyone https://evil.example Rádio")
+        )
     )
     hub.locations = SimpleNamespace(node=lambda value: object() if value.startswith("node:") else None)
     return SimpleNamespace(db=db, hub=hub, store=hub.user_favorites)
@@ -47,9 +49,9 @@ async def test_personal_round_trip_isolation_and_erasure(world):
     assert "https://" not in str(doc) and "@everyone" not in str(doc)
     assert doc["filters"] == [{"node": "node:city"}]
     assert await store.stations(17) == [] and await store.filters(17) == []
-    world.hub.directory.by_uuid.reset_mock()
+    world.hub.directory.by_uuid_strict.reset_mock()
     assert await store.toggle_station(7, uuid(1)) == Toggled.REMOVED
-    world.hub.directory.by_uuid.assert_not_awaited()
+    world.hub.directory.by_uuid_strict.assert_not_awaited()
     assert await store.toggle_filter(7, "node:city") == Toggled.REMOVED
     await store.toggle_station(17, uuid(2))
     await db.delete_data("7", db_name=USER_FAVORITES_DB, collection="global")
@@ -62,9 +64,9 @@ async def test_capacity_full_before_directory_and_idempotent_removal(world, oper
     toggle = getattr(store, "toggle_" + operation)
     for n in range(limit):
         assert await toggle(7, uuid(n) if operation == "station" else f"node:{n}") == Toggled.ADDED
-    world.hub.directory.by_uuid.reset_mock()
+    world.hub.directory.by_uuid_strict.reset_mock()
     assert await toggle(7, item) == Toggled.FULL
-    world.hub.directory.by_uuid.assert_not_awaited()
+    world.hub.directory.by_uuid_strict.assert_not_awaited()
     remove = getattr(store, "remove_" + operation)
     assert not await remove(7, "invalid")
     assert await remove(7, uuid(0) if operation == "station" else "node:0")
@@ -77,7 +79,7 @@ async def test_capacity_full_before_directory_and_idempotent_removal(world, oper
     "operation,value", [("station", "bad"), ("station", uuid(4)), ("filter", "bad!"), ("filter", "missing")]
 )
 async def test_invalid_or_missing_never_writes(world, operation, value):
-    world.hub.directory.by_uuid = AsyncMock(return_value=None)
+    world.hub.directory.by_uuid_strict = AsyncMock(return_value=None)
     world.db.save_doc_cas = AsyncMock()
     with pytest.raises(FavoriteNotFound):
         await getattr(world.store, "toggle_" + operation)(7, value)
@@ -109,7 +111,7 @@ async def test_failures_are_unavailable_without_personal_logs(world, failure, ca
     elif failure == "cas":
         world.db.save_doc_cas = AsyncMock(return_value=False)
     else:
-        world.hub.directory.by_uuid = AsyncMock(side_effect=DirectoryError("unavailable"))
+        world.hub.directory.by_uuid_strict = AsyncMock(side_effect=DirectoryError("unavailable"))
     with pytest.raises(RadioUnavailable):
         await world.store.toggle_station(7, uuid(1))
     assert uuid(1) not in caplog.text and "private" not in caplog.text
@@ -205,3 +207,52 @@ async def test_obsolete_filter_toggles_off_and_bad_filter_column_is_ignored(worl
     assert await world.store.toggle_filter(7, "node:old") == Toggled.REMOVED
     world.db.tables[USER_FAVORITES_DB]["7"]["filters"] = "bad"
     assert await world.store.filters(7) == []
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize("failure", ["network", "throttled"])
+async def test_real_directory_failure_is_unavailable_without_writes(world, failure):
+    from tests.audio.test_radio_directory import directory
+
+    real, fetcher, _ = directory({"*": DirectoryError("unavailable")})
+    if failure == "throttled":
+        while real._bucket.try_acquire():
+            pass
+    world.hub.directory = real
+    world.db.save_doc_cas = AsyncMock()
+
+    with pytest.raises(RadioUnavailable):
+        await world.store.toggle_station(7, uuid(1))
+
+    world.db.save_doc_cas.assert_not_awaited()
+    assert bool(fetcher.calls) is (failure == "network")
+
+
+async def test_real_directory_absence_is_not_found_and_saved_station_can_still_be_removed(world):
+    from tests.audio.test_radio_directory import directory
+
+    real, fetcher, _ = directory({"*": []})
+    world.hub.directory = real
+    world.db.save_doc_cas = AsyncMock()
+    with pytest.raises(FavoriteNotFound):
+        await world.store.toggle_station(7, uuid(1))
+    world.db.save_doc_cas.assert_not_awaited()
+    world.db.tables[USER_FAVORITES_DB] = {
+        "7": {"rev": 0, "stations": [{"uuid": uuid(1), "name": "Rádio"}], "filters": []}
+    }
+    fetcher.calls.clear()
+    world.db.save_doc_cas = AsyncMock(return_value=True)
+    assert await world.store.toggle_station(7, uuid(1)) == Toggled.REMOVED
+    assert fetcher.calls == []
+
+
+async def test_real_strict_directory_adds_resolved_station_and_ignores_invalid_uuid(world):
+    from tests.audio.test_radio_directory import directory, station as payload
+
+    real, fetcher, _ = directory({"*": [payload(uuid(1))]})
+    assert await real.by_uuid_strict("invalid") is None
+    assert fetcher.calls == []
+    world.hub.directory = real
+    assert await world.store.toggle_station(7, uuid(1)) == Toggled.ADDED
+    assert [f.uuid for f in await world.store.stations(7)] == [uuid(1)]
+    assert fetcher.calls[0][1:] == ("/json/stations/byuuid", {"uuids": uuid(1)})

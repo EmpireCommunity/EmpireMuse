@@ -109,7 +109,7 @@ class UserRadioFavorites:
             if len(current) >= USER_LIVE_FAVORITES_MAX:
                 return current, nodes, Toggled.FULL
             try:
-                station = await self.hub.directory.by_uuid(uuid)
+                station = await self.hub.directory.by_uuid_strict(uuid)
             except DirectoryError as error:
                 raise RadioUnavailable from error
             if station is None:

@@ -176,7 +176,9 @@ class TestWalking:
         async def by_uuid(uuid, **kwargs):
             return station(uuid, f"Rádio {uuid[:2]}")
 
-        w.hub.directory = SimpleNamespace(by_uuid=by_uuid, logo_png=AsyncMock(), favicon_of=lambda u: None)
+        w.hub.directory = SimpleNamespace(
+            by_uuid=by_uuid, by_uuid_strict=by_uuid, logo_png=AsyncMock(), favicon_of=lambda u: None
+        )
         radio = await turn_on(w, station=station(MAIN, "Rádio 11"), station_list=list_)
         if volume:
             radio = await w.hub.store.set_volume(radio.id, volume, expected_rev=radio.rev)
@@ -623,9 +625,29 @@ class TestPersonalFavoritesJ3:
         w = await TestWalking.live_world()
         await w.cog.radio_panel_click(click(PANEL_FAVORITE_ID))
         w.cog._gap_at.clear()
-        w.hub.directory.by_uuid = AsyncMock(return_value=None)
+        w.hub.directory.by_uuid_strict = AsyncMock(return_value=None)
         press = click(PANEL_FAVORITE_ID)
         await w.cog.radio_panel_click(press)
         assert "saiu das suas favoritas" in said(press)
         assert await w.hub.user_favorites.stations(7) == []
-        w.hub.directory.by_uuid.assert_not_awaited()
+        w.hub.directory.by_uuid_strict.assert_not_awaited()
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize("server", [False, True])
+async def test_favorite_confirmation_keeps_exactly_one_markdown_escape(server):
+    from empiremuse.rules.radio import PANEL_FAVORITE_ID
+    from tests.audio.test_radio_directory import directory, station as payload
+
+    w = await TestWalking.live_world()
+    w.hub.directory, _, _ = directory({"*": [payload(MAIN, name="Rock_FM")]})
+    press = menu("favorite") if server else click(PANEL_FAVORITE_ID)
+    if server:
+        await w.cog.radio_panel_menu(press)
+    else:
+        await w.cog.radio_panel_click(press)
+    text = said(press)
+    assert "Rock\\_FM" in text
+    assert text.count("\\") == 1

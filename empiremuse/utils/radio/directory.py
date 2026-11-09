@@ -493,6 +493,17 @@ class Directory:
         found = self._stations(payload)
         return found[0] if found and found[0].uuid == uuid else None
 
+    async def by_uuid_strict(self, uuid: object, *, reserve: float = SEARCH_RESERVE) -> Station | None:
+        """Consulta por uuid para gravações: ausência é None; falha ou balde sem ficha levanta DirectoryError.
+
+        Mantém a mesma reserva de fichas e a mesma validação da consulta tolerante.
+        """
+        if not valid_uuid(uuid):
+            return None
+        payload = await self._get_strict("/json/stations/byuuid", {"uuids": str(uuid)}, reserve=reserve)
+        found = self._stations(payload)
+        return found[0] if found and found[0].uuid == uuid else None
+
     async def by_uuids(self, uuids: Iterable[object], *, reserve: float = SEARCH_RESERVE) -> dict[str, Station]:
         """Várias estações de uma vez (UMA consulta, até ``BYUUIDS_MAX``): para o painel mostrar a janela da lista sem gastar uma ficha por estação."""
         wanted = [u for u in dict.fromkeys(uuids) if valid_uuid(u)][:BYUUIDS_MAX]
