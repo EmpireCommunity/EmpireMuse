@@ -8,6 +8,7 @@ from typing import Union, List
 import disnake
 
 from empiremuse.utils.db import DBModel
+from empiremuse.utils.user_ban import user_bans_of
 
 from empiremuse.utils.music.models.tracks import (
     LavalinkTrack,
@@ -120,7 +121,13 @@ class PlayerStateMixin:
             self._queue_updater_task = self.bot.loop.create_task(cog.queue_updater_task(self))
 
     async def _send_rpc_data(self, users: List[int], stats: dict):
+        bans = user_bans_of(self.bot)
         for u in users:
+            if bans is not None and bans.is_blocked(
+                u
+            ):  # E5 (Q14): único envio do RPC; vale também com relé externo (RUN_RPC_SERVER=false)
+                continue
+
             stats["user"] = u
 
             data = await self.bot.get_global_data(id_=u, db_name=DBModel.users)
