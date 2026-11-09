@@ -191,6 +191,7 @@ class FakeDirectory:
         self.stations = {}
         self.calls = []
         self.by_uuid_calls = []
+        self.strict_error = None
         self.region_hits = []
         self.region_partial = False
         self.region_calls = []  # (node.id, key)
@@ -211,6 +212,13 @@ class FakeDirectory:
 
     async def by_uuid(self, uuid):
         self.by_uuid_calls.append(uuid)
+        return self.stations.get(uuid)
+
+    async def by_uuid_strict(self, uuid):
+        """Como o real: ausência é ``None``; falha do diretório levanta ``DirectoryError`` (armada em ``strict_error``)."""
+        self.by_uuid_calls.append(uuid)
+        if self.strict_error is not None:
+            raise self.strict_error
         return self.stations.get(uuid)
 
 

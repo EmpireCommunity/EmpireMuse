@@ -185,7 +185,9 @@ class ServerFavoritesPage:
             return refused
         radio, actor, uuid = refused
         try:
-            station = await radio.directory.by_uuid(uuid)  # o nome é relido aqui: o que veio do formulário não vale
+            station = await radio.directory.by_uuid_strict(
+                uuid
+            )  # relido aqui (nome do formulário não vale); falha = DirectoryError
         except DirectoryError:
             return FavoritesOutcome(STATUS_UNAVAILABLE, tr("panel.radio.favorites.unavailable"), KIND_ERROR)
         if station is None:

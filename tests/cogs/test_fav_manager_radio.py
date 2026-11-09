@@ -44,7 +44,8 @@ class World:
         self.pool = SimpleNamespace(database=self.db, get_all_bots=lambda: [bot], i18n=get_i18n())
         self.hub = RadioHub(self.pool)
         self.pool.radio = self.hub
-        self.hub.directory = SimpleNamespace(by_uuid=AsyncMock(side_effect=lambda v: station(int(v[-12:]), HOSTILE)))
+        lookup = AsyncMock(side_effect=lambda v: station(int(v[-12:]), HOSTILE))
+        self.hub.directory = SimpleNamespace(by_uuid=lookup, by_uuid_strict=lookup)
         self.hub.locations = SimpleNamespace(
             node=lambda n: n if str(n).startswith("node:") else None,
             path=lambda n: [f"raiz-{n}", n],
@@ -161,7 +162,7 @@ async def test_the_list_is_never_built_without_the_private_gate(world):
     with pytest.raises(GenericError) as raised:
         view.build_txt()
 
-    assert "Rádio" not in str(raised.value) and "NODE" not in str(raised.value)
+    assert "evil" not in str(raised.value) and "NODE" not in str(raised.value)  # nenhum dado da lista
 
 
 async def test_prefix_command_has_no_radio_mode_because_it_cannot_be_ephemeral(world):
@@ -362,3 +363,19 @@ async def test_server_view_only_answers_to_its_author(world):
     assert isinstance(view, ServerRadioFavoritesView)
     assert await view.interaction_check(FakeInter(ADMIN)) is True
     assert await view.interaction_check(FakeInter(OTHER_MEMBER)) is False
+
+
+async def test_names_are_escaped_exactly_once_in_the_message_and_not_at_all_in_select_labels(world):
+    """Os nomes guardados NÃO vêm escapados (``markdown=False`` na gravação): o escape é do destino que renderiza markdown
+    (a mensagem), uma vez só. Rótulo de select não renderiza markdown e fica sem barra."""
+    world.hub.directory.by_uuid_strict.side_effect = lambda v: station(int(v[-12:]), "Rock_FM **ao vivo**")
+    await world.seed(stations=(1,), filters=())
+    view, inter = await open_radio(world)
+    (content,) = inter.calls_named("edit_original_message")
+
+    assert "Rock\\_FM \\*\\*ao vivo\\*\\*" in content["content"]  # um nível de barra, nunca ``\\\\_``
+    assert "\\\\" not in content["content"]
+    label = next(
+        o.label for c in view.children if isinstance(c, disnake.ui.Select) for o in c.options if o.value == uuid(1)
+    )
+    assert "\\" not in label and "Rock_FM" in label

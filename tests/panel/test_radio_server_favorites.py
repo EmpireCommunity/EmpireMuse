@@ -8,6 +8,8 @@ já existia, cheia (409), não encontrada (404, refazer), indisponível (503, te
 """
 
 from types import SimpleNamespace
+
+import pytest
 from unittest.mock import AsyncMock
 
 from empiremuse.panel.handlers.settings import MAX_BODY_BYTES, WRITE_LIMIT_PER_MINUTE
@@ -19,6 +21,8 @@ from tests.panel.helpers_radio import CAMPINAS, SP
 from tests.panel.helpers_settings import acao_forms, parse_forms
 from tests.panel.test_radio_page import ALFA, RadioBase
 from tests.persistence.test_radio_store import FakeDb
+
+pytestmark = pytest.mark.critical
 
 STREAM = "https://secret.example/stream"
 HOSTILE = "Rádio <i>Alfa</i> @everyone https://evil.example"
@@ -148,7 +152,7 @@ class FavoritesAddTest(FavoritesBase):
         assert self.saved() == []
 
     def test_directory_down_is_503_to_retry_and_is_not_blamed_on_the_station(self):
-        self.radio.directory.by_uuid = AsyncMock(side_effect=DirectoryError("rede"))
+        self.radio.directory.strict_error = DirectoryError("rede")  # o real by_uuid nunca levanta; o strict sim
         response = self.act(self.logged_in(), "adicionar", 2)
         assert response.code == 503 and "Tente de novo em instantes." in response.body.decode()
         assert self.saved() == []

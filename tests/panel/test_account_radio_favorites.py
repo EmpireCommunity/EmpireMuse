@@ -8,6 +8,8 @@ em memória; só o diretório, a árvore de local e o Discord são dublês.
 
 from types import SimpleNamespace
 
+import pytest
+
 from empiremuse.rules.radio_stations import Station
 from empiremuse.utils.radio.user_favorites import USER_FAVORITES_DB, UserRadioFavorites
 from tests.panel.helpers_account import OTHER_UID
@@ -18,6 +20,8 @@ from tests.persistence.test_radio_store import FakeDb
 
 A, B = (f"{d * 8}-{d * 4}-{d * 4}-{d * 4}-{d * 12}" for d in "ab")
 HOSTILE = "Rádio <b>Alfa</b> \"aspas\" 'simples' @everyone https://evil.example"
+pytestmark = pytest.mark.critical
+
 STREAM = "https://secret.example/stream"
 
 
@@ -30,6 +34,8 @@ class Directory:
 
     async def by_uuid(self, uuid):
         return self.stations.get(uuid)
+
+    by_uuid_strict = by_uuid
 
 
 class RadioAccountCase(AccountCase):
@@ -83,7 +89,7 @@ class AccountRadioPageTest(RadioAccountCase):
 
     def test_empty_lists_say_so_and_offer_no_remove_form(self):
         body = self.body(self.logged_in())
-        assert "Você ainda não tem estações favoritas." in body and "Você ainda não salvou locais." in body
+        assert "Você ainda não tem estações favoritas." in body and "Você ainda não salvou filtros de local." in body
         assert not acao_forms(body, "radio_estacao_remover") and not acao_forms(body, "radio_filtro_remover")
 
     def test_remove_forms_ask_for_confirmation_and_carry_xsrf(self):

@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 
-{% block titulo %}Minha conta{% end %}
+{% block titulo %}{{ _("panel.account.title") }}{% end %}
 
 {# Variáveis: prefixo, favoritos, radios, integracoes, lastfm e rpc (objetos Formulario das seções). Cada seção é um fragmento bloco_conta_*.html que lê `estado`. #}
 {% block conteudo %}
 <section aria-labelledby="titulo-conta">
-  <h1 id="titulo-conta">Minha conta</h1>
+  <h1 id="titulo-conta">{{ _("panel.account.title") }}</h1>
   <p class="nota">
     Estas são as suas configurações pessoais: valem em todos os servidores onde você usa o bot e
     só você as vê.
