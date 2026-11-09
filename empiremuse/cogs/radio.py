@@ -51,7 +51,8 @@ from empiremuse.utils.radio.actions import Actor, Refused
 from empiremuse.utils.radio.custom_ports import CustomRadioPorts
 from empiremuse.utils.radio.discord_ports import DiscordChatPorts, DiscordRadioPorts
 from empiremuse.utils.radio.live_ports import LiveRadioPorts
-from empiremuse.utils.radio.favorites import MAX_FAVORITES
+from empiremuse.utils.radio.favorites import MAX_FAVORITES, FavoriteForbidden, FavoriteNotFound
+from empiremuse.utils.radio.perms import can_manage_guild
 from empiremuse.utils.radio.picker import RadioPicker, VolumePicker
 from empiremuse.utils.radio.premium import RadioUnavailable
 from empiremuse.utils.radio.prefix_commands import RADIO_COOLDOWN, RadioPrefixCommands, is_env_owner  # noqa: F401
@@ -317,7 +318,7 @@ class Radio(RadioPrefixCommands, commands.Cog):
                 return
             await runner.set_admin_pause(muted)
             await reply(content=tr("radio.panel.muted" if muted else "radio.panel.unmuted"))
-        elif action == "favorite":  # ao vivo: favoritas do SERVIDOR; personalizada: favoritas de QUEM clicou
+        elif action == "favorite":  # ao vivo: favoritas pessoais; personalizada: favoritas de QUEM clicou
             if radio.kind == KIND_LIVE:
                 await reply(content=await self._favorite(interaction, tr, radio))
             else:
@@ -355,7 +356,7 @@ class Radio(RadioPrefixCommands, commands.Cog):
         if action == "stations":
             await self._open_station_picker(interaction, tr, radio)
         elif action == "favorite":
-            await reply(content=await self._favorite(interaction, tr, radio))
+            await reply(content=await self._favorite_server(interaction, tr, radio))
         elif action == "volume":
             await self._open_volume_picker(interaction, tr, radio, runner)
         elif action == "info":
@@ -427,10 +428,31 @@ class Radio(RadioPrefixCommands, commands.Cog):
     async def _favorite(self, interaction: Any, tr: Any, radio: Any) -> str:
         if self._too_soon(radio.id, "lookup", LOOKUP_GAP_S):
             return tr("radio.panel.wait")
+        before = await self.hub.user_favorites.stations(interaction.author.id)
+        try:
+            result = await self.hub.user_favorites.toggle_station(interaction.author.id, radio.source["station"])
+        except FavoriteNotFound:
+            return tr("radio.live.not_found")
+        after = await self.hub.user_favorites.stations(interaction.author.id)
+        name = next((f.name for f in [*before, *after] if f.uuid == radio.source["station"]), "")
+        # As chaves existentes da personalizada já descrevem uma favorita pessoal.
+        return tr(
+            f"radio.panel.custom.favorite_{result.value}", station=external_text(name, NAME_LIMIT), max=MAX_FAVORITES
+        )
+
+    async def _favorite_server(self, interaction: Any, tr: Any, radio: Any) -> str:
+        actor_id = interaction.author.id
+        if not await can_manage_guild(self.bot.pool, radio.guild_id, actor_id):
+            return tr("radio.refused.no_manage_guild")
+        if self._too_soon(radio.id, "lookup", LOOKUP_GAP_S):
+            return tr("radio.panel.wait")
         station = await self._station_of(radio)
         if station is None:
             return tr("radio.live.not_found")
-        result = await self.hub.favorites.add(radio.guild_id, station)
+        try:
+            result = await self.hub.favorites.add(radio.guild_id, actor_id, station)
+        except FavoriteForbidden:
+            return tr("radio.refused.no_manage_guild")
         return tr(
             f"radio.panel.favorite_{result.value}", station=external_text(station.name, NAME_LIMIT), max=MAX_FAVORITES
         )

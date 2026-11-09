@@ -14,6 +14,7 @@ from empiremuse.utils.radio.custom_source import STOCK_SLOTS, ResolvedTracks
 from empiremuse.utils.radio.directory import Directory
 from empiremuse.utils.radio.custom_favorites import CustomFavorites
 from empiremuse.utils.radio.favorites import RadioFavorites
+from empiremuse.utils.radio.user_favorites import UserRadioFavorites
 from empiremuse.utils.radio.lastfm_feed import LastFmFeed
 from empiremuse.utils.radio.health import HealthChecker, StationHealth
 from empiremuse.utils.radio.locations import LocationDataError, LocationTree
@@ -69,6 +70,7 @@ class RadioHub:
         self.directory = Directory(
             state_index=self.locations.state_index if self.locations else None
         )  # Radio Browser (R3): busca, uuid -> estação, local, limites e cache
+        self.user_favorites = UserRadioFavorites(pool, self)
         self.relay = RadioRelay()  # o único endereço que o Lavalink recebe: http://127.0.0.1:<porta>/r/<token>
         self.health = StationHealth(pool)  # estações indisponíveis (R-10)
         self.health_checker = HealthChecker(
