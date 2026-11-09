@@ -114,16 +114,17 @@ def is_snowflake(text: str) -> bool:
 def parse_owner_request(content: str, prefix: str) -> str | None:
     """Comando do dono (§3.4): ``<prefixo padrão>apagardados <id>``, casamento exato (maiúsculas contam, nada de alias).
 
-    ``None`` = a mensagem não é este comando (ignorar em silêncio). Texto = o argumento ainda por validar (pode ser vazio ou ter lixo);
-    ``owner_target_id`` o valida. Só a primeira linha vale: mensagem com várias linhas ou palavras a mais não vira ID.
+    ``None`` = a mensagem não é este comando (ignorar em silêncio): outro prefixo, outro nome (``apagardadosx``) ou um separador que não
+    seja espaço ou tabulação ASCII (NBSP e afins não separam). Texto = o argumento ainda por validar, SEM aparar mais que espaço e tabulação:
+    uma segunda linha ou um caractere estranho ficam nele e ``owner_target_id`` os recusa.
     """
     head = f"{prefix}{OWNER_COMMAND_NAME}"
     if not prefix or not content.startswith(head):
         return None
     rest = content[len(head) :]
-    if rest and not rest[0].isspace():
-        return None  # ``apagardadosx``: outro comando
-    return rest.strip()
+    if rest and rest[0] not in " \t":
+        return None
+    return rest.strip(" \t")
 
 
 def owner_target_id(argument: str) -> int | None:

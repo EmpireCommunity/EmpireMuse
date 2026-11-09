@@ -107,16 +107,6 @@ class OwnerGrants:
         self._drop(grant)
         return grant
 
-    def restore(self, grant: Grant) -> bool:
-        """Devolve uma concessão consumida quando NADA foi apagado (limite ou serviço ocupado). Expirada ou já substituída não volta."""
-        now = self._clock()
-        self._prune(now)
-        if grant.expires_at <= now or grant.target_id in self._pending_code or grant.grant_id in self._by_code:
-            return False
-        self._by_code[grant.grant_id] = grant
-        self._pending_code[grant.target_id] = grant.grant_id
-        return True
-
     def revoke(self, grant_id: str) -> None:
         """Cancela (o titular recusou ou a DM não saiu): libera o pendente do titular."""
         grant = self._by_code.get(grant_id) if isinstance(grant_id, str) else None

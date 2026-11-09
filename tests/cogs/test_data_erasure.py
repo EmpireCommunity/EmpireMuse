@@ -22,6 +22,7 @@ from empiremuse.rules.erasure import (
     owner_target_id,
     parse_owner_request,
 )
+from empiremuse.utils import erasure_views as views
 from empiremuse.utils.erasure import ErasureBusy, ErasureRateLimited
 from empiremuse.utils.erasure_grants import GrantLimited, OwnerGrants
 
@@ -48,7 +49,9 @@ def world(status=ErasureStatus.OK, counts=None):
         erasure=SimpleNamespace(erase_user=AsyncMock(return_value=report)),
         erasure_grants=OwnerGrants(clock=clock),
     )
-    bot = SimpleNamespace(pool=pool, env_owner_ids={OWNER}, default_prefix="!!", fetch_user=AsyncMock())
+    bot = SimpleNamespace(
+        pool=pool, env_owner_ids={OWNER}, default_prefix="!!", fetch_user=AsyncMock(), is_reserve=False
+    )
     return SimpleNamespace(pool=pool, bot=bot, clock=clock, tr=get_i18n().for_locale("pt-BR"))
 
 
@@ -71,7 +74,7 @@ def final_text(interaction):
 @pytest.mark.asyncio
 async def test_slash_confirm_erases_the_clicking_author_only():
     w = world()
-    view = data_erasure.ErasureConfirmView(w.bot, w.tr, HOLDER)
+    view = views.ErasureConfirmView(w.bot, w.tr, HOLDER)
     inter = click(HOLDER)
 
     assert await view.interaction_check(inter) is True
@@ -85,7 +88,7 @@ async def test_slash_confirm_erases_the_clicking_author_only():
 @pytest.mark.asyncio
 async def test_slash_button_of_another_user_is_refused_and_erases_nothing():
     w = world()
-    view = data_erasure.ErasureConfirmView(w.bot, w.tr, HOLDER)
+    view = views.ErasureConfirmView(w.bot, w.tr, HOLDER)
     intruder = click(OTHER)
 
     assert await view.interaction_check(intruder) is False
@@ -98,7 +101,7 @@ async def test_slash_button_of_another_user_is_refused_and_erases_nothing():
 async def test_cancel_and_timeout_erase_nothing_and_timeout_clears_the_message():
     w = world()
     origin = click(HOLDER)
-    view = data_erasure.ErasureConfirmView(w.bot, w.tr, HOLDER, origin=origin)
+    view = views.ErasureConfirmView(w.bot, w.tr, HOLDER, origin=origin)
     inter = click(HOLDER)
 
     await view.cancelled(inter)
@@ -128,7 +131,7 @@ async def test_slash_command_replies_ephemerally_without_calling_the_service():
 @pytest.mark.asyncio
 async def test_member_never_sees_counts_and_partial_does_not_promise_a_retry_fixes_it():
     w = world(ErasureStatus.PARTIAL, {"users": 12345, "radios": 987})
-    view = data_erasure.ErasureConfirmView(w.bot, w.tr, HOLDER)
+    view = views.ErasureConfirmView(w.bot, w.tr, HOLDER)
     inter = click(HOLDER)
 
     await view.confirmed(inter)
@@ -145,7 +148,7 @@ async def test_rate_limit_busy_and_unexpected_error_give_fixed_texts_without_exc
     view_texts = []
     for error in (ErasureRateLimited(125), ErasureBusy(), RuntimeError("segredo-da-excecao")):
         w.pool.erasure.erase_user.side_effect = error
-        view = data_erasure.ErasureConfirmView(w.bot, w.tr, HOLDER)
+        view = views.ErasureConfirmView(w.bot, w.tr, HOLDER)
         inter = click(HOLDER)
         await view.confirmed(inter)
         view_texts.append(final_text(inter))
@@ -209,18 +212,6 @@ def test_grant_limits_ten_per_hour_per_owner_and_one_pending_per_holder():
     grants.issue(OWNER, 500000000000000000)
 
 
-def test_restore_gives_back_a_grant_only_if_still_valid_and_free():
-    clock = Clock()
-    grants = OwnerGrants(clock=clock)
-    grant = grants.issue(OWNER, HOLDER)
-    assert grants.redeem(grant.grant_id, HOLDER)
-    assert grants.restore(grant) is True
-    assert grants.restore(grant) is False  # já de volta
-    assert grants.redeem(grant.grant_id, HOLDER)
-    clock.t += OWNER_GRANT_TTL_S
-    assert grants.restore(grant) is False
-
-
 # --------------------------------------------------------------------- R1: titular confirma, dono não apaga
 
 
@@ -229,7 +220,7 @@ async def owner_flow(w, *, dm_fails=False):
     target = SimpleNamespace(id=HOLDER, send=AsyncMock())
     if dm_fails:
         target.send.side_effect = disnake.Forbidden(MagicMock(status=403), "closed")
-    owner_view = data_erasure.OwnerRequestView(w.bot, w.tr, OWNER, target)
+    owner_view = views.OwnerRequestView(w.bot, w.tr, OWNER, target)
     inter = click(OWNER)
     assert await owner_view.interaction_check(inter) is True
     await owner_view.send_request(inter)
@@ -284,17 +275,22 @@ async def test_expired_or_reused_grant_has_no_effect():
 
 
 @pytest.mark.asyncio
-async def test_rate_limited_holder_click_gives_the_grant_back():
+@pytest.mark.parametrize("error", [ErasureRateLimited(60), ErasureBusy()])
+async def test_holder_click_blocked_by_limit_or_busy_keeps_the_grant_consumed_and_the_owner_can_reissue(error):
     w = world()
     _, _, target = await owner_flow(w)
     holder_view = target.send.await_args.kwargs["view"]
-    w.pool.erasure.erase_user.side_effect = ErasureRateLimited(60)
+    w.pool.erasure.erase_user.side_effect = error
+    first = click(HOLDER)
 
-    await holder_view.confirmed(click(HOLDER))
-    w.pool.erasure.erase_user.side_effect = None
-    await holder_view.confirmed(click(HOLDER))  # tenta de novo com a mesma concessão
+    await holder_view.confirmed(first)
+    again = click(HOLDER)
+    await holder_view.confirmed(again)  # a mesma concessão não volta
 
-    assert w.pool.erasure.erase_user.await_count == 2
+    assert final_text(first) == w.tr("erasure.owner.retry_holder")
+    assert w.pool.erasure.erase_user.await_count == 1
+    assert again.response.edit_message.await_args.kwargs["content"] == w.tr("erasure.grant_expired")
+    w.pool.erasure_grants.issue(OWNER, HOLDER)  # o dono reemite na hora
 
 
 @pytest.mark.asyncio
@@ -323,7 +319,7 @@ async def test_closed_dm_warns_the_owner_and_leaves_nothing_pending():
 @pytest.mark.asyncio
 async def test_owner_view_refuses_anyone_but_the_owner():
     w = world()
-    view = data_erasure.OwnerRequestView(w.bot, w.tr, OWNER, SimpleNamespace(id=HOLDER, send=AsyncMock()))
+    view = views.OwnerRequestView(w.bot, w.tr, OWNER, SimpleNamespace(id=HOLDER, send=AsyncMock()))
 
     assert await view.interaction_check(click(OTHER)) is False
     assert await view.interaction_check(click(HOLDER)) is False
@@ -338,6 +334,12 @@ async def test_owner_view_refuses_anyone_but_the_owner():
         ("!!apagardados 123456789012345678", "123456789012345678"),
         ("!!apagardados   123456789012345678  ", "123456789012345678"),
         ("!!apagardados", ""),
+        ("!!apagardados\xa0123456789012345678", None),  # NBSP não separa
+        ("!!apagardados\t123456789012345678", "123456789012345678"),
+        (
+            "!!apagardados 123456789012345678\nfoo",
+            "123456789012345678\nfoo",
+        ),  # segunda linha fica no argumento e é recusada
         ("!!apagardadosx 1", None),
         ("!apagardados 123456789012345678", None),
         ("apagardados 123456789012345678", None),
@@ -362,6 +364,8 @@ def test_parse_owner_request_is_exact(content, expected):
         ("１２３４５６７８９０１２３４５６７８", None),  # dígitos largos (não ASCII)
         ("99999999999999999999", None),  # 20 dígitos, passa de 64 bits
         ("<@123456789012345678>", None),
+        ("123456789012345678\nfoo", None),
+        ("\xa0123456789012345678", None),
     ],
 )
 def test_owner_target_id_is_a_strict_positive_snowflake(argument, expected):
@@ -441,7 +445,7 @@ async def test_listener_shows_the_resolved_user_to_the_owner_and_does_not_erase(
     await cog.erasure_request_dm(message)
 
     kwargs = message.channel.send.await_args.kwargs
-    assert isinstance(kwargs["view"], data_erasure.OwnerRequestView)
+    assert isinstance(kwargs["view"], views.OwnerRequestView)
     assert "123456789012345678" in kwargs["embed"].description and "Ana" in kwargs["embed"].description
     w.pool.erasure.erase_user.assert_not_awaited()
     cog.log_owner_command.assert_called_once()
@@ -476,7 +480,7 @@ async def test_holder_dm_buttons_are_bilingual_and_the_replies_use_the_clicker_l
     w = world()
     fallback = w.pool.i18n.for_locale(None)  # a DM sai no idioma de reserva: o titular ainda não clicou
     grant = w.pool.erasure_grants.issue(OWNER, HOLDER)
-    view = data_erasure.ErasureConfirmView(w.bot, fallback, HOLDER, grant=grant)
+    view = views.ErasureConfirmView(w.bot, fallback, HOLDER, grant=grant)
     labels = [item.label for item in view.children]
     assert all(" · " in label for label in labels)  # os dois idiomas no próprio rótulo
 
@@ -494,3 +498,291 @@ def test_owner_audit_line_is_never_aggregated(caplog):
         cog.log_owner_command(SimpleNamespace(author=SimpleNamespace(id=OWNER)), "apagardados", "x")
 
     assert caplog.records[-1].empiremuse_emit is True
+
+
+# --------------------------------------------------------------------- revisão T-494c
+
+
+def test_real_command_declaration_allows_dm_and_keeps_the_cooldown():
+    command = data_erasure.DataErasure.erase_my_data
+    assert command.extras["allow_private"] is True
+    assert (
+        command.contexts.guild is True and command.contexts.bot_dm is True and command.contexts.private_channel is False
+    )
+    assert command.name == "delete_my_data"
+
+
+@pytest.mark.asyncio
+async def test_view_timeouts_match_the_flow():
+    w = world()
+    grant = w.pool.erasure_grants.issue(OWNER, HOLDER)
+
+    assert views.ErasureConfirmView(w.bot, w.tr, HOLDER).timeout == views.CONFIRM_TIMEOUT_S
+    assert views.ErasureConfirmView(w.bot, w.tr, HOLDER, grant=grant).timeout == OWNER_GRANT_TTL_S
+
+
+@pytest.mark.asyncio
+async def test_holder_dm_timeout_revokes_the_grant_and_removes_the_buttons():
+    w = world()
+    _, _, target = await owner_flow(w)
+    holder_view = target.send.await_args.kwargs["view"]
+    holder_view.dm_message = SimpleNamespace(edit=AsyncMock())
+
+    await holder_view.on_timeout()
+
+    holder_view.dm_message.edit.assert_awaited_once_with(view=None)
+    w.pool.erasure_grants.issue(OWNER, HOLDER)  # nada pendente
+
+
+@pytest.mark.asyncio
+async def test_owner_request_timeout_removes_the_buttons_even_if_the_edit_fails():
+    w = world()
+    view = views.OwnerRequestView(w.bot, w.tr, OWNER, SimpleNamespace(id=HOLDER))
+    view.sent_message = SimpleNamespace(edit=AsyncMock(side_effect=disnake.HTTPException(MagicMock(status=500), "x")))
+
+    await view.on_timeout()
+
+    view.sent_message.edit.assert_awaited_once_with(view=None)
+
+
+@pytest.mark.asyncio
+async def test_ack_comes_before_the_dm_send():
+    w = world()
+    owner_inter = click(OWNER)
+    seen = {}
+    target = SimpleNamespace(id=HOLDER, send=AsyncMock())
+
+    async def send(*args, **kwargs):
+        seen["send"] = owner_inter.response.edit_message.await_count
+
+    target.send.side_effect = send
+    await views.OwnerRequestView(w.bot, w.tr, OWNER, target).send_request(owner_inter)
+
+    assert seen == {"send": 1}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("owner_path", [False, True])
+async def test_ack_comes_before_erase_user(owner_path):
+    w = world()
+    holder = click(HOLDER)
+    seen = {}
+
+    async def erase(*args, **kwargs):
+        seen["erase"] = holder.response.edit_message.await_count
+        return ErasureReport(ErasureStatus.OK, {}, ())
+
+    w.pool.erasure.erase_user.side_effect = erase
+    grant = w.pool.erasure_grants.issue(OWNER, HOLDER) if owner_path else None
+
+    await views.ErasureConfirmView(w.bot, w.tr, HOLDER, grant=grant).confirmed(holder)
+
+    assert seen == {"erase": 1}
+
+
+@pytest.mark.asyncio
+async def test_final_edit_failure_is_swallowed_and_only_the_type_is_logged(caplog):
+    w = world()
+    view = views.ErasureConfirmView(w.bot, w.tr, HOLDER)
+    inter = click(HOLDER)
+    inter.edit_original_message.side_effect = RuntimeError("texto-secreto")
+
+    with caplog.at_level(logging.WARNING):
+        await view.confirmed(inter)
+
+    assert "RuntimeError" in caplog.text and "texto-secreto" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_unexpected_failure_after_issue_revokes_and_tells_the_owner(caplog):
+    w = world()
+    target = SimpleNamespace(id=HOLDER, send=AsyncMock(side_effect=RuntimeError("falha-interna")))
+    view = views.OwnerRequestView(w.bot, w.tr, OWNER, target)
+    inter = click(OWNER)
+
+    with caplog.at_level(logging.WARNING):
+        await view.send_request(inter)
+
+    assert final_text(inter) == w.tr("erasure.owner.send_failed")
+    assert "falha-interna" not in caplog.text
+    w.pool.erasure_grants.issue(OWNER, HOLDER)  # revogada
+
+
+@pytest.mark.asyncio
+async def test_failure_of_the_ack_itself_also_revokes():
+    w = world()
+    target = SimpleNamespace(id=HOLDER, send=AsyncMock())
+    view = views.OwnerRequestView(w.bot, w.tr, OWNER, target)
+    inter = click(OWNER)
+    inter.response.edit_message.side_effect = RuntimeError("ack")
+
+    await view.send_request(inter)
+
+    target.send.assert_not_awaited()
+    w.pool.erasure_grants.issue(OWNER, HOLDER)
+
+
+@pytest.mark.asyncio
+async def test_issue_writes_an_unaggregated_audit_line(caplog):
+    w = world()
+
+    with caplog.at_level(logging.WARNING):
+        _, _, target = await owner_flow(w)
+
+    record = next(r for r in caplog.records if "pedido do dono emitido" in r.getMessage())
+    grant = target.send.await_args.kwargs["view"].grant
+    assert record.empiremuse_emit is True
+    assert f"owner={OWNER} target={HOLDER} grant={grant.grant_id}" in record.getMessage()
+
+
+@pytest.mark.asyncio
+async def test_holder_replies_use_the_clicker_language_en_us():
+    w = world()
+    grant = w.pool.erasure_grants.issue(OWNER, HOLDER)
+    view = views.ErasureConfirmView(w.bot, w.pool.i18n.for_locale(None), HOLDER, grant=grant)
+    inter = click(HOLDER, locale=disnake.Locale.en_US)
+
+    await view.confirmed(inter)
+
+    assert final_text(inter) == w.pool.i18n.for_locale("en-US")("erasure.done")
+    assert final_text(inter) != w.tr("erasure.done")
+
+
+@pytest.mark.parametrize("locale", sorted(ERASE_COMMAND_NAMES))
+def test_holder_dm_fits_discord_limit(locale):
+    assert len(get_i18n().for_locale(locale)("erasure.owner.dm")) < 2000
+
+
+@pytest.mark.asyncio
+async def test_listener_to_view_carries_the_typed_id_the_owner_and_the_target():
+    w, cog, message = listener_world()
+
+    await cog.erasure_request_dm(message)
+
+    w.bot.fetch_user.assert_awaited_once_with(123456789012345678)
+    view = message.channel.send.await_args.kwargs["view"]
+    assert view.target.id == 123456789012345678 and view.owner_id == OWNER
+    assert view.sent_message is message.channel.send.return_value
+
+
+@pytest.mark.asyncio
+async def test_listener_stays_silent_on_reserve_bots():
+    w, cog, message = listener_world()
+    w.bot.is_reserve = True
+
+    await cog.erasure_request_dm(message)
+
+    message.channel.send.assert_not_awaited()
+    w.bot.fetch_user.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("dm_messages", "reserve", "warns"), [(False, False, True), (True, False, False), (False, True, False)]
+)
+async def test_setup_warns_when_the_dm_intent_is_off(monkeypatch, caplog, dm_messages, reserve, warns):
+    from empiremuse.cogs import legacy_cmds
+
+    monkeypatch.setattr(legacy_cmds, "PanelView", MagicMock())
+    w = world()
+    w.bot.intents = SimpleNamespace(dm_messages=dm_messages)
+    w.bot.is_reserve = reserve
+    cog = Owner.__new__(Owner)
+    cog.bot = w.bot
+
+    with caplog.at_level(logging.WARNING):
+        await cog.cog_load()
+
+    assert ("DM_MESSAGES_INTENT" in caplog.text) is warns
+
+
+# --------------------------------------------------------------------- ViewStore real (custom_id único e botão expirado)
+
+
+def real_store(bot):
+    store = disnake.ui.view.ViewStore(MagicMock())
+    bot._connection = SimpleNamespace(_view_store=store)
+    return store
+
+
+def button_interaction(user_id, custom_id, message_id=None):
+    inter = click(user_id)
+    inter.data = SimpleNamespace(component_type=disnake.ComponentType.button, custom_id=custom_id)
+    inter.message = SimpleNamespace(id=message_id) if message_id else None
+    return inter
+
+
+async def settle():
+    import asyncio
+
+    await asyncio.gather(*[t for t in asyncio.all_tasks() if t.get_name().startswith("disnake-ui-view-dispatch")])
+
+
+@pytest.mark.asyncio
+async def test_two_members_slash_views_do_not_share_custom_ids_in_the_real_view_store():
+    w = world()
+    store = real_store(w.bot)
+    mine = views.ErasureConfirmView(w.bot, w.tr, HOLDER)
+    theirs = views.ErasureConfirmView(w.bot, w.tr, OTHER)
+    store.add_view(mine)
+    store.add_view(theirs)  # ainda sem ``message_id``, como o slash efêmero
+
+    assert len({item.custom_id for item in mine.children} | {item.custom_id for item in theirs.children}) == 4
+    store.dispatch(button_interaction(OTHER, theirs.children[0].custom_id))
+    await settle()
+
+    w.pool.erasure.erase_user.assert_awaited_once_with(
+        OTHER, source="slash"
+    )  # o clique de OTHER apaga OTHER, nunca HOLDER
+
+
+@pytest.mark.asyncio
+async def test_unclaimed_grant_button_answers_expired_but_a_live_view_keeps_it():
+    w = world()
+    store = real_store(w.bot)
+    cog = data_erasure.DataErasure(w.bot)
+    grant = w.pool.erasure_grants.issue(OWNER, HOLDER)
+    live = views.ErasureConfirmView(w.bot, w.tr, HOLDER, grant=grant)
+    store.add_view(live, 99)
+    custom_id = live.children[0].custom_id
+
+    claimed = button_interaction(HOLDER, custom_id, 99)
+    await cog.expired_grant_button(claimed)
+    claimed.response.edit_message.assert_not_awaited()  # a view cuida
+
+    live.stop()  # expirou, foi usada ou o bot reiniciou
+    orphan = button_interaction(HOLDER, custom_id, 99)
+    await cog.expired_grant_button(orphan)
+    assert orphan.response.edit_message.await_args.kwargs["content"] == w.tr("erasure.grant_expired")
+
+    other = button_interaction(HOLDER, "outra_coisa:1", 99)
+    await cog.expired_grant_button(other)
+    other.response.edit_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_owner_view_cancel_and_pending_request_send_nothing():
+    w = world()
+    target = SimpleNamespace(id=HOLDER, send=AsyncMock())
+    cancel = click(OWNER)
+    await views.OwnerRequestView(w.bot, w.tr, OWNER, target).cancelled(cancel)
+    w.pool.erasure_grants.issue(OWNER, HOLDER)  # já há um pendente
+    pending = click(OWNER)
+    await views.OwnerRequestView(w.bot, w.tr, OWNER, target).send_request(pending)
+
+    target.send.assert_not_awaited()
+    assert pending.response.edit_message.await_args.kwargs["content"] == w.tr("erasure.owner.pending")
+    assert cancel.response.edit_message.await_args.kwargs["content"] == w.tr("erasure.owner.cancelled")
+
+
+@pytest.mark.asyncio
+async def test_expired_grant_reply_failure_is_logged_by_type_only(caplog):
+    w = world()
+    w.bot._connection = SimpleNamespace(_view_store=SimpleNamespace(_views={}))
+    orphan = button_interaction(HOLDER, "erasure_grant:abc")
+    orphan.response.edit_message.side_effect = disnake.HTTPException(MagicMock(status=404), "gone")
+
+    with caplog.at_level(logging.WARNING):
+        await data_erasure.DataErasure(w.bot).expired_grant_button(orphan)
+
+    assert "HTTPException" in caplog.text
