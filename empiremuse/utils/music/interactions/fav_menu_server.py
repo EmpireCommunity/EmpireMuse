@@ -57,16 +57,17 @@ class ServerRadioFavoritesView(disnake.ui.View):
 
     def build_txt(self) -> str:
         tr = self.tr
-        txt = tr("radio.favorites.server.heading", count=len(self.stations), max=MAX_FAVORITES)
+        txt = tr("radio.favorites.server.heading", total=len(self.stations), max=MAX_FAVORITES)
         if self.stations:
             lines = (
-                f"> ` {n:02} ` ⭐ {external_text(s.name, TEXT_NAME_LIMIT)}" for n, s in enumerate(self.stations, 1)
+                f"> ` {n:02} ` ⭐ {external_text(s.name, TEXT_NAME_LIMIT, markdown=False)}"
+                for n, s in enumerate(self.stations, 1)
             )
             txt += paginator("\n".join(lines), max_size=TEXT_LIST_MAX_SIZE)[0] + "\n"
         else:
             txt += tr("radio.favorites.server.empty")
         if self.confirming:
-            txt += tr("radio.favorites.server.clear_confirm", count=len(self.stations))
+            txt += tr("radio.favorites.server.clear_confirm", total=len(self.stations))
         if self.log:
             txt += tr("fav.last_interaction", log=self.log)
         self.update_components()
@@ -133,7 +134,7 @@ class ServerRadioFavoritesView(disnake.ui.View):
             inter,
             lambda favorites: favorites.remove(self.guild_id, inter.author.id, uuid),
             "radio.favorites.server.removed",
-            {"station": external_text(name, TEXT_NAME_LIMIT)},
+            {"station": external_text(name, TEXT_NAME_LIMIT, markdown=False)},
         )
 
     async def ask_clear_callback(self, inter: disnake.MessageInteraction) -> None:

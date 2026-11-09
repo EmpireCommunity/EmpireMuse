@@ -144,16 +144,16 @@ class FavMenuRadioMixin:
         txt = tr("radio.favorites.heading")
         if self.radio_unavailable:
             return txt + tr("radio.owner.unavailable") + "\n"
-        txt += tr("radio.favorites.stations.heading", count=len(self.radio_stations), max=USER_LIVE_FAVORITES_MAX)
+        txt += tr("radio.favorites.stations.heading", total=len(self.radio_stations), max=USER_LIVE_FAVORITES_MAX)
         if self.radio_stations:
             lines = (
-                f"> ` {n:02} ` 📻 {external_text(s.name, TEXT_NAME_LIMIT)}"
+                f"> ` {n:02} ` 📻 {external_text(s.name, TEXT_NAME_LIMIT, markdown=False)}"
                 for n, s in enumerate(self.radio_stations, 1)
             )
             txt += paginator("\n".join(lines), max_size=TEXT_LIST_MAX_SIZE)[0] + "\n"
         else:
             txt += tr("radio.favorites.stations.empty")
-        txt += tr("radio.favorites.filters.heading", count=len(self.radio_filters), max=USER_FILTERS_MAX)
+        txt += tr("radio.favorites.filters.heading", total=len(self.radio_filters), max=USER_FILTERS_MAX)
         if self.radio_filters:
             lines = (f"> ` {n:02} ` 📌 {label}" for n, (_, label) in enumerate(self.radio_filters, 1))
             txt += paginator("\n".join(lines), max_size=TEXT_LIST_MAX_SIZE)[0] + "\n"
@@ -184,7 +184,7 @@ class FavMenuRadioMixin:
             inter,
             lambda favorites, user: favorites.remove_station(user, uuid),
             "radio.favorites.log.station_removed",
-            {"name": external_text(name, TEXT_NAME_LIMIT)},
+            {"name": external_text(name, TEXT_NAME_LIMIT, markdown=False)},
         )
 
     async def radio_clear_stations_callback(self, inter: disnake.MessageInteraction) -> None:
@@ -202,7 +202,7 @@ class FavMenuRadioMixin:
             inter,
             lambda favorites, user: favorites.remove_filter(user, node),
             "radio.favorites.log.filter_removed",
-            {"name": external_text(label, TEXT_NAME_LIMIT)},
+            {"name": external_text(label, TEXT_NAME_LIMIT, markdown=False)},
         )
 
     async def radio_clear_filters_callback(self, inter: disnake.MessageInteraction) -> None:

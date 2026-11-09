@@ -11,6 +11,7 @@ import disnake
 import pytest
 
 from empiremuse.i18n import get_i18n
+from empiremuse.rules.radio_stations import Station, check_station
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.music.interactions import FavMenuView, ViewMode
 from empiremuse.utils.music.interactions.fav_menu_server import ServerRadioFavoritesView, open_server_favorites
@@ -365,17 +366,38 @@ async def test_server_view_only_answers_to_its_author(world):
     assert await view.interaction_check(FakeInter(OTHER_MEMBER)) is False
 
 
-async def test_names_are_escaped_exactly_once_in_the_message_and_not_at_all_in_select_labels(world):
-    """Os nomes guardados NÃO vêm escapados (``markdown=False`` na gravação): o escape é do destino que renderiza markdown
-    (a mensagem), uma vez só. Rótulo de select não renderiza markdown e fica sem barra."""
-    world.hub.directory.by_uuid_strict.side_effect = lambda v: station(int(v[-12:]), "Rock_FM **ao vivo**")
-    await world.seed(stations=(1,), filters=())
-    view, inter = await open_radio(world)
-    (content,) = inter.calls_named("edit_original_message")
+def production_station(n, name):
+    """A estação como o diretório a entrega: pelo ``check_station``, que já escapa o markdown do nome."""
+    raw = {"stationuuid": uuid(n), "name": name, "url_resolved": "http://stream.example:8000/live", "codec": "MP3"}
+    built = check_station(raw)
+    assert isinstance(built, Station), built
+    return built
 
-    assert "Rock\\_FM \\*\\*ao vivo\\*\\*" in content["content"]  # um nível de barra, nunca ``\\\\_``
-    assert "\\\\" not in content["content"]
-    label = next(
-        o.label for c in view.children if isinstance(c, disnake.ui.Select) for o in c.options if o.value == uuid(1)
-    )
-    assert "\\" not in label and "Rock_FM" in label
+
+async def test_stored_names_are_shown_with_a_single_backslash_per_character(world):
+    """O nome já sai escapado do ``check_station`` e é guardado assim; as telas o mostram com ``markdown=False``."""
+    world.hub.directory.by_uuid_strict.side_effect = lambda v: production_station(int(v[-12:]), "Rock_FM **x**")
+    await world.seed(stations=(1,), filters=())
+    await world.hub.favorites.add(GUILD, ADMIN, production_station(1, "Rock_FM **x**"))
+
+    _, inter = await open_radio(world)
+    (content,) = inter.calls_named("edit_original_message")
+    server = (await open_server(world)).sent[0]["content"]
+
+    for text in (content["content"], server):
+        assert "Rock\\_FM \\*\\*x\\*\\*" in text  # uma barra por caractere
+        assert "\\\\" not in text  # nunca duas
+
+
+async def test_headings_and_confirmation_show_the_translated_text_never_the_raw_key(world):
+    await world.seed()
+    await world.hub.favorites.add(GUILD, ADMIN, station(1))
+    _, inter = await open_radio(world)
+    (content,) = inter.calls_named("edit_original_message")
+    server_view = (await open_server(world)).sent[0]["view"]
+    server_view.confirming = True
+    texts = [content["content"], server_view.build_txt()]
+
+    assert "(2/24)" in texts[0] and "(1/10)" in texts[0] and "(1/24)" in texts[1]
+    assert "1 favoritas do servidor?" in texts[1]
+    assert all("radio.favorites." not in text for text in texts)
