@@ -1,7 +1,7 @@
 """`utils/radio/setup.py` (contrato-nomes-radios §2 e §4.3): configurar e redefinir uma rádio, a única porta do Discord e do painel web.
 
 Caminho de risco ALTO (autorização e apagar dados): premium, ``manage_guild`` de quem pede, bot reserva livre, uma rádio por bot, teto de 3, canal válido,
-CAS em ``rev``, objeto de outro servidor e o backup antes de apagar.
+CAS em ``rev``, objeto de outro servidor e a exclusão sem cópia.
 """
 
 from types import SimpleNamespace
@@ -11,7 +11,6 @@ import disnake
 import pytest
 
 from empiremuse.rules.radio import radio_id
-from empiremuse.utils.radio.premium import RadioUnavailable
 from empiremuse.utils.radio.setup import RadioForbidden
 from empiremuse.utils.radio.store import RadioConflict, RadioInvalid, RadioNotFound
 from tests.cogs.radio_config import configure
@@ -42,7 +41,7 @@ async def test_radio_options_list_radio_bots_before_reserves_in_natural_order():
     w = await setup_world(free_bots=(2, 10))
     w.bots[1].identifier = "TOKEN_RESERVE_2"
     w.bots[2].identifier = "TOKEN_RADIO_10"
-    assert [bot_id for bot_id, _ in (await w.hub.setup.options(GUILD)).bots] == [10, 2]
+    assert [bot_id for bot_id, _ in (await w.hub.setup.options(GUILD, ACTOR)).bots] == [10, 2]
 
 
 def code_of(refused):
@@ -66,7 +65,7 @@ class TestConfigureCreates:
         w.bots[2].get_guild(GUILD).me.voice = object()  # TOKEN_RESERVE_3 em call
         await new_radio(w, bot_id=2)
 
-        options = await w.hub.setup.options(GUILD)
+        options = await w.hub.setup.options(GUILD, ACTOR)
 
         assert options.bots == ()  # o 2 já tem rádio, o 3 está em call e o principal nunca entra
         assert [c[0] for c in options.channels] == [CHANNEL] and options.channels[0][2] == "voice"
@@ -75,7 +74,7 @@ class TestConfigureCreates:
     async def test_the_jukebox_channel_is_not_offered(self):
         w = await setup_world(request_channel=CHANNEL)
 
-        options = await w.hub.setup.options(GUILD)
+        options = await w.hub.setup.options(GUILD, ACTOR)
 
         assert options.channels == () and [b[0] for b in options.bots] == [2, 3]
         assert options.bots[0] == (2, "Bot 2")
@@ -210,7 +209,10 @@ class TestConfigureRefusals:
         w = await setup_world()
         perms = dict(view_channel=True, connect=True, speak=True, manage_messages=True)
         perms[missing] = False
-        w.channel.permissions_for.side_effect = lambda who: SimpleNamespace(**perms)
+        bots = [bot.get_guild(GUILD).me for bot in w.bots]
+        w.channel.permissions_for.side_effect = lambda who: SimpleNamespace(
+            **(perms if any(who is me for me in bots) else dict(view_channel=True, connect=True))
+        )
 
         with pytest.raises(RadioInvalid) as refused:
             await new_radio(w)
@@ -360,7 +362,7 @@ def _channel_with_panel(channel, deleted):
 
 class TestReset:
     @pytest.mark.asyncio
-    async def test_it_backs_the_document_up_then_deletes_it_and_keeps_everything_else(self):
+    async def test_it_deletes_without_backup_and_keeps_everything_else(self):
         w = await setup_world(free_bots=(2, 3))
         radio = await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
         other = await configure(w.hub, guild_id=GUILD, channel_id=OTHER_CHANNEL, bot_id=3)
@@ -372,9 +374,7 @@ class TestReset:
         assert (await w.hub.stations.get(GUILD, station.id)) is not None and await w.hub.premium.fresh(
             GUILD
         ) is not None
-        backups = list(w.db.tables["config_backup"].values())
-        assert len(backups) == 1 and backups[0]["radio"]["_id"] == radio.id and backups[0]["guild_id"] == str(GUILD)
-        assert backups[0]["expire_at"] > __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+        assert "config_backup" not in w.db.tables
 
     @pytest.mark.asyncio
     async def test_a_running_radio_is_turned_off_first_and_gives_the_slot_back(self):
@@ -406,13 +406,11 @@ class TestReset:
         assert await w.hub.store.get(radio.id) is None
 
     @pytest.mark.asyncio
-    async def test_a_stale_rev_a_foreign_radio_no_premium_and_no_permission_delete_nothing(self):
+    async def test_a_foreign_radio_and_no_permission_delete_nothing(self):
         w = await setup_world()
         radio = await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
         foreign = await configure(w.hub, guild_id=GUILD + 1, channel_id=CHANNEL, bot_id=2)
 
-        with pytest.raises(RadioConflict):
-            await w.hub.setup.reset(GUILD, ACTOR, radio.id, radio.rev + 1)
         with pytest.raises(RadioNotFound):
             await w.hub.setup.reset(GUILD, ACTOR, foreign.id, 0)
         denied = build(manage_guild=False)
@@ -424,24 +422,6 @@ class TestReset:
         assert await w.hub.store.get(radio.id) == radio and await w.hub.store.get(foreign.id) == foreign
         assert await denied.hub.store.get(mine.id) == mine
         assert "config_backup" not in w.db.tables
-
-    @pytest.mark.asyncio
-    async def test_without_the_backup_the_document_is_not_deleted(self):
-        w = await setup_world()
-        radio = await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
-        real = w.db.save_doc_cas
-
-        async def save(id_, doc, *, expected_rev, db_name, collection):
-            if db_name == "config_backup":
-                raise ConnectionError("mongo fora")
-            return await real(id_, doc, expected_rev=expected_rev, db_name=db_name, collection=collection)
-
-        w.db.save_doc_cas = save
-
-        with pytest.raises(RadioUnavailable):
-            await w.hub.setup.reset(GUILD, ACTOR, radio.id, radio.rev)
-
-        assert await w.hub.store.get(radio.id) is not None
 
 
 class TestResetNeedsOnlyManageGuild:
@@ -457,7 +437,7 @@ class TestResetNeedsOnlyManageGuild:
         await w.hub.setup.reset(GUILD, ACTOR, radio.id, radio.rev)
 
         assert await w.hub.store.get(radio.id) is None
-        assert len(w.db.tables["config_backup"]) == 1  # a cópia antes de apagar continua valendo
+        assert "config_backup" not in w.db.tables
 
     @pytest.mark.asyncio
     async def test_without_premium_the_reset_still_needs_manage_guild(self):

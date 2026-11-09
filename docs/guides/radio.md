@@ -135,11 +135,13 @@ nó <nome>: players N · CPU x% · memória y MiB · quadros enviados A anulados
 - **GeoNames:** os dados de localização (cidades e estados) vêm do GeoNames, licença **CC BY 4.0**. O rodapé da página Rádios mostra "Dados de localização: GeoNames, CC BY 4.0", e a atribuição completa fica no `CREDITS.md`.
 - **Radio Browser:** o diretório das estações ao vivo é de domínio público. O bot se identifica com um User-Agent próprio.
 
+## Atualizar de uma versão anterior
+
+Quem atualiza de uma versão anterior à release de Rádios e Jukebox deve configurar novamente o canal de pedidos e o painel antigos da Jukebox. A migração de subida `radios_release` foi removida e não guarda mais cópia. O reset de uma rádio também apaga sua configuração sem cópia, mesmo quando a tela de confirmação está com uma revisão antiga.
+
 ## Voltar para uma versão anterior
 
-Depois que a migração R5 rodar, voltar para uma versão **anterior à release RADIOS** deixa as rádios personalizadas migradas ilegíveis para o bot antigo. Antes de reverter, restaure o original guardado em `global.migration_backup`. Sem essa restauração, as estações personalizadas não são lidas e as rádios dessas estações não sobem.
-
-A mesma reversão também esconde a configuração do Jukebox da versão antiga. A cópia fica guardada por 90 dias em `global.migration_backup`; depois desse prazo ela deixa de existir e não há como restaurar.
+Depois que a migração R5 rodar, voltar para uma versão **anterior à release RADIOS** perde as rádios personalizadas migradas: o bot antigo não lê essas estações e as rádios delas não sobem. Não há cópia automática em `migration_backup` para restaurar.
 
 ## Riscos aceitos e o que não está incluído
 

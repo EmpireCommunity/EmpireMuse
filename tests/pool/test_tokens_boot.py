@@ -29,15 +29,13 @@ def test_fatal_before_services_and_login(monkeypatch, main):
         setattr(pool, name, Mock(side_effect=AssertionError(name)))
     rpc = Mock(side_effect=AssertionError("RPC"))
     monkeypatch.setattr(client, "start", rpc)
-    migrate = Mock(side_effect=AssertionError("migração"))
-    monkeypatch.setattr(client.radios_release, "run", migrate)
     pool.servers = SimpleNamespace(migrate_language=Mock(side_effect=AssertionError("idioma")))
 
     pool.setup()
 
     assert pool.exit_code == 1
     assert [call.args[:2] for call in boot.step.call_args_list].count(("Tokens", "fail")) == 1
-    for action in (bot_core, rpc, migrate, pool.start_heartbeat, pool.load_skins, pool.servers.migrate_language):
+    for action in (bot_core, rpc, pool.start_heartbeat, pool.load_skins, pool.servers.migrate_language):
         action.assert_not_called()
 
 

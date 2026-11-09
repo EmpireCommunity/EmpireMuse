@@ -13,12 +13,15 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - O comando temporário `fixfavs` foi removido.
 
 ### Segurança
+- Configuração de rádios: só oferece e aceita canais que o ator consegue ver e conectar, tanto no Discord quanto no painel web.
 - Removido o comando administrativo `exportsource`: o código público já está disponível no GitHub, sem necessidade de exportar arquivos da instalação pelo bot.
 - `tornado` atualizado de 6.5.10 para 6.6 (alertas #2, #3 e #4 do Dependabot), com isenção pontual do corte temporal no lock de produção.
 - O refreshToken do YouTube só é aplicado ao nó LOCAL da própria máquina; o token do RPC é gerado com fonte criptográfica. Conexões REST e WebSocket com nós IPv6 usam o endereço correto.
 
 ### Alterado
 - Links de convite do Discord passam a usar https://empirecommunity.org/discord.
+- O reset de rádio apaga sempre a configuração, inclusive com tela de revisão antiga, sem guardar cópia; primeiro apaga o documento e depois para o runner, que também é parado se a exclusão falhar; nesse caso, a configuração pode permanecer no banco.
+- Removidas a migração de subida `radios_release` e a gravação em `migration_backup`. Quem atualiza de uma versão anterior à release de Rádios e Jukebox perde o canal de pedidos e o painel antigos da Jukebox: configure de novo. Não há cópia automática; o reset de rádio também deixa de guardar cópia em `config_backup`.
 - Imagem Docker: o JRE passa do Temurin 25.0.4.1 para o 25.0.5+8, com tag explícita (`25.0.5_8-jre-resolute`, a mesma distro Ubuntu 26.04) fixada por digest multi-arquitetura (amd64 e arm64) publicado há mais de 7 dias.
 - Imagem Docker: o Temurin 25.0.5 já não confia nas raízes emSign C1, ECC C3 e ECC G3, então o `keytool -delete` (que falharia com alias inexistente) virou uma verificação que falha fechada: o build quebra se a listagem do `cacerts` não funcionar, se a "emSign Root CA - G1" não aparecer ou se alguma das três raízes voltar (conferidas pela impressão digital SHA-256, não pelo alias).
 - CI: novo passo prova que `requirements-lock.txt` instala, com hashes obrigatórios, em linux x86_64 e aarch64 (Python 3.14), as plataformas da imagem de release. Um lock sem as distribuições de alguma delas passa a falhar no CI, não no build do release.
@@ -30,6 +33,8 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - Atualização automática por git: a atualização exige o `build-constraints.txt` no código novo (falha fechada, sem gravar nada); só a reversão para um release antigo tolera a falta dele. A reversão dispensa o `uv` (e a reinstalação) quando o `requirements-lock.txt` é idêntico nos dois commits (o constraints só diz como construir, não o que instalar), e o `boot_guard` registra o motivo da falha. A mensagem de `uv` ausente fala do PATH do processo do bot. Quem instala por git deve rodar `uv cache clean tinydb-serialization` uma vez antes da primeira atualização depois desta versão: o uv reaproveita do cache uma roda já construída, sem o pin do backend de build.
 
 ### Corrigido
+- Ativações concorrentes da mesma rádio reutilizam um único runner.
+- Rádios: falhas de leitura na ativação recebem resposta no comando e não impedem a tentativa das demais rádios na retomada; o reset registra ator e servidor na auditoria.
 - Bots só-rádio ficam fora dos avisos e convites de música; aspas vazias na configuração de tokens contam como ausência. O log do auxiliar de atualização mascara também tokens pelo formato antes de ser enviado ao dono.
 - A confirmação do setup da Jukebox esclarece que o painel atual da Jukebox é preservado na limpeza do canal. A resposta final do setup por prefixo é enviada uma única vez, para que não sobre uma cópia do aviso após os 120 s.
 - Na reprodução comum, faixas resolvidas por busca tentam o próximo candidato quando o áudio não está disponível, com limite de tentativas e sem repetir candidatos já recusados.
