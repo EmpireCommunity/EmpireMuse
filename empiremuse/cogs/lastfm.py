@@ -518,31 +518,32 @@ class LastFmCog(commands.Cog):
         """
         user_id = inter.author.id
         tombstones = self.bot.pool.erasure_tombstones
-        if tombstones.stale(user_id, read_at):
-            await self._abort_erased(inter, view, msg)
-            return False
-
-        fresh_read_at = tombstones.now()
-        fresh = copy.deepcopy(await self.bot.get_global_data(user_id, db_name=DBModel.users))
-        if view.clear_session:  # Desvincular: o usuário também sai (P3)
-            lastfm = clear_lastfm_link(fresh)
-        else:
-            lastfm = fresh["lastfm"]
-            lastfm.update(
-                {
-                    "scrobble": view.scrobble_enabled,
-                    "sessionkey": view.session_key,
-                    "username": view.username or lastfm["username"],
-                }
-            )
-        if tombstones.stale(user_id, fresh_read_at):
-            await self._abort_erased(inter, view, msg)
-            return False
-
-        await self.bot.update_global_data(user_id, data=fresh, db_name=DBModel.users)
-        if tombstones.stale(
-            user_id, fresh_read_at
-        ):  # apagado durante a gravação: não enche o cache (``lastfm_sessions``)
+        # O lock do usuário é o mesmo de ``erase_user``: com ele tomado o apagamento não marca nem apaga entre a releitura, as
+        # conferências e a gravação (senão o ``await`` regravaria o documento relido e o recriaria). Nenhum chamador o segura
+        # (``asyncio.Lock`` não é reentrante); o aviso ao membro e o cache ficam fora do lock.
+        async with self.bot.pool.user_locks.lock(user_id):
+            if tombstones.stale(user_id, read_at):
+                aborted = True
+            else:
+                fresh_read_at = tombstones.now()
+                fresh = copy.deepcopy(await self.bot.get_global_data(user_id, db_name=DBModel.users))
+                if view.clear_session:  # Desvincular: o usuário também sai (P3)
+                    lastfm = clear_lastfm_link(fresh)
+                else:
+                    lastfm = fresh["lastfm"]
+                    lastfm.update(
+                        {
+                            "scrobble": view.scrobble_enabled,
+                            "sessionkey": view.session_key,
+                            "username": view.username or lastfm["username"],
+                        }
+                    )
+                aborted = tombstones.stale(user_id, fresh_read_at)
+                if not aborted:
+                    await self.bot.update_global_data(user_id, data=fresh, db_name=DBModel.users)
+                    # apagado durante a gravação (sem o lock de quem apaga): não enche o cache (``lastfm_sessions``)
+                    aborted = tombstones.stale(user_id, fresh_read_at)
+        if aborted:
             await self._abort_erased(inter, view, msg)
             return False
         if view.clear_session:

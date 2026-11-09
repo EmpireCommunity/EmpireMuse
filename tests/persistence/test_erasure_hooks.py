@@ -879,3 +879,36 @@ async def test_r2_modal_de_integracao_apagado_durante_a_consulta_externa_nao_gra
 
     gravacoes.assert_not_awaited()
     assert interacao.edit_original_message.await_args.kwargs["content"] == traduzir("fav.erased_while_saving")
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_save_link_espera_o_lock_do_apagamento_e_nao_recria_o_documento(mundo):
+    """Apagamento em andamento (segurando o lock do usuário): o fluxo do /lastfm espera, vê a sepultura e aborta, sem travar."""
+    await gravar_usuario(mundo, ALVO, lastfm_username="fulano", lastfm_sessionkey=CHAVE)
+    cog, visao, interacao = _fluxo(mundo, chave="NOVA", usuario="novo")
+    lido_em = mundo.pool.erasure_tombstones.now()
+
+    async with mundo.pool.user_locks.lock(ALVO):  # o que ``erase_user`` faz do início ao fim
+        tarefa = asyncio.ensure_future(cog._save_link(interacao, visao, None, lido_em))
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert not tarefa.done()  # esperando o lock: nada foi relido nem gravado
+        mundo.pool.erasure_tombstones.mark(ALVO)
+        await mundo.database.delete_data(ALVO, db_name="users", collection="global")
+        mundo.pool.erasure_tombstones.mark(ALVO)
+
+    assert await asyncio.wait_for(tarefa, timeout=2) is False  # sem deadlock: o lock foi solto e o fluxo seguiu
+    assert await mundo.database.find_doc(ALVO, db_name="users", collection="global") is None  # não recriou
+    assert mundo.pool.lastfm_sessions == {}
+    interacao.edit_original_message.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_save_link_sem_apagamento_nao_trava_no_proprio_lock(mundo):
+    cog, visao, interacao = _fluxo(mundo, chave="NOVA", usuario="novo")
+
+    assert (
+        await asyncio.wait_for(cog._save_link(interacao, visao, None, mundo.pool.erasure_tombstones.now()), 2) is True
+    )
+    assert not mundo.pool.user_locks.lock(ALVO).locked()  # soltou ao sair
