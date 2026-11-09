@@ -90,7 +90,8 @@ class PlayResolveMixin:
             if not isinstance(integration_data, dict):
                 integration_data = {"url": integration_data, "avatar": None}
                 user_data["integration_links"][query[7:]] = integration_data
-                await self.bot.update_global_data(inter.author.id, user_data, db_name=DBModel.users)
+                if not self.bot.pool.erasure_tombstones.stale(inter.author.id, req.user_read_at):
+                    await self.bot.update_global_data(inter.author.id, user_data, db_name=DBModel.users)
 
             query = integration_data["url"]
 

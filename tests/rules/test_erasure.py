@@ -18,6 +18,7 @@ from empiremuse.rules.erasure import (
     custom_favorite_key_matches,
     fingerprint,
     is_snowflake,
+    read_is_stale,
     only_defaults,
     reset_to_default,
     resurrected_paths,
@@ -222,3 +223,20 @@ def test_summarize_e_build_report():
     assert dict(relatorio.counts) == {"users": 1, "radio_user": 0, "scrobbles": 2} and relatorio.failed == (
         "scrobbles",
     )
+
+
+@pytest.mark.parametrize(
+    ("erased_at", "read_at", "now", "velha"),
+    [
+        (None, 900.0, 1000.0, False),  # sem sepultura e leitura nova
+        (None, 400.0, 1000.0, True),  # sem sepultura, mas a leitura tem 600 s: nunca confiável
+        (None, 401.0, 1000.0, False),  # 599 s
+        (950.0, 900.0, 1000.0, True),  # apagado depois da leitura
+        (950.0, 950.0, 1000.0, True),  # no mesmo instante: conservador
+        (950.0, 960.0, 1000.0, False),  # leitura depois do fim da exclusão: uso novo
+        (100.0, 900.0, 1000.0, False),  # sepultura antiga, leitura posterior e nova
+        (100.0, 50.0, 1000.0, True),  # sepultura expirada e leitura velha
+    ],
+)
+def test_t5_read_is_stale(erased_at, read_at, now, velha):
+    assert read_is_stale(erased_at, read_at, now, 600.0) is velha

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import datetime
 import logging
 from typing import TYPE_CHECKING, Optional, List
@@ -207,10 +208,7 @@ class LastFmCog(commands.Cog):
         else:
             await inter.response.defer(ephemeral=True)
 
-        tombstones = self.bot.pool.erasure_tombstones
-        read_at = (
-            tombstones.now()
-        )  # início do fluxo: apagamento depois disso invalida o que o fluxo gravaria (gancho e)
+        read_at = self.bot.pool.erasure_tombstones.now()  # início do fluxo (gancho e): ver ``_save_link``
         data = await self.bot.get_global_data(inter.author.id, db_name=DBModel.users)
 
         lastfm_user = None
@@ -223,7 +221,8 @@ class LastFmCog(commands.Cog):
                     data["lastfm"]["sessionkey"] = ""
                     data["lastfm"]["username"] = ""
                     current_session_key = ""
-                    await self.bot.update_global_data(inter.author.id, data, db_name=DBModel.users)
+                    if not self.bot.pool.erasure_tombstones.stale(inter.author.id, read_at):
+                        await self.bot.update_global_data(inter.author.id, data, db_name=DBModel.users)
                 else:
                     raise e
 
@@ -231,7 +230,8 @@ class LastFmCog(commands.Cog):
             data["lastfm"]["sessionkey"] = ""
             data["lastfm"]["username"] = ""
             current_session_key = ""
-            await self.bot.update_global_data(inter.author.id, data, db_name=DBModel.users)
+            if not self.bot.pool.erasure_tombstones.stale(inter.author.id, read_at):
+                await self.bot.update_global_data(inter.author.id, data, db_name=DBModel.users)
 
         embed_color = self.bot.get_color()
 
@@ -422,7 +422,7 @@ class LastFmCog(commands.Cog):
 
             return
 
-        if not await self._save_link(inter, view, msg, data, read_at):
+        if not await self._save_link(inter, view, msg, read_at):
             return
 
         embeds[0].clear_fields()
@@ -509,28 +509,41 @@ class LastFmCog(commands.Cog):
     async def update_np(self, player: LavalinkPlayer):
         await self.startscrooble(player, track=player.current or player.last_track, update_np=True)
 
-    async def _save_link(self, inter, view: LastFMView, msg, data: dict, read_at: float) -> bool:
-        """Grava o resultado do fluxo (vincular, desvincular, liga/desliga). Se os dados foram apagados depois de ``read_at``
-        (início do fluxo), nada é gravado: avisa o membro e devolve ``False``."""
+    async def _save_link(self, inter, view: LastFMView, msg, read_at: float) -> bool:
+        """Grava o resultado do fluxo (vincular, desvincular, liga/desliga) e devolve ``True``; ``False`` se abortou sem gravar.
+
+        O fluxo segura ``read_at`` (o início) por até 5 minutos e cada clique renova o prazo: se os dados foram apagados depois dele, ou se ele é
+        velho demais para confiar (``ERASE_TOMBSTONE_S``), aborta e avisa o membro. Se passa, RELÊ o documento e altera só ``lastfm.*`` na cópia
+        relida (o ``username`` vem do relido, e um favorito adicionado durante o fluxo não some); confere de novo antes de gravar.
+        """
         user_id = inter.author.id
-        if self.bot.pool.erasure_tombstones.stale(user_id, read_at):
+        tombstones = self.bot.pool.erasure_tombstones
+        if tombstones.stale(user_id, read_at):
             await self._abort_erased(inter, view, msg)
             return False
 
+        fresh_read_at = tombstones.now()
+        fresh = copy.deepcopy(await self.bot.get_global_data(user_id, db_name=DBModel.users))
         if view.clear_session:  # Desvincular: o usuário também sai (P3)
-            clear_lastfm_link(data)
-            await self.bot.update_global_data(user_id, data=data, db_name=DBModel.users)
-            self.bot.pool.lastfm_sessions.pop(user_id, None)
-            return True
+            lastfm = clear_lastfm_link(fresh)
+        else:
+            lastfm = fresh["lastfm"]
+            lastfm.update(
+                {
+                    "scrobble": view.scrobble_enabled,
+                    "sessionkey": view.session_key,
+                    "username": view.username or lastfm["username"],
+                }
+            )
+        if tombstones.stale(user_id, fresh_read_at):
+            await self._abort_erased(inter, view, msg)
+            return False
 
-        newdata = {
-            "scrobble": view.scrobble_enabled,
-            "sessionkey": view.session_key,
-            "username": view.username or data["lastfm"]["username"],
-        }
-        data["lastfm"].update(newdata)
-        await self.bot.update_global_data(user_id, data=data, db_name=DBModel.users)
-        self.bot.pool.lastfm_sessions[user_id] = newdata
+        await self.bot.update_global_data(user_id, data=fresh, db_name=DBModel.users)
+        if view.clear_session:
+            self.bot.pool.lastfm_sessions.pop(user_id, None)
+        else:
+            self.bot.pool.lastfm_sessions[user_id] = dict(lastfm)
         return True
 
     async def _abort_erased(self, inter, view: LastFMView, msg) -> None:

@@ -45,9 +45,6 @@ class PlayerLifecycleMixin:
         user_read_at: float = None,
     ):
         tombstones = self.bot.pool.erasure_tombstones
-        entered_at = (
-            tombstones.now()
-        )  # sem ``user_read_at``, o ``user_data`` recebido é tratado como lido a partir daqui
 
         if not player.current:
             if warn_message:
@@ -70,7 +67,7 @@ class PlayerLifecycleMixin:
 
         if reg_query is not None:
             if user_data:
-                read_at = user_read_at if user_read_at is not None else entered_at
+                read_at = user_read_at  # ``None`` (hora da leitura desconhecida) falha fechado em ``stale``
             else:
                 read_at = tombstones.now()  # antes de ler (gancho a)
                 user_data = await self.bot.get_global_data(inter.author.id, db_name=DBModel.users)

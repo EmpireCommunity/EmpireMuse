@@ -39,8 +39,9 @@ SEGREDO_PREFIXO, SEGREDO_CHAVE, SEGREDO_TOKEN = "SEGREDO-PREFIXO", "SK-SEGREDO",
 
 
 @pytest_asyncio.fixture
-async def mundo(tmp_path):
+async def mundo(tmp_path, monkeypatch):
     mundo = montar_mundo(tmp_path)
+    monkeypatch.setenv("EMPIREMUSE_HOME", str(tmp_path / "runtime"))  # a fila salva nunca é a do disco real
     yield mundo
     for tarefa in list(mundo.service._tasks):
         tarefa.cancel()
@@ -286,6 +287,9 @@ async def test_origem_e_dono_invalidos_sao_recusados(mundo):
         await mundo.service.erase_user(ALVO, source="web")  # type: ignore[arg-type]
     with pytest.raises(ValueError):
         await mundo.service.erase_user(ALVO, source="owner")  # sem owner_id e grant_id
+    for dono, concessao in ((0, "g"), (42, ""), (None, "g"), (42, None)):  # vazio ou zero também é recusado
+        with pytest.raises(ValueError):
+            await mundo.service.erase_user(ALVO, source="owner", owner_id=dono, grant_id=concessao)
 
 
 # ------------------------------------------------------------------------------------------------ T13
@@ -386,10 +390,10 @@ async def test_memoria_caches_rpc_e_sessoes_do_painel_so_do_alvo(mundo):
 
     relatorio = await apagar(mundo)
 
-    assert mundo.rpc_fechados == [ALVO]
+    assert mundo.rpc_fechados == [ALVO, ALVO]  # passo 2 e passo 5
     assert mundo.pool.lastfm_sessions == {outro: {"sessionkey": "x"}} and mundo.pool.user_prefix_cache == {outro: "?"}
     assert [loja.get(sid) is None for sid in ids] == [True, True, True, False]
-    assert relatorio.counts["memory"] == 6  # 2 caches + RPC + 3 sessões
+    assert relatorio.counts["memory"] == 7  # 2 caches + RPC + 3 sessões, e o RPC falso "fecha" de novo no passo 5
 
 
 @pytest.mark.asyncio
@@ -535,3 +539,229 @@ async def test_r3_gravacao_concorrente_da_conta_no_painel_espera_o_apagamento(mu
     await apagando
     await gravando
     assert gravou == [True]
+
+
+# ------------------------------------------------------------------------------------------------ revisão do Crivo (m1 a m3, m5)
+
+
+def _sempre_ressuscita(mundo, monkeypatch, doc):
+    original = mundo.database.delete_data
+
+    async def apaga_e_regrava(id_, db_name, collection):
+        resultado = await original(id_, db_name=db_name, collection=collection)
+        if db_name == "users":
+            await mundo.database.update_data(id_, deepcopy(doc), db_name="users", collection="global")
+        return resultado
+
+    monkeypatch.setattr(mundo.database, "delete_data", apaga_e_regrava)
+
+
+@pytest.mark.asyncio
+async def test_sobrou_de_novo_depois_da_segunda_tentativa_vira_partial(mundo, monkeypatch):
+    doc = await gravar_usuario(mundo, ALVO, token=SEGREDO_TOKEN)
+    _sempre_ressuscita(mundo, monkeypatch, doc)
+
+    relatorio = await apagar(mundo)
+
+    assert relatorio.status is ErasureStatus.PARTIAL and relatorio.failed == ("users",)
+
+
+@pytest.mark.asyncio
+async def test_falha_ao_fechar_o_rpc_vira_partial_na_memoria_e_o_resto_e_apagado(mundo):
+    await semear_membro(mundo, ALVO)
+
+    def falha(user_id):
+        raise RuntimeError("rpc")
+
+    mundo.service._rpc_closer = falha
+
+    relatorio = await apagar(mundo)
+
+    assert relatorio.status is ErasureStatus.PARTIAL and relatorio.failed == ("memory",)
+    assert not await existe(mundo, "global", "users", ALVO)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("falha_na_chamada", [1, 2])  # 1 = passo 2, 2 = passo 6 (sessão criada durante a execução)
+async def test_falha_ao_destruir_sessoes_do_painel_vira_partial(mundo, falha_na_chamada):
+    chamadas = []
+
+    class LojaQueFalha:
+        def destroy_user(self, user_id):
+            chamadas.append(user_id)
+            if len(chamadas) == falha_na_chamada:
+                raise RuntimeError("loja")
+            return 0
+
+    mundo.pool.panel_sessions = LojaQueFalha()
+
+    relatorio = await apagar(mundo)
+
+    assert relatorio.status is ErasureStatus.PARTIAL and relatorio.failed == ("memory",) and len(chamadas) == 2
+
+
+@pytest.mark.asyncio
+async def test_falha_ao_ler_o_documento_do_usuario_para_a_passada_2_vira_partial_em_users(mundo, monkeypatch):
+    await semear_membro(mundo, ALVO)
+    original = mundo.database.find_doc
+    falhou = []
+
+    async def primeira_leitura_falha(id_, *, db_name, collection):
+        if db_name == "users" and collection == "global" and not falhou:
+            falhou.append(True)
+            raise RuntimeError("banco")
+        return await original(id_, db_name=db_name, collection=collection)
+
+    monkeypatch.setattr(mundo.database, "find_doc", primeira_leitura_falha)
+
+    relatorio = await apagar(mundo)
+
+    assert relatorio.status is ErasureStatus.PARTIAL and relatorio.failed == ("users",)
+    assert not await existe(mundo, "global", "users", ALVO)  # apagou; só não dá para garantir a passada 2
+
+
+@pytest.mark.asyncio
+async def test_cache_do_banco_cheio_no_meio_da_execucao_e_esvaziado_no_passo_5(mundo, monkeypatch):
+    await semear_membro(mundo, ALVO)
+    chave = f"global:users:{ALVO}"
+    apagar_armazenamento = mundo.service._erase_store
+
+    async def apaga_e_um_cache_atrasado_enche(store, user_id):
+        resultado = await apagar_armazenamento(store, user_id)
+        mundo.database.cache[chave] = {"token": SEGREDO_TOKEN}
+        return resultado
+
+    monkeypatch.setattr(mundo.service, "_erase_store", apaga_e_um_cache_atrasado_enche)
+
+    await apagar(mundo)
+
+    assert chave not in mundo.database.cache
+
+
+@pytest.mark.asyncio
+async def test_anonimizar_tenta_todos_um_documento_ruim_nao_deixa_o_bom_com_o_id(mundo):
+    await gravar(mundo, "global", "radios", f"{BOT}:{SERVIDOR}", {"updated_by": str(ALVO)})  # sem rev
+    await gravar(mundo, "global", "radios", f"{BOT}:{SERVIDOR_2}", {"updated_by": str(ALVO), "rev": 1})
+
+    relatorio = await apagar(mundo)
+
+    bom = await mundo.database.find_doc(f"{BOT}:{SERVIDOR_2}", db_name="radios", collection="global")
+    assert bom["updated_by"] == "deleted"
+    assert relatorio.status is ErasureStatus.PARTIAL and relatorio.failed == ("radios",)
+
+
+@pytest.mark.asyncio
+async def test_anonimizar_com_cas_em_conflito_relê_e_conclui(mundo, monkeypatch):
+    chave = f"{BOT}:{SERVIDOR}"
+    await gravar(mundo, "global", "radios", chave, {"updated_by": str(ALVO), "rev": 1})
+    original = mundo.database.save_doc_cas
+    tentativas = []
+
+    async def primeiro_conflito(id_, doc, *, expected_rev, db_name, collection):
+        tentativas.append(expected_rev)
+        if len(tentativas) == 1:  # outro escritor passou na frente
+            await original(
+                id_,
+                {**doc, "updated_by": str(ALVO), "rev": 2, "x": 1},
+                expected_rev=1,
+                db_name=db_name,
+                collection=collection,
+            )
+            return False
+        return await original(id_, doc, expected_rev=expected_rev, db_name=db_name, collection=collection)
+
+    monkeypatch.setattr(mundo.database, "save_doc_cas", primeiro_conflito)
+
+    relatorio = await apagar(mundo)
+
+    final = await mundo.database.find_doc(chave, db_name="radios", collection="global")
+    assert relatorio.status is ErasureStatus.OK and tentativas == [1, 2]
+    assert final["updated_by"] == "deleted" and final["rev"] == 3 and final["x"] == 1
+
+
+@pytest.mark.asyncio
+async def test_anonimizar_com_cas_sempre_em_conflito_esgota_as_tentativas_e_vira_partial(mundo, monkeypatch):
+    await gravar(mundo, "global", "radios", f"{BOT}:{SERVIDOR}", {"updated_by": str(ALVO), "rev": 1})
+
+    async def sempre_conflito(*args, **kwargs):
+        return False
+
+    monkeypatch.setattr(mundo.database, "save_doc_cas", sempre_conflito)
+
+    relatorio = await apagar(mundo)
+
+    assert relatorio.status is ErasureStatus.PARTIAL and relatorio.failed == ("radios",)
+
+
+@pytest.mark.asyncio
+async def test_anonimizar_nao_mexe_em_documento_cujo_updated_by_mudou_no_meio(mundo, monkeypatch):
+    chave = f"{BOT}:{SERVIDOR}"
+    await gravar(mundo, "global", "radios", chave, {"updated_by": str(ALVO), "rev": 1})
+    original = mundo.database.find_doc
+    mudou = []
+
+    async def outro_membro_assume_antes_da_releitura(id_, *, db_name, collection):
+        if db_name == "radios" and id_ == chave and not mudou:
+            mudou.append(True)  # entre a varredura e a releitura do CAS, outro membro mudou a rádio
+            await mundo.database.update_data(
+                id_, {"updated_by": "999", "rev": 2}, db_name="radios", collection="global"
+            )
+        return await original(id_, db_name=db_name, collection=collection)
+
+    monkeypatch.setattr(mundo.database, "find_doc", outro_membro_assume_antes_da_releitura)
+
+    relatorio = await apagar(mundo)
+
+    assert relatorio.status is ErasureStatus.OK
+    assert (await original(chave, db_name="radios", collection="global"))["updated_by"] == "999"  # o do outro fica
+
+
+# ------------------------------------------------------------------------------------------------ v4: RPC, erro interno, lock
+
+
+@pytest.mark.asyncio
+async def test_r2_rpc_aberta_entre_os_passos_2_e_3_cai_no_passo_5_e_outra_depois_cai_na_passada_2(mundo):
+    await semear_membro(mundo, ALVO)
+    await apagar(mundo)
+    assert mundo.rpc_fechados == [ALVO, ALVO]  # passos 2 e 5
+
+    mundo.gate.set()  # uma conexão registrada depois do passo 5 cai na passada 2
+    await mundo.service.wait_rechecks()
+
+    assert mundo.rpc_fechados == [ALVO, ALVO, ALVO]
+
+
+@pytest.mark.asyncio
+async def test_erro_inesperado_em_um_passo_vira_partial_internal_ainda_e_auditado_e_contado(mundo, monkeypatch, caplog):
+    await semear_membro(mundo, ALVO)
+
+    async def quebra(user_id):
+        raise ValueError("detalhe-interno-secreto")
+
+    monkeypatch.setattr(mundo.service, "_erase_queue", quebra)
+
+    with caplog.at_level(logging.WARNING, logger=LOGGER):
+        relatorio = await apagar(mundo)
+
+    assert relatorio.status is ErasureStatus.PARTIAL and relatorio.failed == ("internal",)
+    linhas = [r.getMessage() for r in caplog.records if r.getMessage().startswith("erasure ")]
+    assert linhas == [f"erasure source=slash user={ALVO} status=PARTIAL  failed=internal"]
+    assert "detalhe-interno-secreto" not in caplog.text and "detalhe-interno-secreto" not in repr(relatorio)
+    assert mundo.service._tries[ALVO]  # a tentativa contou
+    assert mundo.pool.erasure_tombstones.stale(ALVO, mundo.relogio() - 1)  # a sepultura ficou marcada
+
+
+@pytest.mark.asyncio
+async def test_r3_erase_user_pega_o_lock_sozinho_quem_o_segura_so_espera_e_nada_e_reentrante(mundo):
+    """O E3 não pode segurar o lock em volta de ``erase_user``: o ``asyncio.Lock`` não é reentrante e o serviço esperaria para sempre."""
+    await gravar_usuario(mundo, ALVO, token=SEGREDO_TOKEN)
+    lock = mundo.pool.user_locks.lock(ALVO)
+    await lock.acquire()
+    apagando = asyncio.create_task(apagar(mundo))
+    for _ in range(20):
+        await asyncio.sleep(0)
+    assert not apagando.done() and await existe(mundo, "global", "users", ALVO)  # esperando o lock de quem o segura
+
+    lock.release()
+    assert (await apagando).status is ErasureStatus.OK
+    assert "NÃO PODE SEGURÁ-LO" in type(mundo.service).erase_user.__doc__  # a regra está na documentação

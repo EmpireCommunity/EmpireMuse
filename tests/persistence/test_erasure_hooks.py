@@ -34,9 +34,10 @@ CHAVE = "SK-SEGREDO"
 
 
 @pytest_asyncio.fixture
-async def mundo(tmp_path):
+async def mundo(tmp_path, monkeypatch):
     mundo = montar_mundo(tmp_path)
     mundo.pool.i18n = get_i18n()
+    monkeypatch.setenv("EMPIREMUSE_HOME", str(tmp_path / "runtime"))  # a fila salva nunca é a do disco real
     yield mundo
     for tarefa in list(mundo.service._tasks):
         tarefa.cancel()
@@ -66,7 +67,10 @@ def test_t5_stale_so_para_leitura_anterior_ao_apagamento_vale_pelo_ttl_e_nao_afe
     relogio.avancar(ERASE_TOMBSTONE_S - 2)
     assert sepulturas.stale(ALVO, leitura_antes) is True  # ainda dentro do prazo
     relogio.avancar(1)
-    assert sepulturas.stale(ALVO, leitura_antes) is False  # expirou
+    assert (
+        sepulturas.stale(ALVO, leitura_antes) is True
+    )  # a sepultura expirou, mas a leitura tem idade >= TTL: nunca confiável
+    assert sepulturas.stale(ALVO, sepulturas.now()) is False  # leitura nova, sem sepultura: passa
 
 
 def test_t5_mark_poda_as_sepulturas_expiradas():
@@ -346,15 +350,17 @@ async def test_r2_last_tracks_lido_antes_e_gravado_aos_2_e_6_minutos_nao_restaur
 
 
 @pytest.mark.asyncio
-async def test_last_tracks_sem_user_read_at_conta_a_partir_da_entrada_em_process_music(mundo):
+@pytest.mark.parametrize("apagar_antes", [False, True])
+async def test_last_tracks_sem_user_read_at_nunca_grava_falha_fechado(mundo, apagar_antes):
     await gravar_usuario(mundo, ALVO, last_tracks=[{"name": "Antiga", "url": "https://x/a"}])
     doc = await mundo.database.get_data(ALVO, db_name="users", collection="global", default_model=global_db_models)
-    await apagar(mundo)
-    mundo.relogio.avancar(1)
+    if apagar_antes:
+        await apagar(mundo)
+        mundo.relogio.avancar(1)
 
-    await _registrar(_lifecycle(mundo), mundo, user_data=deepcopy(doc))  # entrou depois do apagamento: passa
+    await _registrar(_lifecycle(mundo), mundo, user_data=deepcopy(doc))  # hora da leitura desconhecida: descarta
 
-    assert [t["name"] for t in await _ultimas(mundo)] == ["Antiga", "Faixa"]
+    assert [t["name"] for t in await _ultimas(mundo)] == ([] if apagar_antes else ["Antiga"])
 
 
 @pytest.mark.asyncio
@@ -377,7 +383,12 @@ def _fluxo(mundo, *, desvincular=False, chave="", usuario=""):
             user_id, data, db_name=db_name, collection="global", default_model=global_db_models
         )
 
-    cog = _cog(mundo, update_global_data=grava)
+    async def dados_globais(user_id, *, db_name):
+        return await mundo.database.get_data(
+            user_id, db_name=db_name, collection="global", default_model=global_db_models
+        )
+
+    cog = _cog(mundo, update_global_data=grava, get_global_data=dados_globais)
     visao = SimpleNamespace(
         clear_session=desvincular, session_key=chave, scrobble_enabled=True, username=usuario, interaction=None
     )
@@ -401,7 +412,7 @@ async def test_t14_desvincular_zera_usuario_e_chave_no_banco_e_tira_o_cache(mund
     lido_em = mundo.pool.erasure_tombstones.now()
     doc = await mundo.database.get_data(ALVO, db_name="users", collection="global", default_model=global_db_models)
 
-    assert await cog._save_link(interacao, visao, None, doc, lido_em) is True
+    assert await cog._save_link(interacao, visao, None, lido_em) is True
 
     gravado = await mundo.database.find_doc(ALVO, db_name="users", collection="global")
     assert gravado["lastfm"] == {"username": "", "sessionkey": "", "scrobble": False}
@@ -413,7 +424,7 @@ async def test_vincular_grava_a_chave_e_o_usuario_novos_e_enche_o_cache(mundo):
     cog, visao, interacao = _fluxo(mundo, chave="NOVA", usuario="novo")
     doc = await mundo.database.get_data(ALVO, db_name="users", collection="global", default_model=global_db_models)
 
-    assert await cog._save_link(interacao, visao, None, doc, mundo.pool.erasure_tombstones.now()) is True
+    assert await cog._save_link(interacao, visao, None, mundo.pool.erasure_tombstones.now()) is True
 
     gravado = await mundo.database.find_doc(ALVO, db_name="users", collection="global")
     assert gravado["lastfm"] == {"username": "novo", "sessionkey": "NOVA", "scrobble": True}
@@ -431,10 +442,301 @@ async def test_r2_fluxo_de_vinculo_iniciado_antes_e_concluido_depois_do_apagamen
     )
     await apagar(mundo)
 
-    assert await cog._save_link(interacao, visao, None, doc, lido_em) is False
+    assert await cog._save_link(interacao, visao, None, lido_em) is False
 
     assert await mundo.database.find_doc(ALVO, db_name="users", collection="global") is None  # nada foi regravado
     assert mundo.pool.lastfm_sessions == {}
     interacao.edit_original_message.assert_awaited_once()
     texto = interacao.edit_original_message.await_args.kwargs["content"]
     assert texto == (await get_i18n().for_guild(None))("legacy.lastfm.erased_while_linking") and texto
+
+
+# ------------------------------------------------------------------------------------------------ fiação real do read_at (Crivo m4/m5)
+
+
+@pytest.mark.asyncio
+async def test_play_command_captura_read_at_antes_de_ler_o_documento_do_usuario(mundo):
+    from empiremuse.cogs.music import Music
+    from empiremuse.music_cog.play_state import PlayState
+
+    inicio = mundo.relogio()
+
+    async def le_devagar(*args, **kwargs):
+        mundo.relogio.avancar(5)  # a leitura leva tempo: o read_at é o de ANTES
+        return deepcopy(global_db_models["users"])
+
+    cog = Music.__new__(Music)
+    cog.bot = SimpleNamespace(
+        pool=mundo.pool, get_global_data=le_devagar, get_global_command_named=lambda *a, **k: None
+    )
+    req = PlayState(
+        inter=SimpleNamespace(author=SimpleNamespace(id=ALVO)),
+        query="q",
+        position=0,
+        force_play="no",
+        mix=False,
+        manual_selection=False,
+        options=False,
+        server=None,
+        manual_bot_choice="no",
+    )
+    req.bot, req.ephemeral, req.guild_data = cog.bot, False, {}
+
+    await cog._play_user_context(req)
+
+    assert req.user_read_at == inicio and mundo.relogio() == inicio + 5
+
+
+@pytest.mark.asyncio
+async def test_play_enqueue_repassa_o_read_at_do_play_ao_process_music(mundo):
+    from empiremuse.cogs.music import Music
+    from empiremuse.music_cog.play_state import PlayState
+
+    cog = Music.__new__(Music)
+    cog.process_music = AsyncMock()
+    req = PlayState(
+        inter=SimpleNamespace(),
+        query="q",
+        position=0,
+        force_play="no",
+        mix=False,
+        manual_selection=False,
+        options=False,
+        server=None,
+        manual_bot_choice="no",
+    )
+    req.guild_data = {"check_other_bots_in_vc": False}
+    req.player = SimpleNamespace(is_connected=True)
+    req.user_data, req.user_read_at, req.reg_query = {"x": 1}, 123.5, {"name": "n", "url": "u"}
+
+    await cog._play_connect_and_process(req)
+
+    assert cog.process_music.await_args.kwargs["user_read_at"] == 123.5
+
+
+@pytest.mark.asyncio
+async def test_play_resolve_integracao_em_formato_antigo_nao_regrava_o_documento_lido_antes_do_apagamento(mundo):
+    from empiremuse.cogs.music import Music
+
+    await gravar_usuario(mundo, ALVO, integration_links={"k": "https://x/perfil"}, token="T" * 50)
+    leitura = mundo.pool.erasure_tombstones.now()
+    doc = deepcopy(
+        await mundo.database.get_data(ALVO, db_name="users", collection="global", default_model=global_db_models)
+    )
+    gravacoes = AsyncMock()
+    cog = Music.__new__(Music)
+    cog.bot = SimpleNamespace(pool=mundo.pool, update_global_data=gravacoes)
+    inter = SimpleNamespace(author=SimpleNamespace(id=ALVO))
+
+    def requisicao():
+        return SimpleNamespace(
+            bot=cog.bot, guild_data={}, inter=inter, is_pin=None, query="> itg: k", user_data=doc, user_read_at=leitura
+        )
+
+    await cog._play_resolve_prefix(requisicao())  # sem apagamento: grava o formato novo
+    assert gravacoes.await_count == 1
+
+    doc["integration_links"]["k"] = "https://x/perfil"  # volta ao formato antigo
+    await apagar(mundo)
+    await cog._play_resolve_prefix(requisicao())
+    assert gravacoes.await_count == 1  # apagado depois da leitura: não regrava
+
+
+@pytest.mark.asyncio
+async def test_lastfm_comando_captura_o_read_at_no_inicio_e_aborta_se_apagaram_durante_o_fluxo(mundo, monkeypatch):
+    from empiremuse.cogs.lastfm import LastFMView
+
+    ler = AsyncMock(side_effect=lambda *a, **k: deepcopy(global_db_models["users"]))
+    gravar_ = AsyncMock()
+    fm = SimpleNamespace(api_key="AK", get_token=AsyncMock(return_value="TK"))
+    cog = _cog(
+        mundo,
+        get_global_data=ler,
+        update_global_data=gravar_,
+        get_cog=lambda nome: None,
+        get_color=lambda *a: 0,
+        last_fm=fm,
+        loop=SimpleNamespace(create_task=Mock()),
+    )
+    mundo.pool.i18n = get_i18n()
+    interacao = SimpleNamespace(
+        author=SimpleNamespace(id=ALVO),
+        guild=None,
+        permissions=SimpleNamespace(embed_links=True),
+        response=SimpleNamespace(defer=AsyncMock()),
+        edit_original_message=AsyncMock(),
+    )
+
+    async def usuario_desvincula_e_os_dados_sao_apagados(self):
+        self.clear_session = True
+        await apagar(mundo)
+
+    monkeypatch.setattr(LastFMView, "wait", usuario_desvincula_e_os_dados_sao_apagados)
+
+    await LastFmCog.lastfm.callback(cog, interacao)
+
+    usos = gravar_.await_args_list
+    assert len(usos) == 1  # só a limpeza da chave inválida do começo; _save_link não gravou
+    texto = interacao.edit_original_message.await_args.kwargs["content"]
+    assert texto == (await get_i18n().for_guild(None))("legacy.lastfm.erased_while_linking")
+
+
+# ------------------------------------------------------------------------------------------------ v4: TTL, releitura, ganchos f e g, leitor entre mark e delete
+
+
+@pytest.mark.asyncio
+async def test_r2_fluxo_de_vinculo_mais_velho_que_o_ttl_aborta_mesmo_sem_nenhum_apagamento(mundo):
+    await gravar_usuario(mundo, ALVO, fav_links={"a": "https://x/y"})
+    cog, visao, interacao = _fluxo(mundo, chave="NOVA", usuario="novo")
+    lido_em = mundo.pool.erasure_tombstones.now()
+    mundo.relogio.avancar(ERASE_TOMBSTONE_S)  # os cliques renovaram o prazo do view por mais de 10 minutos
+
+    assert await cog._save_link(interacao, visao, None, lido_em) is False
+
+    gravado = await mundo.database.find_doc(ALVO, db_name="users", collection="global")
+    assert gravado["lastfm"]["sessionkey"] == "" and gravado["fav_links"] == {"a": "https://x/y"}
+    interacao.edit_original_message.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_r2_save_link_relê_e_grava_so_o_lastfm_favorito_novo_fica_e_o_usuario_vem_do_relido(mundo):
+    await gravar_usuario(mundo, ALVO, lastfm_username="do_inicio")
+    cog, visao, interacao = _fluxo(mundo, chave="NOVA", usuario="")  # a visão não trouxe usuário novo
+    lido_em = mundo.pool.erasure_tombstones.now()
+    # durante os 5 minutos do fluxo, o membro adicionou um favorito e o usuário do Last.fm mudou
+    await gravar_usuario(mundo, ALVO, fav_links={"novo": "https://x/n"}, lastfm_username="do_relido")
+
+    assert await cog._save_link(interacao, visao, None, lido_em) is True
+
+    gravado = await mundo.database.find_doc(ALVO, db_name="users", collection="global")
+    assert gravado["fav_links"] == {"novo": "https://x/n"}  # não some
+    assert gravado["lastfm"] == {"username": "do_relido", "sessionkey": "NOVA", "scrobble": True}
+
+
+@pytest.mark.asyncio
+async def test_r2_save_link_apagado_durante_a_releitura_aborta_sem_gravar(mundo):
+    await gravar_usuario(mundo, ALVO, lastfm_sessionkey=CHAVE)
+    cog, visao, interacao = _fluxo(mundo, chave="NOVA", usuario="novo")
+    lido_em = mundo.pool.erasure_tombstones.now()
+    ler = cog.bot.get_global_data
+
+    async def le_e_o_apagamento_acontece(user_id, *, db_name):
+        doc = await ler(user_id, db_name=db_name)
+        mundo.pool.erasure_tombstones.mark(ALVO)
+        return doc
+
+    cog.bot.get_global_data = le_e_o_apagamento_acontece
+
+    assert await cog._save_link(interacao, visao, None, lido_em) is False
+
+    interacao.edit_original_message.assert_awaited_once()
+    assert mundo.pool.lastfm_sessions == {}
+
+
+def _menu_de_favoritos(mundo, doc, leitura):
+    from empiremuse.cogs.music import Music
+
+    gravacoes = AsyncMock()
+    cog = Music.__new__(Music)
+    cog.bot = SimpleNamespace(pool=mundo.pool, update_global_data=gravacoes)
+    requisicao = SimpleNamespace(
+        bot=cog.bot,
+        emoji=None,
+        guild=None,
+        guild_data={},
+        inter=SimpleNamespace(author=SimpleNamespace(id=ALVO)),
+        is_pin=None,
+        query=">> [💠 Integrações 💠] <<",
+        user_data=doc,
+        user_read_at=leitura,
+    )
+    return cog, requisicao, gravacoes
+
+
+@pytest.mark.asyncio
+async def test_r2_menu_de_favoritos_nao_regrava_documento_lido_antes_do_apagamento_e_a_opcao_continua(
+    mundo, monkeypatch
+):
+    from empiremuse.music_cog import play_menus
+
+    monkeypatch.setattr(play_menus, "music_source_emoji_url", lambda url, bot: (None, "plataforma"))
+    leitura = mundo.pool.erasure_tombstones.now()
+
+    def doc_antigo():
+        return {"integration_links": {"k": "https://x/perfil"}}
+
+    cog, req, gravacoes = _menu_de_favoritos(mundo, doc_antigo(), leitura)
+    await cog._play_fav_options(req)  # sem apagamento: migra o formato e grava
+    assert gravacoes.await_count == 1
+
+    await apagar(mundo)
+    cog, req, gravacoes = _menu_de_favoritos(mundo, doc_antigo(), leitura)
+    await cog._play_fav_options(req)
+
+    gravacoes.assert_not_awaited()
+    assert [opcao["url"] for opcao in req.fav_opts] == ["https://x/perfil"]  # a faixa ainda toca
+
+
+@pytest.mark.asyncio
+async def test_r2_leitor_entre_o_primeiro_mark_e_o_delete_e_descartado_last_tracks_nao_sobrevive(mundo, monkeypatch):
+    await gravar_usuario(mundo, ALVO, last_tracks=[{"name": "Antiga", "url": "https://x/a"}], token="T" * 50)
+    original = mundo.database.delete_data
+    leituras: list = []
+
+    async def delete_com_um_leitor_no_meio(id_, db_name, collection):
+        if db_name == "users" and not leituras:
+            mundo.relogio.avancar(1)  # depois do 1º mark e antes do fim da exclusão
+            lido_em = mundo.pool.erasure_tombstones.now()
+            doc = await mundo.database.get_data(
+                id_, db_name="users", collection="global", default_model=global_db_models
+            )
+            leituras.append((lido_em, deepcopy(doc)))
+            mundo.relogio.avancar(1)
+        return await original(id_, db_name=db_name, collection=collection)
+
+    monkeypatch.setattr(mundo.database, "delete_data", delete_com_um_leitor_no_meio)
+
+    await apagar(mundo)
+    lido_em, doc = leituras[0]
+
+    assert mundo.pool.erasure_tombstones.stale(ALVO, lido_em) is True  # o 2º mark é o fim da exclusão
+    await _registrar(_lifecycle(mundo), mundo, user_data=doc, user_read_at=lido_em)
+    assert await _ultimas(mundo) == []  # a faixa velha não voltou
+
+
+@pytest.mark.asyncio
+async def test_r2_preenchedor_do_scrobble_lido_entre_o_mark_e_o_delete_nao_enche_o_cache_nem_scrobbla(
+    mundo, monkeypatch
+):
+    await gravar_usuario(mundo, ALVO, lastfm_sessionkey=CHAVE, lastfm_scrobble=True)
+    bot, fm = _bot_do_lastfm(mundo)
+    cog = _cog(mundo, **bot)
+    leu, liberar = asyncio.Event(), asyncio.Event()
+    ler = bot["get_global_data"]
+
+    async def le_e_espera(user_id, *, db_name):
+        doc = await ler(user_id, db_name=db_name)
+        leu.set()
+        await liberar.wait()
+        return doc
+
+    cog.bot.get_global_data = le_e_espera
+    original = mundo.database.delete_data
+    preenchendo: list = []
+
+    async def delete_com_o_preenchimento_no_meio(id_, db_name, collection):
+        if db_name == "users" and not preenchendo:
+            mundo.relogio.avancar(1)  # o preenchedor lê o documento VELHO depois do 1º mark
+            preenchendo.append(asyncio.create_task(_tocar(cog, ALVO)))
+            await leu.wait()
+            mundo.relogio.avancar(1)
+        return await original(id_, db_name=db_name, collection=collection)
+
+    monkeypatch.setattr(mundo.database, "delete_data", delete_com_o_preenchimento_no_meio)
+
+    await apagar(mundo)
+    liberar.set()
+    await preenchendo[0]
+
+    assert mundo.pool.lastfm_sessions == {}
+    fm.update_nowplaying.assert_not_called()

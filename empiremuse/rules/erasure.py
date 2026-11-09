@@ -67,6 +67,29 @@ STORES: tuple[StoreRef, ...] = (
     StoreRef("radio_stations", GLOBAL_DB, "radio_stations", StoreAction.ANONYMIZE),
 )
 MEMORY_KEY = "memory"
+SAVED_QUEUE_KEY = "saved_queue"  # arquivo, fora de STORES (§2 linha 23)
+INTERNAL_KEY = "internal"  # erro inesperado em algum passo (nunca texto da exceção)
+
+
+def read_is_stale(erased_at: float | None, read_at: float, now: float, ttl_s: float) -> bool:
+    """Uma leitura de ``global.users`` ou ``scrobbles.users`` feita em ``read_at`` não pode mais ser gravada de volta?
+
+    Sim se houve apagamento depois dela (``erased_at`` é o FIM da exclusão e ``erased_at >= read_at``) ou se ela é velha demais
+    (``now - read_at >= ttl_s``), com ou sem sepultura: passado o TTL a sepultura some e não dá para provar que não houve apagamento.
+    """
+    return (erased_at is not None and erased_at >= read_at) or now - read_at >= ttl_s
+
+
+def saved_queue_file_names(user_id: int) -> tuple[str, ...]:
+    """Os nomes da fila salva do membro (JSON e o ``.pkl`` antigo), montados só a partir do inteiro: nunca glob nem prefixo."""
+    return (f"{int(user_id)}.json", f"{int(user_id)}.pkl")
+
+
+def saved_queue_tmp_matches(name: str, user_id: int) -> bool:
+    """O temporário órfão de uma queda no meio da gravação: ``<id>.json.<aleatório>.tmp`` (o aleatório do ``mkstemp`` não tem ponto)."""
+    prefix, suffix = f"{int(user_id)}.json.", ".tmp"
+    middle = name[len(prefix) : -len(suffix)] if name.startswith(prefix) and name.endswith(suffix) else ""
+    return bool(middle) and middle.replace("_", "").isalnum() and middle.isascii()
 
 
 def custom_favorite_key_matches(key: str, user_id: int) -> bool:

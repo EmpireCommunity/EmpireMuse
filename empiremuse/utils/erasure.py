@@ -20,8 +20,10 @@ from empiremuse.rules.erasure import (
     ERASE_CONCURRENCY,
     ERASE_RECHECK_S,
     ERASE_TOMBSTONE_S,
+    INTERNAL_KEY,
     MEMORY_KEY,
     RATE_WINDOW_S,
+    SAVED_QUEUE_KEY,
     STORES,
     ErasureReport,
     ErasureStatus,
@@ -33,6 +35,7 @@ from empiremuse.rules.erasure import (
     custom_favorite_key_matches,
     fingerprint,
     only_defaults,
+    read_is_stale,
     reset_to_default,
     resurrected_paths,
 )
@@ -65,7 +68,8 @@ class ErasureTombstones:
     """Sepultura por usuário, só em memória: guarda quando o apagamento aconteceu, por ``ttl_s``.
 
     Quem lê ``global.users`` ou ``scrobbles.users`` para depois gravar (ou encher cache) captura ``read_at = now()`` ANTES de ler e, antes de
-    gravar, pergunta ``stale(user_id, read_at)``: verdadeiro significa "houve apagamento depois da leitura", e o resultado é descartado.
+    gravar, pergunta ``stale(user_id, read_at)``: verdadeiro significa "houve apagamento depois da leitura" (``mark`` roda duas vezes por
+    execução: o segundo é o FIM da exclusão) ou "a leitura é velha demais", e o resultado é descartado.
     """
 
     def __init__(self, ttl_s: float = ERASE_TOMBSTONE_S, clock: Callable[[], float] = time.monotonic) -> None:
@@ -80,14 +84,17 @@ class ErasureTombstones:
         self.prune()
         self._erased_at[int(user_id)] = self._clock()
 
-    def stale(self, user_id: int, read_at: float) -> bool:
+    def stale(self, user_id: int, read_at: Optional[float]) -> bool:
+        """``read_is_stale``: houve apagamento depois da leitura OU a leitura tem ``ttl_s`` ou mais de idade (com ou sem sepultura).
+
+        ``read_at=None`` (hora da leitura desconhecida) falha fechado: sempre velha.
+        """
+        now = self._clock()
         erased_at = self._erased_at.get(int(user_id))
-        if erased_at is None:
-            return False
-        if self._clock() - erased_at >= self._ttl:
+        if erased_at is not None and now - erased_at >= self._ttl:
             del self._erased_at[int(user_id)]
-            return False
-        return erased_at >= read_at
+            erased_at = None
+        return read_is_stale(erased_at, float("-inf") if read_at is None else read_at, now, self._ttl)
 
     def prune(self) -> None:
         now = self._clock()
@@ -101,6 +108,7 @@ class _Snapshot:
 
     salt: bytes
     prints: Mapping[str, str]
+    ok: bool = True  # falso: o documento não foi lido e a passada 2 não tem com o que comparar
 
 
 def _close_rpc(user_id: int) -> bool:
@@ -139,11 +147,15 @@ class ErasureService:
     ) -> ErasureReport:
         """Apaga tudo o que é do membro (§2 do contrato) e devolve o relatório.
 
-        Levanta ``ErasureRateLimited`` e ``ErasureBusy`` (nada é apagado). Falha de armazenamento nunca levanta: vira ``PARTIAL``.
-        Agenda a passada 2 a ``ERASE_RECHECK_S``. ``source="owner"`` exige ``owner_id`` e ``grant_id`` (vão para a auditoria).
+        Levanta ``ErasureRateLimited`` e ``ErasureBusy`` (nada é apagado). Falha de armazenamento e erro inesperado em qualquer passo nunca
+        levantam: viram ``PARTIAL`` (``failed=("internal",)`` no segundo caso) e a auditoria e a contagem de limite ainda rodam.
+        Agenda a passada 2 a ``ERASE_RECHECK_S``. ``source="owner"`` exige ``owner_id`` e ``grant_id`` não vazios (vão para a auditoria).
+
+        PEGA o lock do usuário sozinho (``pool.user_locks``): QUEM CHAMA NÃO PODE SEGURÁ-LO (``asyncio.Lock`` não é reentrante; segurar trava
+        para sempre). É lento (varre coleções): quem responde a uma interação dá ``defer`` antes de chamar.
         """
         user_id = int(user_id)
-        if source not in SOURCES or (source == "owner" and (owner_id is None or grant_id is None)):
+        if source not in SOURCES or (source == "owner" and not (owner_id and grant_id)):
             raise ValueError("source/owner_id/grant_id inválidos")
         async with self.pool.user_locks.lock(user_id):
             self._check_limits(user_id)
@@ -186,15 +198,32 @@ class ErasureService:
     # ------------------------------------------------------------------ passos 1 a 6
 
     async def _run(self, user_id: int) -> tuple[_Snapshot, ErasureReport]:
-        self.tombstones.mark(user_id)  # antes de qualquer outro passo
-        snapshot = await self._snapshot(user_id)
-        memory = self._clear_memory(user_id)
-        step3 = {store.key: await self._erase_store(store, user_id) for store in STORES}
-        results = {store.key: await self._verify_store(store, user_id, step3[store.key]) for store in STORES}
-        self._clear_caches(user_id)
-        results[MEMORY_KEY] = memory
-        self._destroy_panel_sessions(user_id)  # de novo: pega uma sessão criada durante a execução
-        return snapshot, build_report(results)
+        snapshot = _Snapshot(secrets.token_bytes(16), {}, ok=False)
+        try:
+            self.tombstones.mark(user_id)  # passo 1: antes de qualquer outro
+            snapshot = await self._snapshot(user_id)
+            memory = self._clear_memory(user_id)
+            step3 = {store.key: await self._erase_store(store, user_id) for store in STORES}
+            step3[SAVED_QUEUE_KEY] = await self._erase_queue(user_id)
+            results = {store.key: await self._verify_store(store, user_id, step3[store.key]) for store in STORES}
+            results[SAVED_QUEUE_KEY] = await self._verify_queue(user_id, step3[SAVED_QUEUE_KEY])
+            if not snapshot.ok:  # sem as impressões a passada 2 não confere ``users``: não dá para garantir o resultado
+                results[USERS.key] = StoreResult(results[USERS.key].count, ok=False)
+            self.tombstones.mark(user_id)  # passo 5: ``erased_at`` passa a ser o FIM da exclusão
+            self._clear_caches(user_id)
+            late = self._close_connections(user_id)  # RPC e sessões do painel de novo (uma criada durante a execução)
+            results[MEMORY_KEY] = StoreResult(memory.count + late.count, memory.ok and late.ok)
+            return snapshot, build_report(results)
+        except Exception as exc:  # noqa: BLE001 - só o tipo vai ao log; ``erase_user`` nunca levanta por erro inesperado
+            logger.warning("Apagamento: erro inesperado (%s)", type(exc).__name__)
+            self._mark_quietly(user_id)
+            return snapshot, ErasureReport(ErasureStatus.PARTIAL, {}, (INTERNAL_KEY,))
+
+    def _mark_quietly(self, user_id: int) -> None:
+        try:
+            self.tombstones.mark(user_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Apagamento: sepultura não marcada (%s)", type(exc).__name__)
 
     async def _snapshot(self, user_id: int) -> _Snapshot:
         salt = secrets.token_bytes(16)
@@ -202,34 +231,37 @@ class ErasureService:
             doc = await self.pool.database.find_doc(user_id, db_name=USERS.collection, collection=USERS.database)
         except Exception as exc:  # noqa: BLE001 - só o tipo vai ao log
             logger.warning("Apagamento: documento do usuário não lido para a passada 2 (%s)", type(exc).__name__)
-            doc = None
+            return _Snapshot(salt, {}, ok=False)
         return _Snapshot(salt, fingerprint(user_id, doc, salt) if doc else {})
 
     def _clear_memory(self, user_id: int) -> StoreResult:
         """Passo 2: caches do processo, conexão RPC e sessões do painel. Nunca levanta."""
+        popped = sum(
+            int(cache.pop(user_id, None) is not None)
+            for cache in (self.pool.lastfm_sessions, self.pool.user_prefix_cache)
+        )
+        closed = self._close_connections(user_id)
+        return StoreResult(popped + closed.count, closed.ok)
+
+    def _close_connections(self, user_id: int) -> StoreResult:
+        """Fecha a conexão RPC e destrói as sessões do painel do membro. Nunca levanta; uma falha vira ``ok=False``."""
         count, ok = 0, True
-        for cache in (self.pool.lastfm_sessions, self.pool.user_prefix_cache):
-            count += int(cache.pop(user_id, None) is not None)
-        try:
-            count += int(bool(self._rpc_closer(user_id)))
-            count += self._destroy_panel_sessions(user_id)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Apagamento: memória não limpa por inteiro (%s)", type(exc).__name__)
-            ok = False
+        for close in (self._rpc_closer, self._destroy_panel_sessions):
+            try:
+                count += int(close(user_id))
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Apagamento: memória não limpa por inteiro (%s)", type(exc).__name__)
+                ok = False
         return StoreResult(count, ok)
 
     def _destroy_panel_sessions(self, user_id: int) -> int:
         store = getattr(self.pool, "panel_sessions", None)
         if store is None:
             return 0
-        try:
-            return int(store.destroy_user(str(user_id)))
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Apagamento: sessões do painel não destruídas (%s)", type(exc).__name__)
-            return 0
+        return int(store.destroy_user(str(user_id)))
 
     def _clear_caches(self, user_id: int) -> None:
-        """Passo 5 (e passada 2): de novo os caches que quem leu antes pode ter enchido."""
+        """Passo 5 (e passada 2): de novo os caches que quem leu antes pode ter enchido (o RPC e as sessões ficam em ``_close_connections``)."""
         self.pool.lastfm_sessions.pop(user_id, None)
         self.pool.user_prefix_cache.pop(user_id, None)
         for store in STORES:
@@ -248,7 +280,8 @@ class ErasureService:
             doc = await database.find_doc(user_id, db_name=store.collection, collection=store.database)
             return [str(user_id)] if doc else []
         found: list[str] = []
-        async for doc in database.iter_data(db_name=store.collection, collection=store.database):
+        by_updater = {"updated_by": str(user_id)} if store.action is StoreAction.ANONYMIZE else None
+        async for doc in database.iter_data(db_name=store.collection, collection=store.database, filter=by_updater):
             key = str(doc.get("_id", ""))
             if store.action is StoreAction.DELETE_MATCHING and custom_favorite_key_matches(key, user_id):
                 found.append(key)
@@ -263,8 +296,15 @@ class ErasureService:
         elif store.action is StoreAction.DELETE_MATCHING:
             await database.delete_many(ids, db_name=store.collection, collection=store.database)
         else:
-            for doc_id in ids:
-                await self._anonymize(store, doc_id, user_id)
+            failures = 0
+            for doc_id in ids:  # tenta todos: uma falha não deixa os demais com o ID do membro
+                try:
+                    await self._anonymize(store, doc_id, user_id)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Apagamento: falha em %s ao anonimizar (%s)", store.key, type(exc).__name__)
+                    failures += 1
+            if failures:
+                raise RuntimeError("falha ao anonimizar")
 
     async def _anonymize(self, store: StoreRef, doc_id: str, user_id: int) -> None:
         """Troca o ``updated_by`` por ``"deleted"`` com compare-and-set em ``rev`` (relê se alguém gravou no meio)."""
@@ -312,20 +352,51 @@ class ErasureService:
             return StoreResult(count, ok=False)
         return StoreResult(count)
 
+    # ------------------------------------------------------------------ fila salva (arquivos, §2 linha 23)
+
+    @staticmethod
+    async def _queue_call(name: str, user_id: int) -> Any:
+        from empiremuse.utils.music import saved_queue  # importação tardia: o pacote de música importa o cliente do bot
+
+        return await asyncio.get_running_loop().run_in_executor(None, getattr(saved_queue, name), user_id)
+
+    async def _erase_queue(self, user_id: int) -> int:
+        try:
+            return int(await self._queue_call("delete_saved_queues", user_id))
+        except Exception as exc:  # noqa: BLE001 - só o tipo vai ao log
+            logger.warning("Apagamento: falha em %s no passo 3 (%s)", SAVED_QUEUE_KEY, type(exc).__name__)
+            return 0
+
+    async def _verify_queue(self, user_id: int, erased: int) -> StoreResult:
+        """Passada 1: sobrou arquivo → apaga de novo, uma vez; sobrou de novo (ou erro de E/S) → falha do armazenamento."""
+        count = erased
+        try:
+            if await self._queue_call("saved_queue_files", user_id):
+                count += int(await self._queue_call("delete_saved_queues", user_id))
+                if await self._queue_call("saved_queue_files", user_id):
+                    return StoreResult(count, ok=False)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Apagamento: falha em %s na passada 1 (%s)", SAVED_QUEUE_KEY, type(exc).__name__)
+            return StoreResult(count, ok=False)
+        return StoreResult(count)
+
     # ------------------------------------------------------------------ auditoria
 
     @staticmethod
     def _audit(
         user_id: int, source: str, report: ErasureReport, owner_id: Optional[int], grant_id: Optional[str]
     ) -> None:
-        """Passo 6: só origem, usuário, estado e contagens (nenhum valor apagado). O ID é registro de segurança (retenção do log)."""
-        counts = " ".join(f"{key}={value}" for key, value in report.counts.items())
-        line = f"erasure source={source} user={user_id} status={report.status} {counts}"
+        """Passo 6: só origem, usuário, estado e contagens (nenhum valor apagado). O ID é registro de segurança (retenção do log).
+
+        WARNING, como a trilha de auditoria do dono (sai mesmo com o log desligado), com os argumentos separados do texto fixo.
+        """
+        text, args = "erasure source=%s user=%s status=%s %s", [source, user_id, report.status.value, ""]
+        args[3] = " ".join(f"{key}={value}" for key, value in report.counts.items())
         if report.failed:
-            line += f" failed={','.join(report.failed)}"
+            text, args = text + " failed=%s", [*args, ",".join(report.failed)]
         if source == "owner":
-            line += f" owner={owner_id} grant={grant_id}"
-        logger.info(line)
+            text, args = text + " owner=%s grant=%s", [*args, owner_id, grant_id]
+        logger.warning(text, *args)
 
     # ------------------------------------------------------------------ passada 2
 
@@ -346,10 +417,15 @@ class ErasureService:
                 await self._guarded("scrobbles", self._recheck_scrobbles(user_id))
                 await self._guarded("users", self._recheck_users(user_id, snapshot))
                 self._clear_caches(user_id)
+                await self._guarded("rpc", self._close_again(user_id))
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001
             logger.warning("ERASE-RECHECK falhou (%s)", type(exc).__name__)
+
+    async def _close_again(self, user_id: int) -> None:
+        """Passada 2: uma conexão RPC aberta depois do passo 5 também cai."""
+        self._rpc_closer(user_id)
 
     @staticmethod
     async def _guarded(label: str, work: Awaitable[Any]) -> None:

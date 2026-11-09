@@ -1,7 +1,8 @@
 """Fila salva do usuário: caminhos, gravação e leitura em JSON.
 
 O formato é ``local_database/saved_queues_json/users/<id>.json`` (ver ``empiremuse.serialization.queue``). O ``.pkl`` antigo de
-``saved_queues_v1/users/`` não é lido nem apagado (o aviso da subida está em ``legacy_notice``). Fila ilegível vira
+``saved_queues_v1/users/`` não é lido (o aviso da subida está em ``legacy_notice``), mas ``delete_saved_queues`` o apaga junto com o JSON
+quando o membro apaga os próprios dados. Fila ilegível vira
 ``GenericError`` ("incompatível") e o arquivo é mantido; nada do conteúdo vai ao log.
 """
 
@@ -9,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Union
@@ -16,6 +18,7 @@ from typing import Optional, Union
 import aiofiles
 
 from empiremuse import paths
+from empiremuse.rules.erasure import saved_queue_file_names, saved_queue_tmp_matches
 from empiremuse.serialization.files import write_private_atomic
 from empiremuse.serialization.queue import MAX_BYTES, decode_saved_queue, encode_saved_queue
 from empiremuse.serialization.schema import SchemaError
@@ -35,6 +38,38 @@ def saved_queue_path(user_id: Union[int, str]) -> Path:
 
 def has_saved_queue(user_id: Union[int, str]) -> bool:
     return saved_queue_path(user_id).is_file()
+
+
+def saved_queue_files(user_id: Union[int, str]) -> list[Path]:
+    """Os arquivos do membro que ``delete_saved_queues`` apaga e que existem agora: o JSON, o ``.pkl`` antigo e o temporário órfão.
+
+    Os nomes saem só do inteiro (``rules.erasure``), nunca por glob ou prefixo. Só arquivo regular ou link simbólico (um link conta como link e
+    nunca é seguido); pasta é ignorada. Pasta ausente não é erro; outro ``OSError`` sobe.
+    """
+    uid = int(user_id)
+    json_name, pkl_name = saved_queue_file_names(uid)
+    json_dir = _users_dir("saved_queues_json")
+    candidates = [json_dir / json_name, _users_dir("saved_queues_v1") / pkl_name]
+    try:
+        candidates += [json_dir / name for name in os.listdir(json_dir) if saved_queue_tmp_matches(name, uid)]
+    except FileNotFoundError:
+        pass
+    return [path for path in candidates if path.is_symlink() or path.is_file()]
+
+
+def delete_saved_queues(user_id: Union[int, str]) -> int:
+    """Apaga a fila salva do membro (§2 linha 23 do contrato de apagar dados); devolve quantos arquivos saíram. Bloqueia: rode num executor.
+
+    Arquivo ausente não é erro; qualquer outro ``OSError`` sobe ao serviço, que o converte em ``PARTIAL``.
+    """
+    removed = 0
+    for path in saved_queue_files(user_id):
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            continue
+        removed += 1
+    return removed
 
 
 def _incompatible(guild=None) -> GenericError:
