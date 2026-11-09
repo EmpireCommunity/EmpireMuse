@@ -34,6 +34,7 @@ from empiremuse.rules.erasure import (
     build_report,
     custom_favorite_key_matches,
     fingerprint,
+    grant_log_ref,
     only_defaults,
     read_is_stale,
     reset_to_default,
@@ -395,7 +396,7 @@ class ErasureService:
         if report.failed:
             text, args = text + " failed=%s", [*args, ",".join(report.failed)]
         if source == "owner":
-            text, args = text + " owner=%s grant=%s", [*args, owner_id, grant_id]
+            text, args = text + " owner=%s grant=%s", [*args, owner_id, grant_log_ref(grant_id or "")]
         # ``empiremuse_emit``: o agregador de logs junta WARNING de mesmo template; sem isto a 2ª execução em 60 s perderia ID, estado e contagens
         logger.warning(text, *args, extra={"empiremuse_emit": True})
 

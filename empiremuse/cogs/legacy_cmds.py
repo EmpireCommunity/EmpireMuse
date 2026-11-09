@@ -16,11 +16,13 @@ from disnake.http import Route
 import empiremuse.wavelink as wavelink
 from empiremuse import paths
 from empiremuse.config_loader import load_config
+from empiremuse.rules.erasure import OWNER_COMMAND_NAME, owner_target_id, parse_owner_request
 from empiremuse.rules.errors import RuleError
 from empiremuse.rules.git_remote import sanitized_repo_url
 from empiremuse.rules.owner_shell import build_shell_env, mask_secrets, mask_shell_output
 from empiremuse.rules.release import Version, changelog_section, changelog_sections
 from empiremuse.rules.settings import validate_prefix
+from empiremuse.rules.usage import render_text
 from empiremuse.updater.git_flow import (
     EXIT_RESTART,
     UpdateError,
@@ -48,6 +50,7 @@ from empiremuse.updater.views import ConfirmView
 from empiremuse.utils import branding
 from empiremuse.utils.client import BotCore
 from empiremuse.utils.db import DBModel
+from empiremuse.utils.erasure_views import OwnerRequestView
 from empiremuse.utils.music.checks import check_voice, check_requester_channel, can_connect
 from empiremuse.utils.music.converters import URL_REG, md_link
 from empiremuse.utils.music.errors import GenericError, NoVoice, code_suffix, log_unexpected_error
@@ -64,6 +67,7 @@ logger = logging.getLogger(__name__)
 
 # Trecho máximo do comando que vai para o log de execução de comandos de owner.
 MAX_LOGGED_COMMAND_LENGTH = 200
+DISPLAY_NAME_LIMIT = 32  # o Discord limita o nome de exibição a 32 caracteres
 
 # Saída máxima (em caracteres) lida do histórico do git.
 MAX_GIT_READ_OUTPUT = 4 * 1024 * 1024
@@ -223,7 +227,14 @@ class Owner(commands.Cog):
         """Registra quem executou qual comando de owner (o horário vem do formato do log), sem a saída e sem segredos."""
         detail = mask_secrets(detail, self.secret_values())[:MAX_LOGGED_COMMAND_LENGTH]
         # warning: a trilha de auditoria precisa sair mesmo com ENABLE_LOGGER desligado (o nível padrão é WARNING)
-        logger.warning("comando de owner: usuário=%s comando=%s detalhe=%r", ctx.author.id, name, detail)
+        # ``empiremuse_emit``: o agregador junta WARNING de mesmo template; sem isto a trilha de auditoria do dono perderia linhas
+        logger.warning(
+            "comando de owner: usuário=%s comando=%s detalhe=%r",
+            ctx.author.id,
+            name,
+            detail,
+            extra={"empiremuse_emit": True},
+        )
 
     @commands.Cog.listener("on_command")
     async def log_jishaku_command(self, ctx: CustomContext):
@@ -232,6 +243,43 @@ class Owner(commands.Cog):
             return
         if await self.bot.is_owner(ctx.author):
             self.log_owner_command(ctx, "jishaku", ctx.message.content)
+
+    @commands.Cog.listener("on_message")
+    async def erasure_request_dm(self, message: disnake.Message) -> None:
+        """``apagardados <id>`` (§3.4): SÓ no privado do dono com o bot. O clique do dono nunca apaga: ele só envia a DM de concessão ao titular."""
+        if not isinstance(message.channel, disnake.DMChannel) or message.author.id not in self.bot.env_owner_ids:
+            return  # primeira linha: qualquer outra coisa é ignorada em silêncio, sem resposta a ninguém
+        if self.bot.is_reserve:
+            return  # a DM do dono pode chegar a qualquer bot do pool; só o principal (ou um bot único) atende
+        argument = parse_owner_request(message.content, self.bot.default_prefix)
+        if argument is None:
+            return
+        tr = self.bot.pool.i18n.for_locale(None)
+        target_id = owner_target_id(argument)
+        if target_id is None:
+            await message.channel.send(tr("erasure.owner.invalid_id"))
+            return
+        try:
+            target = await self.bot.fetch_user(target_id)
+        except disnake.NotFound:
+            await message.channel.send(tr("erasure.owner.not_found"))
+            return
+        except disnake.HTTPException as error:
+            logger.warning("apagardados: fetch_user falhou (%s)", type(error).__name__)
+            await message.channel.send(tr("erasure.owner.lookup_failed"))
+            return
+        if target.bot:
+            await message.channel.send(tr("erasure.owner.not_found"))
+            return
+        self.log_owner_command(message, OWNER_COMMAND_NAME, f"pedido de apagamento id={target.id}")
+        # Nome de terceiros: ``render_text`` tira controle e bidi, corta e escapa markdown e ``@`` (nome só de caracteres invisíveis cai no ID)
+        name = render_text(target.display_name, DISPLAY_NAME_LIMIT) or str(target.id)
+        embed = disnake.Embed(description=tr("erasure.owner.ask", name=name, id=target.id))
+        embed.set_thumbnail(url=target.display_avatar.url)
+        view = OwnerRequestView(self.bot, tr, message.author.id, target)
+        view.sent_message = await message.channel.send(
+            embed=embed, view=view, allowed_mentions=disnake.AllowedMentions.none()
+        )
 
     def format_log(self, data: list):
         return "\n".join(
@@ -1210,6 +1258,13 @@ class Owner(commands.Cog):
 
     async def cog_load(self) -> None:
         self.owner_view = PanelView(self.bot)
+        if not self.bot.is_reserve and not self.bot.intents.dm_messages:
+            logger.warning(
+                "O comando de dono %s%s está DESLIGADO: DM_MESSAGES_INTENT=false e o Discord não entrega mensagens privadas ao bot. "
+                "Ligue DM_MESSAGES_INTENT=true para atender pedidos de apagamento de dados por e-mail.",
+                self.bot.default_prefix,
+                OWNER_COMMAND_NAME,
+            )
 
     async def download_lavalink_serverlist(self):
         try:
