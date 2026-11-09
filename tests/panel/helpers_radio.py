@@ -312,6 +312,10 @@ class FakeTree:
             node = self.nodes.get(node.parent) if node.parent else None
         return list(reversed(chain))
 
+    def label(self, node, locale):
+        """Como a árvore real: o rótulo do nó para as migalhas do caminho."""
+        return node.name
+
     def children(self, parent, locale, *, guild_locale=None):
         self.calls.append((parent, locale, guild_locale))
         items = [

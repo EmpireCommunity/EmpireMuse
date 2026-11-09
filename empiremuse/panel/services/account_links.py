@@ -1,4 +1,5 @@
-"""Seções da conta: favoritos pessoais (U-02, ``fav_links``) e integrações (U-03, ``integration_links``).
+"""Seções da conta: favoritos pessoais (U-02, ``fav_links``), rádios favoritas (J3, ``global.radio_user``) e integrações
+(U-03, ``integration_links``).
 
 Usam as mesmas regras do ``fav_manager`` e do ``integrations_manager`` de ``utils/music/interactions.py`` (em
 ``empiremuse.rules``): adicionar segue o modal (nome 2–25, URL pura de 10 a 200 caracteres); importar usa os limites
@@ -11,15 +12,25 @@ from __future__ import annotations
 from typing import Any, NamedTuple, Optional
 
 from empiremuse.panel.services.account_base import AccountContext, AccountSection, Parsed, effective_limit, is_web_link
-from empiremuse.panel.services.base import Args, first, load_json_object
+from empiremuse.panel.services.base import (
+    KIND_ERROR,
+    KIND_OK,
+    PANEL_LOCALE,
+    Args,
+    first,
+    load_json_object,
+    panel_translator,
+)
+from empiremuse.panel.services.service import STATUS_INVALID, STATUS_OK
 from empiremuse.rules import limits
 from empiremuse.rules.entries import check_name, merge_import, save_entry
 from empiremuse.rules.errors import NAME_TAKEN, RuleError
 from empiremuse.rules.favorites import check_import_name, name_limit
 from empiremuse.rules.integrations import import_entry as integration_entry
 from empiremuse.rules.quota import has_room
-from empiremuse.rules.text import clean_import_name
+from empiremuse.rules.text import clean_import_name, external_text
 from empiremuse.rules.urls import clean_url
+from empiremuse.utils.radio.premium import RadioUnavailable
 
 EXPORT_PATH = "/painel/conta/favoritos/exportar"
 
@@ -37,6 +48,20 @@ MSG_ITG_JSON = "O conteúdo precisa ser um JSON válido no formato exportado pel
 MSG_ITG_EMPTY = "O conteúdo não tem nenhuma integração."
 MSG_ITG_ITEM = "Um dos itens é inválido (título, endereço ou imagem)."
 MSG_ITG_SPACE = "Você não tem espaço para todas as integrações do conteúdo; remova alguma e tente novamente."
+
+
+STATUS_UNAVAILABLE = 503
+LABEL_LIMIT = 100
+
+
+class RadioStationView(NamedTuple):
+    uuid: str
+    nome: str
+
+
+class RadioFilterView(NamedTuple):
+    node: str
+    rotulo: str
 
 
 class FavView(NamedTuple):
@@ -176,6 +201,75 @@ class FavoritesSection(AccountSection):
 
     def apply(self, doc: dict, new: dict[str, Any]) -> None:
         doc["fav_links"] = new["fav_links"]
+
+
+class RadioFavoritesSection(AccountSection):
+    """Rádios favoritas do próprio usuário (J3): estações ao vivo e filtros de local; só Remover.
+
+    O usuário é sempre o da sessão (``ctx.user_id``): nenhum campo do corpo escolhe de quem é a lista. Os dados ficam em
+    ``global.radio_user`` (fora do documento do usuário), com CAS no store; remover é idempotente, então a seção não usa
+    versão. Banco fora do ar vira 503 com "tente de novo"; nada do usuário nem da estação vai para o log.
+    """
+
+    key = "radios"
+    actions = ("radio_estacao_remover", "radio_filtro_remover")
+    own_store = True
+
+    def values(self, doc: dict) -> dict[str, Any]:
+        return {}
+
+    @staticmethod
+    def _favorites(ctx: AccountContext) -> Any:
+        hub = getattr(ctx.pool, "radio", None)
+        return getattr(hub, "user_favorites", None)
+
+    @staticmethod
+    def _filter_label(tree: Any, node_id: str) -> str:
+        steps = [tree.label(node, PANEL_LOCALE) for node in tree.path(node_id)] if tree is not None else []
+        return external_text(" › ".join(steps) or node_id, LABEL_LIMIT, markdown=False)
+
+    async def extras(self, ctx: AccountContext, doc: dict) -> dict[str, Any]:
+        favorites = self._favorites(ctx)
+        shown: dict[str, Any] = {
+            "disponivel": favorites is not None,
+            "indisponivel": False,
+            "estacoes": (),
+            "filtros": (),
+        }
+        if favorites is None:
+            return shown
+        try:
+            stations = await favorites.stations(ctx.user_id)
+            nodes = await favorites.filters(ctx.user_id)
+        except RadioUnavailable:
+            return {**shown, "indisponivel": True}
+        tree = getattr(ctx.pool.radio, "locations", None)
+        return {
+            **shown,
+            "estacoes": tuple(
+                RadioStationView(f.uuid, external_text(f.name, LABEL_LIMIT, markdown=False)) for f in stations
+            ),
+            "filtros": tuple(RadioFilterView(node, self._filter_label(tree, node)) for node in nodes),
+        }
+
+    async def submit_own(self, service: Any, ctx: AccountContext, action: str, args: Args) -> Any:
+        tr = panel_translator(ctx.pool)
+        favorites = self._favorites(ctx)
+        station = action == "radio_estacao_remover"
+        target = (first(args, "estacao" if station else "filtro") or "").strip()
+        if favorites is None or not target:
+            return await service.finish_own(self, ctx, STATUS_INVALID, tr("panel.account.radio.invalid"), KIND_ERROR)
+        try:
+            if station:
+                changed = await favorites.remove_station(ctx.user_id, target)
+            else:
+                changed = await favorites.remove_filter(ctx.user_id, target)
+        except RadioUnavailable:
+            return await service.finish_own(
+                self, ctx, STATUS_UNAVAILABLE, tr("panel.account.radio.unavailable"), KIND_ERROR
+            )
+        text = tr("panel.account.radio.removed" if changed else "panel.account.radio.already_removed")
+        return await service.finish_own(self, ctx, STATUS_OK, text, KIND_OK)
 
 
 class IntegrationsSection(AccountSection):

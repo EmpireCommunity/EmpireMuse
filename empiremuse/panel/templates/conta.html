@@ -2,7 +2,7 @@
 
 {% block titulo %}Minha conta{% end %}
 
-{# Variáveis: prefixo, favoritos, integracoes, lastfm e rpc (objetos Formulario das seções). Cada seção é um fragmento bloco_conta_*.html que lê `estado`. #}
+{# Variáveis: prefixo, favoritos, radios, integracoes, lastfm e rpc (objetos Formulario das seções). Cada seção é um fragmento bloco_conta_*.html que lê `estado`. #}
 {% block conteudo %}
 <section aria-labelledby="titulo-conta">
   <h1 id="titulo-conta">Minha conta</h1>
@@ -14,6 +14,7 @@
     <ul role="list">
       <li><a class="secao-link" href="#conta-prefixo"><img class="icone" src="{{ static_url('icons/mnauliady/web-ui/comment-square.png') }}" srcset="{{ static_url('icons/mnauliady/web-ui/comment-square@2x.png') }} 2x" alt="" width="20" height="20"> Prefixo</a></li>
       <li><a class="secao-link" href="#conta-favoritos"><img class="icone" src="{{ static_url('icons/mnauliady/web-ui/like.png') }}" srcset="{{ static_url('icons/mnauliady/web-ui/like@2x.png') }} 2x" alt="" width="20" height="20"> Favoritos</a></li>
+      {% if radios.disponivel %}<li><a class="secao-link" href="#conta-radios"><img class="icone" src="{{ static_url('icons/mnauliady/media-player/sound-wave.png') }}" srcset="{{ static_url('icons/mnauliady/media-player/sound-wave@2x.png') }} 2x" alt="" width="20" height="20"> {{ _("panel.account.radio.title") }}</a></li>{% end %}
       <li><a class="secao-link" href="#conta-integracoes"><img class="icone" src="{{ static_url('icons/mnauliady/web-ui/link.png') }}" srcset="{{ static_url('icons/mnauliady/web-ui/link@2x.png') }} 2x" alt="" width="20" height="20"> Integrações</a></li>
       <li><a class="secao-link" href="#conta-lastfm"><img class="icone" src="{{ static_url('icons/mnauliady/web-ui/history.png') }}" srcset="{{ static_url('icons/mnauliady/web-ui/history@2x.png') }} 2x" alt="" width="20" height="20"> Last.fm</a></li>
       {% if rpc.disponivel %}<li><a class="secao-link" href="#conta-rpc"><img class="icone" src="{{ static_url('icons/mnauliady/media-player/sound-wave.png') }}" srcset="{{ static_url('icons/mnauliady/media-player/sound-wave@2x.png') }} 2x" alt="" width="20" height="20"> App de RPC</a></li>{% end %}
@@ -23,6 +24,8 @@
   {% include "bloco_conta_prefixo.html" %}
   {% set estado = favoritos %}
   {% include "bloco_conta_favoritos.html" %}
+  {% set estado = radios %}
+  {% include "bloco_conta_radios.html" %}
   {% set estado = integracoes %}
   {% include "bloco_conta_integracoes.html" %}
   {% set estado = lastfm %}

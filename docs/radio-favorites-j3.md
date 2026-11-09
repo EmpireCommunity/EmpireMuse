@@ -58,9 +58,7 @@ a do servidor usa `radio.panel.favorite_{added,already,full}`. Estação não en
 usa `radio.live.not_found`; indisponibilidade usa `radio.owner.unavailable`.
 O visor público continua usando somente as favoritas do servidor.
 
-Ainda integrar, mantendo os donos de arquivo do contrato: `/fav_manager` modo rádio (Remover/Limpar), `/radio favoritas`
-(admin, lista do servidor, Remover/Limpar com confirmação), gerenciamento de filtros,
-painel Minha conta e Rádios, templates/locales e visibilidade administrativa do menu.
+Telas entregues pela UI (Vitral, T-474): `/fav_manager` modo "Rádios favoritas" (`fav_menu_radio.py`, Remover/Limpar de estações e filtros, sempre efêmero: num menu público abre uma mensagem efêmera nova), a gerência `/radio favoritas` (`fav_menu_server.py`, `open_server_favorites(inter, tr, pool)`, Remover e Limpar com confirmação), Minha conta › Rádios favoritas (só Remover) e Rádios › Favoritas do servidor no painel (Remover com confirmação, Adicionar pelo seletor de local, estados 200/403/404/409/422/503). **Gancho que falta, de quem é o comando:** `cogs/radio.py` registrar `/radio favoritas` chamando `open_server_favorites`. O gerenciamento de filtros pessoais está no mesmo modo do `/fav_manager`.
 Listas pessoais e filtros só em efêmero ou página da própria conta: nunca em
 visão administrativa, voto, log ou mensagem pública. Painel exige sessão e XSRF;
 ignore `user_id` enviado no corpo. Não adicionar Tocar nem estrela no player nesta

@@ -61,6 +61,9 @@ class FavMenuTextMixin:
         elif self.mode == ViewMode.integrations_manager:
             txt = self._integrations_manager_txt(cmd)
 
+        elif self.mode == ViewMode.radio_favorites:
+            txt = self.radio_manager_txt()
+
         else:
             raise GenericError(self.tr("fav.mode.unknown", mode=f"{self.mode} | {type(self.mode)}"))
 
