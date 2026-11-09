@@ -529,6 +529,7 @@ class PlayCommandMixin(PlayMenusMixin, PlayResolveMixin, PlayEnqueueMixin):
                 except IndexError:
                     pass
 
+        req.user_read_at = self.bot.pool.erasure_tombstones.now()  # antes de ler (gancho a)
         user_data = await self.bot.get_global_data(inter.author.id, db_name=DBModel.users)
 
         try:

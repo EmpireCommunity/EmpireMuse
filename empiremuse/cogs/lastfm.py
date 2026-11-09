@@ -33,6 +33,13 @@ logger = logging.getLogger(__name__)
 SCROBBLE_TITLE_THRESHOLD = 70  # limiar do texto completo no casamento do scrobble (o mesmo 70 de antes)
 
 
+def clear_lastfm_link(doc: dict) -> dict:
+    """Desvincular: zera usuário, chave e liga/desliga do Last.fm em ``doc["lastfm"]`` (o ``username`` também sai) e o devolve."""
+    lastfm = doc.setdefault("lastfm", {})
+    lastfm.update({"username": "", "sessionkey": "", "scrobble": False})
+    return lastfm
+
+
 def check_track_title(t: str):
     title = t.lower()
     return [tg for tg in exclude_tags if tg.lower() not in title]
@@ -200,6 +207,10 @@ class LastFmCog(commands.Cog):
         else:
             await inter.response.defer(ephemeral=True)
 
+        tombstones = self.bot.pool.erasure_tombstones
+        read_at = (
+            tombstones.now()
+        )  # início do fluxo: apagamento depois disso invalida o que o fluxo gravaria (gancho e)
         data = await self.bot.get_global_data(inter.author.id, db_name=DBModel.users)
 
         lastfm_user = None
@@ -411,15 +422,8 @@ class LastFmCog(commands.Cog):
 
             return
 
-        newdata = {
-            "scrobble": view.scrobble_enabled,
-            "sessionkey": view.session_key,
-            "username": view.username or data["lastfm"]["username"],
-        }
-        data["lastfm"].update(newdata)
-        await self.bot.update_global_data(inter.author.id, data=data, db_name=DBModel.users)
-
-        self.bot.pool.lastfm_sessions[inter.author.id] = newdata
+        if not await self._save_link(inter, view, msg, data, read_at):
+            return
 
         embeds[0].clear_fields()
 
@@ -505,8 +509,45 @@ class LastFmCog(commands.Cog):
     async def update_np(self, player: LavalinkPlayer):
         await self.startscrooble(player, track=player.current or player.last_track, update_np=True)
 
+    async def _save_link(self, inter, view: LastFMView, msg, data: dict, read_at: float) -> bool:
+        """Grava o resultado do fluxo (vincular, desvincular, liga/desliga). Se os dados foram apagados depois de ``read_at``
+        (início do fluxo), nada é gravado: avisa o membro e devolve ``False``."""
+        user_id = inter.author.id
+        if self.bot.pool.erasure_tombstones.stale(user_id, read_at):
+            await self._abort_erased(inter, view, msg)
+            return False
+
+        if view.clear_session:  # Desvincular: o usuário também sai (P3)
+            clear_lastfm_link(data)
+            await self.bot.update_global_data(user_id, data=data, db_name=DBModel.users)
+            self.bot.pool.lastfm_sessions.pop(user_id, None)
+            return True
+
+        newdata = {
+            "scrobble": view.scrobble_enabled,
+            "sessionkey": view.session_key,
+            "username": view.username or data["lastfm"]["username"],
+        }
+        data["lastfm"].update(newdata)
+        await self.bot.update_global_data(user_id, data=data, db_name=DBModel.users)
+        self.bot.pool.lastfm_sessions[user_id] = newdata
+        return True
+
+    async def _abort_erased(self, inter, view: LastFMView, msg) -> None:
+        """O apagamento dos dados do membro aconteceu enquanto ele vinculava ou desvinculava: nada é gravado."""
+        text = await guild_text(self.bot, inter.guild, "legacy.lastfm.erased_while_linking")
+        if view.interaction:
+            func = view.interaction.response.edit_message
+        elif msg:
+            func = msg.edit
+        else:
+            func = inter.edit_original_message
+        await func(content=text, embeds=[], view=view)
+
     async def save_scrobble(self, query: str, track: LavalinkTrack, users: List[disnake.Member]):
+        tombstones = self.bot.pool.erasure_tombstones
         for u in users:
+            read_at = tombstones.now()
             data = await self.bot.pool.local_database.get_data(
                 u.id, collection="scrobbles", db_name=DBModel.users, default_model=scrobble_model
             )
@@ -516,6 +557,8 @@ class LastFmCog(commands.Cog):
                     "duration": track.duration,
                 }
             )
+            if tombstones.stale(u.id, read_at):  # apagamento depois da leitura (gancho b): descarta sem gravar
+                continue
             await self.bot.pool.local_database.update_data(
                 u.id, data, collection="scrobbles", db_name=DBModel.users, default_model=scrobble_model
             )
@@ -555,13 +598,18 @@ class LastFmCog(commands.Cog):
                 return
 
         users_fminfo = []
+        tombstones = self.bot.pool.erasure_tombstones
+        read_ats: dict[int, float] = {}
 
         for u in users:
+            read_ats[u.id] = read_at = tombstones.now()  # antes de ler (gancho c)
             try:
                 fminfo = self.bot.pool.lastfm_sessions[u.id]
             except KeyError:
                 user_data = await self.bot.get_global_data(u.id, db_name=DBModel.users)
                 fminfo = user_data["lastfm"]
+                if tombstones.stale(u.id, read_at):  # apagamento depois da leitura: não enche o cache nem scrobbla
+                    continue
                 self.bot.pool.lastfm_sessions[u.id] = fminfo
 
             if fminfo["scrobble"] is False or not fminfo["sessionkey"]:
@@ -688,6 +736,9 @@ class LastFmCog(commands.Cog):
             album = track.single_title
 
         for fminfo in users_fminfo:
+            if tombstones.stale(fminfo["user_id"], read_ats[fminfo["user_id"]]):
+                continue  # apagado durante a busca de metadados: nenhum scrobble sai com a chave antiga
+
             try:
                 kwargs = {
                     "artist": artist,

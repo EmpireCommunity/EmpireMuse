@@ -957,6 +957,7 @@
   "legacy.lastfm.link_account": "**Link (or create) an account on {link} to record every song you listen to here on your last.fm profile, get song/artist/album suggestions, have overall statistics of the songs you listened to, and access an amazing community on the platform.**",
   "legacy.lastfm.no_embed_permission": "**You don't have permission to embed links/attachments in the channel <#{channel}>**",
   "legacy.lastfm.not_your_button": "You can't use this button",
+  "legacy.lastfm.erased_while_linking": "Your data was erased while you were linking the account. Start over if you want to link again.",
   "legacy.playlists.attachment_failed": "**I couldn't download the attachment. Try sending the file again.**",
   "legacy.playlists.exported": "**Playlists exported.** You can import this file on another server.",
   "legacy.playlists.import_failed": "**Couldn't import the playlists right now.**",

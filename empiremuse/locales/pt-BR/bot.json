@@ -970,6 +970,7 @@
   "legacy.lastfm.link_account": "**Vincule (ou crie) uma conta no {link} para registrar todas as músicas que você ouvir por aqui no seu perfil do last.fm para obter sugestões de músicas/artistas/álbuns e ter uma estatística geral das músicas que você ouviu alem de ter acesso a uma comunidade incrível da plataforma.**",
   "legacy.lastfm.no_embed_permission": "**Você não possui permissão de inserir links/anexos no canal <#{channel}>**",
   "legacy.lastfm.not_your_button": "Você não pode usar esse botão",
+  "legacy.lastfm.erased_while_linking": "Seus dados foram apagados enquanto você vinculava a conta. Refaça o processo se quiser vincular de novo.",
   "legacy.playlists.attachment_failed": "**Não consegui baixar o anexo. Tente enviar o arquivo de novo.**",
   "legacy.playlists.exported": "**Playlists exportadas.** Você pode importar este arquivo em outro servidor.",
   "legacy.playlists.import_failed": "**Não foi possível importar as playlists agora.**",
