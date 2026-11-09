@@ -1,0 +1,25 @@
+# Poda diária do spring.log do Lavalink (ver deploy/host/lavalink-log-prune.sh e docs/runbook/log-retention.md).
+# Instalar em /etc/systemd/system/ junto do .timer e do script em /usr/local/sbin/ (root, script 0755).
+#
+# Roda como o dono do volume (uid 10001, o mesmo do bot), não como root: assim uma troca de pasta por link no meio da
+# execução só alcança o que esse usuário já pode apagar. O systemd EXIGE que o uid e o gid existam no host (sem entrada
+# no passwd/group a unit falha ao iniciar, status 217/USER): crie-os com empiremuse-lavalink-log-prune.sysusers (passo do
+# runbook) ANTES de habilitar o timer. CONFIRMAR NA JANELA: o uid/gid do dono da pasta
+# (stat -c '%u:%g' <pasta>) e que o serviço consegue chegar nela (a pasta do volume fica sob um diretório do Docker sem
+# acesso para outros; CAP_DAC_READ_SEARCH serve para atravessar, mas também permite LER qualquer arquivo do
+# host, por isso o serviço é restrito por ProtectSystem=strict e o script só faz find na pasta; não permite escrever). Se o uid for outro, ajuste User= e Group=.
+[Unit]
+Description=Poda do spring.log antigo do Lavalink do EmpireMuse
+
+[Service]
+Type=oneshot
+User=10001
+Group=10001
+AmbientCapabilities=CAP_DAC_READ_SEARCH
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+ExecStart=/usr/local/sbin/lavalink-log-prune.sh
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/docker/volumes/empiremuse_empiremuse-data/_data/.logs/lavalink

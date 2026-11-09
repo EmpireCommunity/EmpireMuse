@@ -17,6 +17,18 @@ Qual arquivo usar para cada tipo de implantação. Os guias em [`docs/guides/`](
 | Na Discloud | [`discloud.config`](../discloud.config) (na raiz) | Envie o projeto pelo painel da Discloud | Não (modo `manual`) | [`discloud.md`](../docs/guides/discloud.md) |
 | Com nós Lavalink externos | [`lavalink.ini.example`](lavalink.ini.example) | Renomeie para `lavalink.ini` | — | [`development.md`](../docs/development.md) |
 
+## Retenção de logs (183 dias)
+
+Na instância hospedada (VPS com Docker Manager e Traefik compartilhado), o **`logrotate` é pré-requisito padrão do host** (instalação, o arquivo `host/logrotate-traefik-access` e a verificação estão no runbook). Quem hospeda por conta própria sem essa pilha **não precisa** dele.
+
+Arquivos para aplicar **à mão, numa janela e com o OK do dono**; o passo a passo, o que cada mudança derruba e as condições C1 a C7 estão em [`docs/runbook/log-retention.md`](../docs/runbook/log-retention.md).
+
+| Arquivo | Para quê |
+| :--- | :--- |
+| [`traefik/accesslog-flags.txt`](traefik/accesslog-flags.txt) | Lista de flags e volume para o Traefik compartilhado: registro de acesso em arquivo, só com os campos necessários |
+| [`host/logrotate-traefik-access`](host/logrotate-traefik-access) | `/etc/logrotate.d/` (padrão do host da instância hospedada): rotação diária e `maxage 183` do registro de acesso |
+| [`host/lavalink-log-prune.sh`](host/lavalink-log-prune.sh), `host/empiremuse-lavalink-log-prune.{service,timer,sysusers}` | Poda diária das cópias antigas do `spring.log` do Lavalink |
+
 O `docker-compose.traefik.yml` é só um complemento do `docker-compose.yml`: nunca o suba sozinho.
 
 ## Antes de usar

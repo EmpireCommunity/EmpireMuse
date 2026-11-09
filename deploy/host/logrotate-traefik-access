@@ -1,0 +1,30 @@
+# Retenção do registro de acesso do Traefik (IP, data e hora, método e status): 183 dias.
+# Instalar no host como /etc/logrotate.d/traefik-access (root, modo 0644). Passo a passo: docs/runbook/log-retention.md.
+#
+# - A IDADE manda: "maxage 183" apaga a cópia rotacionada com mais de 183 dias. "rotate 2000" é só teto de segurança;
+#   não troque por "rotate 183", porque contar arquivos apagaria antes do prazo se houver rotações extras.
+# - Sem "notifempty": o logrotate precisa rodar o expurgo por idade mesmo num dia sem linhas novas.
+# - Rotação só diária (o timer do logrotate roda uma vez por dia) e SEM teto de tamanho: nada aqui limita o crescimento
+#   do arquivo no dia. O alerta de disco (C6 do runbook) é PRÉ-REQUISITO de ligar o registro, não um complemento.
+# - O Traefik não gira o arquivo: o sinal USR1 faz ele fechar e reabrir o caminho, e isso é assíncrono. Por isso
+#   "delaycompress": a cópia do dia fica sem compressão até a rotação seguinte, e linhas gravadas logo após o USR1 ainda
+#   caem nela inteiras (comprimir na hora perderia linhas). Sem "copytruncate", que também perde linhas.
+# - Se o USR1 falhar, o postrotate sai com erro: o logrotate.service fica "failed" (é um dos alertas do runbook) e há
+#   uma linha no journal. A cópia rotacionada fica sem compressão e sem ser apagada até a rotação SEGUINTE; se a falha
+#   não for resolvida em 24 h, o Traefik pode seguir escrevendo nela e a próxima rotação a comprime e depois a apaga por
+#   idade, com linhas novas ainda nela (perda de linhas). Por isso o runbook exige resolver o USR1 em até 24 h.
+# - Arquivos novos nascem 0640 root; a pasta /var/log/traefik é 0750 root (IPs de visitantes não são públicos).
+/var/log/traefik/access.log {
+    daily
+    rotate 2000
+    maxage 183
+    dateext
+    compress
+    delaycompress
+    missingok
+    create 0640 root root
+    sharedscripts
+    postrotate
+        /usr/bin/docker kill --signal=USR1 traefik > /dev/null 2>&1 || { logger -p user.err -t traefik-logrotate "FALHA: USR1 ao Traefik não enviado; o access.log novo não está em uso"; exit 1; }
+    endscript
+}

@@ -1,0 +1,11 @@
+# Aciona empiremuse-lavalink-log-prune.service uma vez por dia (Persistent: recupera a execução se o host estava desligado).
+[Unit]
+Description=Poda diária do spring.log antigo do Lavalink do EmpireMuse
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
