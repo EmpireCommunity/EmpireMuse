@@ -78,7 +78,9 @@ class TestRun:
     async def test_a_server_with_ten_stations_keeps_the_old_radio_and_no_marker_is_written(self, world):
         await with_radio(world)
         for number in range(MAX_STATIONS_PER_GUILD):
-            await world.stations.create(GUILD, {"name": f"E{number}", "kind": "genre", "source": {"genre": "rock"}})
+            await world.stations.create(
+                GUILD, {"name": f"E{number}", "kind": "artists", "source": {"artists": ["Queen"]}}
+            )
 
         report = await migrate_r5.run(world.hub)
 

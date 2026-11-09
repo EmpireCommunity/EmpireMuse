@@ -210,6 +210,23 @@ class RadioStore:
             raise RadioConflict
         return checked
 
+    async def replace_station_ref(self, radio_id: str, new_ref: str, expected_rev: int) -> Radio:
+        """Migração dos gêneros: CAS; preserva todos os campos além da ref e de rev."""
+        doc = await self._find(radio_id)
+        current = self._radio(doc)
+        if current is None:
+            raise RadioNotFound
+        if current.rev != expected_rev:
+            raise RadioConflict
+        from empiremuse.utils.radio.stations import StationStore
+
+        if current.kind != KIND_CUSTOM or StationStore.builtin(current.guild_id, new_ref) is None:
+            raise RadioInvalid(RuleError(SOURCE_INVALID, "station"))
+        updated = {**doc, "source": {**doc["source"], "station": new_ref}, "rev": expected_rev + 1}
+        if not await self._save(radio_id, updated, expected_rev):
+            raise RadioConflict
+        return self._radio(updated)
+
     async def set_custom_station(
         self, radio_id: str, station_id: object, *, expected_rev: int, updated_by: str = ""
     ) -> Radio:
@@ -220,12 +237,15 @@ class RadioStore:
             raise RadioNotFound
         if current.rev != expected_rev:
             raise RadioConflict
-        stored = (
-            await self._database.find_doc(station_id, db_name=STATIONS_COLLECTION, collection=GLOBAL_DB)
-            if valid_station_id(station_id)
-            else None
-        )
-        found = from_station_document(stored) if stored else None
+        from empiremuse.utils.radio.stations import StationStore
+
+        found = StationStore.builtin(current.guild_id, station_id)
+        if found is None and valid_station_id(station_id) and not str(station_id).startswith("g:"):
+            stored = await self._database.find_doc(station_id, db_name=STATIONS_COLLECTION, collection=GLOBAL_DB)
+            found = from_station_document(stored) if stored else None
+        if isinstance(station_id, str) and station_id.startswith("g:"):
+            if await self.premium.fresh(current.guild_id) is None:
+                raise NoPremium
         if (
             current.kind != KIND_CUSTOM
             or isinstance(found, RuleError)

@@ -122,7 +122,7 @@
   "panel.radio.station.title": "Estações personalizadas",
   "panel.radio.station.count": "estações",
   "panel.radio.station.of": "de",
-  "panel.radio.station.help": "Uma estação é uma fonte de músicas para a rádio personalizada: um gênero, até 10 artistas ou até 5 playlists do servidor. A rádio toca em ordem aleatória, sem repetir faixa nem artista por perto.",
+  "panel.radio.station.help": "Crie uma estação com até 10 artistas ou até 5 playlists do servidor. Os 33 gêneros prontos estão disponíveis para consulta abaixo e no seletor da rádio.",
   "panel.radio.station.lastfm": "Gêneros e artistas vêm do Last.fm.",
   "panel.radio.station.empty": "Nenhuma estação ainda. Crie a primeira abaixo.",
   "panel.radio.station.create": "Nova estação",
@@ -146,7 +146,7 @@
   "panel.radio.station.in_use_by": "Em uso em: {channels}",
   "panel.radio.station.in_use": "Esta estação está em uso em: {channels}. Troque a estação dessas rádios antes de apagar.",
   "panel.radio.station.error.name_rule": "Use de 1 a 32 caracteres, sem repetir o nome de outra estação deste servidor.",
-  "panel.radio.station.error.kind": "Escolha uma fonte: gênero, artistas ou playlists.",
+  "panel.radio.station.error.kind": "Escolha uma fonte: artistas ou playlists.",
   "panel.radio.station.error.genre": "Escolha um gênero da lista.",
   "panel.radio.station.error.artists": "Informe de 1 a 10 artistas, um por linha, com até 64 caracteres cada.",
   "panel.radio.station.error.playlists": "Marque de 1 a 5 playlists existentes neste servidor.",
@@ -191,5 +191,7 @@
   "panel.radio.genre.mpb": "MPB",
   "panel.radio.genre.gospel": "Gospel",
   "panel.radio.genre.rock_br": "Rock nacional",
-  "panel.radio.genre.phonk_br": "Phonk brasileiro"
+  "panel.radio.genre.phonk_br": "Phonk brasileiro",
+  "panel.radio.genre.ready.international": "Gêneros internacionais",
+  "panel.radio.genre.ready.brazilian": "Gêneros brasileiros"
 }

@@ -27,16 +27,17 @@ from empiremuse.panel.services.base import (
     Formulario,
     first,
 )
-from empiremuse.panel.services.radio import RadioPage
+from empiremuse.panel.services.radio import FORBIDDEN_KEY, STATUS_FORBIDDEN, RadioPage
 from empiremuse.panel.services.service import STATUS_CONFLICT, STATUS_INVALID, STATUS_OK
 from empiremuse.rules.i18n import Translator
+from empiremuse.rules.radio_station import valid_station_id
 from empiremuse.rules.playlists import SCOPE_RADIO
-from empiremuse.utils.radio.store import RadioConflict, RadioInvalid, RadioNotFound
+from empiremuse.utils.radio.store import NoPremium, RadioConflict, RadioInvalid, RadioNotFound
 
 logger = logging.getLogger(__name__)
 
 KIND_GENRE, KIND_ARTISTS, KIND_PLAYLISTS = "genre", "artists", "playlists"
-KINDS = (KIND_GENRE, KIND_ARTISTS, KIND_PLAYLISTS)
+KINDS = (KIND_ARTISTS, KIND_PLAYLISTS)
 FIELDS = ("name", "kind", "genre", "artists", "playlists")
 LIMIT_FIELD = "limit"
 ERROR_KEYS = {"name": "name_rule"}  # chaves ``*.name`` têm o tamanho dos nomes de comando no validador do catálogo
@@ -71,6 +72,7 @@ class StationsView(NamedTuple):
     maximo: int
     form: Formulario  # criar
     lastfm_url: str = LASTFM_URL
+    builtin_groups: tuple = ()
 
 
 class CustomView(NamedTuple):
@@ -160,7 +162,7 @@ class StationsPage:
         message: Optional[str] = None,
         kind: Optional[str] = None,
     ) -> Formulario:
-        current = _values_of(station) if station is not None else {"kind": KIND_GENRE, "playlists": []}
+        current = _values_of(station) if station is not None else {"kind": KIND_ARTISTS, "playlists": []}
         suffix = str(station.id) if station is not None else "nova"
         return Formulario(
             key="radio_station",
@@ -222,7 +224,16 @@ class StationsPage:
                 )
             )
         create = form if form is not None else self.form(action, tr, genres=genres, playlists=playlists)
-        return StationsView(tuple(rows), len(rows), STATIONS_MAX, create)
+        return StationsView(
+            tuple(rows),
+            len(rows),
+            STATIONS_MAX,
+            create,
+            builtin_groups=tuple(
+                (tr(f"panel.radio.genre.ready.{group}"), tuple(tr(f"panel.radio.genre.{g}") for g in ids))
+                for group, ids in genres
+            ),
+        )
 
     @staticmethod
     async def _in_use(ctx: FormContext, station: Any) -> tuple[str, ...]:
@@ -373,6 +384,9 @@ class StationsPage:
         """O seletor da rádio personalizada: as estações do servidor e a atual (``source.station``)."""
         current = str(radio.source.get("station") or "")
         options = tuple((str(s.id), str(s.name)) for s in sorted(stations, key=lambda s: str(s.name).casefold()))
+        from empiremuse.rules.radio_genres import shipped_catalog
+
+        options += tuple(("g:" + g.id, tr(f"panel.radio.genre.{g.id}")) for g in shipped_catalog())
         slug = str(radio.id).replace(":", "-")
         form = Formulario(
             key="radio_estacao",
@@ -395,7 +409,8 @@ class StationsPage:
             return STATUS_INVALID, VERSION_TEXT, KIND_ERROR, radio
         if int(sent) != int(radio.rev):
             return STATUS_CONFLICT, CONFLICT_TEXT, KIND_ERROR, radio
-        wanted = station_id_of((first(args, "estacao") or "").strip())
+        wanted = (first(args, "estacao") or "").strip()
+        wanted = wanted if valid_station_id(wanted) else None
         if wanted is None:
             return STATUS_INVALID, tr("panel.radio.station.pick_invalid"), KIND_ERROR, radio
         if wanted == str(radio.source.get("station") or ""):
@@ -404,6 +419,8 @@ class StationsPage:
             saved = await ctx.pool.radio.store.set_custom_station(
                 radio.id, wanted, expected_rev=int(radio.rev), updated_by=ctx.user_id
             )
+        except NoPremium:
+            return STATUS_FORBIDDEN, tr(FORBIDDEN_KEY), KIND_ERROR, radio
         except RadioConflict, RadioNotFound:
             return STATUS_CONFLICT, CONFLICT_TEXT, KIND_ERROR, radio
         except RadioInvalid:

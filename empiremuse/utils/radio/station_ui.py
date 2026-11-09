@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any, Optional
 import disnake
 
 from empiremuse.rules.i18n import Translator, fit
-from empiremuse.rules.radio_genres import GROUPS
 from empiremuse.rules.radio_station import (
     ARTIST_NAME_MAX,
     KIND_ARTISTS,
@@ -23,7 +22,7 @@ from empiremuse.rules.radio_station import (
     MAX_ARTISTS,
     MAX_PLAYLISTS,
     NAME_MAX,
-    STATION_KINDS,
+    CREATE_KINDS,
     CustomStation,
 )
 from empiremuse.rules.text import external_text
@@ -109,7 +108,7 @@ def summary(tr: Translator, station: CustomStation) -> str:
 
 
 class StationEditor(disnake.ui.View):
-    """Cria ou edita UMA estação: tipo, fonte (gênero em dois níveis, artistas num modal ou playlists num select) e nome. Só salva quando a fonte está completa."""
+    """Cria ou edita UMA estação: tipo, fonte (artistas num modal ou playlists num select) e nome. Só salva quando a fonte está completa."""
 
     def __init__(
         self,
@@ -128,9 +127,7 @@ class StationEditor(disnake.ui.View):
         self.hub, self.tr, self.author_id, self.guild_id = hub, tr, author_id, guild_id
         self.playlists = list(playlists)[:SELECT_MAX]
         self.editing = station
-        self.name, self.kind = name, kind if kind in STATION_KINDS else KIND_GENRE
-        self.group = GROUPS[0]
-        self.genre: Optional[str] = None
+        self.name, self.kind = name, kind if kind in CREATE_KINDS else KIND_ARTISTS
         self.artists: list[str] = []
         self.chosen_playlists: list[str] = []
         if station is not None:
@@ -139,11 +136,7 @@ class StationEditor(disnake.ui.View):
 
     def _load(self, station: CustomStation) -> None:
         self.kind = station.kind
-        if station.kind == KIND_GENRE:
-            self.genre = station.source.get("genre")
-            known = next((g for g in self.hub.stations.genres() if g.id == self.genre), None)
-            self.group = known.group if known else GROUPS[0]
-        elif station.kind == KIND_ARTISTS:
+        if station.kind == KIND_ARTISTS:
             self.artists = list(station.source.get("artists", ()))
         else:
             self.chosen_playlists = [p for p in station.source.get("playlists", ()) if p in self.playlists]
@@ -151,8 +144,6 @@ class StationEditor(disnake.ui.View):
     # ------------------------------------------------------------------ o que falta e o que vai gravar
 
     def _source(self) -> Optional[dict[str, Any]]:
-        if self.kind == KIND_GENRE and self.genre:
-            return {"genre": self.genre}
         if self.kind == KIND_ARTISTS and self.artists:
             return {"artists": self.artists}
         if self.kind == KIND_PLAYLISTS and self.chosen_playlists:
@@ -160,8 +151,6 @@ class StationEditor(disnake.ui.View):
         return None
 
     def _source_text(self) -> str:
-        if self.kind == KIND_GENRE:
-            return self.tr(f"radio.genre.{self.genre}") if self.genre else self.tr("radio.station.ui.pick_genre")
         items = self.artists if self.kind == KIND_ARTISTS else self.chosen_playlists
         if not items:
             return self.tr(
@@ -190,14 +179,12 @@ class StationEditor(disnake.ui.View):
                 disnake.SelectOption(
                     label=fit(self.tr(f"radio.station.kind.{k}"), 100), value=k, default=k == self.kind
                 )
-                for k in STATION_KINDS
+                for k in CREATE_KINDS
             ],
         )
         kind_select.callback = self._on_kind
         self.add_item(kind_select)
-        if self.kind == KIND_GENRE:
-            self._add_genre_selects()
-        elif self.kind == KIND_ARTISTS:
+        if self.kind == KIND_ARTISTS:
             button = disnake.ui.Button(
                 label=fit(self.tr("radio.station.ui.artists_button"), 80), custom_id="radio_station_artists"
             )
@@ -221,31 +208,6 @@ class StationEditor(disnake.ui.View):
         for item in (name_button, save, cancel):
             self.add_item(item)
         return {"content": "\n".join(lines), "view": self}
-
-    def _add_genre_selects(self) -> None:
-        group = disnake.ui.Select(
-            placeholder=fit(self.tr("radio.station.ui.group_placeholder"), 150),
-            options=[
-                disnake.SelectOption(
-                    label=fit(self.tr(f"radio.genre.group.{g}"), 100), value=g, default=g == self.group
-                )
-                for g in GROUPS
-            ],
-        )
-        group.callback = self._on_group
-        self.add_item(group)
-        genres = [g for g in self.hub.stations.genres() if g.group == self.group][:SELECT_MAX]
-        genre = disnake.ui.Select(
-            placeholder=fit(self.tr("radio.station.ui.genre_placeholder"), 150),
-            options=[
-                disnake.SelectOption(
-                    label=fit(self.tr(f"radio.genre.{g.id}"), 100), value=g.id, default=g.id == self.genre
-                )
-                for g in genres
-            ],
-        )
-        genre.callback = self._on_genre
-        self.add_item(genre)
 
     def _add_playlist_select(self, lines: list[str]) -> None:
         if not self.playlists:
@@ -285,21 +247,8 @@ class StationEditor(disnake.ui.View):
 
     async def _on_kind(self, interaction: disnake.MessageInteraction) -> None:
         values = self._values(interaction)
-        if len(values) == 1 and values[0] in STATION_KINDS:
+        if len(values) == 1 and values[0] in CREATE_KINDS:
             self.kind = values[0]
-        await self._redraw(interaction)
-
-    async def _on_group(self, interaction: disnake.MessageInteraction) -> None:
-        values = self._values(interaction)
-        if len(values) == 1 and values[0] in GROUPS:
-            self.group, self.genre = values[0], None
-        await self._redraw(interaction)
-
-    async def _on_genre(self, interaction: disnake.MessageInteraction) -> None:
-        values = self._values(interaction)
-        offered = {g.id for g in self.hub.stations.genres() if g.group == self.group}
-        if len(values) == 1 and values[0] in offered:  # só o que o select de agora ofereceu
-            self.genre = values[0]
         await self._redraw(interaction)
 
     async def _on_playlists(self, interaction: disnake.MessageInteraction) -> None:

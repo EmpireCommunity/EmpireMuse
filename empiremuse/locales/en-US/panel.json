@@ -122,7 +122,7 @@
   "panel.radio.station.title": "Custom stations",
   "panel.radio.station.count": "stations",
   "panel.radio.station.of": "of",
-  "panel.radio.station.help": "A station is a source of music for the custom radio: one genre, up to 10 artists or up to 5 server playlists. The radio plays in random order, without repeating a track or an artist too soon.",
+  "panel.radio.station.help": "Create a station from up to 10 artists or 5 server playlists. The 33 built-in genres are listed below for reference and are available in the radio selector.",
   "panel.radio.station.lastfm": "Genres and artists come from Last.fm.",
   "panel.radio.station.empty": "No station yet. Create the first one below.",
   "panel.radio.station.create": "New station",
@@ -146,7 +146,7 @@
   "panel.radio.station.in_use_by": "In use in: {channels}",
   "panel.radio.station.in_use": "This station is in use in: {channels}. Change those radios' station before deleting it.",
   "panel.radio.station.error.name_rule": "Use 1 to 32 characters, without repeating another station's name in this server.",
-  "panel.radio.station.error.kind": "Pick a source: genre, artists or playlists.",
+  "panel.radio.station.error.kind": "Choose a source: artists or playlists.",
   "panel.radio.station.error.genre": "Pick a genre from the list.",
   "panel.radio.station.error.artists": "Enter 1 to 10 artists, one per line, up to 64 characters each.",
   "panel.radio.station.error.playlists": "Check 1 to 5 playlists that exist in this server.",
@@ -191,5 +191,7 @@
   "panel.radio.genre.mpb": "MPB",
   "panel.radio.genre.gospel": "Gospel",
   "panel.radio.genre.rock_br": "Brazilian rock",
-  "panel.radio.genre.phonk_br": "Brazilian phonk"
+  "panel.radio.genre.phonk_br": "Brazilian phonk",
+  "panel.radio.genre.ready.international": "International genres",
+  "panel.radio.genre.ready.brazilian": "Brazilian genres"
 }

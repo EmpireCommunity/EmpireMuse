@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 
 from empiremuse.rules.errors import RuleError
 from empiremuse.rules.radio import KIND_CUSTOM, Radio
-from empiremuse.rules.radio_genres import GROUPS, Genre, shipped_catalog
+from empiremuse.rules.radio_genres import GROUPS, Genre, find_genre, shipped_catalog
 from empiremuse.rules.radio_station import (
     CustomStation,
     check_station_doc,
@@ -130,7 +130,22 @@ class StationStore:
         found = (self._station(doc, guild_id) for doc in await self._documents(guild_id))
         return sorted((s for s in found if s is not None), key=lambda s: s.name_norm)
 
+    @staticmethod
+    def builtin(guild_id: int, ref: object) -> CustomStation | None:
+        if not isinstance(ref, str) or not ref.startswith("g:") or not valid_station_id(ref):
+            return None
+        genre = find_genre(shipped_catalog(), ref[2:])
+        if genre is None:
+            return None
+        return CustomStation(ref, int(guild_id), genre.id, "genre", {"genre": genre.id})
+
+    @classmethod
+    def list_builtin(cls, guild_id: int = 0) -> list[CustomStation]:
+        return [CustomStation("g:" + g.id, int(guild_id), g.id, "genre", {"genre": g.id}) for g in shipped_catalog()]
+
     async def get(self, guild_id: int, station_id: object) -> CustomStation | None:
+        if isinstance(station_id, str) and station_id.startswith("g:"):
+            return self.builtin(guild_id, station_id)
         if not valid_station_id(station_id):
             return None
         return self._station(await self._find(station_id), guild_id)  # type: ignore[arg-type]
@@ -180,6 +195,8 @@ class StationStore:
         updated_by: str = "",
     ) -> CustomStation:
         """Troca nome, tipo e fonte. ``StationNotFound``, ``StationConflict`` (``rev`` velho) ou ``StationInvalid``."""
+        if station_id.startswith("g:"):
+            raise StationNotFound
         async with self._lock(guild_id):
             current = await self.get(guild_id, station_id)
             if current is None:
@@ -221,6 +238,8 @@ class StationStore:
 
     async def delete(self, guild_id: int, station_id: str, *, expected_rev: int) -> None:
         """Apaga a estação. ``StationInUse`` (com as rádios) enquanto alguma rádio a usa; ``StationNotFound``; ``StationConflict``."""
+        if station_id.startswith("g:"):
+            raise StationNotFound
         async with self._lock(guild_id):
             current = await self.get(guild_id, station_id)
             if current is None:
@@ -238,6 +257,8 @@ class StationStore:
 
     async def set_unknown(self, guild_id: int, station_id: str, unknown: Collection[str]) -> None:
         """Grava os artistas que o Last.fm não conhece (os ⚠️ das duas telas). Só quando muda, e com CAS; perder a corrida é desistir em silêncio."""
+        if station_id.startswith("g:"):
+            return
         wanted = tuple(sorted(unknown))
         for _ in range(CAS_ATTEMPTS):
             current = await self.get(guild_id, station_id)

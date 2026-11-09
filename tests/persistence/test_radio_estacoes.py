@@ -13,7 +13,7 @@ from tests.persistence.test_radio_store import GUILD, FakeDb, make_radio, with_p
 pytestmark = pytest.mark.critical
 
 OTHER_GUILD = GUILD + 1
-ROCK = {"name": "Rock", "kind": "genre", "source": {"genre": "rock"}}
+ROCK = {"name": "Rock", "kind": "artists", "source": {"artists": ["Queen"]}}
 
 
 @pytest.fixture

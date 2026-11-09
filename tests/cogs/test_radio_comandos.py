@@ -437,3 +437,33 @@ class TestPlayerHooks:
             await asyncio.gather(*list(w.hub.manager._tasks))
 
         assert runner.phase is Phase.PLAYING and w.ports.sleeps[0] >= 4.0  # voltou, mas só depois do recuo
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("genres_fail", [False, True])
+async def test_boot_migrates_in_order_and_resumes_even_if_genres_fail(monkeypatch, genres_fail):
+    from empiremuse.utils.radio import migrate_genres, migrate_r5
+
+    w = build()
+    events = []
+    w.hub.manager.ports_factory = None
+    w.hub.manager.start_ticker = MagicMock()
+    w.hub.health.refresh = AsyncMock()
+    w.hub.health_checker.start = MagicMock()
+
+    async def r5(hub):
+        events.append("r5")
+
+    async def genres(hub):
+        events.append("genres")
+        if genres_fail:
+            raise RuntimeError("banco indisponível")
+
+    monkeypatch.setattr(migrate_r5, "run", r5)
+    monkeypatch.setattr(migrate_genres, "run", genres)
+    w.hub.manager.resume_all_with_retry = AsyncMock(side_effect=lambda: events.append("resume"))
+    await w.cog.radio_boot()
+    await w.cog.radio_boot()
+    await settle(w)
+    assert events == ["r5", "genres", "resume"]
+    w.hub.manager.resume_all_with_retry.assert_awaited_once()

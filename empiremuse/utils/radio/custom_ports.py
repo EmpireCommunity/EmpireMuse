@@ -372,13 +372,21 @@ class CustomRadioPorts(DiscordRadioPorts):
     # ------------------------------------------------------------------ painel
 
     async def _panel_name(self, current: Radio) -> object:
-        return self.station.name if self.station is not None else "—"
+        from empiremuse.utils.radio.custom_panel import station_label
+
+        if self.station is None:
+            return "—"
+        tr = await self.pool.i18n.for_guild(self._guild())
+        return station_label(self.station, tr, markdown=False)
 
     async def _custom_view(self) -> CustomView:
+        from empiremuse.utils.radio.custom_panel import station_label
+
         station = self.station
+        tr = await self.pool.i18n.for_guild(self._guild()) if station else None
         stations = await self.pool.radio.stations.list_for_guild(self.radio.guild_id) if station else []
         return CustomView(
-            station=station.name if station else "—",
+            station=station_label(station, tr, markdown=False) if station else "—",
             artist=self.current.artist if self.current and not self.no_tracks else "",
             title=self.current.title if self.current and not self.no_tracks else "",
             no_tracks=self.no_tracks,

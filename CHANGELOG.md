@@ -19,6 +19,8 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - O refreshToken do YouTube só é aplicado ao nó LOCAL da própria máquina; o token do RPC é gerado com fonte criptográfica. Conexões REST e WebSocket com nós IPv6 usam o endereço correto.
 
 ### Alterado
+- Estações de gênero criadas no servidor foram substituídas pelos 33 gêneros prontos; as existentes são apagadas na subida, sem backup, e a rádio 24 h e as favoritas passam ao gênero pronto de mesmo id. Conflitos preservam a estação para repetir na próxima subida. Anterior/Próxima continua nas estações do servidor.
+- Formulários de estações no chat e painel aceitam artistas ou playlists; o catálogo de gêneros no painel é só consulta. O esquema do slash muda e AUTO_SYNC_COMMANDS ressincroniza as opções.
 - Links de convite do Discord passam a usar https://empirecommunity.org/discord.
 - O reset de rádio apaga sempre a configuração, inclusive com tela de revisão antiga, sem guardar cópia; primeiro apaga o documento e depois para o runner, que também é parado se a exclusão falhar; nesse caso, a configuração pode permanecer no banco.
 - Removidas a migração de subida `radios_release` e a gravação em `migration_backup`. Quem atualiza de uma versão anterior à release de Rádios e Jukebox perde o canal de pedidos e o painel antigos da Jukebox: configure de novo. Não há cópia automática; o reset de rádio também deixa de guardar cópia em `config_backup`.

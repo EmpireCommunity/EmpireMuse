@@ -13,9 +13,8 @@ from disnake.ext import commands
 
 from empiremuse.rules.playlists import SCOPE_RADIO
 from empiremuse.rules.radio_station import (
-    KIND_GENRE,
     MAX_STATIONS_PER_GUILD,
-    STATION_KINDS,
+    CREATE_KINDS,
     CustomStation,
     normalize_name,
 )
@@ -84,6 +83,8 @@ async def find(cog: Radio, inter: Any, tr: Any, name: str) -> CustomStation:
 
 async def create(cog: Radio, inter: disnake.ApplicationCommandInteraction, name: str, kind: Optional[str]) -> None:
     tr = await gate(cog, inter)
+    if kind is not None and kind not in CREATE_KINDS:
+        raise GenericError(tr("radio.station.err.station_kind_invalid"))
     try:
         playlists = await playlist_names(inter)
     except RadioUnavailable:
@@ -96,7 +97,7 @@ async def create(cog: Radio, inter: disnake.ApplicationCommandInteraction, name:
         playlists=playlists,
         station=None,
         name=" ".join((name or "").split()),
-        kind=kind if kind in STATION_KINDS else KIND_GENRE,
+        kind=kind if kind in CREATE_KINDS else "artists",
         can_manage=can_manage,
     )
     await inter.edit_original_message(**editor.render())

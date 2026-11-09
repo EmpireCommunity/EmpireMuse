@@ -46,7 +46,7 @@ DEFAULT_SKIN = SKINS[0]
 _SNOWFLAKE = re.compile(r"[0-9]{1,20}")
 _FILTER_ID = re.compile(r"[A-Za-z0-9_:.\-]{1,48}")
 _RADIO_ID = re.compile(r"([0-9]{1,20}):([0-9]{1,20})")
-_CUSTOM_STATION_ID = re.compile(r"[0-9a-f]{24}")
+_CUSTOM_STATION_ID = re.compile(r"(?:[0-9a-f]{24}|g:[a-z][a-z0-9_]{1,23})")
 _STATION_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 
