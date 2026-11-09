@@ -291,7 +291,7 @@ class FavoritesLocalTest(FavoritesBase):
         assert forms[0].value("node") == SP and forms[0].has("_xsrf")
 
     def test_without_premium_the_leaf_never_reaches_the_directory_but_the_saved_list_stays(self):
-        """Sem premium o balde global do diretório não é gasto; a lista salva e o Remover seguem valendo."""
+        """Sem premium o balde global do diretório não é gasto; a lista salva, o Adicionar e o Remover seguem valendo."""
         del self.radio.premium.docs[ALFA]
         self.add_direct(3)
         self.radio.directory.region_hits = [station(2)]
@@ -304,7 +304,9 @@ class FavoritesLocalTest(FavoritesBase):
         assert [f.value("estacao") for f in acao_forms(self.page(browser), "remover")] == [
             uuid(3)
         ]  # a lista salva continua
-        assert self.act(browser, "remover", 3).code == 200 and self.saved() == []  # e remover não pede premium
+        assert self.act(browser, "adicionar", 2).code == 200  # o contrato §6 pede só Gerenciar Servidor para adicionar
+        assert self.saved() == [uuid(3), uuid(2)]
+        assert self.act(browser, "remover", 3).code == 200 and self.saved() == [uuid(2)]  # e remover não pede premium
 
     def test_navigating_the_levels_never_calls_the_directory(self):
         response = self.local(self.logged_in(), "c:BR")
