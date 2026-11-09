@@ -32,5 +32,10 @@
   {% include "bloco_conta_lastfm.html" %}
   {% set estado = rpc %}
   {% include "bloco_conta_rpc.html" %}
+  <section id="conta-apagar" class="bloco-config bloco-largo bloco-perigo" aria-labelledby="titulo-conta-apagar">
+    <h2 class="subtitulo" id="titulo-conta-apagar">Apagar meus dados</h2>
+    <p>Apaga tudo o que o bot guarda sobre você. Você vê o que sai e o que fica antes de confirmar. Isso não pode ser desfeito.</p>
+    <p><a role="button" class="secondary outline botao-perigo" href="/painel/conta/apagar">Apagar meus dados…</a></p>
+  </section>
 </section>
 {% end %}

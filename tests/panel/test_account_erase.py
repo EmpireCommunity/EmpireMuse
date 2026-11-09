@@ -115,6 +115,23 @@ class EraseGateTest(EraseBase):
         assert 'name="confirmacao"' in body and 'name="_xsrf"' in body and "APAGAR" in body
         assert self.stored(UID)
 
+    def test_get_lists_what_goes_and_what_stays_with_an_empty_field_and_no_counts(self):
+        body = self.logged_in().get(URL).body.decode()
+        assert (
+            "O que será apagado" in body
+            and "O que fica" in body
+            and "4 semanas" in body
+            and "Não dá para desfazer" in body
+        )
+        assert 'value=""' in body and "banimento" not in body
+        assert "entrar de novo" not in body, "login recente: sem o aviso"
+
+    def test_get_warns_when_the_login_is_too_old_and_the_account_page_links_to_the_screen(self):
+        browser = self.logged_in()
+        self.clock.advance(ERASE_MAX_SESSION_AGE_S + 1)
+        assert "entrar de novo com o Discord" in browser.get(URL).body.decode()
+        assert f'href="{URL}"' in browser.get("/painel/conta").body.decode()
+
     def test_anonymous_is_sent_to_login_and_nothing_is_erased(self):
         browser = self.browser()
         assert browser.get(URL).code == 302
