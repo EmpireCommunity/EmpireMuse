@@ -61,7 +61,7 @@ class SessionStore:
         self._sessions: OrderedDict[str, Session] = OrderedDict()
         self._next_sweep = clock() + SWEEP_INTERVAL_SECONDS
 
-    def create(self, user: PanelUser, guilds: tuple[ManagedGuild, ...], consented: bool = False) -> str:
+    def create(self, user: PanelUser, guilds: tuple[ManagedGuild, ...], *, consented: bool = False) -> str:
         now = self._clock()
         self._sweep(now)
         own = [sid for sid, s in self._sessions.items() if s.user.id == user.id]

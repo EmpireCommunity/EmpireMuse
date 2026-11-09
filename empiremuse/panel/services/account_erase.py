@@ -44,7 +44,7 @@ def msg_rate_limited(retry_after_s: float) -> str:
 class EraseResult(StrEnum):
     DONE = "done"  # OK: nada sobrou
     PARTIAL = "partial"  # parte apagada; o texto não promete que repetir resolve
-    LOGIN_REQUIRED = "login_required"  # sessão antiga: o handler redireciona ao login, nada foi apagado
+    LOGIN_REQUIRED = "login_required"  # sem consentimento recente (login silencioso ou antigo): o handler responde 303 ao GET, nada foi apagado
     BAD_CONFIRMATION = "bad_confirmation"
     RATE_LIMITED = "rate_limited"
     BUSY = "busy"

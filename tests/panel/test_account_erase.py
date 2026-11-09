@@ -177,9 +177,15 @@ class EraseGateTest(EraseBase):
             assert self.stored(UID) and self.stored_queue(UID) and self.session_alive(browser)
 
     def test_silent_login_after_an_old_consent_does_not_bring_the_form_back(self):
-        self.logged_in()  # consentimento de agora a pouco
-        self.clock.advance(ERASE_MAX_SESSION_AGE_S + 1)
-        browser = self.silent_login()
+        browser = self.logged_in()  # consentimento de agora a pouco
+        assert FORM_APAGAR.search(browser.get(URL).body.decode()) is not None
+        assert self.login(browser).code == 302  # o MESMO navegador entra de novo, em silêncio e sem next
+        assert FORM_APAGAR.search(browser.get(URL).body.decode()) is None
+        response = self.post_erase(browser)
+        assert response.code == 303 and response.headers["Location"] == URL
+        assert self.stored(UID) and self.stored_queue(UID)
+        self.clock.advance(ERASE_MAX_SESSION_AGE_S + 1)  # e também depois de o consentimento antigo vencer
+        assert self.login(browser).code == 302
         assert FORM_APAGAR.search(browser.get(URL).body.decode()) is None
         assert self.post_erase(browser).code == 303 and self.stored(UID)
 
