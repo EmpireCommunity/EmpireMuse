@@ -30,6 +30,7 @@ from empiremuse.rules.user_ban import (
     UNBAN_ACTION,
     ban_target_error,
 )
+from empiremuse.utils.erasure_views import _guarded
 from empiremuse.utils.user_ban import FAILED_PANEL, FAILED_RPC, AlreadyBanned, UserBansUnavailable, user_bans_of
 
 if TYPE_CHECKING:
@@ -143,8 +144,13 @@ class UserBanConfirmView(disnake.ui.View):
 
     async def confirmed(self, interaction: disnake.MessageInteraction) -> None:
         self.stop()  # uma confirmação só: o segundo clique não repete
+        # Reconhece antes de gravar (3 s) e entrega o desfecho pela edição protegida, como o apagamento: PARTIAL e falha chegam ao dono.
+        await _guarded(
+            "aviso de andamento",
+            interaction.response.edit_message(content=self.tr("erasure.ban.owner.working"), embed=None, view=None),
+        )
         text = await self._apply()
-        await interaction.response.edit_message(content=text, embed=None, view=None)
+        await _guarded("resposta final", interaction.edit_original_message(content=text))
 
     async def _apply(self) -> str:
         bans = user_bans_of(self.bot)
@@ -215,13 +221,12 @@ class UserBanModal(disnake.ui.Modal):
             str(values.get(ID_FIELD, "")).strip(),
             str(values.get(REASON_FIELD, "")),
         )
-        await interaction.response.send_message(
-            content=prepared.content,
-            embed=prepared.embed,
-            view=prepared.view,
-            ephemeral=True,
-            allowed_mentions=disnake.AllowedMentions.none(),
-        )
+        # ``send_message`` não aceita ``None`` onde espera ``MISSING`` (``embed=None`` viraria ``embeds=[None]``): só os campos preenchidos.
+        kwargs: dict[str, Any] = {"ephemeral": True, "allowed_mentions": disnake.AllowedMentions.none()}
+        for name, value in (("content", prepared.content), ("embed", prepared.embed), ("view", prepared.view)):
+            if value is not None:
+                kwargs[name] = value
+        await interaction.response.send_message(**kwargs)
 
 
 class UserBanPanelView(disnake.ui.View):
