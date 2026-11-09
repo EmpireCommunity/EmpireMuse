@@ -10,7 +10,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 ### Breaking
 - Os tokens agora vêm um por variável: `TOKEN` (principal), `TOKEN_RESERVE_<NOME>` e `TOKEN_RADIO_<NOME>`. `TOKEN_BOT_*`, `TOKEN_1..n`, vários tokens em `TOKEN` e o `guild_bots.json` não são mais lidos. Migre o `.env` e o compose antes de atualizar; `TOKEN` ausente, inválido ou com mais de um token impede a subida. O `/update` não migra o compose.
 - Bots só-rádio passam a ser definidos pelo prefixo `TOKEN_RADIO_`; o comando de dono `radio bot` e a leitura de `bot_roles` foram removidos. Na escolha da rádio 24 h, os só-rádio aparecem antes das reservas.
-- O comando temporário `fixfavs` foi removido e `exportsource` recusa arquivos de `local_database`.
+- O comando temporário `fixfavs` foi removido.
 
 ### Segurança
 - Removido o comando administrativo `exportsource`: o código público já está disponível no GitHub, sem necessidade de exportar arquivos da instalação pelo bot.
@@ -18,6 +18,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - O refreshToken do YouTube só é aplicado ao nó LOCAL da própria máquina; o token do RPC é gerado com fonte criptográfica. Conexões REST e WebSocket com nós IPv6 usam o endereço correto.
 
 ### Alterado
+- Links de convite do Discord passam a usar https://empirecommunity.org/discord.
 - Imagem Docker: o JRE passa do Temurin 25.0.4.1 para o 25.0.5+8, com tag explícita (`25.0.5_8-jre-resolute`, a mesma distro Ubuntu 26.04) fixada por digest multi-arquitetura (amd64 e arm64) publicado há mais de 7 dias.
 - Imagem Docker: o Temurin 25.0.5 já não confia nas raízes emSign C1, ECC C3 e ECC G3, então o `keytool -delete` (que falharia com alias inexistente) virou uma verificação que falha fechada: o build quebra se a listagem do `cacerts` não funcionar, se a "emSign Root CA - G1" não aparecer ou se alguma das três raízes voltar (conferidas pela impressão digital SHA-256, não pelo alias).
 - CI: novo passo prova que `requirements-lock.txt` instala, com hashes obrigatórios, em linux x86_64 e aarch64 (Python 3.14), as plataformas da imagem de release. Um lock sem as distribuições de alguma delas passa a falhar no CI, não no build do release.

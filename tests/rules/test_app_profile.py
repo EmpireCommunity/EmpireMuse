@@ -20,7 +20,7 @@ from empiremuse.rules.app_profile import (
 pytestmark = pytest.mark.critical
 
 PANEL = "https://muse.empirecommunity.org/painel"
-SUPPORT = "https://discord.gg/KgtyNg9U6H"
+SUPPORT = "https://empirecommunity.org/discord"
 
 
 def render(template=DEFAULT_DESCRIPTION, **values):

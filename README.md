@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://discord.gg/KgtyNg9U6H"><img src="https://img.shields.io/badge/Discord-EmpireHUB-8B5CF6?logo=discord&logoColor=white" alt="Discord EmpireHUB"></a>
+  <a href="https://empirecommunity.org/discord"><img src="https://img.shields.io/badge/Discord-EmpireHUB-8B5CF6?logo=discord&logoColor=white" alt="Discord EmpireHUB"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/Licen%C3%A7a-GPL--2.0-blue.svg" alt="Licença GPL-2.0"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white" alt="Python 3.14"></a>
   <a href="https://github.com/EmpireCommunity/EmpireMuse/actions/workflows/ci.yml"><img src="https://github.com/EmpireCommunity/EmpireMuse/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -22,7 +22,7 @@
 ## Links
 
 - 🤖 [Convidar o EmpireMuse 1](https://discord.com/oauth2/authorize?client_id=1149485958480285756&permissions=2533601240804560&scope=bot) para o seu servidor
-- 💬 [Servidor do Discord](https://discord.gg/KgtyNg9U6H)
+- 💬 [Servidor do Discord](https://empirecommunity.org/discord)
 - 🌐 [Página do projeto](https://muse.empirecommunity.org) (status; painel web em `/painel`)
 
 O repositório é público e mantido pela equipe para a comunidade EmpireHub, sem compromisso de suporte à hospedagem própria por terceiros.
@@ -31,11 +31,11 @@ O repositório é público e mantido pela equipe para a comunidade EmpireHub, se
 
 ## Sobre o Projeto
 
-O **EmpireMuse** é o bot de música oficial da comunidade [EmpireHUB](https://discord.gg/KgtyNg9U6H). Desenvolvido em **Python 3.14** com o framework [disnake](https://github.com/DisnakeDev/disnake), o bot conta com processamento de áudio externo de alta fidelidade baseado no ecossistema [Lavalink v4](https://github.com/lavalink-devs/Lavalink) e NodeLink, arquitetura multi-instância em pool e interface visual rica para usuários e administradores no Discord.
+O **EmpireMuse** é o bot de música oficial da comunidade [EmpireHUB](https://empirecommunity.org/discord). Desenvolvido em **Python 3.14** com o framework [disnake](https://github.com/DisnakeDev/disnake), o bot conta com processamento de áudio externo de alta fidelidade baseado no ecossistema [Lavalink v4](https://github.com/lavalink-devs/Lavalink) e NodeLink, arquitetura multi-instância em pool e interface visual rica para usuários e administradores no Discord.
 
 > O **EmpireMuse** é uma obra derivada e evolução contínua do [MuseHeart-MusicBot](https://github.com/zRitsu/MuseHeart-MusicBot), criado por **zRitsu** e distribuído sob a licença **GPL-2.0** (consulte [LICENSE](LICENSE) e [CREDITS.md](CREDITS.md)).
 
-Participe do nosso servidor oficial [Discord EmpireHUB](https://discord.gg/KgtyNg9U6H) para interagir com a comunidade, tirar dúvidas e acompanhar as atualizações do bot.
+Participe do nosso servidor oficial [Discord EmpireHUB](https://empirecommunity.org/discord) para interagir com a comunidade, tirar dúvidas e acompanhar as atualizações do bot.
 
 ---
 
@@ -128,7 +128,7 @@ Para configurar um ambiente local, executar testes e contribuir com o desenvolvi
 
 Em caso de falha inesperada durante a execução de comandos (slash ou prefixo) ou na navegação pelo painel web (erro 500), o EmpireMuse exibe ao usuário uma mensagem amigável acompanhada de um código de erro curto no formato `ERR-XXXXXX` (gerado aleatoriamente e sem expor detalhes internos):
 
-- **Para o usuário**: Ao solicitar suporte ou abrir um chamado no servidor [Discord EmpireHUB](https://discord.gg/KgtyNg9U6H) ou no repositório, basta informar o código `ERR-XXXXXX` exibido na mensagem ou página de erro.
+- **Para o usuário**: Ao solicitar suporte ou abrir um chamado no servidor [Discord EmpireHUB](https://empirecommunity.org/discord) ou no repositório, basta informar o código `ERR-XXXXXX` exibido na mensagem ou página de erro.
 - **Para o administrador / dono da instância**: Para investigar a causa raiz:
   - **Arquivo de log local**: fora do Docker o arquivo `RUNTIME_DIR/.logs/disnake.log` vem ligado (`LOG_FILE=auto`; no Docker, use `LOG_FILE=on` e um volume). Ele é rotativo (5 MB × 3), não é recriado a cada inicialização e, por padrão, não grava nomes de usuários nem texto de mensagens (só IDs; `LOG_DEBUG_GUILDS` e `DEBUG` liberam texto livre redigido); os segredos conhecidos são mascarados por um redator, mas ele tem limites, descritos em [`docs/guides/logs.md`](docs/guides/logs.md) (ex.: `grep ERR-XXXXXX .logs/disnake.log`). Níveis, `LOG_DEBUG_GUILDS`, resumo periódico e `COMMAND_LOG` estão no [guia de logs](docs/guides/logs.md).
   - **Canal de webhook (recomendado para histórico)**: Para guardar o histórico persistente de erros entre reinicializações, recomenda-se configurar `AUTO_ERROR_REPORT_WEBHOOK` (envio automático de notificações com o código `ERR-XXXXXX`, traceback completo e dados de contexto) ou `ERROR_REPORT_WEBHOOK` (habilita o botão manual "Reporte esse erro" para envio pelo usuário).

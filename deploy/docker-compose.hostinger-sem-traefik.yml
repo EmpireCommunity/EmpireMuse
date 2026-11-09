@@ -79,7 +79,7 @@ services:
       KILL_ON_429: "true"
       ENABLE_COMMANDS_COOLDOWN: "true"
       COMMAND_LOG: "false"
-      SUPPORT_SERVER: "https://discord.gg/KgtyNg9U6H"
+      SUPPORT_SERVER: "https://empirecommunity.org/discord"
       APP_DESCRIPTION: "🎵 Bot de música da comunidade EmpireHub: YouTube, Spotify e Deezer.\n▶️ Comece com /play ou {prefix}play <nome ou link>. Ajuda: {prefix}help\n🤖 Somos {bots} bots: se eu estiver ocupado, uma reserva entra na sua call.\n⚙️ Painel: {panel_url}\n💬 Suporte: {support_url}"
       APP_DESCRIPTION_RESERVE: "🎵 Reserva do {main}: entro na call quando o {main} está ocupado.\n▶️ Comandos de barra ficam no {main}; aqui use {prefix}play. Ajuda: {prefix}help\n⚙️ Painel: {panel_url}\n💬 Suporte: {support_url}"
       APP_TAGS: "música,music,player,spotify,youtube"
