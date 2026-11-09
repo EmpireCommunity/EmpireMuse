@@ -276,7 +276,7 @@ class LocOption(NamedTuple):
     id: str
     label: str
     description: str
-    count: int
+    count: int  # type: ignore[assignment]  # campo do protocolo; sombreia tuple.count
 
 
 class FakeTree:

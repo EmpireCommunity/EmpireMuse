@@ -1,11 +1,13 @@
 """O CRUD de estações no Discord (``station_ui.py``): a autorização de cada clique (autor, ``manage_guild`` e premium AGORA) e o fluxo criar por gênero até gravar."""
 
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
 
 from empiremuse.i18n import get_i18n
+from empiremuse.rules.radio_station import CustomStation
 from empiremuse.utils.radio import RadioHub
 from empiremuse.utils.radio.station_ui import ConfirmDelete, StationEditor
 from tests.persistence.test_radio_store import FakeDb
@@ -60,7 +62,9 @@ class TestEveryClickIsAuthorizedNow:
         "make",
         [
             lambda hub: editor(hub),
-            lambda hub: ConfirmDelete(hub, tr(), author_id=AUTHOR, station=SimpleNamespace(), can_manage=allow),
+            lambda hub: ConfirmDelete(
+                hub, tr(), author_id=AUTHOR, station=cast(CustomStation, SimpleNamespace()), can_manage=allow
+            ),
         ],
     )
     async def test_another_author_is_refused_ephemerally_and_nothing_is_saved(self, make):
@@ -79,7 +83,9 @@ class TestEveryClickIsAuthorizedNow:
         "make",
         [
             lambda hub: editor(hub),
-            lambda hub: ConfirmDelete(hub, tr(), author_id=AUTHOR, station=SimpleNamespace(), can_manage=allow),
+            lambda hub: ConfirmDelete(
+                hub, tr(), author_id=AUTHOR, station=cast(CustomStation, SimpleNamespace()), can_manage=allow
+            ),
         ],
     )
     async def test_the_right_author_who_lost_manage_guild_is_refused(self, make):
@@ -95,7 +101,9 @@ class TestEveryClickIsAuthorizedNow:
         "make",
         [
             lambda hub: editor(hub),
-            lambda hub: ConfirmDelete(hub, tr(), author_id=AUTHOR, station=SimpleNamespace(), can_manage=allow),
+            lambda hub: ConfirmDelete(
+                hub, tr(), author_id=AUTHOR, station=cast(CustomStation, SimpleNamespace()), can_manage=allow
+            ),
         ],
     )
     async def test_premium_revoked_while_the_screen_was_open_is_refused(self, make):
