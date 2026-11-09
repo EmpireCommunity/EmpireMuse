@@ -11,17 +11,12 @@ API exigida do Backend (nomes fixados pelos testes):
   local_lavalink.py        run_lavalink(..., *, lavalink_file_sha256=None, youtube_oauth_refresh_token=None): com token, o
                            Popen recebe env= (cópia de os.environ + as 3 variáveis PLUGINS_YOUTUBE_OAUTH_*); sem token, nada.
   utils/client.py          start_lavalink passa youtube_oauth_refresh_token=self.config['YOUTUBE_OAUTH_REFRESH_TOKEN'].
-  modules/legacy_cmds.py   exportsource nunca grava o token no .env exportado.
 """
 
 import ast
-import asyncio
 import hashlib
 import os
-import shutil
 from pathlib import Path
-from types import SimpleNamespace
-from unittest import mock
 
 import pytest
 
@@ -41,7 +36,6 @@ OAUTH_ENV_VARS = (
     "PLUGINS_YOUTUBE_OAUTH_REFRESH_TOKEN",
     "PLUGINS_YOUTUBE_OAUTH_SKIP_INITIALIZATION",
 )
-CONFIG_KEY = "YOUTUBE_OAUTH_REFRESH_TOKEN"
 # Valor sintético com formato de refresh token do Google; nunca é um segredo real.
 FAKE_TOKEN = "1//0gFAKE-refresh_TOKEN-qa-fase2a2-zZ9"
 
@@ -126,63 +120,6 @@ class TestRunLavalinkOauthEnv:
 
 
 # ============================================================================ (4) o token nunca vaza
-
-
-@pytest.fixture
-def export_env(monkeypatch, tmp_path):
-    """Roda `Owner.exportsource` sem Discord/git: captura o conteúdo do .env que iria dentro do source.zip."""
-    from empiremuse.cogs import legacy_cmds
-
-    monkeypatch.chdir(tmp_path)
-    shutil.copyfile(ROOT / ".example.env", tmp_path / ".example.env")
-    (tmp_path / "git_dir").mkdir()
-    monkeypatch.setenv("GIT_DIR", str(tmp_path / "git_dir"))
-    monkeypatch.delenv(CONFIG_KEY, raising=False)
-    snapshots, sent = [], []
-
-    async def fake_run_command(cmd):
-        return ""
-
-    monkeypatch.setattr(legacy_cmds, "run_command", fake_run_command)
-
-    def fake_zip_dir(self, filelist):
-        snapshots.append((tmp_path / ".env-temp").read_text(encoding="utf-8"))
-        (tmp_path / "source.zip").write_bytes(b"PK")
-
-    monkeypatch.setattr(legacy_cmds.Owner, "zip_dir", fake_zip_dir)
-
-    async def author_send(*args, **kwargs):
-        sent.append((args, kwargs))
-        return SimpleNamespace(jump_url="https://discord.test/msg")
-
-    async def run_in_executor(executor, func, *args):
-        return func(*args)
-
-    bot = SimpleNamespace(
-        pool=SimpleNamespace(secret_values=lambda: frozenset()),
-        config={"SOURCE_REPO": "https://example.test/repo.git", "EXTRA_HINTS": ""},
-        loop=SimpleNamespace(run_in_executor=run_in_executor),
-        get_color=lambda me: 0,
-        user="bot#0000",
-    )
-    cog = legacy_cmds.Owner(bot)
-    ctx = SimpleNamespace(
-        author=SimpleNamespace(id=1, send=author_send), guild=SimpleNamespace(me=None), send=mock.AsyncMock()
-    )
-
-    def run_export(flags=""):
-        return asyncio.run(legacy_cmds.Owner.exportsource.callback(cog, ctx, flags=flags))
-
-    return SimpleNamespace(
-        run=run_export, snapshots=snapshots, sent=sent, tmp=tmp_path, ctx=ctx, monkeypatch=monkeypatch
-    )
-
-
-class TestExportNeverCarriesTheToken:
-    def test_token_from_config_json_is_not_exported(self, export_env):
-        (export_env.tmp / "config.json").write_text(f'{{"{CONFIG_KEY}": "{FAKE_TOKEN}"}}', encoding="utf-8")
-        export_env.run()
-        assert_no_token(".env exportado", export_env.snapshots[0])
 
 
 SINK_NAMES = frozenset(

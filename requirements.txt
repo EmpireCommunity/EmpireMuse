@@ -2,7 +2,6 @@ disnake==2.12.2
 python-dotenv
 user_agent
 requests>=2.31.0
-humanize
 pymongo>=4.13
 tinymongo[serialization]
 dnspython>=2.6.1
