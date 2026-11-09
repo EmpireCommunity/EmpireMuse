@@ -19,6 +19,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - O refreshToken do YouTube só é aplicado ao nó LOCAL da própria máquina; o token do RPC é gerado com fonte criptográfica. Conexões REST e WebSocket com nós IPv6 usam o endereço correto.
 
 ### Alterado
+- Infraestrutura (retenção de logs de 183 dias, E4c): novos `deploy/traefik/accesslog-flags.txt` (registro de acesso do Traefik em arquivo, só com `StartUTC`, `ClientHost`, `RequestHost`, `RequestMethod`, `DownstreamStatus`, `RouterName` e o cabeçalho `Cf-Connecting-Ip`), `deploy/host/` (`logrotate` com `maxage 183` e poda diária do `spring.log` do Lavalink) e a nota de janela `docs/runbook/log-retention.md`. Os compose da Hostinger trazem `LOG_FILE=on` e `LOG_RETENTION_DAYS=183`, que só valem com a poda do bot (E4a). Nada é aplicado pelo `/update`: cada passo roda em janela, com o OK do dono.
 - Estações de gênero criadas no servidor foram substituídas pelos 33 gêneros prontos; as existentes são apagadas na subida, sem backup, e a rádio 24 h e as favoritas passam ao gênero pronto de mesmo id. Conflitos preservam a estação para repetir na próxima subida. Anterior/Próxima continua nas estações do servidor.
 - Formulários de estações no chat e painel aceitam artistas ou playlists; o catálogo de gêneros no painel é só consulta. O esquema do slash muda e AUTO_SYNC_COMMANDS ressincroniza as opções.
 - Links de convite do Discord passam a usar https://empirecommunity.org/discord.
