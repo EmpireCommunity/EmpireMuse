@@ -20,6 +20,7 @@ from empiremuse.rules.radio import KIND_LIVE, PANEL_RECREATE_S, Radio
 from empiremuse.utils.radio.chat import ChatPorts, ChatSweeper
 from empiremuse.utils.radio.custom import CustomRadioRunner
 from empiremuse.utils.radio.live import LiveRadioRunner
+from empiremuse.utils.radio.premium import RadioUnavailable
 from empiremuse.utils.radio.runner import Phase, ProcessLimits, RadioPorts, RadioRunner
 from empiremuse.utils.radio.service import RadioService
 
@@ -198,8 +199,14 @@ class RadioManager:
             return
         try:
             radio = await self.hub.store.ensure_clock(radio)
-        except Exception as error:  # noqa: BLE001 - sem gravar a época a rádio ainda toca, só não sobrevive ao reinício
+        except Exception as error:  # noqa: BLE001 - segue só se a leitura seguinte confirmar o documento
             logger.warning("Relógio virtual da rádio não gravado (%s)", type(error).__name__)
+        # Leitura indisponível propaga. Após o último await, reconfere também ativações concorrentes.
+        # Nenhum await separa essas checagens do registro do runner no processo único.
+        if await self.hub.store.get(radio.id) is None:
+            return  # apagada durante a ativação: nunca criar runner órfão
+        if self.is_running(radio.id):
+            return
         runner = self._runner_for(radio)
         if runner is None:
             return
@@ -342,10 +349,15 @@ class RadioManager:
         """Reconcilia o banco e põe na fila global as rádios ligadas. Devolve quantas foram enfileiradas."""
         report = await self.hub.store.reconcile()
         await self.hub.control.load()
-        await self.hub.roles.load()
         radios = await self.hub.store.list_enabled()
+        unavailable = None
         for radio in radios:
-            await self.activate(radio, queued=True)
+            try:
+                await self.activate(radio, queued=True)
+            except RadioUnavailable as error:
+                unavailable = error  # tenta as demais antes de devolver a falha ao retry do lote
+        if unavailable is not None:
+            raise unavailable
         logger.info(
             "radio.toggle: %d ligadas na subida (%d sem premium e %d acima do teto desligadas, %d contadores corrigidos)",
             len(radios),

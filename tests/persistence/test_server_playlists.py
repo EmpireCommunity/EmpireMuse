@@ -61,7 +61,10 @@ def parsed(*names):
 @pytest.fixture
 def world():
     banco = Banco()
-    bots = [make_bot(MAIN_ID, "TOKEN", guilds=(GID, OTHER)), make_bot(RESERVE_ID, "TOKEN_2", guilds=(GID, OTHER))]
+    bots = [
+        make_bot(MAIN_ID, "TOKEN", guilds=(GID, OTHER)),
+        make_bot(RESERVE_ID, "TOKEN_RESERVE_2", guilds=(GID, OTHER)),
+    ]
     for bot in bots:
         bot.music = SimpleNamespace(players={GID: 1, OTHER: 1})  # tocando: o embed ocioso não tem o que atualizar
     pool = SimpleNamespace(database=banco, get_all_bots=lambda: bots)

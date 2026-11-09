@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """Sincroniza os emojis de aplicação de cada bot, uma vez por processo, no ``on_ready``.
 
-Só os bots principais sincronizam por padrão; os de ``guild_bots.json`` podem ser aplicações de outras pessoas e só entram com
-``APP_EMOJIS_GUILD_BOTS`` ligada. Falha de sync nunca derruba o bot: vale a reserva Unicode.
+Todos os bots do pool sincronizam, incluindo os só-rádio. Falha de sync usa a reserva Unicode.
 """
 
 from __future__ import annotations
@@ -33,21 +32,12 @@ class AppEmojis(commands.Cog):
         self._task: asyncio.Task | None = None
         self._unloaded = False
 
-    def _should_sync(self) -> bool:
-        if self.bot in self.bot.pool.bots:
-            return True
-
-        return bool(self.bot.config.get("APP_EMOJIS_GUILD_BOTS"))
-
     def _start(self):
         # a flag fica no bot: recarregar a cog e reconectar não refaz o sync
         if getattr(self.bot, "_app_emojis_started", False):
             return
 
         self.bot._app_emojis_started = True
-
-        if not self._should_sync():
-            return
 
         self._task = self.bot.loop.create_task(self._sync())
 

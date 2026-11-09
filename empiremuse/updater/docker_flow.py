@@ -18,7 +18,7 @@ from typing import Any, Protocol
 
 import aiohttp
 
-from empiremuse.rules.owner_shell import mask_secrets
+from empiremuse.rules.owner_shell import mask_shell_output
 from empiremuse.rules.release import Version, changelog_sections, pick_target
 from empiremuse.updater.git_flow import UpdateError
 from empiremuse.updater.proxy_client import ProxyClient
@@ -202,7 +202,7 @@ async def send_helper_log(client: ProxyClient, report: Report, pending: PendingU
     except UpdateError:
         return
     # Mascara ANTES de cortar: um segredo na fronteira do corte não pode escapar do mascaramento pela metade.
-    body = mask_secrets("\n".join(lines[:DM_LOG_LINES]), secrets)  # o proxy já devolve só as últimas DM_LOG_LINES
+    body = mask_shell_output("\n".join(lines[:DM_LOG_LINES]), secrets)  # o proxy já devolve só as últimas DM_LOG_LINES
     header = f"Log do auxiliar da atualização para {pending.to_version}:\n"
     room = DM_MAX_CHARS - len(header)
     if len(body) > room:

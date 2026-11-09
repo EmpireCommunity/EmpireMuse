@@ -51,7 +51,7 @@ Do menor para o maior peso — o último vence:
 
 1. `DEFAULT_CONFIG` em `empiremuse/config_loader.py`;
 2. variáveis de ambiente — **somente** as chaves de `DEFAULT_CONFIG`, `TOKEN`, `MONGO` e as que começam
-   com `TOKEN_BOT_`, `TEST_GUILDS_` e `LAVALINK_NODE_`;
+   com `TOKEN_RESERVE_`, `TOKEN_RADIO_`, `TEST_GUILDS_` e `LAVALINK_NODE_`;
 3. `config.json` na raiz (JSON simples `{"CHAVE": "valor"}`);
 4. `.env` — **sobrescreve** todos os anteriores.
 
@@ -66,7 +66,7 @@ Valores de tipo incompatível em chaves inteiras geram erro explicativo na inici
 
 | Variável | Para quê |
 |---|---|
-| `TOKEN` | Token(s) do(s) bot(s). Vários tokens: separados por espaço. Qualquer chave cujo valor contenha um token válido também é aceita (`BotPool.setup` em `empiremuse/utils/client.py`). |
+| `TOKEN` | Um token do principal, obrigatório. Bots extras usam `TOKEN_RESERVE_<NOME>` ou `TOKEN_RADIO_<NOME>`, um token por variável (`rules/bot_tokens.py`). |
 | `DEFAULT_PREFIX` | Prefixo dos comandos de texto (padrão `!!`). |
 | `OWNER_IDS` | IDs de donos extras, separados por `\|\|` (`BotCore.__init__` em `empiremuse/utils/client.py`). |
 | `MONGO` | URL do MongoDB. **Vazio = TinyMongo local** em `local_database` sob o diretório de dados/runtime (configurável via `EMPIREMUSE_HOME`; `./local_database` por padrão em desenvolvimento). |

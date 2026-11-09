@@ -58,7 +58,6 @@ DEFAULT_CONFIG = {
     "APP_DESCRIPTION_RESERVE": DEFAULT_RESERVE_DESCRIPTION,  # só o bot reserva; vazio = não mexer
     "APP_TAGS": DEFAULT_TAGS,
     "INVITE_PERMISSIONS": 2533601240804560,
-    "APP_EMOJIS_GUILD_BOTS": False,
     "ENABLE_LOGGER": False,
     "LOG_LEVEL": "INFO",
     "LOG_COLOR": "on",
@@ -253,7 +252,7 @@ def load_config():
             continue
 
     for env in environ:
-        if env.lower().startswith(("token_bot_", "test_guilds_", "lavalink_node_")):
+        if env.lower().startswith(("token_reserve_", "token_radio_", "test_guilds_", "lavalink_node_")):
             CONFIG[env] = environ[env]
 
     try:
@@ -273,8 +272,7 @@ def load_config():
         )
 
     # o padrão relativo ao cwd vira o repositório do RUNTIME_DIR; um GIT_DIR configurado pelo usuário é respeitado.
-    # Nunca o PROJECT_DIR/.git: com o cwd na .runtime o git trataria a .runtime como árvore de trabalho e o exportsource
-    # listaria o .env e o config.json reais.
+    # Não usa PROJECT_DIR/.git: o repositório acompanha o diretório de execução.
     if CONFIG["GIT_DIR"] == DEFAULT_CONFIG["GIT_DIR"]:
         CONFIG["GIT_DIR"] = str(paths.RUNTIME_DIR / ".git")
 
@@ -330,7 +328,6 @@ def load_config():
     for i in [
         "AUTO_SYNC_COMMANDS",
         "INTERACTION_COMMAND_ONLY",
-        "APP_EMOJIS_GUILD_BOTS",
         "ENABLE_JISHAKU",
         "RUN_LOCAL_LAVALINK",
         "LAVALINK_OFFLINE",

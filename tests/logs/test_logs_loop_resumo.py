@@ -79,7 +79,7 @@ class Cenario:
         )
         self.pool = BotPool.__new__(BotPool)
         self.pool.config = {"METRICS_INTERVAL": 300}
-        self.pool.bots, self.pool.guild_bots = list(bots), {}
+        self.pool.bots = list(bots)
         self.pool.metrics = MetricsCollector()
         self.pool.logs_task = None
         self.pool.lavalink_instance = SimpleNamespace(pid=PID_DO_JAVA) if lavalink_local else None

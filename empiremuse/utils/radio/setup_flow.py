@@ -65,7 +65,7 @@ async def _no_bot_reason(cog: RadioCog, inter: Any, tr: Any) -> GenericError:
     hub = cog.hub
     try:
         await hub.setup.check_actor(inter.guild_id, inter.author.id)
-        options = await hub.setup.options(inter.guild_id)
+        options = await hub.setup.options(inter.guild_id, inter.author.id)
         busy = await hub.setup.busy_reserves(inter.guild_id)
     except (RadioForbidden, RadioUnavailable) as error:
         return refusal(tr, error)

@@ -40,7 +40,14 @@ def test_new_document_starts_with_defaults_and_nothing_migrated():
 
 @pytest.mark.parametrize(
     ("identifier", "is_main"),
-    [("TOKEN", True), ("TOKEN_1", True), ("TOKEN_2", False), ("token", False), ("", False), (None, False)],
+    [
+        ("TOKEN", True),
+        ("TOKEN_RESERVE_1", False),
+        ("TOKEN_RESERVE_2", False),
+        ("token", False),
+        ("", False),
+        (None, False),
+    ],
 )
 def test_only_the_main_token_identifies_the_main_bot(identifier, is_main):
     assert is_main_identifier(identifier) is is_main

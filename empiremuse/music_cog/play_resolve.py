@@ -450,7 +450,7 @@ class PlayResolveMixin:
 
         music_sources = {"deezer", "spotify"}
 
-        for b in self.bot.pool.get_guild_bots(inter.guild_id):
+        for b in self.bot.pool.get_all_bots():
             if not b.get_guild(inter.guild_id):
                 continue
 

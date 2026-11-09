@@ -369,8 +369,12 @@ async def test_a_successful_helper_is_reported_removed_and_cleared_after_waiting
 async def test_a_failed_helper_tells_the_channel_only_the_meaning_and_the_dm_the_masked_log_lines(
     docker_flow, tmp_path, pendente
 ):
+    from tests.rules.test_bot_tokens import token
+
     cliente = ClienteQueObserva(tmp_path, [estado(rodando=False, codigo=66)])
-    cliente.linhas = ["empiremuse-updater: pull", "token TOKEN-SECRETO vazou"] + [f"linha {n}" for n in range(30)]
+    cliente.linhas = ["empiremuse-updater: pull", "token TOKEN-SECRETO vazou " + token()] + [
+        f"linha {n}" for n in range(30)
+    ]
 
     resultado, relatorio, _ = await vigiar(
         docker_flow, cliente, pendente, tmp_path, secrets=frozenset({"TOKEN-SECRETO"})
@@ -383,6 +387,7 @@ async def test_a_failed_helper_tells_the_channel_only_the_meaning_and_the_dm_the
     assert (
         len([linha for linha in mensagem.splitlines() if linha.strip()]) <= 20 + 2
     )  # as linhas, mais no máximo um cabeçalho curto
+    assert token() not in mensagem
     assert cliente.eventos[-1] == "remove" and not pending_path(tmp_path).exists()
 
 

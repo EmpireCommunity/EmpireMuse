@@ -107,10 +107,9 @@ async def test_reset_waits_even_while_configure_is_checking_the_actor(monkeypatc
     async def hold_actor(*args):
         entered.set()
         await release.wait()
-        await check_actor(*args)
+        return await check_actor(*args)
 
     monkeypatch.setattr(w.hub.setup, "check_actor", hold_actor)
-    monkeypatch.setattr(w.hub.setup, "_backup", AsyncMock())
     creating = asyncio.create_task(new_radio(w))
     await entered.wait()
     resetting = asyncio.create_task(started_call(reset_started, w.hub.setup.reset(GUILD, ACTOR, f"2:{GUILD}", 0)))
@@ -127,11 +126,14 @@ async def test_configure_waits_until_reset_has_deleted_the_old_radio(monkeypatch
     radio = await new_radio(w)
     entered, release, configure_started = asyncio.Event(), asyncio.Event(), asyncio.Event()
 
-    async def hold_backup(*args):
+    original_delete = w.hub.store.delete
+
+    async def hold_delete(*args):
         entered.set()
         await release.wait()
+        await original_delete(*args)
 
-    monkeypatch.setattr(w.hub.setup, "_backup", hold_backup)
+    monkeypatch.setattr(w.hub.store, "delete", hold_delete)
     resetting = asyncio.create_task(w.hub.setup.reset(GUILD, ACTOR, radio.id, radio.rev))
     await entered.wait()
     creating = asyncio.create_task(started_call(configure_started, new_radio(w, bot_id=3)))

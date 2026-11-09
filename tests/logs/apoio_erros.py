@@ -90,7 +90,7 @@ def interacao(opcoes: dict[str, object], comando: str = "play") -> SimpleNamespa
         channel=canal_de_texto(),
         channel_id=CANAL,
         filled_options=opcoes,
-        bot=SimpleNamespace(exclusive_guild_id=None, is_owner=_nao_dono),
+        bot=SimpleNamespace(is_owner=_nao_dono),
     )
 
 

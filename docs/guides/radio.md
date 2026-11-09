@@ -26,7 +26,6 @@ Os comandos do dono são de prefixo e ocultos:
 | `radio-premium listar` | Lista os servidores com premium. |
 | `radio-pause-all` (alias `radio-pausar-todas`) | Para **todas** as rádios do processo (válvula de segurança). |
 | `radio-resume-all` (alias `radio-retomar-todas`) | Volta de onde parou, aos poucos (2 por vez, 1 s entre elas). |
-| `radio-bot adicionar\|remover <TOKEN_2>`, `radio-bot listar` | Define quais bots reserva são **só de rádio**. O principal não pode. |
 
 Detalhes:
 
@@ -136,11 +135,13 @@ nó <nome>: players N · CPU x% · memória y MiB · quadros enviados A anulados
 - **GeoNames:** os dados de localização (cidades e estados) vêm do GeoNames, licença **CC BY 4.0**. O rodapé da página Rádios mostra "Dados de localização: GeoNames, CC BY 4.0", e a atribuição completa fica no `CREDITS.md`.
 - **Radio Browser:** o diretório das estações ao vivo é de domínio público. O bot se identifica com um User-Agent próprio.
 
+## Atualizar de uma versão anterior
+
+Quem atualiza de uma versão anterior à release de Rádios e Jukebox deve configurar novamente o canal de pedidos e o painel antigos da Jukebox. A migração de subida `radios_release` foi removida e não guarda mais cópia. O reset de uma rádio também apaga sua configuração sem cópia, mesmo quando a tela de confirmação está com uma revisão antiga.
+
 ## Voltar para uma versão anterior
 
-Depois que a migração R5 rodar, voltar para uma versão **anterior à release RADIOS** deixa as rádios personalizadas migradas ilegíveis para o bot antigo. Antes de reverter, restaure o original guardado em `global.migration_backup`. Sem essa restauração, as estações personalizadas não são lidas e as rádios dessas estações não sobem.
-
-A mesma reversão também esconde a configuração do Jukebox da versão antiga. A cópia fica guardada por 90 dias em `global.migration_backup`; depois desse prazo ela deixa de existir e não há como restaurar.
+Depois que a migração R5 rodar, voltar para uma versão **anterior à release RADIOS** perde as rádios personalizadas migradas: o bot antigo não lê essas estações e as rádios delas não sobem. Não há cópia automática em `migration_backup` para restaurar.
 
 ## Riscos aceitos e o que não está incluído
 
@@ -148,3 +149,5 @@ A mesma reversão também esconde a configuração do Jukebox da versão antiga.
 - Não há limite global de rádios: o controle é o premium e a pausa geral.
 - **Uso comercial do Last.fm:** hoje o premium é concedido sem cobrança. Se um dia ele for vendido, é preciso fechar acordo com o Last.fm (partners@last.fm) **antes**, porque os termos de uso da API não cobrem uso comercial.
 - Fora desta versão: URL informada pelo usuário, estações HLS, rádio no bot principal, Spotify e YouTube Music como fonte de gênero ou de artistas, e busca ou fila do usuário na rádio.
+
+Bots só-rádio são definidos por `TOKEN_RADIO_<NOME>` no ambiente, sem configuração no banco. A escolha de bot na rádio 24 h lista os só-rádio antes das reservas; o principal nunca pode ser escolhido.

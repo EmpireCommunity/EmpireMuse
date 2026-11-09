@@ -6,7 +6,7 @@ do MAESTRO) precisa de um CURSOR que entregue os documentos aos poucos: ``iter_d
 assíncrono nos dois bancos (``async for documento in banco.iter_data(...)``).
 
 * caracterização dos chamadores atuais (passa hoje e tem de continuar passando): sem ``limit`` EXPLÍCITO a consulta devolve tudo
-  (nenhum teto escondido de 100 ou 500), o ``filter`` filtra, e ``misc.fixfavs`` percorre as duas coleções por ``iter_data``, sem limite;
+  (nenhum teto escondido de 100 ou 500), o ``filter`` filtra, e ``iter_data`` percorre os documentos sem limite;
 * RED: com ``limit=n`` devolve no máximo ``n`` e puxa do cursor no máximo ``n`` (+1) documentos; ``iter_data`` entrega preguiçosamente.
 """
 

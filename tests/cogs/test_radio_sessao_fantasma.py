@@ -28,7 +28,7 @@ def no_waiting(monkeypatch):
     monkeypatch.setattr(asyncio, "sleep", quick)  # a retomada espera 1 s entre sessões
 
 
-def build(sessions, *, identifier="TOKEN_2"):
+def build(sessions, *, identifier="TOKEN_RESERVE_2"):
     db = FakeDb()
     pool = SimpleNamespace(database=db)
     hub = RadioHub(pool)
@@ -123,7 +123,7 @@ class TestGhostSessions:
     @pytest.mark.asyncio
     async def test_every_session_of_a_radio_only_bot_is_skipped_and_forgotten(self):
         w = build([{"_id": GUILD, "keep_connected": False}, {"_id": OTHER_GUILD, "keep_connected": True}])
-        await w.hub.roles.add("TOKEN_2")
+        w.bot.identifier = "TOKEN_RADIO_2"
 
         assert await resume(w) == [] and forgotten(w) == [GUILD, OTHER_GUILD]
 
@@ -138,6 +138,5 @@ class TestGhostSessions:
     @pytest.mark.asyncio
     async def test_the_main_bot_never_a_radio_only_one_resumes_its_sessions(self):
         w = build([{"_id": GUILD, "keep_connected": True}], identifier="TOKEN")
-        await w.hub.roles.load()
 
         assert await resume(w) == [GUILD]

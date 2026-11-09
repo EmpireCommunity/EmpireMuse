@@ -98,7 +98,7 @@ class VoiceStatusForm(SettingsForm):
 
     async def effects(self, ctx: FormContext, current: dict[str, Any], new: dict[str, Any]) -> None:
         cfg = resolve_voice_status(new)
-        for bot in ctx.pool.get_guild_bots(ctx.guild_id):
+        for bot in ctx.pool.get_all_bots():
             player = active_player(bot, ctx.guild_id)
             if player is not None:
                 player.voice_status_saved_default = False  # há uma escolha salva: o aviso de padrão não vale mais

@@ -28,26 +28,21 @@ URL = "https://discord.com/oauth2/authorize?client_id=1"
 
 
 @pytest.mark.parametrize(
-    ("identifier", "exclusive", "configured", "is_main", "is_reserve"),
-    [
-        ("TOKEN", None, True, True, False),
-        ("TOKEN_1", None, True, True, False),
-        ("TOKEN_2", None, True, False, True),
-        ("TOKEN_2", 123, True, False, False),  # exclusivo de servidor não é nem principal nem reserva
-        ("TOKEN", 123, True, False, False),
-        ("TOKEN_2", None, False, False, False),  # sem token principal configurado ninguém é reserva
-    ],
+    ("identifier", "configured", "is_main", "is_reserve"),
+    [("TOKEN", True, True, False), ("TOKEN_RESERVE_2", True, False, True), ("TOKEN_RESERVE_2", False, False, False)],
 )
-def test_roles_of_a_bot(identifier, exclusive, configured, is_main, is_reserve):
-    bot = SimpleNamespace(
-        identifier=identifier, exclusive_guild_id=exclusive, pool=SimpleNamespace(main_configured=configured)
-    )
+def test_roles_of_a_bot(identifier, configured, is_main, is_reserve):
+    bot = SimpleNamespace(identifier=identifier, pool=SimpleNamespace(main_configured=configured))
     assert (BotCore.is_main.fget(bot), BotCore.is_reserve.fget(bot)) == (is_main, is_reserve)
 
 
 @pytest.mark.parametrize(
     ("bots", "failed", "configured"),
-    [(["TOKEN", "TOKEN_2"], {}, True), (["TOKEN_2"], {"TOKEN": "erro"}, True), (["TOKEN_2"], {}, False)],
+    [
+        (["TOKEN", "TOKEN_RESERVE_2"], {}, True),
+        (["TOKEN_RESERVE_2"], {"TOKEN": "erro"}, True),
+        (["TOKEN_RESERVE_2"], {}, False),
+    ],
 )
 def test_a_main_that_failed_to_log_in_still_counts_as_configured(bots, failed, configured):
     pool = SimpleNamespace(bots=[SimpleNamespace(identifier=i) for i in bots], failed_bots=failed)
@@ -97,7 +92,7 @@ def reserve_bot(*, main_up=True, http_error=None):
         bulk_upsert_guild_commands=AsyncMock(side_effect=http_error),
     )
     return SimpleNamespace(
-        identifier="TOKEN_2",
+        identifier="TOKEN_RESERVE_2",
         user=SimpleNamespace(id=22),
         application_id=220,
         _test_guilds=[1, 2],
@@ -217,7 +212,9 @@ def test_reserve_says_where_the_slash_commands_are(is_reserve, main_here, url, e
 # ---------------------------------------------------------------------- S6/S-V10: aviso de servidor sem o principal
 
 
-def notice_world(*, identifier="TOKEN_2", others=("TOKEN_3",), main_here=False, url=URL, system=True, can_send=True):
+def notice_world(
+    *, identifier="TOKEN_RESERVE_2", others=("TOKEN_RESERVE_3",), main_here=False, url=URL, system=True, can_send=True
+):
     send = AsyncMock()
     channel = SimpleNamespace(send=send, permissions_for=lambda me: SimpleNamespace(send_messages=can_send))
     guild = SimpleNamespace(
@@ -257,11 +254,51 @@ async def test_the_lowest_reserve_warns_once_in_the_system_channel_with_a_fixed_
     assert GID in pool.join_notices
 
 
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize("radio_is_sender", [True, False])
+async def test_radio_bots_neither_send_nor_prevent_the_music_reserve_join_notice(radio_is_sender):
+    identifier = "TOKEN_RADIO_2" if radio_is_sender else "TOKEN_RESERVE_2"
+    other = "TOKEN_RESERVE_2" if radio_is_sender else "TOKEN_RADIO_2"
+    cog, guild, send, _ = notice_world(identifier=identifier, others=(other,))
+    await Misc.reserve_join_notice(cog, guild)
+    assert send.await_count == (0 if radio_is_sender else 1)
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_music_invites_exclude_radio_only_bots():
+    def bot(bot_id, identifier, name):
+        return SimpleNamespace(
+            identifier=identifier,
+            user=SimpleNamespace(id=bot_id, name=name),
+            is_main=False,
+            guilds=[],
+            config={"INVITE_PERMISSIONS": 8},
+            appinfo=SimpleNamespace(bot_public=True, flags=SimpleNamespace(gateway_message_content_limited=False)),
+        )
+
+    pool = SimpleNamespace(bots=[bot(2, "TOKEN_RADIO_2", "RADIOONLY"), bot(3, "TOKEN_RESERVE_3", "MUSIC")])
+    cog = SimpleNamespace(bot=SimpleNamespace(pool=pool, get_color=lambda _: 0))
+    inter = SimpleNamespace(
+        guild_id=GID,
+        guild=SimpleNamespace(me=object(), members=[]),
+        author=SimpleNamespace(guild_permissions=SimpleNamespace(manage_guild=False)),
+        send=AsyncMock(),
+    )
+    await Misc.invite_button(cog, inter, is_command=True)
+    text = "\n".join(embed.description for embed in inter.send.await_args.kwargs["embeds"])
+    assert "MUSIC" in text and "RADIOONLY" not in text
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "world",
     [
-        {"identifier": "TOKEN_3", "others": ("TOKEN_2",)},  # outra reserva, de maior identifier: quem avisa é a TOKEN_2
+        {
+            "identifier": "TOKEN_RESERVE_3",
+            "others": ("TOKEN_RESERVE_2",),
+        },  # outra reserva, de maior identifier: quem avisa é a TOKEN_RESERVE_2
         {"main_here": True},  # o principal está no servidor
         {"system": False},  # sem canal de sistema não cai para outro canal
         {"can_send": False},
@@ -321,7 +358,7 @@ def profile_bot(*, reserve, main_up):
     }
     appinfo = SimpleNamespace(description="antiga", tags=["velha"], edit=AsyncMock())
     pool = SimpleNamespace(wait_main_outcome=AsyncMock(return_value=main_up), main_bot=main)
-    return SimpleNamespace(identifier="TOKEN_2", appinfo=appinfo, config=config, is_reserve=reserve, pool=pool)
+    return SimpleNamespace(identifier="TOKEN_RESERVE_2", appinfo=appinfo, config=config, is_reserve=reserve, pool=pool)
 
 
 @pytest.mark.asyncio

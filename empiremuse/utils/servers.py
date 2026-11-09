@@ -120,13 +120,8 @@ class ServerStore:
     def main_bot(self) -> Optional[BotCore]:
         """O principal: o bot do token principal (nunca o primeiro por ordem); ``None`` se não logou."""
         candidates = [
-            bot
-            for bot in self.pool.get_all_bots()
-            if bot.user is not None
-            and is_main_identifier(bot.identifier)
-            and getattr(bot, "exclusive_guild_id", None) is None
+            bot for bot in self.pool.get_all_bots() if bot.user is not None and is_main_identifier(bot.identifier)
         ]
-        # a ordem de get_all_bots() vem de um conjunto: com TOKEN e TOKEN_1 juntos, vale sempre o TOKEN
         return min(candidates, key=lambda bot: MAIN_IDENTIFIERS.index(bot.identifier), default=None)
 
     def knows(self, gid: int) -> bool:

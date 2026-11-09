@@ -13,7 +13,6 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1] / "empiremuse"
 SKIP_DIRS = {"panel", "__pycache__", "wavelink"}
 ALLOWED = {
-    "utils/migrations/radios_release.py",  # lê as chaves antigas para migrar
     "utils/radio/prefix_commands.py",  # o alias de prefixo 247 do grupo radio
 }
 LOCALES = ("bot.json", "commands.json", "player.json")

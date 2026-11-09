@@ -57,7 +57,7 @@ async def _pc_embed_resolve(self, req):
     channel: Union[disnake.TextChannel, disnake.VoiceChannel, disnake.StageChannel, disnake.Thread] = None
     author: Optional[disnake.Member] = None
 
-    for b in sorted(self.bot.pool.get_guild_bots(interaction.guild_id), key=lambda b: b.identifier, reverse=True):
+    for b in sorted(self.bot.pool.get_all_bots(), key=lambda b: b.identifier, reverse=True):
         try:
             p = b.music.players[interaction.guild_id]
         except KeyError:

@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import logging
-import os
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -21,7 +20,6 @@ import disnake
 
 from empiremuse import paths
 from empiremuse.rules.release import Version, changelog_sections
-from empiremuse.rules.owner_shell import collect_secret_values
 from empiremuse.updater.docker_flow import (
     UNKNOWN_EXIT,
     WATCH_INTERVAL,
@@ -227,7 +225,7 @@ async def deliver_docker_notice(
     state = await _wait_for_helper(client, sleep, timeout, interval) if client is not None else None
     if client is not None:
         if state is not None and state.exit_code != 0:
-            secrets = collect_secret_values(getattr(pool, "config", {}), os.environ)
+            secrets = pool.secret_values()
             await send_helper_log(client, DiscordReport(bot, pending), pending, secrets)
         try:
             await client.remove_helper()

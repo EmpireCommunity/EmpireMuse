@@ -129,7 +129,7 @@ class TestSetupCommand:
         w, _ = await world_with_station()
 
         with pytest.raises(GenericError):
-            await run_setup(w, bot="TOKEN_2")
+            await run_setup(w, bot="TOKEN_RESERVE_2")
 
 
 class TestStationSelectIsOnlyForWhoOpenedIt:
@@ -205,19 +205,20 @@ class TestResetCommand:
         assert "redefinida" in confirm.edit_original_message.await_args.kwargs["content"]
 
     @pytest.mark.asyncio
-    async def test_a_changed_radio_between_the_question_and_the_click_is_a_conflict_message(self):
+    async def test_a_changed_radio_between_the_question_and_the_click_is_deleted(self):
         w = build()
         await premium(w)
         radio = await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
         await radio_cog.Radio.radio_reset.callback(w.cog, w.inter, channel=None, bot=None)
         view = w.inter.edit_original_message.await_args.kwargs["view"]
         await w.hub.store.set_panel_message(radio.id, 1)  # alguém mexeu na rádio: o rev andou
+        w.channel.get_partial_message.return_value.delete = AsyncMock()
 
         confirm = click_of()
         await view.confirmed(confirm)
 
-        assert await w.hub.store.get(radio.id) is not None
-        assert "mudou" in confirm.edit_original_message.await_args.kwargs["content"]
+        assert await w.hub.store.get(radio.id) is None
+        assert "redefinida" in confirm.edit_original_message.await_args.kwargs["content"]
 
     @pytest.mark.asyncio
     async def test_only_who_asked_can_confirm_and_a_channel_without_radio_says_so(self):
@@ -282,7 +283,7 @@ class TestBotAutocomplete:
         await premium(w)
         inter = SimpleNamespace(
             guild_id=GUILD,
-            author=SimpleNamespace(guild_permissions=SimpleNamespace(manage_guild=True)),
+            author=SimpleNamespace(id=7, guild_permissions=SimpleNamespace(manage_guild=True)),
             guild=w.inter.guild,
             bot=SimpleNamespace(pool=w.bots[0].pool if hasattr(w.bots[0], "pool") else w.cog.bot.pool),
         )
@@ -301,7 +302,7 @@ class TestBotAutocomplete:
         inter = SimpleNamespace(
             guild_id=GUILD,
             guild=w.inter.guild,
-            author=SimpleNamespace(guild_permissions=SimpleNamespace(manage_guild=True)),
+            author=SimpleNamespace(id=7, guild_permissions=SimpleNamespace(manage_guild=True)),
             bot=w.cog.bot,
         )
 
@@ -318,7 +319,7 @@ class TestBotAutocomplete:
         inter = SimpleNamespace(
             guild_id=GUILD,
             guild=w.inter.guild,
-            author=SimpleNamespace(guild_permissions=SimpleNamespace(manage_guild=True)),
+            author=SimpleNamespace(id=7, guild_permissions=SimpleNamespace(manage_guild=True)),
             bot=w.cog.bot,
         )
 
@@ -418,7 +419,7 @@ class TestPickingTheRadio:
         return SimpleNamespace(
             guild_id=GUILD,
             guild=w.inter.guild,
-            author=SimpleNamespace(guild_permissions=SimpleNamespace(manage_guild=True)),
+            author=SimpleNamespace(id=7, guild_permissions=SimpleNamespace(manage_guild=True)),
             bot=w.cog.bot,
         )
 

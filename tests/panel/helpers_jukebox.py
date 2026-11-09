@@ -58,7 +58,7 @@ class PanelBot(FakeBot):
         super().__init__(journal, guild, None)
         self.world, self.ready = world, True
         self.application_id = BOT_ID
-        self.identifier, self.exclusive_guild_id = "TOKEN", None  # o único bot é o principal
+        self.identifier = "TOKEN"  # o único bot é o principal
         self.user = SimpleNamespace(
             id=BOT_ID,
             name="Bot Um",
@@ -87,9 +87,6 @@ class PanelPool:
     def __init__(self, bots, config):
         self.bots, self.config, self.database = list(bots), config, None
         self.guild_prefix_cache, self.default_skin, self.default_static_skin = {}, "default", "default"
-
-    def get_guild_bots(self, guild_id):
-        return [b for b in self.bots if b.get_guild(int(guild_id)) is not None]
 
     def get_all_bots(self):
         return list(self.bots)

@@ -87,7 +87,7 @@ class TestWhoMayUseTheOwnerCommands:
         group = w.cog.radio_prefix
         by_name = {command.name: command for command in group.commands}
 
-        assert {n for n, c in by_name.items() if c.hidden} == {"premium", "bot", "pauseall", "resumeall"}
+        assert {n for n, c in by_name.items() if c.hidden} == {"premium", "pauseall", "resumeall"}
         assert {"setup", "on", "off", "status", "reset"} <= set(by_name) and not group.hidden
         assert [c for c in w.cog.get_commands()] == [group]  # nenhum comando de topo além do grupo
 
@@ -206,42 +206,3 @@ class TestPauseAll:
         await w.cog.radio_pause_all.callback(w.cog, ctx)
 
         assert (await w.hub.store.get(radio.id)).enabled and (await w.hub.premium.fresh(GUILD)).active == 1
-
-
-class TestRadioOnlyBots:
-    @pytest.mark.asyncio
-    async def test_the_owner_replies_never_ping_anyone(self):  # V181 L6
-        w, ctx = build(), ctx_of(OWNER)
-
-        await w.cog.radio_bot.callback(w.cog, ctx, "adicionar", "TOKEN_3")
-        changed = ctx.send.await_args.kwargs["allowed_mentions"]
-        await w.cog.radio_bot.callback(w.cog, ctx, "listar")
-        listed = ctx.send.await_args.kwargs["allowed_mentions"]
-
-        for mentions in (changed, listed):
-            assert mentions.everyone is False and mentions.users is False and mentions.roles is False
-
-    @pytest.mark.asyncio
-    async def test_add_list_remove(self):
-        w, ctx = build(), ctx_of(OWNER)
-
-        await w.cog.radio_bot.callback(w.cog, ctx, "adicionar", "TOKEN_3")
-        await w.cog.radio_bot.callback(w.cog, ctx, "listar")
-        assert "TOKEN_3" in said(ctx)
-        await w.cog.radio_bot.callback(w.cog, ctx, "remover", "TOKEN_3")
-        assert w.hub.roles.radio_only == ()
-
-    @pytest.mark.asyncio
-    async def test_the_main_bot_is_refused(self):
-        w, ctx = build(), ctx_of(OWNER)
-
-        with pytest.raises(GenericError):
-            await w.cog.radio_bot.callback(w.cog, ctx, "adicionar", "TOKEN")
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("identifier", ["", "x" * 41, "tökén"])
-    async def test_a_bad_identifier_gets_the_usage(self, identifier):
-        w, ctx = build(), ctx_of(OWNER)
-
-        with pytest.raises(GenericError):
-            await w.cog.radio_bot.callback(w.cog, ctx, "adicionar", identifier)

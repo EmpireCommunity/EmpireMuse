@@ -11,24 +11,26 @@ from typing import TYPE_CHECKING, Any
 
 import disnake
 
+from empiremuse.rules.bot_tokens import is_radio_only_identifier
+
 if TYPE_CHECKING:
     from empiremuse.utils.client import BotCore
 
 logger = logging.getLogger(__name__)
 
 
-def _another_bot_will_answer(bot: BotCore, hub: Any, message: disnake.Message) -> bool:
+def _another_bot_will_answer(bot: BotCore, message: disnake.Message) -> bool:
     """Há, neste servidor, outro bot pronto e que NÃO é só-rádio? Num prefixo compartilhado ele executa o comando: dizer "este bot não atende"
     seria avisar à toa. O aviso fica para quando só o bot só-rádio ouviu."""
-    guild_bots = getattr(bot.pool, "get_guild_bots", None)
-    if guild_bots is None or message.guild is None:
+    all_bots = getattr(bot.pool, "get_all_bots", None)
+    if all_bots is None or message.guild is None:
         return False
     return any(
         other is not bot
         and getattr(other, "bot_ready", False)
-        and not hub.roles.is_radio_only(other.identifier)
+        and not is_radio_only_identifier(other.identifier)
         and _can_answer_here(other, message)
-        for other in guild_bots(message.guild.id)
+        for other in all_bots()
     )
 
 
@@ -55,11 +57,12 @@ async def refuse_radio_only(bot: BotCore, ctx: Any, message: disnake.Message) ->
     """``True`` se ``bot`` é só-rádio (a mensagem não segue). Um comando de prefixo ganha o aviso, no máximo um por canal por minuto."""
     pool = bot.pool
     hub = getattr(pool, "radio", None)
-    if hub is None or not hub.roles.is_radio_only(bot.identifier):
+    if not is_radio_only_identifier(bot.identifier):
         return False
     if (
         getattr(ctx, "valid", False)
-        and not _another_bot_will_answer(bot, hub, message)
+        and not _another_bot_will_answer(bot, message)
+        and hub is not None
         and hub.claim_notice(message.channel.id)
     ):
         try:

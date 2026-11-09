@@ -17,7 +17,7 @@ Documentação técnica e tutoriais de configuração para administradores e des
 | **[Logs e Telemetria Local](logs.md)** | Níveis, cores, arquivo rotativo, `LOG_DEBUG_GUILDS`, resumo periódico de métricas, `COMMAND_LOG` só com IDs, redação de segredos e como investigar um `ERR-XXXXXX`. |
 | **[Idiomas (i18n)](i18n.md)** | Catálogos em `empiremuse/locales/`, regras de chave e plural, o que o validador descarta, como ligar um idioma novo e a checagem `python -m empiremuse.i18n.check` do CI. |
 | **[Rádios](radio.md)** | Rádios personalizadas (estações por gênero, artistas ou playlists) e ao vivo (Radio Browser, com filtro de local): premium liberado só pelo dono, limite por servidor, comandos de dono, regras do chat, reserva e saúde, leitura do resumo periódico e custo por rádio. |
-| **[Emojis do Bot](emojis.md)** | Emojis de aplicação enviados à própria aplicação do bot, reserva em Unicode, troca de ícones por `emojis.json` e `APP_EMOJIS_GUILD_BOTS`. |
+| **[Emojis do Bot](emojis.md)** | Emojis de aplicação enviados à própria aplicação do bot, reserva em Unicode, troca de ícones por `emojis.json`. |
 | **[Guia de Release e Publicação](release.md)** | Versionamento SemVer, publicação de tags no Git, esteira automatizada multi-arquitetura no Docker Hub com SBOM, provenance, assinatura cosign e GitHub Release com o digest. |
 | **[Implantação no Pterodactyl](pterodactyl.md)** | Instalação via egg oficial no painel Pterodactyl, imagens `0.1` e `latest`, alocação de porta, persistência e recursos. |
 | **[Implantação na Discloud](discloud.md)** | Hospedagem no plano pago da Discloud (1 GB / 1 vCPU), integração com GitHub, variáveis de ambiente, Lavalink e MongoDB. |

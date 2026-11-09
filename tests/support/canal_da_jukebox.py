@@ -383,7 +383,7 @@ class FakeBot:
         self.script = {}  # evento -> lista de interações entregues por wait_for (exceção = levantar)
         self.waits = []
         self.pool = SimpleNamespace(
-            get_guild_bots=lambda gid: [self], servers=SimpleNamespace(jukebox=FakeRequestStore(self))
+            get_all_bots=lambda: [self], servers=SimpleNamespace(jukebox=FakeRequestStore(self))
         )
 
     @property

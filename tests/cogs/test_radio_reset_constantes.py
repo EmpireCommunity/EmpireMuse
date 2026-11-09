@@ -1,10 +1,4 @@
-"""Constantes do `/radio reset` (contrato-nomes-radios §2) com os números do contrato como LITERAIS.
-
-Sem estes pinos, a cópia em ``global.config_backup`` podia expirar em 1 segundo e a confirmação podia durar qualquer tempo
-sem nenhum teste falhar.
-"""
-
-import datetime
+"""Prazo de confirmação do reset no Discord; o reset não mantém cópia."""
 
 import pytest
 
@@ -16,19 +10,6 @@ from empiremuse.cogs import radio as radio_cog
 pytestmark = pytest.mark.critical
 
 ACTOR = 7
-
-
-@pytest.mark.asyncio
-async def test_the_reset_backup_expires_30_days_after_it_was_taken():
-    w = build()
-    await premium(w)
-    radio = await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
-
-    await w.hub.setup.reset(GUILD, ACTOR, radio.id, radio.rev)
-
-    backup = next(iter(w.db.tables["config_backup"].values()))
-    taken = datetime.datetime.fromtimestamp(backup["at"], tz=datetime.timezone.utc)
-    assert abs((backup["expire_at"] - taken) - datetime.timedelta(days=30)) < datetime.timedelta(seconds=2)
 
 
 @pytest.mark.asyncio

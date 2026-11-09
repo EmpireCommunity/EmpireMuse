@@ -130,7 +130,7 @@ class BotDeVoz:
         )
         self.porta_texto = asyncio.Event()
         self.app_emojis: dict[str, str] = {}
-        self.pool = SimpleNamespace(emoji_data={"music_sources": {}}, get_guild_bots=lambda _gid: [self])
+        self.pool = SimpleNamespace(emoji_data={"music_sources": {}}, get_all_bots=lambda: [self])
         self.config: dict[str, Any] = {}
         self.dispatch = MagicMock()
         self.documentos: dict[int, dict[str, Any]] = {}

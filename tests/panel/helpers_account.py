@@ -118,7 +118,7 @@ class AccountPool:
         self.user_prefix_cache, self.guild_prefix_cache = {}, {}
         self.default_skin = self.default_static_skin = "default"
 
-    def get_guild_bots(self, guild_id):
+    def get_all_bots(self):
         return list(self.bots)
 
     def api_calls(self):

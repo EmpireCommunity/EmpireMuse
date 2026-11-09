@@ -271,7 +271,33 @@ async def test_on_pool_ready_without_a_proxy_socket_sends_the_unknown_notice_and
 def pool_com_config(*bots, **config):
     pool = pool_com(*bots)
     pool.config = config
+    from empiremuse.rules.owner_shell import collect_secret_values
+
+    pool.secret_values = lambda: collect_secret_values(config)
     return pool
+
+
+async def test_helper_log_uses_pool_secrets_including_normalized_tokens(runtime):
+    from empiremuse.rules.bot_tokens import load_bot_tokens
+    from empiremuse.utils.client import BotPool
+    from tests.rules.test_bot_tokens import token
+
+    bot = bot_falso()
+    pool = pool_com_config(bot, TOKEN='"' + token() + '"')
+    pool._token_load = load_bot_tokens(pool.config)
+    pool.token_secrets = lambda: BotPool.token_secrets(pool)
+    pool.secret_values = lambda: BotPool.secret_values(pool)
+    cliente = ClienteFalso([estado(rodando=False, codigo=70)])
+    cliente.linhas = ["empiremuse-updater: " + token()]
+    write_pending(runtime, pendente_docker())
+
+    await entregar_docker(pool, cliente, runtime, DE)
+
+    call = bot.usuario.send.await_args
+    text = (call.args[0] if call.args else call.kwargs.get("content") or "") + (
+        call.kwargs["embed"].description if call.kwargs.get("embed") else ""
+    )
+    assert token() not in text and "***" in text
 
 
 @pytest.mark.parametrize("versao", [DE, None], ids=["voltou-para-a-anterior", "versao-ilegivel"])

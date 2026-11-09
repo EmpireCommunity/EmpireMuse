@@ -24,11 +24,10 @@ from empiremuse.rules.servers import SettingError, changed_jukebox, migrate_juke
 
 pytestmark = pytest.mark.critical
 
-MAIN, R2, R10, EXCLUSIVE = (
+MAIN, R2, R10 = (
     PanelPeer("TOKEN", 1),
-    PanelPeer("TOKEN_2", 2),
-    PanelPeer("TOKEN_10", 10),
-    PanelPeer("TOKEN_3", 3, exclusive=True),
+    PanelPeer("TOKEN_RESERVE_2", 2),
+    PanelPeer("TOKEN_RESERVE_10", 10),
 )
 
 
@@ -40,9 +39,7 @@ MAIN, R2, R10, EXCLUSIVE = (
     [
         ([R10, R2, MAIN], 1),  # o principal, esteja onde estiver na lista
         ([PanelPeer("ALFA", 4), MAIN], 1),  # e por papel, não por ordem do nome
-        ([R10, R2], 2),  # sem o principal: a 1ª reserva pela ordem natural (TOKEN_2 antes de TOKEN_10)
-        ([EXCLUSIVE, R10], 10),  # exclusivo de servidor só entra se não há mais ninguém
-        ([EXCLUSIVE], 3),
+        ([R10, R2], 2),  # sem o principal: a 1ª reserva pela ordem natural (TOKEN_RESERVE_2 antes de TOKEN_RESERVE_10)
         ([], None),
     ],
 )
