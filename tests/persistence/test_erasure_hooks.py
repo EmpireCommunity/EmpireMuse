@@ -907,8 +907,11 @@ async def test_save_link_espera_o_lock_do_apagamento_e_nao_recria_o_documento(mu
 @pytest.mark.asyncio
 async def test_save_link_sem_apagamento_nao_trava_no_proprio_lock(mundo):
     cog, visao, interacao = _fluxo(mundo, chave="NOVA", usuario="novo")
+    lock = mundo.pool.user_locks.lock(
+        ALVO
+    )  # a referência mantém o mesmo objeto vivo (o dicionário só guarda referência fraca)
 
     assert (
         await asyncio.wait_for(cog._save_link(interacao, visao, None, mundo.pool.erasure_tombstones.now()), 2) is True
     )
-    assert not mundo.pool.user_locks.lock(ALVO).locked()  # soltou ao sair
+    assert mundo.pool.user_locks.lock(ALVO) is lock and not lock.locked()  # era o mesmo lock e soltou ao sair
