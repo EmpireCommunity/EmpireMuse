@@ -2,9 +2,8 @@
 
 Sem ``EMPIREMUSE_HOME``, o bot gravava Lavalink.jar, JDK, ``local_database/``, caches e ``.env`` no cwd, que em
 desenvolvimento é a raiz do repositório. Agora, se ``PROJECT_DIR/.runtime`` existir como diretório, ela vira o
-``RUNTIME_DIR`` e o cwd do processo. O ``GIT_DIR`` padrão continua ``RUNTIME_DIR/.git`` (AppSec A1): apontá-lo para
-``PROJECT_DIR/.git`` com o cwd na ``.runtime`` faz o git tratar a ``.runtime`` como árvore de trabalho e o
-``exportsource`` listar o ``.env`` e o ``config.json`` reais.
+``RUNTIME_DIR`` e o cwd do processo. O ``GIT_DIR`` padrão continua ``RUNTIME_DIR/.git``,
+para que o repositório acompanhe o diretório de execução.
 Produção não muda: Docker e Pterodactyl definem ``EMPIREMUSE_HOME``; a Discloud não recebe ``.runtime/``.
 
 Os testes trocam ``paths.PROJECT_DIR`` por uma pasta do ``tmp_path`` e nunca tocam a ``.runtime`` real.
