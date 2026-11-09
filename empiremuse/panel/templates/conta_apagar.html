@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block titulo %}Apagar meus dados{% end %}
+
+{# Variáveis (handlers/erase.py): resultado (None|"ok"|"partial"|"erro"), mensagem (texto pronto, sem contagens), palavra_confirmacao, login_recente.
+   Textos aprovados pela Bússola (T-496, erasure.ask/erasure.done); nenhum número de itens apagados chega aqui. #}
+{% block conteudo %}
+<section aria-labelledby="titulo-apagar">
+  <h1 id="titulo-apagar">Apagar meus dados</h1>
+
+  {% if resultado in ("ok", "partial") %}
+    {# A sessão já acabou: o topo sai deslogado e não há mais o que confirmar nem cancelar. #}
+    <p class="mensagem-form {% if resultado == 'ok' %}mensagem-sucesso{% else %}mensagem-erro{% end %}" role="{% if resultado == 'ok' %}status{% else %}alert{% end %}">{{ mensagem }}</p>
+    <p class="nota">Se você vinculou o Last.fm, o que já foi enviado continua lá. Para encerrar o acesso do bot à sua conta do Last.fm, revogue em <a href="https://www.last.fm/settings/applications" rel="noopener noreferrer">last.fm/settings/applications</a>.</p>
+    <p><a role="button" href="/painel/">Voltar ao início</a></p>
+  {% else %}
+    {% if resultado == "erro" and mensagem %}
+    <p class="mensagem-form mensagem-erro" role="alert">{{ mensagem }}</p>
+    {% end %}
+
+    <p class="lead">Vamos apagar os dados que o bot guarda sobre você. Alguns registros ficam por um tempo. Antes de continuar, confira o que sai e o que fica.</p>
+
+    <section class="bloco-config bloco-largo" aria-labelledby="titulo-apagar-sai">
+      <h2 class="subtitulo" id="titulo-apagar-sai">O que será apagado</h2>
+      <ul>
+        <li>seu prefixo, seus favoritos, suas integrações e o acesso do app de Rich Presence;</li>
+        <li>suas últimas músicas, o vínculo com o Last.fm e a fila de scrobbles;</li>
+        <li>sua fila salva, suas rádios favoritas e a sua lista pessoal de rádios;</li>
+        <li>o seu ID nos registros de quem mudou as rádios dos servidores;</li>
+        <li>suas sessões abertas no painel.</li>
+      </ul>
+    </section>
+
+    <section class="bloco-config bloco-largo" aria-labelledby="titulo-apagar-fica">
+      <h2 class="subtitulo" id="titulo-apagar-fica">O que fica</h2>
+      <ul>
+        <li>registros de acesso e de segurança, por até 6 meses, para proteger o serviço e cumprir a lei;</li>
+        <li>enquanto um player estiver tocando, o registro de quem pediu cada música e do último envio ao Last.fm, até o player acabar;</li>
+        <li>as configurações dos servidores e as estatísticas de uso, que não ficam ligadas a você;</li>
+        <li>o que já foi enviado ao Last.fm, fora do nosso alcance. Para encerrar o acesso do bot à sua conta, revogue em <a href="https://www.last.fm/settings/applications" rel="noopener noreferrer">last.fm/settings/applications</a>.</li>
+      </ul>
+      <p class="nota">Cópias de segurança do provedor podem guardar dados já apagados por até 4 semanas.</p>
+    </section>
+
+    <section class="bloco-config bloco-largo bloco-perigo" aria-labelledby="titulo-apagar-confirmar">
+      <h2 class="subtitulo" id="titulo-apagar-confirmar">Confirmar</h2>
+      <p><strong>Não dá para desfazer.</strong> Quer apagar mesmo?</p>
+      {% if not login_recente %}
+      <p class="aviso-info" role="note">Por segurança, você precisa entrar de novo com o Discord antes de apagar seus dados. Nada é apagado até lá.</p>
+      <div class="acoes-apagar">
+        <a role="button" class="secondary" href="/painel/conta">Cancelar</a>
+        <a role="button" href="/painel/login?next=/painel/conta/apagar">Entrar de novo com o Discord</a>
+      </div>
+      {% else %}
+      <form id="form-apagar" class="form-config" method="post" action="/painel/conta/apagar">
+        {% module xsrf_form_html() %}
+        <label for="apagar-confirmacao">Digite <strong>{{ palavra_confirmacao }}</strong> (em maiúsculas) para confirmar</label>
+        <input id="apagar-confirmacao" type="text" name="confirmacao" value="" required autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+        <div class="acoes-apagar">
+          <a role="button" class="secondary" href="/painel/conta">Cancelar</a>
+          <button type="submit" class="botao-perigo-cheio">Apagar tudo</button>
+        </div>
+      </form>
+      {% end %}
+    </section>
+  {% end %}
+</section>
+{% end %}

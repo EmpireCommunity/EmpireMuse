@@ -1020,3 +1020,17 @@ main:focus {
 #bloco-links:has(#filtro-escopo-jukebox:checked) #playlists-radio {
   display: none;
 }
+
+/* Apagar meus dados: Cancelar e Apagar tudo lado a lado, sem botão largo do Pico */
+.acoes-apagar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.acoes-apagar > a[role="button"],
+.acoes-apagar > button {
+  margin: 0;
+  width: auto;
+}

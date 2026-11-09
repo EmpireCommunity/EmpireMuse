@@ -77,6 +77,12 @@ class PanelResponseMixin:
     def clear_panel_cookie(self, base: str) -> None:
         self.clear_cookie(self.cookie_name(base), **self.cookie_kwargs())
 
+    def forget_session(self) -> None:
+        """Encerra a sessão do pedido: destrói no store, limpa o cookie e deixa a página sem usuário (o topo sai deslogado)."""
+        self.application.settings["session_store"].destroy(self.session_id)
+        self.clear_panel_cookie(SESSION_COOKIE)
+        self._current_session = None
+
     @property
     def session_id(self) -> Optional[str]:
         value = self.get_signed_cookie(self.cookie_name(SESSION_COOKIE))

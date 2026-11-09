@@ -24,6 +24,7 @@ OWNER_GRANT_TTL_S = 86400
 OWNER_GRANTS_PER_HOUR = 10
 
 RATE_WINDOW_S = 3600
+
 # Q1 (decidida): nome do comando por locale, num só lugar. O cog declara o comando pelas chaves ``cmd.delete_my_data.*`` dos catálogos,
 # que repetem estes valores (um teste confere); renomear é mudar aqui e nos dois catálogos.
 ERASE_COMMAND_NAMES = {"pt-BR": "apagar_meus_dados", "en-US": "delete_my_data"}
@@ -181,6 +182,14 @@ USER_FIELD_DEFAULTS: Mapping[str, Any] = {
     "lastfm.sessionkey": "",
 }
 _LASTFM_SCROBBLE = "lastfm.scrobble"
+
+
+def consent_is_recent(consented_at: float | None, now: float, max_age_s: float = ERASE_MAX_SESSION_AGE_S) -> bool:
+    """O login com consentimento (``prompt=consent``) é recente o bastante para apagar pelo painel (§3.2).
+
+    ``consented_at`` é ``None`` quando a sessão nasceu de um login silencioso: esse nunca autoriza apagar.
+    """
+    return consented_at is not None and now - consented_at <= max_age_s
 
 
 def _get_path(doc: Mapping[str, Any], path: str) -> Any:

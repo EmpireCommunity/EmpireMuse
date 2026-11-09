@@ -18,6 +18,9 @@ from empiremuse.panel.settings import PanelSettings
 DISCORD_API = "https://discord.com/api/v10"
 AUTHORIZE_URL = "https://discord.com/oauth2/authorize"
 OAUTH_SCOPE = "identify guilds"
+PROMPT_NONE = "none"  # login silencioso: o padrão de todo login
+PROMPT_CONSENT = "consent"  # a pessoa reconfirma no Discord (só para apagar dados)
+_PROMPTS = frozenset({PROMPT_NONE, PROMPT_CONSENT})
 REQUEST_TIMEOUT_SECONDS = 10
 GUILDS_PAGE_LIMIT = 200
 VERIFIER_BYTES = 48
@@ -49,7 +52,9 @@ class DiscordOAuthClient:
         self._client_id = client_id
         self._session_factory = session_factory
 
-    def authorize_url(self, state: str, code_challenge: str) -> str:
+    def authorize_url(self, state: str, code_challenge: str, prompt: str = PROMPT_NONE) -> str:
+        if prompt not in _PROMPTS:
+            raise ValueError("prompt inválido")
         query = urlencode(
             {
                 "response_type": "code",
@@ -59,7 +64,7 @@ class DiscordOAuthClient:
                 "redirect_uri": self._settings.redirect_uri,
                 "code_challenge": code_challenge,
                 "code_challenge_method": "S256",
-                "prompt": "none",
+                "prompt": prompt,
             }
         )
         return f"{AUTHORIZE_URL}?{query}"

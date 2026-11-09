@@ -63,6 +63,15 @@ def test_authorize_url_has_exact_parameters():
     }
 
 
+def test_authorize_url_prompt_is_none_by_default_and_accepts_only_known_values():
+    _, client = _client()
+    prompt = lambda url: parse_qs(urlsplit(url).query)["prompt"][0]  # noqa: E731
+    assert prompt(client.authorize_url("s", "c")) == "none"
+    assert prompt(client.authorize_url("s", "c", "consent")) == "consent"
+    with pytest.raises(ValueError):
+        client.authorize_url("s", "c", "login")
+
+
 def test_authorize_url_redirect_uri_comes_from_settings_only():
     _, client = _client(local_config())
     url = client.authorize_url("s", "c")
