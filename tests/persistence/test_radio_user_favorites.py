@@ -256,3 +256,25 @@ async def test_real_strict_directory_adds_resolved_station_and_ignores_invalid_u
     assert await world.store.toggle_station(7, uuid(1)) == Toggled.ADDED
     assert [f.uuid for f in await world.store.stations(7)] == [uuid(1)]
     assert fetcher.calls[0][1:] == ("/json/stations/byuuid", {"uuids": uuid(1)})
+
+
+@pytest.mark.regression
+async def test_real_strict_directory_non_list_body_is_unavailable_not_absence(world):
+    from tests.audio.test_radio_directory import directory
+
+    real, _, _ = directory({"*": {"error": "oops"}})
+    with pytest.raises(DirectoryError):
+        await real.by_uuid_strict(uuid(1))
+    world.hub.directory = real
+    world.db.save_doc_cas = AsyncMock()
+    with pytest.raises(RadioUnavailable):
+        await world.store.toggle_station(7, uuid(1))
+    world.db.save_doc_cas.assert_not_awaited()
+
+
+@pytest.mark.regression
+async def test_cas_retry_does_not_query_the_directory_again(world):
+    world.db.save_doc_cas = AsyncMock(side_effect=[False, True])
+    assert await world.store.toggle_station(7, uuid(1)) == Toggled.ADDED
+    assert world.db.save_doc_cas.await_count == 2
+    world.hub.directory.by_uuid_strict.assert_awaited_once()

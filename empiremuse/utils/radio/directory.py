@@ -494,13 +494,15 @@ class Directory:
         return found[0] if found and found[0].uuid == uuid else None
 
     async def by_uuid_strict(self, uuid: object, *, reserve: float = SEARCH_RESERVE) -> Station | None:
-        """Consulta por uuid para gravações: ausência é None; falha ou balde sem ficha levanta DirectoryError.
+        """Consulta por uuid para gravações: ausência (lista vazia) é None; falha, resposta que não é lista ou balde sem ficha levanta DirectoryError.
 
         Mantém a mesma reserva de fichas e a mesma validação da consulta tolerante.
         """
         if not valid_uuid(uuid):
             return None
         payload = await self._get_strict("/json/stations/byuuid", {"uuids": str(uuid)}, reserve=reserve)
+        if not isinstance(payload, list):
+            raise DirectoryError("payload")
         found = self._stations(payload)
         return found[0] if found and found[0].uuid == uuid else None
 

@@ -101,6 +101,19 @@ class UserRadioFavorites:
         if not valid_uuid(uuid):
             raise FavoriteNotFound
 
+        resolved: list[FavoriteStation] = []  # resolvida uma vez só: um retry do CAS nunca volta ao diretório
+
+        async def resolve() -> FavoriteStation:
+            if not resolved:
+                try:
+                    station = await self.hub.directory.by_uuid_strict(uuid)
+                except DirectoryError as error:
+                    raise RadioUnavailable from error
+                if station is None:
+                    raise FavoriteNotFound
+                resolved.append(FavoriteStation(uuid, external_text(station.name, NAME_LIMIT, markdown=False)))
+            return resolved[0]
+
         async def toggle(
             current: list[FavoriteStation], nodes: list[str]
         ) -> tuple[list[FavoriteStation], list[str], Toggled]:
@@ -108,14 +121,8 @@ class UserRadioFavorites:
                 return [f for f in current if f.uuid != uuid], nodes, Toggled.REMOVED
             if len(current) >= USER_LIVE_FAVORITES_MAX:
                 return current, nodes, Toggled.FULL
-            try:
-                station = await self.hub.directory.by_uuid_strict(uuid)
-            except DirectoryError as error:
-                raise RadioUnavailable from error
-            if station is None:
-                raise FavoriteNotFound
             return (
-                [*current, FavoriteStation(uuid, external_text(station.name, NAME_LIMIT, markdown=False))],
+                [*current, await resolve()],
                 nodes,
                 Toggled.ADDED,
             )

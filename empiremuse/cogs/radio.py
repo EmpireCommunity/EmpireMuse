@@ -510,7 +510,7 @@ class Radio(RadioPrefixCommands, commands.Cog):
             raise GenericError(tr("radio.cooldown", seconds=int(retry) + 1))
         return tr
 
-    @radio.sub_command(name="favoritas", description=localized("radio.local.favorites"))
+    @radio.sub_command(name="favoritas", description=localized("cmd.radio.favorites.description"))
     async def radio_favoritas(self, inter: disnake.ApplicationCommandInteraction) -> None:
         tr = await self._gate(inter)
         await open_server_favorites(inter, tr, self.bot.pool)
