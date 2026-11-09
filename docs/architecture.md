@@ -222,7 +222,7 @@ Os métodos mais longos do player (KI-29b) seguem o mesmo padrão do `/play`: `i
   personalizadas por servidor são guardadas no banco (ver seção 8).
 - **UI**: views, botões e modais em `empiremuse/utils/music/interactions/` (pacote desde a KI-29; o `__init__.py` reexporta os nomes
   públicos): `player_views.py` (volume, fila, paginador, botões, seletores), `stage_title.py` (`SetStageTitle`), `fav_menu.py`
-  (`FavMenuView`, com os mixins `fav_menu_components.py` para selects e botões e `fav_menu_text.py` para o texto da mensagem),
+  (`FavMenuView`, com os mixins `fav_menu_components.py` para selects e botões, `fav_menu_text.py` para o texto da mensagem e `fav_menu_radio.py` para o modo "Rádios favoritas", só Remover e Limpar e sempre em mensagem efêmera), `fav_menu_server.py` (`/radio favoritas`: lista do servidor, Remover e Limpar com confirmação, só para quem gerencia o servidor),
   `fav_modals.py` (importação e adição de favoritos), `favorites_texts.py`, `skin_editor.py` (`SkinEditorMenu`, `SkinSettingsButton`
   e o ciclo de vida da view, com os mixins `skin_editor_components.py` para montagem dos componentes, `skin_editor_modals.py`
   para os callbacks que abrem modais, `skin_editor_submit.py` para aplicar o que os modais enviam, `skin_editor_persist.py` para

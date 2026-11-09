@@ -29,14 +29,24 @@ from empiremuse.utils.music.interactions.common import (
 from empiremuse.utils.music.interactions.fav_menu_components import (
     FavMenuComponentsMixin,
 )
+from empiremuse.utils.music.interactions.fav_menu_radio import (
+    FavMenuRadioMixin,
+)
 from empiremuse.utils.music.interactions.fav_menu_text import (
     FavMenuTextMixin,
 )
 
 logger = logging.getLogger(__name__)
 
+NO_MENTIONS = disnake.AllowedMentions.none()
 
-class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, disnake.ui.View):
+
+def message_is_ephemeral(inter: disnake.MessageInteraction) -> bool:
+    """``True`` só se a mensagem do componente é efêmera (a lista pessoal de rádios só aparece em uma)."""
+    return getattr(getattr(getattr(inter, "message", None), "flags", None), "ephemeral", False) is True
+
+
+class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, FavMenuRadioMixin, disnake.ui.View):
     def __init__(
         self,
         bot: BotCore,
@@ -47,6 +57,7 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, disnake.ui.View):
         mode: str = ViewMode.fav_manager,
         is_owner=False,
         tr=None,
+        radio_private: bool = False,
     ):
         super().__init__(timeout=180)
         self.mode = mode
@@ -61,6 +72,7 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, disnake.ui.View):
         self.components_updater_task = bot.loop.create_task(self.auto_update())
         self.is_owner = is_owner
         self.light_mode = False
+        self.init_radio_state(private=radio_private)  # o modo rádio só lista com a mensagem efêmera (fav_menu_radio)
 
         if not self.guild:
             for b in self.bot.pool.get_all_bots():
@@ -316,7 +328,45 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, disnake.ui.View):
         await inter.response.edit_message(content=self.tr("fav.closed"), view=None)
         self.stop()
 
+    async def _open_radio_favorites(self, inter: disnake.MessageInteraction):
+        """Entra no modo rádio. A lista pessoal nunca vai a uma mensagem pública: se este menu está numa, o modo abre
+        numa mensagem efêmera nova e este menu fica como está."""
+        if not self.radio_available():
+            await inter.send(self.tr("fav.unsupported"), ephemeral=True)
+            return
+
+        if message_is_ephemeral(inter):
+            await inter.response.defer()
+            try:
+                self.components_updater_task.cancel()
+            except Exception:
+                pass
+            self.mode, self.radio_private, self.log = ViewMode.radio_favorites, True, ""
+            await self.load_radio()
+            await inter.edit_original_message(content=self.build_txt(), view=self, allowed_mentions=NO_MENTIONS)
+            return
+
+        await inter.response.defer(with_message=True, ephemeral=True)
+        private_view = type(self)(
+            bot=self.bot,
+            ctx=inter,
+            data=self.data,
+            prefix=self.prefix,
+            mode=ViewMode.radio_favorites,
+            is_owner=self.is_owner,
+            tr=self.tr,
+            radio_private=True,
+        )
+        await private_view.load_radio()
+        await inter.edit_original_message(
+            content=private_view.build_txt(), view=private_view, allowed_mentions=NO_MENTIONS
+        )
+
     async def mode_callback(self, inter: disnake.MessageInteraction):
+        if inter.values[0][14:] == ViewMode.radio_favorites:
+            await self._open_radio_favorites(inter)
+            return
+
         self.mode = inter.values[0][14:]
 
         try:

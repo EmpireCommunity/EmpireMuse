@@ -26,22 +26,39 @@ def station(n, name=None):
 @pytest.fixture
 def world():
     db = FakeDb()
-    return SimpleNamespace(db=db, favorites=RadioFavorites(SimpleNamespace(database=db)))
+    return SimpleNamespace(
+        db=db,
+        favorites=RadioFavorites(
+            SimpleNamespace(
+                database=db,
+                get_all_bots=lambda: [
+                    SimpleNamespace(
+                        get_guild=lambda gid: SimpleNamespace(
+                            owner_id=7,
+                            get_member=lambda uid: SimpleNamespace(
+                                guild_permissions=SimpleNamespace(manage_guild=True, administrator=False)
+                            ),
+                        )
+                    )
+                ],
+            )
+        ),
+    )
 
 
 class TestAdd:
     @pytest.mark.asyncio
     async def test_it_adds_lists_and_does_not_repeat(self, world):
-        assert await world.favorites.add(GUILD, station(1)) is AddResult.ADDED
-        assert await world.favorites.add(GUILD, station(2)) is AddResult.ADDED
-        assert await world.favorites.add(GUILD, station(1)) is AddResult.ALREADY
+        assert await world.favorites.add(GUILD, 7, station(1)) is AddResult.ADDED
+        assert await world.favorites.add(GUILD, 7, station(2)) is AddResult.ADDED
+        assert await world.favorites.add(GUILD, 7, station(1)) is AddResult.ALREADY
 
         assert [f.uuid for f in await world.favorites.list(GUILD)] == [uuid(1), uuid(2)]
         assert await world.favorites.list(OTHER) == []  # cada servidor tem a sua
 
     @pytest.mark.asyncio
     async def test_only_uuid_and_name_are_stored_never_the_stream_address(self, world):
-        await world.favorites.add(GUILD, station(1))
+        await world.favorites.add(GUILD, 7, station(1))
 
         stored = world.db.tables[FAVORITES_DB][str(GUILD)]
         assert stored["stations"] == [{"uuid": uuid(1), "name": "Rádio 1"}]
@@ -50,14 +67,14 @@ class TestAdd:
     @pytest.mark.asyncio
     async def test_the_list_stops_at_24(self, world):
         for n in range(MAX_FAVORITES):
-            assert await world.favorites.add(GUILD, station(n)) is AddResult.ADDED
+            assert await world.favorites.add(GUILD, 7, station(n)) is AddResult.ADDED
 
-        assert await world.favorites.add(GUILD, station(99)) is AddResult.FULL
+        assert await world.favorites.add(GUILD, 7, station(99)) is AddResult.FULL
         assert len(await world.favorites.list(GUILD)) == MAX_FAVORITES
 
     @pytest.mark.asyncio
     async def test_two_members_favoriting_at_once_lose_nobody(self, world):
-        results = await asyncio.gather(*(world.favorites.add(GUILD, station(n)) for n in range(4)))
+        results = await asyncio.gather(*(world.favorites.add(GUILD, 7, station(n)) for n in range(4)))
 
         assert all(r is AddResult.ADDED for r in results)
         assert {f.uuid for f in await world.favorites.list(GUILD)} == {uuid(n) for n in range(4)}
@@ -67,7 +84,7 @@ class TestAdd:
         world.db.fail = True
 
         with pytest.raises(RadioUnavailable):
-            await world.favorites.add(GUILD, station(1))
+            await world.favorites.add(GUILD, 7, station(1))
         with pytest.raises(RadioUnavailable):
             await world.favorites.list(GUILD)
 

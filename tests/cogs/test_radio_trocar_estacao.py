@@ -176,7 +176,9 @@ class TestWalking:
         async def by_uuid(uuid, **kwargs):
             return station(uuid, f"Rádio {uuid[:2]}")
 
-        w.hub.directory = SimpleNamespace(by_uuid=by_uuid, logo_png=AsyncMock(), favicon_of=lambda u: None)
+        w.hub.directory = SimpleNamespace(
+            by_uuid=by_uuid, by_uuid_strict=by_uuid, logo_png=AsyncMock(), favicon_of=lambda u: None
+        )
         radio = await turn_on(w, station=station(MAIN, "Rádio 11"), station_list=list_)
         if volume:
             radio = await w.hub.store.set_volume(radio.id, volume, expected_rev=radio.rev)
@@ -286,8 +288,10 @@ class TestFavoriteAndInfoButtons:
         w.cog._gap_at.clear()  # passaram os 5 s entre consultas ao diretório
         await w.cog.radio_panel_click(info)
 
-        assert "entrou nas favoritas" in said(favorite) and "MP3" in said(info)
-        assert [f.uuid for f in await w.hub.favorites.list(GUILD)] == [MAIN]
+        assert "entrou nas SUAS favoritas" in said(favorite) and "MP3" in said(info)
+        assert [f.uuid for f in await w.hub.user_favorites.stations(favorite.author.id)] == [MAIN]
+        assert await w.hub.favorites.list(GUILD) == []
+        assert favorite.response.defer.await_args.kwargs["ephemeral"] is True
 
 
 class TestMenu:
@@ -307,7 +311,7 @@ class TestMenu:
     async def test_the_favorites_list_has_a_limit(self):
         w = await TestWalking.live_world()
         for n in range(MAX_FAVORITES):
-            await w.hub.favorites.add(GUILD, station(f"{n:08x}-0000-0000-0000-000000000000", f"R{n}"))
+            await w.hub.favorites.add(GUILD, 7, station(f"{n:08x}-0000-0000-0000-000000000000", f"R{n}"))
         press = menu("favorite")
 
         await w.cog.radio_panel_menu(press)
@@ -593,3 +597,87 @@ class TestPickerUsesTheRadioOfNow:
 
         current = await w.hub.store.get(w.radio.id)
         assert current.source["station"] == THIRD and current.rev > bumped.rev - 1
+
+
+class TestPersonalFavoritesJ3:
+    @pytest.mark.asyncio
+    async def test_member_star_is_personal_and_server_menu_rechecks_real_permission(self):
+        from empiremuse.rules.radio import PANEL_FAVORITE_ID
+
+        w = await TestWalking.live_world()
+        for bot in w.cog.bot.pool.get_all_bots():
+            bot.get_guild(GUILD).get_member(7).guild_permissions.manage_guild = False
+        press = click(PANEL_FAVORITE_ID, manage_guild=False)
+        await w.cog.radio_panel_click(press)
+        assert [f.uuid for f in await w.hub.user_favorites.stations(7)] == [MAIN]
+        assert await w.hub.user_favorites.stations(17) == []
+        w.cog._gap_at.clear()
+        refused = menu("favorite", manage_guild=False)
+        await w.cog.radio_panel_menu(refused)
+        assert "Gerenciar Servidor" in said(refused)
+        assert await w.hub.favorites.list(GUILD) == []
+        assert refused.response.defer.await_args.kwargs["ephemeral"] is True
+
+    @pytest.mark.asyncio
+    async def test_star_removes_a_station_missing_from_directory(self):
+        from empiremuse.rules.radio import PANEL_FAVORITE_ID
+
+        w = await TestWalking.live_world()
+        await w.cog.radio_panel_click(click(PANEL_FAVORITE_ID))
+        w.cog._gap_at.clear()
+        w.hub.directory.by_uuid_strict = AsyncMock(return_value=None)
+        press = click(PANEL_FAVORITE_ID)
+        await w.cog.radio_panel_click(press)
+        assert "saiu das suas favoritas" in said(press)
+        assert await w.hub.user_favorites.stations(7) == []
+        w.hub.directory.by_uuid_strict.assert_not_awaited()
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize("server", [False, True])
+async def test_favorite_confirmation_keeps_exactly_one_markdown_escape(server):
+    from empiremuse.rules.radio import PANEL_FAVORITE_ID
+    from tests.audio.test_radio_directory import directory, station as payload
+
+    w = await TestWalking.live_world()
+    w.hub.directory, _, _ = directory({"*": [payload(MAIN, name="Rock_FM")]})
+    press = menu("favorite") if server else click(PANEL_FAVORITE_ID)
+    if server:
+        await w.cog.radio_panel_menu(press)
+    else:
+        await w.cog.radio_panel_click(press)
+    text = said(press)
+    assert "Rock\\_FM" in text
+    assert text.count("\\") == 1
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_favorite_answer_survives_a_failed_read_after_the_saved_toggle():
+    from empiremuse.rules.radio import PANEL_FAVORITE_ID
+    from empiremuse.utils.radio.premium import RadioUnavailable
+
+    w = await TestWalking.live_world()
+    store = w.hub.user_favorites
+    real_stations = store.stations
+    calls = []
+
+    async def stations(user):
+        calls.append(user)
+        if len(calls) > 1:  # a leitura depois da gravação
+            raise RadioUnavailable
+        return await real_stations(user)
+
+    store.stations = stations
+    w.ports._names = {MAIN: "Rádio 11"}  # nome já conhecido do play
+    press = click(PANEL_FAVORITE_ID)
+    await w.cog.radio_panel_click(press)
+
+    assert "entrou nas SUAS favoritas" in said(press)
+    assert len(calls) == 2
+    assert "Rádio 11" in said(press) and MAIN not in said(press)
+    del store.stations
+    assert [f.uuid for f in await store.stations(7)] == [MAIN]

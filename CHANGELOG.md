@@ -13,12 +13,15 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - O comando temporário `fixfavs` foi removido.
 
 ### Segurança
+- Backend J3: favoritas do servidor passam a exigir ator com Gerenciar Servidor, administrador ou dono também no store. A estrela da rádio 24 h guarda favoritas pessoais; o menu conserva a ação administrativa do servidor.
 - Configuração de rádios: só oferece e aceita canais que o ator consegue ver e conectar, tanto no Discord quanto no painel web.
 - Removido o comando administrativo `exportsource`: o código público já está disponível no GitHub, sem necessidade de exportar arquivos da instalação pelo bot.
 - `tornado` atualizado de 6.5.10 para 6.6 (alertas #2, #3 e #4 do Dependabot), com isenção pontual do corte temporal no lock de produção.
 - O refreshToken do YouTube só é aplicado ao nó LOCAL da própria máquina; o token do RPC é gerado com fonte criptográfica. Conexões REST e WebSocket com nós IPv6 usam o endereço correto.
 
 ### Alterado
+- Telas J3 das favoritas de rádio: o `/fav_manager` ganha o modo "Rádios favoritas" (Remover e Limpar estações e filtros pessoais, sempre em mensagem efêmera), a gerência das favoritas do servidor (`open_server_favorites`, para o `/radio favoritas`) tem Remover e Limpar com confirmação, e o painel web ganha "Rádios favoritas" em Minha conta (só Remover) e "Favoritas do servidor" em Rádios (Remover com confirmação e Adicionar pelo seletor de local). Textos novos em pt-BR e en-US; o Tocar e a estrela do player ficam para a J2a. O comando `/radio favoritas` abre a gerência efêmera e reconfere Gerenciar Servidor, administrador ou dono em execução.
+- Backend J3 de favoritas pessoais ao vivo e filtros: coleção global `radio_user`, sem URLs, com CAS, limites de 24 estações e 10 filtros e remoção idempotente. Não publicar J3 antes das revisões, inventário, Política e pré-requisito de exclusão E1.
 - Estações de gênero criadas no servidor foram substituídas pelos 33 gêneros prontos; as existentes são apagadas na subida, sem backup, e a rádio 24 h e as favoritas passam ao gênero pronto de mesmo id. Conflitos preservam a estação para repetir na próxima subida. Anterior/Próxima continua nas estações do servidor.
 - Formulários de estações no chat e painel aceitam artistas ou playlists; o catálogo de gêneros no painel é só consulta. O esquema do slash muda e AUTO_SYNC_COMMANDS ressincroniza as opções.
 - Links de convite do Discord passam a usar https://empirecommunity.org/discord.
@@ -36,6 +39,8 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - O limite de playlists do servidor (Jukebox e rádio, por lista) passa de 25 para 100. O select de playlists da Jukebox (embed ocioso e painel com 2+ players) é paginado: "◀ Página anterior" e "Próxima página ▶" abrem a página pedida numa mensagem efêmera e o placeholder mostra "Página {p} de {t}". O menu "Favoritos do servidor" do `/play` mostra as 25 primeiras. `/jukebox playlists list` e `/radio playlists list` mostram todas, em mensagens de linhas inteiras (antes a lista longa era cortada no meio). A nota da página Playlists do painel informa o limite e a paginação.
 
 ### Corrigido
+- Confirmações de favoritas pessoais e do servidor preservam um único escape de markdown nos nomes de estação do diretório.
+- Favoritas pessoais de rádio distinguem estação ausente de falha no diretório ou limite de consultas: a consulta estrita preserva a reserva de fichas e responde indisponibilidade sem gravar dados.
 - Falhas ao carregar ou atualizar a paginação da Jukebox passam pelo tratamento de erros das interações.
 - Ativações concorrentes da mesma rádio reutilizam um único runner.
 - Rádios: falhas de leitura na ativação recebem resposta no comando e não impedem a tentativa das demais rádios na retomada; o reset registra ator e servidor na auditoria.

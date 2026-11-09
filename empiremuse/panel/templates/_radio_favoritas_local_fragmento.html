@@ -1,0 +1,7 @@
+{# Resposta htmx da cascata das favoritas do servidor: os selects (no alvo) e, fora de banda, a lista de estações do nó final. Variável: favoritas. #}
+{% set vivo = favoritas %}
+{% set form = favoritas %}
+{% include "_radio_local.html" %}
+<div id="estacoes-favoritas" aria-live="polite" hx-swap-oob="true">
+  {% include "_radio_favoritas_estacoes.html" %}
+</div>

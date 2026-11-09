@@ -1,4 +1,4 @@
-"""As estações favoritas do SERVIDOR (item 8): a lista que o painel da rádio ao vivo alimenta com "⭐ Favoritar" e o seletor de estações oferece como uma lista.
+"""As estações favoritas do SERVIDOR (item 8): a lista que o menu administrativo da rádio ao vivo alimenta e o seletor oferece como uma lista; a estrela pessoal usa user_favorites.py.
 
 Um documento por servidor na coleção ``radio_favorites`` do banco ``global`` (``_id`` = id do servidor em texto), com compare-and-set em ``rev``: dois membros
 favoritando ao mesmo tempo não perdem um ao outro. Só guarda o ``uuid`` e o nome já limpo pela função única de texto externo (R-11); o endereço do fluxo
@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 from empiremuse.rules.radio_stations import Station, valid_uuid
 from empiremuse.rules.text import external_text
+from empiremuse.utils.radio.perms import can_manage_guild
 from empiremuse.utils.radio.premium import CAS_ATTEMPTS, GLOBAL_DB, RadioUnavailable
 
 if TYPE_CHECKING:
@@ -23,6 +24,14 @@ logger = logging.getLogger(__name__)
 FAVORITES_DB = "radio_favorites"
 MAX_FAVORITES = 24
 NAME_LIMIT = 100
+
+
+class FavoriteForbidden(Exception):
+    """O ator não pode gerenciar as favoritas deste servidor."""
+
+
+class FavoriteNotFound(Exception):
+    """Estação ou filtro ausente/inválido; sem payload pessoal."""
 
 
 class FavoriteStation(NamedTuple):
@@ -65,7 +74,13 @@ class RadioFavorites:
         found: list[FavoriteStation] = []
         for item in raw if isinstance(raw, list) else []:
             uuid, name = (item.get("uuid"), item.get("name")) if isinstance(item, dict) else (None, None)
-            if valid_uuid(uuid) and isinstance(name, str) and name and all(f.uuid != uuid for f in found):
+            if (
+                isinstance(uuid, str)
+                and valid_uuid(uuid)
+                and isinstance(name, str)
+                and name
+                and all(f.uuid != uuid for f in found)
+            ):
                 found.append(
                     FavoriteStation(uuid, external_text(name, NAME_LIMIT, markdown=False))
                 )  # sem escapar de novo: o nome já veio escapado
@@ -74,8 +89,9 @@ class RadioFavorites:
     async def list(self, guild_id: int) -> list[FavoriteStation]:
         return self._stations(await self._find(guild_id))
 
-    async def add(self, guild_id: int, station: Station) -> AddResult:
+    async def add(self, guild_id: int, actor_id: int, station: Station) -> AddResult:
         """Põe a estação na lista do servidor. ``ALREADY`` se já estava e ``FULL`` com 24; ``RadioUnavailable`` se o banco não respondeu."""
+        await self._authorize(guild_id, actor_id)
         for _ in range(CAS_ATTEMPTS):
             doc = await self._find(guild_id)
             current = self._stations(doc)
@@ -90,11 +106,42 @@ class RadioFavorites:
                     *({"uuid": f.uuid, "name": f.name} for f in current),
                     {
                         "uuid": station.uuid,
-                        "name": station.name[:NAME_LIMIT],
+                        "name": external_text(station.name, NAME_LIMIT, markdown=False),
                     },  # o nome da estação já passou pela função única (R-11),
                 ],
                 "rev": rev + 1,
             }
             if await self._save(guild_id, updated, rev if doc is not None else None):
                 return AddResult.ADDED
+        raise RadioUnavailable
+
+    async def _authorize(self, guild_id: int, actor_id: int) -> None:
+        if not await can_manage_guild(self.pool, guild_id, actor_id):
+            raise FavoriteForbidden
+
+    async def remove(self, guild_id: int, actor_id: int, uuid: str) -> bool:
+        return await self._remove(guild_id, actor_id, uuid)
+
+    async def clear(self, guild_id: int, actor_id: int) -> bool:
+        return await self._remove(guild_id, actor_id, None)
+
+    async def _remove(self, guild_id: int, actor_id: int, uuid: str | None) -> bool:
+        await self._authorize(guild_id, actor_id)
+        for _ in range(CAS_ATTEMPTS):
+            doc = await self._find(guild_id)
+            current = self._stations(doc)
+            updated = [f for f in current if uuid is not None and f.uuid != uuid]
+            if updated == current:
+                return False
+            rev = doc["rev"] if isinstance(doc, dict) and isinstance(doc.get("rev"), int) else 0
+            if await self._save(
+                guild_id,
+                {
+                    "_id": str(int(guild_id)),
+                    "stations": [{"uuid": f.uuid, "name": f.name} for f in updated],
+                    "rev": rev + 1,
+                },
+                rev if doc is not None else None,
+            ):
+                return True
         raise RadioUnavailable
