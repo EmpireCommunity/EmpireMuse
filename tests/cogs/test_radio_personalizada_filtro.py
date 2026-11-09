@@ -237,3 +237,54 @@ async def test_genre_groups_are_selectable_favoritable_and_excluded_from_walk(mo
     assert cog.hub.custom_favorites.data[(1, 9)] == ["g:rock"]
     assert [s.id for s in await custom_panel.listed(cog.hub, radio)] == ["g:rock"]
     assert await custom_panel.walk(cog, inter(), tr, radio, 1) == "radio.panel.no_other_station"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("locale", ["pt-BR", "en-US"])
+@pytest.mark.parametrize("action", ["choose", "favorite"])
+async def test_builtin_messages_use_the_translated_genre_name(monkeypatch, locale, action):
+    from empiremuse.i18n import get_i18n
+
+    radio, cog, calls, change = world("f:brazilian")
+    monkeypatch.setattr(custom_panel.actions, "change_custom_station", change)
+    tr_real = get_i18n().for_locale(locale)
+    if action == "choose":
+        message = await custom_panel.pick_station(cog, inter(), tr_real, radio, "g:sertanejo_uni")
+    else:
+        radio.source = {"station": "g:sertanejo_uni"}
+        cog.hub.custom_favorites = FakeFavs()
+        cog.hub.stations.get = AsyncMock(side_effect=StationStore.builtin)
+        message = await custom_panel.favorite(cog, inter(), tr_real, radio)
+    assert tr_real("radio.genre.sertanejo_uni") in message
+    assert "sertanejo_uni" not in message
+
+
+@pytest.mark.asyncio
+async def test_walking_mixed_favorites_never_selects_a_builtin(monkeypatch):
+    radio, cog, calls, change = world("f:fav:9", active=1)
+    monkeypatch.setattr(custom_panel.actions, "change_custom_station", change)
+    cog.hub.custom_favorites = FakeFavs()
+    cog.hub.custom_favorites.data[(1, 9)] = [STATIONS[0].id, "g:rock", STATIONS[3].id]
+    await custom_panel.walk(cog, inter(), tr, radio, 1)
+    await custom_panel.walk(cog, inter(), tr, radio, -1)
+    assert calls == [STATIONS[3].id, STATIONS[3].id]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("locale", ["pt-BR", "en-US"])
+async def test_custom_ports_translate_builtin_labels(locale):
+    from empiremuse.i18n import get_i18n
+    from empiremuse.utils.radio.custom_ports import CustomRadioPorts
+
+    ports = object.__new__(CustomRadioPorts)
+    ports.station = StationStore.builtin(1, "g:sertanejo_uni")
+    tr_real = get_i18n().for_locale(locale)
+    ports.pool = SimpleNamespace(
+        i18n=SimpleNamespace(for_guild=AsyncMock(return_value=tr_real)),
+        radio=SimpleNamespace(stations=SimpleNamespace(list_for_guild=AsyncMock(return_value=[]))),
+    )
+    ports._guild = lambda: None
+    ports.radio = SimpleNamespace(guild_id=1)
+    ports.current, ports.no_tracks, ports.searching, ports.unknown = None, False, False, ()
+    assert await ports._panel_name(ports.radio) == tr_real("radio.genre.sertanejo_uni")
+    assert (await ports._custom_view()).station == tr_real("radio.genre.sertanejo_uni")

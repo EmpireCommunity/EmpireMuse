@@ -45,6 +45,12 @@ FAVORITES_VALUE = (
 )
 
 
+def station_label(station: CustomStation, tr: Any = None, *, markdown: bool = True) -> str:
+    """Nome traduzido dos prontos; nomes externos sempre neutralizados no destino."""
+    name = tr(f"radio.genre.{station.source['genre']}") if tr and station.id.startswith("g:") else station.name
+    return external_text(name, NAME_LIMIT, markdown=markdown)
+
+
 def favorites_owner(filter_id: str | None) -> int | None:
     """O membro dono da lista de favoritas aplicada (``f:fav:<id>``); ``None`` se o filtro não é o de favoritas."""
     prefix = FAVORITES_VALUE + ":"
@@ -96,15 +102,7 @@ async def custom_snapshot(hub: Any, radio: Radio, ports: Any, runner: Any, *, lo
     by_id = {s.id: s for s in listed}
     index = {s.id: i + 1 for i, s in enumerate(listed)}
     options = tuple(
-        StationOption(
-            index[i],
-            i,
-            tr(f"radio.genre.{by_id[i].source['genre']}") if tr and i.startswith("g:") else by_id[i].name,
-            0,
-            "",
-            QUALITY_GOOD,
-        )
-        for i in window
+        StationOption(index[i], i, station_label(by_id[i], tr, markdown=False), 0, "", QUALITY_GOOD) for i in window
     )
     kind = TYPE_FILTERS.get(radio.filter or "")
     label = ""
@@ -124,11 +122,7 @@ async def custom_snapshot(hub: Any, radio: Radio, ports: Any, runner: Any, *, lo
     return RadioPanelSnapshot(
         radio_id=radio.id,
         skin=radio.skin,
-        station_name=(
-            tr(f"radio.genre.{station.source['genre']}") if tr and station.id.startswith("g:") else station.name
-        )
-        if station
-        else "—",
+        station_name=station_label(station, tr, markdown=False) if station else "—",
         country="",
         codec="",
         bitrate_kbps=0,
@@ -159,7 +153,7 @@ async def _change(cog: RadioCog, interaction: Any, tr: Any, radio: Any, station:
     await actions.change_custom_station(
         cog.hub, radio_id=radio.id, station_id=station.id, actor=cog._authorized(interaction)
     )
-    return tr("radio.local.changed", station=external_text(station.name, NAME_LIMIT))
+    return tr("radio.local.changed", station=station_label(station, tr))
 
 
 def _gap() -> float:
@@ -233,6 +227,6 @@ async def favorite(cog: RadioCog, interaction: Any, tr: Any, radio: Radio) -> st
     result = await cog.hub.custom_favorites.toggle(radio.guild_id, interaction.author.id, station.id)
     return tr(
         f"radio.panel.custom.favorite_{result.value}",
-        station=external_text(station.name, NAME_LIMIT),
+        station=station_label(station, tr),
         max=MAX_CUSTOM_FAVORITES,
     )

@@ -136,7 +136,10 @@ async def run(hub: RadioHub) -> MigrationReport:
             left += 1  # editada/trocada durante a migração: não apaga
             continue
         await database.delete_data(sid, STATIONS_DB, GLOBAL_DB)
-        removed += 1
+        if await database.find_doc(sid, db_name=STATIONS_DB, collection=GLOBAL_DB) is not None:
+            left += 1  # o adaptador local pode recusar apagar sem levantar
+        else:
+            removed += 1
     if not left:
         await database.save_doc_cas(
             MARKER_ID,

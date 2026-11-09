@@ -9,7 +9,7 @@ import pytest
 from empiremuse.rules.radio_station import CustomStation, to_document
 from empiremuse.utils.radio import RadioHub, migrate_genres
 from empiremuse.utils.radio.stations import STATIONS_DB, StationInvalid, StationNotFound
-from empiremuse.utils.radio.store import NoPremium, RadioConflict
+from empiremuse.utils.radio.store import NoPremium, RadioConflict, RadioInvalid
 from tests.persistence.test_radio_store import FakeDb, GUILD, make_radio
 
 pytestmark = pytest.mark.critical
@@ -192,3 +192,53 @@ async def test_premium_loss_is_a_refusal_in_chat_and_panel(world):
         ctx, radio, {"versao": ["0"], "estacao": ["g:pop"]}, lambda key: key
     )
     assert outcome[0] == 403
+
+
+@pytest.mark.asyncio
+async def test_silent_delete_failure_keeps_marker_absent_and_is_not_counted(world):
+    world.db.delete_data = AsyncMock(return_value=None)
+    report = await migrate_genres.run(world.hub)
+    assert report.removed == 0 and report.left_behind == 1
+    assert SID in world.db._table(STATIONS_DB) and await marker(world) is None
+
+
+@pytest.mark.asyncio
+async def test_replace_station_ref_rejects_a_stale_revision_without_writing(world):
+    radio = await world.hub.store.create(make_radio(source={"station": SID}))
+    original = deepcopy(world.db._table("radios")[radio.id])
+    with pytest.raises(RadioConflict):
+        await world.hub.store.replace_station_ref(radio.id, "g:rock", expected_rev=radio.rev + 1)
+    assert world.db._table("radios")[radio.id] == original
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind,ref", [("live", "g:rock"), ("custom", "g:unknown"), ("custom", "g:../bad")])
+async def test_replace_station_ref_rejects_noncustom_and_unknown_refs(world, kind, ref):
+    source = {"station": "11111111-1111-1111-1111-111111111111"} if kind == "live" else {"station": SID}
+    radio = await world.hub.store.create(make_radio(kind=kind, source=source))
+    original = deepcopy(world.db._table("radios")[radio.id])
+    with pytest.raises(RadioInvalid):
+        await world.hub.store.replace_station_ref(radio.id, ref, expected_rev=radio.rev)
+    assert world.db._table("radios")[radio.id] == original
+
+
+@pytest.mark.asyncio
+async def test_set_custom_station_rejects_unknown_builtin_with_active_premium(world):
+    radio = await world.hub.store.create(make_radio(source={"station": SID}))
+    await world.hub.premium.grant(GUILD, by=1)
+    original = deepcopy(world.db._table("radios")[radio.id])
+    with pytest.raises(RadioInvalid):
+        await world.hub.store.set_custom_station(radio.id, "g:unknown", expected_rev=radio.rev)
+    assert world.db._table("radios")[radio.id] == original
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("rev", ["1", None, True, -1, 1.0, {}])
+async def test_invalid_favorite_revision_keeps_station_without_marker(world, rev):
+    key = f"{GUILD}:7"
+    original = {"_id": key, "stations": [SID], "rev": rev}
+    world.db._table("radio_custom_favorites")[key] = deepcopy(original)
+    report = await migrate_genres.run(world.hub)
+    assert report.left_behind == 1 and report.removed == 0
+    assert SID in world.db._table(STATIONS_DB) and await marker(world) is None
+    assert world.db._table("radio_custom_favorites")[key] == original

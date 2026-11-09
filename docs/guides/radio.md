@@ -81,6 +81,7 @@ Uma estação do servidor tem um **nome** (1 a 32 caracteres, único no servidor
 - **Artista digitado:** se o Last.fm não reconhece o nome, ele aparece com ⚠️ nas duas interfaces. O salvamento não é bloqueado.
 - **Troca de estação na call:** os botões ⏮ e ⏭ do painel trocam para a estação anterior ou seguinte do servidor (por ordem de nome), e há um botão para pular a faixa. Valem só para quem está na call do bot.
 - **Migração dos gêneros antigos:** na subida, as referências das rádios e das favoritas passam ao gênero pronto de mesmo id (`g:<id>`). A estação antiga é apagada depois, sem backup. Conflitos de gravação preservam a estação para a próxima subida; repetir a migração é seguro. Gênero fora do catálogo é removido e a rádio conserva a referência antiga, mostrando estação sem faixas. Documentos sem identidade válida ficam inertes.
+- **Filtro antigo de gênero:** uma rádio que ainda guarda `f:genre` passa a mostrar todas as estações do servidor; escolha um dos dois grupos de gêneros prontos no seletor.
 - **Quem configurou antes:** uma rádio personalizada que tocava uma playlist passa a usar uma estação de playlists com o mesmo nome, criada sozinha na subida do bot.
 
 ## O que o bot faz sozinho
