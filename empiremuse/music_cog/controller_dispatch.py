@@ -13,6 +13,7 @@ from empiremuse.utils.music.checks import pick_request_bot, update_attr, voice_s
 from empiremuse.utils.music.converters import (
     time_format,
 )
+from empiremuse.utils.music.guild_pin import GUILD_PIN, GUILD_PIN_PAGE, load_guild_pin, replace_guild_pin
 from empiremuse.utils.music.errors import (
     GenericError,
 )
@@ -356,7 +357,7 @@ class ControllerDispatchMixin:
             )
             return
 
-        if interaction.data.custom_id != "player_guild_pin":
+        if interaction.data.custom_id not in (GUILD_PIN, GUILD_PIN_PAGE):
             return
 
         if not interaction.data.values:
@@ -370,19 +371,42 @@ class ControllerDispatchMixin:
             )
             return
 
-        await interaction.response.defer(ephemeral=True)
-
-        guild_data = await self.bot.get_data(interaction.guild_id, db_name=DBModel.guilds)
-
-        try:
-            query = interaction.data.values[0]
-        except KeyError:
-            await interaction.send(
-                (await interaction.bot.pool.i18n.for_guild(interaction.guild))("player.the_selected_item_was_not"),
-                ephemeral=True,
-            )
-            await send_idle_embed(interaction.message, bot=self.bot, guild_data=guild_data, force=True)
+        query = interaction.data.values[0]
+        if query.startswith("jb:"):
+            await interaction.response.defer(with_message=False)
+            tr = await self.bot.pool.i18n.for_guild(interaction.guild)
+            number = query.removeprefix("jb:page:")
+            if not query.startswith("jb:page:") or not number.isascii() or not number.isdigit() or len(number) > 100:
+                await interaction.send(tr("player.the_selected_item_was_not"), ephemeral=True)
+                return
+            try:
+                select = await load_guild_pin(
+                    self.bot, tr, interaction.guild_id, int(number), placeholder_key="jukebox.select.page.placeholder"
+                )
+                components = []
+                if select is not None:
+                    select.custom_id = GUILD_PIN_PAGE
+                    components = [select]
+                if interaction.data.custom_id == GUILD_PIN_PAGE:
+                    await interaction.edit_original_message(
+                        components=components, content=None if components else tr("player.the_selected_item_was_not")
+                    )
+                else:
+                    first = await load_guild_pin(self.bot, tr, interaction.guild_id)
+                    await interaction.edit_original_message(components=replace_guild_pin(interaction.message, first))
+                    await interaction.followup.send(
+                        components=components,
+                        content=None if components else tr("player.the_selected_item_was_not"),
+                        ephemeral=True,
+                    )
+            except Exception as error:
+                self.bot.dispatch("interaction_player_error", interaction, error)
             return
+
+        # Sem prefixo = mensagem antiga. Somente jb: é reservado aos controles.
+        if query.startswith("pl:"):
+            query = query[3:]
+        await interaction.response.defer(ephemeral=True)
 
         kwargs = {
             "query": f"> pin: {query}",

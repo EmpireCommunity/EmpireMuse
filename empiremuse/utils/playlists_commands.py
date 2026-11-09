@@ -20,7 +20,7 @@ from empiremuse.rules.errors import (
     URL_TAKEN,
     RuleError,
 )
-from empiremuse.rules.i18n import fit
+from empiremuse.rules.i18n import fit, utf16_length
 from empiremuse.rules.limits import MAX_SERVER_PLAYLISTS
 from empiremuse.rules.playlists import SCOPE_JUKEBOX, SCOPE_RADIO, Playlist, display_name
 from empiremuse.rules.text import external_text
@@ -61,6 +61,23 @@ def _line(item: Playlist) -> str:
     return f"{item.order}. {icon}**{external_text(item.name, NAME_LIMIT)}**"
 
 
+def chunk_lines(lines: list[str], limit: int) -> list[str]:
+    """Junta linhas INTEIRAS em blocos de até ``limit`` unidades UTF-16 (a lista de 100 playlists não cabe numa mensagem de 2000).
+
+    Uma linha maior que ``limit`` é cortada no meio por ``fit``; nenhuma playlist some da lista.
+    """
+    blocks: list[list[str]] = [[]]
+    used = 0
+    for line in (fit(line, limit) for line in lines):
+        cost = utf16_length(line) + 1
+        if blocks[-1] and used + cost > limit:
+            blocks.append([])
+            used = 0
+        blocks[-1].append(line)
+        used += cost
+    return ["\n".join(block) for block in blocks]
+
+
 async def names_autocomplete(inter: Any, current: str, scope: str) -> list[str]:
     """Até 25 nomes das playlists DESTE servidor e escopo; quem não gerencia não vê nada."""
     if inter.guild_id is None or not member_may_manage(
@@ -88,11 +105,13 @@ async def list_(bot: BotCore, inter: disnake.ApplicationCommandInteraction, scop
     if not items:
         await inter.edit_original_message(tr(f"playlists.cmd.empty.{scope}"), allowed_mentions=NO_MENTIONS)
         return
-    text = "\n".join(_line(p) for p in items)
     head = tr(
         "playlists.cmd.list.title", scope=tr(f"playlists.scope.{scope}"), count=len(items), max=MAX_SERVER_PLAYLISTS
     )
-    await inter.edit_original_message(f"{head}\n{fit(text, LIST_LINE_MAX)}", allowed_mentions=NO_MENTIONS)
+    first, *rest = chunk_lines([_line(p) for p in items], LIST_LINE_MAX)
+    await inter.edit_original_message(f"{head}\n{first}", allowed_mentions=NO_MENTIONS)
+    for block in rest:
+        await inter.followup.send(block, ephemeral=True, allowed_mentions=NO_MENTIONS)
 
 
 async def remove(bot: BotCore, inter: disnake.ApplicationCommandInteraction, scope: str, name: str) -> None:

@@ -17,7 +17,7 @@
   "panel.playlists.filter.legend": "Show playlists of",
   "panel.playlists.scope.jukebox.label": "Jukebox",
   "panel.playlists.scope.radio.label": "Radio",
-  "panel.playlists.scope.jukebox.note": "They show up in the idle player and in the server favorites menu of the /play command, filtered by genre, and are shared by every bot of this server. They are never a radio source.",
+  "panel.playlists.scope.jukebox.note": "Up to {max} playlists. They show up in the Jukebox select, in pages and in the order listed here, in the idle player and in the server favorites menu of the /play command (filtered by genre), and are shared by every bot of this server. They are never a radio source.",
   "panel.playlists.scope.radio.note": "Only usable as the source of a custom radio station (Radios → stations). They never show up in /play, in the Jukebox or in the music menus.",
   "panel.radio.nav": "Radios",
   "panel.radio.title": "Radios",

@@ -15,6 +15,8 @@ from typing import Any
 import disnake
 
 from empiremuse.rules.i18n import Translator, fit
+from empiremuse.rules.playlists import Playlist
+from empiremuse.utils.music.guild_pin import build_guild_pin
 from empiremuse.rules.jukebox_panel import (
     GENRE_SELECT_ID,
     MAX_GENRE_OPTIONS,
@@ -105,7 +107,7 @@ def render_panel(
     entries: Sequence[PanelEntry],
     *,
     tr: Translator,
-    playlist_options: Sequence[disnake.SelectOption] = (),
+    playlists: Sequence[Playlist] = (),
     last_action: str = "",
     genres: Sequence[str] = (),
 ) -> dict[str, Any]:
@@ -128,16 +130,7 @@ def render_panel(
     ]
     if genres:
         components.append(disnake.ui.ActionRow(_genre_select(tr, genres)))
-    if playlist_options:
-        components.append(
-            disnake.ui.ActionRow(
-                disnake.ui.Select(
-                    placeholder=fit(tr("player.panel.playlists.placeholder"), 150),
-                    options=list(playlist_options)[:25],
-                    custom_id="player_guild_pin",
-                    min_values=0,
-                    max_values=1,
-                )
-            )
-        )
+    select = build_guild_pin(bot, tr, playlists, placeholder_key="player.panel.playlists.placeholder")
+    if select is not None:
+        components.append(disnake.ui.ActionRow(select))
     return {"content": None, "embeds": [embed], "components": components}

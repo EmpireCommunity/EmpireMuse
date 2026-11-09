@@ -18,7 +18,7 @@ from empiremuse.utils.music.errors import (
     log_unexpected_error,
 )
 from empiremuse.utils.others import PlayerControls, string_to_file
-from empiremuse.utils.server_playlists import load_select_options
+from empiremuse.utils.music.guild_pin import load_guild_pin
 from empiremuse.wavelink import TrackStart, TrackEnd
 
 if TYPE_CHECKING:
@@ -266,16 +266,11 @@ class PlayerPlaybackMixin:
             )
         ]
 
-        opts = await load_select_options(self.bot, self.guild.id)
-
-        if opts:
-            components.append(
-                disnake.ui.Select(
-                    placeholder=fit(self.tr("player.play_a_song_playlist_from.placeholder"), 150),
-                    options=opts,
-                    custom_id="player_guild_pin",
-                )
-            )
+        select = await load_guild_pin(
+            self.bot, self.tr, self.guild.id, placeholder_key="player.play_a_song_playlist_from.placeholder"
+        )
+        if select is not None:
+            components.append(select)
 
         embed = disnake.Embed(
             description=fit(self.tr("player.there_are_no_songs_in.description"), 4096),

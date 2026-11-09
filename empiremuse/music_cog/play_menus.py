@@ -9,7 +9,7 @@ import disnake
 
 from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.music_cog.play_guild_menu import GuildPlaylistSelect
-from empiremuse.rules.limits import MAX_SERVER_PLAYLISTS
+from empiremuse.rules.jukebox_select import SELECT_CAPACITY
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.converters import fix_characters, md_link
 from empiremuse.utils.music.errors import (
@@ -300,7 +300,7 @@ class PlayMenusMixin:
             menu = "guild_favs"
 
             # as 25 primeiras por ordem; o valor "> pin: <nome>" é resolvido de novo no store ao tocar
-            for playlist, option in zip(playlists, select_options(self.bot, playlists, MAX_SERVER_PLAYLISTS)):
+            for playlist, option in zip(playlists, select_options(self.bot, playlists, limit=SELECT_CAPACITY)):
                 option.value = f"> pin: {playlist.name}"
                 fav_opts.append({"url": playlist.url, "option": option})
 

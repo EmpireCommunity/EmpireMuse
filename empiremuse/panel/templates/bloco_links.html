@@ -43,7 +43,7 @@
       <h3 class="subtitulo" id="titulo-playlists-{{ escopo }}">{{ rotulo }}</h3>
       <p class="contagem-links"><strong>{{ bloco.total }} de {{ bloco.maximo }}</strong> playlists</p>
     </div>
-    <p class="nota">{{ _("panel.playlists.scope." + escopo + ".note") }}</p>
+    <p class="nota">{{ _("panel.playlists.scope." + escopo + ".note", max=bloco.maximo) }}</p>
 
     {% if itens %}
     <ul class="lista-links" role="list">

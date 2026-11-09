@@ -6,11 +6,11 @@ import html
 import json
 import re
 
+from empiremuse.rules.limits import MAX_SERVER_PLAYLISTS as MAX_PLAYLISTS
 from empiremuse.rules.playlists import Playlist, from_doc, sorted_by_order, to_export
 from tests.panel.helpers_settings import NOT_FOUND_TEXT, UID, acao_form
 from tests.panel.test_settings_http import HttpBase
 
-MAX_PLAYLISTS = 25
 BASE_URL = "https://example.com/"
 
 
