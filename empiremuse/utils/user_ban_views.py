@@ -72,6 +72,11 @@ def _bot_ids(bot: BotCore) -> set[int]:
     return {b.user.id for b in bot.pool.get_all_bots() if getattr(b, "user", None) is not None}
 
 
+def _is_listed(bot: BotCore, user_id: int) -> bool:
+    bans = user_bans_of(bot)
+    return bans is not None and any(record.user_id == user_id for record in bans.records())
+
+
 async def prepare_confirmation(bot: BotCore, tr, owner_id: int, action: str, argument: str, reason: str) -> Prepared:
     """Valida o alvo, resolve o usuário e monta a confirmação; qualquer recusa volta como texto fixo (nunca exceção do Discord)."""
     target_id = owner_target_id(argument)
@@ -79,25 +84,29 @@ async def prepare_confirmation(bot: BotCore, tr, owner_id: int, action: str, arg
     if error is not None or target_id is None:
         key = {TARGET_OWNER: "erasure.ban.owner.target_owner", TARGET_BOT: "erasure.ban.owner.target_bot"}
         return Prepared(content=tr(key.get(error or "", "erasure.owner.invalid_id")))
+    target: Any = None
     try:
         target = await bot.fetch_user(target_id)
     except disnake.NotFound:
-        return Prepared(content=tr("erasure.owner.not_found"))
+        # Só o desban de um ID que está na lista segue sem o usuário resolvido (conta apagada no Discord): senão o registro nunca sairia.
+        if not (action == UNBAN_ACTION and _is_listed(bot, target_id)):
+            return Prepared(content=tr("erasure.owner.not_found"))
     except disnake.HTTPException as exc:
         logger.warning("banimento: fetch_user falhou (%s)", type(exc).__name__)
         return Prepared(content=tr("erasure.owner.lookup_failed"))
-    if target.bot:
+    if target is not None and target.bot:
         return Prepared(content=tr("erasure.ban.owner.target_bot"))
-    name = render_text(target.display_name, DISPLAY_NAME_LIMIT) or str(target.id)
+    name = (render_text(target.display_name, DISPLAY_NAME_LIMIT) if target is not None else "") or str(target_id)
     if action == BAN_ACTION:
-        text = tr("erasure.ban.owner.ask", name=name, id=target.id)
+        text = tr("erasure.ban.owner.ask", name=name, id=target_id)
         if reason:
             text += "\n" + tr("erasure.ban.owner.reason_line", reason=render_text(reason, REASON_LIMIT))
     else:
-        text = tr("erasure.ban.owner.unban_ask", name=name, id=target.id)
+        text = tr("erasure.ban.owner.unban_ask", name=name, id=target_id)
     embed = disnake.Embed(description=text)
-    embed.set_thumbnail(url=target.display_avatar.url)
-    return Prepared(embed=embed, view=UserBanConfirmView(bot, tr, owner_id, action, target.id, name, reason))
+    if target is not None:
+        embed.set_thumbnail(url=target.display_avatar.url)
+    return Prepared(embed=embed, view=UserBanConfirmView(bot, tr, owner_id, action, target_id, name, reason))
 
 
 class UserBanConfirmView(disnake.ui.View):

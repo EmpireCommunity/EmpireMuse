@@ -954,3 +954,47 @@ async def test_a_warning_without_permission_does_not_spend_the_quota():
 
     perdida.reply.assert_not_awaited()
     valida.reply.assert_awaited_once()  # o outro bot ainda pôde avisar
+
+
+# ------------------------------------------------------------------------------- T-521: desban de conta que o Discord não resolve
+
+
+@pytest.mark.asyncio
+async def test_unban_of_an_account_discord_no_longer_resolves_proceeds_with_the_id_alone():
+    w = mundo_do_dono()
+    await w.bans.ban(DONO, COMUM, "")
+    w.bot.fetch_user.side_effect = disnake.NotFound(MagicMock(status=404), "x")
+
+    prepared = await views.prepare_confirmation(w.bot, PT, DONO, "unban", str(COMUM), "")
+
+    assert isinstance(prepared.view, views.UserBanConfirmView) and prepared.content is None
+    assert (
+        str(COMUM) in prepared.embed.description and prepared.embed.thumbnail.url is None
+    )  # nome vira o ID, sem miniatura
+    assert await prepared.view.interaction_check(clique(DONO_DA_APP)) is False  # a conferência do dono continua
+    c = clique(DONO)
+    await prepared.view.confirmed(c)
+    assert not w.bans.is_blocked(COMUM)
+    assert c.edit_original_message.await_args.kwargs["content"] == PT(
+        "erasure.ban.owner.unbanned", name=str(COMUM), id=COMUM
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("acao", "banido"),
+    [
+        pytest.param("unban", False, id="desban de ID que não está na lista"),
+        pytest.param("ban", False, id="ban exige usuário resolvível"),
+        pytest.param("ban", True, id="ban de ID já listado também exige"),
+    ],
+)
+async def test_the_id_alone_path_is_only_for_unban_of_a_listed_id(acao, banido):
+    w = mundo_do_dono()
+    if banido:
+        await w.bans.ban(DONO, COMUM, "")
+    w.bot.fetch_user.side_effect = disnake.NotFound(MagicMock(status=404), "x")
+
+    prepared = await views.prepare_confirmation(w.bot, PT, DONO, acao, str(COMUM), "m")
+
+    assert prepared.view is None and prepared.content == PT("erasure.owner.not_found")
