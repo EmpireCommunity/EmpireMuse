@@ -94,8 +94,9 @@ async def _resultado_do_vetor_b(servidor, sessao, proprio, novo):
     ws = await _registrar_usuario(servidor, sessao, [proprio], _token_do_app())
     await ws.send_json({"op": "rpc_update", "user_ids": [novo], "token": _token_do_app(), "version": "3.0.0"})
     await asyncio.sleep(ASSENTAR)
-    vistas = await observar(ws)
-    return vistas, proprio in web_app.users_ws, novo in web_app.users_ws
+    terceira = await _registrar_usuario(servidor, sessao, [proprio], _token_do_app())  # alguém assume o ID antigo
+    vistas = await observar(ws)  # a primeira conexão NÃO é derrubada: já esqueceu ``proprio``
+    return vistas, proprio in web_app.users_ws, novo in web_app.users_ws, terceira is not None
 
 
 @pytest.mark.asyncio
@@ -107,7 +108,9 @@ async def test_vector_b_re_registering_replaces_the_previous_ids_the_same_for_ba
     com_banido = await _resultado_do_vetor_b(servidor, sessao, _snowflake(), banido)
     com_livre = await _resultado_do_vetor_b(servidor, sessao, _snowflake(), livre)
 
-    assert com_banido == com_livre == (([], None), False, True)  # o ID antigo sai e o novo entra, igual nos dois casos
+    assert (
+        com_banido == com_livre == (([], None), True, True, True)
+    )  # a conexão não é chutada; o ID antigo passa à terceira e o novo entra, igual nos dois casos
 
 
 @pytest.mark.asyncio
@@ -203,3 +206,20 @@ async def test_send_rpc_data_skips_the_banned_user_without_even_reading_the_data
 
     assert [e["user"] for e in enviados] == [livre]
     assert [c.kwargs["id_"] for c in bot.get_global_data.await_args_list] == [livre]
+
+
+@pytest.mark.asyncio
+async def test_a_banned_id_gets_no_token_error_either_when_the_server_checks_tokens(iniciar_servidor, sessao, segredo):
+    """O descarte vem antes da auth: num ban parcial (conexão ainda aberta) o token errado não gera ``_token_error`` para o banido."""
+    servidor = iniciar_servidor({"RPC_SERVER_SECRET": segredo, "ENABLE_RPC_AUTH": "true"})
+    banido, livre = _snowflake(), _snowflake()
+    banir(servidor, banido)
+    ws_bot, _ = await _registrar_bot(servidor, sessao, segredo)
+    ws_banido = await _registrar_usuario(servidor, sessao, [banido], _token_do_app())
+    ws_livre = await _registrar_usuario(servidor, sessao, [livre], _token_do_app())
+
+    for uid in (banido, livre):
+        await ws_bot.send_json({"op": "update", "user": uid, "token": "errado"})
+
+    assert (await observar(ws_banido))[0] == []
+    assert len((await observar(ws_livre))[0]) == 1  # o livre recebe o aviso de token; o banido, nada

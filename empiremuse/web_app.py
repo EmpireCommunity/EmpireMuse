@@ -339,7 +339,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
     def _relay_registration(self, data: dict) -> None:
         allowed = [u for u in self.user_ids if not self.is_blocked(u)]  # o banido nunca chega aos bots
         if not allowed:
-            return
+            return  # o lado do bot ignora ``user_ids`` vazio (``if not users: continue``): enviar não mudaria nada
         payload = {"op": USER_OP, "user_ids": allowed}
         if isinstance(data.get("version"), str):
             payload["version"] = data["version"]
@@ -361,8 +361,13 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             logger.warning("Relé RPC: mensagem do bot %s ignorada, formato inesperado.", self.bot_ids)
             return
 
+        if self.is_blocked(
+            user_id
+        ):  # banido: nada é entregue; vem ANTES da auth, de ``target.blocked`` e de ``_token_error`` (cobre o ban parcial)
+            return
+
         target = users_ws.get(user_id)
-        if target is None or self.is_blocked(user_id):  # banido: nada é entregue (e a conexão dele não muda de estado)
+        if target is None:
             return
 
         payload = pick_fields(data, BOT_TO_USER_FIELDS)
