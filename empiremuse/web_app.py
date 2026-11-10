@@ -309,9 +309,11 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             self._disconnect("O token precisa ter 50 caracteres...")
             return
 
-        # E5 (Q14): lista com QUALQUER id banido cai inteira, antes de ``_forget_users`` e ``_replace_session`` (a sessão de outro id não é derrubada)
-        if any(self.is_blocked(u) for u in ids):
-            self._disconnect(RPC_BLOCKED_REASON)
+        # E5 (Q14): o ID banido é ignorado em SILÊNCIO (nada de mensagem ou fechamento diferente do caminho de sucesso, que não envia nada): não
+        # é registrado, não é repassado aos bots e não mexe em ``_forget_users`` nem em ``_replace_session``. O aviso de bloqueio só existe em
+        # ``close_rpc_for``, para a conexão que já estava aberta quando o ban foi aplicado. Os demais IDs da lista seguem normalmente.
+        ids = [u for u in ids if not self.is_blocked(u)]
+        if not ids:
             return
 
         self._forget_users()
