@@ -30,7 +30,7 @@ from empiremuse.rules.user_ban import (
     UNBAN_ACTION,
     ban_target_error,
 )
-from empiremuse.utils.erasure_views import _guarded
+from empiremuse.utils.erasure_views import guarded
 from empiremuse.utils.user_ban import FAILED_PANEL, FAILED_RPC, AlreadyBanned, UserBansUnavailable, user_bans_of
 
 if TYPE_CHECKING:
@@ -145,12 +145,13 @@ class UserBanConfirmView(disnake.ui.View):
     async def confirmed(self, interaction: disnake.MessageInteraction) -> None:
         self.stop()  # uma confirmação só: o segundo clique não repete
         # Reconhece antes de gravar (3 s) e entrega o desfecho pela edição protegida, como o apagamento: PARTIAL e falha chegam ao dono.
-        await _guarded(
+        await guarded(
             "aviso de andamento",
             interaction.response.edit_message(content=self.tr("erasure.ban.owner.working"), embed=None, view=None),
+            domain="banimento",
         )
         text = await self._apply()
-        await _guarded("resposta final", interaction.edit_original_message(content=text))
+        await guarded("resposta final", interaction.edit_original_message(content=text), domain="banimento")
 
     async def _apply(self) -> str:
         bans = user_bans_of(self.bot)

@@ -83,12 +83,15 @@ async def run_erasure(pool: BotPool, tr, user_id: int, *, grant: Optional[Grant]
     return tr("erasure.done") if report.status is ErasureStatus.OK else tr("erasure.partial")
 
 
-async def _guarded(label: str, work: Any) -> bool:
-    """Espera um envio ou edição de enfeite/resposta final: falha vira log do TIPO (a interação ou a mensagem pode ter expirado)."""
+async def guarded(label: str, work: Any, *, domain: str = "apagamento") -> bool:
+    """Espera um envio ou edição de enfeite/resposta final: falha vira log do TIPO (a interação ou a mensagem pode ter expirado).
+
+    ``domain`` é o prefixo do log (cada fluxo usa o seu: ``apagamento``, ``banimento``).
+    """
     try:
         await work
     except Exception as error:  # noqa: BLE001 - nada aqui pode quebrar o fluxo nem vazar texto de exceção
-        logger.warning("apagamento: %s falhou (%s)", label, type(error).__name__)
+        logger.warning("%s: %s falhou (%s)", domain, label, type(error).__name__)
         return False
     return True
 
@@ -96,7 +99,7 @@ async def _guarded(label: str, work: Any) -> bool:
 async def clear_buttons(message: Optional[disnake.Message], label: str) -> None:
     """Tira os botões de uma mensagem que expirou (a view já está parada)."""
     if message is not None:
-        await _guarded(label, message.edit(view=None))
+        await guarded(label, message.edit(view=None))
 
 
 class ErasureConfirmView(disnake.ui.View):
@@ -169,11 +172,9 @@ class ErasureConfirmView(disnake.ui.View):
                 return
         # ``edit_message`` reconhece a interação (3 s) e tira os botões; a varredura do serviço vem depois, sem prazo de resposta.
         # Se o ack falhar, o clique é genuíno e a concessão já é do titular: segue para o serviço e entrega o desfecho pela edição protegida.
-        await _guarded(
-            "aviso de andamento", interaction.response.edit_message(content=tr("erasure.running"), view=None)
-        )
+        await guarded("aviso de andamento", interaction.response.edit_message(content=tr("erasure.running"), view=None))
         text = await run_erasure(pool, tr, interaction.author.id, grant=grant)
-        await _guarded("resposta final", interaction.edit_original_message(content=text))
+        await guarded("resposta final", interaction.edit_original_message(content=text))
 
     async def on_timeout(self) -> None:
         self.stop()
@@ -181,7 +182,7 @@ class ErasureConfirmView(disnake.ui.View):
             self.bot.pool.erasure_grants.revoke(self.grant.grant_id)
             await clear_buttons(self.dm_message, "limpar a DM expirada")
         elif self.origin is not None:
-            await _guarded(
+            await guarded(
                 "limpar a mensagem expirada",
                 self.origin.edit_original_message(content=self.tr("erasure.cancelled"), view=None),
             )
@@ -261,4 +262,4 @@ class OwnerRequestView(disnake.ui.View):
             pool.erasure_grants.revoke(grant.grant_id)
             if view is not None:
                 view.stop()
-        await _guarded("aviso ao dono", interaction.edit_original_message(content=self.tr(key)))
+        await guarded("aviso ao dono", interaction.edit_original_message(content=self.tr(key)))
