@@ -13,8 +13,6 @@ import disnake
 
 from empiremuse.rules.i18n import fit
 from empiremuse.rules.radio import KIND_CUSTOM, KIND_LIVE, Radio
-from empiremuse.rules.radio_stations import Station
-from empiremuse.rules.text import external_text
 from empiremuse.utils.ephemeral import CONFIRMATION_TTL_S, ERROR_TTL_S, cleanup_later
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.radio import actions, radio_commands
@@ -29,7 +27,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 CONFIRM_TIMEOUT_S = 60.0
-NAME_LIMIT = 80
 KNOWN_CODES = frozenset(
     {
         "reserve_only",
@@ -141,64 +138,6 @@ async def _start_waiting(cog: RadioCog, inter: Any, radio: Radio, channel: Any) 
         allow_no_station=True,
     )
     await cog.hub.manager.activate(enabled, wait=False, fresh=True)
-
-
-async def choose_station(cog: RadioCog, inter: Any, tr: Any, radio: Radio, channel: Any) -> None:
-    """Depois de configurar: a estação que a rádio toca. Sem ela a rádio existe, mas não liga."""
-    if radio.kind == KIND_LIVE:
-        picker = cog._picker(
-            inter,
-            tr,
-            lambda click, station, station_list: apply_live(cog, click, tr, radio.id, station, station_list),
-            tr("radio.setup.confirm_station", channel=channel.name),
-        )
-        rendered = await picker.render()
-        done = tr(
-            "radio.setup.done", channel=channel.mention, bot=f"<@{radio.bot_id}>", kind=tr("radio.setup.kind.live")
-        )
-        rendered["content"] = f"{done}\n{rendered.get('content') or ''}".strip()
-        await inter.edit_original_message(**rendered, allowed_mentions=disnake.AllowedMentions.none())
-
-
-async def _save_source(cog: RadioCog, tr: Any, interaction: Any, radio_id: str, write: Any) -> Radio:
-    """Grava a estação escolhida na rádio de AGORA (o select vive minutos: premium, ``manage_guild`` e ``rev`` são conferidos aqui)."""
-    hub = cog.hub
-    try:
-        await hub.setup.check_actor(interaction.guild_id, interaction.author.id)
-        fresh = await hub.store.get(radio_id)
-        if fresh is None:
-            raise RadioNotFound
-        updated = await write(fresh)
-    except (RadioForbidden, RadioNotFound, RadioConflict, RadioInvalid, RadioUnavailable) as error:
-        raise refusal(tr, error) from None
-    if updated.enabled:
-        await hub.manager.change_station(updated)  # ligada: troca ao vivo, pelo recuo
-    return updated
-
-
-async def apply_live(
-    cog: RadioCog, click: Any, tr: Any, radio_id: str, station: Station, station_list: tuple[str, ...]
-) -> str:
-    async def write(fresh: Radio) -> Radio:
-        if fresh.kind != KIND_LIVE:
-            raise RadioInvalid(_kind_error())
-        return await cog.hub.store.set_station(
-            fresh.id,
-            station.uuid,
-            expected_rev=fresh.rev,
-            updated_by=str(click.author.id),
-            station_list=station_list or None,
-        )
-
-    await _save_source(cog, tr, click, radio_id, write)
-    return tr("radio.setup.station_saved", station=external_text(station.name, NAME_LIMIT))
-
-
-def _kind_error():
-    from empiremuse.rules.errors import RuleError
-    from empiremuse.rules.radio import SOURCE_INVALID
-
-    return RuleError(SOURCE_INVALID, "kind")
 
 
 async def prepare_reset(cog: RadioCog, tr: Any, author: Any, guild_id: int, channel: Any) -> tuple[str, ConfirmReset]:

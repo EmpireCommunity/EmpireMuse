@@ -50,7 +50,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - O limite de playlists do servidor (Jukebox e rádio, por lista) passa de 25 para 100. O select de playlists da Jukebox (embed ocioso e painel com 2+ players) é paginado: "◀ Página anterior" e "Próxima página ▶" abrem a página pedida numa mensagem efêmera e o placeholder mostra "Página {p} de {t}". O menu "Favoritos do servidor" do `/play` mostra as 25 primeiras. `/jukebox playlists list` e `/radio playlists list` mostram todas, em mensagens de linhas inteiras (antes a lista longa era cortada no meio). A nota da página Playlists do painel informa o limite e a paginação.
 
 ### Removido
-- Código sem uso do `/radio setup`: o seletor de estações do servidor (`choose_station` custom e `StationSelect`) e os textos `radio.setup.no_stations`, `pick_station`, `select_placeholder` e `expired`. Desde o R1 o setup liga a rádio em espera e a estação se escolhe no painel; nada muda para o usuário.
+- Código sem uso do `/radio setup`: `choose_station`, `StationSelect`, `apply_live` e os textos `radio.setup.no_stations`, `pick_station`, `select_placeholder`, `expired`, `confirm_station` e `station_saved`. Desde o R1 o setup liga a rádio em espera e a estação se escolhe no painel; nada muda para o usuário.
 
 ### Corrigido
 - Confirmações de favoritas pessoais e do servidor preservam um único escape de markdown nos nomes de estação do diretório.

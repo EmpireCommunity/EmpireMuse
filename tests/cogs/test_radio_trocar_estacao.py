@@ -400,51 +400,6 @@ class TestPickerWiring:
         assert (await w.hub.store.get(w.radio.id)).source["station"] == THIRD
         assert "agora tocando" in said(confirm).lower()
 
-    @pytest.mark.asyncio
-    async def test_the_setup_picker_saves_the_chosen_station_and_list_without_turning_the_radio_on(self):
-        from empiremuse.utils.radio import setup_flow
-        from tests.cogs.radio_config import configure
-
-        w = build_world()
-        await w.hub.control.load()
-        await w.hub.premium.grant(GUILD, by=1)
-        w.hub.directory = SimpleNamespace(by_uuid=AsyncMock(), logo_png=AsyncMock(), favicon_of=lambda u: None)
-        tr = await w.cog.bot.pool.i18n.for_guild(w.inter.guild)
-        radio = await configure(w.hub, guild_id=GUILD, channel_id=w.channel.id, kind="live", source={})
-
-        await setup_flow.choose_station(w.cog, w.inter, tr, radio, w.channel)
-        view = w.inter.edit_original_message.await_args.kwargs["view"]
-        view.chosen = station(THIRD, "Rádio 33")
-        view.hits = (
-            SimpleNamespace(station=station(MAIN, "Rádio 11")),
-            SimpleNamespace(station=station(THIRD, "Rádio 33")),
-        )
-        confirm = click(PANEL_MENU_ID)
-        await view._on_confirm(confirm)
-
-        saved = await w.hub.store.get(radio_id(2, GUILD))
-        assert saved.source["station"] == THIRD and saved.source["list"] == [MAIN, THIRD] and not saved.enabled
-        assert "/radio on" in said(confirm)
-
-    @pytest.mark.asyncio
-    async def test_a_station_chosen_for_a_running_radio_switches_it_live(self):
-        from empiremuse.utils.radio import setup_flow
-
-        w = await TestWalking.live_world()
-        tr = await w.cog.bot.pool.i18n.for_guild(w.inter.guild)
-        switched = []
-
-        async def change_station(updated):
-            switched.append(updated.source["station"])
-            return True
-
-        w.hub.manager.change_station = change_station
-        confirm = click(PANEL_MENU_ID)
-
-        text = await setup_flow.apply_live(w.cog, confirm, tr, w.radio.id, station(THIRD, "Rádio 33"), ())
-
-        assert switched == [THIRD] and "Rádio 33" in text
-
 
 class TestMenuStopNeedsManageGuild:
     @pytest.mark.asyncio
