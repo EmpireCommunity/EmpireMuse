@@ -309,13 +309,10 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             self._disconnect("O token precisa ter 50 caracteres...")
             return
 
-        # E5 (Q14): o ID banido é ignorado em SILÊNCIO (nada de mensagem ou fechamento diferente do caminho de sucesso, que não envia nada): não
-        # é registrado, não é repassado aos bots e não mexe em ``_forget_users`` nem em ``_replace_session``. O aviso de bloqueio só existe em
-        # ``close_rpc_for``, para a conexão que já estava aberta quando o ban foi aplicado. Os demais IDs da lista seguem normalmente.
-        ids = [u for u in ids if not self.is_blocked(u)]
-        if not ids:
-            return
-
+        # E5 (Q14): o ID banido tem os MESMOS efeitos locais de um livre (entra em ``user_ids`` e ``users_ws``; ``_forget_users`` e
+        # ``_replace_session`` se comportam igual; o token é guardado igual), senão o estado de banimento vazaria por quem é derrubado. A
+        # diferença é só para fora: ``_relay_registration`` o tira do repasse aos bots e ``_on_bot_message`` não entrega nada a ele. O aviso de
+        # bloqueio só existe em ``close_rpc_for``, para a conexão que já estava aberta quando o ban foi aplicado.
         self._forget_users()
         self.user_ids = ids
         self.token = token
@@ -340,7 +337,10 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             pass
 
     def _relay_registration(self, data: dict) -> None:
-        payload = {"op": USER_OP, "user_ids": self.user_ids}
+        allowed = [u for u in self.user_ids if not self.is_blocked(u)]  # o banido nunca chega aos bots
+        if not allowed:
+            return
+        payload = {"op": USER_OP, "user_ids": allowed}
         if isinstance(data.get("version"), str):
             payload["version"] = data["version"]
 
@@ -362,7 +362,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             return
 
         target = users_ws.get(user_id)
-        if target is None:
+        if target is None or self.is_blocked(user_id):  # banido: nada é entregue (e a conexão dele não muda de estado)
             return
 
         payload = pick_fields(data, BOT_TO_USER_FIELDS)

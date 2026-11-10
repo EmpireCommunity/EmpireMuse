@@ -1,3 +1,4 @@
+# ruff: noqa: F811 - os fixtures ``iniciar_servidor``, ``sessao`` e ``segredo`` são importados de test_rpc_websocket
 """E5 (R8.4): o RPC fecha para o banido (Q14): relé recusa o registro, ``_send_rpc_data`` o omite e o ban derruba a conexão aberta.
 
 Servidor Tornado real em porta efêmera (a infraestrutura de ``test_rpc_websocket``); a lista de banidos é a do pool, com banco falso.
@@ -64,42 +65,77 @@ async def mensagens_ate_fechar(ws) -> list[dict]:
             return textos
 
 
+async def _resultado_do_vetor_a(servidor, sessao, uid):
+    """Vetor A: a conexão A registra ``uid``; a conexão B registra o mesmo ``uid``. O que A vê (mensagens e fechamento) e quem ficou em ``users_ws``."""
+    ws_a = await _registrar_usuario(servidor, sessao, [uid], _token_do_app())
+    ws_b = await _registrar_usuario(servidor, sessao, [uid], _token_do_app())
+    vistas_por_a = await observar(ws_a)
+    return vistas_por_a, await observar(ws_b), web_app.users_ws.get(uid) is not None
+
+
 @pytest.mark.asyncio
-async def test_a_banned_id_is_ignored_silently_and_the_free_ids_of_the_list_register(iniciar_servidor, sessao, segredo):  # noqa: F811 - fixtures importadas
-    servidor = iniciar_servidor({"RPC_SERVER_SECRET": segredo})
+async def test_vector_a_a_second_registration_kicks_the_first_the_same_for_banned_and_free(iniciar_servidor, sessao):
+    servidor = iniciar_servidor()
     banido, livre = _snowflake(), _snowflake()
     banir(servidor, banido)
-    ws_bot, _ = await _registrar_bot(servidor, sessao, segredo)
-    ws_outro = await _registrar_usuario(servidor, sessao, [_snowflake()], _token_do_app())
 
-    ws_misto = await _registrar_usuario(servidor, sessao, [banido, livre], _token_do_app())  # lista mista
+    com_banido = await _resultado_do_vetor_a(servidor, sessao, banido)
+    com_livre = await _resultado_do_vetor_a(servidor, sessao, livre)
 
-    assert banido not in web_app.users_ws and web_app.users_ws[livre] is not None  # só o ID livre foi registrado
-    assert await _nada_recebido(ws_misto) and await _fechamento(ws_misto, ASSENTAR) is None  # nada diferente do sucesso
-    assert await _fechamento(ws_outro, ASSENTAR) is None  # a sessão de outro ID segue
-    repassados, _ = await observar(ws_bot)
-    ids_repassados = [uid for r in repassados for uid in r["user_ids"]]
-    assert livre in ids_repassados and banido not in ids_repassados  # o banido não é repassado aos bots
-
-
-@pytest.mark.asyncio
-async def test_a_list_with_only_banned_ids_changes_nothing_and_says_nothing(iniciar_servidor, sessao, segredo):  # noqa: F811 - fixtures importadas
-    servidor = iniciar_servidor({"RPC_SERVER_SECRET": segredo})
-    banido = _snowflake()
-    banir(servidor, banido)
-    ws_bot, _ = await _registrar_bot(servidor, sessao, segredo)
-
-    ws = await _registrar_usuario(servidor, sessao, [banido], _token_do_app())
-
-    assert banido not in web_app.users_ws
     assert (
-        await _nada_recebido(ws) and await _fechamento(ws, ASSENTAR) is None
-    )  # igual a um registro livre: sem mensagem e sem fechar
-    assert await _nada_recebido(ws_bot)  # nada foi repassado aos bots
+        com_banido == com_livre
+    )  # mesma mensagem e mesmo fechamento para A, B segue aberta, ID registrado nos dois casos
+    textos, codigo = com_livre[0]
+    assert textos and codigo == rpc_protocol.CLOSE_REFUSED  # e o chute acontece de fato (não é um empate de "nada")
+
+
+async def _resultado_do_vetor_b(servidor, sessao, proprio, novo):
+    """Vetor B: a conexão registra o próprio ``proprio`` e depois reenvia a lista ``[novo]``. O que a conexão vê e quem está em ``users_ws``."""
+    ws = await _registrar_usuario(servidor, sessao, [proprio], _token_do_app())
+    await ws.send_json({"op": "rpc_update", "user_ids": [novo], "token": _token_do_app(), "version": "3.0.0"})
+    await asyncio.sleep(ASSENTAR)
+    vistas = await observar(ws)
+    return vistas, proprio in web_app.users_ws, novo in web_app.users_ws
 
 
 @pytest.mark.asyncio
-async def test_without_a_token_a_banned_id_gets_exactly_what_a_free_id_gets(iniciar_servidor, sessao):  # noqa: F811 - fixtures importadas
+async def test_vector_b_re_registering_replaces_the_previous_ids_the_same_for_banned_and_free(iniciar_servidor, sessao):
+    servidor = iniciar_servidor()
+    banido, livre = _snowflake(), _snowflake()
+    banir(servidor, banido)
+
+    com_banido = await _resultado_do_vetor_b(servidor, sessao, _snowflake(), banido)
+    com_livre = await _resultado_do_vetor_b(servidor, sessao, _snowflake(), livre)
+
+    assert com_banido == com_livre == (([], None), False, True)  # o ID antigo sai e o novo entra, igual nos dois casos
+
+
+@pytest.mark.asyncio
+async def test_nothing_reaches_the_bots_or_the_client_for_a_banned_id(iniciar_servidor, sessao, segredo):
+    servidor = iniciar_servidor({"RPC_SERVER_SECRET": segredo})
+    banido, outro_banido, livre = _snowflake(), _snowflake(), _snowflake()
+    banir(servidor, banido, outro_banido)
+    ws_bot, _ = await _registrar_bot(servidor, sessao, segredo)
+
+    ws_banido = await _registrar_usuario(servidor, sessao, [outro_banido], _token_do_app())
+    ws_misto = await _registrar_usuario(servidor, sessao, [banido, livre], _token_do_app())
+    repassados, _ = await observar(ws_bot)
+    assert [r["user_ids"] for r in repassados] == [
+        [livre]
+    ]  # o registro só só-banido não é repassado; no misto, só o livre
+
+    await ws_bot.send_json({"op": "update", "user": banido, "track": "x"})
+    await ws_bot.send_json({"op": "update", "user": outro_banido, "track": "z"})
+    await ws_bot.send_json({"op": "update", "user": livre, "track": "y"})
+    entregue_misto, _ = await observar(ws_misto)
+    entregue_banido, _ = await observar(ws_banido)
+
+    assert [m.get("track") for m in entregue_misto] == ["y"]  # a mensagem do banido não chega ao cliente
+    assert entregue_banido == []
+
+
+@pytest.mark.asyncio
+async def test_without_a_token_a_banned_id_gets_exactly_what_a_free_id_gets(iniciar_servidor, sessao):
     servidor = iniciar_servidor()
     banido, livre = _snowflake(), _snowflake()
     banir(servidor, banido)
@@ -113,7 +149,7 @@ async def test_without_a_token_a_banned_id_gets_exactly_what_a_free_id_gets(inic
 
 
 @pytest.mark.asyncio
-async def test_a_common_user_still_registers(iniciar_servidor, sessao):  # noqa: F811 - fixtures importadas
+async def test_a_common_user_still_registers(iniciar_servidor, sessao):
     servidor = iniciar_servidor()
     banir(servidor, _snowflake())
     livre = _snowflake()
@@ -124,7 +160,7 @@ async def test_a_common_user_still_registers(iniciar_servidor, sessao):  # noqa:
 
 
 @pytest.mark.asyncio
-async def test_the_ban_closes_an_open_connection_with_the_new_reason(iniciar_servidor, sessao):  # noqa: F811 - fixtures importadas
+async def test_the_ban_closes_an_open_connection_with_the_new_reason(iniciar_servidor, sessao):
     servidor = iniciar_servidor()
     alvo, outro = _snowflake(), _snowflake()
     ws_alvo = await _registrar_usuario(servidor, sessao, [alvo], _token_do_app())
@@ -167,25 +203,3 @@ async def test_send_rpc_data_skips_the_banned_user_without_even_reading_the_data
 
     assert [e["user"] for e in enviados] == [livre]
     assert [c.kwargs["id_"] for c in bot.get_global_data.await_args_list] == [livre]
-
-
-def test_a_banned_id_never_reaches_forget_replace_or_the_relay():
-    """Uma conexão que JÁ registrou e reenvia a lista com um ID banido: só o ID livre passa por ``_forget_users``, ``_replace_session`` e o repasse."""
-    chamadas = []
-    handler = web_app.WebSocketHandler.__new__(web_app.WebSocketHandler)
-    banido, livre = 200000000000000002, 100000000000000001
-    handler.is_blocked = lambda user_id: user_id == banido
-    handler._disconnect = lambda motivo: chamadas.append(("disconnect", motivo))
-    handler._reject = lambda *a: chamadas.append(("reject", a))
-    handler._forget_users = lambda: chamadas.append("forget")
-    handler._replace_session = lambda user_id: chamadas.append(("replace", user_id))
-    handler._relay_registration = lambda data: chamadas.append(("relay", list(handler.user_ids)))
-
-    handler._register_user({"user_ids": [livre, banido], "token": "t" * 50, "version": "99.0.0"})
-    handler._register_user({"user_ids": [banido], "token": "t" * 50, "version": "99.0.0"})
-
-    assert chamadas == [
-        "forget",
-        ("replace", livre),
-        ("relay", [livre]),
-    ]  # a lista só com banido não faz nada, nem fecha
