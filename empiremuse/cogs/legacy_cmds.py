@@ -1260,10 +1260,12 @@ class Owner(commands.Cog):
         self.owner_view = PanelView(self.bot)
         if not self.bot.is_reserve and not self.bot.intents.dm_messages:
             logger.warning(
-                "O comando de dono %s%s está DESLIGADO: DM_MESSAGES_INTENT=false e o Discord não entrega mensagens privadas ao bot. "
-                "Ligue DM_MESSAGES_INTENT=true para atender pedidos de apagamento de dados por e-mail.",
+                "Os comandos de dono %s%s, %sbanuser e %sunbanuser estão DESLIGADOS: DM_MESSAGES_INTENT=false e o Discord não entrega "
+                "mensagens privadas ao bot. Ligue DM_MESSAGES_INTENT=true para atender pedidos de apagamento de dados por e-mail e o banimento.",
                 self.bot.default_prefix,
                 OWNER_COMMAND_NAME,
+                self.bot.default_prefix,
+                self.bot.default_prefix,
             )
 
     async def download_lavalink_serverlist(self):

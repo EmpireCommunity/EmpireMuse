@@ -1,4 +1,4 @@
-"""``hardreset`` (só dono, só prefixo): apaga o banco do bot inteiro, MENOS o premium (``global.premium``), e esquece o que está em memória.
+"""``hardreset`` (só dono, só prefixo): apaga o banco do bot inteiro, MENOS o premium (``global.premium``) e as listas de banimento (``global.banned_users`` e ``global.banned_guilds``), e esquece o que está em memória.
 
 A ordem importa: para as rádios (senão o ticker as religa e o runner regrava o estado), apaga, esquece os caches e para as rádios de novo
 (uma partida em andamento pode ter terminado no meio). Só os bancos do próprio bot são tocados: ``global``, as sessões e um banco por bot
@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
+from empiremuse.utils.db import DBModel
 from empiremuse.utils.music import session_store
 from empiremuse.utils.radio.premium import GLOBAL_DB, PREMIUM_DB
 
@@ -21,7 +22,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-KEEP = frozenset({(GLOBAL_DB, PREMIUM_DB)})  # a única tabela que sobrevive
+# Sobrevivem: o premium e as DUAS listas de banimento (só ``unbanuser`` e o desban de servidor encerram uma sanção; apagar o banco não pode).
+KEEP = frozenset({(GLOBAL_DB, PREMIUM_DB), (GLOBAL_DB, DBModel.banned_users), (GLOBAL_DB, DBModel.banned_guilds)})
 SCROBBLES_DB = "scrobbles"  # sempre no banco local, mesmo com o MongoDB (cogs/lastfm.py)
 
 
@@ -60,7 +62,7 @@ def _forget_memory(pool: BotPool) -> None:
 
 
 async def hard_reset(pool: BotPool, *, author_id: int, now: datetime | None = None) -> HardResetReport:
-    """Apaga tudo menos ``global.premium`` e devolve as contagens; grava uma linha no log (quem, quando, quantos)."""
+    """Apaga tudo menos ``global.premium`` e os banimentos e devolve as contagens; grava uma linha no log (quem, quando, quantos)."""
     when = now or datetime.now(timezone.utc)
     bot_ids = _bot_ids(pool)
     await _stop_radios(pool)

@@ -18,6 +18,7 @@ from empiremuse.rules.text import format_int
 from empiremuse.rules.title_match import title_matches
 from empiremuse.utils.branding import asset_url
 from empiremuse.utils.db import DBModel, scrobble_model
+from empiremuse.utils.user_ban import user_bans_of
 from empiremuse.utils.safe_error import HTTPStatusError, safe_error
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.music.lastfm_tools import LastFmException
@@ -613,6 +614,12 @@ class LastFmCog(commands.Cog):
         if not users:
             users = [u for u in player.last_channel.members if not u.bot]
 
+            if not users:
+                return
+
+        # E5 (D3): o banido sai ANTES do laço, e ``users`` já filtrada vai também ao ``save_scrobble`` (:719, :735); a música em curso segue
+        if (bans := user_bans_of(self.bot)) is not None:
+            users = [u for u in users if not bans.is_blocked(u.id)]
             if not users:
                 return
 

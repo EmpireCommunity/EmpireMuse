@@ -820,3 +820,26 @@ async def test_duas_auditorias_em_60_s_saem_inteiras_pelo_saneador_e_pelo_agrega
     assert [linha.split()[2] for linha in auditoria] == [f"user={ALVO}", f"user={PREFIXO_DO_ALVO}", f"user={ALVO}"]
     assert all("status=OK" in linha and "users=" in linha for linha in auditoria)
     assert not [linha for linha in saidas if linha.startswith("↻")]  # nada virou "repetida N×"
+
+
+# ----------------------------------------------------------------------------------------------- E5 (R8.7)
+
+
+@pytest.mark.asyncio
+async def test_erasing_a_banned_user_keeps_the_ban_record_and_the_block(mundo):
+    """R8.7 (D1): o apagamento não remove o registro de banimento (``banned_users`` fora de STORES); depois de apagar, continua banido."""
+    from empiremuse.utils.user_ban import UserBans
+
+    dono = 100000000000000009
+    bans = UserBans(mundo.pool, owners=frozenset({dono}), rpc_closer=lambda uid, motivo: True)
+    await semear_membro(mundo, ALVO)
+    await bans.ban(dono, ALVO, "reincidente")
+
+    relatorio = await apagar(mundo, ALVO)
+
+    assert relatorio.status is ErasureStatus.OK
+    assert not await existe(mundo, "global", "users", ALVO)  # os dados foram apagados
+    assert await existe(mundo, "global", "banned_users", ALVO)  # o registro fica
+    assert bans.is_blocked(ALVO)
+    reinicio = UserBans(mundo.pool, owners=frozenset({dono}))
+    assert await reinicio.ensure_loaded() and reinicio.is_blocked(ALVO)  # e sobrevive a um reinício

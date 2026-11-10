@@ -29,6 +29,12 @@ RATE_WINDOW_S = 3600
 # que repetem estes valores (um teste confere); renomear é mudar aqui e nos dois catálogos.
 ERASE_COMMAND_NAMES = {"pt-BR": "apagar_meus_dados", "en-US": "delete_my_data"}
 OWNER_COMMAND_NAME = "apagardados"  # comando do dono (§3.4): só no privado, só OWNER_IDS
+# ``custom_id`` dos botões do apagamento (fonte única; ``utils/erasure_views.py`` reexporta). Confirmar e cancelar do titular (slash e DM) e a
+# concessão do dono; o portão do banimento (``rules/user_ban.py``) deixa passar só estes prefixos, com os dois-pontos (D1).
+CONFIRM_ID = "erasure_confirm"
+CANCEL_ID = "erasure_cancel"
+GRANT_PREFIX = "erasure_grant"  # ``erasure_grant:<código>`` e ``erasure_grant_cancel:<código>``
+ERASE_COMPONENT_PREFIXES = (f"{CONFIRM_ID}:", f"{CANCEL_ID}:", f"{GRANT_PREFIX}:", f"{GRANT_PREFIX}_cancel:")
 ANONYMIZED = "deleted"
 SNOWFLAKE_MIN_DIGITS = 17
 SNOWFLAKE_MAX_DIGITS = 20

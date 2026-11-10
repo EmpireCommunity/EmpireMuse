@@ -45,6 +45,10 @@ _MSG_DISCORD = (
 )
 _MSG_RATE = ("Muitas tentativas", "Você tentou entrar muitas vezes seguidas. Aguarde um minuto e tente de novo.")
 _MSG_UNAVAILABLE = ("Login indisponível", "O login com Discord não está disponível no momento.")
+_MSG_BLOCKED = (  # D4: curto, sem motivo; o apagamento de dados segue pelo bot (D1)
+    "Acesso indisponível",
+    "Esta conta não pode usar o painel. Para apagar seus dados, use o comando /apagar_meus_dados no bot.",
+)
 
 
 def safe_next_path(value: str) -> str:
@@ -79,12 +83,20 @@ class AuthHandler(PanelHandler):
     def oauth_client(self) -> Optional[DiscordOAuthClient]:
         return self.application.settings["oauth_provider"]()
 
+    def login_closed(self) -> bool:
+        """D2: com a lista de banidos ainda não carregada (banco fora no boot) o login fica fechado (503); o bot e o RPC seguem abertos."""
+        bans = self.user_bans
+        if bans is None or bans.loaded:
+            return False
+        self.render_error(503, *_MSG_UNAVAILABLE)
+        return True
+
 
 class LoginHandler(AuthHandler):
     rate_scope = "login"
 
     def get(self) -> None:
-        if self.rate_limited():
+        if self.rate_limited() or self.login_closed():
             return
         oauth = self.oauth_client()
         if oauth is None:
@@ -111,7 +123,7 @@ class CallbackHandler(AuthHandler):
     rate_scope = "callback"
 
     async def get(self) -> None:
-        if self.rate_limited():
+        if self.rate_limited() or self.login_closed():
             return
         attempt = self._take_attempt()
         if self.get_argument("error", None) == "access_denied":
@@ -129,6 +141,11 @@ class CallbackHandler(AuthHandler):
         identity = await self._read_identity(oauth, code, attempt)
         if identity is None:
             self.render_error(502, *_MSG_DISCORD)
+            return
+        bans = self.user_bans
+        # E5 (MJ-E3): sem ``await`` entre conferir e criar a sessão. ``PanelUser.id`` é texto; ``is_blocked`` converte. Sem isenção (D1).
+        if bans is not None and bans.is_blocked(identity[0].id):
+            self.render_error(403, *_MSG_BLOCKED)
             return
         self._start_session(*identity, consented=attempt.consent)
         self.redirect(attempt.next_path)

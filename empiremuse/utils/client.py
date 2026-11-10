@@ -69,6 +69,8 @@ from empiremuse.utils.erasure_grants import OwnerGrants
 from empiremuse.utils.user_locks import UserLocks
 from empiremuse.utils.app_profile import sync_app_profile
 from empiremuse.utils.guild_ban import GuildBans
+from empiremuse.utils.user_ban import UserBans, user_bans_of
+from empiremuse.utils.user_ban_gate import install_interaction_gate
 from empiremuse.utils.radio import RadioHub
 from empiremuse.utils.radio.notice import refuse_radio_only
 from empiremuse.utils.jukebox_panel import JukeboxPanel
@@ -209,6 +211,7 @@ class BotPool:
     update_watch_task: Optional[asyncio.Task] = None
     usage: Optional[UsageRecorder] = None
     guild_bans: Optional[GuildBans] = None
+    user_bans: Optional[UserBans] = None
     servers: Optional[ServerStore] = None
     jukebox_panel: Optional[JukeboxPanel] = None
     radio: RadioHub
@@ -286,6 +289,7 @@ class BotPool:
         self.metrics = MetricsCollector()
         self.usage = UsageRecorder(self)
         self.guild_bans = GuildBans(self)
+        self.user_bans = UserBans(self, owners=frozenset(parse_owner_ids(self.config["OWNER_IDS"])))
         self.i18n = get_i18n()
         self.i18n.pool = self
         self.servers = ServerStore(self)
@@ -700,11 +704,15 @@ class BotPool:
             await self.check_pool_ready()  # o pool pode ter ficado saudável sem este bot
 
     async def run_bots(self, bots: List[BotCore]):
+        # D2: a lista de banidos carrega ANTES de conectar ao gateway; sem banco o bot abre assim mesmo (nova tentativa em segundo plano)
+        await self.user_bans.boot()
         await asyncio.gather(*[self.start_bot(bot) for bot in bots])
 
     async def shutdown(self, exit_code: int = 1):
         self.exit_code = exit_code
         self.killing_state = True
+        if self.user_bans:
+            self.user_bans.stop()
         if self.heartbeat_task:  # encerrando: o container não deve mais parecer saudável
             self.heartbeat_task.cancel()
         if self.logs_task:
@@ -1245,6 +1253,7 @@ class BotPool:
             )
 
             bot.http.token = token
+            install_interaction_gate(bot, self.user_bans)  # E5: todo canal de interação passa por is_blocked (MJ-E1)
 
             load_jishaku_if_enabled(bot)
 
@@ -1789,11 +1798,49 @@ class BotCore(commands.AutoShardedBot):
 
         return True
 
+    async def _refuse_blocked_message(self, message: disnake.Message) -> None:
+        """Mensagem de banido: nada é processado. Só uma mensagem endereçada ao bot recebe aviso, no máximo 1 por usuário por hora (Q13)."""
+        bans = user_bans_of(self)
+        if bans is None or not await self._is_addressed_to_bot(message):
+            return
+        if not await self.can_send_message(message):  # antes de gastar a cota: sem permissão, o aviso não conta
+            return
+        if not bans.allow_warning(message.author.id):  # Q13: 1 por usuário por hora em TODO o pool (um limitador só)
+            return
+        tr = self.pool.i18n.for_locale(self.pool.i18n.resolve(None, message.guild.preferred_locale))
+        try:
+            await message.reply(
+                tr("erasure.ban.blocked_message"),  # vai ao canal, à vista de todos: sem a palavra banimento
+                fail_if_not_exists=False,
+                mention_author=False,
+                allowed_mentions=disnake.AllowedMentions.none(),
+            )
+        except disnake.HTTPException as exc:
+            logger.debug("Aviso ao usuário bloqueado não enviado (%s)", type(exc).__name__)
+
+    async def _is_addressed_to_bot(self, message: disnake.Message) -> bool:
+        """A mensagem seria um pedido ao bot (menção ou prefixo)? Só então o banido recebe o aviso; conversa comum fica em silêncio."""
+        content = message.content or ""
+        if content.startswith(self.user.mention) or content.startswith(f"<@!{self.user.id}>"):
+            return True
+        try:
+            prefix = await self.get_prefix(message)
+        except Exception:  # noqa: BLE001 - sem prefixo legível, sem aviso
+            return False
+        prefixes = (prefix,) if isinstance(prefix, str) else tuple(prefix)
+        return bool(prefixes) and content.startswith(prefixes)
+
     async def on_message(self, message: disnake.Message):
         if not self.bot_ready or not self.appinfo or self.is_closed():
             return
 
         if not message.guild:
+            return
+
+        # E5 (MJ-E2): ``if`` isolado, FORA da cadeia if/elif abaixo (mensagem em canal de palco cairia no ``pass``) e antes do player.
+        # ``bot.check`` não serve: o pedido por menção chama ``play_cmd.callback`` direto e o canal jukebox sai antes de ``ctx.valid``.
+        if (bans := user_bans_of(self)) is not None and bans.is_blocked(message.author.id):
+            await self._refuse_blocked_message(message)
             return
 
         try:

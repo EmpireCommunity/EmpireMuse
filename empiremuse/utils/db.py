@@ -43,6 +43,7 @@ class DBModel:
     default = "default"
     usage_events = "usage_events"
     banned_guilds = "banned_guilds"
+    banned_users = "banned_users"
     servers = "servers"
 
 

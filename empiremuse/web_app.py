@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Optional
 
 import aiohttp
@@ -21,6 +22,7 @@ from empiremuse import paths
 from empiremuse.config_loader import load_config, resolve_port
 from empiremuse.rules.client_ip import UNKNOWN_PEER, IPNetwork, resolve_client_ip
 from empiremuse.rules.servers import is_main_identifier
+from empiremuse.rules.user_ban import RPC_BLOCKED_REASON
 from empiremuse.rpc_protocol import (
     BOT_OPS,
     BOT_TO_USER_FIELDS,
@@ -54,6 +56,9 @@ from empiremuse.utils import branding
 
 # Limite de corpo de requisição da porta inteira (painel, relé do RPC e página de status): 64 KiB.
 MAX_BODY_SIZE = 64 * 1024
+RPC_ERASED_REASON = (
+    "Dados apagados."  # motivo padrão de ``close_rpc_for`` (apagamento); o banimento passa ``RPC_BLOCKED_REASON``
+)
 
 if TYPE_CHECKING:
     from empiremuse.utils.client import BotPool
@@ -173,8 +178,16 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
     dados aos usuários. A autenticação por token (``ENABLE_RPC_AUTH``) é decidida pela configuração do servidor.
     """
 
-    def initialize(self, config: Optional[dict] = None, connections: Optional[set] = None):
+    def initialize(
+        self,
+        config: Optional[dict] = None,
+        connections: Optional[set] = None,
+        is_blocked: Optional[Callable[[int], bool]] = None,
+    ):
         config = config or {}
+        self.is_blocked = is_blocked or (
+            lambda _user_id: False
+        )  # E5: ``UserBans.is_blocked`` do pool; sem ele ninguém é bloqueado
         self.rpc_secret = get_rpc_secret(config)
         self.server_auth = bool(config.get("ENABLE_RPC_AUTH"))
         self.allowed_origins = parse_allowed_origins(config.get("RPC_ALLOWED_ORIGINS"))
@@ -296,6 +309,10 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             self._disconnect("O token precisa ter 50 caracteres...")
             return
 
+        # E5 (Q14): o ID banido tem os MESMOS efeitos locais de um livre (entra em ``user_ids`` e ``users_ws``; ``_forget_users`` e
+        # ``_replace_session`` se comportam igual; o token é guardado igual), senão o estado de banimento vazaria por quem é derrubado. A
+        # diferença é só para fora: ``_relay_registration`` o tira do repasse aos bots e ``_on_bot_message`` não entrega nada a ele. O aviso de
+        # bloqueio só existe em ``close_rpc_for``, para a conexão que já estava aberta quando o ban foi aplicado.
         self._forget_users()
         self.user_ids = ids
         self.token = token
@@ -320,7 +337,10 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             pass
 
     def _relay_registration(self, data: dict) -> None:
-        payload = {"op": USER_OP, "user_ids": self.user_ids}
+        allowed = [u for u in self.user_ids if not self.is_blocked(u)]  # o banido nunca chega aos bots
+        if not allowed:
+            return  # o lado do bot ignora ``user_ids`` vazio (``if not users: continue``): enviar não mudaria nada
+        payload = {"op": USER_OP, "user_ids": allowed}
         if isinstance(data.get("version"), str):
             payload["version"] = data["version"]
 
@@ -339,6 +359,11 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         user_id = data.get("user")
         if data.get("op") not in BOT_OPS or not is_valid_id(user_id):
             logger.warning("Relé RPC: mensagem do bot %s ignorada, formato inesperado.", self.bot_ids)
+            return
+
+        if self.is_blocked(
+            user_id
+        ):  # banido: nada é entregue; vem ANTES da auth, de ``target.blocked`` e de ``_token_error`` (cobre o ban parcial)
             return
 
         target = users_ws.get(user_id)
@@ -414,7 +439,12 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                 )
 
 
-def close_rpc_for(user_id: int) -> bool:
+def _is_rpc_blocked(pool: BotPool, user_id: int) -> bool:
+    bans = getattr(pool, "user_bans", None)  # sem importar ``utils.user_ban``: o servidor web não puxa o banco
+    return bans is not None and bans.is_blocked(user_id)
+
+
+def close_rpc_for(user_id: int, reason: str = RPC_ERASED_REASON) -> bool:
     """Fecha a conexão RPC aberta do usuário (apagar o token no banco não derruba uma conexão já autenticada).
 
     A conexão inteira cai, inclusive para outros ids que ela tenha registrado: o app reconecta, e cada id volta a se
@@ -424,7 +454,7 @@ def close_rpc_for(user_id: int) -> bool:
     if connection is None:
         return False
     try:
-        connection.write_message(json.dumps({"op": "disconnect", "reason": "Dados apagados."}))
+        connection.write_message(json.dumps({"op": "disconnect", "reason": reason}))
     except tornado.websocket.WebSocketClosedError:
         pass
     connection._forget_users()
@@ -679,7 +709,11 @@ def run_app(pool: BotPool, config: dict = None):
                 IndexHandler,
                 {"pool": pool, "config": config, "panel_enabled": panel_app is not None},
             ),
-            (r"/ws", WebSocketHandler, {"config": config, "connections": set()}),
+            (
+                r"/ws",
+                WebSocketHandler,
+                {"config": config, "connections": set(), "is_blocked": lambda user_id: _is_rpc_blocked(pool, user_id)},
+            ),
         ],
         websocket_max_message_size=MAX_MESSAGE_SIZE,
         websocket_ping_interval=WEBSOCKET_PING_INTERVAL,

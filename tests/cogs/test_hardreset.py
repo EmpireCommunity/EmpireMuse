@@ -125,3 +125,32 @@ def test_hard_reset_also_forgets_the_pause_all_held_in_memory() -> None:
     RadioHub.forget_all(hub)
 
     assert control.paused_all is False
+
+
+@pytest.mark.asyncio
+async def test_hardreset_keeps_both_ban_lists_and_their_memory_mirrors(tmp_path, monkeypatch):
+    """Só ``unbanuser`` e o desban de servidor encerram uma sanção: apagar o banco não pode."""
+    from empiremuse.utils.guild_ban import GuildBans
+    from empiremuse.utils.user_ban import UserBans
+
+    w = build(tmp_path, monkeypatch)
+    await seed(w)
+    w.pool.user_bans = UserBans(w.pool, owners=frozenset({OWNER}), rpc_closer=lambda uid, motivo: True)
+    w.pool.guild_bans = GuildBans(w.pool)
+    await w.pool.user_bans.ban(OWNER, 700000000000000001, "x")
+    await w.pool.guild_bans.ban(800000000000000001, "Servidor", "y")
+    view = hardreset_cog.ConfirmHardReset(w.bot, get_i18n().for_locale("pt-BR"), OWNER)
+    interaction = SimpleNamespace(
+        author=SimpleNamespace(id=OWNER),
+        response=SimpleNamespace(edit_message=AsyncMock()),
+        edit_original_message=AsyncMock(),
+    )
+
+    await view.confirmed(interaction)
+
+    assert all_tables(w.db) == {"global.premium", "global.banned_users", "global.banned_guilds"}
+    assert await w.db.find_doc(700000000000000001, db_name="banned_users", collection="global") is not None
+    assert await w.db.find_doc(800000000000000001, db_name="banned_guilds", collection="global") is not None
+    assert w.pool.user_bans.is_blocked(700000000000000001) and w.pool.guild_bans.is_banned(800000000000000001)
+    reinicio = UserBans(w.pool, owners=frozenset({OWNER}))
+    assert await reinicio.ensure_loaded() and reinicio.is_blocked(700000000000000001)  # e o banco ainda tem
