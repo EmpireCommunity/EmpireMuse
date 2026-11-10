@@ -37,7 +37,7 @@ O proxy é o arquivo único `empiremuse/updater/proxy.py`, só biblioteca padrã
 
 ### 2.1 Implantação passo a passo (compose da Hostinger)
 
-Pré-requisito: o repositório com **Releases imutáveis** ligadas e uma release com `image-digest.txt` (seção 5.4 do [`release.md`](release.md)). Use o [`deploy/docker-compose.hostinger.yml`](../../deploy/docker-compose.hostinger.yml) (ou o [`deploy/docker-compose.hostinger-sem-traefik.yml`](../../deploy/docker-compose.hostinger-sem-traefik.yml), se não usa Traefik; o proxy de atualização é o mesmo) e o [`deploy/env.example.hostinger`](../../deploy/env.example.hostinger). O [índice do `deploy/`](../../deploy/README.md) mostra quais tipos de implantação têm auto-update.
+Pré-requisito: a imagem publicada em `empirecommunity/empiremuse` (repositório público no Docker Hub, com os segredos da organização da seção 2 do [`release.md`](release.md)); o repositório com **Releases imutáveis** ligadas e uma release com `image-digest.txt` (seção 5.4 do [`release.md`](release.md)). Use o [`deploy/docker-compose.hostinger.yml`](../../deploy/docker-compose.hostinger.yml) (ou o [`deploy/docker-compose.hostinger-sem-traefik.yml`](../../deploy/docker-compose.hostinger-sem-traefik.yml), se não usa Traefik; o proxy de atualização é o mesmo) e o [`deploy/env.example.hostinger`](../../deploy/env.example.hostinger). O [índice do `deploy/`](../../deploy/README.md) mostra quais tipos de implantação têm auto-update.
 
 1. **Digest das duas imagens.** O compose traz dois marcadores de zeros (`@sha256:000…`): a imagem do `bot` (`empirecommunity/empiremuse:X.Y.Z@sha256:…`) e a do `updater-proxy` (`docker.io/empirecommunity/empiremuse:X.Y.Z@sha256:…`). Troque os **dois** pelo conteúdo do `image-digest.txt` da mesma versão:
 

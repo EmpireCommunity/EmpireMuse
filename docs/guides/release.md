@@ -23,25 +23,17 @@ O EmpireMuse segue rigorosamente o padrão de [Versionamento Semântico 2.0.0](h
 
 ## 2. Pré-requisitos de Configuração (Configuração Única)
 
-A publicação automatizada de imagens no Docker Hub exige credenciais configuradas nos segredos do repositório no GitHub:
+A publicação automatizada de imagens no Docker Hub depende de um repositório público e de credenciais guardadas como **segredos da organização** no GitHub:
 
-1. **Conta e Repositório no Docker Hub**:
-   - Conta ou organização com acesso de publicação ao repositório `empirecommunity/empiremuse` (e, só até a 2.3.0, também ao `or4cu1o/empiremuse`; ver a seção 7).
-2. **Personal Access Token (PAT) no Docker Hub**:
-   - Gerar um token em **Account Settings > Security > New Access Token** com permissões de **Read & Write**.
-3. **GitHub Actions Secrets e Environment `docker-release`**:
-   - O proprietário do repositório deve configurar as variáveis de segredo no GitHub sem expor valores publicamente (seja a nível de repositório ou no ambiente **`docker-release`**, onde também é possível definir revisores obrigatórios para aprovar o deploy antes da publicação):
-     - `DOCKERHUB_USERNAME`: Nome do usuário no Docker Hub (`or4cu1o`).
-     - `DOCKERHUB_TOKEN`: Personal Access Token com permissão de escrita gerado no Docker Hub.
-   
-   A configuração pode ser realizada via interface web do GitHub ou pelo GitHub CLI (`gh`):
-   ```bash
-   gh secret set DOCKERHUB_USERNAME
-   gh secret set DOCKERHUB_TOKEN
-   ```
+1. **Repositório no Docker Hub**: `empirecommunity/empiremuse` tem de existir e ser **público** antes de a tag ser enviada (sem ele o push falha e o pull anônimo da seção 5.1 não funciona). Na publicação dupla (seção 7), `or4cu1o/empiremuse` também tem de aceitar o push.
+2. **Token do Docker Hub**: um Personal Access Token com **Read & Write**, de um usuário com **permissão de escrita no repositório da organização** (e no `or4cu1o/empiremuse` enquanto houver publicação dupla). Gere em **Account Settings > Security > New Access Token**.
+3. **Segredos da organização `EmpireCommunity`**: `DOCKERHUB_USERNAME` (o usuário dono do token) e `DOCKERHUB_TOKEN` são **segredos da organização**, com acesso restrito a **Selected repositories** (só este repositório). O job `docker` roda no ambiente **`docker-release`** (onde também é possível exigir revisores antes da publicação).
+
+> [!WARNING]
+> Um segredo com o mesmo nome no **repositório** ou no ambiente **`docker-release`** tem precedência sobre o da organização e o esconde. Esses segredos locais **não devem existir**: confira em *Settings > Secrets and variables > Actions* do repositório e do ambiente. Não crie nem altere segredos por comando de terminal sem o OK do dono; os valores nunca entram em arquivo, log ou conversa.
 
 > [!NOTE]
-> Essa configuração é feita apenas uma única vez. Se esses secrets não estiverem presentes, a etapa de autenticação no Docker Hub falhará durante o workflow de release.
+> Essa configuração é feita uma única vez. Se os segredos não estiverem acessíveis ao repositório, a etapa de autenticação no Docker Hub falha durante o workflow de release.
 
 ---
 
@@ -210,7 +202,7 @@ Se for detectado qualquer defeito de código, falha de empacotamento ou inconsis
 A imagem é enviada ao Docker Hub **antes** da assinatura e da GitHub Release. Se `cosign sign`, `cosign verify` ou a criação da Release falharem:
 - A versão **não** é anunciada ao bot (sem Release com `image-digest.txt`), mas a imagem já publicada continua no Hub;
 - **Não reexecute o job `docker`**: ele recusa a tag (a imagem já existe), de propósito. Reconstruir trocaria o digest, e assinar uma imagem já existente sem prova de que veio desta tag deixaria um push indevido (por exemplo, com um token vazado do Hub) ganhar assinatura;
-- Na publicação dupla (seção 7), o push que falhar em um dos repositórios deixa a versão num só: a conferência de tag livre também recusa essa reexecução. Trate como defeito e publique o patch seguinte;
+- Na publicação dupla (seção 7), o push que falhar em um dos repositórios deixa a versão num só: a conferência de tag livre também recusa essa reexecução. Trate como defeito e publique o patch seguinte: ele passa a ser a release de publicação dupla (seção 7), e a retirada do repositório antigo (7.1) só vale depois dele;
 - Se só o job `github-release` falhou, reexecute **apenas esse job** (o `docker` já terminou e o digest é o mesmo);
 - Nos demais casos, trate como defeito: publique a próxima versão de patch, como acima.
 
@@ -218,23 +210,37 @@ A imagem é enviada ao Docker Hub **antes** da assinatura e da GitHub Release. S
 
 ## 7. Migração para `empirecommunity/empiremuse` e aposentadoria do repositório antigo
 
-Decisão do dono (2026-11-10): a imagem passa a ser publicada na organização, `empirecommunity/empiremuse`. O repositório antigo, `or4cu1o/empiremuse`, **mantém as imagens que já tem** (nunca apague nem reetiquete) e a **2.3.0 é publicada nos dois**, assinada e verificada nos dois. Da release seguinte em diante, só no novo.
+Decisão do dono (2026-11-10): a imagem passa a ser publicada na organização, `empirecommunity/empiremuse`. O repositório antigo, `or4cu1o/empiremuse`, **mantém as imagens que já tem** (nunca apague nem reetiquete). A **primeira release publicada com este workflow** (a 2.3.0, como planejado) sai **nos dois repositórios**, assinada e verificada nos dois; da release seguinte em diante, só no novo.
 
-### 7.1 Retirar o repositório antigo (primeiro PR depois da 2.3.0)
+Essa release só conta como feita quando os jobs `docker` e `github-release` terminaram **verdes** (imagem publicada, assinada e verificada nos dois repositórios, Release criada com o `image-digest.txt`). Se ela falhar ou for substituída por um patch (seção 6), a primeira release que passar por inteiro é a de publicação dupla, e as etapas abaixo valem para ela, com a versão dela no lugar de `2.3.0`.
 
-1. Em `.github/workflows/release.yml`, apague a linha `or4cu1o/empiremuse` de `IMAGE_REPOS` (job `docker`). Nada mais muda no workflow: o `images`, a conferência de tag livre, a assinatura e a verificação leem a lista.
-2. Confirme que a 2.3.0 está nos dois repositórios com o mesmo digest (`docker buildx imagetools inspect <repo>:2.3.0` e a seção 5.3 para cada um) e que a produção do dono já foi migrada (7.2).
-3. Registre no `CHANGELOG.md` que a imagem vive só em `empirecommunity/empiremuse` e que o repositório antigo ficou congelado na 2.3.0 (as tags `latest`, `2` e `2.3` dele param nela; quem usa `or4cu1o/empiremuse:latest` ou `:2` não recebe mais nada).
+### 7.1 Retirar o repositório antigo (primeiro PR depois dessa release)
 
-### 7.2 Troca manual da produção (uma vez, depois da 2.3.0)
+1. Confirme que a release de publicação dupla está nos dois repositórios com o mesmo digest (`docker buildx imagetools inspect <repo>:X.Y.Z` em cada um e o `cosign verify` da seção 5.3 para cada um) e que a produção do dono já foi migrada (7.2).
+2. Só então, em `.github/workflows/release.yml`, apague a linha `or4cu1o/empiremuse` de `IMAGE_REPOS` (job `docker`). Nada mais muda no workflow: o `images`, a conferência de tag livre, a assinatura e a verificação leem a lista.
+3. Registre no `CHANGELOG.md` que a imagem vive só em `empirecommunity/empiremuse` e que o repositório antigo ficou congelado na release de publicação dupla (as tags `latest`, `2` e `2.X` dele param nela; quem usa `or4cu1o/empiremuse:latest` ou `:2` não recebe mais nada).
 
-O proxy de atualização roda de uma imagem fixada à mão e as versões anteriores à 2.3.0 só aceitam `or4cu1o/empiremuse` (o `/update` nunca troca de repositório). Então a ordem é:
+### 7.2 Troca manual da produção (uma vez, depois da release de publicação dupla)
+
+O proxy de atualização roda de uma imagem fixada à mão e as versões anteriores a essa release só aceitam `or4cu1o/empiremuse` (o `/update` nunca troca de repositório). Com a 2.3.0 como release de publicação dupla, a ordem é:
 
 1. `update` para a 2.3.0 pelo bot: o proxy antigo baixa `or4cu1o/empiremuse:2.3.0@<digest>`, que existe porque a 2.3.0 é publicada nos dois. O bot sobe na 2.3.0; o `updater-proxy` continua na imagem antiga (o `update` só troca a linha do bot).
-2. Antes de existir a 2.3.1, na VPS (backup do compose antes, `docker-compose.yml.bak-AAAAMMDD-HHMMSS`), troque as duas linhas `image:` mantendo a forma e o digest da 2.3.0 (o mesmo nos dois repositórios):
-   - bot: `    image: empirecommunity/empiremuse:2.3.0@sha256:<digest>` (4 espaços);
-   - `updater-proxy`: `    image: docker.io/empirecommunity/empiremuse:2.3.0@sha256:<digest>`;
-   - reimplante o projeto pelo painel (ou `docker compose up -d bot updater-proxy`). O proxy 2.3.0 já tem `empirecommunity/empiremuse` como padrão, e o auxiliar passa a casar a linha do bot com esse repositório.
-3. Sem o passo 2, o `update` para a 2.3.1 não muda nada: o proxy antigo tenta baixar `or4cu1o/empiremuse:2.3.1`, que não existe (código 66, "não consegui baixar a imagem; nada mudou"). Se a linha do bot já estiver no repositório novo e o proxy ainda no antigo, o auxiliar não acha a linha e sai com o código 65 (também sem alterar nada).
+2. Antes de existir a release seguinte, na VPS, com o OK do dono:
+   1. Pegue o digest do `image-digest.txt` da GitHub Release (nunca da página do Docker Hub) e confira a assinatura no repositório novo, como na seção 5.3:
+
+      ```bash
+      DIGEST=$(gh release download v2.3.0 --repo EmpireCommunity/EmpireMuse -p image-digest.txt -O -)
+      cosign verify \
+        --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+        --certificate-identity "https://github.com/EmpireCommunity/EmpireMuse/.github/workflows/release.yml@refs/tags/v2.3.0" \
+        "empirecommunity/empiremuse@${DIGEST}"
+      ```
+
+      Se a verificação falhar, pare: não troque nenhuma linha.
+   2. Guarde o backup do compose (`docker-compose.yml.bak-AAAAMMDD-HHMMSS`) e troque as duas linhas `image:`, mantendo a forma e o digest verificado (o mesmo nos dois repositórios):
+      - bot: `    image: empirecommunity/empiremuse:2.3.0@sha256:<digest>` (4 espaços);
+      - `updater-proxy`: `    image: docker.io/empirecommunity/empiremuse:2.3.0@sha256:<digest>`;
+   3. Reimplante o projeto pelo painel (ou `docker compose up -d bot updater-proxy`). O proxy 2.3.0 já tem `empirecommunity/empiremuse` como padrão, e o auxiliar passa a casar a linha do bot com esse repositório.
+3. Sem o passo 2, o `update` para a release seguinte não muda nada: o proxy antigo tenta baixar do `or4cu1o/empiremuse`, onde ela não existe (código 66, "não consegui baixar a imagem; nada mudou"). Se a linha do bot já estiver no repositório novo e o proxy ainda no antigo, o auxiliar não acha a linha e sai com o código 65 (também sem alterar nada).
 
 Alterar a produção só com o OK do dono, em uma implantação aprovada.

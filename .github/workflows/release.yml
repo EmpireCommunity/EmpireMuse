@@ -125,9 +125,10 @@ jobs:
           # Reexecutar o job de uma tag publicada reconstruiria a imagem com outro digest e republicaria as tags,
           # enquanto o image-digest.txt (imutável) guarda o digest antigo. Vale para cada repositório da lista: se a versão
           # já existe em qualquer um (inclusive uma publicação dupla interrompida pela metade), o job para.
-          while IFS= read -r repo; do
-            [ -n "$repo" ] || continue
-            if out=$(docker buildx imagetools inspect "${repo}:${VERSION}" 2>&1); then
+          mapfile -t repos < <(printf '%s\n' "$IMAGE_REPOS" | sed '/^[[:space:]]*$/d')
+          [ "${#repos[@]}" -gt 0 ] || { echo "::error::IMAGE_REPOS vazio."; exit 1; }
+          for repo in "${repos[@]}"; do
+            if out=$(docker buildx imagetools inspect "${repo}:${VERSION}" 2>&1 < /dev/null); then
               echo "::error::A imagem ${repo}:${VERSION} já existe; uma versão publicada nunca é reconstruída."
               exit 1
             fi
@@ -135,7 +136,7 @@ jobs:
               echo "::error::Não foi possível confirmar que a tag está livre em ${repo}: $out"
               exit 1
             fi
-          done <<< "$IMAGE_REPOS"
+          done
 
       - name: Build e push da imagem Docker
         id: build
@@ -174,10 +175,11 @@ jobs:
           DIGEST: ${{ steps.digest.outputs.value }}
         run: |
           # O mesmo digest nos dois repositórios; cada um guarda a própria assinatura.
-          while IFS= read -r repo; do
-            [ -n "$repo" ] || continue
-            cosign sign --yes "${repo}@${DIGEST}"
-          done <<< "$IMAGE_REPOS"
+          mapfile -t repos < <(printf '%s\n' "$IMAGE_REPOS" | sed '/^[[:space:]]*$/d')
+          [ "${#repos[@]}" -gt 0 ] || { echo "::error::IMAGE_REPOS vazio."; exit 1; }
+          for repo in "${repos[@]}"; do
+            cosign sign --yes "${repo}@${DIGEST}" < /dev/null
+          done
 
       - name: Verificar a assinatura (identidade deste workflow)
         env:
@@ -187,15 +189,17 @@ jobs:
           # O índice de referrers do Docker Hub é eventualmente consistente: logo depois do sign a assinatura pode ainda
           # não aparecer. Repete com espera; a identidade e o emissor continuam exatos e, esgotadas as tentativas, falha.
           attempts=6
-          while IFS= read -r repo; do
-            [ -n "$repo" ] || continue
+          mapfile -t repos < <(printf '%s\n' "$IMAGE_REPOS" | sed '/^[[:space:]]*$/d')
+          [ "${#repos[@]}" -gt 0 ] || { echo "::error::IMAGE_REPOS vazio."; exit 1; }
+          verified_count=0
+          for repo in "${repos[@]}"; do
             verified=0
             for attempt in $(seq 1 "$attempts"); do
               echo "Verificação da assinatura em ${repo}: tentativa ${attempt}/${attempts}"
               if cosign verify \
                 --certificate-oidc-issuer https://token.actions.githubusercontent.com \
                 --certificate-identity "$IDENTITY" \
-                "${repo}@${DIGEST}" > /dev/null; then
+                "${repo}@${DIGEST}" > /dev/null < /dev/null; then
                 echo "Assinatura de ${repo} verificada na tentativa ${attempt}."
                 verified=1
                 break
@@ -209,7 +213,12 @@ jobs:
               echo "::error::A assinatura de ${repo}@${DIGEST} não foi verificada em ${attempts} tentativas; a versão não será anunciada."
               exit 1
             fi
-          done <<< "$IMAGE_REPOS"
+            verified_count=$((verified_count + 1))
+          done
+          if [ "$verified_count" -ne "${#repos[@]}" ]; then
+            echo "::error::Assinaturas verificadas (${verified_count}) diferem dos repositórios (${#repos[@]})."
+            exit 1
+          fi
 
   github-release:
     name: Criar a GitHub Release com o digest
