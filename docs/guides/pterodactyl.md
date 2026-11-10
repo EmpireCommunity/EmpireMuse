@@ -38,11 +38,11 @@ O egg disponibiliza duas opções de imagem Docker:
 
 | Tag da Imagem | Descrição | Recomendação de Uso |
 | :--- | :--- | :--- |
-| `or4cu1o/empiremuse:2` | Acompanha toda a série maior `2.x`. Recebe automaticamente atualizações e correções de bugs da linha 2 sem introduzir quebras incompatíveis de versão maior. | **Recomendada para produção**. |
-| `or4cu1o/empiremuse:latest` | Aponta sempre para a versão estável mais recente publicada. | Útil para quem deseja acompanhar todas as atualizações automaticamente. |
+| `empirecommunity/empiremuse:2` | Acompanha toda a série maior `2.x`. Recebe automaticamente atualizações e correções de bugs da linha 2 sem introduzir quebras incompatíveis de versão maior. | **Recomendada para produção**. |
+| `empirecommunity/empiremuse:latest` | Aponta sempre para a versão estável mais recente publicada. | Útil para quem deseja acompanhar todas as atualizações automaticamente. |
 
 > [!IMPORTANT]
-> Para fixar uma versão exata e imutável (ex.: `or4cu1o/empiremuse:2.0.2`), acesse a aba **Startup** do servidor (ou a seção de imagem na criação), localize o campo **Docker Image** e informe a tag manualmente.
+> Para fixar uma versão exata e imutável (ex.: `empirecommunity/empiremuse:2.0.2`), acesse a aba **Startup** do servidor (ou a seção de imagem na criação), localize o campo **Docker Image** e informe a tag manualmente.
 
 > [!TIP]
 > O daemon do Pterodactyl (**Wings**) baixa novamente a imagem selecionada ao reiniciar o servidor caso haja atualizações na tag correspondente no registro.

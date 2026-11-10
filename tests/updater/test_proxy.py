@@ -36,7 +36,7 @@ CONFIG = {
     "UPDATER_PROJECT_NAME": "e2e",
     "UPDATER_PROJECT_DIR": "/srv/e2e",
     "UPDATER_SERVICE": "bot",
-    "UPDATER_IMAGE_REPO": "or4cu1o/empiremuse",
+    "UPDATER_IMAGE_REPO": "empirecommunity/empiremuse",
 }
 
 
@@ -222,7 +222,7 @@ def conferir_template(recebido: dict, alvo: str) -> None:
     assert recebido == {
         "Image": recebido["Image"],
         "Entrypoint": recebido["Entrypoint"],
-        "Cmd": [alvo, "e2e", "/srv/e2e", "bot", "or4cu1o/empiremuse"],
+        "Cmd": [alvo, "e2e", "/srv/e2e", "bot", "empirecommunity/empiremuse"],
         "User": "0:0",
         "Env": ["DOCKER_CONFIG=/tmp/docker", "HOME=/tmp"],
         "Labels": {"org.empiremuse.role": "updater"},
@@ -405,7 +405,7 @@ INVALIDAS = [
     ("UPDATER_SERVICE", "a\\b"),
     ("UPDATER_SERVICE", "a b"),
     ("UPDATER_IMAGE_REPO", "semBarra"),
-    ("UPDATER_IMAGE_REPO", "or4cu1o/empiremuse#x"),
+    ("UPDATER_IMAGE_REPO", "empirecommunity/empiremuse#x"),
     ("UPDATER_IMAGE_REPO", "or4cu1o/empire&muse"),
     ("UPDATER_IMAGE_REPO", "or4cu1o/empire muse"),
     ("UPDATER_IMAGE_REPO", "or4cu1o/empire\\muse"),

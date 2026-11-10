@@ -79,6 +79,13 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    env:
+      # Repositórios que recebem a imagem, um por linha; o primeiro é o canônico. A 2.3.0 sai nos dois (migração para a
+      # organização, T-523): um único build empurra o mesmo índice para todos, então o digest, o SBOM e a procedência são
+      # idênticos, e cada repositório recebe a sua assinatura. Para aposentar o antigo, apague a linha or4cu1o/empiremuse.
+      IMAGE_REPOS: |
+        empirecommunity/empiremuse
+        or4cu1o/empiremuse
     outputs:
       digest: ${{ steps.digest.outputs.value }}
     steps:
@@ -103,7 +110,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
-          images: or4cu1o/empiremuse
+          images: ${{ env.IMAGE_REPOS }}
           flavor: |
             latest=auto
           tags: |
@@ -116,15 +123,19 @@ jobs:
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
           # Reexecutar o job de uma tag publicada reconstruiria a imagem com outro digest e republicaria as tags,
-          # enquanto o image-digest.txt (imutável) guarda o digest antigo.
-          if out=$(docker buildx imagetools inspect "or4cu1o/empiremuse:${VERSION}" 2>&1); then
-            echo "::error::A imagem or4cu1o/empiremuse:${VERSION} já existe; uma versão publicada nunca é reconstruída."
-            exit 1
-          fi
-          if ! grep -qiE 'not found|manifest unknown|no such manifest' <<< "$out"; then
-            echo "::error::Não foi possível confirmar que a tag está livre: $out"
-            exit 1
-          fi
+          # enquanto o image-digest.txt (imutável) guarda o digest antigo. Vale para cada repositório da lista: se a versão
+          # já existe em qualquer um (inclusive uma publicação dupla interrompida pela metade), o job para.
+          while IFS= read -r repo; do
+            [ -n "$repo" ] || continue
+            if out=$(docker buildx imagetools inspect "${repo}:${VERSION}" 2>&1); then
+              echo "::error::A imagem ${repo}:${VERSION} já existe; uma versão publicada nunca é reconstruída."
+              exit 1
+            fi
+            if ! grep -qiE 'not found|manifest unknown|no such manifest' <<< "$out"; then
+              echo "::error::Não foi possível confirmar que a tag está livre em ${repo}: $out"
+              exit 1
+            fi
+          done <<< "$IMAGE_REPOS"
 
       - name: Build e push da imagem Docker
         id: build
@@ -161,7 +172,12 @@ jobs:
       - name: Assinar a imagem (cosign keyless)
         env:
           DIGEST: ${{ steps.digest.outputs.value }}
-        run: cosign sign --yes "or4cu1o/empiremuse@${DIGEST}"
+        run: |
+          # O mesmo digest nos dois repositórios; cada um guarda a própria assinatura.
+          while IFS= read -r repo; do
+            [ -n "$repo" ] || continue
+            cosign sign --yes "${repo}@${DIGEST}"
+          done <<< "$IMAGE_REPOS"
 
       - name: Verificar a assinatura (identidade deste workflow)
         env:
@@ -171,22 +187,29 @@ jobs:
           # O índice de referrers do Docker Hub é eventualmente consistente: logo depois do sign a assinatura pode ainda
           # não aparecer. Repete com espera; a identidade e o emissor continuam exatos e, esgotadas as tentativas, falha.
           attempts=6
-          for attempt in $(seq 1 "$attempts"); do
-            echo "Verificação da assinatura: tentativa ${attempt}/${attempts}"
-            if cosign verify \
-              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-              --certificate-identity "$IDENTITY" \
-              "or4cu1o/empiremuse@${DIGEST}" > /dev/null; then
-              echo "Assinatura verificada na tentativa ${attempt}."
-              exit 0
+          while IFS= read -r repo; do
+            [ -n "$repo" ] || continue
+            verified=0
+            for attempt in $(seq 1 "$attempts"); do
+              echo "Verificação da assinatura em ${repo}: tentativa ${attempt}/${attempts}"
+              if cosign verify \
+                --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+                --certificate-identity "$IDENTITY" \
+                "${repo}@${DIGEST}" > /dev/null; then
+                echo "Assinatura de ${repo} verificada na tentativa ${attempt}."
+                verified=1
+                break
+              fi
+              if [ "$attempt" -lt "$attempts" ]; then
+                echo "Assinatura ainda não encontrada; nova tentativa em 10 s."
+                sleep 10
+              fi
+            done
+            if [ "$verified" -ne 1 ]; then
+              echo "::error::A assinatura de ${repo}@${DIGEST} não foi verificada em ${attempts} tentativas; a versão não será anunciada."
+              exit 1
             fi
-            if [ "$attempt" -lt "$attempts" ]; then
-              echo "Assinatura ainda não encontrada; nova tentativa em 10 s."
-              sleep 10
-            fi
-          done
-          echo "::error::A assinatura de ${DIGEST} não foi verificada em ${attempts} tentativas; a versão não será anunciada."
-          exit 1
+          done <<< "$IMAGE_REPOS"
 
   github-release:
     name: Criar a GitHub Release com o digest

@@ -19,7 +19,7 @@ from empiremuse.updater.proxy import HELPER_SCRIPT
 
 pytestmark = pytest.mark.critical
 
-REPO = "or4cu1o/empiremuse"
+REPO = "empirecommunity/empiremuse"
 ANTIGO = "sha256:" + "11" * 32
 NOVO = "sha256:" + "22" * 32
 PROXY_DIGEST = "sha256:" + "33" * 32
