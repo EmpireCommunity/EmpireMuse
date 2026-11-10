@@ -87,3 +87,22 @@ async def test_run_bots_loads_the_ban_list_before_any_bot_connects():
     await BotPool.run_bots(pool, ["a", "b"])
 
     assert ordem[0] == "boot" and sorted(ordem[1:]) == ["start:a", "start:b"]
+
+
+@pytest.mark.asyncio
+async def test_a_non_timeout_load_failure_at_boot_still_starts_the_bots_with_the_list_not_loaded():
+    """D2: qualquer falha da carga (não só ``TimeoutError``) abre o bot sem lista; o login do painel segue fechado (``loaded`` falso)."""
+
+    class ErroDoDriver(Exception):  # como o erro de seleção de servidor do driver: não é ``TimeoutError`` embutido
+        pass
+
+    pool = BotPool.__new__(BotPool)
+    pool.user_bans = UserBans(MagicMock(), owners=frozenset(DONOS), sleep=lambda _s: asyncio.Event().wait())
+    pool.user_bans.ensure_loaded = AsyncMock(side_effect=ErroDoDriver("banco fora"))
+    pool.start_bot = AsyncMock()
+
+    await BotPool.run_bots(pool, ["a", "b"])
+
+    assert pool.start_bot.await_count == 2
+    assert not pool.user_bans.loaded and pool.user_bans._retry_task is not None  # nova tentativa em segundo plano
+    pool.user_bans.stop()

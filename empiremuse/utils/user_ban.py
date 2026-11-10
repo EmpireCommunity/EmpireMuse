@@ -148,6 +148,10 @@ class UserBans:
             if not self._warned_unloaded:
                 self._warned_unloaded = True
                 logger.warning("Lista de usuários banidos não carregada (tempo esgotado)")
+        except Exception as exc:  # noqa: BLE001 - D2: qualquer falha da carga (não só timeout) abre o bot sem lista; só o tipo vai ao log
+            if not self._warned_unloaded:
+                self._warned_unloaded = True
+                logger.warning("Lista de usuários banidos não carregada (%s)", type(exc).__name__)
         self.start_retry()
         return False
 
