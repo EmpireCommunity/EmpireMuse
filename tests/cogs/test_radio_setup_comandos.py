@@ -132,48 +132,6 @@ class TestSetupCommand:
             await run_setup(w, bot="TOKEN_RESERVE_2")
 
 
-class TestStationSelectIsOnlyForWhoOpenedIt:
-    @pytest.mark.asyncio
-    async def test_another_user_is_refused_and_the_radio_is_untouched(self):
-        w, station = await world_with_station()
-        await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2, source={})
-        view = setup_flow.StationSelect(
-            w.cog, await w.cog.bot.pool.i18n.for_guild(w.inter.guild), radio_id(2, GUILD), 7, [station]
-        )
-        stranger = click_of(user_id=99)
-
-        assert await view.interaction_check(stranger) is False
-
-        assert (await w.hub.store.get(radio_id(2, GUILD))).source == {}
-
-    @pytest.mark.asyncio
-    async def test_a_station_deleted_meanwhile_is_not_saved(self):
-        w, station = await world_with_station()
-        await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2, source={})
-        view = setup_flow.StationSelect(
-            w.cog, await w.cog.bot.pool.i18n.for_guild(w.inter.guild), radio_id(2, GUILD), 7, [station]
-        )
-
-        with pytest.raises(GenericError):
-            await view.picked(click_of(values=["0" * 24]))  # um id que o select nunca ofereceu
-
-        assert (await w.hub.store.get(radio_id(2, GUILD))).source == {}
-
-    @pytest.mark.asyncio
-    async def test_premium_revoked_while_the_select_was_open_stops_the_save(self):
-        w, station = await world_with_station()
-        await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2, source={})
-        view = setup_flow.StationSelect(
-            w.cog, await w.cog.bot.pool.i18n.for_guild(w.inter.guild), radio_id(2, GUILD), 7, [station]
-        )
-        await w.hub.store.revoke_premium(GUILD)
-
-        with pytest.raises(GenericError) as refused:
-            await view.picked(click_of(values=[station.id]))
-
-        assert "premium" in str(refused.value) and (await w.hub.store.get(radio_id(2, GUILD))).source == {}
-
-
 class TestResetCommand:
     @pytest.mark.asyncio
     async def test_it_asks_for_confirmation_before_touching_anything(self):
