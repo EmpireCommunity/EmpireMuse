@@ -25,7 +25,7 @@ O EmpireMuse segue rigorosamente o padrão de [Versionamento Semântico 2.0.0](h
 
 A publicação automatizada de imagens no Docker Hub depende de um repositório público e de credenciais guardadas como **segredos da organização** no GitHub:
 
-1. **Repositório no Docker Hub**: `empirecommunity/empiremuse` tem de existir e ser **público** antes de a tag ser enviada (sem ele o push falha e o pull anônimo da seção 5.1 não funciona). Na publicação dupla (seção 7), `or4cu1o/empiremuse` também tem de aceitar o push.
+1. **Repositório no Docker Hub**: `empirecommunity/empiremuse` tem de existir e ser **público** antes de a tag ser enviada (sem ele o primeiro push pode falhar ou criar o repositório com a visibilidade padrão, e o pull anônimo da seção 5.1 não funciona se ele não for público). Na publicação dupla (seção 7), `or4cu1o/empiremuse` também tem de aceitar o push.
 2. **Token do Docker Hub**: um Personal Access Token com **Read & Write**, de um usuário com **permissão de escrita no repositório da organização** (e no `or4cu1o/empiremuse` enquanto houver publicação dupla). Gere em **Account Settings > Security > New Access Token**.
 3. **Segredos da organização `EmpireCommunity`**: `DOCKERHUB_USERNAME` (o usuário dono do token) e `DOCKERHUB_TOKEN` são **segredos da organização**, com acesso restrito a **Selected repositories** (só este repositório). O job `docker` roda no ambiente **`docker-release`** (onde também é possível exigir revisores antes da publicação).
 
@@ -148,16 +148,16 @@ Após a conclusão com sucesso do workflow no GitHub Actions, realize a verifica
 Em um terminal independente (ou sem autenticação no Docker Hub), teste o download da imagem publicada para validar que o repositório é público e acessível:
 
 ```bash
-docker pull empirecommunity/empiremuse:2.0.0
+docker pull empirecommunity/empiremuse:2.3.0
 ```
 
-*(Substitua `2.0.0` pela tag publicada, como `2.0.2` ou `2`)*.
+*(Substitua `2.3.0` pela tag publicada; `2` e `latest` também existem depois da primeira release estável)*.
 
 ### 5.2 Inspeção do Manifesto Multi-Arquitetura
 Utilize o comando `docker buildx imagetools inspect` para verificar as arquiteturas publicadas e os atestados de segurança:
 
 ```bash
-docker buildx imagetools inspect empirecommunity/empiremuse:2.0.0
+docker buildx imagetools inspect empirecommunity/empiremuse:2.3.0
 ```
 
 O comando exibirá a lista de manifestos contendo:
@@ -222,10 +222,11 @@ Essa release só conta como feita quando os jobs `docker` e `github-release` ter
 
 ### 7.2 Troca manual da produção (uma vez, depois da release de publicação dupla)
 
-O proxy de atualização roda de uma imagem fixada à mão e as versões anteriores a essa release só aceitam `or4cu1o/empiremuse` (o `/update` nunca troca de repositório). Com a 2.3.0 como release de publicação dupla, a ordem é:
+O proxy de atualização roda de uma imagem fixada à mão e as versões anteriores à release de publicação dupla só aceitam `or4cu1o/empiremuse` (o `/update` nunca troca de repositório). Com a 2.3.0 como release de publicação dupla, a ordem é:
 
-1. `update` para a 2.3.0 pelo bot: o proxy antigo baixa `or4cu1o/empiremuse:2.3.0@<digest>`, que existe porque a 2.3.0 é publicada nos dois. O bot sobe na 2.3.0; o `updater-proxy` continua na imagem antiga (o `update` só troca a linha do bot).
-2. Antes de existir a release seguinte, na VPS, com o OK do dono:
+0. **Antes de tudo, migre os tokens.** A 2.3.0 só lê `TOKEN`, `TOKEN_RESERVE_<NOME>` e `TOKEN_RADIO_<NOME>` e não sobe com o formato antigo (ver `Breaking` no `CHANGELOG.md`). O `/update` **não** migra o `.env` nem o compose: faça essa migração, de forma coordenada, **antes** do `update` do passo 1, e só então siga. Sem ela o bot não sobe na 2.3.0.
+1. `update` para a 2.3.0 pelo bot: o proxy antigo baixa `or4cu1o/empiremuse:2.3.0@<digest>`, que existe porque a 2.3.0 é publicada nos dois. O bot sobe na 2.3.0; o `updater-proxy` continua na imagem antiga (o `update` só troca a linha do bot). **Se a migração só começar depois de uma release posterior** (publicada só no repositório novo, que o proxy antigo não alcança), pule o passo 1: faça o 0 e o 2 usando a tag e o digest dessa release no lugar de `2.3.0`.
+2. Antes de existir a release seguinte (ou, no caso acima, direto da versão antiga), na VPS, com o OK do dono:
    1. Pegue o digest do `image-digest.txt` da GitHub Release (nunca da página do Docker Hub) e confira a assinatura no repositório novo, como na seção 5.3:
 
       ```bash
@@ -237,10 +238,11 @@ O proxy de atualização roda de uma imagem fixada à mão e as versões anterio
       ```
 
       Se a verificação falhar, pare: não troque nenhuma linha.
-   2. Guarde o backup do compose (`docker-compose.yml.bak-AAAAMMDD-HHMMSS`) e troque as duas linhas `image:`, mantendo a forma e o digest verificado (o mesmo nos dois repositórios):
+   2. Guarde o backup do compose (`docker-compose.yml.bak-AAAAMMDD-HHMMSS`) e troque as duas linhas `image:`, **tag e digest juntos**, para a mesma release e o digest verificado (o mesmo nos dois repositórios):
       - bot: `    image: empirecommunity/empiremuse:2.3.0@sha256:<digest>` (4 espaços);
       - `updater-proxy`: `    image: docker.io/empirecommunity/empiremuse:2.3.0@sha256:<digest>`;
-   3. Reimplante o projeto pelo painel (ou `docker compose up -d bot updater-proxy`). O proxy 2.3.0 já tem `empirecommunity/empiremuse` como padrão, e o auxiliar passa a casar a linha do bot com esse repositório.
+   3. Se o `updater-proxy` do compose define `UPDATER_IMAGE_REPO=or4cu1o/empiremuse`, apague a variável (o padrão do proxy 2.3.0 é o repositório novo) ou troque o valor por `empirecommunity/empiremuse`. Com o valor antigo, o auxiliar não acha a linha do bot e o próximo `update` sai com o código 65.
+   4. Reimplante o projeto pelo painel (ou `docker compose up -d bot updater-proxy`). O auxiliar passa a casar a linha do bot com o repositório novo.
 3. Sem o passo 2, o `update` para a release seguinte não muda nada: o proxy antigo tenta baixar do `or4cu1o/empiremuse`, onde ela não existe (código 66, "não consegui baixar a imagem; nada mudou"). Se a linha do bot já estiver no repositório novo e o proxy ainda no antigo, o auxiliar não acha a linha e sai com o código 65 (também sem alterar nada).
 
 Alterar a produção só com o OK do dono, em uma implantação aprovada.

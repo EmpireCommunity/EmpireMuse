@@ -32,7 +32,7 @@ docker build -t empiremuse:local .
 ```
 
 > [!IMPORTANT]
-> O Docker Hub publica a versão exata, nunca republicada (`empirecommunity/empiremuse:X.Y.Z`, ex.: `2.0.2`) e as tags flutuantes `X.Y`, `X` (`2`) e `latest`. Em produção, prefira a versão exata ou a `:2`.
+> O Docker Hub publica a versão exata, nunca republicada (`empirecommunity/empiremuse:X.Y.Z`, ex.: `2.3.0`, a primeira publicada neste repositório) e as tags flutuantes `X.Y`, `X` (`2`) e `latest`. Em produção, prefira a versão exata ou a `:2`.
 
 ### 2.2 Execução com `docker run`
 
@@ -103,7 +103,7 @@ Você pode customizar o comportamento do Compose através do seu arquivo `.env` 
 
 | Variável | Valor Padrão | Descrição |
 | :--- | :--- | :--- |
-| `EMPIREMUSE_IMAGE` | `empirecommunity/empiremuse:latest` | Nome da imagem Docker a ser utilizada (em produção recomenda-se fixar a versão exata `empirecommunity/empiremuse:2.0.2` (ou o digest) ou a tag flutuante `:2` que acompanha a série 2.x). |
+| `EMPIREMUSE_IMAGE` | `empirecommunity/empiremuse:latest` | Nome da imagem Docker a ser utilizada (em produção recomenda-se fixar a versão exata `empirecommunity/empiremuse:2.3.0` (ou o digest) ou a tag flutuante `:2` que acompanha a série 2.x). |
 | `EMPIREMUSE_MEM_LIMIT` | `1024m` | Limite de memória do contêiner do bot (cobre processo Python e heap do Java). |
 | `EMPIREMUSE_PORT` | `127.0.0.1:6000` | Mapeamento da porta HTTP exposta no host para o bot (padrão em loopback). |
 

@@ -42,7 +42,7 @@ O egg disponibiliza duas opções de imagem Docker:
 | `empirecommunity/empiremuse:latest` | Aponta sempre para a versão estável mais recente publicada. | Útil para quem deseja acompanhar todas as atualizações automaticamente. |
 
 > [!IMPORTANT]
-> Para fixar uma versão exata e imutável (ex.: `empirecommunity/empiremuse:2.0.2`), acesse a aba **Startup** do servidor (ou a seção de imagem na criação), localize o campo **Docker Image** e informe a tag manualmente.
+> Para fixar uma versão exata e imutável (ex.: `empirecommunity/empiremuse:2.3.0`), acesse a aba **Startup** do servidor (ou a seção de imagem na criação), localize o campo **Docker Image** e informe a tag manualmente.
 
 > [!TIP]
 > O daemon do Pterodactyl (**Wings**) baixa novamente a imagem selecionada ao reiniciar o servidor caso haja atualizações na tag correspondente no registro.
