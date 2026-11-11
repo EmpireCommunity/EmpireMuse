@@ -20,11 +20,13 @@ def is_genre(ref: str) -> bool:
 
 async def ref_label(hub: Any, tr: Any, guild_id: int, ref: str) -> str:
     """O rótulo de uma entrada: o gênero pelo idioma, a ``custom`` pelo nome atual e a que sumiu por "removida"."""
-    if is_genre(ref):
-        return external_text(tr(f"radio.genre.{ref[len(GENRE_PREFIX) :]}"), LABEL_LIMIT, markdown=False) or "—"
-    station = await hub.stations.get(guild_id, ref)
+    station = await hub.stations.get(
+        guild_id, ref
+    )  # as duas espécies passam pelo catálogo: gênero que saiu dele é "removida", como na API
     if station is None:
         return tr("radio.favorites.ref.missing")
+    if is_genre(ref):
+        return external_text(tr(f"radio.genre.{ref[len(GENRE_PREFIX) :]}"), LABEL_LIMIT, markdown=False) or "—"
     return external_text(station.name, LABEL_LIMIT, markdown=False) or "—"
 
 

@@ -218,6 +218,10 @@ class FavMenuRadioMixin:
         txt = tr("radio.favorites.heading")
         if self.radio_unavailable:
             return txt + tr("radio.owner.unavailable") + "\n"
+        if (
+            self.radio_refs_page
+        ):  # a página das ``custom``/``genre``: só elas, para a mensagem nunca passar dos 2.000 caracteres
+            return txt + self._radio_refs_txt() + tr("radio.favorites.private_note")
         txt += tr("radio.favorites.stations.heading", total=len(self.radio_stations), max=USER_LIVE_FAVORITES_MAX)
         if self.radio_stations:
             lines = [
@@ -233,17 +237,18 @@ class FavMenuRadioMixin:
             txt += fit_lines(lines, TEXT_LIST_MAX_SIZE)
         else:
             txt += tr("radio.favorites.filters.empty")
-        if self._radio_guild_id() is not None:
-            txt += tr("radio.favorites.refs.heading", total=len(self.radio_refs), max=MAX_CUSTOM_FAVORITES)
-            if self.radio_refs:
-                lines = [
-                    f"> ` {n:02} ` {'🎼' if is_genre(ref) else '🎛️'} {external_text(label, TEXT_NAME_LIMIT, markdown=False)}"
-                    for n, (ref, label) in enumerate(self.radio_refs, 1)
-                ]
-                txt += fit_lines(lines, TEXT_LIST_MAX_SIZE)
-            else:
-                txt += tr("radio.favorites.refs.empty")
         return txt + tr("radio.favorites.private_note")
+
+    def _radio_refs_txt(self) -> str:
+        tr = self.tr
+        txt = tr("radio.favorites.refs.heading", total=len(self.radio_refs), max=MAX_CUSTOM_FAVORITES)
+        if not self.radio_refs:
+            return txt + tr("radio.favorites.refs.empty")
+        lines = [
+            f"> ` {n:02} ` {'🎼' if is_genre(ref) else '🎛️'} {external_text(label, TEXT_NAME_LIMIT)}"
+            for n, (ref, label) in enumerate(self.radio_refs, 1)
+        ]
+        return txt + fit_lines(lines, TEXT_LIST_MAX_SIZE)
 
     # ------------------------------------------------------------------ callbacks
 
@@ -312,8 +317,10 @@ class FavMenuRadioMixin:
         await self._radio_guarded(
             inter,
             lambda favorites, user: self.bot.pool.radio.custom_favorites.remove(guild_id, user, ref),
-            "radio.favorites.log.ref_removed",
-            {"name": external_text(label, TEXT_NAME_LIMIT, markdown=False)},
+            "radio.favorites.log.ref_gone"
+            if label == self.tr("radio.favorites.ref.missing")
+            else "radio.favorites.log.ref_removed",
+            {} if label == self.tr("radio.favorites.ref.missing") else {"name": external_text(label, TEXT_NAME_LIMIT)},
         )
 
     async def radio_clear_refs_callback(self, inter: disnake.MessageInteraction) -> None:

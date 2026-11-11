@@ -73,8 +73,7 @@ class ServerRadioFavoritesView(disnake.ui.View):
                 for n, s in enumerate(self.stations, 1)
             ]
             lines += [
-                f"> ` {n:02} ` {GENRE_EMOJI if is_genre(ref) else CUSTOM_EMOJI} "
-                f"{external_text(label, TEXT_NAME_LIMIT, markdown=False)}"
+                f"> ` {n:02} ` {GENRE_EMOJI if is_genre(ref) else CUSTOM_EMOJI} {external_text(label, TEXT_NAME_LIMIT)}"
                 for n, (ref, label) in enumerate(self.refs, len(self.stations) + 1)
             ]
             txt += paginator("\n".join(lines), max_size=TEXT_LIST_MAX_SIZE)[0] + "\n"
@@ -151,6 +150,9 @@ class ServerRadioFavoritesView(disnake.ui.View):
         ref_names = dict(self.refs)
         is_ref = uuid in ref_names
         name = ref_names[uuid] if is_ref else next((s.name for s in self.stations if s.uuid == uuid), "")
+        gone = is_ref and name == self.tr(
+            "radio.favorites.ref.missing"
+        )  # a estação já tinha sido apagada: sem nome para citar
         remove = (  # as ``custom``/``genre`` têm o próprio remover; os dois conferem o gate da gerência
             (lambda favorites: favorites.remove_ref(self.guild_id, inter.author.id, uuid))
             if is_ref
@@ -159,8 +161,8 @@ class ServerRadioFavoritesView(disnake.ui.View):
         await self._change(
             inter,
             remove,
-            "radio.favorites.server.removed",
-            {"station": external_text(name, TEXT_NAME_LIMIT, markdown=False)},
+            "radio.favorites.log.ref_gone" if gone else "radio.favorites.server.removed",
+            {} if gone else {"station": external_text(name, TEXT_NAME_LIMIT)},
         )
 
     async def ask_clear_callback(self, inter: disnake.MessageInteraction) -> None:
@@ -201,13 +203,16 @@ class ServerRadioFavoritesView(disnake.ui.View):
             return
         try:
             changed = await operation(favorites)
-            self.stations, self.refs = await load_server_list(self.pool, self.tr, self.guild_id)
         except FavoriteForbidden:
             self.log = self.tr("radio.refused.no_manage_guild")
         except RadioUnavailable:
             self.log = self.tr("radio.owner.unavailable")
         else:
             self.log = self.tr(log_key, **fmt) if changed else self.tr("radio.favorites.nothing_changed")
+            try:  # o aviso do que mudou vem ANTES de reler: uma releitura que falha não esconde uma mudança que aconteceu
+                self.stations, self.refs = await load_server_list(self.pool, self.tr, self.guild_id)
+            except RadioUnavailable:
+                self.log += "\n" + self.tr("radio.owner.unavailable")
         await inter.edit_original_message(content=self.build_txt(), view=self, allowed_mentions=NO_MENTIONS)
 
     async def on_timeout(self) -> None:

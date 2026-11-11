@@ -21,6 +21,7 @@ from empiremuse.utils.music.interactions.fav_menu_radio import fit_lines
 from empiremuse.utils.music.interactions.fav_menu_server import ServerRadioFavoritesView, open_server_favorites
 from empiremuse.utils.radio import RadioHub
 from empiremuse.utils.radio.favorites import FavoriteForbidden
+from empiremuse.utils.radio.premium import RadioUnavailable
 from tests.persistence.test_radio_favoritas import station, uuid
 from tests.persistence.test_radio_store import FakeDb
 from tests.support.modais import ContextoDePrefixo
@@ -508,7 +509,7 @@ async def test_server_clear_removes_the_refs_too_and_a_deleted_custom_stays_list
         GUILD, custom, expected_rev=(await world.hub.stations.get(GUILD, custom)).rev
     )  # a estação sumiu: segue listada e removível
     view = (await open_server(world)).sent[0]["view"]
-    assert world.tr("radio.favorites.ref.missing") in view.build_txt()
+    assert "removida" in view.build_txt()
 
     await view.ask_clear_callback(FakeInter(ADMIN))
     await view.confirm_clear_callback(FakeInter(ADMIN))
@@ -525,10 +526,13 @@ async def test_member_menu_lists_own_custom_and_genre_removes_and_clears_without
     await world.seed()
 
     view, inter = await open_radio(world)
-    text = inter.calls_named("edit_original_message")[0]["content"]
-    assert "(2/24)" in text and world.tr("radio.genre.rock") in text and "Queen Rock" in text
+    assert (
+        "Queen Rock" not in inter.calls_named("edit_original_message")[0]["content"]
+    )  # a página principal não leva as refs
     await view.radio_toggle_refs_callback(FakeInter(MEMBER))  # a página própria cabe nas 5 linhas do Discord
     assert view.radio_refs_page and tr_label(world, "radio.favorites.remove_ref.label") in labels(view)
+    text = view.radio_manager_txt()
+    assert "(2/24)" in text and world.tr("radio.genre.rock") in text and "Queen Rock" in text
 
     view.current_ref = custom
     await view.radio_remove_ref_callback(FakeInter(MEMBER))
@@ -556,3 +560,118 @@ async def test_member_ref_writes_respect_the_erasure_tombstone(world):
     view.current_ref = "g:rock"
     await view.radio_remove_ref_callback(FakeInter(MEMBER))
     assert view.log == world.tr("radio.owner.unavailable")
+
+
+def all_texts(view):
+    """O texto da página principal e o da página das ``custom``/``genre``."""
+    view.radio_refs_page = False
+    main = view.radio_manager_txt()
+    view.radio_refs_page = True
+    refs = view.radio_manager_txt()
+    view.radio_refs_page = False
+    return main, refs
+
+
+async def full_world(world):
+    """As três listas cheias: 24 estações, 10 filtros e 24 entradas ``custom``/``genre`` do membro."""
+    from empiremuse.rules.radio_genres import shipped_catalog
+
+    await world.seed(stations=range(1, 25), filters=[f"node:{n}" for n in range(10)])
+    custom = await make_custom(world)
+    for ref in [custom, *(f"g:{g.id}" for g in shipped_catalog())][:24]:
+        await world.hub.custom_favorites.toggle(GUILD, MEMBER, ref)
+
+
+async def test_every_member_page_fits_the_2000_character_limit_with_the_three_lists_full(world):
+    await full_world(world)
+    view, _ = await open_radio(world)
+    view.log = "x" * 100
+
+    for text in all_texts(view):
+        assert len(text) + len(view.log) <= 2000
+        assert "\\n" not in text  # nenhum "\n" literal (barra e n) vindo dos textos do idioma
+    assert all("\\n" not in world.tr(key) for key in ("radio.favorites.refs.heading", "radio.favorites.refs.empty"))
+
+
+async def test_a_genre_gone_from_the_catalog_shows_as_removed_and_stays_removable(world):
+    await world.hub.custom_favorites.toggle(GUILD, MEMBER, "g:ghost_genre")
+    view, _ = await open_radio(world)
+    await view.radio_toggle_refs_callback(FakeInter(MEMBER))
+    assert "removida" in view.radio_manager_txt()
+
+    view.current_ref = "g:ghost_genre"
+    await view.radio_remove_ref_callback(FakeInter(MEMBER))
+    assert await world.hub.custom_favorites.list(GUILD, MEMBER) == []
+    assert view.log == world.tr("radio.favorites.log.ref_gone")  # sem "(removida) removida"
+
+
+async def test_refs_page_escapes_markdown_once_in_the_member_and_the_server_lists(world):
+    custom = await make_custom(world, {**ROCK, "name": "Rock_FM [x]"})
+    await world.hub.custom_favorites.toggle(GUILD, MEMBER, custom)
+    await world.hub.favorites.add_ref(GUILD, ADMIN, custom, exists=AsyncMock(return_value=True))
+    view, _ = await open_radio(world)
+    await view.radio_toggle_refs_callback(FakeInter(MEMBER))
+    server = (await open_server(world)).sent[0]["content"]
+
+    for text in (view.radio_manager_txt(), server):
+        assert "Rock\\_FM" in text and "\\\\" not in text  # uma barra por caractere, nunca duas
+
+
+async def test_member_ref_load_failure_shows_retry_on_the_member_page(world):
+    view, _ = await open_radio(world)
+
+    async def down(user, *args):
+        raise RadioUnavailable
+
+    world.hub.custom_favorites.list = down
+    await view.load_radio()
+    assert view.radio_unavailable
+    assert world.tr("radio.owner.unavailable") in view.radio_manager_txt()
+
+
+async def test_server_clear_keeps_the_member_custom_favorites(world):
+    custom = await make_custom(world)
+    await world.hub.custom_favorites.toggle(GUILD, MEMBER, custom)
+    await world.hub.favorites.add_ref(GUILD, ADMIN, custom, exists=AsyncMock(return_value=True))
+    view = (await open_server(world)).sent[0]["view"]
+
+    await view.ask_clear_callback(FakeInter(ADMIN))
+    await view.confirm_clear_callback(FakeInter(ADMIN))
+
+    assert await world.hub.favorites.list_all(GUILD) == ([], [])
+    assert await world.hub.custom_favorites.list(GUILD, MEMBER) == [custom]  # a lista pessoal é outra
+
+
+async def test_member_clear_respects_the_erasure_tombstone(world):
+    await world.hub.custom_favorites.toggle(GUILD, MEMBER, "g:rock")
+    real_find = world.hub.custom_favorites._find
+
+    async def erased_meanwhile(key):
+        doc = await real_find(key)
+        world.pool.erasure_tombstones.mark(MEMBER)
+        return doc
+
+    world.hub.custom_favorites._find = erased_meanwhile
+    with pytest.raises(RadioUnavailable):
+        await world.hub.custom_favorites.clear(GUILD, MEMBER)
+    world.hub.custom_favorites._find = real_find
+    assert await world.hub.custom_favorites.list(GUILD, MEMBER) == ["g:rock"]  # nada foi gravado
+
+
+async def test_server_reload_failure_keeps_the_log_of_the_change_that_happened(world):
+    await world.hub.favorites.add(GUILD, ADMIN, station(1))
+    view = (await open_server(world)).sent[0]["view"]
+    view.current = uuid(1)
+
+    async def down(pool, tr, guild_id):
+        raise RadioUnavailable
+
+    original = fav_menu_server.load_server_list
+    fav_menu_server.load_server_list = down
+    try:
+        await view.remove_callback(FakeInter(ADMIN))
+    finally:
+        fav_menu_server.load_server_list = original
+    assert (await world.hub.favorites.list_all(GUILD))[0] == []  # a remoção aconteceu
+    assert "Rádio 1" in view.log  # e o aviso dela segue na tela
+    assert world.tr("radio.owner.unavailable") in view.log
