@@ -9,6 +9,9 @@ permissions:
   contents: read
   actions: read
 
+env:
+  IMAGE_NAME: or4cu1o/empiremuse
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
@@ -103,7 +106,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
-          images: or4cu1o/empiremuse
+          images: ${{ env.IMAGE_NAME }}
           flavor: |
             latest=auto
           tags: |
@@ -117,8 +120,8 @@ jobs:
         run: |
           # Reexecutar o job de uma tag publicada reconstruiria a imagem com outro digest e republicaria as tags,
           # enquanto o image-digest.txt (imutável) guarda o digest antigo.
-          if out=$(docker buildx imagetools inspect "or4cu1o/empiremuse:${VERSION}" 2>&1); then
-            echo "::error::A imagem or4cu1o/empiremuse:${VERSION} já existe; uma versão publicada nunca é reconstruída."
+          if out=$(docker buildx imagetools inspect "${IMAGE_NAME}:${VERSION}" 2>&1); then
+            echo "::error::A imagem ${IMAGE_NAME}:${VERSION} já existe; uma versão publicada nunca é reconstruída."
             exit 1
           fi
           if ! grep -qiE 'not found|manifest unknown|no such manifest' <<< "$out"; then
@@ -161,7 +164,7 @@ jobs:
       - name: Assinar a imagem (cosign keyless)
         env:
           DIGEST: ${{ steps.digest.outputs.value }}
-        run: cosign sign --yes "or4cu1o/empiremuse@${DIGEST}"
+        run: cosign sign --yes "${IMAGE_NAME}@${DIGEST}"
 
       - name: Verificar a assinatura (identidade deste workflow)
         env:
@@ -176,7 +179,7 @@ jobs:
             if cosign verify \
               --certificate-oidc-issuer https://token.actions.githubusercontent.com \
               --certificate-identity "$IDENTITY" \
-              "or4cu1o/empiremuse@${DIGEST}" > /dev/null; then
+              "${IMAGE_NAME}@${DIGEST}" > /dev/null; then
               echo "Assinatura verificada na tentativa ${attempt}."
               exit 0
             fi
@@ -216,7 +219,7 @@ jobs:
           fi
           BOT_VERSION="${BASH_REMATCH[1]}"
           # O exportador roda DENTRO da imagem que acabou de ser publicada e assinada, sem rede: o arquivo descreve o código lançado.
-          docker run --rm --network none --entrypoint python "or4cu1o/empiremuse@${DIGEST}" \
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --entrypoint python "${IMAGE_NAME}@${DIGEST}" \
             -m empiremuse.site_data --bot-version "$BOT_VERSION" > site-data.json
           jq -e --arg v "$BOT_VERSION" '.bot_version == $v and (.slash_commands | length) > 0 and (.prefix_commands | length) > 0' \
             site-data.json > /dev/null

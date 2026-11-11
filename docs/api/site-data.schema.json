@@ -5,101 +5,311 @@
   "description": "Comandos públicos do bot para o site. Gerado por scripts/export_site_data.py a cada release (rc inclusive); nunca traz comando de dono, comando oculto, segredo nem id interno. Mudança só aditiva dentro do mesmo schema_version.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "bot_version", "locales", "slash_commands", "prefix_commands"],
+  "required": [
+    "schema_version",
+    "bot_version",
+    "locales",
+    "slash_commands",
+    "prefix_commands"
+  ],
   "properties": {
-    "schema_version": { "const": 1 },
+    "schema_version": {
+      "const": 1
+    },
     "bot_version": {
       "type": "string",
       "description": "Versão do release (X.Y.Z ou X.Y.Z-rc.N); dev fora de um release.",
       "pattern": "^(dev|[0-9]+\\.[0-9]+\\.[0-9]+(-rc\\.[0-9]+)?)$"
     },
-    "locales": { "const": ["pt-BR", "en-US"] },
-    "slash_commands": { "type": "array", "items": { "$ref": "#/$defs/SlashCommand" } },
-    "prefix_commands": { "type": "array", "items": { "$ref": "#/$defs/PrefixCommand" } }
+    "locales": {
+      "const": [
+        "pt-BR",
+        "en-US"
+      ]
+    },
+    "slash_commands": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/SlashCommand"
+      }
+    },
+    "prefix_commands": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/PrefixCommand"
+      }
+    }
   },
   "$defs": {
     "LocalizedText": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["pt-BR", "en-US"],
-      "properties": { "pt-BR": { "type": "string" }, "en-US": { "type": "string" } }
+      "required": [
+        "pt-BR",
+        "en-US"
+      ],
+      "properties": {
+        "pt-BR": {
+          "type": "string"
+        },
+        "en-US": {
+          "type": "string"
+        }
+      }
     },
     "LocalizedList": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["pt-BR", "en-US"],
+      "required": [
+        "pt-BR",
+        "en-US"
+      ],
       "properties": {
-        "pt-BR": { "type": "array", "items": { "type": "string" } },
-        "en-US": { "type": "array", "items": { "type": "string" } }
+        "pt-BR": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "en-US": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     },
     "Category": {
       "type": "object",
       "description": "A categoria que o cog declara na descrição de barra. Ausente nos comandos de um cog sem comando de barra.",
       "additionalProperties": false,
-      "required": ["emoji", "label"],
-      "properties": { "emoji": { "type": "string" }, "label": { "$ref": "#/$defs/LocalizedText" } }
+      "required": [
+        "emoji",
+        "label"
+      ],
+      "properties": {
+        "emoji": {
+          "type": "string"
+        },
+        "label": {
+          "$ref": "#/$defs/LocalizedText"
+        }
+      }
     },
     "Permissions": {
       "type": "array",
-      "description": "Permissões de servidor exigidas do usuário (nomes do Discord, como manage_guild), em ordem alfabética. Vazio = nenhuma exigida pelo comando. Não inclui regras de execução (DJ, canal de voz).",
-      "items": { "type": "string", "pattern": "^[a-z_]+$" },
+      "description": "Permissões de servidor exigidas do USUÁRIO (nomes do Discord, como manage_guild), em ordem alfabética: default_member_permissions e as verificações has_permissions e has_guild_permissions do comando. Não inclui o que o bot precisa (bot_has_*) nem regras de execução (DJ, canal de voz). Vazio = nenhuma.",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z_]+$"
+      },
       "uniqueItems": true
     },
     "Choice": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["value", "name"],
-      "properties": { "value": { "type": ["string", "number"] }, "name": { "$ref": "#/$defs/LocalizedText" } }
+      "required": [
+        "value",
+        "name"
+      ],
+      "properties": {
+        "value": {
+          "type": [
+            "string",
+            "number"
+          ]
+        },
+        "name": {
+          "$ref": "#/$defs/LocalizedText"
+        }
+      }
     },
     "Option": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "description", "type", "required"],
+      "required": [
+        "name",
+        "description",
+        "type",
+        "required"
+      ],
       "properties": {
-        "name": { "$ref": "#/$defs/LocalizedText" },
-        "description": { "$ref": "#/$defs/LocalizedText" },
+        "name": {
+          "$ref": "#/$defs/LocalizedText"
+        },
+        "description": {
+          "$ref": "#/$defs/LocalizedText"
+        },
         "type": {
           "type": "string",
           "description": "Nome do tipo de opção do Discord (string, integer, boolean, user, channel, role, mentionable, number, attachment).",
           "pattern": "^[a-z_]+$"
         },
-        "required": { "type": "boolean" },
-        "choices": { "type": "array", "items": { "$ref": "#/$defs/Choice" } }
+        "required": {
+          "type": "boolean"
+        },
+        "choices": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Choice"
+          }
+        }
       }
     },
     "SlashCommand": {
       "type": "object",
-      "description": "Comando de barra, grupo ou subcomando. Só o nível de topo traz kind e permissions.",
+      "description": "Comando de barra de topo. Exige kind e permissions (a soma de default_member_permissions e das verificações do comando).",
       "additionalProperties": false,
-      "required": ["id", "path", "name", "description", "options"],
+      "required": [
+        "id",
+        "kind",
+        "path",
+        "name",
+        "description",
+        "options",
+        "permissions"
+      ],
       "properties": {
-        "id": { "type": "string", "description": "Caminho com pontos (queue.display): estável, serve de chave e de referência em features.ts." },
-        "kind": { "const": "slash" },
-        "path": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
-        "name": { "$ref": "#/$defs/LocalizedText" },
-        "description": { "$ref": "#/$defs/LocalizedText" },
-        "options": { "type": "array", "items": { "$ref": "#/$defs/Option" } },
-        "subcommands": { "type": "array", "items": { "$ref": "#/$defs/SlashCommand" }, "minItems": 1 },
-        "permissions": { "$ref": "#/$defs/Permissions" },
-        "category": { "$ref": "#/$defs/Category" }
+        "id": {
+          "type": "string",
+          "description": "Caminho com pontos (queue.display): estável, serve de chave e de referência em features.ts."
+        },
+        "kind": {
+          "const": "slash"
+        },
+        "path": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 1
+        },
+        "name": {
+          "$ref": "#/$defs/LocalizedText"
+        },
+        "description": {
+          "$ref": "#/$defs/LocalizedText"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Option"
+          }
+        },
+        "subcommands": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SlashSubcommand"
+          },
+          "minItems": 1
+        },
+        "permissions": {
+          "$ref": "#/$defs/Permissions"
+        },
+        "category": {
+          "$ref": "#/$defs/Category"
+        }
       }
     },
     "PrefixCommand": {
       "type": "object",
       "description": "Comando de prefixo (ou subcomando). Os aliases são os do catálogo, por idioma.",
       "additionalProperties": false,
-      "required": ["id", "kind", "path", "name", "description", "aliases", "permissions"],
+      "required": [
+        "id",
+        "kind",
+        "path",
+        "name",
+        "description",
+        "aliases",
+        "permissions"
+      ],
       "properties": {
-        "id": { "type": "string", "description": "O id do catálogo (cmd.<id>.*): o caminho com pontos, ou o nome do PREFIX_CATALOG_IDS." },
-        "kind": { "const": "prefix" },
-        "path": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
-        "name": { "$ref": "#/$defs/LocalizedText" },
-        "description": { "$ref": "#/$defs/LocalizedText" },
-        "aliases": { "$ref": "#/$defs/LocalizedList" },
-        "permissions": { "$ref": "#/$defs/Permissions" },
-        "subcommands": { "type": "array", "items": { "$ref": "#/$defs/PrefixCommand" }, "minItems": 1 },
-        "category": { "$ref": "#/$defs/Category" }
+        "id": {
+          "type": "string",
+          "description": "O id do catálogo (cmd.<id>.*): o caminho com pontos, ou o nome do PREFIX_CATALOG_IDS."
+        },
+        "kind": {
+          "const": "prefix"
+        },
+        "path": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "name": {
+          "$ref": "#/$defs/LocalizedText"
+        },
+        "description": {
+          "$ref": "#/$defs/LocalizedText"
+        },
+        "aliases": {
+          "$ref": "#/$defs/LocalizedList"
+        },
+        "permissions": {
+          "$ref": "#/$defs/Permissions"
+        },
+        "subcommands": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PrefixCommand"
+          },
+          "minItems": 1
+        },
+        "category": {
+          "$ref": "#/$defs/Category"
+        }
+      }
+    },
+    "SlashSubcommand": {
+      "type": "object",
+      "description": "Grupo ou subcomando de barra. Traz as permissões de servidor exigidas ao usuário pelas verificações dele (por exemplo, jukebox setup exige manage_guild); não tem kind nem category (são do comando de topo).",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "path",
+        "name",
+        "description",
+        "options",
+        "permissions"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Caminho com pontos (queue.display)."
+        },
+        "path": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 2
+        },
+        "name": {
+          "$ref": "#/$defs/LocalizedText"
+        },
+        "description": {
+          "$ref": "#/$defs/LocalizedText"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Option"
+          }
+        },
+        "subcommands": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SlashSubcommand"
+          },
+          "minItems": 1
+        },
+        "permissions": {
+          "$ref": "#/$defs/Permissions"
+        }
       }
     }
   }

@@ -4,6 +4,11 @@ Lê **só o que o código já declara**, sem login no Discord e sem rede: os com
 instanciar nenhum bot) e o catálogo de textos (``cmd.<id>.{name,description,aliases}``), em pt-BR e en-US. Nunca entra comando de dono,
 comando oculto, segredo nem id interno: o filtro é :func:`is_public` e a saída passa por um teste que falha se algo vazar.
 
+Catálogos: antes de importar qualquer cog, :func:`build_site_data` instala o ``I18n`` único do processo restrito a ``LOCALES``
+(``install_i18n``). Como o ``localized()`` de cada cog chama ``get_i18n()`` na importação, isso vale para o processo inteiro: nenhum
+outro diretório de idioma (por exemplo, um baixado do Crowdin) é aberto. Se o processo já tem um ``I18n`` sem essa restrição, o
+exportador falha em vez de seguir (rode-o num processo novo, como o release faz).
+
 A saída é determinística (sem data nem ordem solta): o mesmo código gera os mesmos bytes e o mesmo SHA-256. O formato está em
 ``docs/api/site-data.schema.json`` (JSON Schema 2020-12) e é descrito em ``docs/api/site-data.md``.
 """
@@ -21,8 +26,7 @@ from typing import Any, Optional
 import disnake
 from disnake.ext import commands
 
-from empiremuse.cogs.help_cog import catalog_id
-from empiremuse.i18n.service import I18n
+from empiremuse.i18n.service import install_i18n
 from empiremuse.rules.i18n import REFERENCE_LOCALE
 from empiremuse.version import image_version
 
@@ -32,23 +36,35 @@ COG_PACKAGES = ("empiremuse.cogs", "empiremuse.music_cog")
 VERSION_PATTERN = re.compile(r"^(dev|[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?)$")
 # Os cogs prefixam a descrição de barra com a própria categoria: ``[🔧 Settings] | Texto``.
 CATEGORY_PREFIX = re.compile(r"^\[(?P<emoji>\S+) (?P<label>[^\]]+)\] \| (?P<text>.*)$", re.DOTALL)
-OWNER_CHECK_MARKERS = (
-    "admin_owner_only",
-    "is_owner",
-    "owner_check",
-)  # nome (``__qualname__``) das verificações de dono
+# Verificações de dono, pelo nome da função (``__qualname__``): o ``commands.check`` de ``admin_owner_only`` (prefixo exato) e a
+# ``radio_owner_only`` dos subcomandos de dono do prefixo ``radio``. Nome exato ou prefixo exato, nunca trecho do nome.
+OWNER_CHECK_NAMES = frozenset({"radio_owner_only"})
+OWNER_CHECK_PREFIXES = ("admin_owner_only.", "is_owner.")
+# Verificações de permissão do USUÁRIO (``commands.has_permissions`` e ``has_guild_permissions``); as do bot (``bot_has_*``) não entram.
+USER_PERMISSION_PREFIXES = ("has_permissions.<locals>", "has_guild_permissions.<locals>")
 
 
 class SiteDataError(Exception):
     """A saída não pode ser gerada com segurança (por exemplo, versão inválida)."""
 
 
+def _is_owner_check(check: Any) -> bool:
+    name = getattr(check, "__qualname__", "")
+    return name in OWNER_CHECK_NAMES or name.startswith(OWNER_CHECK_PREFIXES)
+
+
 def is_public(command: Any) -> bool:
-    """Falso para comando oculto ou com verificação de dono: nunca vai ao site."""
+    """Falso para comando oculto ou com verificação de dono: nunca vai ao site. Vale para comando de prefixo, de barra e subcomando."""
     if getattr(command, "hidden", False):
         return False
-    checks = getattr(command, "checks", ())
-    return not any(marker in getattr(check, "__qualname__", "") for check in checks for marker in OWNER_CHECK_MARKERS)
+    return not any(_is_owner_check(check) for check in getattr(command, "checks", ()))
+
+
+def catalog_id(command: commands.Command) -> str:
+    """O id do catálogo do comando de prefixo (``PREFIX_CATALOG_IDS``). Importa o ``help_cog`` só aqui, depois do ``install_i18n``."""
+    from empiremuse.cogs.help_cog import catalog_id as catalog_id_of
+
+    return catalog_id_of(command)
 
 
 def _cog_classes() -> Iterator[type[commands.Cog]]:
@@ -68,11 +84,12 @@ def _permission_names(permissions: Optional[Any]) -> list[str]:
     return sorted(name for name, enabled in disnake.Permissions(permissions.value) if enabled)
 
 
-def _prefix_permissions(command: commands.Command) -> list[str]:
-    """As permissões de servidor que ``has_permissions``/``has_guild_permissions`` exigem (lidas do fecho da verificação)."""
+def _user_permissions(command: Any) -> list[str]:
+    """As permissões de servidor que o USUÁRIO precisa ter, lidas do fecho das verificações ``has_permissions`` e
+    ``has_guild_permissions`` do comando (barra, subcomando ou prefixo). Nome exato: ``bot_has_*`` é exigência do bot e não entra."""
     found: set[str] = set()
-    for check in command.checks:
-        if "has_guild_permissions" in check.__qualname__ or "has_permissions" in check.__qualname__:
+    for check in getattr(command, "checks", ()):
+        if getattr(check, "__qualname__", "").startswith(USER_PERMISSION_PREFIXES):
             perms = inspect.getclosurevars(check).nonlocals.get("perms", {})
             found.update(name for name, wanted in perms.items() if wanted)
     return sorted(found)
@@ -123,10 +140,12 @@ def _option(option: disnake.Option) -> dict[str, Any]:
     return entry
 
 
-def _slash_node(path: list[str], source: Any) -> dict[str, Any]:
-    """Um comando, grupo ou subcomando de barra (``source`` tem ``name``, ``description``, ``options`` e as localizações)."""
+def _slash_node(path: list[str], source: Any, command: Any) -> dict[str, Any]:
+    """Um comando, grupo ou subcomando de barra. ``source`` (o corpo ou a opção) dá nome, descrição e opções; ``command`` (o objeto
+    registrado) dá as verificações e os filhos. Subcomando de dono ou sem objeto correspondente fica de fora (falha fechado)."""
     nested = (disnake.OptionType.sub_command, disnake.OptionType.sub_command_group)
-    leaves = [o for o in source.options if o.type in nested]
+    children = getattr(command, "children", {})
+    leaves = [(o, children.get(o.name)) for o in source.options if o.type in nested]
     description, category = _split_category(_by_locale(source.description, source.description_localizations))
     node: dict[str, Any] = {
         "id": ".".join(path),
@@ -134,11 +153,17 @@ def _slash_node(path: list[str], source: Any) -> dict[str, Any]:
         "name": _by_locale(source.name, source.name_localizations),
         "description": description,
         "options": [_option(o) for o in source.options if o.type not in nested],
+        "permissions": _user_permissions(command),
     }
     if category is not None:
         node["_category"] = category
-    if leaves:
-        node["subcommands"] = [_slash_node([*path, sub.name], sub) for sub in leaves]
+    subs = [
+        _slash_node([*path, option.name], option, child)
+        for option, child in leaves
+        if child is not None and is_public(child)
+    ]
+    if subs:
+        node["subcommands"] = subs
     return node
 
 
@@ -150,13 +175,13 @@ def slash_commands(provider: Any) -> list[dict[str, Any]]:
                 continue
             body = command.body
             body.localize(provider)
-            node = _slash_node([body.name], body)
+            node = _slash_node([body.name], body, command)
+            node["permissions"] = sorted({*node["permissions"], *_permission_names(body.default_member_permissions)})
             found.append(
                 {
                     "id": node.pop("id"),
                     "kind": "slash",
                     **node,
-                    "permissions": _permission_names(body.default_member_permissions),
                     "_cog": cls.__cog_name__,  # só para a categoria; o nome do cog (classe Python) nunca sai
                 }
             )
@@ -180,7 +205,7 @@ def _prefix_node(command: commands.Command, entries: dict[str, dict[str, str]], 
             loc: [a.strip() for a in text.split(",") if a.strip()] if text else list(command.aliases)
             for loc, text in _texts(entries, f"{base}.aliases").items()
         },
-        "permissions": _prefix_permissions(command),
+        "permissions": _user_permissions(command),
         "_cog": cog,
     }
     subs = [s for s in (_prefix_node(sub, entries, cog) for sub in getattr(command, "commands", ())) if s is not None]
@@ -223,12 +248,22 @@ def _with_category(nodes: Iterable[dict[str, Any]], labels: dict[str, dict[str, 
     return out
 
 
-def build_site_data(bot_version: Optional[str] = None) -> dict[str, Any]:
-    """O dicionário de ``site-data.json``. ``bot_version`` padrão = versão da imagem, ou ``dev`` fora dela."""
+def validated_version(bot_version: Optional[str]) -> str:
     version = bot_version if bot_version is not None else str(image_version() or "dev")
     if not VERSION_PATTERN.fullmatch(version):
         raise SiteDataError("bot_version fora do formato X.Y.Z[-rc.N] ou dev")
-    i18n = I18n(only=LOCALES)  # só os catálogos en-US e pt-BR do repositório: nenhum idioma baixado do Crowdin é aberto
+    return version
+
+
+def build_site_data(bot_version: Optional[str] = None) -> dict[str, Any]:
+    """O dicionário de ``site-data.json``. ``bot_version`` padrão = versão da imagem, ou ``dev`` fora dela."""
+    version = validated_version(bot_version)
+    try:
+        i18n = install_i18n(
+            only=LOCALES
+        )  # ANTES de qualquer cog: só en-US e pt-BR do repositório são abertos, no processo inteiro
+    except RuntimeError as error:
+        raise SiteDataError(str(error)) from None
     entries = {locale: i18n.entries(locale) for locale in LOCALES}
     slash = slash_commands(i18n.provider)
     labels = {node["_cog"]: node["_category"] for node in slash if "_category" in node}

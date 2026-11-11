@@ -312,6 +312,22 @@ def get_i18n() -> I18n:
     return _INSTANCE
 
 
+def install_i18n(*, only: Collection[str]) -> I18n:
+    """Instala, ANTES de qualquer cog ser importado, o ``I18n`` único que só lê os locales de ``only`` (o exportador do site).
+
+    ``localized()`` chama ``get_i18n()`` quando um cog é importado; sem isto ele criaria um ``I18n`` que abre TODOS os diretórios de
+    idioma. Se já existe um singleton, ele só serve se tiver exatamente o mesmo ``only``; senão falha (``RuntimeError``).
+    """
+    global _INSTANCE
+    wanted = frozenset(only)
+    if _INSTANCE is not None:
+        if _INSTANCE.only != wanted:
+            raise RuntimeError("o I18n do processo já existe com outro conjunto de idiomas")
+        return _INSTANCE
+    _INSTANCE = I18n(only=wanted)
+    return _INSTANCE
+
+
 def localized(key: str) -> disnake.Localized:
     """Para declarar um comando: ``description=localized("cmd.play.description")``."""
     return get_i18n().localized(key)

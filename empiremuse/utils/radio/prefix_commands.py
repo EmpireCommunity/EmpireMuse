@@ -38,6 +38,12 @@ def _guild_id(raw: str) -> int | None:
     return int(raw) if raw.isdecimal() and 0 < int(raw) < 1 << 64 else None
 
 
+async def radio_owner_only(ctx: CustomContext) -> bool:
+    """A verificação dos subcomandos de dono do prefixo ``radio``. Tem nome próprio (e não uma ``lambda``) para o exportador do site
+    (``empiremuse/site_data.py``) reconhecê-la pelo nome e nunca publicar esses comandos, mesmo que percam o ``hidden=True``."""
+    return await ctx.cog.owner_check(ctx)
+
+
 RADIO_COOLDOWN = commands.CooldownMapping.from_cooldown(1, 10, commands.BucketType.guild)
 
 
@@ -129,7 +135,7 @@ class RadioPrefixCommands:
     # ------------------------------------------------------------------ premium
 
     @radio_prefix.command(name="premium", hidden=True)
-    @commands.check(lambda ctx: ctx.cog.owner_check(ctx))
+    @commands.check(radio_owner_only)
     async def radio_premium(self, ctx: CustomContext, action: str = "", guild: str = ""):
         """``radio premium conceder|revogar <id do servidor>`` e ``radio premium listar``."""
         tr = await self._tr(ctx)
@@ -156,7 +162,7 @@ class RadioPrefixCommands:
     # ------------------------------------------------------------------ pausar todas
 
     @radio_prefix.command(name="pauseall", aliases=["pausartodas"], hidden=True)
-    @commands.check(lambda ctx: ctx.cog.owner_check(ctx))
+    @commands.check(radio_owner_only)
     async def radio_pause_all(self, ctx: CustomContext):
         tr = await self._tr(ctx)
         try:
@@ -167,7 +173,7 @@ class RadioPrefixCommands:
         await ctx.send(tr("radio.owner.paused_all" if changed else "radio.owner.paused_all_already"))
 
     @radio_prefix.command(name="resumeall", aliases=["retomartodas"], hidden=True)
-    @commands.check(lambda ctx: ctx.cog.owner_check(ctx))
+    @commands.check(radio_owner_only)
     async def radio_resume_all(self, ctx: CustomContext):
         tr = await self._tr(ctx)
         try:
