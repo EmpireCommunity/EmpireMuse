@@ -1608,7 +1608,7 @@ class MusicSettings(commands.Cog):
         await self.bot.update_global_data(id_=inter.author.id, data=data, db_name=DBModel.users)
 
         await inter.edit_original_message(
-            f"O seu token foi importado/editado com sucesso!\nNota: Adicione/Atualize o token no app de RPC."
+            f"O seu token foi importado/editado com sucesso!\nNota: Adicione/Atualize o token no app de RPC e reinicie o app."
         )
 
     @commands.cooldown(1, 5, commands.BucketType.user)
@@ -2017,7 +2017,8 @@ class RPCCog(commands.Cog):
             await self.bot.update_global_data(id_=user_id, data=data, db_name=DBModel.users)
             msg = (
                 f"O token para usar no app de RPC (Rich Presence) foi gerado com sucesso!\n\n"
-                f"`Token gerado:` ||{data['token']}||"
+                f"`Token gerado:` ||{data['token']}||\n\n"
+                f"Cole o token no app de RPC e **reinicie o app**."
             )
 
         elif button_id == "rpc_create":
