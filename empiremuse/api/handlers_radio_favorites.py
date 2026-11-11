@@ -82,7 +82,9 @@ class FavoriteListRoute(RadioRoute):
 
     @radio_endpoint
     async def post(self, guild_id: str) -> None:
-        ctx, _ = await self.guild_context(guild_id, write=True)
+        ctx, _ = await self.guild_access(
+            guild_id, write=True
+        )  # o premium só é lido (fresco) para custom/genre: estação ao vivo não o exige
         body = self.json_body()
         kind = body.get("kind")
         if isinstance(kind, str) and kind in PREMIUM_KINDS and kind in self.kinds:
@@ -99,6 +101,10 @@ class FavoriteListRoute(RadioRoute):
                     status = 400
                     raise validation_failed("limit")
                 return Reply(200, await self.listing(ctx))
+            except (
+                ApiError
+            ):  # o 400 de "cheia" (status já registrado) e demais erros da API passam como estão, nunca como 500
+                raise
             except FavoriteForbidden:
                 status = 403
                 raise ApiError(403, FORBIDDEN) from None

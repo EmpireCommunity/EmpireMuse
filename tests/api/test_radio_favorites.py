@@ -294,6 +294,16 @@ class RadioFavoritesRisk(FavoritesApiCase):
 
         self.expect("POST", T_SERVER, response, 403, "forbidden")
 
+    def test_a_ao_vivo_nao_le_o_premium_e_uma_falha_dele_nao_a_derruba(self):
+        self.radio.directory.stations[LIVE_UUID] = station(LIVE_UUID)
+
+        async def down(guild_id):
+            raise RadioUnavailable
+
+        self.radio.premium.get = down  # o armazém do premium fora do ar: só custom/genre dependem dele
+
+        self.expect("POST", T_SERVER, self.add(SERVER, "station", LIVE_UUID), 200)
+
     # ------------------------------------------------------------------ 6. preservação e leitura
 
     def test_adicionar_um_tipo_preserva_o_outro_e_a_entrada_que_sumiu_sai_com_missing_e_e_removivel(self):
@@ -431,7 +441,9 @@ class RadioFavoritesContract(FavoritesApiCase):
             kind, ident = ("station", LIVE_UUID) if is_server else ("custom", self.custom_station().id)
             self.radio.store.fail_with = None
             self.radio.premium.fail_with = RadioUnavailable()
-            self.expect("POST", template, self.add(route, kind, ident), 503, "bot_unavailable")
+            self.expect(
+                "POST", template, self.add(route, "genre", GENRE), 503, "bot_unavailable"
+            )  # só custom/genre leem o premium; a ao vivo não
             self.radio.premium.fail_with = None
             self.db.fail = True  # o banco das favoritas fora do ar (DELETE e GET não leem o premium)
             self.expect("DELETE", template, self.remove(route, kind, ident), 503, "bot_unavailable")
