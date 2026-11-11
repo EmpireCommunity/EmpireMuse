@@ -310,6 +310,17 @@ def test_a5_the_pool_logs_the_mode_once_in_setup_right_after_the_log_is_configur
         r for r in caplog.records if r.name == "empiremuse.utils.owner_gate"
     ]  # construir o pool (e os bots) não loga
 
+    bots = [  # vários bots no mesmo pool: construir bots também não loga
+        BotCore(
+            command_prefix=commands.when_mentioned,
+            intents=disnake.Intents.none(),
+            pool=pool,
+            identifier=f"teste{n}",
+        )
+        for n in range(3)
+    ]
+    assert len(bots) == 3 and not [r for r in caplog.records if r.name == "empiremuse.utils.owner_gate"]
+
     order = []
     monkeypatch.setattr(client, "configure_logging", lambda *a, **k: order.append("log"))
     monkeypatch.setattr(client, "log_owner_gate_boot", lambda config: order.append("owner_gate"))
@@ -380,18 +391,31 @@ async def test_a6_voice_status_keeps_manage_guild_for_everyone_but_the_allowed_u
 # --- A7: nenhum portão esquecido -------------------------------------------------------------------------------------
 
 
-def loaded_cog_commands():
+EXPECTED_COG_MODULES = {
+    "app_emojis", "data_erasure", "error_handler", "hardreset", "help_cog", "language", "lastfm", "legacy_cmds", "ll_yt_oauth",
+    "misc", "music", "music_settings", "player_resume", "radio", "server_manager", "server_playlists", "usage_tracker", "user_bans",
+}  # fmt: skip
+
+
+def cog_modules():
     for package in (empiremuse.cogs, empiremuse.music_cog):
         for info in pkgutil.iter_modules(package.__path__, package.__name__ + "."):
-            try:
-                module = importlib.import_module(info.name)
-            except Exception:  # um cog que não importa neste ambiente não carrega no bot também
-                continue
-            for _, cls in inspect.getmembers(module, inspect.isclass):
-                if issubclass(cls, commands.Cog) and cls.__module__ == module.__name__:
-                    for attr in ("__cog_commands__", "__cog_app_commands__"):
-                        for command in getattr(cls, attr, []):
-                            yield f"{cls.__name__}.{command.name}", command
+            yield info.name, importlib.import_module(info.name)  # sem engolir: um cog que não importa derruba o teste
+
+
+def loaded_cog_commands():
+    for _, module in cog_modules():
+        for _, cls in inspect.getmembers(module, inspect.isclass):
+            if issubclass(cls, commands.Cog) and cls.__module__ == module.__name__:
+                for attr in ("__cog_commands__", "__cog_app_commands__"):
+                    for command in getattr(cls, attr, []):
+                        yield f"{cls.__name__}.{command.name}", command
+
+
+def test_a7_every_cog_module_imports_and_the_scan_covers_the_expected_ones():
+    names = {name for name, _ in cog_modules()}
+
+    assert {f"empiremuse.cogs.{n}" for n in EXPECTED_COG_MODULES} <= names
 
 
 def test_a7_no_loaded_command_uses_the_default_is_owner_check():
@@ -402,7 +426,7 @@ def test_a7_no_loaded_command_uses_the_default_is_owner_check():
         if any("is_owner" in c.__qualname__ and "admin" not in c.__qualname__ for c in cmd.checks)
     ]
 
-    assert len(seen) > 50  # a varredura achou os cogs de verdade
+    assert len(seen) > 50  # a varredura achou os comandos de verdade
     assert offenders == []
 
 

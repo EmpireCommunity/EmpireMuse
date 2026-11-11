@@ -2,7 +2,13 @@
 
 import pytest
 
-from empiremuse.rules.owner_gate import OwnerGateMode, admin_owner_allowed, resolve_owner_gate
+from empiremuse.rules.owner_gate import (
+    OwnerGateMode,
+    admin_owner_allowed,
+    parse_owner_ids,
+    resolve_owner_gate,
+    split_owner_ids,
+)
 
 pytestmark = [pytest.mark.critical, pytest.mark.regression]
 
@@ -43,3 +49,19 @@ def test_resolve_owner_gate(raw, ids, esperado):
 )
 def test_admin_owner_allowed(modo, usuario, app_owner, esperado):
     assert admin_owner_allowed(modo, usuario, frozenset({DONO_ENV}), app_owner) is esperado
+
+
+@pytest.mark.parametrize(
+    ("raw", "ids", "invalid"),
+    [
+        ("1||2", [1, 2], 0),
+        (" 3 || || x ||4", [3, 4], 1),
+        ("1,2", [], 1),
+        ("", [], 0),
+        (None, [], 0),
+        ("abc||def", [], 2),
+    ],
+)
+def test_split_owner_ids_counts_the_discarded_items_without_keeping_them(raw, ids, invalid):
+    assert split_owner_ids(raw) == (ids, invalid)
+    assert parse_owner_ids(raw) == ids

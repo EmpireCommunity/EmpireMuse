@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from disnake.ext import commands
 
-from empiremuse.rules.owner_gate import OwnerGateMode, admin_owner_allowed, resolve_owner_gate
+from empiremuse.rules.owner_gate import OwnerGateMode, admin_owner_allowed, resolve_owner_gate, split_owner_ids
 
 if TYPE_CHECKING:
     from empiremuse.utils.client import BotCore
@@ -39,10 +39,11 @@ def admin_owner_only():
 
 def log_owner_gate_boot(config: dict) -> OwnerGateMode:
     """O ERROR do modo ``DENY`` e o WARNING do ``FALLBACK``, uma vez (o valor de ``OWNER_IDS`` nunca entra no texto)."""
-    from empiremuse.utils.client import parse_owner_ids  # import tardio: ``client`` importa este módulo
-
     raw = config.get("OWNER_IDS")
-    mode = resolve_owner_gate(raw, parse_owner_ids(raw))
+    ids, invalid = split_owner_ids(raw)
+    mode = resolve_owner_gate(raw, ids)
+    if invalid and mode is OwnerGateMode.ENV:
+        logger.warning("OWNER_IDS tem %d item(ns) que não é um ID numérico (o separador é ||): ignorado(s).", invalid)
     if mode is OwnerGateMode.DENY:
         logger.error(
             "OWNER_IDS está preenchido, mas não tem nenhum ID válido (o separador é ||): nenhum comando de dono vai funcionar."

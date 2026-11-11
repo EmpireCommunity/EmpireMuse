@@ -18,7 +18,7 @@ BOT_ID = 4242
 OWNER = 1000
 
 
-def build(tmp_path, monkeypatch, *, owner=True):
+def build(tmp_path, monkeypatch):
     monkeypatch.setenv("EMPIREMUSE_HOME", str(tmp_path))
     db = LocalDatabase(str(tmp_path / "db"))
     bot = SimpleNamespace(user=SimpleNamespace(id=BOT_ID))
@@ -61,7 +61,7 @@ def all_tables(db):
 
 @pytest.mark.asyncio
 async def test_a_non_owner_is_refused_and_nothing_is_deleted(tmp_path, monkeypatch):
-    w = build(tmp_path, monkeypatch, owner=False)
+    w = build(tmp_path, monkeypatch)
     await seed(w)
     ctx = SimpleNamespace(
         bot=w.bot, author=SimpleNamespace(id=5), guild=None, send=AsyncMock(), command=w.cog.hardreset, cog=w.cog

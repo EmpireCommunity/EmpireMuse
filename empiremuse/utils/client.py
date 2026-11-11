@@ -70,7 +70,7 @@ from empiremuse.utils.owner_gate import log_owner_gate_boot
 from empiremuse.utils.user_locks import UserLocks
 from empiremuse.utils.app_profile import sync_app_profile
 from empiremuse.utils.guild_ban import GuildBans
-from empiremuse.rules.owner_gate import resolve_owner_gate
+from empiremuse.rules.owner_gate import parse_owner_ids, resolve_owner_gate
 from empiremuse.utils.user_ban import UserBans, user_bans_of
 from empiremuse.utils.user_ban_gate import install_interaction_gate
 from empiremuse.utils.radio import RadioHub
@@ -170,22 +170,6 @@ def _report_module_failure(bot_name, filename: str, error: BaseException) -> Non
     """Falha de cog: módulo e tipo da exceção em WARNING (sem traceback); o traceback só em DEBUG."""
     BootReport().step(f"Cog {filename}.py de {bot_name}", "warn", f"falhou ao carregar ({type(error).__name__})")
     logger.debug("Detalhe da falha do módulo %s", filename, exc_info=(type(error), error, error.__traceback__))
-
-
-def parse_owner_ids(raw: Optional[str]) -> list[int]:
-    """IDs numéricos de ``OWNER_IDS`` (separados por ``||``); vazios são ignorados e inválidos, descartados com aviso."""
-    ids = []
-    for item in (raw or "").split("||"):
-        item = item.strip()
-        if not item:
-            continue
-        try:
-            ids.append(int(item))
-        except ValueError:
-            logger.warning(
-                "OWNER_IDS tem um item que não é um ID numérico: ignorado."
-            )  # sem o valor: ele pode ser digitação de um ID
-    return ids
 
 
 def load_jishaku_if_enabled(bot) -> bool:
