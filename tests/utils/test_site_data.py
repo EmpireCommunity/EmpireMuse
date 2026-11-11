@@ -146,6 +146,12 @@ class TestPermissionsAreTheUsers:
             assert command(data, kind, "jukebox.setup")["permissions"] == ["manage_guild"]
             assert command(data, kind, "jukebox.reset")["permissions"] == ["manage_guild"]  # manage_threads é do bot
 
+    def test_the_radio_prefix_publishes_manage_guild_and_never_the_owner_alternative(self, data):
+        for id_ in ("radio", "radio.status", "radio.on", "radio.off", "radio.reset", "radio.setup"):
+            assert command(data, "prefix", id_)["permissions"] == ["manage_guild"], id_
+        ids = {node["id"] for node in flatten(data["prefix_commands"])}
+        assert ids.isdisjoint({"radio.premium", "radio.pauseall", "radio.resumeall"})  # o dono continua de fora
+
     def test_only_the_users_checks_count_with_the_real_decorators(self):
         async def handler(ctx):
             return None

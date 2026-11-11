@@ -42,6 +42,10 @@ OWNER_CHECK_NAMES = frozenset({"radio_owner_only"})
 OWNER_CHECK_PREFIXES = ("admin_owner_only.", "is_owner.")
 # Verificações de permissão do USUÁRIO (``commands.has_permissions`` e ``has_guild_permissions``); as do bot (``bot_has_*``) não entram.
 USER_PERMISSION_PREFIXES = ("has_permissions.<locals>", "has_guild_permissions.<locals>")
+# Verificações próprias com nome (``__qualname__`` exato) que exigem uma permissão do usuário sem usar ``has_permissions``: o prefixo
+# ``radio`` e seus subcomandos públicos conferem ``manage_guild`` em execução (``radio_group_access`` ainda deixa passar o dono, que
+# é oculto no site; aqui vale o que um membro comum precisa).
+NAMED_CHECK_PERMISSIONS = {"radio_manager_only": ("manage_guild",), "radio_group_access": ("manage_guild",)}
 
 
 class SiteDataError(Exception):
@@ -89,6 +93,7 @@ def _user_permissions(command: Any) -> list[str]:
     ``has_guild_permissions`` do comando (barra, subcomando ou prefixo). Nome exato: ``bot_has_*`` é exigência do bot e não entra."""
     found: set[str] = set()
     for check in getattr(command, "checks", ()):
+        found.update(NAMED_CHECK_PERMISSIONS.get(getattr(check, "__qualname__", ""), ()))
         if getattr(check, "__qualname__", "").startswith(USER_PERMISSION_PREFIXES):
             perms = inspect.getclosurevars(check).nonlocals.get("perms", {})
             found.update(name for name, wanted in perms.items() if wanted)
