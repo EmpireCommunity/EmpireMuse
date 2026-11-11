@@ -12,6 +12,8 @@ USER_WRITE_PER_MINUTE = 20
 KEY_PER_MINUTE = 600
 SESSIONS_PER_MINUTE = 120
 KEY_FAILURES_PER_MINUTE = 30
+WARN_WINDOW_SECONDS = 60
+MAX_WARNED_PEERS = 1000
 
 
 class ApiLimits:
@@ -24,3 +26,15 @@ class ApiLimits:
         self.key = RateLimiter(KEY_PER_MINUTE, clock=clock)
         self.sessions = RateLimiter(SESSIONS_PER_MINUTE, clock=clock)
         self.key_failures = RateLimiter(KEY_FAILURES_PER_MINUTE, clock=clock)
+        self._clock = clock
+        self._warned_until: dict[str, float] = {}
+
+    def should_warn(self, peer: str) -> bool:
+        """Um aviso por par e por janela (nunca um por requisição bloqueada)."""
+        now = self._clock()
+        if len(self._warned_until) >= MAX_WARNED_PEERS:
+            self._warned_until = {p: t for p, t in self._warned_until.items() if t > now}
+        if self._warned_until.get(peer, 0.0) > now:
+            return False
+        self._warned_until[peer] = now + WARN_WINDOW_SECONDS
+        return True

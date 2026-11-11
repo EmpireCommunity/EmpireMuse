@@ -59,13 +59,49 @@ class KeyLimitsTest(ApiTestCase):
 
         assert respostas[:120] == [201] * 120 and respostas[120] == 429
 
-    def test_n2_31_falhas_de_chave_do_mesmo_par_dao_429_e_bloqueiam_a_chave_certa_do_par(self):
+    def test_n2_31_falhas_do_mesmo_par_dao_429_e_a_chave_certa_do_par_sempre_passa(self):
         falhas = [self.api("GET", "/meta", key="errada").code for _ in range(31)]
 
         assert falhas[:30] == [401] * 30 and falhas[30] == 429
-        assert self.api("GET", "/meta").code == 429  # o par ficou bloqueado até a janela andar
+        assert self.api("GET", "/meta").code == 200  # a chave certa nunca leva 429 por falha alheia
+        assert self.api("GET", "/meta", key="errada").code == 429  # só a errada, até a janela andar
         self.advance(61)
-        assert self.api("GET", "/meta").code == 200
+        assert self.api("GET", "/meta", key="errada").code == 401
+
+    def test_n2_o_aviso_sai_uma_vez_por_par_e_janela_e_as_falhas_normais_nao_avisam(self):
+        with self.assertLogs("empiremuse.api", level="DEBUG") as capturado:
+            for _ in range(40):
+                self.api("GET", "/meta", key="errada")
+        avisos = [r for r in capturado.records if r.levelname == "WARNING"]
+
+        assert len(avisos) == 1
+        assert not [r for r in capturado.records if r.levelname not in ("WARNING", "DEBUG")]
+        self.advance(61)
+        with self.assertLogs("empiremuse.api", level="WARNING") as capturado:
+            for _ in range(31):
+                self.api("GET", "/meta", key="errada")
+        assert len(capturado.records) == 1  # nova janela, novo aviso
+
+    def test_o_par_vem_do_socket_e_nunca_de_x_forwarded_for(self):
+        codigos = []
+        for i in range(31):
+            cabecalhos = {
+                "X-Forwarded-For": f"10.0.0.{i}",
+                "X-Real-IP": f"10.0.1.{i}",
+                "CF-Connecting-IP": f"10.0.2.{i}",
+            }
+            codigos.append(self.api("GET", "/meta", key="errada", headers=cabecalhos).code)
+
+        assert codigos[30] == 429  # todos contaram para o mesmo par TCP
+
+    def test_balde_do_usuario_vem_antes_do_da_chave_requisicao_negada_nao_gasta_a_chave(self):
+        alice = self.new_session("1001")
+        bruno = self.new_session("1002")
+        # 120 leituras passam e 480 são negadas pelo balde do usuário; se as negadas gastassem a chave (600/min), ela esgotaria
+        for _ in range(600):
+            self.api("GET", "/session", session=alice)
+
+        assert self.api("GET", "/session", session=bruno).code == 200
 
     def test_n2_401_de_sessao_nao_consome_o_balde_de_falhas_de_chave(self):
         for _ in range(100):  # reinício do bot seguido de uma rajada de session_expired

@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 API_PREFIX = "/api/v1"
 MAX_BODY_BYTES = 16 * 1024
 DENIED_LOG_INTERVAL_SECONDS = 60
+CONNECTION_TIMEOUT_SECONDS = 60  # conexão parada e corpo que não chega
 
 
 def build_api_app(ctx: ApiContext) -> tornado.web.Application:
@@ -60,7 +61,13 @@ class ApiHTTPServer(tornado.httpserver.HTTPServer):
         *,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
-        super().initialize(app, xheaders=False, max_body_size=MAX_BODY_BYTES)
+        super().initialize(
+            app,
+            xheaders=False,
+            max_body_size=MAX_BODY_BYTES,
+            idle_connection_timeout=CONNECTION_TIMEOUT_SECONDS,
+            body_timeout=CONNECTION_TIMEOUT_SECONDS,
+        )
         self._networks = networks
         self._clock = clock
         self._denied = 0

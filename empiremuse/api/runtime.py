@@ -33,6 +33,15 @@ def _bot_version() -> str:
     return str(image_version() or "dev")
 
 
+def warn_if_relay_is_off(config: Mapping[str, Any]) -> None:
+    """``RUN_RPC_SERVER`` desligado: o servidor web não sobe e, com ele, nem a API externa. Avisa alto em vez de calar."""
+    if external_panel_requested(config):
+        logger.error(
+            "EXTERNAL_PANEL_* está preenchida, mas RUN_RPC_SERVER=false: o servidor web não sobe e a API do painel externo "
+            "não abre. Ligue RUN_RPC_SERVER=true ou limpe as variáveis EXTERNAL_PANEL_*."
+        )
+
+
 def start_external_api(
     pool: Any,
     config: Optional[Mapping[str, Any]],

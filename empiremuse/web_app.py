@@ -21,7 +21,7 @@ from packaging import version
 
 from empiremuse import paths
 from empiremuse.config_loader import load_config, resolve_port
-from empiremuse.rules.client_ip import UNKNOWN_PEER, IPNetwork, resolve_client_ip
+from empiremuse.rules.client_ip import UNKNOWN_PEER, IPNetwork, parse_trusted_proxy_cidrs, resolve_client_ip
 from empiremuse.rules.rpc_proof import DeniedBudget, LogThrottle, proof_ip_key
 from empiremuse.rules.servers import is_main_identifier
 from empiremuse.rules.user_ban import RPC_BLOCKED_REASON
@@ -796,8 +796,16 @@ def run_app(pool: BotPool, config: dict = None):
 
     external = start_external_api(pool, config)
     # Modo externo pedido e inválido: nenhum painel sobe, nem o genérico (sem fallback); o bot e o relé seguem.
-    panel_app, trust_proxy, trusted_networks = (None, False, ()) if external.blocked else _build_panel(pool, config)
-    trusted = bool(panel_app and trust_proxy)
+    if external.blocked:
+        panel_app = None
+        # Sem painel não há ``PanelSettings``: a confiança no proxy vem direto da configuração (o /ws e a página de status
+        # continuam vendo o IP do visitante, não o do proxy).
+        trust_proxy = bool(config.get("PANEL_TRUST_PROXY", False))
+        trusted_networks = parse_trusted_proxy_cidrs(config.get("PANEL_TRUSTED_PROXY_CIDRS"))[0]
+        trusted = trust_proxy
+    else:
+        panel_app, trust_proxy, trusted_networks = _build_panel(pool, config)
+        trusted = bool(panel_app and trust_proxy)
     ws_proof = _build_registration_proof(pool, config)
 
     app = tornado.web.Application(

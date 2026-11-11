@@ -1,5 +1,6 @@
 """Servidor da API em teste: ``AsyncHTTPTestCase`` com relógios falsos, OAuth falso e pool de dublê (nada de rede real)."""
 
+import asyncio
 import json
 from types import SimpleNamespace
 
@@ -48,9 +49,20 @@ class FakeOAuth(DiscordOAuthClient):
         self.fail_at: str | None = None
         self.fail_status: int | None = None
         self.issued: dict[str, dict] = {}
+        self.before_exchange = (
+            None  # chamado (sem await) durante a troca, para simular o que acontece enquanto o Discord responde
+        )
+        self.yield_in_exchange = False  # cede o loop durante a troca (requisições concorrentes se intercalam)
 
     async def exchange_code(self, code, code_verifier):
         self.calls.append("exchange")
+        if self.yield_in_exchange:
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+        if self.before_exchange is not None:
+            self.before_exchange()
+        if code_verifier != VERIFIER:  # o verifier tem de chegar ao Discord igual ao do corpo
+            raise DiscordOAuthError("verifier errado", 400)
         if self.fail_at == "exchange" or code not in self.identities:
             raise DiscordOAuthError("recusado", self.fail_status if self.fail_at == "exchange" else 400)
         token = f"{ACCESS_TOKEN}-{len(self.issued)}"

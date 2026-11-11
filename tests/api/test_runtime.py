@@ -1,15 +1,18 @@
 """Modos do painel (contrato T-456 §6 e §14 [M4, n3]): config inválida = nenhum painel e nenhuma API, e o bot sobe e toca."""
 
+import json
 import socket
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+from tornado.httpclient import AsyncHTTPClient
+from tornado.testing import AsyncTestCase
 
 from empiremuse import web_app
 from empiremuse.api.runtime import start_external_api
 from empiremuse.panel.state import ensure_panel_state
-from tests.api.helpers import NOW, external_config
+from tests.api.helpers import NOW, SERVICE_KEY, external_config
 from tests.panel.helpers import load_settings, local_config
 
 pytestmark = pytest.mark.critical
@@ -111,3 +114,86 @@ def test_painel_generico_segue_como_antes_sem_nenhuma_variavel_externa(monkeypat
     web_app.run_app(MagicMock(), config={"PORT": "6000"})
 
     assert chamado == [1]
+
+
+def test_listener_so_escuta_no_endereco_configurado(pool):
+    status, _ = start(pool)
+    try:
+        porta = [s.getsockname() for s in status.server._sockets.values()]
+        assert porta and all(nome[0] == "127.0.0.1" for nome in porta)  # nunca 0.0.0.0 nem ::
+        numero = porta[0][1]
+        with socket.create_connection(("127.0.0.1", numero), timeout=2):
+            pass
+        with pytest.raises(OSError):  # outro endereço da mesma máquina não alcança a API
+            socket.create_connection(("127.0.0.2", numero), timeout=2)
+    finally:
+        status.server.stop()
+
+
+def test_aviso_alto_quando_o_modo_externo_esta_pedido_mas_o_rele_esta_desligado(caplog):
+    from empiremuse.api.runtime import warn_if_relay_is_off
+
+    with caplog.at_level("ERROR"):
+        warn_if_relay_is_off(external_config())
+        warn_if_relay_is_off({})
+        warn_if_relay_is_off({"EXTERNAL_PANEL_URL": "   "})
+
+    assert [r.levelname for r in caplog.records] == ["ERROR"]
+    assert "RUN_RPC_SERVER" in caplog.text
+
+
+def test_modo_bloqueado_mantem_a_confianca_no_proxy_vinda_da_configuracao(monkeypatch):
+    capturado = {}
+
+    class ServidorFalso:
+        def __init__(self, roteador, **kwargs):
+            capturado["roteador"], capturado["kwargs"] = roteador, kwargs
+
+        def listen(self, porta, address=None, **kwargs):
+            pass
+
+    monkeypatch.setattr(web_app.tornado.httpserver, "HTTPServer", ServidorFalso)
+    config = {
+        "PORT": "6000",
+        "EXTERNAL_PANEL_URL": "https://painel.example.com",  # incompleto: modo bloqueado
+        "PANEL_TRUST_PROXY": True,
+        "PANEL_TRUSTED_PROXY_CIDRS": "192.0.2.0/24",
+    }
+
+    web_app.run_app(MagicMock(), config=config)
+
+    assert capturado["kwargs"]["xheaders"] is True  # o /ws e a página de status seguem vendo o IP do visitante
+    assert [str(rede) for rede in capturado["roteador"].trusted_networks] == ["192.0.2.0/24"]
+    assert capturado["roteador"].trust_proxy is True
+
+
+class ListenerPublicoTest(AsyncTestCase):
+    def test_o_listener_publico_nunca_responde_api(self):
+        pool = SimpleNamespace(bots=[], database=None)
+        publica, interna = free_port(), free_port()
+        config = {
+            "PORT": str(publica),
+            "WEB_BIND_ADDRESS": "127.0.0.1",
+            **external_config(EXTERNAL_PANEL_API_PORT=str(interna)),
+        }
+        web_app.run_app(pool, config=config)
+        cabecalhos = {"Authorization": f"Bearer {SERVICE_KEY}"}
+
+        async def pedir(porta, caminho):
+            return await AsyncHTTPClient().fetch(
+                f"http://127.0.0.1:{porta}{caminho}", headers=cabecalhos, raise_error=False
+            )
+
+        async def tudo():
+            return [await pedir(publica, c) for c in ("/api/v1/health", "/api/v1/meta", "/api/v1/sessions")] + [
+                await pedir(interna, "/api/v1/health")
+            ]
+
+        try:
+            *publicas, interna_ok = self.io_loop.run_sync(tudo)
+        finally:
+            pool.panel_api_server.stop()
+
+        assert interna_ok.code == 200 and json.loads(interna_ok.body) == {"status": "ok"}
+        for resposta in publicas:
+            assert resposta.code == 404 and b"api_versions" not in resposta.body and b'"status"' not in resposta.body

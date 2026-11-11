@@ -55,11 +55,24 @@ class EnvelopeTest(ApiTestCase):
             assert not [h for h in response.headers if h.lower().startswith("access-control-")]
             assert "Set-Cookie" not in response.headers
 
-    def test_corpo_acima_do_limite_e_recusado(self):
-        response = self.api(
-            "POST", "/sessions", raw_body="x" * (64 * 1024), headers={"Content-Type": "application/json"}
-        )
-        assert response.code in (400, 413, 599)
+    def test_corpo_acima_de_16_kib_e_recusado_mesmo_sendo_json_valido_e_abaixo_passa(self):
+        from tornado.simple_httpclient import HTTPStreamClosedError
+
+        from tests.api.support import CODE, VERIFIER
+
+        def com_enchimento(tamanho):
+            corpo = {"code": CODE, "code_verifier": VERIFIER, "enchimento": "x" * tamanho}
+            return self.api("POST", "/sessions", body=corpo)
+
+        assert com_enchimento(8 * 1024).code == 201
+        self.oauth.identities[CODE] = {"id": "1002", "username": "u"}
+        self.oauth.calls.clear()
+        try:
+            acima = com_enchimento(20 * 1024)
+        except HTTPStreamClosedError:
+            acima = None  # o servidor fecha a conexão antes de ler o corpo
+        assert acima is None or acima.code in (400, 413)
+        assert self.oauth.calls == []  # nunca chegou ao Discord
 
 
 class MetaHealthTest(ApiTestCase):

@@ -135,7 +135,11 @@ class LogsTest(ApiTestCase):
 
         self.oauth.exchange_code = quebra
         with self.assertLogs(level=logging.DEBUG) as capturado:
-            response = self.login(CODE)
+            response = self.api(
+                "POST",
+                "/sessions?code=SEGREDO-NA-QUERY&state=outro",
+                body={"code": CODE, "code_verifier": "v" * 50},
+            )
         corpo = response.body.decode()
 
         assert response.code == 500
@@ -143,3 +147,4 @@ class LogsTest(ApiTestCase):
         assert "Traceback" not in corpo and "falha-interna" not in corpo and "request_id" in corpo
         assert "Uncaught exception" in "\n".join(capturado.output)
         assert SERVICE_KEY not in "\n".join(capturado.output)
+        assert "SEGREDO-NA-QUERY" not in "\n".join(capturado.output)  # a query nunca vai para o log de exceção

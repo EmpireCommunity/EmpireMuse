@@ -81,20 +81,17 @@ class ApiHandler(tornado.web.RequestHandler):
 
     def _authenticate_key(self) -> str:
         peer = self.request.remote_ip  # sem ``xheaders`` neste listener: é o par TCP, nunca um cabeçalho
-        failures = self.ctx.limits.key_failures
-        blocked_for = failures.retry_after(peer)
-        if blocked_for:
-            logger.debug("API do painel externo: par bloqueado por falhas de chave (%s).", peer)
-            raise rate_limited(blocked_for)
         scheme, _, credential = self.request.headers.get("Authorization", "").partition(" ")
         provided = credential.strip() if scheme.lower() == "bearer" else None
         fingerprint = self.ctx.keys.match(provided, self.ctx.wall_clock())
         if fingerprint is not None:
-            return fingerprint
-        if not failures.allow(peer):  # a falha que passa de 30 por minuto
-            logger.warning("API do painel externo: excesso de falhas de chave de serviço do par %s.", peer)
+            return fingerprint  # a chave certa sempre passa; só a errada paga o balde de falhas
+        failures = self.ctx.limits.key_failures
+        if not failures.allow(peer):  # a falha que passa de 30 por minuto (e as seguintes, até a janela andar)
+            if self.ctx.limits.should_warn(peer):
+                logger.warning("API do painel externo: excesso de falhas de chave de serviço de um par TCP.")
             raise rate_limited(failures.retry_after(peer))
-        logger.debug("API do painel externo: chave de serviço ausente, errada ou vencida (%s).", peer)
+        logger.debug("API do painel externo: chave de serviço ausente, errada ou vencida.")
         raise ApiError(401, FORBIDDEN)
 
     def _load_session(self, *, required: bool) -> None:

@@ -1499,6 +1499,9 @@ class BotPool:
                 return
 
         else:
+            from empiremuse.api.runtime import warn_if_relay_is_off  # só aqui: importar o bot não carrega a API
+
+            warn_if_relay_is_off(self.config)
             self.cache_updater_task = self.loop.create_task(self.cache_updater())
 
             self.loop.create_task(self.connect_rpc_ws())

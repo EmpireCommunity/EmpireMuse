@@ -32,7 +32,7 @@ API_VERSIONS = ["v1"]
 FEATURES = ["sessions", "reauth"]
 CODE_MAX_LENGTH = 512
 _CODE_VERIFIER = re.compile(r"[A-Za-z0-9._~-]{43,128}", re.ASCII)  # RFC 7636
-_DISCORD_REJECTED = (400, 401)  # o Discord recusou o código (inválido, já usado ou vencido), não está fora do ar
+_CODE_REFUSED = 400  # só o 400 diz que o código é inválido, já usado ou vencido; 401 é o client OAuth recusado
 
 
 def user_payload(user: PanelUser) -> dict[str, Any]:
@@ -131,11 +131,16 @@ class SessionsHandler(ApiHandler):
         if oauth is None:
             raise ApiError(503, BOT_UNAVAILABLE)
         user, guilds = await self._read_identity(oauth, code, verifier)
-        if bans is not None and bans.is_blocked(user.id):  # sem await entre conferir e criar
-            raise ApiError(403, FORBIDDEN)
         store = self.ctx.store
+        # Daqui até criar a sessão não há ``await``: o que se confere agora vale na hora de gravar.
+        anchor = store.get_api(self.session_token, self.key_fingerprint) if reauth else None
+        # A sessão de origem pode ter morrido durante a troca com o Discord (logout, apagamento, outra reauth).
+        if reauth and anchor is None:
+            raise ApiError(401, SESSION_EXPIRED)
+        if bans is not None and bans.is_blocked(user.id):
+            raise ApiError(403, FORBIDDEN)
         if reauth:
-            if user.id != self.session.user.id:
+            if user.id != anchor.user.id:
                 raise ApiError(403, REAUTH_USER_MISMATCH)  # nada muda
             store.destroy_api(self.session_token)  # nunca renova no lugar: token novo, o antigo morre
         token = store.create_api(user, guilds, self.key_fingerprint)
@@ -152,9 +157,10 @@ class SessionsHandler(ApiHandler):
             try:
                 access_token = await oauth.exchange_code(code, verifier)
             except DiscordOAuthError as error:
-                logger.warning("API do painel externo: o Discord recusou a troca do código: %s", error)
-                if error.status in _DISCORD_REJECTED:
+                if error.status == _CODE_REFUSED:
+                    logger.warning("API do painel externo: o Discord recusou o código: %s", error)
                     raise validation_failed("code") from None
+                logger.error("API do painel externo: falha na troca do código com o Discord: %s", error)
                 raise ApiError(502, DISCORD_UNAVAILABLE) from None
             try:
                 user = parse_user(await oauth.fetch_user(access_token))

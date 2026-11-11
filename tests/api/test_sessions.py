@@ -7,7 +7,7 @@ import pytest
 
 from empiremuse.panel.sessions import MAX_SESSIONS_PER_USER
 from empiremuse.utils.user_ban import UserBanRecord, UserBans
-from tests.api.support import ACCESS_TOKEN, CODE, GUILDS, USER, VERIFIER, ApiTestCase, body_of, error_code
+from tests.api.support import ACCESS_TOKEN, CODE, USER, VERIFIER, ApiTestCase, body_of, error_code
 
 pytestmark = pytest.mark.critical
 
@@ -57,6 +57,20 @@ class LoginTest(ApiTestCase):
 
         assert (repetido.code, error_code(repetido)) == (400, "validation_failed")
         assert body_of(repetido)["error"]["fields"] == ["code"]
+
+    def test_so_o_400_do_discord_e_codigo_recusado_o_401_do_client_oauth_e_discord_unavailable(self):
+        self.oauth.fail_at = "exchange"
+        for status, esperado in ((400, (400, "validation_failed")), (401, (502, "discord_unavailable"))):
+            self.oauth.fail_status = status
+            with self.assertLogs("empiremuse.api", level="WARNING") as logs:
+                response = self.login()
+            assert (response.code, error_code(response)) == esperado
+            assert logs.records[0].levelname == ("WARNING" if status == 400 else "ERROR")
+
+    def test_o_verifier_do_corpo_chega_ao_discord(self):
+        resposta = self.api("POST", "/sessions", body={"code": CODE, "code_verifier": "w" * 50})
+
+        assert (resposta.code, error_code(resposta)) == (400, "validation_failed")  # o FakeOAuth recusa outro verifier
 
     def test_discord_fora_do_ar_na_troca_e_discord_unavailable(self):
         self.oauth.fail_at, self.oauth.fail_status = "exchange", 503
@@ -150,7 +164,7 @@ class ReauthTest(ApiTestCase):
         assert [(r.code, error_code(r)) for r in (sem, invalida)] == [(401, "session_expired")] * 2
         assert self.oauth.calls == []
 
-    def test_sessao_de_outra_chave_nao_serve_de_ancora_para_reauth(self):
+    def test_token_adulterado_nao_serve_de_ancora_para_reauth(self):
         token = self.new_session("1001")
         self.oauth.identities["c2"] = USER
         response = self.api(
@@ -161,6 +175,63 @@ class ReauthTest(ApiTestCase):
             body={"code": "c2", "code_verifier": VERIFIER, "reauth": True},
         )
         assert response.code == 401
+
+
+class ReauthRaceTest(ApiTestCase):
+    """A sessão de origem pode morrer enquanto o Discord responde: a reautenticação confere de novo antes de gravar."""
+
+    def reauth_body(self, code):
+        self.oauth.identities[code] = USER
+        return {"code": code, "code_verifier": VERIFIER, "reauth": True}
+
+    def test_logout_durante_a_troca_nao_ressuscita_a_sessao(self):
+        token = self.new_session("1001")
+        self.oauth.before_exchange = lambda: self.store.destroy_api(token)  # DELETE /session no meio da troca
+
+        response = self.api("POST", "/sessions", session=token, body=self.reauth_body("r1"))
+
+        assert (response.code, error_code(response)) == (401, "session_expired")
+        assert self.store._sessions == {}
+        assert self.oauth.calls[-1] == "revoke"  # o token do Discord é revogado mesmo assim
+
+    def test_apagamento_de_dados_durante_a_troca_nao_ressuscita_a_sessao(self):
+        token = self.new_session("1001")
+        self.oauth.before_exchange = lambda: self.pool.panel_sessions.destroy_user("1001")  # destroy_user do apagamento
+
+        response = self.api("POST", "/sessions", session=token, body=self.reauth_body("r2"))
+
+        assert (response.code, error_code(response)) == (401, "session_expired")
+        assert self.store._sessions == {}
+
+    def test_duas_reautenticacoes_concorrentes_so_uma_vence(self):
+        from tornado.httpclient import AsyncHTTPClient
+
+        token = self.new_session("1001")
+        self.oauth.yield_in_exchange = True
+        headers = {
+            "Authorization": f"Bearer {self.settings.service_key}",
+            "X-EM-Session": token,
+            "Content-Type": "application/json",
+        }
+
+        async def reauth(code):
+            return await AsyncHTTPClient().fetch(
+                self.get_url("/api/v1/sessions"),
+                method="POST",
+                headers=headers,
+                body=json.dumps(self.reauth_body(code)),
+                raise_error=False,
+            )
+
+        async def both():
+            import asyncio
+
+            return await asyncio.gather(reauth("ra"), reauth("rb"))
+
+        respostas = self.io_loop.run_sync(both)
+
+        assert sorted(r.code for r in respostas) == [201, 401]
+        assert len(self.store._sessions) == 1  # um só token novo; o antigo e o do perdedor não existem
 
 
 def lista(*banidos, carregada=True):
@@ -207,7 +278,6 @@ class SharedStoreTest(ApiTestCase):
 
         assert generico.settings["session_store"] is self.store
         assert generico.settings["task_runner"] is self.pool.panel_tasks
-        assert GUILDS  # (dados de apoio importados)
 
 
 class StoreSeparationTest(ApiTestCase):
