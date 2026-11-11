@@ -30,6 +30,9 @@ NO_GUILD = 0  # o apagamento não é de servidor
 MAX_TOKEN_CHARS = 512  # um token de verdade tem pouco mais de 130 caracteres; o teto barra lixo antes do HMAC
 MAX_TYPED_CHARS = 64
 STATUS_OK, STATUS_PARTIAL, STATUS_BUSY = "OK", "PARTIAL", "BUSY"
+# As palavras que a API aceita em ``typed``: a do painel em português e a do painel em inglês (a tela escolhe pelo idioma da página; o bot aceita as
+# duas em qualquer idioma). SÓ da API: o painel genérico e o slash seguem com ``CONFIRMATION_WORD``. Conferência EXATA (sem ``casefold`` nem ``strip``).
+CONFIRMATION_WORDS = frozenset({CONFIRMATION_WORD, "DELETE"})
 
 # O resumo é só código estável (o texto de usuário final é do painel, §4 erro): o que o apagamento remove e o que fica.
 SUMMARY = {
@@ -87,8 +90,8 @@ class ErasureRunHandler(ErasureHandler):
             raise validation_failed(
                 "confirm_token"
             )  # expirado, usado, de outra sessão, usuário ou finalidade: não se distingue
-        if typed != CONFIRMATION_WORD:
-            raise validation_failed("typed")  # o token fica valendo: errar a palavra não o gasta
+        if typed not in CONFIRMATION_WORDS:
+            raise validation_failed("typed")  # depois do token; o token fica valendo: errar a palavra não o gasta
         tokens.consume(
             confirm_token
         )  # sem ``await`` entre o ``check`` e o ``consume``: dois pedidos não gastam o mesmo token

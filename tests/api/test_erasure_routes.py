@@ -26,6 +26,7 @@ pytestmark = pytest.mark.critical
 
 PREPARE, ERASE = "/account/erasure/prepare", "/account/erasure"
 WORD = "APAGAR"
+WORDS = ("APAGAR", "DELETE")
 TOKEN_TTL_S = 60
 MINUTE = 60
 OTHER_UID = int(OTHER)
@@ -208,7 +209,25 @@ class ConfirmTokenTest(ErasureCase):
     def test_a_palavra_errada_recusa_sem_gastar_o_token(self):
         calls = self.use_stub(ErasureReport(ErasureStatus.OK, {}, ()))
         token = self.prepare()
-        for typed in ("apagar", "APAGAR ", " APAGAR", "APAGA", "", None, 7):
+        # só `APAGAR` e `DELETE`, exatas: nada de caixa, espaço, quebra de linha, parecido nem as duas juntas
+        wrong = (
+            "apagar",
+            "APAGAR ",
+            " APAGAR",
+            "APAGA",
+            "delete",
+            "Delete",
+            " DELETE",
+            "DELETE ",
+            "DELETE\n",
+            "DELETAR",
+            "APAGAR DELETE",
+            "APAGAR\u200b",
+            "",
+            None,
+            7,
+        )
+        for typed in wrong:
             response = self.erase(token, typed)
             assert (response.code, error_code(response), body_of(response)["error"]["fields"]) == (
                 400,
@@ -218,6 +237,27 @@ class ConfirmTokenTest(ErasureCase):
         assert calls == []
 
         assert self.erase(token).code == 200 and len(calls) == 1  # o mesmo token ainda vale com a palavra certa
+
+    def test_apagar_e_delete_apagam_cada_uma_com_login_e_token_novos(self):
+        for word in WORDS:
+            with self.subTest(word=word):
+                calls = self.use_stub(ErasureReport(ErasureStatus.OK, {}, ()))
+                self.token = self.new_session(USER)  # cada apagamento derruba as sessões do usuário
+                token = self.prepare()
+
+                response = self.erase(token, word)
+
+                assert response.code == 200 and len(calls) == 1, word
+
+    def test_a_palavra_e_conferida_depois_do_token(self):
+        calls = self.use_stub(ErasureReport(ErasureStatus.OK, {}, ()))
+
+        response = self.erase(
+            "token-invalido", "DELETAR"
+        )  # token inválido E palavra errada: o campo citado é o do token
+
+        assert (response.code, body_of(response)["error"]["fields"]) == (400, ["confirm_token"])
+        assert calls == []
 
 
 class OutcomeTest(ErasureCase):
