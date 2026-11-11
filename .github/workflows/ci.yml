@@ -178,7 +178,7 @@ jobs:
 
       - name: Cobertura das áreas críticas (≥ 90%)
         if: steps.detect-changes.outputs.code == 'true'
-        run: coverage report --fail-under=90 --skip-covered --include="empiremuse/panel/*,empiremuse/web_app.py,empiremuse/rpc_protocol.py,empiremuse/rules/*,empiremuse/config_loader.py,empiremuse/utils/db.py,empiremuse/serialization/*,empiremuse/utils/music/legacy_notice.py,empiremuse/utils/music/session_store.py,empiremuse/updater/*,empiremuse/logs/*,empiremuse/health.py,empiremuse/version.py"
+        run: coverage report --fail-under=90 --skip-covered --include="empiremuse/panel/*,empiremuse/web_app.py,empiremuse/rpc_protocol.py,empiremuse/rules/*,empiremuse/config_loader.py,empiremuse/utils/db.py,empiremuse/api/*,empiremuse/utils/owner_gate.py,empiremuse/utils/rpc_proof.py,empiremuse/serialization/*,empiremuse/utils/music/legacy_notice.py,empiremuse/utils/music/session_store.py,empiremuse/updater/*,empiremuse/logs/*,empiremuse/health.py,empiremuse/version.py"
 
   ci-py315:
     name: CI Python 3.15 (não bloqueante)
@@ -256,7 +256,7 @@ jobs:
 
       - name: Cobertura das áreas críticas (≥ 90%)
         if: steps.detect-changes.outputs.code == 'true'
-        run: coverage report --fail-under=90 --skip-covered --include="empiremuse/panel/*,empiremuse/web_app.py,empiremuse/rpc_protocol.py,empiremuse/rules/*,empiremuse/config_loader.py,empiremuse/utils/db.py,empiremuse/serialization/*,empiremuse/utils/music/legacy_notice.py,empiremuse/utils/music/session_store.py,empiremuse/updater/*,empiremuse/logs/*,empiremuse/health.py,empiremuse/version.py"
+        run: coverage report --fail-under=90 --skip-covered --include="empiremuse/panel/*,empiremuse/web_app.py,empiremuse/rpc_protocol.py,empiremuse/rules/*,empiremuse/config_loader.py,empiremuse/utils/db.py,empiremuse/api/*,empiremuse/utils/owner_gate.py,empiremuse/utils/rpc_proof.py,empiremuse/serialization/*,empiremuse/utils/music/legacy_notice.py,empiremuse/utils/music/session_store.py,empiremuse/updater/*,empiremuse/logs/*,empiremuse/health.py,empiremuse/version.py"
 
   deploy-check:
     name: Deploy (compose, segredos e gitleaks)
