@@ -102,6 +102,8 @@ class OpenApiContractTest(ApiTestCase):
     spec = load_spec()
     seen: set[tuple[str, str, str]] = set()
     ran: set[str] = set()
+    # respostas dos casos de limite e erro de /status, validadas contra o contrato num teste À PARTE (os casos em si não leem a documentação)
+    captured: list[tuple[str, str, object]] = []
 
     def setUp(self):
         super().setUp()
@@ -112,6 +114,13 @@ class OpenApiContractTest(ApiTestCase):
         if code is not None:
             assert body_of(response)["error"]["code"] == code
         self.seen.add(SpecChecker(self.spec).check(method, path, response))
+
+    def expect_status(self, method: str, path: str, response, status: int, code: str | None = None) -> None:
+        """Confere só o comportamento (status e código); guarda a resposta para ``test_status_validacao_do_contrato_dos_casos_de_falha``."""
+        assert response.code == status, response.body
+        if code is not None:
+            assert body_of(response)["error"]["code"] == code
+        self.captured.append((method, path, response))
 
     def exhaust_key_failures(self) -> None:
         for _ in range(KEY_FAILURES_PER_MINUTE):
@@ -143,13 +152,20 @@ class OpenApiContractTest(ApiTestCase):
 
     def test_status_nada_subiu_limite_e_erro_inesperado(self):
         self.pool.bots.clear()
-        self.expect("GET", STATUS, self.api("GET", "/status"), 503, "bot_unavailable")
+        self.expect_status("GET", STATUS, self.api("GET", "/status"), 503, "bot_unavailable")
         self.exhaust_key_failures()
-        self.expect("GET", STATUS, self.api("GET", "/status", key="errada"), 429, "rate_limited")
+        self.expect_status("GET", STATUS, self.api("GET", "/status", key="errada"), 429, "rate_limited")
 
     def test_status_erro_inesperado(self):
         with patch.object(StatusHandler, "get", side_effect=FAILURE):
-            self.expect("GET", STATUS, self.api("GET", "/status"), 500, "bot_unavailable")
+            self.expect_status("GET", STATUS, self.api("GET", "/status"), 500, "bot_unavailable")
+
+    def test_status_validacao_do_contrato_dos_casos_de_falha(self):
+        """A validação contra o contrato (que lê a documentação) dos casos acima, separada do comportamento: roda depois deles (ordem alfabética)."""
+        if len(self.captured) < 3:
+            pytest.skip("só vale depois dos casos de limite e erro de /status (o ``-k`` deixa casos de fora)")
+        for method, path, response in self.captured:
+            self.seen.add(SpecChecker(self.spec).check(method, path, response))
 
     def test_health(self):
         self.expect("GET", HEALTH, self.api("GET", "/health", key=None), 200)
