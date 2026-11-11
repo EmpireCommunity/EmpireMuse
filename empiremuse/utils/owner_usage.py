@@ -27,7 +27,7 @@ from empiremuse.rules.usage import (
     render_text,
     summarize,
 )
-from empiremuse.utils.guild_ban import bans_of
+from empiremuse.utils.guild_ban import AlreadyBanned, GuildBansUnavailable, bans_of
 from empiremuse.utils.music.converters import time_format
 from empiremuse.utils.usage import QUERY_LIMIT, usage_of
 
@@ -39,6 +39,9 @@ logger = logging.getLogger(__name__)
 NO_MENTIONS = disnake.AllowedMentions.none()
 FIELD_LIMIT = 1000  # teto do Discord para o valor de um campo é 1024
 SELECT_LIMIT = 25
+LIST_NOT_LOADED_MESSAGE = (
+    "A lista de banidos não foi carregada (banco fora do ar); nada foi alterado. Tente de novo em instantes."
+)
 NOT_OWNER_TEXT = "Você não pode interagir aqui..."
 
 
@@ -199,6 +202,12 @@ class BanConfirmView(OwnerOnlyView):
             return
         try:
             await bans.ban(self.guild_id, self.guild_name, self.reason)
+        except AlreadyBanned:
+            await interaction.edit_original_response(content="Esse servidor já está banido; nada foi alterado.")
+            return
+        except GuildBansUnavailable:
+            await interaction.edit_original_response(content=LIST_NOT_LOADED_MESSAGE)
+            return
         except Exception as exc:  # noqa: BLE001 - sem gravar, o bot não sai: o ban só vale persistido
             logger.warning("Banimento não gravado (%s)", type(exc).__name__)
             await interaction.edit_original_response(content="Não consegui gravar o banimento; nada foi feito.")
@@ -272,6 +281,9 @@ class BannedListView(OwnerOnlyView):
         try:
             if bans is not None:
                 await bans.unban(guild_id)
+        except GuildBansUnavailable:
+            await interaction.response.send_message(LIST_NOT_LOADED_MESSAGE, ephemeral=True)
+            return
         except Exception as exc:  # noqa: BLE001
             logger.warning("Desbanimento não gravado (%s)", type(exc).__name__)
             await interaction.response.send_message("Não consegui gravar o desbanimento.", ephemeral=True)
