@@ -115,6 +115,32 @@ def test_teto_total_derruba_a_mais_antiga():
     assert store.claim(str(MAX_KEYS_TOTAL), "key-0001", "f").replay == OK
 
 
+def test_teto_total_descarta_as_fechadas_antes_dos_pedidos_em_andamento(monkeypatch):
+    monkeypatch.setattr("empiremuse.api.idempotency.MAX_KEYS_TOTAL", 3)
+    store = IdempotencyStore(Clock())
+    store.claim("1", "em-andamento-1", "f")  # a mais antiga, mas ainda sem resposta
+    run(store, "2", "fechada-0002")
+    run(store, "3", "fechada-0003")
+
+    store.claim("4", "chegou-0004", "f")  # no teto: sai a fechada mais antiga (a de ``2``), não a em andamento
+
+    with pytest.raises(IdempotencyConflict):
+        store.claim("1", "em-andamento-1", "f")  # segue em andamento: a mesma chave não executa duas vezes
+    assert store.claim("3", "fechada-0003", "f").replay == OK  # a outra fechada ficou
+    assert store.claim("2", "fechada-0002", "f").replay is None  # por último: este claim abre uma entrada nova
+
+
+def test_teto_total_sem_nenhuma_fechada_derruba_a_mais_antiga_para_nao_travar(monkeypatch):
+    monkeypatch.setattr("empiremuse.api.idempotency.MAX_KEYS_TOTAL", 2)
+    store = IdempotencyStore(Clock())
+    store.claim("1", "aberta-0001", "f")
+    store.claim("2", "aberta-0002", "f")
+
+    store.claim("3", "aberta-0003", "f")
+
+    assert store.claim("1", "aberta-0001", "f").ticket is not None  # a mais antiga saiu
+
+
 def test_fechar_uma_chave_que_ja_foi_tomada_nao_guarda_nada():
     clock = Clock()
     store = IdempotencyStore(clock)

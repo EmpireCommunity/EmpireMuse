@@ -107,3 +107,44 @@ def test_o_form_vem_do_corpo_ou_da_unica_opcao_da_categoria_e_a_versao_tem_forma
             bad()
 
         assert raised.value.status_code == 400
+
+
+# ---------------------------------------------------------------------------- cobertura dos formulários do servidor
+
+LINKS_AND_LISTEN_ALONG = {"links", "ouvir_junto"}  # têm corpo próprio (ação e escopo), não só ``values``
+
+
+def _branches(schema: dict, field: str) -> set[str]:
+    """Os valores de ``field`` (``const``) das variantes de um ``oneOf`` do arquivo, resolvendo ``$ref`` locais."""
+    found = set()
+    for branch in schema["oneOf"]:
+        node = branch
+        while "$ref" in node:
+            node = spec_node(node["$ref"])
+        const = node["properties"].get(field, {}).get("const")
+        if const is not None:
+            found.add(const)
+    return found
+
+
+def spec_node(ref: str) -> dict:
+    from tests.api.test_openapi_contract import load_spec
+
+    node = load_spec()
+    for part in ref[2:].split("/"):
+        node = node[part]
+    return node
+
+
+def test_todo_formulario_do_servidor_tem_corpo_de_escrita_e_ramo_no_openapi():
+    """Um formulário novo em ``CATEGORY_FORMS`` sem ``GUILD_FORM_SPECS`` ou sem ramo no ``openapi.yaml`` quebra aqui (e não
+    em produção, com ``KeyError`` na primeira escrita)."""
+    from empiremuse.api.writes import GUILD_FORM_SPECS
+    from empiremuse.panel.services.forms import CATEGORY_FORMS
+
+    keys = {form.key for forms in CATEGORY_FORMS.values() for form in forms}
+    written = _branches(spec_node("#/components/schemas/SettingsWrite"), "form")
+    read = _branches(spec_node("#/components/schemas/SettingsForm"), "key")
+
+    assert keys - set(GUILD_FORM_SPECS) <= LINKS_AND_LISTEN_ALONG
+    assert keys <= written and keys <= read
