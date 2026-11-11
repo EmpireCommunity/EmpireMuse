@@ -1111,7 +1111,7 @@ paths:
       operationId: startJukeboxTask
       summary: "Configura ou reinicia a Jukebox"
       description: |
-        `action: configure` (com `values`) ou `reset`. Configurar num **canal existente** limpa as mensagens dele e reiniciar apaga o painel: os dois pedem confirmação em **dois passos**. O passo 1 (sem `confirm_token`) não faz nada e devolve `200` com `requires_confirmation` e o `confirm_token`; o passo 2 repete o mesmo pedido **com** o token e devolve `202` com o `task_id`. O token é preso a usuário, servidor, finalidade e canal, vale 60 s e uma vez só. Criar um canal novo e usar um fórum não pedem confirmação (`202` direto).
+        `action: configure` (com `values`) ou `reset`. Configurar num **canal existente** limpa as mensagens dele e reiniciar apaga o painel: os dois pedem confirmação em **dois passos**. O passo 1 (sem `confirm_token`) não faz nada e devolve `200` com `requires_confirmation` e o `confirm_token`; o passo 2 repete o mesmo pedido **com** o token e devolve `202` com o `task_id`. O token é preso a usuário, servidor, finalidade e canal, vale 60 s e uma vez só. Criar um canal novo e usar um fórum não pedem confirmação (`202` direto). A `Idempotency-Key` vale no passo 2 e também em um `configure` que cria a tarefa direto (sem limpar canal): repetir devolve o mesmo `task_id` com `Idempotent-Replayed`. O passo 1 ignora a chave (cada pedido emite um token novo).
         Acompanhe por `GET …/tasks/{task_id}`. `409` com `current_version` se `expected_version` é velha; `409` sem `current_version` se já há uma tarefa no servidor; `429` se o usuário já tem 5 tarefas em andamento. `400` com `confirm_token` em `fields` para token inválido, vencido, usado ou de outro contexto.
       security:
         - ServiceKey: []

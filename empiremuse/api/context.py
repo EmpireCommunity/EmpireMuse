@@ -36,7 +36,7 @@ class ApiContext:
     settings_service: SettingsService  # os mesmos serviços do painel genérico (e os mesmos locks)
     account_service: AccountService
     idempotency: IdempotencyStore
-    radio_page: RadioPage  # B4: as rádios, as estações e a Jukebox (os do pool, únicos)
+    radio_page: RadioPage  # B4: instâncias da API (``runtime.py``), não do pool: só dividem o cache de nomes entre as rotas da API
     stations_page: StationsPage
     jukebox_service: JukeboxService  # preso à subchave ``jukebox`` (``api/signing.py``), nunca à ``cookie_secret``
     radio_setup_service: RadioSetupService  # preso à subchave ``radio_reset``

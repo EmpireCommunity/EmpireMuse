@@ -147,7 +147,10 @@ class JukeboxTasksHandler(JukeboxRoute):
 
     def creates_task_directly(self, ctx: FormContext, request: TaskRequest) -> bool:
         """``True`` quando este pedido cria a tarefa (passo 2, ou configurar sem limpar o canal): a repetição com a mesma
-        ``Idempotency-Key`` devolve o mesmo ``task_id``. O passo 1 só emite um token (nada a repetir)."""
+        ``Idempotency-Key`` devolve o mesmo ``task_id``. O passo 1 só emite um token (nada a repetir).
+
+        A repetibilidade depende de ``validate_setup`` decidir ``purges`` só pelo modo e pelo tipo do canal (fórum ou não):
+        se essa regra passar a depender de outra coisa (estado do servidor, por exemplo), revise isto."""
         if request.confirm_token is not None:
             return True
         if request.action != TASK_CONFIGURE:
