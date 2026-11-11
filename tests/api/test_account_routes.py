@@ -161,6 +161,25 @@ class IdempotencyTest(DataApiCase):
 
         assert retry.code == 400 and good.code == 200  # o erro foi refeito, não repetido de cache
 
+    def test_apagar_os_dados_do_usuario_limpa_as_respostas_guardadas_so_dele(self):
+        outro = self.new_session(OTHER)
+        version = self.version_of("/account", "prefixo")
+        other_version = body_of(self.call("GET", "/account", session=outro))["forms"]["prefixo"]["version"]
+        self.call("PATCH", PREFIX, prefix_body(version), key="chave-0001")
+        self.call("PATCH", PREFIX, prefix_body(other_version, "bb"), session=outro, key="chave-0001")
+
+        self.store.destroy_user("1001")  # o gancho que o apagamento de dados já chama
+        again = self.call("PATCH", PREFIX, prefix_body(version), session=self.new_session("1001"), key="chave-0001")
+        other_again = self.call("PATCH", PREFIX, prefix_body(other_version, "bb"), session=outro, key="chave-0001")
+
+        assert (again.code, error_code(again)) == (
+            409,
+            "conflict",
+        ) and "Idempotent-Replayed" not in again.headers  # executou
+        assert (
+            other_again.code == 200 and other_again.headers["Idempotent-Replayed"] == "true"
+        )  # o outro segue guardado
+
     def test_chave_fora_do_formato_da_400(self):
         response = self.call("PATCH", PREFIX, prefix_body(self.version_of("/account", "prefixo")), key="curta")
 

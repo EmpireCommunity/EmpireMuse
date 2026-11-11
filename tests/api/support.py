@@ -125,6 +125,7 @@ class ApiTestCase(AsyncHTTPTestCase):
             account_service=state.account_service,
             idempotency=IdempotencyStore(self.clock),
         )
+        self.store.add_user_listener(self.ctx.idempotency.purge_user)
         return build_api_app(self.ctx)
 
     def make_pool(self):

@@ -458,7 +458,7 @@ paths:
       operationId: updateAccountIntegrations
       summary: Remove ou importa integrações pessoais
       description: |
-        `action: remove` tira uma integração pelo título; `action: import` acrescenta as do JSON de exportação do bot (só acrescenta; respeita o limite).
+        `action: remove` tira uma integração pelo título; `action: import` mescla as do JSON de exportação do bot: as novas entram e uma com o mesmo título (sem diferenciar maiúsculas) é substituída; respeita o limite (a substituída não ocupa vaga).
       security:
         - ServiceKey: []
           SessionToken: []
@@ -595,7 +595,7 @@ paths:
       operationId: writeFavorites
       summary: Adiciona, edita ou importa favoritos
       description: |
-        `add` (nome novo), `edit` (troca o endereço de um nome existente) e `import` (JSON no formato de exportação; só acrescenta). Respeita o limite do usuário.
+        `add` (nome novo), `edit` (troca o endereço de um nome existente) e `import` (JSON no formato de exportação, mesclado: os nomes novos entram e um nome já existente, sem diferenciar maiúsculas, tem o endereço substituído). Respeita o limite do usuário (a substituição não ocupa vaga).
       security:
         - ServiceKey: []
           SessionToken: []
@@ -791,6 +791,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
         "429":
           $ref: "#/components/responses/RateLimited"
         "500":

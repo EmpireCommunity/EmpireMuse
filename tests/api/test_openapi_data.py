@@ -201,6 +201,9 @@ class OpenApiDataContractTest(DataApiCase):
         query = f"{path}?kind=station&id={STATION}"
         self.expect("DELETE", path, self.call("DELETE", query), 200)
         self.expect("DELETE", path, self.call("DELETE", f"{path}?kind=x&id=1"), 400, "validation_failed")
+        self.call("DELETE", f"{path}?kind=filter&id={NODE}", key="chave-0001")
+        reused = self.call("DELETE", f"{path}?kind=station&id={STATION}", key="chave-0001")
+        self.expect("DELETE", path, reused, 409, "conflict")  # a mesma chave com outro pedido
         self.cover_common(
             "DELETE", path, f"{path}?kind=filter&id={NODE}", crash=self.crash_account, unavailable=self.bots_not_ready
         )

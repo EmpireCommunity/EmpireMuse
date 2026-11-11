@@ -91,6 +91,12 @@ class IdempotencyStore:
             return
         entry.reply = reply
 
+    def purge_user(self, user_id: str) -> None:
+        """Descarta tudo do usuário (apagamento de dados): respostas guardadas e pedidos em andamento. Um pedido que fecha
+        depois não encontra a entrada e não guarda nada."""
+        for key in list(self._user_keys.get(user_id, ())):
+            self._drop((user_id, key))
+
     def _sweep(self, now: float) -> None:
         while self._entries:
             oldest = next(iter(self._entries))

@@ -77,6 +77,9 @@ def start_external_api(
         account_service=state.account_service,
         idempotency=IdempotencyStore(clock),
     )
+    state.session_store.add_user_listener(
+        ctx.idempotency.purge_user
+    )  # o apagamento de dados limpa também as respostas guardadas
     try:
         server = listen(ctx, settings)
     except OSError as error:

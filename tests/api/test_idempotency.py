@@ -134,3 +134,39 @@ def test_a_impressao_cobre_metodo_caminho_e_corpo_sem_depender_da_ordem_das_chav
     assert base != request_fingerprint("PUT", "/api/v1/guilds/2/settings/player", {"a": 1, "b": 2})
     assert base != request_fingerprint("PATCH", "/api/v1/guilds/1/settings/player", {"a": 1, "b": 2})
     assert base != request_fingerprint("PUT", "/api/v1/guilds/1/settings/player", {"a": 1, "b": 3})
+
+
+def test_purgar_o_usuario_descarta_as_respostas_e_os_pedidos_em_andamento_so_dele():
+    store = IdempotencyStore(Clock())
+    run(store, "1", "guardada")
+    in_flight = store.claim("1", "andamento", "f")
+    run(store, "2", "de-outro")
+
+    store.purge_user("1")
+
+    assert store.claim("1", "guardada", "f").replay is None
+    assert store.claim("2", "de-outro", "f").replay == OK  # o outro usuário não muda
+    store.purge_user("sem-nada")  # usuário sem entradas: nada acontece
+    assert in_flight.ticket is not None
+
+
+def test_pedido_que_fecha_depois_do_apagamento_nao_guarda_a_resposta():
+    store = IdempotencyStore(Clock())
+    ticket = store.claim("1", "k1", "f").ticket
+
+    store.purge_user("1")
+    store.settle(ticket, OK)
+
+    assert store.claim("1", "k1", "f").replay is None  # nada guardado: a chave executa de novo
+
+
+def test_pedido_antigo_nao_fecha_a_entrada_nova_da_mesma_chave_depois_do_apagamento():
+    store = IdempotencyStore(Clock())
+    old = store.claim("1", "k1", "f").ticket
+    store.purge_user("1")
+    new = store.claim("1", "k1", "f").ticket
+
+    store.settle(old, Reply(200, {"antigo": True}))
+    store.settle(new, OK)
+
+    assert store.claim("1", "k1", "f").replay == OK
