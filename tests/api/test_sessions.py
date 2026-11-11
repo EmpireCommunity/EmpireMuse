@@ -207,7 +207,8 @@ class ReauthRaceTest(ApiTestCase):
         from tornado.httpclient import AsyncHTTPClient
 
         token = self.new_session("1001")
-        self.oauth.yield_in_exchange = True
+        self.oauth.calls.clear()
+        self.oauth.hold_until = 2  # as duas passam pela autenticação antes de qualquer uma terminar
         headers = {
             "Authorization": f"Bearer {self.settings.service_key}",
             "X-EM-Session": token,
@@ -232,6 +233,9 @@ class ReauthRaceTest(ApiTestCase):
 
         assert sorted(r.code for r in respostas) == [201, 401]
         assert len(self.store._sessions) == 1  # um só token novo; o antigo e o do perdedor não existem
+        assert (
+            self.oauth.calls.count("exchange") == 2 and self.oauth.calls.count("revoke") == 2
+        )  # nenhum token do Discord sobra
 
 
 def lista(*banidos, carregada=True):

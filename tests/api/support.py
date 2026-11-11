@@ -52,13 +52,18 @@ class FakeOAuth(DiscordOAuthClient):
         self.before_exchange = (
             None  # chamado (sem await) durante a troca, para simular o que acontece enquanto o Discord responde
         )
-        self.yield_in_exchange = False  # cede o loop durante a troca (requisições concorrentes se intercalam)
+        self.hold_until = 0  # segura a troca até chegarem tantas requisições (prova a concorrência de verdade)
+        self._arrived = 0
+        self._gate: asyncio.Event | None = None
 
     async def exchange_code(self, code, code_verifier):
         self.calls.append("exchange")
-        if self.yield_in_exchange:
-            await asyncio.sleep(0)
-            await asyncio.sleep(0)
+        if self.hold_until:
+            self._gate = self._gate or asyncio.Event()
+            self._arrived += 1
+            if self._arrived >= self.hold_until:
+                self._gate.set()
+            await self._gate.wait()
         if self.before_exchange is not None:
             self.before_exchange()
         if code_verifier != VERIFIER:  # o verifier tem de chegar ao Discord igual ao do corpo

@@ -801,7 +801,9 @@ def run_app(pool: BotPool, config: dict = None):
         # Sem painel não há ``PanelSettings``: a confiança no proxy vem direto da configuração (o /ws e a página de status
         # continuam vendo o IP do visitante, não o do proxy).
         trust_proxy = bool(config.get("PANEL_TRUST_PROXY", False))
-        trusted_networks = parse_trusted_proxy_cidrs(config.get("PANEL_TRUSTED_PROXY_CIDRS"))[0]
+        trusted_networks, cidr_warnings = parse_trusted_proxy_cidrs(config.get("PANEL_TRUSTED_PROXY_CIDRS"))
+        for warning in cidr_warnings:
+            logger.warning("%s", warning)
         trusted = trust_proxy
     else:
         panel_app, trust_proxy, trusted_networks = _build_panel(pool, config)

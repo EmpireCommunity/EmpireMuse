@@ -167,6 +167,21 @@ def test_modo_bloqueado_mantem_a_confianca_no_proxy_vinda_da_configuracao(monkey
     assert capturado["roteador"].trust_proxy is True
 
 
+def test_modo_bloqueado_registra_os_avisos_da_lista_de_proxies(monkeypatch, caplog):
+    monkeypatch.setattr(web_app.tornado.httpserver, "HTTPServer", lambda *a, **k: MagicMock())
+    config = {
+        "PORT": "6000",
+        "EXTERNAL_PANEL_URL": "https://painel.example.com",
+        "PANEL_TRUST_PROXY": True,
+        "PANEL_TRUSTED_PROXY_CIDRS": "192.0.2.0/24, valor-invalido-xyz",
+    }
+
+    with caplog.at_level("WARNING", logger="empiremuse.web_app"):
+        web_app.run_app(MagicMock(), config=config)
+
+    assert [r for r in caplog.records if r.name == "empiremuse.web_app" and r.levelname == "WARNING"]
+
+
 class ListenerPublicoTest(AsyncTestCase):
     def test_o_listener_publico_nunca_responde_api(self):
         pool = SimpleNamespace(bots=[], database=None)
