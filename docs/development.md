@@ -184,7 +184,7 @@ As subpastas são organizadas por domínio: `audio/` (Lavalink, JDK, YouTube, Sp
 Política: lint, smoke e a suíte completa rodam no CI e não se repetem localmente; "pronto" é CI verde. Rode localmente só o que o CI/CD e o bot ECC Tools não cobrem. Os comandos abaixo servem para diagnóstico pontual.
 
 ```bash
-uv pip install --require-hashes -r requirements-dev-lock.txt # pytest, pytest-asyncio, pytest-cov, ruff e mypy
+uv pip install --require-hashes -r requirements-dev-lock.txt # pytest, pytest-asyncio, pytest-cov, ruff, mypy e jsonschema (valida as respostas da API contra docs/api/openapi.yaml)
 .venv/bin/python -m pytest               # executa a suíte de testes (Windows: .venv\Scripts\python -m pytest)
 .venv/bin/python -m pytest --cov         # executa testes medindo a cobertura de código
 .venv/bin/ruff check .                   # verificação estática de linting
