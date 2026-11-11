@@ -82,6 +82,7 @@ _REGISTRY: Mapping[str, Mapping[str, FormShape]] = {
             {"placeholders": None, "modelo_padrao": None},
         ),
         "idioma": FormShape({"language": None}, {"idiomas": {"code": None, "name": None}}),
+        "opcoes": FormShape({"jukebox_auto_delete": None, "jukebox_text_requests": None}),  # as opções da Jukebox
         "ouvir_junto": FormShape(
             {}, {"itens": {"canal_id": None, "canal_nome": None, "convite": None}, "pode_remover": None}
         ),

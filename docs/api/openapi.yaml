@@ -60,6 +60,10 @@ tags:
     description: Servidores que o usuário gerencia.
   - name: Configurações
     description: Formulários de configuração de um servidor e exportação das playlists.
+  - name: Jukebox
+    description: A Jukebox do servidor (opções, configurar e reiniciar por tarefa).
+  - name: Rádios
+    description: Rádios do servidor, estações personalizadas, busca, cascata de local e redefinição.
 paths:
   /api/v1/meta:
     get:
@@ -1104,6 +1108,1000 @@ paths:
           $ref: "#/components/responses/Unexpected"
         "503":
           $ref: "#/components/responses/NotReady"
+  /api/v1/guilds/{guild_id}/jukebox:
+    get:
+      tags:
+        - Jukebox
+      operationId: getJukebox
+      summary: "A Jukebox do servidor"
+      description: |
+        A Jukebox é uma por servidor. Traz o canal atual, a `version` que `POST …/tasks` envia em `expected_version`, as duas opções (`options`, com a própria `version`), o que o formulário de configurar oferece (`choices`) e a tarefa em andamento **do próprio usuário**, se houver. Leitura aceita o cache de autorização de 30 s.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+      responses:
+        "200":
+          description: "A Jukebox."
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JukeboxState"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+    put:
+      tags:
+        - Jukebox
+      operationId: writeJukeboxOptions
+      summary: "Grava as duas opções da Jukebox"
+      description: |
+        `jukebox_auto_delete` e `jukebox_text_requests`: substituição, com `expected_version` (a `version` de `options`). Reautoriza o usuário na hora. `409` com `current_version` se a versão é velha; `409` sem `current_version` enquanto uma tarefa da Jukebox roda no servidor.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JukeboxOptionsWrite"
+      responses:
+        "200":
+          description: "As opções salvas."
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JukeboxOptionsForm"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMedia"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+  /api/v1/guilds/{guild_id}/jukebox/tasks:
+    post:
+      tags:
+        - Jukebox
+      operationId: startJukeboxTask
+      summary: "Configura ou reinicia a Jukebox"
+      description: |
+        `action: configure` (com `values`) ou `reset`. Configurar num **canal existente** limpa as mensagens dele e reiniciar apaga o painel: os dois pedem confirmação em **dois passos**. O passo 1 (sem `confirm_token`) não faz nada e devolve `200` com `requires_confirmation` e o `confirm_token`; o passo 2 repete o mesmo pedido **com** o token e devolve `202` com o `task_id`. O token é preso a usuário, servidor, finalidade e canal, vale 60 s e uma vez só. Criar um canal novo e usar um fórum não pedem confirmação (`202` direto). A `Idempotency-Key` vale no passo 2 e também em um `configure` que cria a tarefa direto (sem limpar canal): repetir devolve o mesmo `task_id` com `Idempotent-Replayed`. O passo 1 ignora a chave (cada pedido emite um token novo).
+        Acompanhe por `GET …/tasks/{task_id}`. `409` com `current_version` se `expected_version` é velha; `409` sem `current_version` se já há uma tarefa no servidor; `429` se o usuário já tem 5 tarefas em andamento. `400` com `confirm_token` em `fields` para token inválido, vencido, usado ou de outro contexto.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JukeboxTaskWrite"
+      responses:
+        "200":
+          description: "Passo 1: a confirmação pedida (nada foi feito)."
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JukeboxConfirmation"
+        "202":
+          description: "Passo 2: a tarefa foi aceita."
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JukeboxTaskAccepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMedia"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+  /api/v1/guilds/{guild_id}/jukebox/tasks/{task_id}:
+    get:
+      tags:
+        - Jukebox
+      operationId: getJukeboxTask
+      summary: "O estado de uma tarefa da Jukebox"
+      description: |
+        Só o usuário que a criou, e só no servidor dela: a tarefa de outro usuário, a de outro servidor, a vencida (15 minutos depois de acabar) e um `task_id` que não existe dão o mesmo `404`. O texto do resultado não sai (só o estado).
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+        - $ref: "#/components/parameters/TaskId"
+      responses:
+        "200":
+          description: "A tarefa."
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JukeboxTask"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+  /api/v1/guilds/{guild_id}/radios:
+    get:
+      tags:
+        - Rádios
+      operationId: listRadios
+      summary: "As rádios do servidor"
+      description: |
+        As rádios (até 3), cada uma com `version` (o `rev` decimal que a escrita seguinte envia em `expected_version`), o estado, o canal, o bot, as regras do chat, o que toca e, com premium, os nomes da estação principal e da reserva. Com premium também vem `setup`: os bots reserva livres e os canais que valem. Sem premium nada vai ao diretório. `can_edit` = premium **e** Gerenciar Mensagens no canal da rádio.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+      responses:
+        "200":
+          description: "A lista."
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RadioList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+    post:
+      tags:
+        - Rádios
+      operationId: createRadio
+      summary: "Cria uma rádio"
+      description: |
+        Exige premium de rádio (`403` sem ele). Sem versão (não há o que perder): a unicidade é a idempotência natural (uma rádio por bot e por servidor, no máximo 3). `values`: `kind` (`live` ou `custom`), `channel_id` e `bot_id` (texto). O bot confere permissões, o canal e o bot reserva livre; a recusa vem como `400` com o campo em `fields`.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RadioCreate"
+      responses:
+        "201":
+          description: "A rádio criada (desligada)."
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Radio"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenAction"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMedia"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+  /api/v1/guilds/{guild_id}/radios/{radio_id}:
+    get:
+      tags:
+        - Rádios
+      operationId: getRadio
+      summary: "Uma rádio do servidor"
+      description: |
+        `{radio_id}` é `<bot>:<servidor>` e tem de terminar com o `{guild_id}` do caminho; de outro servidor dá o mesmo `404` de um id que não existe.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+        - $ref: "#/components/parameters/RadioId"
+      responses:
+        "200":
+          description: "A rádio."
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Radio"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+    put:
+      tags:
+        - Rádios
+      operationId: configureRadio
+      summary: "Configura tipo, canal e bot reserva"
+      description: |
+        Exige premium. `expected_version` é o `version` da rádio (CAS em `rev`); `409` com `current_version` (decimal) se velho. Uma rádio ligada precisa ser desligada antes (`400`).
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+        - $ref: "#/components/parameters/RadioId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RadioSetupWrite"
+      responses:
+        "200":
+          description: "A rádio salva."
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Radio"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenAction"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMedia"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+  /api/v1/guilds/{guild_id}/radios/{radio_id}/chat:
+    put:
+      tags:
+        - Rádios
+      operationId: writeRadioChat
+      summary: "Regras do chat da call"
+      description: |
+        Exige premium e Gerenciar Mensagens no canal da rádio (`403` sem eles). Substituição dos três campos, com `expected_version` (CAS em `rev`).
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+        - $ref: "#/components/parameters/RadioId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RadioChatWrite"
+      responses:
+        "200":
+          description: "A rádio salva."
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Radio"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenAction"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMedia"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+  /api/v1/guilds/{guild_id}/radios/{radio_id}/station:
+    put:
+      tags:
+        - Rádios
+      operationId: writeRadioStation
+      summary: "A estação principal"
+      description: |
+        Exige premium e Gerenciar Mensagens no canal. Numa rádio `live`, `estacao` é o `uuid` de uma estação do diretório (e `node`, opcional, o nó da cascata de onde ela foi escolhida, para o anterior e o próximo); numa rádio `custom`, o id de uma estação do servidor ou `g:<gênero>`. A rádio ligada troca na hora. Estação marcada indisponível é recusada (`400`).
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+        - $ref: "#/components/parameters/RadioId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RadioStationWrite"
+      responses:
+        "200":
+          description: "A rádio salva."
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Radio"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenAction"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMedia"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+  /api/v1/guilds/{guild_id}/radios/{radio_id}/reserve:
+    put:
+      tags:
+        - Rádios
+      operationId: writeRadioReserve
+      summary: "A estação reserva"
+      description: |
+        Só rádio `live` (`400` com `kind` em `fields` nas outras). `reserva: null` tira a reserva. Exige premium e Gerenciar Mensagens no canal.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+        - $ref: "#/components/parameters/RadioId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RadioReserveWrite"
+      responses:
+        "200":
+          description: "A rádio salva."
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Radio"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenAction"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMedia"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+  /api/v1/guilds/{guild_id}/radios/{radio_id}/stations:
+    get:
+      tags:
+        - Rádios
+      operationId: searchRadioStations
+      summary: "Busca estações no diretório"
+      description: |
+        Só rádio `live`, premium e Gerenciar Mensagens no canal. `q` de 2 a 64 caracteres, sem controle (`400` com `q` em `fields`; um termo fora da regra nunca chega ao diretório). Cada busca gasta também o limite de escrita do usuário (usa o balde global do diretório). A URL do fluxo nunca sai.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+        - $ref: "#/components/parameters/RadioId"
+        - $ref: "#/components/parameters/SearchTerm"
+      responses:
+        "200":
+          description: "As estações achadas (a principal fica de fora)."
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RadioStationSearch"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenAction"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+  /api/v1/guilds/{guild_id}/radios/{radio_id}/local:
+    get:
+      tags:
+        - Rádios
+      operationId: browseRadioLocal
+      summary: "Cascata de local"
+      description: |
+        Região, país, estado, cidade. Sem `node` devolve o topo; com um `node` conhecido da árvore devolve os níveis até ele e, se ele é final, as estações da página (`pagina`, 24 por página). Só o nó final vai ao diretório (e gasta o limite de escrita). `node` desconhecido é `400`. `404` se a rádio não é `live` ou a árvore não está carregada.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+        - $ref: "#/components/parameters/RadioId"
+        - $ref: "#/components/parameters/LocalNode"
+        - $ref: "#/components/parameters/LocalPage"
+      responses:
+        "200":
+          description: "O nível e as estações."
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RadioLocal"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenAction"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+  /api/v1/guilds/{guild_id}/radios/{radio_id}/reset/prepare:
+    post:
+      tags:
+        - Rádios
+      operationId: prepareRadioReset
+      summary: "Passo 1 de redefinir uma rádio"
+      description: |
+        Não apaga nada: devolve o `confirm_token` (60 s, uso único, preso a usuário, servidor, rádio e finalidade). Não pede premium (um servidor que o perdeu apaga a própria configuração); basta gerenciar o servidor agora. O corpo é um objeto JSON (pode ser vazio).
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+        - $ref: "#/components/parameters/RadioId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmptyObject"
+      responses:
+        "200":
+          description: "O token de confirmação."
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RadioResetPrepared"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "415":
+          $ref: "#/components/responses/UnsupportedMedia"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+  /api/v1/guilds/{guild_id}/radios/{radio_id}/reset:
+    post:
+      tags:
+        - Rádios
+      operationId: resetRadio
+      summary: "Passo 2: redefine (apaga) a rádio"
+      description: |
+        **Apaga a configuração da rádio sem recusar por versão** (T-422b/R1: tela velha também apaga) e para a rádio ligada. Só com o `confirm_token` de `reset/prepare`; token inválido, vencido, já usado ou de outro usuário, servidor, rádio ou finalidade é `400` com `confirm_token` em `fields`. O token é gasto mesmo que o bot recuse. Ficam as estações do servidor, o premium e as outras rádios.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+        - $ref: "#/components/parameters/RadioId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RadioResetWrite"
+      responses:
+        "204":
+          description: "A rádio foi redefinida."
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenAction"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMedia"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+  /api/v1/guilds/{guild_id}/radios/{radio_id}/logo:
+    get:
+      tags:
+        - Rádios
+      operationId: getRadioLogo
+      summary: "O logo da estação principal"
+      description: |
+        O PNG já re-codificado da estação principal (ou o ícone padrão). Só pela rota aninhada, depois da checagem de sessão, servidor e rádio; a URL do logo e o motivo de uma falha nunca saem. Como toda resposta de sessão, `no-store`.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+        - $ref: "#/components/parameters/RadioId"
+      responses:
+        "200":
+          description: "O PNG."
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            image/png:
+              schema:
+                type: string
+                contentMediaType: image/png
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+  /api/v1/guilds/{guild_id}/radio-stations:
+    get:
+      tags:
+        - Rádios
+      operationId: listRadioStations
+      summary: "As estações personalizadas do servidor"
+      description: |
+        Exige premium. Cada estação traz a `version` (`rev` decimal), a fonte, os artistas que o Last.fm não achou (`unknown`) e as rádios que a usam. Traz também o catálogo de gêneros e os nomes das playlists de rádio, para montar o formulário. `name`, `source` e `playlists` são os valores guardados, só para devolver numa escrita (ida e volta); o que se mostra ao usuário é `display` e `playlists_display`.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+      responses:
+        "200":
+          description: "As estações."
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomStationList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenAction"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+    post:
+      tags:
+        - Rádios
+      operationId: createRadioStation
+      summary: "Cria uma estação personalizada"
+      description: |
+        Exige premium. Sem versão: o nome é único no servidor (idempotência natural). Uma fonte só, conforme `kind`: `artists` (até 10) ou `playlists` (até 5, existentes). O 11º dá `400` com `limit` em `fields`.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomStationWrite"
+      responses:
+        "201":
+          description: "A estação criada."
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomStation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenAction"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMedia"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+  /api/v1/guilds/{guild_id}/radio-stations/{station_id}:
+    put:
+      tags:
+        - Rádios
+      operationId: writeCustomStation
+      summary: "Edita uma estação personalizada"
+      description: |
+        Substituição, com `expected_version` (CAS em `rev`). Os valores de `name` e `source` são os guardados (os que a leitura devolve em `name`/`source`), nunca os de `display`. A estação é sempre do servidor do caminho; de outro dá `404`.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+        - $ref: "#/components/parameters/StationId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomStationEdit"
+      responses:
+        "200":
+          description: "A estação salva."
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomStation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenAction"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMedia"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+    delete:
+      tags:
+        - Rádios
+      operationId: deleteRadioStation
+      summary: "Apaga uma estação personalizada"
+      description: |
+        `expected_version` na query, conferida primeiro (versão velha dá `409` com `current_version`, mesmo em uso). Uma estação em uso por alguma rádio é recusada (`400` com `in_use` em `fields`).
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+        - $ref: "#/components/parameters/StationId"
+        - $ref: "#/components/parameters/ExpectedRev"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "204":
+          description: "Apagada."
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenAction"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
 components:
   securitySchemes:
     ServiceKey:
@@ -1200,6 +2198,59 @@ components:
         enum:
           - jukebox
           - radio
+    RadioId:
+      name: radio_id
+      in: path
+      required: true
+      description: "O id da rádio, `<bot>:<servidor>`. Tem de terminar com o `guild_id` do caminho; senão `404`."
+      schema:
+        type: string
+        pattern: ^[0-9]{1,20}:[0-9]{1,20}$
+    StationId:
+      name: station_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[0-9a-f]{24}$
+    TaskId:
+      name: task_id
+      in: path
+      required: true
+      description: O id que `POST …/jukebox/tasks` devolveu (32 caracteres). Fora desse formato a rota nem existe (`404`).
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9_-]{32}$
+    ExpectedRev:
+      name: expected_version
+      in: query
+      required: true
+      schema:
+        $ref: "#/components/schemas/RevVersion"
+    SearchTerm:
+      name: q
+      in: query
+      required: true
+      schema:
+        type: string
+        minLength: 2
+        maxLength: 200
+    LocalNode:
+      name: node
+      in: query
+      required: false
+      description: O id de um nó da árvore de local (o `id` de uma opção de `levels`). Parâmetro repetido é `400`.
+      schema:
+        type: string
+        maxLength: 100
+    LocalPage:
+      name: pagina
+      in: query
+      required: false
+      description: A página das estações do nó final (24 por página; a última se passar).
+      schema:
+        type: string
+        pattern: ^[0-9]{1,4}$
   headers:
     CacheControl:
       required: true
@@ -1393,8 +2444,10 @@ components:
           pattern: "^[0-9]{1,20}$"
         redirect_uri:
           type: string
-          description: "`EXTERNAL_PANEL_URL` + `/auth/callback`, o único `redirect_uri` aceito."
-          examples: ["https://painel.example.com/auth/callback"]
+          description: "`EXTERNAL_PANEL_URL` + `/auth/callback`, o único `redirect_uri` aceito. A URL pode levar um prefixo de caminho (`https://muse.example.com/panel` dá `https://muse.example.com/panel/auth/callback`)."
+          examples:
+            - "https://painel.example.com/auth/callback"
+            - "https://muse.example.com/panel/auth/callback"
         features:
           type: array
           description: Recursos ativos nesta versão da API; cresce de forma aditiva.
@@ -1535,8 +2588,8 @@ components:
                 type: string
             current_version:
               type: string
-              description: "Só em `409 conflict` de versão: a versão que o formulário tem agora."
-              pattern: "^[0-9a-f]{16}$"
+              description: "Só em `409 conflict` de versão: a versão que o formulário (16 hexadecimais) ou a rádio e a estação (`rev` decimal) têm agora."
+              pattern: "^([0-9a-f]{16}|[0-9]{1,12})$"
             request_id:
               type: string
               description: Liga a resposta ao log do bot; o mesmo valor vai no cabeçalho `X-Request-ID`.
@@ -2870,3 +3923,677 @@ components:
                     - array
               description: '`add`: `nome` e `url` (os outros opcionais). `edit`: o mesmo mais `alvo` (o nome atual). `remove`:
                 só `alvo`. `import`: só `dados` (o arquivo de importação).'
+    RevVersion:
+      type: string
+      description: "A versão de uma rádio ou de uma estação do servidor: o `rev` decimal do documento (1 a 12 dígitos), que a escrita seguinte envia em `expected_version`. **Não** é o hexadecimal dos formulários de configuração."
+      pattern: ^[0-9]{1,12}$
+    EmptyObject:
+      type: object
+      additionalProperties: false
+    JukeboxOptionsValues:
+      type: object
+      additionalProperties: false
+      required: [jukebox_auto_delete, jukebox_text_requests]
+      properties:
+        jukebox_auto_delete:
+          type: boolean
+        jukebox_text_requests:
+          type: boolean
+    JukeboxOptionsForm:
+      type: object
+      additionalProperties: false
+      required: [key, version, values, extras]
+      properties:
+        key:
+          const: opcoes
+        version:
+          $ref: "#/components/schemas/Version"
+        values:
+          $ref: "#/components/schemas/JukeboxOptionsValues"
+        extras:
+          type: object
+          additionalProperties: false
+          maxProperties: 0
+    JukeboxOptionsWrite:
+      type: object
+      required: [expected_version, values]
+      properties:
+        expected_version:
+          $ref: "#/components/schemas/Version"
+        values:
+          $ref: "#/components/schemas/JukeboxOptionsValues"
+    JukeboxTaskKind:
+      type: string
+      enum: [configure, reset]
+    JukeboxTaskState:
+      type: string
+      description: "`pendente`, `executando`, `ok` ou `erro`; só `ok` e `erro` são finais."
+      enum: [pendente, executando, ok, erro]
+    JukeboxTask:
+      type: object
+      additionalProperties: false
+      required: [task_id, kind, state, final]
+      properties:
+        task_id:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{32}$
+        kind:
+          $ref: "#/components/schemas/JukeboxTaskKind"
+        state:
+          $ref: "#/components/schemas/JukeboxTaskState"
+        final:
+          type: boolean
+    JukeboxTaskAccepted:
+      type: object
+      additionalProperties: false
+      required: [task_id, state]
+      properties:
+        task_id:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{32}$
+        state:
+          $ref: "#/components/schemas/JukeboxTaskState"
+    JukeboxConfirmation:
+      type: object
+      additionalProperties: false
+      required: [requires_confirmation, confirm_token]
+      properties:
+        requires_confirmation:
+          const: true
+        confirm_token:
+          type: string
+          description: Vale 60 s e uma vez só; preso a usuário, servidor, finalidade e canal. Repita o pedido com ele em `confirm_token`.
+          maxLength: 400
+    JukeboxConfigureValues:
+      type: object
+      additionalProperties: false
+      required: [modo]
+      properties:
+        modo:
+          type: string
+          enum: [existente, criar]
+        canal:
+          type: string
+          description: "`existente`: o id de um canal de texto, voz, palco ou fórum do servidor."
+        titulo_forum:
+          type: string
+          description: Só em fórum (o título do post).
+        tipo:
+          type: string
+          description: "`criar`: `texto`, `voz` ou `palco`."
+        categoria:
+          type: string
+          description: "`criar`: o id da categoria (vazio = sem categoria)."
+    JukeboxTaskWrite:
+      description: "`configure` (com `values`) ou `reset` (sem `values`); `confirm_token` só no passo 2."
+      oneOf:
+        - type: object
+          required: [expected_version, action, values]
+          properties:
+            expected_version:
+              $ref: "#/components/schemas/Version"
+            action:
+              const: configure
+            values:
+              $ref: "#/components/schemas/JukeboxConfigureValues"
+            confirm_token:
+              type: [string, "null"]
+              maxLength: 400
+        - type: object
+          required: [expected_version, action]
+          properties:
+            expected_version:
+              $ref: "#/components/schemas/Version"
+            action:
+              const: reset
+            confirm_token:
+              type: [string, "null"]
+              maxLength: 400
+    JukeboxChoices:
+      type: object
+      additionalProperties: false
+      required: [channels, types, categories]
+      properties:
+        channels:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [category, channels]
+            properties:
+              category:
+                type: [string, "null"]
+              channels:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [id, name, type]
+                  properties:
+                    id:
+                      type: string
+                    name:
+                      type: string
+                    type:
+                      type: string
+                      enum: [texto, voz, palco, forum]
+        types:
+          type: array
+          items:
+            type: string
+            enum: [texto, voz, palco]
+        categories:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name]
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+    JukeboxState:
+      type: object
+      additionalProperties: false
+      required: [version, configured, channel, panel_bot, options, choices, task]
+      properties:
+        version:
+          $ref: "#/components/schemas/Version"
+        configured:
+          type: boolean
+        channel:
+          type: [object, "null"]
+          additionalProperties: false
+          required: [id, name, missing]
+          properties:
+            id:
+              type: string
+            name:
+              type: [string, "null"]
+            missing:
+              type: boolean
+              description: O canal configurado já não existe no servidor.
+        panel_bot:
+          type: [string, "null"]
+          description: O nome do bot que envia o painel e atende o canal.
+        options:
+          $ref: "#/components/schemas/JukeboxOptionsForm"
+        choices:
+          $ref: "#/components/schemas/JukeboxChoices"
+        task:
+          description: A tarefa em andamento do próprio usuário neste servidor, ou `null`.
+          oneOf:
+            - $ref: "#/components/schemas/JukeboxTask"
+            - type: "null"
+    DirectoryStation:
+      type: object
+      additionalProperties: false
+      required: [uuid, name, country, codec, bitrate, unavailable]
+      description: Uma estação do diretório. A URL do fluxo e a do logo nunca saem (use `GET …/radios/{radio_id}/logo`).
+      properties:
+        uuid:
+          type: string
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+        name:
+          type: [string, "null"]
+          description: "`null` se o diretório não respondeu ou não conhece o `uuid`."
+        country:
+          type: [string, "null"]
+        codec:
+          type: [string, "null"]
+        bitrate:
+          type: integer
+        unavailable:
+          type: boolean
+    RadioChat:
+      type: object
+      additionalProperties: false
+      required: [voice_delete_after_s, stage_max_messages, stage_max_age_s]
+      properties:
+        voice_delete_after_s:
+          type: integer
+        stage_max_messages:
+          type: integer
+        stage_max_age_s:
+          type: integer
+    Radio:
+      type: object
+      additionalProperties: false
+      required: [id, kind, enabled, state, version, bot, channel, title, can_edit, chat, source]
+      properties:
+        id:
+          type: string
+          pattern: ^[0-9]{1,20}:[0-9]{1,20}$
+        kind:
+          type: string
+          enum: [live, custom]
+        enabled:
+          type: boolean
+        state:
+          type: string
+          enum: [desligada, pausada_dono, fora_do_ar, reserva, tocando, pausada]
+        version:
+          $ref: "#/components/schemas/RevVersion"
+        bot:
+          type: object
+          additionalProperties: false
+          required: [id, name]
+          properties:
+            id:
+              type: string
+            name:
+              type: [string, "null"]
+              description: "`null` se o bot não está conectado neste servidor."
+        channel:
+          type: object
+          additionalProperties: false
+          required: [id, name]
+          properties:
+            id:
+              type: string
+            name:
+              type: [string, "null"]
+        title:
+          type: [string, "null"]
+          description: O que toca agora (já sem menção nem link vivos).
+        can_edit:
+          type: boolean
+          description: Premium **e** Gerenciar Mensagens no canal da rádio.
+        chat:
+          $ref: "#/components/schemas/RadioChat"
+        source:
+          type: object
+          additionalProperties: false
+          required: [station, reserve]
+          properties:
+            station:
+              type: [string, "null"]
+            reserve:
+              type: [string, "null"]
+        stations:
+          type: object
+          description: Só em rádio `live` de servidor com premium.
+          additionalProperties: false
+          required: [main, reserve]
+          properties:
+            main:
+              oneOf:
+                - $ref: "#/components/schemas/DirectoryStation"
+                - type: "null"
+            reserve:
+              oneOf:
+                - $ref: "#/components/schemas/DirectoryStation"
+                - type: "null"
+    RadioSetupOptions:
+      type: object
+      additionalProperties: false
+      required: [bots, channels]
+      properties:
+        bots:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name]
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+        channels:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name, kind]
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              kind:
+                type: string
+                enum: [voice, stage]
+    RadioList:
+      type: object
+      additionalProperties: false
+      required: [premium, max_radios, radios]
+      properties:
+        premium:
+          type: boolean
+        max_radios:
+          type: integer
+        radios:
+          type: array
+          items:
+            $ref: "#/components/schemas/Radio"
+        setup:
+          $ref: "#/components/schemas/RadioSetupOptions"
+    RadioSetupValues:
+      type: object
+      additionalProperties: false
+      required: [kind, channel_id, bot_id]
+      properties:
+        kind:
+          type: string
+          enum: [live, custom]
+        channel_id:
+          type: string
+          pattern: ^[0-9]{1,20}$
+        bot_id:
+          type: string
+          pattern: ^[0-9]{1,20}$
+    RadioCreate:
+      type: object
+      required: [values]
+      properties:
+        values:
+          $ref: "#/components/schemas/RadioSetupValues"
+    RadioSetupWrite:
+      type: object
+      required: [expected_version, values]
+      properties:
+        expected_version:
+          $ref: "#/components/schemas/RevVersion"
+        values:
+          $ref: "#/components/schemas/RadioSetupValues"
+    RadioChatWrite:
+      type: object
+      required: [expected_version, values]
+      properties:
+        expected_version:
+          $ref: "#/components/schemas/RevVersion"
+        values:
+          $ref: "#/components/schemas/RadioChat"
+    RadioStationWrite:
+      type: object
+      required: [expected_version, values]
+      properties:
+        expected_version:
+          $ref: "#/components/schemas/RevVersion"
+        values:
+          type: object
+          additionalProperties: false
+          required: [estacao]
+          properties:
+            estacao:
+              type: string
+              description: "`live`: o `uuid` da estação. `custom`: o id de uma estação do servidor ou `g:<gênero>`."
+            node:
+              type: string
+              description: O nó da cascata de onde a estação foi escolhida (opcional).
+    RadioReserveWrite:
+      type: object
+      required: [expected_version, values]
+      properties:
+        expected_version:
+          $ref: "#/components/schemas/RevVersion"
+        values:
+          type: object
+          additionalProperties: false
+          required: [reserva]
+          properties:
+            reserva:
+              type: [string, "null"]
+    RadioStationSearch:
+      type: object
+      additionalProperties: false
+      required: [stations]
+      properties:
+        stations:
+          type: array
+          items:
+            $ref: "#/components/schemas/DirectoryStation"
+    RadioLocal:
+      type: object
+      additionalProperties: false
+      required: [node, final, levels, stations, paging]
+      properties:
+        node:
+          type: [string, "null"]
+        final:
+          type: boolean
+        levels:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [depth, parent, selected, options]
+            properties:
+              depth:
+                type: integer
+              parent:
+                type: [string, "null"]
+              selected:
+                type: [string, "null"]
+              options:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [id, label, description, count]
+                  properties:
+                    id:
+                      type: string
+                    label:
+                      type: [string, "null"]
+                    description:
+                      type: [string, "null"]
+                    count:
+                      type: integer
+        stations:
+          type: array
+          items:
+            $ref: "#/components/schemas/DirectoryStation"
+        paging:
+          type: [object, "null"]
+          additionalProperties: false
+          required: [node, page, pages]
+          properties:
+            node:
+              type: string
+            page:
+              type: integer
+            pages:
+              type: integer
+    RadioResetPrepared:
+      type: object
+      additionalProperties: false
+      required: [confirm_token, expires_in, radio]
+      properties:
+        confirm_token:
+          type: string
+          maxLength: 400
+        expires_in:
+          type: integer
+          description: Segundos de validade (60).
+        radio:
+          type: object
+          additionalProperties: false
+          required: [id, kind, enabled]
+          properties:
+            id:
+              type: string
+            kind:
+              type: string
+              enum: [live, custom]
+            enabled:
+              type: boolean
+    RadioResetWrite:
+      type: object
+      required: [confirm_token]
+      properties:
+        confirm_token:
+          type: string
+          maxLength: 400
+    CustomStationValues:
+      description: "Uma fonte só, conforme `kind`: `artists` exige `artists`; `playlists` exige `playlists`."
+      oneOf:
+        - $ref: "#/components/schemas/CustomStationArtistsValues"
+        - $ref: "#/components/schemas/CustomStationPlaylistsValues"
+      discriminator:
+        propertyName: kind
+        mapping:
+          artists: "#/components/schemas/CustomStationArtistsValues"
+          playlists: "#/components/schemas/CustomStationPlaylistsValues"
+    CustomStationArtistsValues:
+      type: object
+      additionalProperties: false
+      required: [name, kind, artists]
+      properties:
+        name:
+          type: string
+          description: De 1 a 32 caracteres, único no servidor.
+        kind:
+          type: string
+          const: artists
+          description: Só `artists` e `playlists` se criam e se editam; `genre` existe apenas na leitura (estação legada).
+        artists:
+          type: array
+          description: "De 1 a 10 nomes."
+          minItems: 1
+          maxItems: 10
+          items:
+            type: string
+    CustomStationPlaylistsValues:
+      type: object
+      additionalProperties: false
+      required: [name, kind, playlists]
+      properties:
+        name:
+          type: string
+          description: De 1 a 32 caracteres, único no servidor.
+        kind:
+          type: string
+          const: playlists
+          description: Só `artists` e `playlists` se criam e se editam; `genre` existe apenas na leitura (estação legada).
+        playlists:
+          type: array
+          description: "De 1 a 5 playlists de rádio do servidor."
+          minItems: 1
+          maxItems: 5
+          items:
+            type: string
+    CustomStationWrite:
+      description: "Criar leva só `values`."
+      type: object
+      additionalProperties: false
+      required: [values]
+      properties:
+        values:
+          $ref: "#/components/schemas/CustomStationValues"
+    CustomStationEdit:
+      description: "Editar leva `values` e a versão lida (`expected_version`, obrigatória)."
+      type: object
+      additionalProperties: false
+      required: [values, expected_version]
+      properties:
+        expected_version:
+          $ref: "#/components/schemas/RevVersion"
+        values:
+          $ref: "#/components/schemas/CustomStationValues"
+    CustomStation:
+      type: object
+      additionalProperties: false
+      required: [id, name, kind, display, source, unknown, in_use, version]
+      properties:
+        id:
+          type: string
+          pattern: ^[0-9a-f]{24}$
+        name:
+          type: [string, "null"]
+          description: O valor guardado (o que a edição devolve). Para exibir use `display.name`.
+        kind:
+          type: string
+          enum: [genre, artists, playlists]
+        display:
+          type: object
+          description: Os mesmos textos já tratados para exibição (sem menção nem link vivos). Nunca os envie de volta numa escrita.
+          additionalProperties: false
+          required: [name, source]
+          properties:
+            name:
+              type: [string, "null"]
+            source:
+              type: object
+              additionalProperties: false
+              properties:
+                genre:
+                  type: string
+                artists:
+                  type: array
+                  items:
+                    type: string
+                playlists:
+                  type: array
+                  items:
+                    type: string
+        source:
+          type: object
+          additionalProperties: false
+          properties:
+            genre:
+              type: string
+            artists:
+              type: array
+              items:
+                type: string
+            playlists:
+              type: array
+              items:
+                type: string
+        unknown:
+          type: array
+          description: Artistas que o Last.fm não achou.
+          items:
+            type: string
+        in_use:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [radio_id, channel_name]
+            properties:
+              radio_id:
+                type: string
+              channel_name:
+                type: string
+        version:
+          $ref: "#/components/schemas/RevVersion"
+    CustomStationList:
+      type: object
+      additionalProperties: false
+      required: [stations, total, max, genres, playlists, playlists_display]
+      properties:
+        stations:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomStation"
+        total:
+          type: integer
+        max:
+          type: integer
+        genres:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [group, genres]
+            properties:
+              group:
+                type: string
+              genres:
+                type: array
+                items:
+                  type: string
+        playlists:
+          type: array
+          description: Os nomes como estão guardados (a identidade que a escrita compara).
+          items:
+            type: string
+        playlists_display:
+          type: array
+          description: Os mesmos nomes, na mesma ordem, tratados para exibição.
+          items:
+            type: string

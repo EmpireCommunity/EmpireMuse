@@ -17,6 +17,9 @@ from empiremuse.api.handlers import HealthHandler, MetaHandler, SessionHandler, 
 from empiremuse.api.handlers_account import account_routes
 from empiremuse.api.handlers_erasure import erasure_routes
 from empiremuse.api.handlers_guilds import guild_routes
+from empiremuse.api.handlers_jukebox import jukebox_routes
+from empiremuse.api.handlers_radio import radio_routes
+from empiremuse.api.handlers_stations import station_routes
 from empiremuse.api.settings import ExternalPanelSettings, IPNetwork
 
 logger = logging.getLogger(__name__)
@@ -32,7 +35,14 @@ def build_api_app(ctx: ApiContext) -> tornado.web.Application:
     # O nome de cada rota com parâmetro é o caminho dele no ``openapi.yaml`` (o teste de contrato confere os dois lados).
     data_routes = [
         tornado.web.url(API_PREFIX + pattern, handler, args, name=API_PREFIX + template)
-        for pattern, handler, template in [*account_routes(), *erasure_routes(), *guild_routes()]
+        for pattern, handler, template in [
+            *account_routes(),
+            *erasure_routes(),
+            *guild_routes(),
+            *jukebox_routes(),
+            *radio_routes(),
+            *station_routes(),
+        ]
     ]
     return tornado.web.Application(
         [

@@ -79,6 +79,9 @@ class SpecChecker:
         content = declared.get("content")
         if not content:
             assert not response.body, f"{key}: o arquivo declara resposta sem corpo"
+        elif "image/png" in content:  # o logo: o que o arquivo promete é um PNG (assinatura e tipo)
+            assert response.headers["Content-Type"] == "image/png", key
+            assert response.body.startswith(b"\x89PNG\r\n\x1a\n"), key
         else:
             assert response.headers["Content-Type"].startswith("application/json"), key
             self.validate(content["application/json"]["schema"], body_of(response))

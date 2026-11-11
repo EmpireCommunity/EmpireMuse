@@ -12,9 +12,13 @@ from empiremuse.api.keys import ServiceKeys
 from empiremuse.api.limits import ApiLimits
 from empiremuse.api.server import API_PREFIX, ApiHTTPServer, build_api_app
 from empiremuse.api.settings import load_external_panel_settings
-from empiremuse.api.signing import PURPOSE_ERASURE, derive_key
+from empiremuse.api.signing import PURPOSE_ERASURE, PURPOSE_JUKEBOX, PURPOSE_RADIO_RESET, derive_key
 from empiremuse.panel.authz import GuildAuthorizer
 from empiremuse.panel.oauth import DiscordOAuthClient, DiscordOAuthError
+from empiremuse.panel.services.jukebox import JukeboxService
+from empiremuse.panel.services.radio import RadioPage
+from empiremuse.panel.services.radio_setup import RadioSetupService
+from empiremuse.panel.services.radio_stations import StationsPage
 from empiremuse.panel.services.tokens import SignedTokens
 from empiremuse.panel.settings import load_session_limits
 from empiremuse.panel.state import ensure_panel_state
@@ -127,6 +131,17 @@ class ApiTestCase(AsyncHTTPTestCase):
             account_service=state.account_service,
             idempotency=IdempotencyStore(self.clock),
             erase_tokens=SignedTokens(derive_key(self.settings.signing_secret, PURPOSE_ERASURE), self.clock),
+            radio_page=RadioPage(),
+            stations_page=StationsPage(),
+            jukebox_service=JukeboxService(
+                state.task_runner,
+                state.settings_service,
+                derive_key(self.settings.signing_secret, PURPOSE_JUKEBOX),
+                self.clock,
+            ),
+            radio_setup_service=RadioSetupService(
+                derive_key(self.settings.signing_secret, PURPOSE_RADIO_RESET), self.clock
+            ),
         )
         self.store.add_user_listener(self.ctx.idempotency.purge_user)
         return build_api_app(self.ctx)

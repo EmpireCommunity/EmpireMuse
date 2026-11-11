@@ -171,9 +171,7 @@ class SettingsWriteTest(DataApiCase):
             self.call("PUT", PLAYER, player_body(OLD_VERSION))
 
         assert [call.args[1:] for call in record.call_args_list] == [("player/player", 200), ("player/player", 409)]
-        assert (
-            all(call.args[0].user_id == USER for call in record.call_args_list) is True
-        )  # o contexto, nunca um id solto
+        assert all(call.args[0].user_id == USER for call in record.call_args_list)  # o contexto, nunca um id solto
 
     def test_versao_velha_da_409_com_a_versao_atual_e_nao_grava(self):
         current = self.version_of(PLAYER, "player")

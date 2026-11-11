@@ -20,7 +20,7 @@ from empiremuse.panel.services.listen_along import ACTION as LISTEN_ALONG_REMOVE
 from empiremuse.rules.panel_serialize import FIELD_NAME
 from empiremuse.rules.playlists import SCOPES
 
-BOOL, INT, INT_OR_NULL, TEXT, TEXT_OR_NULL, IDS, GENRES, JSON_DOC = (
+BOOL, INT, INT_OR_NULL, TEXT, TEXT_OR_NULL, IDS, GENRES, JSON_DOC, LINES, NAMES = (
     "bool",
     "int",
     "int_or_null",
@@ -29,11 +29,14 @@ BOOL, INT, INT_OR_NULL, TEXT, TEXT_OR_NULL, IDS, GENRES, JSON_DOC = (
     "ids",
     "genres",
     "json",
+    "lines",  # lista de textos que o serviço lê como um texto de várias linhas (um item por linha)
+    "names",  # lista de textos que o serviço lê como valores repetidos do mesmo campo
 )
 MAX_TEXT = 2000
 MAX_INT_ABS = 10**9
 MAX_LIST = 100
 MAX_ITEM = 40
+MAX_LINE_ITEM = 128
 MAX_TARGET = 128
 GENRE_SEPARATORS = (",", ";")
 
@@ -87,6 +90,25 @@ def _ids(value: Any) -> list[str]:
     return list(value)
 
 
+def _one_line(item: str) -> bool:
+    """Sem nenhum separador que ``splitlines()`` reconhece (``\\r``, ``\\x0b``, ``\\x1c``, ``\\x85``, ``\\u2028``...): o
+    analisador do serviço quebra por ele, e um item viraria dois."""
+    return len(item.splitlines()) == 1 and item.splitlines()[0] == item
+
+
+def _names(value: Any) -> list[str]:
+    if not isinstance(value, list) or len(value) > MAX_LIST:
+        raise _Invalid
+    if not all(isinstance(item, str) and 0 < len(item) <= MAX_LINE_ITEM and _one_line(item) for item in value):
+        raise _Invalid
+    return list(value)
+
+
+def _lines(value: Any) -> list[str]:
+    items = _names(value)
+    return ["\n".join(items)] if items else []
+
+
 def _genres(value: Any) -> list[str]:
     items = _ids(value)
     if any(sep in item for item in items for sep in GENRE_SEPARATORS):
@@ -116,6 +138,8 @@ def convert(kind: str, value: Any) -> list[str]:
         IDS: _ids,
         GENRES: _genres,
         JSON_DOC: _json_document,
+        LINES: _lines,
+        NAMES: _names,
     }
     return converters[kind](value)
 
