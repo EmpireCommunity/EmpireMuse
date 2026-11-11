@@ -136,10 +136,10 @@ class RadioFavoritesHandler(AccountSectionHandler):
         query = self.query_arguments("kind", "id")
         removal = parse_radio_removal(query)
         ctx = self.account_context()
-        if getattr(getattr(ctx.pool, "radio", None), "user_favorites", None) is None:
-            raise ApiError(503, BOT_UNAVAILABLE)  # a rádio não está ligada neste bot
         service = self.ctx.account_service
         section = service.section(RADIOS)
+        if not (await service.read(section, ctx)).extras["disponivel"]:
+            raise ApiError(503, BOT_UNAVAILABLE)  # a rádio não está ligada neste bot (o sinal é o da própria seção)
 
         async def work() -> Reply:
             outcome = await service.submit(section, ctx, removal.action, {removal.field: [removal.target]})

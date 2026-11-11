@@ -23,6 +23,7 @@ ACCOUNT = "account"
 
 MAX_DEPTH = 8
 MAX_NUMBER_DIGITS = 9
+_INTEGRAL_TEXT = re.compile(r"([0-9]{1,9})(?:\.0+)?", re.ASCII)
 FIELD_NAME = re.compile(r"[a-z][a-z0-9_]{0,63}", re.ASCII)
 NO_STORE = {"Cache-Control": "no-store"}
 RPC_KEY = "rpc"
@@ -233,11 +234,16 @@ def _pick(source: Mapping[str, Any], shape: Shape) -> dict[str, Any]:
 
 
 def _number(value: Any) -> int:
-    """Inteiro de um campo numérico: aceita o inteiro ou o texto de dígitos que o formulário mostra; nada além disso."""
-    if isinstance(value, int) and not isinstance(value, bool):
+    """Inteiro de um campo numérico: aceita o inteiro, o texto de dígitos que o formulário mostra e o inteiral em ponto
+    flutuante (``50.0``) ou em texto (``"50.0"``); qualquer outra coisa falha fechada."""
+    if isinstance(value, bool):
+        raise SerializationError("campo numérico com valor que não é inteiro")
+    if isinstance(value, int):
         return value
-    if isinstance(value, str) and value.isascii() and value.isdigit() and len(value) <= MAX_NUMBER_DIGITS:
+    if isinstance(value, float) and math.isfinite(value) and value.is_integer() and abs(value) < 10**MAX_NUMBER_DIGITS:
         return int(value)
+    if isinstance(value, str) and (match := _INTEGRAL_TEXT.fullmatch(value)):
+        return int(match.group(1))
     raise SerializationError("campo numérico com valor que não é inteiro")
 
 

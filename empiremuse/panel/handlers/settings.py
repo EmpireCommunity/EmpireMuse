@@ -19,7 +19,6 @@ from empiremuse.panel.handlers.servers import (
     decode_args,
     initial_of,
 )
-from empiremuse.panel.services.appearance import SkinsGlobalForm, SkinsServerForm
 from empiremuse.panel.services.base import (
     CONFLICT_TEXT,
     DIGITS,
@@ -29,10 +28,7 @@ from empiremuse.panel.services.base import (
     FormContext,
     SettingsForm,
 )
-from empiremuse.panel.services.general import LanguageForm, PrefixForm, VoiceStatusForm
-from empiremuse.panel.services.links import LinksForm
-from empiremuse.panel.services.listen_along import ListenAlongForm
-from empiremuse.panel.services.player import DjForm, PlayerForm
+from empiremuse.panel.services.forms import CATEGORY_FORMS
 from empiremuse.panel.services.service import Outcome, SettingsService
 from empiremuse.rules.playlists import SCOPES
 from empiremuse.utils.servers import ServerConfigConflict, ServerConfigUnavailable
@@ -41,13 +37,6 @@ from empiremuse.utils.usage import record_panel_action
 logger = logging.getLogger(__name__)
 
 WRITE_LIMIT_PER_MINUTE = 20
-CATEGORY_FORMS: dict[str, tuple[SettingsForm, ...]] = {
-    "player": (PlayerForm(),),
-    "dj": (DjForm(),),
-    "aparencia": (SkinsServerForm(), SkinsGlobalForm()),
-    "links": (LinksForm(),),
-    "geral": (PrefixForm(), VoiceStatusForm(), LanguageForm(), ListenAlongForm()),
-}
 PER_BOT_CATEGORIES: frozenset[str] = (
     frozenset()
 )  # tudo é do servidor (doc único): sem seletor de bot em categoria alguma

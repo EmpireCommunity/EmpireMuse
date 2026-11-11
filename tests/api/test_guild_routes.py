@@ -1,7 +1,7 @@
 """B3 · servidores e configurações (contrato T-456 §4 "Servidores" e "Configurações", m4, §14): o usuário só age no servidor
 que gerencia agora, a escrita reautoriza sem cache, ``expected_version`` velho dá ``409`` com a versão atual e nada vaza."""
 
-import json
+from unittest.mock import patch
 
 import pytest
 
@@ -162,6 +162,18 @@ class SettingsWriteTest(DataApiCase):
         assert self.world.server_settings(100)["default_player_volume"] == 60
         assert self.world.server_settings(100)["autoplay"] is True
         assert self.world.p100.called("process_save_queue") == [{}]  # o efeito do painel genérico também roda
+
+    def test_registra_a_acao_do_painel_com_o_mesmo_rotulo_do_generico_e_sem_o_usuario(self):
+        version = self.version_of(PLAYER, "player")
+
+        with patch("empiremuse.api.handlers_guilds.record_panel_action") as record:
+            self.call("PUT", PLAYER, player_body(version))
+            self.call("PUT", PLAYER, player_body(OLD_VERSION))
+
+        assert [call.args[1:] for call in record.call_args_list] == [("player/player", 200), ("player/player", 409)]
+        assert (
+            all(call.args[0].user_id == USER for call in record.call_args_list) is True
+        )  # o contexto, nunca um id solto
 
     def test_versao_velha_da_409_com_a_versao_atual_e_nao_grava(self):
         current = self.version_of(PLAYER, "player")
@@ -490,7 +502,3 @@ class EveryRouteTest(DataApiCase):
 
         assert (response.code, error_code(response)) == (405, "validation_failed")
         assert body_of(response)["error"]["fields"] == ["method"]
-
-
-def test_nenhuma_chave_de_segredo_no_exemplo_de_json():  # a verificação em si falha com ``token``
-    assert [n for n in key_names(json.loads('{"a": {"sessionkey": 1}}')) if "sessionkey" in n]

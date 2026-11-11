@@ -13,16 +13,18 @@ from empiremuse.api.errors import BOT_UNAVAILABLE, FORBIDDEN, ApiError, conflict
 from empiremuse.api.handlers import guild_payload
 from empiremuse.api.idempotency import Reply
 from empiremuse.api.writes import parse_guild_write
-from empiremuse.panel.handlers.servers import missing_invites
-from empiremuse.panel.handlers.settings import CATEGORY_FORMS
+from empiremuse.panel.authz import missing_invites
+from empiremuse.panel.services.forms import CATEGORY_FORMS
 from empiremuse.panel.services.base import ForbiddenAction, FormContext, SettingsForm
 from empiremuse.rules.panel_serialize import GUILD, serialize_access, serialize_form, serialize_invites
 from empiremuse.rules.playlists import SCOPES
 from empiremuse.utils.servers import ServerConfigConflict, ServerConfigUnavailable
+from empiremuse.utils.usage import record_panel_action
 
 GUILD_ID = r"([0-9]{1,20})"
 CATEGORY = r"(player|dj|appearance|links|general)"
 SERVICE_CATEGORY = {"player": "player", "dj": "dj", "appearance": "aparencia", "links": "links", "general": "geral"}
+STATUS_FORBIDDEN, STATUS_CONFLICT = 403, 409
 JSON_UTF8 = "application/json; charset=UTF-8"
 
 
@@ -77,19 +79,23 @@ class SettingsHandler(DataHandler):
 
     async def apply(self, form: SettingsForm, ctx: FormContext, args: dict[str, list[str]], category: str) -> Reply:
         service = self.ctx.settings_service
+        name = f"{SERVICE_CATEGORY[category]}/{form.key}"  # o mesmo rótulo do painel genérico; nada do usuário vai ao registro
         try:
             try:
                 outcome = await service.submit(
                     form, ctx, args, "", audit_user=ctx.user_id, category=SERVICE_CATEGORY[category]
                 )
             except ForbiddenAction:
+                record_panel_action(ctx, name, STATUS_FORBIDDEN)
                 raise ApiError(403, FORBIDDEN) from None
             except (
                 ServerConfigConflict
             ):  # a gravação concorrente do store esgotou as tentativas: reler e tentar de novo
+                record_panel_action(ctx, name, STATUS_CONFLICT)
                 raise conflict((await service.read(form, ctx, "")).versao) from None
         except ServerConfigUnavailable:
             raise ApiError(503, BOT_UNAVAILABLE) from None
+        record_panel_action(ctx, name, outcome.status)
         return form_reply(outcome.status, outcome.form, GUILD)
 
 

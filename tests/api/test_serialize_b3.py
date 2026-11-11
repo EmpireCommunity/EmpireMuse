@@ -3,7 +3,7 @@
 import pytest
 
 from empiremuse.panel.authz import BotRef, GuildAccess
-from empiremuse.panel.handlers.servers import InviteLink
+from empiremuse.panel.authz import InviteLink
 from empiremuse.panel.services.base import Formulario
 from empiremuse.rules import panel_serialize as ps
 
@@ -20,15 +20,36 @@ def player_form(volume):
     return Formulario(key="player", form_id="f", template="t", acao="/x", versao="0" * 16, valores=values)
 
 
-def test_o_volume_sai_como_numero_tanto_do_texto_do_formulario_quanto_do_inteiro():
-    assert ps.serialize_form(player_form("60"), ps.GUILD)["values"]["default_player_volume"] == 60
-    assert ps.serialize_form(player_form(150), ps.GUILD)["values"]["default_player_volume"] == 150
+@pytest.mark.parametrize("value", ["60", 60, 60.0, "60.0", "60.00"])
+def test_o_volume_sai_como_inteiro_do_texto_do_formulario_do_inteiro_e_do_inteiral_em_float_ou_texto(value):
+    volume = ps.serialize_form(player_form(value), ps.GUILD)["values"]["default_player_volume"]
+
+    assert volume == 60 and type(volume) is int
 
 
-def test_valor_que_nao_e_inteiro_no_campo_numerico_falha_fechado():
-    for bad in ("sessenta", "6.5", "-1", "", True, 6.5, None, ["6"], "9" * 30):
-        with pytest.raises(ps.SerializationError):
-            ps.serialize_form(player_form(bad), ps.GUILD)
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "sessenta",
+        "6.5",
+        "60.5",
+        "-1",
+        "",
+        "5e1",
+        " 60",
+        True,
+        6.5,
+        float("inf"),
+        float("nan"),
+        None,
+        ["6"],
+        "9" * 30,
+        1e30,
+    ],
+)
+def test_valor_que_nao_e_inteiro_no_campo_numerico_falha_fechado(bad):
+    with pytest.raises(ps.SerializationError):
+        ps.serialize_form(player_form(bad), ps.GUILD)
 
 
 def test_acesso_ao_servidor_so_leva_a_lista_de_permissao():
