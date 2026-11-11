@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from empiremuse.api.errors import conflict, validation_failed
+from empiremuse.api.errors import BOT_UNAVAILABLE, ApiError, conflict, validation_failed
 from empiremuse.api.idempotency import Reply
 from empiremuse.api.radio_base import (
     GUILD_ID,
@@ -79,12 +79,15 @@ class StationsHandler(RadioRoute):
         if len(await stations.list_for_guild(ctx.guild_id)) >= STATIONS_MAX:
             record_panel_action(ctx, f"{CATEGORY}/estacoes", 400)
             raise validation_failed("limit")
+        known = {item.id for item in await stations.list_for_guild(ctx.guild_id)}
         outcome = await self.ctx.stations_page.create(ctx, args, "", self.tr)
         record_panel_action(ctx, f"{CATEGORY}/estacoes", outcome.status)
         raise_for_status(outcome.status, view_error_fields(outcome.view))
-        name = (args.get("name") or [""])[0].strip().casefold()
-        row = next(row for row in outcome.view.rows if row.nome.casefold() == name)
-        saved = await stations.get(ctx.guild_id, row.id)
+        # a estação nova é a que não existia: o nome gravado pode diferir do enviado (espaços internos colapsados)
+        created = [item for item in await stations.list_for_guild(ctx.guild_id) if item.id not in known]
+        saved = created[0] if created else None
+        if saved is None:
+            raise ApiError(500, BOT_UNAVAILABLE)
         return Reply(STATUS_CREATED, await custom_station_entry(ctx, saved))
 
 

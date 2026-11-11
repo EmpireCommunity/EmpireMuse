@@ -143,8 +143,17 @@ class JukeboxTasksHandler(JukeboxRoute):
         async def work() -> Reply:
             return await self.start(ctx, request)
 
-        # o passo 1 só emite um token (nada a repetir); o passo 2 cria a tarefa e a repetição devolve o mesmo ``task_id``
-        await self.run_write(body, work, replayable=request.confirm_token is not None)
+        await self.run_write(body, work, replayable=self.creates_task_directly(ctx, request))
+
+    def creates_task_directly(self, ctx: FormContext, request: TaskRequest) -> bool:
+        """``True`` quando este pedido cria a tarefa (passo 2, ou configurar sem limpar o canal): a repetição com a mesma
+        ``Idempotency-Key`` devolve o mesmo ``task_id``. O passo 1 só emite um token (nada a repetir)."""
+        if request.confirm_token is not None:
+            return True
+        if request.action != TASK_CONFIGURE:
+            return False
+        check = self.jukebox.validate_setup(ctx, request.args)  # sem efeitos
+        return check.plan is not None and not check.plan.purges
 
     async def start(self, ctx: FormContext, request: TaskRequest) -> Reply:
         label = f"{CATEGORY}/{ACTION_LABELS[(request.action, request.confirm_token is not None)]}"

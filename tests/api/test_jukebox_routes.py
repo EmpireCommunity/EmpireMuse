@@ -234,6 +234,18 @@ class JukeboxTaskFlowTest(JukeboxApiCase):
         assert second.headers["Idempotent-Replayed"] == "true" and started == 1
         assert (other_body.code, error_code(other_body)) == (409, "conflict")
 
+    def test_idempotency_key_em_canal_novo_repete_o_mesmo_task_id(self):
+        version = self.state()["version"]
+        body = configure_body(version, SETUP_NEW_CHANNEL)
+
+        with self.held_jobs():
+            first = self.start_task(body, key="chave-de-teste-2")
+            again = self.start_task(body, key="chave-de-teste-2")
+            started = len(self.ctx.jukebox_service.runner._tasks)
+
+        assert first.code == again.code == 202 and body_of(first)["task_id"] == body_of(again)["task_id"]
+        assert again.headers["Idempotent-Replayed"] == "true" and started == 1
+
     def test_escrita_reautoriza_agora_a_leitura_aceita_o_cache(self):
         self.world.configured_text()
         version = self.state()["version"]

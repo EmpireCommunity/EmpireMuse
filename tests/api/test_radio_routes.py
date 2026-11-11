@@ -622,6 +622,19 @@ class RadioLogoTest(RadioApiCase):
 class RadioStationsRoutesTest(RadioApiCase):
     CREATE = {"name": "Minha", "kind": "artists", "artists": ["Queen", "Abba"]}
 
+    def test_nome_com_espacos_internos_e_gravado_colapsado_e_a_criacao_responde_201(self):
+        self.premium()
+        original = self.radio.stations._validate
+
+        def collapsing(guild_id, raw, **kwargs):  # como a store real: espaços internos colapsados
+            name, kind, source = original(guild_id, {**raw, "name": " ".join(str(raw["name"]).split())}, **kwargs)
+            return name, kind, source
+
+        with patch.object(self.radio.stations, "_validate", collapsing):
+            response = self.call("POST", f"{BASE}/radio-stations", {"values": {**self.CREATE, "name": "Minha   rádio"}})
+
+        assert response.code == 201 and body_of(response)["name"] == "Minha rádio"
+
     def test_exige_premium_em_todas_as_rotas_e_nada_e_gravado(self):
         station_ = self.radio.stations.seed(ALFA, "Minha")
         url = f"{BASE}/radio-stations"
