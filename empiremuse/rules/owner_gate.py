@@ -3,11 +3,13 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Collection
 from enum import Enum
 from typing import Optional
 
 OWNER_IDS_SEPARATOR = "||"
+_SNOWFLAKE = re.compile(r"[1-9][0-9]{14,19}", re.ASCII)  # 15 a 20 dígitos ASCII, como o relé RPC espera
 
 
 class OwnerGateMode(Enum):
@@ -22,13 +24,16 @@ def _items(raw: Optional[str]) -> list[str]:
 
 
 def split_owner_ids(raw: Optional[str]) -> tuple[list[int], int]:
-    """Os IDs numéricos de ``OWNER_IDS`` e quantos itens não brancos não eram um ID (descartados, sem o valor)."""
+    """Os IDs de ``OWNER_IDS`` e quantos itens não brancos não eram um ID (descartados, sem o valor).
+
+    Só vale um snowflake: 15 a 20 dígitos ASCII, sem sinal, zero à esquerda, separador de milhar nem espaço no meio.
+    """
     ids: list[int] = []
     invalid = 0
     for item in _items(raw):
-        try:
+        if _SNOWFLAKE.fullmatch(item):
             ids.append(int(item))
-        except ValueError:
+        else:
             invalid += 1
     return ids, invalid
 
