@@ -136,11 +136,18 @@ def test_chave_curta_recusa_o_boot(chave):
         {"PANEL_OAUTH_CLIENT_SECRET": SERVICE_KEY},
         {"EXTERNAL_PANEL_SIGNING_SECRET": OAUTH_SECRET},
         {"PANEL_COOKIE_SECRET": SIGNING_SECRET},
+        {"RPC_SERVER_SECRET": SERVICE_KEY},
+        {"RPC_SERVER_SECRET": SIGNING_SECRET},
     ],
 )
 def test_chaves_repetidas_entre_si_recusam_o_boot(overrides):
     with pytest.raises(ExternalPanelConfigError):
         load(external_config(**overrides))
+
+
+def test_rpc_server_secret_curto_nao_e_recusado_e_so_a_igualdade_conta():
+    assert load(external_config(RPC_SERVER_SECRET="curto")) is not None
+    assert load(external_config(RPC_SERVER_SECRET="")) is not None
 
 
 def previous(**extra):

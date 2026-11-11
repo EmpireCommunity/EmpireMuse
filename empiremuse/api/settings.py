@@ -202,6 +202,7 @@ def load_external_panel_settings(
             SIGNING_SECRET_KEY: signing_secret,
             "PANEL_OAUTH_CLIENT_SECRET": oauth_secret,
             "PANEL_COOKIE_SECRET": _text(config, "PANEL_COOKIE_SECRET"),
+            "RPC_SERVER_SECRET": _text(config, "RPC_SERVER_SECRET"),  # sem piso de tamanho: só a unicidade vale
         }
     )
     return ExternalPanelSettings(
