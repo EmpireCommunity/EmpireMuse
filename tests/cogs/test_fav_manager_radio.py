@@ -10,6 +10,8 @@ from unittest.mock import AsyncMock
 import disnake
 import pytest
 
+from empiremuse.utils.erasure import ErasureTombstones
+
 from empiremuse.i18n import get_i18n
 from empiremuse.rules.radio_stations import Station, check_station
 from empiremuse.utils.music.errors import GenericError
@@ -44,7 +46,9 @@ class World:
             ),
         )
         bot = SimpleNamespace(get_guild=lambda gid: guild if gid == GUILD else None)
-        self.pool = SimpleNamespace(database=self.db, get_all_bots=lambda: [bot], i18n=get_i18n())
+        self.pool = SimpleNamespace(
+            database=self.db, get_all_bots=lambda: [bot], i18n=get_i18n(), erasure_tombstones=ErasureTombstones()
+        )
         self.hub = RadioHub(self.pool)
         self.pool.radio = self.hub
         lookup = AsyncMock(side_effect=lambda v: station(int(v[-12:]), HOSTILE))

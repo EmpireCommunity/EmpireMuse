@@ -7,6 +7,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from empiremuse.utils.erasure import ErasureTombstones
+
 from empiremuse.utils.radio import RadioHub
 from empiremuse.utils.radio.custom_favorites import Toggled
 from empiremuse.utils.radio.directory import DirectoryError
@@ -29,7 +31,7 @@ class MemoryDb(FakeDb):
 @pytest.fixture
 def world():
     db = MemoryDb()
-    hub = RadioHub(SimpleNamespace(database=db))
+    hub = RadioHub(SimpleNamespace(database=db, erasure_tombstones=ErasureTombstones()))
     hub.directory = SimpleNamespace(
         by_uuid_strict=AsyncMock(
             side_effect=lambda value: station(int(value[-12:]), "@everyone https://evil.example Rádio")

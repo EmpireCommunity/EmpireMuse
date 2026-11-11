@@ -8,6 +8,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from empiremuse.utils.erasure import ErasureTombstones
+
 from empiremuse.utils.radio import RadioHub
 from empiremuse.utils.radio.custom_favorites import CUSTOM_FAVORITES_DB, MAX_CUSTOM_FAVORITES, CustomFavorites
 from empiremuse.utils.radio.directory import DirectoryError
@@ -44,7 +46,7 @@ def perms(manager: bool = True):
 @pytest.fixture
 def world():
     db = FakeDb()
-    pool = SimpleNamespace(database=db, **vars(perms()))
+    pool = SimpleNamespace(database=db, erasure_tombstones=ErasureTombstones(), **vars(perms()))
     hub = RadioHub(pool)
     hub.directory = SimpleNamespace(by_uuid_strict=AsyncMock(side_effect=lambda value: station(int(value[-12:]))))
     hub.locations = SimpleNamespace(node=lambda value: object() if value.startswith("node:") else None)

@@ -10,6 +10,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from empiremuse.utils.erasure import ErasureTombstones
+
 from empiremuse.rules.radio_stations import Station
 from empiremuse.utils.radio.user_favorites import USER_FAVORITES_DB, UserRadioFavorites
 from tests.panel.helpers_account import OTHER_UID
@@ -44,7 +46,9 @@ class RadioAccountCase(AccountCase):
         self.fav_db = FakeDb()
         tree = build_tree()
         hub = SimpleNamespace(directory=Directory(), locations=tree)
-        self.favorites = UserRadioFavorites(SimpleNamespace(database=self.fav_db), hub)
+        self.favorites = UserRadioFavorites(
+            SimpleNamespace(database=self.fav_db, erasure_tombstones=ErasureTombstones()), hub
+        )
         self.pool.radio = SimpleNamespace(user_favorites=self.favorites, locations=tree)
         return app
 

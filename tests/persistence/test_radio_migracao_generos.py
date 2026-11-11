@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from empiremuse.utils.erasure import ErasureTombstones
+
 from empiremuse.rules.radio_station import CustomStation, to_document
 from empiremuse.utils.radio import RadioHub, migrate_genres
 from empiremuse.utils.radio.stations import STATIONS_DB, StationInvalid, StationNotFound
@@ -19,7 +21,7 @@ SID = "a" * 24
 @pytest.fixture
 def world():
     db = FakeDb()
-    hub = RadioHub(SimpleNamespace(database=db))
+    hub = RadioHub(SimpleNamespace(database=db, erasure_tombstones=ErasureTombstones()))
     # Usa o escritor real: guild_id textual canônico, como na produção.
     db._table(STATIONS_DB)[SID] = to_document(CustomStation(SID, GUILD, "Rock", "genre", {"genre": "rock"}))
     return SimpleNamespace(db=db, hub=hub)

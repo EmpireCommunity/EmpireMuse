@@ -69,17 +69,15 @@ class UserRadioFavorites:
 
     async def _change(self, user: int, change: Change) -> Any:
         key = self._key(user)
-        tombstones = getattr(self.pool, "erasure_tombstones", None)
-        read_at = (
-            tombstones.now() if tombstones is not None else 0.0
-        )  # ANTES de ler (como o controle do player): um apagamento depois disto invalida a gravação
+        tombstones = self.pool.erasure_tombstones  # direto: sem a sepultura falha (fecha), nunca pula a conferência
+        read_at = tombstones.now()  # ANTES de ler: um apagamento depois disto invalida a gravação
         for _ in range(CAS_ATTEMPTS):
             doc = await self._find(key)
             stations, nodes = RadioFavorites._stations(doc), self._nodes(doc)
             updated, filters, result = await change(stations, nodes)
             if updated == stations and filters == nodes:
                 return result
-            if tombstones is not None and tombstones.stale(
+            if tombstones.stale(
                 user, read_at
             ):  # dados apagados depois da leitura (inclusive durante o diretório): nada é gravado
                 raise RadioUnavailable

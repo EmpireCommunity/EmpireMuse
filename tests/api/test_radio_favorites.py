@@ -8,6 +8,8 @@ from unittest.mock import patch
 
 import pytest
 
+from empiremuse.utils.erasure import ErasureTombstones
+
 from empiremuse.api.data import DataHandler
 from empiremuse.rules.radio_station import shipped_catalog
 from empiremuse.utils.radio.custom_favorites import CUSTOM_FAVORITES_DB, CustomFavorites
@@ -45,7 +47,9 @@ class FavoritesApiCase(RadioApiCase):
     def make_pool(self):
         pool = super().make_pool()
         self.db = FakeDb()
-        store_pool = SimpleNamespace(database=self.db, get_all_bots=pool.get_all_bots)
+        store_pool = SimpleNamespace(
+            database=self.db, get_all_bots=pool.get_all_bots, erasure_tombstones=ErasureTombstones()
+        )
         hub = self.radio
         hub.favorites = RadioFavorites(store_pool)
         hub.custom_favorites = CustomFavorites(store_pool)

@@ -76,14 +76,12 @@ class CustomFavorites:
         raise RadioUnavailable
 
     def _read_at(self) -> float:
-        tombstones = getattr(self.pool, "erasure_tombstones", None)
         return (
-            tombstones.now() if tombstones is not None else 0.0
-        )  # ANTES de ler: um apagamento depois disto invalida a gravação
+            self.pool.erasure_tombstones.now()
+        )  # direto (falha se faltar); ANTES de ler: um apagamento depois disto invalida a gravação
 
     async def _write(self, key: str, doc: dict[str, Any] | None, ids: list[str], user_id: int, read_at: float) -> bool:
-        tombstones = getattr(self.pool, "erasure_tombstones", None)
-        if tombstones is not None and tombstones.stale(
+        if self.pool.erasure_tombstones.stale(
             user_id, read_at
         ):  # dados apagados depois da leitura: não recria o documento de quem foi apagado
             raise RadioUnavailable
