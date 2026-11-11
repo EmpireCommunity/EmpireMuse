@@ -361,7 +361,7 @@ class TestOwnerFilterFailsClosed:
         )
         child = SimpleNamespace(hidden=False, checks=[SimpleNamespace(__qualname__="rogue_check")], children={})
 
-        with pytest.raises(SiteDataError, match="rogue_check"):
+        with pytest.raises(SiteDataError, match=r"slash g s: .*rogue_check"):
             site_data._slash_node(["g"], body, SimpleNamespace(checks=[], children={"s": child}))
 
     @pytest.mark.parametrize(

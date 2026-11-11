@@ -183,9 +183,13 @@ jobs:
   site-data-image:
     name: Exportador do site na imagem (sem publicar)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
     # O caminho do release (release.yml, job github-release) só roda numa tag: uma falha determinística do exportador queimaria uma versão
-    # depois de a imagem ser publicada. Este job faz o MESMO caminho no PR, sem publicar nada: constrói a imagem, roda o exportador dentro
-    # dela com as mesmas flags de endurecimento, confere o JSON com jq e valida o schema.
+    # depois de a imagem ser publicada. Este job faz o MESMO caminho no PR, sem publicar nada: constrói a imagem e roda o exportador dentro
+    # dela com as mesmas flags de endurecimento. DIFERENÇA: o release.yml NÃO roda o scripts/validate_site_data.py; aqui, além do `jq`,
+    # o JSON é validado contra o schema publicado (só no PR; a falha de schema aparece antes da tag).
 
     steps:
       - name: Checkout do repositório
@@ -205,16 +209,20 @@ jobs:
             exit 0
           fi
           git fetch origin "$BASE_REF:refs/remotes/origin/$BASE_REF"
+          # Falha FECHADO: com `set -e`, um `git diff` que falha derruba o passo (job vermelho) em vez de pular o exportador em silêncio;
+          # needed só vira false depois de um diff que DEU CERTO e não tocou nenhum arquivo da lista.
+          set -e
+          DIFF_FILES="$(git diff --name-only "origin/$BASE_REF...HEAD")"
           NEEDED="false"
           while IFS= read -r file; do
             [ -z "$file" ] && continue
             case "$file" in
-              empiremuse/*|scripts/*|docs/api/site-data*|data/*|Dockerfile|requirements*|.github/workflows/release.yml|.github/workflows/ci.yml)
+              empiremuse/*|scripts/*|docs/api/*|data/*|assets/*|pyproject.toml|build-constraints.in|build-constraints.txt|.dockerignore|Dockerfile|LICENSE|CREDITS.md|requirements*|.github/ci-uv-requirements.txt|.github/workflows/release.yml|.github/workflows/ci.yml)
                 NEEDED="true"
                 break
                 ;;
             esac
-          done < <(git diff --name-only "origin/$BASE_REF...HEAD" 2>/dev/null || git diff --name-only "origin/$BASE_REF" HEAD)
+          done <<< "$DIFF_FILES"
           echo "needed=$NEEDED" >> "$GITHUB_OUTPUT"
           echo "Exportador afetado: $NEEDED"
 
@@ -234,7 +242,8 @@ jobs:
           build-args: |
             EMPIREMUSE_VERSION=0.0.0-rc.0
           cache-from: type=gha,scope=site-data-image
-          cache-to: type=gha,mode=max,scope=site-data-image
+          # PR só LÊ o cache; só o push na main escreve (mode=max em todo PR esgotaria a cota de 10 GB do repositório)
+          cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max,scope=site-data-image' || '' }}
 
       - name: Gerar site-data.json dentro da imagem (sem rede, contêiner endurecido)
         if: steps.detect-changes.outputs.needed == 'true'

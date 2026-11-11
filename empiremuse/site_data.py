@@ -218,9 +218,9 @@ def _slash_node(path: list[str], source: Any, command: Any, inherited: Sequence[
     }
     if category is not None:
         node["_category"] = category
-    for _, child in leaves:
+    for option, child in leaves:
         if child is not None and is_public(child):
-            require_classified(child, f"slash {' '.join([*path])}")
+            require_classified(child, f"slash {' '.join([*path, option.name])}")
     subs = [
         _slash_node([*path, option.name], option, child, inherited)
         for option, child in leaves
