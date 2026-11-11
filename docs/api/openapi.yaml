@@ -3535,7 +3535,7 @@ components:
         summary:
           type: object
           additionalProperties: false
-          required: [erases, keeps, backups_up_to_weeks, confirmation_word]
+          required: [erases, keeps, backups_up_to_weeks]
           properties:
             erases:
               type: array
@@ -3552,9 +3552,6 @@ components:
             backups_up_to_weeks:
               type: integer
               description: Cópias de segurança do provedor podem guardar dados já apagados por até tantas semanas.
-            confirmation_word:
-              type: string
-              description: A palavra padrão (pt-BR) em `typed`; `DELETE` também vale, e a tela escolhe pelo idioma da página.
     ErasureRequest:
       type: object
       required: [confirm_token, typed]

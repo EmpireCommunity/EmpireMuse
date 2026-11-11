@@ -93,7 +93,8 @@ class PrepareTest(ErasureCase):
 
         body = body_of(response)
         assert response.code == 200 and response.headers["Cache-Control"] == "no-store"
-        assert body["expires_in"] == TOKEN_TTL_S and body["summary"]["confirmation_word"] == WORD
+        assert body["expires_in"] == TOKEN_TTL_S
+        assert "confirmation_word" not in body["summary"]  # a tela escolhe a palavra pelo idioma da página
         assert set(body) == {"confirm_token", "expires_in", "summary"}
         assert self.stored(UID) and self.alive(self.token)
 
@@ -134,7 +135,15 @@ class RecentLoginTest(ErasureCase):
 
         assert (response.code, error_code(response)) == (401, "reauth_required")
 
+    def test_a_ordem_e_a_mesma_do_prepare_o_login_antigo_vem_antes_do_corpo(self):
+        self.advance(31 * MINUTE)
+
+        response = self.call("POST", ERASE, {"confirm_token": 7, "typed": ""})  # corpo inválido E login velho
+
+        assert (response.code, error_code(response)) == (401, "reauth_required")
+
     def test_reautenticar_renova_a_idade_e_mata_o_token_antigo(self):
+        old_confirm = self.prepare()  # um confirm_token da sessão antiga (login ainda recente)
         self.advance(31 * MINUTE)
         self.oauth.identities["novo"] = {"id": USER, "username": "alice"}
         reauth = self.api(
@@ -144,6 +153,10 @@ class RecentLoginTest(ErasureCase):
         fresh = body_of(reauth)["session_token"]
 
         assert not self.alive(self.token)  # o token antigo morreu
+        refused = self.erase(
+            old_confirm, session=fresh
+        )  # o confirm_token da sessão antiga não vale na nova (preso à sessão)
+        assert (refused.code, error_code(refused)) == (400, "validation_failed")
         token = self.prepare(session=fresh)
         assert self.erase(token, session=fresh).code == 200  # com o login novo, apaga
 
@@ -287,7 +300,7 @@ class OutcomeTest(ErasureCase):
 
         assert calls == [(UID, "panel", False)]  # ``erase_user`` pega o lock sozinho: quem chama não o segura
 
-    def test_partial_e_reportado_sem_contagens_nem_nomes_e_a_sessao_acaba(self):
+    def test_partial_e_reportado_sem_contagens_nem_nomes(self):
         report = ErasureReport(ErasureStatus.PARTIAL, {"users": 1}, ("radios",))
         self.use_stub(report)
 
@@ -295,6 +308,34 @@ class OutcomeTest(ErasureCase):
 
         assert (response.code, body_of(response)) == (200, {"status": "PARTIAL"})
         assert "radios" not in response.body.decode() and "users" not in response.body.decode()
+
+    def test_partial_do_servico_real_tambem_derruba_a_sessao(self):
+        def closer_that_fails(_user_id):
+            raise RuntimeError(
+                "falha ao fechar o app de RPC"
+            )  # a limpeza da memória fica parcial: o resultado é PARTIAL
+
+        self.service._rpc_closer = closer_that_fails
+        token = self.prepare()
+
+        response = self.erase(token)
+
+        assert (response.code, body_of(response)) == (200, {"status": "PARTIAL"})
+        assert not self.alive(self.token)  # sem depender de dublê: o serviço real destruiu a sessão
+
+    def test_o_teto_global_conta_execucoes_ok_e_partial(self):
+        def closer_that_fails(_user_id):
+            raise RuntimeError("parcial")
+
+        self.service._rpc_closer = closer_that_fails
+        for number in range(ERASE_GLOBAL_PER_HOUR):
+            report = self.io_loop.run_sync(lambda n=number: self.service.erase_user(9_000 + n, source="panel"))
+            assert report.status is ErasureStatus.PARTIAL
+
+        response = self.erase(self.prepare())  # PARTIAL também gastou o teto de 60 execuções por hora
+
+        assert (response.code, error_code(response)) == (429, "rate_limited")
+        assert self.stored(UID)
 
     def test_busy_nada_e_apagado_a_sessao_segue_e_o_lock_do_usuario_nao_e_do_handler(self):
         calls = self.use_stub(ErasureBusy())

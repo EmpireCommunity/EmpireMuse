@@ -11,7 +11,11 @@ Este serviço **não segura o lock do usuário** (``erase_user`` o pega sozinho;
 ``DataHandler.run_write``: o apagamento destrói a sessão do pedido por desenho, e a resposta de sucesso ainda tem de sair. A
 ``Idempotency-Key`` é ignorada (o ``confirm_token`` de uso único já impede a repetição); a limpeza das respostas guardadas do usuário
 vem do ouvinte ``purge_user`` do ``SessionStore``, que o apagamento aciona. O ``confirm_token`` é gasto **antes** da chamada: ``BUSY`` e
-``429`` pedem outro ``prepare``. Quando a rota responde, o painel deve destruir a sessão dele (§9e).
+``429`` pedem outro ``prepare``. O painel destrói a sessão dele **só** quando a resposta é ``OK`` ou ``PARTIAL`` (§9e): em ``BUSY``,
+``429``, ``400`` ou ``5xx`` nada foi apagado e a sessão segue de pé.
+
+A palavra digitada (``typed``) é ``APAGAR`` ou ``DELETE`` (``CONFIRMATION_WORDS``, **só da API**; o painel genérico e o slash seguem com
+``APAGAR``); a tela escolhe pelo idioma da página, então a resposta do ``prepare`` não traz palavra.
 """
 
 from __future__ import annotations
@@ -44,7 +48,6 @@ SUMMARY = {
         "lastfm_remote_data",
     ],
     "backups_up_to_weeks": 4,
-    "confirmation_word": CONFIRMATION_WORD,
 }
 
 
@@ -79,9 +82,9 @@ class ErasurePrepareHandler(ErasureHandler):
 
 class ErasureRunHandler(ErasureHandler):
     async def post(self) -> None:
-        confirm_token, typed = self._parse(self.json_body())
-        self.require_recent_login()
+        self.require_recent_login()  # as conferências de acesso PRIMEIRO, na mesma ordem do ``prepare``; só depois o corpo
         self.require_service()
+        confirm_token, typed = self._parse(self.json_body())
         # A sessão é lida AQUI, uma vez: o apagamento destrói todas as sessões do usuário e depois dele ela não é consultada.
         user_id = int(self.session.user.id)
         tokens = self.ctx.erase_tokens
@@ -95,7 +98,7 @@ class ErasureRunHandler(ErasureHandler):
         tokens.consume(
             confirm_token
         )  # sem ``await`` entre o ``check`` e o ``consume``: dois pedidos não gastam o mesmo token
-        outcome = await AccountEraseService().run(self.ctx.pool, user_id=user_id)
+        outcome = await AccountEraseService.run(self.ctx.pool, user_id=user_id)
         self._respond(outcome)
 
     @staticmethod

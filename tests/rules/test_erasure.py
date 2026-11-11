@@ -108,9 +108,9 @@ def test_r6_partial_so_entra_em_tries_e_nao_barra_as_3_por_hora():
 
 
 def test_r6_teto_global():
-    global_ok = [AGORA - 60 + n * 0.5 for n in range(ERASE_GLOBAL_PER_HOUR)]
+    global_runs = [AGORA - 60 + n * 0.5 for n in range(ERASE_GLOBAL_PER_HOUR)]
 
-    decisao = allow_erasure([], [], global_ok, AGORA)
+    decisao = allow_erasure([], [], global_runs, AGORA)
 
     assert not decisao.allowed and decisao.reason == "global"
 
@@ -120,8 +120,8 @@ def test_r6_o_que_passou_de_uma_hora_nao_conta_e_a_espera_e_a_maior_entre_os_lim
     assert allow_erasure(velhos, velhos, [], AGORA).allowed
 
     ok = [AGORA - 3000, AGORA - 2000, AGORA - 1000]
-    global_ok = [AGORA - 3500 + n for n in range(ERASE_GLOBAL_PER_HOUR)]
-    decisao = allow_erasure(ok, ok, global_ok, AGORA)
+    global_runs = [AGORA - 3500 + n for n in range(ERASE_GLOBAL_PER_HOUR)]
+    decisao = allow_erasure(ok, ok, global_runs, AGORA)
     assert decisao.retry_after_s == pytest.approx(3600 - 3000)  # o do usuário (600 s) é maior que o global (100 s)
 
 

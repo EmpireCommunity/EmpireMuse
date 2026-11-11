@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from empiremuse.panel.settings import PanelSettings
-from empiremuse.rules.user_cleanup import UserCleanupError as UserCleanupError  # reexporta: o erro mora em ``rules``
+from empiremuse.rules.user_cleanup import UserCleanupError
 
 logger = logging.getLogger(__name__)
 MAX_SESSIONS_PER_USER = 5

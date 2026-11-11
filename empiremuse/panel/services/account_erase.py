@@ -80,7 +80,8 @@ class AccountEraseService:
             return EraseOutcome(EraseResult.BAD_CONFIRMATION, MSG_BAD_CONFIRMATION)
         return await self.run(pool, user_id=user_id)
 
-    async def run(self, pool: BotPool, *, user_id: int) -> EraseOutcome:
+    @staticmethod
+    async def run(pool: BotPool, *, user_id: int) -> EraseOutcome:
         """Chama o serviço de apagamento do bot (o único) e traduz o resultado. **Não confere nada**: quem chama (o painel genérico
         e a API externa, cada um com a sua regra de login recente e de confirmação) já conferiu. ``user_id`` é sempre o da sessão."""
         service = getattr(pool, "erasure", None)

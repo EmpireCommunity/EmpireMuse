@@ -135,7 +135,9 @@ class ErasureService:
         self._running = 0
         self._ok: dict[int, list[float]] = {}
         self._tries: dict[int, list[float]] = {}
-        self._global_ok: list[float] = []
+        self._global_runs: list[
+            float
+        ] = []  # execuções (OK e PARTIAL) de todos: o teto global conta execuções, não só sucessos
         self._tasks: set[asyncio.Task] = set()
 
     @property
@@ -177,7 +179,7 @@ class ErasureService:
 
     def _check_limits(self, user_id: int) -> None:
         now = self._clock()
-        decision = allow_erasure(self._ok.get(user_id, ()), self._tries.get(user_id, ()), self._global_ok, now)
+        decision = allow_erasure(self._ok.get(user_id, ()), self._tries.get(user_id, ()), self._global_runs, now)
         if not decision.allowed:
             raise ErasureRateLimited(decision.retry_after_s)
 
@@ -186,7 +188,7 @@ class ErasureService:
         self._tries.setdefault(user_id, []).append(now)
         if status is ErasureStatus.OK:
             self._ok.setdefault(user_id, []).append(now)
-            self._global_ok.append(now)
+        self._global_runs.append(now)  # OK e PARTIAL: ambos gastaram a execução
         self._prune_limits(now)
 
     def _prune_limits(self, now: float) -> None:
@@ -195,7 +197,7 @@ class ErasureService:
                 book[user_id] = [stamp for stamp in book[user_id] if now - stamp < RATE_WINDOW_S]
                 if not book[user_id]:
                     del book[user_id]
-        self._global_ok = [stamp for stamp in self._global_ok if now - stamp < RATE_WINDOW_S]
+        self._global_runs = [stamp for stamp in self._global_runs if now - stamp < RATE_WINDOW_S]
 
     # ------------------------------------------------------------------ passos 1 a 6
 

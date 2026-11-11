@@ -160,15 +160,16 @@ def _wait(stamps: list[float], limit: int, now: float) -> float:
     return max(0.0, ordered[len(ordered) - limit] + RATE_WINDOW_S - now)
 
 
-def allow_erasure(ok: Sequence[float], tries: Sequence[float], global_ok: Sequence[float], now: float) -> Decision:
+def allow_erasure(ok: Sequence[float], tries: Sequence[float], global_runs: Sequence[float], now: float) -> Decision:
     """Limites por hora. ``ok`` e ``tries`` são do usuário: só ``OK`` entra em ``ok``; toda tentativa entra em ``tries`` (``PARTIAL`` só aqui).
+    ``global_runs`` são as EXECUÇÕES de todos os usuários (``OK`` e ``PARTIAL``): o teto global conta execuções, não só sucessos.
 
     Passou de um limite: ``allowed=False`` e o tempo até todos os limites estourados abrirem.
     """
     checks = (
         ("user_ok", _wait(_recent(ok, now), ERASE_OK_PER_HOUR, now)),
         ("user_tries", _wait(_recent(tries, now), ERASE_TRIES_PER_HOUR, now)),
-        ("global", _wait(_recent(global_ok, now), ERASE_GLOBAL_PER_HOUR, now)),
+        ("global", _wait(_recent(global_runs, now), ERASE_GLOBAL_PER_HOUR, now)),
     )
     blocked = [(reason, wait) for reason, wait in checks if wait > 0]
     if not blocked:

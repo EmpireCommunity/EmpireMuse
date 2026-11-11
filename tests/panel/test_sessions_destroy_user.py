@@ -8,7 +8,8 @@ from types import SimpleNamespace
 import pytest
 
 from empiremuse import panel
-from empiremuse.panel.sessions import ManagedGuild, PanelUser, SessionStore, UserCleanupError
+from empiremuse.panel.sessions import ManagedGuild, PanelUser, SessionStore
+from empiremuse.rules.user_cleanup import UserCleanupError
 from empiremuse.utils.user_locks import UserLocks
 from tests.panel.helpers import fake_pool, https_config, load_settings
 from tests.panel.helpers_login import FakeClock
