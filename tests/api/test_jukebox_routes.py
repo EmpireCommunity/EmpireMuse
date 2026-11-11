@@ -41,10 +41,19 @@ class JukeboxReadTest(JukeboxApiCase):
         permissions = self.world.guild.members[int(OTHER_USER)].guild_permissions
         permissions.administrator = permissions.manage_guild = False  # já não gerencia o servidor
         outro = self.new_session(OTHER_USER)
+        self.world.db.reads.clear()
 
         responses = [self.call("GET", BASE, session=outro), self.call("GET", "/guilds/999/jukebox")]
 
         assert [(r.code, error_code(r)) for r in responses] == [(404, "not_found")] * 2
+        assert self.world.db.reads == []  # a recusa vem antes de qualquer leitura do banco
+
+    def test_canal_guardado_que_e_de_outro_servidor_nao_vaza_o_nome_e_sai_como_ausente(self):
+        self.world.configure("99", None)  # o 99 está no cache do bot, mas é de outro servidor
+
+        body = body_of(self.call("GET", BASE))
+
+        assert body["configured"] is True and body["channel"] == {"id": "99", "name": None, "missing": True}
 
 
 class JukeboxOptionsTest(JukeboxApiCase):

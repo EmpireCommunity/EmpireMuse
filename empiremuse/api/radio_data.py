@@ -126,14 +126,19 @@ def paging_entry(paging: Optional[Paging]) -> Optional[dict[str, Any]]:
     return {"node": paging.node, "page": paging.page, "pages": paging.pages} if paging is not None else None
 
 
-def custom_source(station: Any) -> dict[str, Any]:
-    """A fonte de uma estação do servidor, só a que o tipo dela usa."""
+def custom_source(station: Any, *, display: bool = False) -> dict[str, Any]:
+    """A fonte de uma estação do servidor, só a que o tipo dela usa.
+
+    Por padrão os valores saem como estão guardados: são a identidade que a escrita compara por igualdade, então uma
+    leitura seguida de escrita os devolve intactos. ``display=True`` os passa por ``external_text`` (rótulo para exibir).
+    """
     source = dict(getattr(station, "source", {}) or {})
     kind = str(station.kind)
+    shown = (lambda item: safe_text(item) or "") if display else str
     if kind == KIND_GENRE:
-        return {"genre": str(source.get(KIND_GENRE) or "")}
+        return {"genre": shown(source.get(KIND_GENRE) or "")}
     if kind in (KIND_ARTISTS, KIND_PLAYLISTS):
-        return {kind: [safe_text(item) or "" for item in source.get(kind) or ()]}
+        return {kind: [shown(item) for item in source.get(kind) or ()]}
     return {}
 
 
@@ -142,9 +147,10 @@ async def custom_station_entry(ctx: Any, station: Any) -> dict[str, Any]:
     using = await ctx.pool.radio.stations.radios_using(ctx.guild_id, station.id)
     return {
         "id": str(station.id),
-        "name": safe_text(station.name),
+        "name": None if station.name is None else str(station.name),  # valor guardado: o que a edição devolve
         "kind": str(station.kind),
         "source": custom_source(station),
+        "display": {"name": safe_text(station.name), "source": custom_source(station, display=True)},
         "unknown": [safe_text(item) or "" for item in getattr(station, "unknown", ()) or ()],
         "in_use": [{"radio_id": str(radio.id), "channel_name": channel_label(ctx, radio)} for radio in using],
         "version": str(station.rev),

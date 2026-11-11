@@ -1855,7 +1855,7 @@ paths:
       operationId: createRadioStation
       summary: "Cria uma estação personalizada"
       description: |
-        Exige premium. Sem versão: o nome é único no servidor (idempotência natural). Uma fonte só, conforme `kind`: `genre`, `artists` (até 10) ou `playlists` (até 5, existentes). O 11º dá `400` com `limit` em `fields`.
+        Exige premium. Sem versão: o nome é único no servidor (idempotência natural). Uma fonte só, conforme `kind`: `artists` (até 10) ou `playlists` (até 5, existentes). O 11º dá `400` com `limit` em `fields`.
       security:
         - ServiceKey: []
           SessionToken: []
@@ -1926,7 +1926,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CustomStationWrite"
+              $ref: "#/components/schemas/CustomStationEdit"
       responses:
         "200":
           description: "A estação salva."
@@ -4285,10 +4285,8 @@ components:
           description: De 1 a 32 caracteres, único no servidor.
         kind:
           type: string
-          enum: [genre, artists, playlists]
-        genre:
-          type: string
-          description: "`kind: genre`: o id do gênero do catálogo."
+          description: Só `artists` e `playlists` se criam e se editam; `genre` existe apenas na leitura (estação legada).
+          enum: [artists, playlists]
         artists:
           type: array
           description: "`kind: artists`: de 1 a 10 nomes."
@@ -4300,9 +4298,18 @@ components:
           items:
             type: string
     CustomStationWrite:
-      description: "Criar leva só `values`; editar leva também `expected_version`."
+      description: "Criar leva só `values`."
       type: object
+      additionalProperties: false
       required: [values]
+      properties:
+        values:
+          $ref: "#/components/schemas/CustomStationValues"
+    CustomStationEdit:
+      description: "Editar leva `values` e a versão lida (`expected_version`, obrigatória)."
+      type: object
+      additionalProperties: false
+      required: [values, expected_version]
       properties:
         expected_version:
           $ref: "#/components/schemas/RevVersion"
@@ -4311,16 +4318,39 @@ components:
     CustomStation:
       type: object
       additionalProperties: false
-      required: [id, name, kind, source, unknown, in_use, version]
+      required: [id, name, kind, display, source, unknown, in_use, version]
       properties:
         id:
           type: string
           pattern: ^[0-9a-f]{24}$
         name:
           type: [string, "null"]
+          description: O valor guardado (o que a edição devolve). Para exibir use `display.name`.
         kind:
           type: string
           enum: [genre, artists, playlists]
+        display:
+          type: object
+          description: Os mesmos textos já tratados para exibição (sem menção nem link vivos). Nunca os envie de volta numa escrita.
+          additionalProperties: false
+          required: [name, source]
+          properties:
+            name:
+              type: [string, "null"]
+            source:
+              type: object
+              additionalProperties: false
+              properties:
+                genre:
+                  type: string
+                artists:
+                  type: array
+                  items:
+                    type: string
+                playlists:
+                  type: array
+                  items:
+                    type: string
         source:
           type: object
           additionalProperties: false
@@ -4356,7 +4386,7 @@ components:
     CustomStationList:
       type: object
       additionalProperties: false
-      required: [stations, total, max, genres, playlists]
+      required: [stations, total, max, genres, playlists, playlists_display]
       properties:
         stations:
           type: array
@@ -4381,5 +4411,11 @@ components:
                   type: string
         playlists:
           type: array
+          description: Os nomes como estão guardados (a identidade que a escrita compara).
+          items:
+            type: string
+        playlists_display:
+          type: array
+          description: Os mesmos nomes, na mesma ordem, tratados para exibição.
           items:
             type: string

@@ -90,10 +90,16 @@ def _ids(value: Any) -> list[str]:
     return list(value)
 
 
+def _one_line(item: str) -> bool:
+    """Sem nenhum separador que ``splitlines()`` reconhece (``\\r``, ``\\x0b``, ``\\x1c``, ``\\x85``, ``\\u2028``...): o
+    analisador do serviço quebra por ele, e um item viraria dois."""
+    return len(item.splitlines()) == 1 and item.splitlines()[0] == item
+
+
 def _names(value: Any) -> list[str]:
     if not isinstance(value, list) or len(value) > MAX_LIST:
         raise _Invalid
-    if not all(isinstance(item, str) and 0 < len(item) <= MAX_LINE_ITEM and "\n" not in item for item in value):
+    if not all(isinstance(item, str) and 0 < len(item) <= MAX_LINE_ITEM and _one_line(item) for item in value):
         raise _Invalid
     return list(value)
 

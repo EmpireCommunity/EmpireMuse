@@ -2,7 +2,7 @@
 (outro servidor = ``404``), premium e Gerenciar Mensagens onde o painel também pede, escrita com ``expected_version`` (CAS em
 ``rev``) que reautoriza na hora, redefinir só com token de uso único, o logo só depois das conferências e nenhum segredo."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -480,9 +480,14 @@ class RadioResetTest(RadioApiCase):
         assert self.radio.setup.calls[0][0] == "reset" and self.radio.setup.calls[0][3]["rev"] is None
 
     def test_tela_velha_tambem_apaga_o_rev_que_o_painel_viu_nao_entra(self):
+        self.premium()  # a escrita do chat pede premium
         radio = self.seed_live(rev=3)
         token = self.prepare(radio)
-        self.call("PUT", self.radio_url(radio, "/chat"), rev_body(radio, CHAT))  # alguém mexeu depois: o rev mudou
+        before = radio.rev
+
+        edit = self.call("PUT", self.radio_url(radio, "/chat"), rev_body(radio, CHAT))  # alguém mexeu depois
+        assert edit.code == 200, edit.body
+        assert self.radio.store.docs[radio.id].rev != before
 
         response = self.reset(radio, token)
 
@@ -733,8 +738,54 @@ class RadioStationsRoutesTest(RadioApiCase):
         response = self.get(f"{BASE}/radio-stations")
 
         entry = body_of(response)["stations"][0]
-        assert_clean(entry["name"] + " ".join(entry["source"]["artists"]))
+        assert_clean(entry["display"]["name"] + " ".join(entry["display"]["source"]["artists"]))
         assert not [n for n in keys_of(body_of(response)) if any(part in n.lower() for part in SECRET_FRAGMENTS)]
+
+    def test_o_que_a_leitura_devolve_volta_na_edicao_mesmo_com_texto_que_o_tratamento_altera(self):
+        self.premium()
+        self.radio.stations.seed(ALFA, "rock.fm", source={"artists": ["rock.fm", "a@everyone"]})
+        url = f"{BASE}/radio-stations"
+
+        entry = body_of(self.get(url))["stations"][0]
+        values = {"name": entry["name"], "kind": entry["kind"], **entry["source"]}
+        response = self.call("PUT", f"{url}/{entry['id']}", {"expected_version": entry["version"], "values": values})
+
+        assert entry["name"] == "rock.fm" and entry["source"]["artists"] == ["rock.fm", "a@everyone"]
+        assert entry["display"]["source"]["artists"] != entry["source"]["artists"]  # o rótulo é outro texto
+        assert response.code == 200 and body_of(response)["source"] == entry["source"]
+
+    def test_lista_de_playlists_traz_o_nome_guardado_e_o_rotulo_a_parte(self):
+        self.premium()
+        with patch.object(self.ctx.stations_page, "playlist_names", AsyncMock(return_value=("rock.fm",))):
+            body = body_of(self.get(f"{BASE}/radio-stations"))
+
+        assert body["playlists"] == ["rock.fm"] and len(body["playlists_display"]) == 1
+        assert body["playlists_display"][0] != "rock.fm"
+
+    def test_separador_de_linha_que_nao_e_o_n_e_recusado_nos_artistas(self):
+        self.premium()
+        url = f"{BASE}/radio-stations"
+
+        responses = [
+            self.call("POST", url, {"values": {**self.CREATE, "artists": [f"Queen{sep}Abba"]}})
+            for sep in ("\r", "\x0b", "\x1c", "\x85", "\u2028", "\u2029")
+        ]
+
+        assert {(r.code, body_of(r)["error"]["fields"][0]) for r in responses} == {(400, "artists")}
+        assert self.radio.stations.docs == {}
+
+    def test_apagar_em_uso_com_versao_velha_da_409_com_a_atual_antes_do_in_use(self):
+        self.premium()
+        used = self.radio.stations.seed(ALFA, "Em uso")
+        radio = self.seed_custom()
+        self.radio.store.docs[radio.id] = self.radio.store.docs[radio.id].__class__(
+            **{**self.radio.store.docs[radio.id].__dict__, "source": {"station": used.id}}
+        )
+
+        response = self.call("DELETE", f"{BASE}/radio-stations/{used.id}?expected_version={used.rev + 5}")
+
+        assert (response.code, body_of(response)["error"]["current_version"]) == (409, str(used.rev))
+        assert used.id in self.radio.stations.docs
 
     def test_escrita_reconfere_agora_e_registra_o_rotulo_do_generico(self):
         self.premium()

@@ -46,6 +46,7 @@ class StationsHandler(RadioRoute):
         ctx, premium = await self.guild_context(guild_id, write=False)
         self.require_premium(premium)
         page = self.ctx.stations_page
+        playlists = [str(name) for name in await page.playlist_names(ctx)]
         stations = await self.hub(ctx).stations.list_for_guild(ctx.guild_id)
         entries = [
             await custom_station_entry(ctx, station)
@@ -58,7 +59,8 @@ class StationsHandler(RadioRoute):
                 "total": len(entries),
                 "max": STATIONS_MAX,
                 "genres": [{"group": group, "genres": list(ids)} for group, ids in page.genre_groups(ctx)],
-                "playlists": [safe_text(name) or "" for name in await page.playlist_names(ctx)],
+                "playlists": playlists,  # os nomes como estão: a escrita os compara por igualdade
+                "playlists_display": [safe_text(name) or "" for name in playlists],
             }
         )
 
@@ -111,6 +113,7 @@ class StationHandler(RadioRoute):
         version = read_station_version(query)
 
         async def work() -> Reply:
+            await self.fail_if_stale(ctx, station, version)  # versão velha é 409, mesmo com a estação em uso
             if await self.hub(ctx).stations.radios_using(ctx.guild_id, station.id):  # em uso: recusa, nada é apagado
                 record_panel_action(ctx, f"{CATEGORY}/estacoes/apagar", 400)
                 raise validation_failed("in_use")
@@ -120,6 +123,11 @@ class StationHandler(RadioRoute):
             return Reply(STATUS_NO_CONTENT, None)
 
         await self.run_write(query, work)
+
+    async def fail_if_stale(self, ctx: FormContext, station: Any, version: str) -> None:
+        current = await self.hub(ctx).stations.get(ctx.guild_id, station.id)
+        if current is None or str(current.rev) != version:
+            raise conflict(str(current.rev) if current is not None else None)
 
     async def fail_unless_ok(self, status: int, ctx: FormContext, station: Any, fields: Any = ()) -> None:
         """No ``409`` a versão que a estação tem agora (relida da store); estação que sumiu é ``409`` sem versão."""
