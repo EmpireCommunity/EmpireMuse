@@ -12,10 +12,12 @@ from empiremuse.api.idempotency import IdempotencyStore
 from empiremuse.api.keys import ServiceKeys
 from empiremuse.api.limits import ApiLimits
 from empiremuse.api.server import ApiHTTPServer, listen
+from empiremuse.api.signing import PURPOSE_ERASURE, derive_key
 from empiremuse.api.settings import ExternalPanelConfigError, external_panel_requested, load_external_panel_settings
 from empiremuse.config_loader import resolve_port
 from empiremuse.panel.authz import GuildAuthorizer
 from empiremuse.panel.oauth import make_client_provider
+from empiremuse.panel.services.tokens import SignedTokens
 from empiremuse.panel.settings import PanelConfigError, load_session_limits
 from empiremuse.panel.state import ensure_panel_state
 from empiremuse.version import image_version
@@ -76,6 +78,7 @@ def start_external_api(
         settings_service=state.settings_service,
         account_service=state.account_service,
         idempotency=IdempotencyStore(clock),
+        erase_tokens=SignedTokens(derive_key(settings.signing_secret, PURPOSE_ERASURE), clock),
     )
     try:
         server = listen(ctx, settings)

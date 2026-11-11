@@ -40,6 +40,7 @@ from empiremuse.rules.erasure import (
     reset_to_default,
     resurrected_paths,
 )
+from empiremuse.rules.user_cleanup import UserCleanupError
 
 if TYPE_CHECKING:
     from empiremuse.utils.client import BotPool
@@ -250,6 +251,12 @@ class ErasureService:
         for close in (self._rpc_closer, self._destroy_panel_sessions):
             try:
                 count += int(close(user_id))
+            except (
+                UserCleanupError
+            ) as exc:  # as sessões caíram (contam); só um ouvinte de limpeza falhou: limpeza parcial
+                count += exc.destroyed
+                logger.warning("Apagamento: memória não limpa por inteiro (%s)", type(exc).__name__)
+                ok = False
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Apagamento: memória não limpa por inteiro (%s)", type(exc).__name__)
                 ok = False

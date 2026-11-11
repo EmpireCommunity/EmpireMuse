@@ -198,6 +198,15 @@ def consent_is_recent(consented_at: float | None, now: float, max_age_s: float =
     return consented_at is not None and now - consented_at <= max_age_s
 
 
+def login_is_recent(created_at: float, now: float, max_age_s: float = ERASE_MAX_SESSION_AGE_S) -> bool:
+    """O login que criou a sessão da API externa é recente o bastante para apagar (``painel-api-contrato.md`` §3.5).
+
+    A sessão da API nunca tem ``consented_at`` (o bot não vê o ``prompt``); a medida é a idade do login, ``Session.created_at``,
+    no mesmo relógio do ``SessionStore``. O painel genérico segue exigindo ``consent_is_recent``.
+    """
+    return now - created_at <= max_age_s
+
+
 def _get_path(doc: Mapping[str, Any], path: str) -> Any:
     node: Any = doc
     for part in path.split("."):

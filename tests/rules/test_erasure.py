@@ -18,6 +18,7 @@ from empiremuse.rules.erasure import (
     custom_favorite_key_matches,
     fingerprint,
     is_snowflake,
+    login_is_recent,
     read_is_stale,
     only_defaults,
     reset_to_default,
@@ -240,3 +241,17 @@ def test_summarize_e_build_report():
 )
 def test_t5_read_is_stale(erased_at, read_at, now, velha):
     assert read_is_stale(erased_at, read_at, now, 600.0) is velha
+
+
+@pytest.mark.parametrize(
+    ("idade_s", "recente"),
+    [
+        (0, True),
+        (29 * 60, True),
+        (1800, True),
+        (1801, False),
+        (31 * 60, False),
+    ],  # §3.5: 30 min no máximo, pela ``created_at``
+)
+def test_login_is_recent_measures_the_login_age_without_consent(idade_s, recente):
+    assert login_is_recent(AGORA - idade_s, AGORA) is recente

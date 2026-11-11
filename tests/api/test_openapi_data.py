@@ -325,6 +325,13 @@ class OpenApiDataContractTest(DataApiCase):
         if not casos <= self.ran:
             pytest.skip("só vale com todos os casos da classe rodando (o ``-k`` deixa casos de fora)")
 
-        faltando = {item for item in documented(self.spec) if item[1] not in FOUNDATION_PATHS} - self.seen
+        erasure = (
+            BASE + "/account/erasure"
+        )  # as rotas de apagar dados (B5) têm o contrato delas (``test_openapi_erasure``)
+        faltando = {
+            item
+            for item in documented(self.spec)
+            if item[1] not in FOUNDATION_PATHS and not item[1].startswith(erasure)
+        } - self.seen
 
         assert not faltando, f"documentados e nunca observados: {sorted(faltando)}"

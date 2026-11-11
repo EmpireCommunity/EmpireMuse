@@ -12,8 +12,10 @@ from empiremuse.api.keys import ServiceKeys
 from empiremuse.api.limits import ApiLimits
 from empiremuse.api.server import API_PREFIX, ApiHTTPServer, build_api_app
 from empiremuse.api.settings import load_external_panel_settings
+from empiremuse.api.signing import PURPOSE_ERASURE, derive_key
 from empiremuse.panel.authz import GuildAuthorizer
 from empiremuse.panel.oauth import DiscordOAuthClient, DiscordOAuthError
+from empiremuse.panel.services.tokens import SignedTokens
 from empiremuse.panel.settings import load_session_limits
 from empiremuse.panel.state import ensure_panel_state
 from tests.api.helpers import NOW, SERVICE_KEY, WEB_PORT, external_config
@@ -124,6 +126,7 @@ class ApiTestCase(AsyncHTTPTestCase):
             settings_service=state.settings_service,
             account_service=state.account_service,
             idempotency=IdempotencyStore(self.clock),
+            erase_tokens=SignedTokens(derive_key(self.settings.signing_secret, PURPOSE_ERASURE), self.clock),
         )
         self.store.add_user_listener(self.ctx.idempotency.purge_user)
         return build_api_app(self.ctx)

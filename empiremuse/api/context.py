@@ -14,6 +14,7 @@ from empiremuse.panel.authz import GuildAuthorizer
 from empiremuse.panel.oauth import DiscordOAuthClient
 from empiremuse.panel.services.account import AccountService
 from empiremuse.panel.services.service import SettingsService
+from empiremuse.panel.services.tokens import SignedTokens
 from empiremuse.panel.sessions import SessionStore
 
 
@@ -32,6 +33,7 @@ class ApiContext:
     settings_service: SettingsService  # os mesmos serviços do painel genérico (e os mesmos locks)
     account_service: AccountService
     idempotency: IdempotencyStore
+    erase_tokens: SignedTokens  # preso à subchave ``erasure`` (``api/signing.py``): o ``confirm_token`` do apagamento
 
     def iso_at(self, monotonic_instant: float) -> str:
         """Um instante do relógio do store como data ISO 8601 em UTC (``2026-11-11T12:00:00Z``)."""
