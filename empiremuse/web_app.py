@@ -115,7 +115,10 @@ class IndexHandler(tornado.web.RequestHandler):
         self.set_header("X-Frame-Options", "DENY")
         self.set_header("Referrer-Policy", "same-origin")
 
-    def initialize(self, pool: Optional[BotPool] = None, config: dict = None, panel_enabled: bool = False):
+    def initialize(
+        self, pool: Optional[BotPool] = None, config: dict = None, panel_enabled: bool = False, panel_url: str = ""
+    ):
+        self.panel_url = panel_url
         self.panel_enabled = panel_enabled
         self.pool = pool
         self.config = config
@@ -172,7 +175,8 @@ class IndexHandler(tornado.web.RequestHandler):
                 prefixo=self.pool.config["DEFAULT_PREFIX"],
                 commit=commit,
                 commit_url=f"{self.pool.remote_git_url}/commit/{commit}" if commit else "",
-                painel_url="/painel/" if self.panel_enabled else "",
+                painel_url=self.panel_url or ("/painel/" if self.panel_enabled else ""),
+                generic_panel_enabled=self.panel_enabled,
                 suporte_url=branding.SUPPORT_SERVER_URL,
                 nome_bot=branding.BOT_NAME,
                 repo_url=branding.REPO_URL,
@@ -795,19 +799,20 @@ def run_app(pool: BotPool, config: dict = None):
     from empiremuse.api.runtime import start_external_api  # só aqui: importar o bot não carrega a API
 
     external = start_external_api(pool, config)
-    # Modo externo pedido e inválido: nenhum painel sobe, nem o genérico (sem fallback); o bot e o relé seguem.
-    if external.blocked:
-        panel_app = None
-        # Sem painel não há ``PanelSettings``: a confiança no proxy vem direto da configuração (o /ws e a página de status
-        # continuam vendo o IP do visitante, não o do proxy).
-        trust_proxy = bool(config.get("PANEL_TRUST_PROXY", False))
-        trusted_networks, cidr_warnings = parse_trusted_proxy_cidrs(config.get("PANEL_TRUSTED_PROXY_CIDRS"))
-        for warning in cidr_warnings:
-            logger.warning("%s", warning)
-        trusted = trust_proxy
-    else:
-        panel_app, trust_proxy, trusted_networks = _build_panel(pool, config)
-        trusted = bool(panel_app and trust_proxy)
+    # A confiança do /ws e do status depende só da configuração, mesmo sem app genérico.
+    trusted = bool(config.get("PANEL_TRUST_PROXY", False))
+    trusted_networks, cidr_warnings = parse_trusted_proxy_cidrs(config.get("PANEL_TRUSTED_PROXY_CIDRS"))
+    for warning in cidr_warnings:
+        logger.warning("%s", warning)
+    panel_app = None
+    panel_routes = None
+    if external.server is not None:
+        from empiremuse.panel.redirect import build_redirect_app
+
+        panel_routes = build_redirect_app(external.panel_url)
+    elif not external.blocked:
+        panel_app, _, _ = _build_panel(pool, config)  # sem modo externo, preserva a hospedagem própria
+        panel_routes = panel_app
     ws_proof = _build_registration_proof(pool, config)
 
     app = tornado.web.Application(
@@ -815,7 +820,12 @@ def run_app(pool: BotPool, config: dict = None):
             (
                 r"/",
                 IndexHandler,
-                {"pool": pool, "config": config, "panel_enabled": panel_app is not None},
+                {
+                    "pool": pool,
+                    "config": config,
+                    "panel_enabled": panel_app is not None,
+                    "panel_url": external.panel_url,
+                },
             ),
             (
                 r"/ws",
@@ -835,7 +845,7 @@ def run_app(pool: BotPool, config: dict = None):
     )
 
     server = tornado.httpserver.HTTPServer(
-        ClientIpRouter(make_router(app, panel_app), trusted, trusted_networks),
+        ClientIpRouter(make_router(app, panel_routes), trusted, trusted_networks),
         xheaders=trusted,
         max_body_size=MAX_BODY_SIZE,
     )

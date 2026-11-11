@@ -8,6 +8,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 ## [Unreleased]
 
 ### Adicionado
+- B6: com o modo externo válido, o painel genérico é substituído por redirect `302` de `GET`/`HEAD /painel/*` à base externa validada, sem transferir caminho, query ou código OAuth; `POST` responde `404`. Sem modo externo, o genérico continua para hospedagem própria. O IP do relé e do status segue somente a configuração de proxies. Links de perfil/status e a presença padrão apontam para o painel novo em `/panel`.
 - API para painéis externos: `GET /api/v1/status` (aditivo na v1, chave de serviço, sem sessão, só leitura) devolve o que a página de status já mostra, sem dado novo e sem dado pessoal: o estado geral (`ok`, `degraded` ou `restarting`), o nome e o número de servidores de cada bot pronto, a contagem de bots pendentes e com falha, a versão e o commit curto. Nunca traz avatar, convite, identificador ou erro de bot com falha, mensagem do operador nem flags de RPC. `/meta` passa a listar o recurso `status`.
 
 ### Breaking

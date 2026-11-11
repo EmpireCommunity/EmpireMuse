@@ -182,7 +182,7 @@ DEFAULT_CONFIG = {
     "WATCHING_PRESENCES": "",
     "PLAYING_PRESENCES": "",
     "STREAMING_PRESENCES": "",
-    "CUSTOM_STATUS_PRESENCES": "🎵 /play ou !play | ajuda: !help||⚙️ Painel: muse.empirecommunity.org/painel||🎧 Tocando em {players_count} calls",
+    "CUSTOM_STATUS_PRESENCES": "🎵 /play ou !play | ajuda: !help||⚙️ Painel: muse.empirecommunity.org/panel||🎧 Tocando em {players_count} calls",
     ###############
     ### Intents ###
     ###############

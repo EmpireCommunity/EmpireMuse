@@ -32,7 +32,7 @@ def test_build_panel_com_configuracao_invalida_nao_confia_em_ninguem(monkeypatch
 
 
 @pytest.mark.parametrize(
-    ("painel_ativo", "confia", "esperado"), [(True, True, True), (True, False, False), (False, True, False)]
+    ("painel_ativo", "confia", "esperado"), [(True, True, True), (True, False, False), (False, True, True)]
 )
 def test_run_app_entrega_a_lista_e_o_xheaders_ao_servidor(monkeypatch, painel_ativo, confia, esperado) -> None:
     capturado: dict = {}
@@ -51,7 +51,8 @@ def test_run_app_entrega_a_lista_e_o_xheaders_ao_servidor(monkeypatch, painel_at
     monkeypatch.setattr(web_app, "make_router", lambda app, panel: app)
     monkeypatch.setenv("PORT", "18080")
 
-    web_app.run_app(SimpleNamespace(config={"PORT": "18080"}), config={"PORT": "18080"})
+    config = {"PORT": "18080", "PANEL_TRUST_PROXY": confia, "PANEL_TRUSTED_PROXY_CIDRS": "192.0.2.0/24"}
+    web_app.run_app(SimpleNamespace(config=config), config=config)
 
     roteador = capturado["roteador"]
     assert isinstance(roteador, web_app.ClientIpRouter)

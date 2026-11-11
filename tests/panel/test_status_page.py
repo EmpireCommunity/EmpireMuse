@@ -104,6 +104,17 @@ class TestLinks:
     def test_no_panel_link_when_the_panel_config_is_invalid(self, monkeypatch):
         assert "/painel" not in page(monkeypatch, PANEL_ENABLED=True, PANEL_BASE_URL="lixo")
 
+    def test_link_externo_no_status_nao_aponta_ao_generico_nem_ao_favicon_antigo(self, monkeypatch):
+        from empiremuse.api.runtime import ExternalApiStatus
+
+        monkeypatch.setattr(
+            "empiremuse.api.runtime.start_external_api",
+            lambda *args: ExternalApiStatus(server=object(), panel_url="https://muse.empirecommunity.org/panel"),
+        )
+        body = page(monkeypatch, bots=READY, PANEL_ENABLED=True)
+        assert 'href="https://muse.empirecommunity.org/panel"' in body
+        assert "/painel" not in body
+
     def test_external_links_open_safely(self, monkeypatch):
         body = page(monkeypatch, bots=READY)
         for tag in re.findall(r'<a\b[^>]*target="_blank"[^>]*>', body):

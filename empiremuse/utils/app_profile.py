@@ -9,9 +9,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
+import time
+from typing import TYPE_CHECKING, Any, Mapping
 
 import disnake
+
+from empiremuse.api.settings import external_panel_requested, load_external_panel_settings
+from empiremuse.config_loader import resolve_port
 
 from empiremuse.rules.app_profile import build_profile, panel_url_of, plan_changes
 
@@ -21,6 +25,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 EDIT_TIMEOUT = 20  # s: o disnake espera o 429 por conta própria; passou disso, desiste sem travar a tarefa
+
+
+def public_panel_url(config: Mapping[str, Any], *, now: float) -> str:
+    """O link público do modo escolhido: externo validado, vazio quando inválido, ou genérico para hospedagem própria."""
+    if external_panel_requested(config):
+        try:
+            settings = load_external_panel_settings(config, web_port=resolve_port(config.get("PORT")), now=now)
+        except ValueError:
+            return ""
+        return settings.base_url if settings is not None else ""
+    return panel_url_of(config.get("PANEL_BASE_URL"), config.get("PANEL_ENABLED"))
 
 
 async def sync_app_profile(bot: BotCore, bots: int) -> None:
@@ -50,7 +65,7 @@ async def _sync(bot: BotCore, bots: int) -> None:
         tags=config["APP_TAGS"],
         prefix=config["DEFAULT_PREFIX"],
         bots=bots,
-        panel_url=panel_url_of(config["PANEL_BASE_URL"], config["PANEL_ENABLED"]),
+        panel_url=public_panel_url(config, now=time.time()),
         support_url=config["SUPPORT_SERVER"],
         main=main.user.name if main is not None and main.user is not None else "",
     )

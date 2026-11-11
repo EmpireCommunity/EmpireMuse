@@ -19,7 +19,7 @@ from empiremuse.rules.app_profile import (
 
 pytestmark = pytest.mark.critical
 
-PANEL = "https://muse.empirecommunity.org/painel"
+PANEL = "https://muse.empirecommunity.org/panel"
 SUPPORT = "https://empirecommunity.org/discord"
 
 
@@ -97,8 +97,8 @@ def test_truncation_counts_utf16_units_so_an_emoji_is_never_split():
 @pytest.mark.parametrize(
     ("base", "enabled", "expected"),
     [
-        ("https://muse.empirecommunity.org", True, PANEL),
-        ("https://muse.empirecommunity.org/", True, PANEL),
+        ("https://self.example", True, "https://self.example/painel"),
+        ("https://self.example/", True, "https://self.example/painel"),
         ("https://muse.empirecommunity.org", False, ""),
         ("", True, ""),
         (None, True, ""),

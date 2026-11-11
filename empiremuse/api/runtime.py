@@ -35,6 +35,7 @@ class ExternalApiStatus:
 
     blocked: bool = False
     server: Optional[ApiHTTPServer] = None
+    panel_url: str = ""  # destino validado; só existe se o listener abriu
 
 
 def _bot_version() -> str:
@@ -108,4 +109,4 @@ def start_external_api(
     state.session_store.add_user_listener(ctx.idempotency.purge_user)
     pool.panel_api_server = server
     logger.info("API do painel externo ativa em %s:%d (/api/v1).", settings.bind, settings.port)
-    return ExternalApiStatus(server=server)
+    return ExternalApiStatus(server=server, panel_url=settings.base_url)
