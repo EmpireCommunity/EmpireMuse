@@ -274,26 +274,27 @@ async def test_the_real_bot_is_owner_still_accepts_owner_ids_for_the_limit_bypas
 
 
 @pytest.mark.parametrize(
-    ("raw", "level"),
+    ("raw", "level", "invalid_item"),
     [
-        ("1,2", logging.ERROR),
-        ("abc", logging.ERROR),
-        ("", logging.WARNING),
-        (None, logging.WARNING),
-        ("100000000000000001", None),
+        ("1,2", logging.ERROR, "1,2"),
+        ("zz-item-invalido", logging.ERROR, "zz-item-invalido"),
+        ("", logging.WARNING, None),
+        (None, logging.WARNING, None),
+        ("100000000000000001", None, None),
+        ("100000000000000001||zz-item-invalido", logging.WARNING, "zz-item-invalido"),  # ENV com um item descartado
     ],
 )
-def test_a5_boot_logs_one_record_per_mode_and_never_the_value_anywhere(raw, level, caplog):
-    caplog.set_level(
-        logging.DEBUG
-    )  # o log inteiro: o aviso de item inválido do ``parse_owner_ids`` também não mostra o valor
+def test_a5_boot_logs_one_record_per_mode_and_never_the_discarded_item_anywhere(raw, level, invalid_item, caplog):
+    caplog.set_level(logging.DEBUG)  # o log inteiro, de qualquer logger
 
     log_owner_gate_boot({"OWNER_IDS": raw})
 
     records = [r for r in caplog.records if r.name == "empiremuse.utils.owner_gate"]
     assert [r.levelno for r in records] == ([] if level is None else [level])
-    if raw and level == logging.ERROR:
-        assert raw not in caplog.text
+    if invalid_item:
+        assert invalid_item not in caplog.text
+    if raw and "||" in raw and level == logging.WARNING:
+        assert "1 item(ns)" in records[0].getMessage()  # só a contagem dos descartados
 
 
 def test_a5_the_pool_logs_the_mode_once_in_setup_right_after_the_log_is_configured(monkeypatch, caplog):
