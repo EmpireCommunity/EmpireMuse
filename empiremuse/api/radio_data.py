@@ -85,12 +85,12 @@ async def radio_entry(
 
 
 def setup_options_entry(options: Any) -> dict[str, Any]:
-    """O que o formulário de criar e configurar oferece: os bots reserva livres e os canais de voz e de palco."""
+    """O que o formulário de criar e configurar oferece: os bots reserva livres e os canais de voz e de palco (nomes do
+    próprio Discord, de quem administra o servidor: não passam por ``external_text``, como em ``radio_entry``)."""
     return {
-        "bots": [{"id": str(bot_id), "name": safe_text(name)} for bot_id, name in options.bots],
+        "bots": [{"id": str(bot_id), "name": str(name)} for bot_id, name in options.bots],
         "channels": [
-            {"id": str(channel_id), "name": safe_text(name), "kind": str(kind)}
-            for channel_id, name, kind in options.channels
+            {"id": str(channel_id), "name": str(name), "kind": str(kind)} for channel_id, name, kind in options.channels
         ],
     }
 
