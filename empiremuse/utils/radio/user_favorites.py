@@ -15,7 +15,7 @@ from empiremuse.rules.radio_stations import valid_uuid
 from empiremuse.rules.text import external_text
 from empiremuse.utils.radio.custom_favorites import Toggled
 from empiremuse.utils.radio.directory import DirectoryError
-from empiremuse.utils.radio.favorites import FavoriteNotFound, FavoriteStation, NAME_LIMIT, RadioFavorites
+from empiremuse.utils.radio.favorites import AddResult, FavoriteNotFound, FavoriteStation, NAME_LIMIT, RadioFavorites
 from empiremuse.utils.radio.premium import CAS_ATTEMPTS, GLOBAL_DB, RadioUnavailable
 
 if TYPE_CHECKING:
@@ -29,8 +29,11 @@ _NODE = re.compile(r"[A-Za-z0-9_:.\-]{1,48}\Z")
 Change = Callable[[list[FavoriteStation], list[str]], Awaitable[tuple[list[FavoriteStation], list[str], Any]]]
 
 
-def _valid_node(value: object) -> TypeGuard[str]:
+def valid_node(value: object) -> TypeGuard[str]:
     return isinstance(value, str) and _NODE.fullmatch(value) is not None
+
+
+_valid_node = valid_node
 
 
 class UserRadioFavorites:
@@ -95,6 +98,52 @@ class UserRadioFavorites:
             if saved:
                 return result
         raise RadioUnavailable
+
+    async def add_station(self, user: int, uuid: str) -> AddResult:
+        """Põe uma estação AO VIVO nas favoritas da conta (a estrela da API; o ``toggle`` fica para a do Discord). Ordem: formato, leitura, já está, cheia (24),
+        diretório (``by_uuid_strict``, uma vez só e só aqui), CAS. O nome nunca vem do chamador."""
+        self._key(user)
+        if not valid_uuid(uuid):
+            raise FavoriteNotFound
+        resolved: list[FavoriteStation] = []
+
+        async def add(
+            current: list[FavoriteStation], nodes: list[str]
+        ) -> tuple[list[FavoriteStation], list[str], AddResult]:
+            if any(f.uuid == uuid for f in current):
+                return current, nodes, AddResult.ALREADY
+            if len(current) >= USER_LIVE_FAVORITES_MAX:
+                return current, nodes, AddResult.FULL
+            if not resolved:
+                try:
+                    station = await self.hub.directory.by_uuid_strict(uuid)
+                except DirectoryError as error:
+                    raise RadioUnavailable from error
+                if station is None:
+                    raise FavoriteNotFound
+                resolved.append(FavoriteStation(uuid, external_text(station.name, NAME_LIMIT, markdown=False)))
+            return [*current, resolved[0]], nodes, AddResult.ADDED
+
+        return await self._change(user, add)
+
+    async def add_filter(self, user: int, node_id: str) -> AddResult:
+        """Põe um local (nó da árvore) nos filtros da conta. Ordem: formato, leitura, já está, cheio (10), a árvore conhece o nó, CAS."""
+        self._key(user)
+        if not _valid_node(node_id):
+            raise FavoriteNotFound
+
+        async def add(
+            stations: list[FavoriteStation], nodes: list[str]
+        ) -> tuple[list[FavoriteStation], list[str], AddResult]:
+            if node_id in nodes:
+                return stations, nodes, AddResult.ALREADY
+            if len(nodes) >= USER_FILTERS_MAX:
+                return stations, nodes, AddResult.FULL
+            if self.hub.locations is None or self.hub.locations.node(node_id) is None:
+                raise FavoriteNotFound
+            return stations, [*nodes, node_id], AddResult.ADDED
+
+        return await self._change(user, add)
 
     async def toggle_station(self, user: int, uuid: str) -> Toggled:
         self._key(user)

@@ -8,10 +8,12 @@ estações do servidor (24 hex) ou gêneros prontos (g:<id>); estação apagada 
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from empiremuse.rules.radio_station import valid_station_id
+from empiremuse.utils.radio.favorites import AddResult, FavoriteNotFound
 from empiremuse.utils.radio.premium import CAS_ATTEMPTS, GLOBAL_DB, RadioUnavailable
 
 if TYPE_CHECKING:
@@ -83,4 +85,56 @@ class CustomFavorites:
                 raise RadioUnavailable from error
             if saved:
                 return result
+        raise RadioUnavailable
+
+    async def _write(self, key: str, doc: dict[str, Any] | None, ids: list[str]) -> bool:
+        rev = doc["rev"] if isinstance(doc, dict) and isinstance(doc.get("rev"), int) else 0
+        try:
+            return bool(
+                await self.pool.database.save_doc_cas(
+                    key,
+                    {"_id": key, "stations": ids, "rev": rev + 1},
+                    expected_rev=rev if doc is not None else None,
+                    db_name=CUSTOM_FAVORITES_DB,
+                    collection=GLOBAL_DB,
+                )
+            )
+        except Exception as error:  # noqa: BLE001
+            logger.warning("Favoritas da personalizada não gravadas (%s)", type(error).__name__)
+            raise RadioUnavailable from error
+
+    async def add(
+        self, guild_id: int, user_id: int, station_id: str, exists: Callable[[str], Awaitable[bool]]
+    ) -> AddResult:
+        """Põe ``station_id`` nas favoritas do membro (só dele, neste servidor). Ordem: formato, leitura, já está, cheia (24), ``exists`` (a estação do servidor
+        ou o gênero existe; a de outro servidor é igual a uma que não existe: ``FavoriteNotFound``), CAS. ``exists`` roda uma vez só."""
+        if not valid_station_id(station_id):
+            raise FavoriteNotFound
+        key = self._key(guild_id, user_id)
+        checked = False
+        for _ in range(CAS_ATTEMPTS):
+            doc = await self._find(key)
+            current = self._ids(doc)
+            if station_id in current:
+                return AddResult.ALREADY
+            if len(current) >= MAX_CUSTOM_FAVORITES:
+                return AddResult.FULL
+            if not checked:
+                if not await exists(station_id):
+                    raise FavoriteNotFound
+                checked = True
+            if await self._write(key, doc, [*current, station_id]):
+                return AddResult.ADDED
+        raise RadioUnavailable
+
+    async def remove(self, guild_id: int, user_id: int, station_id: str) -> bool:
+        """Tira ``station_id`` das favoritas do membro; ``False`` se não estava (remover o que não está não é erro)."""
+        key = self._key(guild_id, user_id)
+        for _ in range(CAS_ATTEMPTS):
+            doc = await self._find(key)
+            current = self._ids(doc)
+            if station_id not in current:
+                return False
+            if await self._write(key, doc, [i for i in current if i != station_id]):
+                return True
         raise RadioUnavailable

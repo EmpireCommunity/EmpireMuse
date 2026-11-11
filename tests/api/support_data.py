@@ -7,6 +7,7 @@ sessão é o ``1001`` (``UID``); ``2002`` é outro usuário, que não gerencia n
 import json
 from types import SimpleNamespace
 
+from empiremuse.utils.radio.favorites import AddResult, FavoriteNotFound
 from empiremuse.utils.radio.premium import RadioUnavailable
 from tests.api.support import ApiTestCase
 from tests.panel.helpers_account import FAV_CONFIG, OTHER_UID, RPC_TOKEN_OLD, SESSIONKEY, AccountWorld, UserFakeDB
@@ -17,6 +18,7 @@ OTHER = str(OTHER_UID)
 OLD_VERSION = "0" * 16
 STATION = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 NODE = "br-sp"
+UNKNOWN_STATION = "cccccccc-cccc-cccc-cccc-cccccccccccc"  # o diretório não a conhece
 
 
 class FakeUserFavorites:
@@ -37,6 +39,26 @@ class FakeUserFavorites:
 
     async def filters(self, user_id):
         return list(self.filter_ids[user_id])
+
+    async def add_station(self, user_id, uuid):
+        self._check()
+        if uuid == UNKNOWN_STATION:
+            raise FavoriteNotFound
+        if len(self.station_ids[user_id]) >= 24:
+            return AddResult.FULL
+        if uuid in self.station_ids[user_id]:
+            return AddResult.ALREADY
+        self.station_ids[user_id].append(uuid)
+        return AddResult.ADDED
+
+    async def add_filter(self, user_id, node):
+        self._check()
+        if node == "desconhecido":
+            raise FavoriteNotFound
+        if node in self.filter_ids[user_id]:
+            return AddResult.ALREADY
+        self.filter_ids[user_id].append(node)
+        return AddResult.ADDED
 
     async def remove_station(self, user_id, uuid):
         self._check()
