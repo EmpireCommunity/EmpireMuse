@@ -98,6 +98,21 @@ class TestSessaoAberta(PainelComLista):
         assert "Tester Global" not in html  # anônimo na requisição seguinte
         assert self.sessoes().destroy_user("1001") == 0  # a sessão foi destruída no store
 
+    def test_a_cleanup_listener_failure_does_not_keep_a_banned_session_alive(self):
+        def broken(user_id):
+            raise RuntimeError("falha")
+
+        self.sessoes().add_user_listener(broken)  # ``destroy_user`` levanta ``UserCleanupError`` depois de destruir
+        navegador = self.browser()
+        assert self.login(navegador).code == 302
+
+        self.bans._records = {USUARIO_ID: UserBanRecord(USUARIO_ID, 1, MOTIVO, 999)}
+        html = self.index_html(navegador)
+
+        assert "Tester Global" not in html  # o erro de limpeza é tolerado: a requisição segue anônima, sem 500
+        self.sessoes()._user_listeners.clear()
+        assert self.sessoes().destroy_user("1001") == 0  # as sessões já tinham caído
+
     def test_every_session_of_the_banned_user_dies_and_others_survive(self):
         dele, dela = self.browser(), self.browser()
         self.login(dele)

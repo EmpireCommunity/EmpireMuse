@@ -184,7 +184,12 @@ class RadioFavoritesHandler(AccountSectionHandler):
                 raise ApiError(503, BOT_UNAVAILABLE) from None
             if result is AddResult.FULL:
                 raise validation_failed("limit")
-            return Reply(200, serialize_form(await service.read(section, ctx), ACCOUNT))
+            updated = await service.read(section, ctx)
+            if updated.extras.get("indisponivel") or not updated.extras.get("disponivel"):
+                raise ApiError(
+                    503, BOT_UNAVAILABLE
+                )  # a escrita pode ter ocorrido; nunca confirma uma lista vazia inventada
+            return Reply(200, serialize_form(updated, ACCOUNT))
 
         await self.run_write(body, work)
 

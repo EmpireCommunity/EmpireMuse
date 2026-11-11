@@ -20,7 +20,8 @@ from empiremuse.api.errors import (
     ApiError,
     rate_limited,
 )
-from empiremuse.panel.sessions import Session, SessionStore, UserCleanupError
+from empiremuse.panel.sessions import Session, SessionStore
+from empiremuse.rules.user_cleanup import UserCleanupError
 from empiremuse.rules.error_code import safe_error_code
 from empiremuse.utils.user_ban import user_bans_of
 
