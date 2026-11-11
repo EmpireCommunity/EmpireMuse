@@ -33,9 +33,6 @@ def valid_node(value: object) -> TypeGuard[str]:
     return isinstance(value, str) and _NODE.fullmatch(value) is not None
 
 
-_valid_node = valid_node
-
-
 class UserRadioFavorites:
     def __init__(self, pool: BotPool, hub: RadioHub) -> None:
         self.pool, self.hub = pool, hub
@@ -58,7 +55,7 @@ class UserRadioFavorites:
         found: list[str] = []
         for item in raw if isinstance(raw, list) else []:
             node = item.get("node") if isinstance(item, dict) else None
-            if _valid_node(node) and node not in found:
+            if valid_node(node) and node not in found:
                 found.append(node)
         return found[:USER_FILTERS_MAX]
 
@@ -72,12 +69,20 @@ class UserRadioFavorites:
 
     async def _change(self, user: int, change: Change) -> Any:
         key = self._key(user)
+        tombstones = getattr(self.pool, "erasure_tombstones", None)
+        read_at = (
+            tombstones.now() if tombstones is not None else 0.0
+        )  # ANTES de ler (como o controle do player): um apagamento depois disto invalida a gravação
         for _ in range(CAS_ATTEMPTS):
             doc = await self._find(key)
             stations, nodes = RadioFavorites._stations(doc), self._nodes(doc)
             updated, filters, result = await change(stations, nodes)
             if updated == stations and filters == nodes:
                 return result
+            if tombstones is not None and tombstones.stale(
+                user, read_at
+            ):  # dados apagados depois da leitura (inclusive durante o diretório): nada é gravado
+                raise RadioUnavailable
             rev = doc["rev"] if isinstance(doc, dict) and type(doc.get("rev")) is int else 0
             updated_doc = {
                 "_id": key,
@@ -129,7 +134,7 @@ class UserRadioFavorites:
     async def add_filter(self, user: int, node_id: str) -> AddResult:
         """Põe um local (nó da árvore) nos filtros da conta. Ordem: formato, leitura, já está, cheio (10), a árvore conhece o nó, CAS."""
         self._key(user)
-        if not _valid_node(node_id):
+        if not valid_node(node_id):
             raise FavoriteNotFound
 
         async def add(
@@ -139,7 +144,9 @@ class UserRadioFavorites:
                 return stations, nodes, AddResult.ALREADY
             if len(nodes) >= USER_FILTERS_MAX:
                 return stations, nodes, AddResult.FULL
-            if self.hub.locations is None or self.hub.locations.node(node_id) is None:
+            if self.hub.locations is None:
+                raise RadioUnavailable  # a árvore de locais não carregou: indisponível (503), nunca "não encontrado"
+            if self.hub.locations.node(node_id) is None:
                 raise FavoriteNotFound
             return stations, [*nodes, node_id], AddResult.ADDED
 
@@ -180,7 +187,7 @@ class UserRadioFavorites:
 
     async def toggle_filter(self, user: int, node_id: str) -> Toggled:
         self._key(user)
-        if not _valid_node(node_id):
+        if not valid_node(node_id):
             raise FavoriteNotFound
 
         async def toggle(
@@ -190,7 +197,9 @@ class UserRadioFavorites:
                 return stations, [n for n in nodes if n != node_id], Toggled.REMOVED
             if len(nodes) >= USER_FILTERS_MAX:
                 return stations, nodes, Toggled.FULL
-            if self.hub.locations is None or self.hub.locations.node(node_id) is None:
+            if self.hub.locations is None:
+                raise RadioUnavailable
+            if self.hub.locations.node(node_id) is None:
                 raise FavoriteNotFound
             return stations, [*nodes, node_id], Toggled.ADDED
 

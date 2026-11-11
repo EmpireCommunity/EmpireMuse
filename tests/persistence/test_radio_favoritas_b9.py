@@ -108,8 +108,10 @@ class TestServerList:
         stations, refs = await world.favorites.list_all(GUILD)
 
         assert [f.uuid for f in stations] == [uuid(2)] and refs == [GENRE]
-        assert await world.favorites.clear(GUILD, ADMIN) is True  # o botão do Discord limpa só as ao vivo
-        assert await world.favorites.list_all(GUILD) == ([], [GENRE])
+        assert (
+            await world.favorites.clear(GUILD, ADMIN) is True
+        )  # o botão do Discord limpa a lista inteira, inclusive custom e genre
+        assert await world.favorites.list_all(GUILD) == ([], [])
 
     async def test_nothing_with_a_user_id_is_ever_stored(self, world):
         await world.favorites.add_live(GUILD, ADMIN, uuid(1), world.hub.directory.by_uuid_strict)
@@ -246,6 +248,32 @@ class TestMyAccountList:
         with pytest.raises(FavoriteNotFound):
             await world.mine.add_filter(USER + 1, "<script>")
         assert set(world.db.tables[USER_FAVORITES_DB][str(USER)]) == {"_id", "rev", "stations", "filters"}
+
+
+class TestLastSlotOnTheUserLists:
+    async def test_two_adds_for_the_last_slot_one_wins_one_is_full(self, world):
+        for n in range(USER_LIVE_FAVORITES_MAX - 1):
+            await world.mine.add_station(USER, uuid(n))
+        for n in range(USER_FILTERS_MAX - 1):
+            await world.mine.add_filter(USER, f"node:{n}")
+
+        stations = await asyncio.gather(world.mine.add_station(USER, uuid(90)), world.mine.add_station(USER, uuid(91)))
+        filters = await asyncio.gather(world.mine.add_filter(USER, "node:x"), world.mine.add_filter(USER, "node:y"))
+
+        assert sorted(r.value for r in stations) == ["added", "full"] and sorted(r.value for r in filters) == [
+            "added",
+            "full",
+        ]
+        assert (
+            len(await world.mine.stations(USER)) == USER_LIVE_FAVORITES_MAX
+            and len(await world.mine.filters(USER)) == USER_FILTERS_MAX
+        )
+
+    async def test_a_tree_that_did_not_load_is_unavailable_not_not_found(self, world):
+        world.hub.locations = None
+
+        with pytest.raises(RadioUnavailable):
+            await world.mine.add_filter(USER, "node:a")
 
 
 class TestErasureStaysTrue:

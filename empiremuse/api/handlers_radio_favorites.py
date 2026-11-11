@@ -20,6 +20,7 @@ from empiremuse.api.radio_data import safe_text
 from empiremuse.api.writes import MINE_KINDS, SERVER_KINDS, RadioFavorite, parse_radio_favorite
 from empiremuse.panel.services.base import FormContext
 from empiremuse.panel.services.radio import can_write
+from empiremuse.utils.radio.premium import RadioUnavailable
 from empiremuse.utils.radio.favorites import SERVER_FAVORITES_MAX, AddResult, FavoriteForbidden, FavoriteNotFound
 from empiremuse.utils.radio.custom_favorites import MAX_CUSTOM_FAVORITES
 from empiremuse.utils.usage import record_panel_action
@@ -104,6 +105,12 @@ class FavoriteListRoute(RadioRoute):
             except FavoriteNotFound:
                 status = 404
                 raise not_found() from None
+            except RadioUnavailable:
+                status = 503
+                raise
+            except Exception:
+                status = 500
+                raise
             finally:
                 record_panel_action(ctx, ACTION_LABEL, status)
 
@@ -111,7 +118,7 @@ class FavoriteListRoute(RadioRoute):
 
     @radio_endpoint
     async def delete(self, guild_id: str) -> None:
-        ctx, _ = await self.guild_context(guild_id, write=True)
+        ctx, _ = await self.guild_access(guild_id, write=True)  # remover nunca exige premium: não o lê
         query = self.query_arguments("kind", "id")
         favorite = parse_radio_favorite(query, self.kinds)
 
@@ -123,6 +130,12 @@ class FavoriteListRoute(RadioRoute):
             except FavoriteForbidden:
                 status = 403
                 raise ApiError(403, FORBIDDEN) from None
+            except RadioUnavailable:
+                status = 503
+                raise
+            except Exception:
+                status = 500
+                raise
             finally:
                 record_panel_action(ctx, ACTION_LABEL, status)
 
@@ -173,7 +186,7 @@ class GuildRadioFavoritesHandler(RadioRoute):
 
     @radio_endpoint
     async def get(self, guild_id: str) -> None:
-        ctx, _ = await self.guild_context(guild_id, write=False)
+        ctx, _ = await self.guild_access(guild_id, write=False)
         hub = self.hub(ctx)
         self.write({"server": await server_listing(hub, ctx), "mine": await mine_listing(hub, ctx)})
 

@@ -131,6 +131,18 @@ class RadioFavoritesRisk(FavoritesApiCase):
         assert other.code == 200 and other.headers.get("Idempotent-Replayed") is None
         assert body_of(other)["total"] == 1
 
+    def test_a_conta_ignora_user_id_do_corpo_e_a_lista_de_a_nunca_muda_a_de_b_com_a_loja_real(self):
+        def listed(user):
+            return [f.uuid for f in self.io_loop.run_sync(lambda: self.radio.user_favorites.stations(user))]
+
+        self.radio.directory.stations[LIVE_UUID] = station(LIVE_UUID)
+        response = self.call(
+            "POST", "/account/radio-favorites", {"kind": "station", "id": LIVE_UUID, "user_id": OTHER_USER}
+        )
+
+        assert response.code == 200
+        assert listed(int(USER)) == [LIVE_UUID] and listed(int(OTHER_USER)) == []
+
     # ------------------------------------------------------------------ 2. porta de admin
 
     def test_quem_nao_gerencia_recebe_o_mesmo_404_de_servidor_inexistente(self):
@@ -202,12 +214,10 @@ class RadioFavoritesRisk(FavoritesApiCase):
         again = self.add(SERVER, "station", LIVE_UUID)
         self.radio.directory.strict_error = DirectoryError("unavailable")
         down = self.add(SERVER, "station", OTHER_UUID)
-        mine_down = self.add(f"{FAV.replace('/guilds/100', '/guilds/100')}/server", "station", OTHER_UUID)
 
         self.expect("POST", T_SERVER, again, 200)
-        assert self.calls_to_directory() == 2  # só as duas adições NOVAS (a repetida não foi ao diretório)
+        assert self.calls_to_directory() == 1  # só a adição NOVA (a repetida não foi ao diretório)
         self.expect("POST", T_SERVER, down, 503, "bot_unavailable")
-        assert mine_down.code == 503
 
     # ------------------------------------------------------------------ 4. formato e oráculo
 
@@ -335,7 +345,13 @@ class RadioFavoritesRisk(FavoritesApiCase):
         text = "\n".join(logs.output)
         stored = str(self.db.tables[FAVORITES_DB])
         assert USER not in stored and "added_by" not in stored
-        assert LIVE_UUID not in text and "Rock FM" not in text and USER + ":" not in text
+        assert (
+            text.count("sentinela") == 1
+            and LIVE_UUID not in text
+            and "Rock FM" not in text
+            and GENRE not in text
+            and USER not in text.replace("sentinela", "")
+        )
         assert response.headers["Cache-Control"] == "no-store"
 
     # ------------------------------------------------------------------ 9. exclusão (E1 não muda)
@@ -412,8 +428,10 @@ class RadioFavoritesContract(FavoritesApiCase):
             self.radio.store.fail_with = None
             self.radio.premium.fail_with = RadioUnavailable()
             self.expect("POST", template, self.add(route, kind, ident), 503, "bot_unavailable")
-            self.expect("DELETE", template, self.remove(route, kind, ident), 503, "bot_unavailable")
             self.radio.premium.fail_with = None
+            self.db.fail = True  # o banco das favoritas fora do ar (DELETE e GET não leem o premium)
+            self.expect("DELETE", template, self.remove(route, kind, ident), 503, "bot_unavailable")
+            self.db.fail = False
             with patch.object(DataHandler, "guild_access", side_effect=FAILURE):
                 self.expect("POST", template, self.add(route, kind, ident), 500, "bot_unavailable")
                 self.expect("DELETE", template, self.remove(route, kind, ident), 500, "bot_unavailable")
@@ -424,9 +442,9 @@ class RadioFavoritesContract(FavoritesApiCase):
             self.advance(61)
         with patch.object(DataHandler, "guild_access", side_effect=FAILURE):
             self.expect("GET", T_LIST, self.call("GET", FAV), 500, "bot_unavailable")
-        self.radio.premium.fail_with = RadioUnavailable()
+        self.db.fail = True
         self.expect("GET", T_LIST, self.call("GET", FAV), 503, "bot_unavailable")
-        self.radio.premium.fail_with = None
+        self.db.fail = False
         self.expect("GET", T_LIST, self.call("GET", FAV, session="x" * 43), 401, "session_expired")
         self.expect("GET", T_LIST, self.call("GET", FAV, session=self.stranger), 404, "not_found")
         while self.ctx.limits.user_read.allow(USER):

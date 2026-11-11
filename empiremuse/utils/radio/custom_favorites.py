@@ -61,6 +61,7 @@ class CustomFavorites:
     async def toggle(self, guild_id: int, user_id: int, station_id: str) -> Toggled:
         """Liga/desliga ``station_id`` nas favoritas do membro. ``FULL`` com 24 (nada muda); ``RadioUnavailable`` se o banco não respondeu."""
         key = self._key(guild_id, user_id)
+        read_at = self._read_at()
         for _ in range(CAS_ATTEMPTS):
             doc = await self._find(key)
             current = self._ids(doc)
@@ -70,24 +71,22 @@ class CustomFavorites:
                 return Toggled.FULL
             else:
                 result, ids = Toggled.ADDED, [*current, station_id]
-            rev = doc["rev"] if isinstance(doc, dict) and isinstance(doc.get("rev"), int) else 0
-            updated = {"_id": key, "stations": ids, "rev": rev + 1}
-            try:
-                saved = await self.pool.database.save_doc_cas(
-                    key,
-                    updated,
-                    expected_rev=rev if doc is not None else None,
-                    db_name=CUSTOM_FAVORITES_DB,
-                    collection=GLOBAL_DB,
-                )
-            except Exception as error:  # noqa: BLE001
-                logger.warning("Favoritas da personalizada não gravadas (%s)", type(error).__name__)
-                raise RadioUnavailable from error
-            if saved:
+            if await self._write(key, doc, ids, user_id, read_at):
                 return result
         raise RadioUnavailable
 
-    async def _write(self, key: str, doc: dict[str, Any] | None, ids: list[str]) -> bool:
+    def _read_at(self) -> float:
+        tombstones = getattr(self.pool, "erasure_tombstones", None)
+        return (
+            tombstones.now() if tombstones is not None else 0.0
+        )  # ANTES de ler: um apagamento depois disto invalida a gravação
+
+    async def _write(self, key: str, doc: dict[str, Any] | None, ids: list[str], user_id: int, read_at: float) -> bool:
+        tombstones = getattr(self.pool, "erasure_tombstones", None)
+        if tombstones is not None and tombstones.stale(
+            user_id, read_at
+        ):  # dados apagados depois da leitura: não recria o documento de quem foi apagado
+            raise RadioUnavailable
         rev = doc["rev"] if isinstance(doc, dict) and isinstance(doc.get("rev"), int) else 0
         try:
             return bool(
@@ -111,6 +110,7 @@ class CustomFavorites:
         if not valid_station_id(station_id):
             raise FavoriteNotFound
         key = self._key(guild_id, user_id)
+        read_at = self._read_at()
         checked = False
         for _ in range(CAS_ATTEMPTS):
             doc = await self._find(key)
@@ -123,18 +123,19 @@ class CustomFavorites:
                 if not await exists(station_id):
                     raise FavoriteNotFound
                 checked = True
-            if await self._write(key, doc, [*current, station_id]):
+            if await self._write(key, doc, [*current, station_id], user_id, read_at):
                 return AddResult.ADDED
         raise RadioUnavailable
 
     async def remove(self, guild_id: int, user_id: int, station_id: str) -> bool:
         """Tira ``station_id`` das favoritas do membro; ``False`` se não estava (remover o que não está não é erro)."""
         key = self._key(guild_id, user_id)
+        read_at = self._read_at()
         for _ in range(CAS_ATTEMPTS):
             doc = await self._find(key)
             current = self._ids(doc)
             if station_id not in current:
                 return False
-            if await self._write(key, doc, [i for i in current if i != station_id]):
+            if await self._write(key, doc, [i for i in current if i != station_id], user_id, read_at):
                 return True
         raise RadioUnavailable

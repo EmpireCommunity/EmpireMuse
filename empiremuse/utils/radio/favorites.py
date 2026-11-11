@@ -104,7 +104,13 @@ class RadioFavorites:
     def _read(cls, doc: dict[str, Any] | None) -> tuple[list[FavoriteStation], list[str]]:
         """``(estações ao vivo, refs)`` com o teto de 24 sobre a SOMA: o que passa do teto (dado gravado ruim) sai da leitura."""
         stations = cls._stations(doc)
-        return stations, cls._refs(doc)[: max(0, MAX_FAVORITES - len(stations))]
+        refs = cls._refs(doc)
+        room = max(0, MAX_FAVORITES - len(stations))
+        if len(refs) > room:
+            logger.warning(
+                "Favoritas do servidor passam do teto de %d: %d refs fora da leitura", MAX_FAVORITES, len(refs) - room
+            )  # sem ids nem nomes
+        return stations, refs[:room]
 
     @staticmethod
     def _document(guild_id: int, stations: list[FavoriteStation], refs: list[str], rev: int) -> dict[str, Any]:
@@ -219,7 +225,7 @@ class RadioFavorites:
         return await self._remove(guild_id, actor_id, ref=ref)
 
     async def clear(self, guild_id: int, actor_id: int) -> bool:
-        """Limpa as estações AO VIVO (o botão do Discord); os ``custom``/``genre`` ficam."""
+        """Limpa a lista do servidor INTEIRA (o botão do Discord): as ao vivo e os ``custom``/``genre``."""
         return await self._remove(guild_id, actor_id, everything=True)
 
     async def _remove(
@@ -230,7 +236,7 @@ class RadioFavorites:
             doc = await self._find(guild_id)
             current, refs = self._read(doc)
             updated = [] if everything else [f for f in current if f.uuid != uuid]
-            updated_refs = [r for r in refs if r != ref]
+            updated_refs = [] if everything else [r for r in refs if r != ref]
             if updated == current and updated_refs == refs:
                 return False
             rev = doc["rev"] if isinstance(doc, dict) and isinstance(doc.get("rev"), int) else 0

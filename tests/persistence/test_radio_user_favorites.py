@@ -93,7 +93,7 @@ async def test_hidden_and_obsolete_filters_remain_removable(world):
     # Alterar estações com a árvore desligada não apaga os filtros guardados.
     await world.store.toggle_station(7, uuid(1))
     assert world.db.tables[USER_FAVORITES_DB]["7"]["filters"] == [{"node": "node:1"}]
-    with pytest.raises(FavoriteNotFound):
+    with pytest.raises(RadioUnavailable):  # a árvore não carregou: indisponível (503), nunca "não encontrado"
         await world.store.toggle_filter(7, "node:2")
     assert await world.store.toggle_filter(7, "node:1") == Toggled.REMOVED
     world.hub.locations = SimpleNamespace(node=lambda value: None)
