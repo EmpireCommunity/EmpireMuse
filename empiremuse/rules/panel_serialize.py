@@ -10,6 +10,7 @@ Textos de usuário final (``mensagem``, texto dos erros) não saem: a API devolv
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Mapping, Sequence
 from typing import Any, Optional, Protocol
@@ -169,6 +170,8 @@ def _leaf(value: Any, depth: int) -> Any:
     """Valor simples ou lista (de listas) de valores simples; qualquer outra coisa não é dado puro."""
     if depth > MAX_DEPTH:
         raise SerializationError("profundidade acima do limite")
+    if isinstance(value, float) and not math.isfinite(value):
+        raise SerializationError("número não finito (NaN/Infinity) não é JSON estrito")
     if value is None or isinstance(value, (bool, int, float, str)):
         return value
     if isinstance(value, (list, tuple)) and not hasattr(value, "_fields"):
@@ -176,9 +179,18 @@ def _leaf(value: Any, depth: int) -> Any:
     raise SerializationError(f"valor que não é dado puro: {type(value).__name__}")
 
 
+def _is_object_like(item: Any) -> bool:
+    """NamedTuple, ``dict`` ou sequência posicional: as únicas formas que ``_read`` sabe ler."""
+    if hasattr(item, "_fields") or isinstance(item, Mapping):
+        return True
+    return isinstance(item, Sequence) and not isinstance(item, (str, bytes))
+
+
 def _object(item: Any, shape: Shape, depth: int) -> dict[str, Any]:
     if depth > MAX_DEPTH:
         raise SerializationError("profundidade acima do limite")
+    if not _is_object_like(item):
+        raise SerializationError(f"esperava um objeto, veio {type(item).__name__}")
     out: dict[str, Any] = {}
     for position, (name, sub) in enumerate(shape.items()):
         present, value = _read(item, name, position)

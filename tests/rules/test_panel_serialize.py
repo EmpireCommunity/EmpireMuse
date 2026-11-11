@@ -122,6 +122,31 @@ def test_only_plain_scalars_and_sequences_pass_under_a_leaf_field(bad):
         ps.serialize_form(form, ps.GUILD)
 
 
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_non_finite_numbers_are_rejected_so_the_output_is_strict_json(bad):
+    with pytest.raises(ps.SerializationError):
+        ps.serialize_form(make_form(key="player", valores={"default_player_volume": bad}), ps.GUILD)
+    with pytest.raises(ps.SerializationError):
+        ps.serialize_form(make_form(key="player", extras={"volumes": [5, bad]}), ps.GUILD)
+
+
+def test_a_valid_form_is_strict_json():
+    body = ps.serialize_form(make_form(key="player", valores={"default_player_volume": 50.5}), ps.GUILD)
+    json.dumps(body, allow_nan=False)
+
+
+@pytest.mark.parametrize("bad", [object(), "texto", 7, [object()], [None]])
+def test_an_item_that_is_not_an_object_fails_instead_of_becoming_an_empty_dict(bad):
+    form = make_form(key="dj", extras={"cargos": bad})
+    with pytest.raises(ps.SerializationError):
+        ps.serialize_form(form, ps.GUILD)
+
+
+def test_unregistered_fields_inside_a_valid_object_are_still_dropped_silently():
+    form = make_form(key="dj", extras={"cargos": [{"id": 1, "name": "DJ", "extra": SECRET}]})
+    assert ps.serialize_form(form, ps.GUILD)["extras"]["cargos"] == [{"id": 1, "name": "DJ"}]
+
+
 def test_depth_is_capped():
     deep: tuple = ()
     for _ in range(40):
