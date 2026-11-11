@@ -68,7 +68,7 @@ Valores de tipo incompatível em chaves inteiras geram erro explicativo na inici
 |---|---|
 | `TOKEN` | Um token do principal, obrigatório. Bots extras usam `TOKEN_RESERVE_<NOME>` ou `TOKEN_RADIO_<NOME>`, um token por variável (`rules/bot_tokens.py`). |
 | `DEFAULT_PREFIX` | Prefixo dos comandos de texto (padrão `!!`). |
-| `OWNER_IDS` | IDs de donos extras, separados por `\|\|` (`BotCore.__init__` em `empiremuse/utils/client.py`). |
+| `OWNER_IDS` | IDs dos donos, separados por `\|\|` (`BotCore.__init__` em `empiremuse/utils/client.py`). Os comandos de administração (`shell`, `hardreset`, `ytoauth`, `update`, `servers`, painel do dono, entre outros) valem só para estes IDs (`empiremuse/utils/owner_gate.py`); a equipe do aplicativo no Discord não passa. Preenchido sem nenhum ID válido (separador errado, como vírgula): nega todos e registra um ERROR na subida. Vazio: só o dono da aplicação de cada bot (aviso na subida). |
 | `MONGO` | URL do MongoDB. **Vazio = TinyMongo local** em `local_database` sob o diretório de dados/runtime (configurável via `EMPIREMUSE_HOME`; `./local_database` por padrão em desenvolvimento). |
 | `MONGO_SSL_FIX` | Só para depuração: com `true` (também `1`, `yes`, `on`, sem diferenciar maiúsculas) desliga a validação do certificado TLS do `MONGO` (CWE-295) e registra um WARNING no startup, sem a URI. Vazio, ausente, `false` ou `0` mantêm a validação. Qualquer outro valor deixou de desligá-la. |
 | `PLAYER_SESSIONS_MONGODB` | Guardar sessões de players no Mongo (exige `MONGO`). |

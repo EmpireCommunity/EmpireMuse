@@ -3,6 +3,7 @@
 import disnake
 from disnake.ext import commands
 
+from empiremuse.utils.owner_gate import is_admin_owner
 from empiremuse.i18n import localized
 from empiremuse.rules.errors import RuleError
 from empiremuse.rules.settings import validate_voice_status
@@ -76,7 +77,7 @@ class VoiceStatusMixin:
             guild = inter.guild
             author = inter.author
 
-        if not author.guild_permissions.manage_guild and not (await bot.is_owner(author)):
+        if not author.guild_permissions.manage_guild and not is_admin_owner(bot, author):
             raise GenericError((await inter.bot.pool.i18n.for_guild(inter.guild))("player.you_do_not_have_the"))
 
         if not template:

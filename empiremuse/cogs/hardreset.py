@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import disnake
 from disnake.ext import commands
 
+from empiremuse.utils.owner_gate import admin_owner_only
 from empiremuse.rules.i18n import fit
 from empiremuse.utils.hardreset import hard_reset
 from empiremuse.utils.music.errors import PoolException
@@ -72,7 +73,7 @@ class HardReset(commands.Cog):
             raise PoolException("hardreset: só o bot principal responde")
         return True
 
-    @commands.is_owner()
+    @admin_owner_only()
     @commands.command(name="hardreset", hidden=True, description="Apaga o banco do bot, menos o premium (só dono).")
     async def hardreset(self, ctx: CustomContext) -> None:
         tr = await self.bot.pool.i18n.for_guild(ctx.guild)

@@ -66,9 +66,11 @@ from empiremuse.utils.safe_error import HTTPStatusError, safe_error
 from empiremuse.utils.db import MongoDatabase, LocalDatabase, get_prefix, DBModel, global_db_models
 from empiremuse.utils.erasure import ErasureService, ErasureTombstones
 from empiremuse.utils.erasure_grants import OwnerGrants
+from empiremuse.utils.owner_gate import log_owner_gate_boot
 from empiremuse.utils.user_locks import UserLocks
 from empiremuse.utils.app_profile import sync_app_profile
 from empiremuse.utils.guild_ban import GuildBans
+from empiremuse.rules.owner_gate import resolve_owner_gate
 from empiremuse.utils.user_ban import UserBans, user_bans_of
 from empiremuse.utils.user_ban_gate import install_interaction_gate
 from empiremuse.utils.radio import RadioHub
@@ -290,6 +292,7 @@ class BotPool:
         self.usage = UsageRecorder(self)
         self.guild_bans = GuildBans(self)
         self.user_bans = UserBans(self, owners=frozenset(parse_owner_ids(self.config["OWNER_IDS"])))
+        log_owner_gate_boot(self.config)  # uma vez por pool
         self.i18n = get_i18n()
         self.i18n.pool = self
         self.servers = ServerStore(self)
@@ -1531,6 +1534,7 @@ class BotCore(commands.AutoShardedBot):
         self._clear_commands_task: Optional[asyncio.Task] = None
 
         self.env_owner_ids.update(parse_owner_ids(self.config["OWNER_IDS"]))
+        self.owner_gate = resolve_owner_gate(self.config["OWNER_IDS"], self.env_owner_ids)
 
     async def on_error(self, event_method: str, *args, **kwargs):
         """Exceção em um tratador de evento: ERROR com o traceback no log de erros (o padrão do disnake imprimiria no stderr)."""

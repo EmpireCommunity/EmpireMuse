@@ -8,6 +8,7 @@ from disnake.ext import commands
 
 from empiremuse.cogs import hardreset as hardreset_cog
 from empiremuse.i18n import get_i18n
+from empiremuse.rules.owner_gate import OwnerGateMode
 from empiremuse.utils.db import LocalDatabase
 from empiremuse.utils.music import session_store
 
@@ -33,7 +34,7 @@ def build(tmp_path, monkeypatch, *, owner=True):
         guild_prefix_cache={2: "y"},
     )
     bot.pool = pool
-    bot.is_owner = AsyncMock(return_value=owner)
+    bot.owner_gate, bot.env_owner_ids = OwnerGateMode.ENV, {OWNER}  # a recusa vem do autor (id 5), fora de OWNER_IDS
     bot.can_run = AsyncMock(return_value=True)  # os checks globais do bot
     pool.servers.main_bot = lambda: bot
     return SimpleNamespace(bot=bot, pool=pool, db=db, cog=hardreset_cog.HardReset(bot))
