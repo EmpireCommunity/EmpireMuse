@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -64,8 +64,9 @@ class CatalogProvider(LocalizationProtocol):
 class I18n:
     """Os catálogos e o que se faz com eles. ``load()`` é idempotente; o resto só lê o que já foi carregado."""
 
-    def __init__(self, root: Path | None = None) -> None:
+    def __init__(self, root: Path | None = None, *, only: Collection[str] | None = None) -> None:
         self.root = Path(root) if root is not None else loader.DEFAULT_ROOT
+        self.only = frozenset(only) if only is not None else None  # só estes locales são lidos (o exportador do site)
         self.pool: BotPool | None = None
         self.provider = CatalogProvider(self)
         self._loaded: dict[str, LocaleData] = {}
@@ -86,7 +87,7 @@ class I18n:
         """Lê e valida ``locales/``. ``en-US``/``pt-BR`` quebrado levanta ``I18nError``; outro locale inválido só fica desligado."""
         if self._is_loaded and not force:
             return self._loaded
-        loaded = loader.load_catalogs(self.root)
+        loaded = loader.load_catalogs(self.root, only=self.only)
         problems = loader.required_errors(loaded)
         if problems:
             for problem in problems:
