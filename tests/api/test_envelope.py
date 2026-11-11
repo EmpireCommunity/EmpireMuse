@@ -85,7 +85,7 @@ class MetaHealthTest(ApiTestCase):
             "bot_version": "9.9.9",
             "client_id": CLIENT_ID,
             "redirect_uri": "https://painel.example.com/auth/callback",
-            "features": ["sessions", "reauth", "account", "guilds", "guild-settings", "idempotency-key"],
+            "features": ["sessions", "reauth", "account", "guilds", "guild-settings", "idempotency-key", "status"],
         }
         assert SERVICE_KEY not in response.body.decode()
         assert self.api("GET", "/meta", key=None).code == 401
