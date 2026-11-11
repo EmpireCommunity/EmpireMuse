@@ -11,6 +11,7 @@ import disnake
 import ruamel.yaml
 from disnake.ext import commands
 
+from empiremuse.utils.owner_gate import admin_owner_only
 from empiremuse import paths
 from empiremuse.logs import register_secret
 from empiremuse.rules.lavalink import is_loopback_host
@@ -152,7 +153,7 @@ class YtOauthLL(commands.Cog):
     def __init__(self, bot: BotCore):
         self.bot = bot
 
-    @commands.is_owner()
+    @admin_owner_only()
     @commands.command(hidden=True)
     async def ytoauth(self, ctx: CustomContext):
         try:
