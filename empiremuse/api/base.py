@@ -127,9 +127,9 @@ class ApiHandler(tornado.web.RequestHandler):
 
     def write_error(self, status_code: int, **kwargs: Any) -> None:
         exc = kwargs["exc_info"][1] if "exc_info" in kwargs else None
-        fields, retry_after = None, None
+        fields, retry_after, current_version = None, None, None
         if isinstance(exc, ApiError):
-            code, fields, retry_after = exc.code, exc.fields, exc.retry_after
+            code, fields, retry_after, current_version = exc.code, exc.fields, exc.retry_after, exc.current_version
         elif status_code == 404:
             code = NOT_FOUND
         elif status_code == 405:
@@ -144,6 +144,8 @@ class ApiHandler(tornado.web.RequestHandler):
         error: dict[str, Any] = {"code": code}
         if fields:
             error["fields"] = fields
+        if current_version:
+            error["current_version"] = current_version
         error["request_id"] = self.request_id
         self.finish({"error": error})
 

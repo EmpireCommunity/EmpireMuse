@@ -82,10 +82,10 @@ def build_panel_app(
     if not settings.enabled:
         return None
 
-    settings_service = SettingsService(getattr(pool, "user_locks", None))
-    # Um só store e um só runner por pool: a API externa e o apagamento de dados (``destroy_user``) usam os mesmos.
+    # Um só store, runner e serviço de formulários por pool: a API externa e o apagamento de dados (``destroy_user``)
+    # usam os mesmos (o lock por escopo vale entre os dois painéis).
     state = ensure_panel_state(pool, settings, clock=clock)
-    session_store, task_runner = state.session_store, state.task_runner
+    session_store, task_runner, settings_service = state.session_store, state.task_runner, state.settings_service
     return tornado.web.Application(
         [
             (PANEL_PREFIX, RedirectToIndexHandler),
@@ -139,7 +139,7 @@ def build_panel_app(
         oauth_provider=make_client_provider(pool, settings, oauth_client),
         authorizer=GuildAuthorizer(pool, clock=clock),
         settings_service=settings_service,
-        account_service=AccountService(settings_service),
+        account_service=state.account_service,
         account_erase_service=AccountEraseService(clock=clock),
         task_runner=task_runner,
         jukebox_service=JukeboxService(task_runner, settings_service, settings.cookie_secret, clock),

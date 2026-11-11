@@ -7,10 +7,12 @@ from types import SimpleNamespace
 from tornado.testing import AsyncHTTPTestCase
 
 from empiremuse.api.context import ApiContext
+from empiremuse.api.idempotency import IdempotencyStore
 from empiremuse.api.keys import ServiceKeys
 from empiremuse.api.limits import ApiLimits
 from empiremuse.api.server import API_PREFIX, ApiHTTPServer, build_api_app
 from empiremuse.api.settings import load_external_panel_settings
+from empiremuse.panel.authz import GuildAuthorizer
 from empiremuse.panel.oauth import DiscordOAuthClient, DiscordOAuthError
 from empiremuse.panel.settings import load_session_limits
 from empiremuse.panel.state import ensure_panel_state
@@ -49,6 +51,7 @@ class FakeOAuth(DiscordOAuthClient):
         self.fail_at: str | None = None
         self.fail_status: int | None = None
         self.issued: dict[str, dict] = {}
+        self.guilds: list[dict] = GUILDS  # os servidores que o Discord devolve (um teste pode trocar)
         self.before_exchange = (
             None  # chamado (sem await) durante a troca, para simular o que acontece enquanto o Discord responde
         )
@@ -84,7 +87,7 @@ class FakeOAuth(DiscordOAuthClient):
         self.calls.append("guilds")
         if self.fail_at == "guilds":
             raise DiscordOAuthError("falha", 500)
-        return list(GUILDS)
+        return list(self.guilds)
 
     async def revoke(self, access_token):
         self.calls.append("revoke")
@@ -101,7 +104,7 @@ class ApiTestCase(AsyncHTTPTestCase):
     def get_app(self):
         self.clock = FakeClock()
         self.wall = FakeClock(NOW)
-        self.pool = SimpleNamespace(bots=[SimpleNamespace(application_id=CLIENT_ID)], database=None)
+        self.pool = self.make_pool()
         config = external_config(**self.config_overrides)
         self.settings = load_external_panel_settings(config, web_port=WEB_PORT, now=NOW)
         state = ensure_panel_state(self.pool, load_session_limits(config), clock=self.clock)
@@ -117,8 +120,15 @@ class ApiTestCase(AsyncHTTPTestCase):
             clock=self.clock,
             wall_clock=self.wall,
             bot_version=lambda: "9.9.9",
+            authorizer=GuildAuthorizer(self.pool, clock=self.clock),
+            settings_service=state.settings_service,
+            account_service=state.account_service,
+            idempotency=IdempotencyStore(self.clock),
         )
         return build_api_app(self.ctx)
+
+    def make_pool(self):
+        return SimpleNamespace(bots=[SimpleNamespace(application_id=CLIENT_ID)], database=None)
 
     def advance(self, seconds: float) -> None:
         """Avança o relógio monótono do store e o de parede (as datas da resposta seguem os dois)."""

@@ -14,6 +14,8 @@ import tornado.web
 from empiremuse.api.base import NotFoundHandler, log_request
 from empiremuse.api.context import ApiContext
 from empiremuse.api.handlers import HealthHandler, MetaHandler, SessionHandler, SessionsHandler
+from empiremuse.api.handlers_account import account_routes
+from empiremuse.api.handlers_guilds import guild_routes
 from empiremuse.api.settings import ExternalPanelSettings, IPNetwork
 
 logger = logging.getLogger(__name__)
@@ -26,12 +28,18 @@ CONNECTION_TIMEOUT_SECONDS = 60  # conexão parada e corpo que não chega
 
 def build_api_app(ctx: ApiContext) -> tornado.web.Application:
     args = {"ctx": ctx}
+    # O nome de cada rota com parâmetro é o caminho dele no ``openapi.yaml`` (o teste de contrato confere os dois lados).
+    data_routes = [
+        tornado.web.url(API_PREFIX + pattern, handler, args, name=API_PREFIX + template)
+        for pattern, handler, template in [*account_routes(), *guild_routes()]
+    ]
     return tornado.web.Application(
         [
             (API_PREFIX + "/meta", MetaHandler, args),
             (API_PREFIX + "/health", HealthHandler, args),
             (API_PREFIX + "/sessions", SessionsHandler, args),
             (API_PREFIX + "/session", SessionHandler, args),
+            *data_routes,
         ],
         default_handler_class=NotFoundHandler,
         default_handler_args=args,

@@ -266,6 +266,8 @@ class BotPool:
         # ``SessionStore`` e ``TaskRunner`` únicos (painel e API externa), de ``ensure_panel_state``
         self.panel_sessions: Optional[Any] = None
         self.panel_tasks: Optional[Any] = None
+        self.panel_forms: Optional[Any] = None  # ``SettingsService`` e ``AccountService`` únicos (locks por escopo)
+        self.panel_accounts: Optional[Any] = None
         self.panel_api_server: Optional[Any] = None  # listener da API externa (``None`` com o modo externo desligado)
         self.erasure = ErasureService(self)
         self.erasure_grants = OwnerGrants()

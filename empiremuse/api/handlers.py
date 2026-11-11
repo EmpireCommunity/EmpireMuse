@@ -29,7 +29,7 @@ from empiremuse.utils.user_ban import user_bans_of
 logger = logging.getLogger(__name__)
 
 API_VERSIONS = ["v1"]
-FEATURES = ["sessions", "reauth"]
+FEATURES = ["sessions", "reauth", "account", "guilds", "guild-settings", "idempotency-key"]
 CODE_MAX_LENGTH = 512
 _CODE_VERIFIER = re.compile(r"[A-Za-z0-9._~-]{43,128}", re.ASCII)  # RFC 7636
 _CODE_REFUSED = 400  # só o 400 diz que o código é inválido, já usado ou vencido; 401 é o client OAuth recusado

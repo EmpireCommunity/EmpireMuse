@@ -6,10 +6,13 @@ abaixo; campo novo no serviço não vaza até alguém decidir expô-lo. ``RpcTok
 têm entrada aqui e portanto nunca saem. O token novo do RPC só sai por ``new_rpc_token``, uma vez, com ``no-store``.
 
 Textos de usuário final (``mensagem``, texto dos erros) não saem: a API devolve o código e os nomes dos campos.
+Também passam por aqui, pela mesma lista de permissão, os dados que não são formulário: o acesso a um servidor, os
+convites dos bots ausentes e a exportação dos favoritos.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import math
 import re
 from collections.abc import Mapping, Sequence
@@ -19,6 +22,7 @@ GUILD = "guild"
 ACCOUNT = "account"
 
 MAX_DEPTH = 8
+MAX_NUMBER_DIGITS = 9
 FIELD_NAME = re.compile(r"[a-z][a-z0-9_]{0,63}", re.ASCII)
 NO_STORE = {"Cache-Control": "no-store"}
 RPC_KEY = "rpc"
@@ -47,11 +51,14 @@ class SerializationError(ValueError):
 
 
 class FormShape:
-    __slots__ = ("values", "extras")
+    """``numbers``: campos de ``values`` que o formulário mostra como texto (o ``<select>``) e a API entrega como número."""
 
-    def __init__(self, values: Shape | None = None, extras: Shape | None = None) -> None:
+    __slots__ = ("values", "extras", "numbers")
+
+    def __init__(self, values: Shape | None = None, extras: Shape | None = None, numbers: Sequence[str] = ()) -> None:
         self.values: Shape = values or {}
         self.extras: Shape = extras or {}
+        self.numbers: frozenset[str] = frozenset(numbers)
 
 
 _SKINS: Shape = {"skins": None, "skins_estaticas": None}
@@ -65,6 +72,7 @@ _REGISTRY: Mapping[str, Mapping[str, FormShape]] = {
                 for name in ("default_player_volume", "autoplay", "check_other_bots_in_vc", "enable_restrict_mode")
             },
             {"volumes": None},
+            numbers=("default_player_volume",),
         ),
         "dj": FormShape({"djroles": None}, {"cargos": {"id": None, "name": None}}),
         "prefixo": FormShape({"prefix": None}),
@@ -156,9 +164,15 @@ def _check_registry() -> None:
 _check_registry()
 
 
+def _is_record(item: Any) -> bool:
+    return dataclasses.is_dataclass(item) and not isinstance(item, type)
+
+
 def _read(item: Any, name: str, position: int) -> tuple[bool, Any]:
     if hasattr(item, "_fields"):  # NamedTuple: por nome
         return (True, getattr(item, name)) if name in item._fields else (False, None)
+    if _is_record(item):  # dataclass: por nome
+        return (True, getattr(item, name)) if name in {f.name for f in dataclasses.fields(item)} else (False, None)
     if isinstance(item, Mapping):
         return (True, item[name]) if name in item else (False, None)
     if isinstance(item, Sequence) and not isinstance(item, (str, bytes)):
@@ -180,8 +194,8 @@ def _leaf(value: Any, depth: int) -> Any:
 
 
 def _is_object_like(item: Any) -> bool:
-    """NamedTuple, ``dict`` ou sequência posicional: as únicas formas que ``_read`` sabe ler."""
-    if hasattr(item, "_fields") or isinstance(item, Mapping):
+    """NamedTuple, dataclass, ``dict`` ou sequência posicional: as únicas formas que ``_read`` sabe ler."""
+    if hasattr(item, "_fields") or _is_record(item) or isinstance(item, Mapping):
         return True
     return isinstance(item, Sequence) and not isinstance(item, (str, bytes))
 
@@ -218,6 +232,15 @@ def _pick(source: Mapping[str, Any], shape: Shape) -> dict[str, Any]:
     return {name: _shaped(source[name], sub, 0) for name, sub in shape.items() if name in source}
 
 
+def _number(value: Any) -> int:
+    """Inteiro de um campo numérico: aceita o inteiro ou o texto de dígitos que o formulário mostra; nada além disso."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.isascii() and value.isdigit() and len(value) <= MAX_NUMBER_DIGITS:
+        return int(value)
+    raise SerializationError("campo numérico com valor que não é inteiro")
+
+
 def _shape_of(form: FormLike, scope: str) -> FormShape:
     try:
         return _REGISTRY[scope][form.key]
@@ -228,12 +251,10 @@ def _shape_of(form: FormLike, scope: str) -> FormShape:
 def serialize_form(form: FormLike, scope: str) -> dict[str, Any]:
     """O formulário como dado puro: ``{key, version, values, extras}``, só com os campos da lista de permissão."""
     shape = _shape_of(form, scope)
-    return {
-        "key": form.key,
-        "version": form.versao,
-        "values": _pick(form.valores, shape.values),
-        "extras": _pick(form.extras, shape.extras),
-    }
+    values = _pick(form.valores, shape.values)
+    for name in shape.numbers & values.keys():
+        values[name] = _number(values[name])
+    return {"key": form.key, "version": form.versao, "values": values, "extras": _pick(form.extras, shape.extras)}
 
 
 def error_fields(form: FormLike) -> list[str]:
@@ -249,3 +270,36 @@ def new_rpc_token(form: FormLike) -> Optional[tuple[dict[str, str], dict[str, st
     if not isinstance(token, str) or not token:
         return None
     return {"token": token}, dict(NO_STORE)
+
+
+# ---------------------------------------------------------------------------- dados que não são formulário
+
+_ACCESS: Shape = {
+    "guild_id": None,
+    "name": None,
+    "icon_url": None,
+    "bots": {"id": None, "name": None, "avatar_url": None},
+}
+_INVITE: Shape = {"bot_name": None, "bot_avatar_url": None, "url": None}
+
+
+def _plain(item: Any, shape: Shape) -> dict[str, Any]:
+    return _object(item, shape, 0)
+
+
+def serialize_access(access: Any) -> dict[str, Any]:
+    """O acesso do usuário a um servidor (``GuildAccess``): só id, nome, ícone e os bots do pool que estão nele."""
+    body = _plain(access, _ACCESS)
+    return {"id": body["guild_id"], "name": body["name"], "icon_url": body["icon_url"], "bots": body["bots"]}
+
+
+def serialize_invites(invites: Sequence[Any]) -> list[dict[str, Any]]:
+    """Convites dos bots prontos que ainda não estão no servidor (``InviteLink``)."""
+    return [_plain(invite, _INVITE) for invite in invites]
+
+
+def serialize_favorites_export(favorites: Any) -> dict[str, str]:
+    """A exportação dos favoritos pessoais (nome -> endereço), no formato de importação; só texto."""
+    if not isinstance(favorites, Mapping):
+        raise SerializationError("favoritos fora do formato de importação")
+    return {str(name): str(url) for name, url in favorites.items()}

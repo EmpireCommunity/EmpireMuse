@@ -283,6 +283,17 @@ class SharedStoreTest(ApiTestCase):
         assert generico.settings["session_store"] is self.store
         assert generico.settings["task_runner"] is self.pool.panel_tasks
 
+    def test_painel_generico_e_api_usam_os_mesmos_servicos_de_formulario_e_portanto_os_mesmos_locks(self):
+        from empiremuse.panel import build_panel_app
+        from empiremuse.panel.settings import load_panel_settings
+        from tests.panel.helpers import local_config
+
+        generico = build_panel_app(self.pool, load_panel_settings(local_config()), clock=self.clock)
+
+        assert generico.settings["settings_service"] is self.ctx.settings_service is self.pool.panel_forms
+        assert generico.settings["account_service"] is self.ctx.account_service is self.pool.panel_accounts
+        assert self.ctx.settings_service.lock("1", 100) is generico.settings["settings_service"].lock("1", 100)
+
 
 class StoreSeparationTest(ApiTestCase):
     def test_sessao_da_api_nunca_sai_pelo_leitor_do_cookie_do_painel_generico(self):

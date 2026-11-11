@@ -5,8 +5,8 @@ info:
   summary: Contrato público e versionado entre o bot e um painel externo (BFF).
   description: |
     Fonte da verdade da API `/api/v1` (contrato T-456, §4 e §7). O que o bot serve hoje é a **fundação (B1)**:
-    `/meta`, `/health`, as sessões de usuário e o envelope de erro. As rotas de dados (conta, servidores, configurações,
-    Jukebox, rádios, apagar dados) entram nos PRs seguintes, que estendem este arquivo.
+    `/meta`, `/health`, as sessões de usuário e o envelope de erro; mais **conta, servidores e configurações (B3)**.
+    Jukebox, rádios e apagar dados entram nos PRs seguintes, que estendem este arquivo.
 
     **Rede.** A API vive num listener próprio e interno (`EXTERNAL_PANEL_API_BIND` e `EXTERNAL_PANEL_API_PORT`), nunca na
     porta pública. O navegador só fala com o painel; quem chama a API é o servidor do painel.
@@ -30,6 +30,14 @@ info:
     `fields: ["method"]`; caminho desconhecido, em qualquer método e sem exigir a chave, dá `404 not_found`. Um `5xx`
     não diz se uma escrita ocorreu: o painel só repete escrita com `Idempotency-Key` (rotas de escrita, B3 em diante).
 
+    **Escritas de formulário.** Toda escrita leva `expected_version` (a `version` que a leitura devolveu): versão velha dá
+    `409 conflict` com `error.current_version`. O usuário vem sempre da sessão e o servidor, do caminho; um `user_id` ou
+    `guild_id` no corpo é ignorado. A escrita num servidor reautoriza o usuário na hora (sem cache); a leitura aceita o
+    cache de 30 s. Servidor negado e inexistente dão o mesmo `404`. Chave desconhecida fora de `values` é ignorada; dentro
+    de `values`, campo desconhecido, que falta ou de tipo errado dá `400 validation_failed` com os nomes em `fields`.
+    Nenhuma resposta traz segredo: o token do app de RPC sai só ao gerar (`PATCH /account/rpc`, `no-store`) e a chave de
+    sessão do Last.fm nunca sai.
+
     **Versão.** Dentro da v1 só mudam coisas de forma aditiva; uma quebra vira `/api/v2` lado a lado por 6 meses, com
     `Deprecation` e `Sunset`.
   license:
@@ -46,6 +54,12 @@ tags:
     description: Descoberta e saúde.
   - name: Sessão
     description: Login do usuário pelo OAuth do Discord, reautenticação e logout.
+  - name: Conta
+    description: Dados pessoais do usuário da sessão (prefixo, favoritos, integrações, Last.fm, token do RPC, rádios favoritas).
+  - name: Servidores
+    description: Servidores que o usuário gerencia.
+  - name: Configurações
+    description: Formulários de configuração de um servidor e exportação das playlists.
 paths:
   /api/v1/meta:
     get:
@@ -300,6 +314,698 @@ paths:
           $ref: "#/components/responses/RateLimited"
         "500":
           $ref: "#/components/responses/Unexpected"
+  /api/v1/account:
+    get:
+      tags:
+        - Conta
+      operationId: getAccount
+      summary: Todas as seções da conta do usuário da sessão
+      description: |
+        Prefixo pessoal, favoritos, rádios favoritas, integrações, Last.fm e token do app de RPC, uma entrada por chave de formulário. Só os dados do usuário da sessão; nenhum segredo sai (a chave de sessão do Last.fm e o token do RPC guardado nunca aparecem: só `vinculada` e `configurado`).
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+      responses:
+        "200":
+          description: As seções.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountForms"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+  /api/v1/account/prefix:
+    patch:
+      tags:
+        - Conta
+      operationId: setAccountPrefix
+      summary: Prefixo pessoal
+      description: |
+        Troca o prefixo pessoal (vazio remove). Com `expected_version` velho a resposta é `409` com a versão atual.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccountPrefixWrite"
+      responses:
+        "200":
+          description: O prefixo salvo.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountPrefixForm"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMedia"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+  /api/v1/account/rpc:
+    patch:
+      tags:
+        - Conta
+      operationId: issueRpcToken
+      summary: Gera um token novo do app de RPC
+      description: |
+        O token novo aparece **só nesta resposta** (`Cache-Control: no-store`); o bot nunca o devolve de novo nem o registra. Por isso a rota **ignora** `Idempotency-Key`: o bot não guarda a resposta para repetir. O token antigo nunca sai. `403 forbidden` quando o token do RPC não está disponível neste bot.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccountRpcWrite"
+      responses:
+        "200":
+          description: O token novo, uma só vez.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountRpcIssued"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenAction"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMedia"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+  /api/v1/account/integrations:
+    patch:
+      tags:
+        - Conta
+      operationId: updateAccountIntegrations
+      summary: Remove ou importa integrações pessoais
+      description: |
+        `action: remove` tira uma integração pelo título; `action: import` acrescenta as do JSON de exportação do bot (só acrescenta; respeita o limite).
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccountIntegrationsWrite"
+      responses:
+        "200":
+          description: A seção atualizada.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountIntegrationsForm"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMedia"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+  /api/v1/account/lastfm:
+    patch:
+      tags:
+        - Conta
+      operationId: setLastFmScrobble
+      summary: Liga ou desliga o scrobble do Last.fm
+      description: |
+        Só o scrobble. O vínculo com o Last.fm **não** existe na v1 (continua pelo Discord); sem conta vinculada a resposta é `400 validation_failed`. A chave de sessão do Last.fm nunca sai.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccountLastFmWrite"
+      responses:
+        "200":
+          description: A seção atualizada.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountLastFmForm"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMedia"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+  /api/v1/account/favorites:
+    get:
+      tags:
+        - Conta
+      operationId: getFavorites
+      summary: Favoritos pessoais
+      description: |
+        A seção de favoritos, com a contagem e o limite.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+      responses:
+        "200":
+          description: A seção.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountFavoritesForm"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+    put:
+      tags:
+        - Conta
+      operationId: writeFavorites
+      summary: Adiciona, edita ou importa favoritos
+      description: |
+        `add` (nome novo), `edit` (troca o endereço de um nome existente) e `import` (JSON no formato de exportação; só acrescenta). Respeita o limite do usuário.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccountFavoritesWrite"
+      responses:
+        "200":
+          description: A seção atualizada.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountFavoritesForm"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMedia"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+    delete:
+      tags:
+        - Conta
+      operationId: deleteFavorite
+      summary: Remove um favorito
+      description: |
+        Sem corpo: o nome e a versão vão na query (a API não registra a query em log; o painel também não deve registrá-la).
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/FavoriteName"
+        - $ref: "#/components/parameters/ExpectedVersionQuery"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: A seção atualizada.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountFavoritesForm"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+  /api/v1/account/favorites/export:
+    get:
+      tags:
+        - Conta
+      operationId: exportFavorites
+      summary: Exporta os favoritos
+      description: |
+        O JSON no formato de importação (`{nome: endereço}`), só do usuário da sessão.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+      responses:
+        "200":
+          description: O arquivo de exportação.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FavoritesExport"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+  /api/v1/account/radio-favorites:
+    get:
+      tags:
+        - Conta
+      operationId: getRadioFavorites
+      summary: Rádios favoritas pessoais
+      description: |
+        Estações ao vivo e locais favoritos do usuário (J3). `disponivel: false` com a rádio desligada; `indisponivel: true` com o banco fora do ar.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+      responses:
+        "200":
+          description: A seção.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountRadiosForm"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+    delete:
+      tags:
+        - Conta
+      operationId: deleteRadioFavorite
+      summary: Remove uma estação ou um local favorito
+      description: |
+        Idempotente e sem versão: remover o que já não está dá `200` do mesmo jeito. O alvo vai na query. `503` com a rádio desligada ou o banco fora do ar.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/RadioKind"
+        - $ref: "#/components/parameters/RadioTarget"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: A seção atualizada.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountRadiosForm"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+  /api/v1/guilds:
+    get:
+      tags:
+        - Servidores
+      operationId: listGuilds
+      summary: Servidores do login
+      description: |
+        Os servidores da sessão (pré-filtro do login: dono, administrador ou Gerenciar Servidor), cada um com `bot_present` e os convites dos bots prontos que ainda não estão nele. A decisão real de acesso é por servidor.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+      responses:
+        "200":
+          description: A lista.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuildList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+  /api/v1/guilds/{guild_id}:
+    get:
+      tags:
+        - Servidores
+      operationId: getGuild
+      summary: Um servidor que o usuário gerencia agora
+      description: |
+        Reconfere o usuário a cada requisição (cache de 30 s na leitura). **Negado e inexistente dão o mesmo `404`.**
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+      responses:
+        "200":
+          description: O servidor.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuildDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+  /api/v1/guilds/{guild_id}/settings/{category}:
+    get:
+      tags:
+        - Configurações
+      operationId: getSettings
+      summary: Os formulários de uma categoria
+      description: |
+        `player`, `dj`, `appearance`, `links` ou `general`. Cada formulário vem com a `version` que a escrita seguinte deve enviar em `expected_version`. Leitura aceita o cache de autorização de 30 s.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+        - $ref: "#/components/parameters/Category"
+      responses:
+        "200":
+          description: Os formulários.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingsRead"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+    put:
+      tags:
+        - Configurações
+      operationId: writeSettings
+      summary: Grava um formulário da categoria
+      description: |
+        Uma escrita é sempre uma **substituição**: todo campo do formulário vem em `values` (o checkbox desmarcado é `false`). `form` é obrigatório nas categorias com mais de um formulário (`appearance` e `general`) e opcional nas outras. A escrita **reautoriza o usuário na hora** (sem cache). `expected_version` velho dá `409` com `current_version`. `403 forbidden` quando falta a permissão específica da ação (remover convite de ouvir junto exige Gerenciar Canais). `400` traz em `fields` os nomes dos campos de `values` (ou `action`, `scope`, `form`, `expected_version`) que falharam.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+        - $ref: "#/components/parameters/Category"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SettingsWrite"
+      responses:
+        "200":
+          description: O formulário salvo.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingsForm"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenAction"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMedia"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+  /api/v1/guilds/{guild_id}/links/export:
+    get:
+      tags:
+        - Configurações
+      operationId: exportLinks
+      summary: Exporta as playlists do servidor
+      description: |
+        O arquivo no formato de importação, dos dois escopos ou de um (`scope=jukebox|radio`).
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+        - $ref: "#/components/parameters/LinksScope"
+      responses:
+        "200":
+          description: O arquivo de exportação.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LinksExport"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
 components:
   securitySchemes:
     ServiceKey:
@@ -326,6 +1032,76 @@ components:
       required: true
       schema:
         $ref: "#/components/schemas/SessionToken"
+    GuildId:
+      name: guild_id
+      in: path
+      required: true
+      description: ID do servidor no Discord. Fora desse formato a rota nem existe (`404`).
+      schema:
+        type: string
+        pattern: ^[0-9]{1,20}$
+    Category:
+      name: category
+      in: path
+      required: true
+      schema:
+        type: string
+        enum:
+          - player
+          - dj
+          - appearance
+          - links
+          - general
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        Torna a escrita repetível: a mesma chave com o mesmo pedido (usuário, servidor, rota e corpo) devolve a resposta de sucesso guardada, com `Idempotent-Replayed: true`, por 10 minutos (até 100 chaves por usuário). A mesma chave com outro pedido, ou com o original ainda em andamento, é `409 conflict`. Só sucesso é guardado: um erro libera a chave. Um `5xx` não diz se a escrita ocorreu; repita com a mesma chave **e** com `expected_version` (a versão impede gravar duas vezes). Fora do formato é `400` com `fields: ["idempotency_key"]`.
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9_-]{8,64}$
+    FavoriteName:
+      name: name
+      in: query
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    ExpectedVersionQuery:
+      name: expected_version
+      in: query
+      required: true
+      schema:
+        $ref: "#/components/schemas/Version"
+    RadioKind:
+      name: kind
+      in: query
+      required: true
+      schema:
+        type: string
+        enum:
+          - station
+          - filter
+    RadioTarget:
+      name: id
+      in: query
+      required: true
+      description: O `uuid` da estação ou o `node` do local (os mesmos de `GET /account/radio-favorites`).
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    LinksScope:
+      name: scope
+      in: query
+      required: false
+      schema:
+        type: string
+        enum:
+          - jukebox
+          - radio
   headers:
     CacheControl:
       required: true
@@ -349,6 +1125,11 @@ components:
       schema:
         type: integer
         minimum: 1
+    IdempotentReplayed:
+      required: false
+      description: "`true` quando a resposta é a guardada de uma tentativa anterior com a mesma `Idempotency-Key`."
+      schema:
+        const: "true"
   responses:
     KeyRejected:
       description: |
@@ -426,6 +1207,73 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorBotUnavailable"
+    BadRequest:
+      description: "`validation_failed`: corpo, tipo ou campo inválido; `fields` nomeia o que falhou (nunca o texto de erro)."
+      headers:
+        Cache-Control:
+          $ref: "#/components/headers/CacheControl"
+        X-Content-Type-Options:
+          $ref: "#/components/headers/ContentTypeOptions"
+        X-Request-ID:
+          $ref: "#/components/headers/RequestIdOut"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorValidationFailed"
+    UnsupportedMedia:
+      description: '`415 validation_failed` com `fields: ["content_type"]`: o corpo exige `Content-Type: application/json`.'
+      headers:
+        Cache-Control:
+          $ref: "#/components/headers/CacheControl"
+        X-Content-Type-Options:
+          $ref: "#/components/headers/ContentTypeOptions"
+        X-Request-ID:
+          $ref: "#/components/headers/RequestIdOut"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorValidationFailed"
+    ForbiddenAction:
+      description: '`forbidden`: o usuário gerencia o servidor, mas não tem a permissão específica desta ação, ou o recurso não
+        está disponível neste bot.'
+      headers:
+        Cache-Control:
+          $ref: "#/components/headers/CacheControl"
+        X-Content-Type-Options:
+          $ref: "#/components/headers/ContentTypeOptions"
+        X-Request-ID:
+          $ref: "#/components/headers/RequestIdOut"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorForbidden"
+    NotFound:
+      description: "`not_found`. Servidor negado e inexistente dão o mesmo `404`, sem dizer qual dos dois."
+      headers:
+        Cache-Control:
+          $ref: "#/components/headers/CacheControl"
+        X-Content-Type-Options:
+          $ref: "#/components/headers/ContentTypeOptions"
+        X-Request-ID:
+          $ref: "#/components/headers/RequestIdOut"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorNotFound"
+    Conflict:
+      description: '`conflict`. Versão velha: traz `current_version` (a versão que o formulário tem agora). Também `Idempotency-Key`
+        já usada com outro pedido ou ainda em andamento (sem `current_version`).'
+      headers:
+        Cache-Control:
+          $ref: "#/components/headers/CacheControl"
+        X-Content-Type-Options:
+          $ref: "#/components/headers/ContentTypeOptions"
+        X-Request-ID:
+          $ref: "#/components/headers/RequestIdOut"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorConflict"
   schemas:
     Meta:
       type: object
@@ -587,6 +1435,10 @@ components:
               description: "Só em `validation_failed`: nomes dos campos (ou `method` e `content_type`) que falharam."
               items:
                 type: string
+            current_version:
+              type: string
+              description: "Só em `409 conflict` de versão: a versão que o formulário tem agora."
+              pattern: "^[0-9a-f]{16}$"
             request_id:
               type: string
               description: Liga a resposta ao log do bot; o mesmo valor vai no cabeçalho `X-Request-ID`.
@@ -610,3 +1462,1259 @@ components:
     ErrorBotUnavailable:
       description: "`bot_unavailable`."
       $ref: "#/components/schemas/Error"
+    Version:
+      type: string
+      description: "A versão de um formulário (16 hexadecimais): a que a escrita seguinte envia em `expected_version`."
+      pattern: ^[0-9a-f]{16}$
+    PlayerValues:
+      type: object
+      additionalProperties: false
+      required:
+        - default_player_volume
+        - autoplay
+        - check_other_bots_in_vc
+        - enable_restrict_mode
+      properties:
+        default_player_volume:
+          type: integer
+        autoplay:
+          type: boolean
+        check_other_bots_in_vc:
+          type: boolean
+        enable_restrict_mode:
+          type: boolean
+    PlayerExtras:
+      type: object
+      additionalProperties: false
+      required:
+        - volumes
+      properties:
+        volumes:
+          type: array
+          items:
+            type: integer
+    DjValues:
+      type: object
+      additionalProperties: false
+      required:
+        - djroles
+      properties:
+        djroles:
+          type: array
+          items:
+            type: string
+    DjExtras:
+      type: object
+      additionalProperties: false
+      required:
+        - cargos
+      properties:
+        cargos:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - id
+              - name
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+    GuildPrefixValues:
+      type: object
+      additionalProperties: false
+      required:
+        - prefix
+      properties:
+        prefix:
+          type: string
+    VoiceStatusValues:
+      type: object
+      additionalProperties: false
+      required:
+        - voice_status_permanent
+        - voice_channel_status
+      properties:
+        voice_status_permanent:
+          type: boolean
+        voice_channel_status:
+          type: string
+    VoiceStatusExtras:
+      type: object
+      additionalProperties: false
+      required:
+        - placeholders
+        - modelo_padrao
+      properties:
+        placeholders:
+          type: array
+          items:
+            type: string
+        modelo_padrao:
+          type: string
+    LanguageValues:
+      type: object
+      additionalProperties: false
+      required:
+        - language
+      properties:
+        language:
+          type:
+            - string
+            - "null"
+    LanguageExtras:
+      type: object
+      additionalProperties: false
+      required:
+        - idiomas
+      properties:
+        idiomas:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - code
+              - name
+            properties:
+              code:
+                type: string
+              name:
+                type: string
+    ListenAlongExtras:
+      type: object
+      additionalProperties: false
+      required:
+        - itens
+        - pode_remover
+      properties:
+        itens:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - canal_id
+              - canal_nome
+              - convite
+            properties:
+              canal_id:
+                type: string
+              canal_nome:
+                type:
+                  - string
+                  - "null"
+              convite:
+                type: string
+        pode_remover:
+          type: boolean
+    ServerSkinValues:
+      type: object
+      additionalProperties: false
+      required:
+        - skin
+        - static_skin
+      properties:
+        skin:
+          type: string
+        static_skin:
+          type: string
+    GlobalSkinValues:
+      type: object
+      additionalProperties: false
+      required:
+        - global_skin
+        - player_skin
+        - player_skin_static
+      properties:
+        global_skin:
+          type: boolean
+        player_skin:
+          type: string
+        player_skin_static:
+          type: string
+    SkinExtras:
+      type: object
+      additionalProperties: false
+      required:
+        - skins
+        - skins_estaticas
+      properties:
+        skins:
+          type: array
+          items:
+            type: string
+        skins_estaticas:
+          type: array
+          items:
+            type: string
+    Playlist:
+      type: object
+      additionalProperties: false
+      required:
+        - ordem
+        - nome
+        - url
+        - descricao
+        - generos
+        - icone
+        - escopo
+      properties:
+        ordem:
+          type: integer
+        nome:
+          type: string
+        url:
+          type: string
+        descricao:
+          type: string
+        generos:
+          type: array
+          items:
+            type: string
+        icone:
+          type:
+            - string
+            - "null"
+        escopo:
+          type: string
+    PlaylistScope:
+      type: object
+      additionalProperties: false
+      required:
+        - escopo
+        - total
+        - maximo
+        - pode_adicionar
+        - itens
+      properties:
+        escopo:
+          type: string
+          enum:
+            - jukebox
+            - radio
+        total:
+          type: integer
+        maximo:
+          type: integer
+        pode_adicionar:
+          type: boolean
+        itens:
+          type: array
+          items:
+            $ref: "#/components/schemas/Playlist"
+    ImportReport:
+      type: object
+      additionalProperties: false
+      required:
+        - adicionadas
+        - ignoradas
+      properties:
+        adicionadas:
+          type: integer
+        ignoradas:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - nome
+            properties:
+              nome:
+                type: string
+      description: O relatório da última importação (só na resposta dela); as ignoradas vêm só pelo nome, sem o motivo.
+    LinksExtras:
+      type: object
+      additionalProperties: false
+      required:
+        - escopos
+        - escopo_atual
+        - relatorio
+      properties:
+        escopos:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlaylistScope"
+        escopo_atual:
+          type: string
+        relatorio:
+          oneOf:
+            - $ref: "#/components/schemas/ImportReport"
+            - type: "null"
+    AccountPrefixValues:
+      type: object
+      additionalProperties: false
+      required:
+        - custom_prefix
+      properties:
+        custom_prefix:
+          type: string
+    Favorite:
+      type: object
+      additionalProperties: false
+      required:
+        - nome
+        - url
+        - link
+      properties:
+        nome:
+          type: string
+        url:
+          type: string
+        link:
+          type: boolean
+    Integration:
+      type: object
+      additionalProperties: false
+      required:
+        - titulo
+        - url
+        - avatar
+        - link
+      properties:
+        titulo:
+          type: string
+        url:
+          type: string
+        avatar:
+          type: string
+        link:
+          type: boolean
+    FavoritesExtras:
+      type: object
+      additionalProperties: false
+      required:
+        - itens
+        - total
+        - maximo
+        - ilimitado
+        - cheio
+      properties:
+        itens:
+          type: array
+          items:
+            $ref: "#/components/schemas/Favorite"
+        total:
+          type: integer
+        maximo:
+          type: integer
+        ilimitado:
+          type: boolean
+        cheio:
+          type: boolean
+    IntegrationsExtras:
+      type: object
+      additionalProperties: false
+      required:
+        - itens
+        - total
+        - maximo
+        - ilimitado
+        - cheio
+      properties:
+        itens:
+          type: array
+          items:
+            $ref: "#/components/schemas/Integration"
+        total:
+          type: integer
+        maximo:
+          type: integer
+        ilimitado:
+          type: boolean
+        cheio:
+          type: boolean
+    LastFmValues:
+      type: object
+      additionalProperties: false
+      required:
+        - scrobble
+      properties:
+        scrobble:
+          type: boolean
+    LastFmExtras:
+      type: object
+      additionalProperties: false
+      required:
+        - vinculada
+        - usuario
+      properties:
+        vinculada:
+          type: boolean
+        usuario:
+          type: string
+    RpcExtras:
+      type: object
+      additionalProperties: false
+      required:
+        - disponivel
+        - configurado
+      properties:
+        disponivel:
+          type: boolean
+        configurado:
+          type: boolean
+    RadiosExtras:
+      type: object
+      additionalProperties: false
+      required:
+        - disponivel
+        - indisponivel
+        - estacoes
+        - filtros
+      properties:
+        disponivel:
+          type: boolean
+        indisponivel:
+          type: boolean
+        estacoes:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - uuid
+              - nome
+            properties:
+              uuid:
+                type: string
+              nome:
+                type: string
+        filtros:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - node
+              - rotulo
+            properties:
+              node:
+                type: string
+              rotulo:
+                type: string
+    PlayerForm:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+        - version
+        - values
+        - extras
+      properties:
+        key:
+          const: player
+        version:
+          $ref: "#/components/schemas/Version"
+        values:
+          $ref: "#/components/schemas/PlayerValues"
+        extras:
+          $ref: "#/components/schemas/PlayerExtras"
+    DjForm:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+        - version
+        - values
+        - extras
+      properties:
+        key:
+          const: dj
+        version:
+          $ref: "#/components/schemas/Version"
+        values:
+          $ref: "#/components/schemas/DjValues"
+        extras:
+          $ref: "#/components/schemas/DjExtras"
+    GuildPrefixForm:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+        - version
+        - values
+        - extras
+      properties:
+        key:
+          const: prefixo
+        version:
+          $ref: "#/components/schemas/Version"
+        values:
+          $ref: "#/components/schemas/GuildPrefixValues"
+        extras:
+          type: object
+          additionalProperties: false
+          maxProperties: 0
+    VoiceStatusForm:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+        - version
+        - values
+        - extras
+      properties:
+        key:
+          const: status_voz
+        version:
+          $ref: "#/components/schemas/Version"
+        values:
+          $ref: "#/components/schemas/VoiceStatusValues"
+        extras:
+          $ref: "#/components/schemas/VoiceStatusExtras"
+    LanguageForm:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+        - version
+        - values
+        - extras
+      properties:
+        key:
+          const: idioma
+        version:
+          $ref: "#/components/schemas/Version"
+        values:
+          $ref: "#/components/schemas/LanguageValues"
+        extras:
+          $ref: "#/components/schemas/LanguageExtras"
+    ListenAlongForm:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+        - version
+        - values
+        - extras
+      properties:
+        key:
+          const: ouvir_junto
+        version:
+          $ref: "#/components/schemas/Version"
+        values:
+          type: object
+          additionalProperties: false
+          maxProperties: 0
+        extras:
+          $ref: "#/components/schemas/ListenAlongExtras"
+    ServerSkinForm:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+        - version
+        - values
+        - extras
+      properties:
+        key:
+          const: skin_servidor
+        version:
+          $ref: "#/components/schemas/Version"
+        values:
+          $ref: "#/components/schemas/ServerSkinValues"
+        extras:
+          $ref: "#/components/schemas/SkinExtras"
+    GlobalSkinForm:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+        - version
+        - values
+        - extras
+      properties:
+        key:
+          const: skin_global
+        version:
+          $ref: "#/components/schemas/Version"
+        values:
+          $ref: "#/components/schemas/GlobalSkinValues"
+        extras:
+          $ref: "#/components/schemas/SkinExtras"
+    LinksForm:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+        - version
+        - values
+        - extras
+      properties:
+        key:
+          const: links
+        version:
+          $ref: "#/components/schemas/Version"
+        values:
+          type: object
+          additionalProperties: false
+          maxProperties: 0
+        extras:
+          $ref: "#/components/schemas/LinksExtras"
+    AccountPrefixForm:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+        - version
+        - values
+        - extras
+      properties:
+        key:
+          const: prefixo
+        version:
+          $ref: "#/components/schemas/Version"
+        values:
+          $ref: "#/components/schemas/AccountPrefixValues"
+        extras:
+          type: object
+          additionalProperties: false
+          maxProperties: 0
+    AccountFavoritesForm:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+        - version
+        - values
+        - extras
+      properties:
+        key:
+          const: favoritos
+        version:
+          $ref: "#/components/schemas/Version"
+        values:
+          type: object
+          additionalProperties: false
+          maxProperties: 0
+        extras:
+          $ref: "#/components/schemas/FavoritesExtras"
+    AccountRadiosForm:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+        - version
+        - values
+        - extras
+      properties:
+        key:
+          const: radios
+        version:
+          $ref: "#/components/schemas/Version"
+        values:
+          type: object
+          additionalProperties: false
+          maxProperties: 0
+        extras:
+          $ref: "#/components/schemas/RadiosExtras"
+    AccountIntegrationsForm:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+        - version
+        - values
+        - extras
+      properties:
+        key:
+          const: integracoes
+        version:
+          $ref: "#/components/schemas/Version"
+        values:
+          type: object
+          additionalProperties: false
+          maxProperties: 0
+        extras:
+          $ref: "#/components/schemas/IntegrationsExtras"
+    AccountLastFmForm:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+        - version
+        - values
+        - extras
+      properties:
+        key:
+          const: lastfm
+        version:
+          $ref: "#/components/schemas/Version"
+        values:
+          $ref: "#/components/schemas/LastFmValues"
+        extras:
+          $ref: "#/components/schemas/LastFmExtras"
+    AccountRpcForm:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+        - version
+        - values
+        - extras
+      properties:
+        key:
+          const: rpc
+        version:
+          $ref: "#/components/schemas/Version"
+        values:
+          type: object
+          additionalProperties: false
+          maxProperties: 0
+        extras:
+          $ref: "#/components/schemas/RpcExtras"
+    AccountRpcIssued:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+        - version
+        - values
+        - extras
+        - token
+      properties:
+        key:
+          const: rpc
+        version:
+          $ref: "#/components/schemas/Version"
+        values:
+          type: object
+          additionalProperties: false
+          maxProperties: 0
+        extras:
+          $ref: "#/components/schemas/RpcExtras"
+        token:
+          type: string
+          minLength: 32
+          description: O token novo do app de RPC, **uma só vez**. Nunca é devolvido de novo.
+      description: "O formulário do RPC mais o `token` recém-gerado (`Cache-Control: no-store`)."
+    SettingsForm:
+      description: O formulário salvo; o `key` diz qual.
+      oneOf:
+        - $ref: "#/components/schemas/PlayerForm"
+        - $ref: "#/components/schemas/DjForm"
+        - $ref: "#/components/schemas/GuildPrefixForm"
+        - $ref: "#/components/schemas/VoiceStatusForm"
+        - $ref: "#/components/schemas/LanguageForm"
+        - $ref: "#/components/schemas/ListenAlongForm"
+        - $ref: "#/components/schemas/ServerSkinForm"
+        - $ref: "#/components/schemas/GlobalSkinForm"
+        - $ref: "#/components/schemas/LinksForm"
+    AccountForms:
+      type: object
+      additionalProperties: false
+      required:
+        - forms
+      properties:
+        forms:
+          type: object
+          additionalProperties: false
+          required:
+            - prefixo
+            - favoritos
+            - radios
+            - integracoes
+            - lastfm
+            - rpc
+          properties:
+            prefixo:
+              $ref: "#/components/schemas/AccountPrefixForm"
+            favoritos:
+              $ref: "#/components/schemas/AccountFavoritesForm"
+            radios:
+              $ref: "#/components/schemas/AccountRadiosForm"
+            integracoes:
+              $ref: "#/components/schemas/AccountIntegrationsForm"
+            lastfm:
+              $ref: "#/components/schemas/AccountLastFmForm"
+            rpc:
+              $ref: "#/components/schemas/AccountRpcForm"
+    SettingsRead:
+      type: object
+      additionalProperties: false
+      required:
+        - category
+        - forms
+      properties:
+        category:
+          type: string
+          enum:
+            - player
+            - dj
+            - appearance
+            - links
+            - general
+        forms:
+          type: object
+          description: Um item por formulário da categoria, pela chave dele.
+          additionalProperties:
+            $ref: "#/components/schemas/SettingsForm"
+    Invite:
+      type: object
+      additionalProperties: false
+      required:
+        - bot_name
+        - bot_avatar_url
+        - url
+      properties:
+        bot_name:
+          type: string
+        bot_avatar_url:
+          type: string
+        url:
+          type: string
+    GuildEntry:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - icon
+        - owner
+        - permissions
+        - bot_present
+        - invites
+      properties:
+        id:
+          type: string
+          pattern: ^[0-9]{1,20}$
+        name:
+          type: string
+        icon:
+          type:
+            - string
+            - "null"
+        owner:
+          type: boolean
+        permissions:
+          type: string
+          pattern: ^[0-9]+$
+        bot_present:
+          type: boolean
+        invites:
+          type: array
+          items:
+            $ref: "#/components/schemas/Invite"
+    GuildList:
+      type: object
+      additionalProperties: false
+      required:
+        - guilds
+      properties:
+        guilds:
+          type: array
+          items:
+            $ref: "#/components/schemas/GuildEntry"
+    GuildDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - icon_url
+        - bots
+        - invites
+      properties:
+        id:
+          type: string
+          pattern: ^[0-9]{1,20}$
+        name:
+          type: string
+        icon_url:
+          type:
+            - string
+            - "null"
+        bots:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - id
+              - name
+              - avatar_url
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              avatar_url:
+                type: string
+        invites:
+          type: array
+          items:
+            $ref: "#/components/schemas/Invite"
+    FavoritesExport:
+      type: object
+      description: "`{nome: endereço}`, o formato de importação."
+      additionalProperties:
+        type: string
+    LinksExport:
+      type: object
+      description: "`{playlists: [...]}`, o formato de importação (cada item leva `scope` quando a exportação é dos dois escopos)."
+      required:
+        - playlists
+      properties:
+        playlists:
+          type: array
+          items:
+            type: object
+    ErrorNotFound:
+      description: "`not_found`."
+      $ref: "#/components/schemas/Error"
+    ErrorConflict:
+      description: "`conflict`, com `current_version` quando a versão esperada é velha."
+      $ref: "#/components/schemas/Error"
+    AccountPrefixWrite:
+      type: object
+      required:
+        - expected_version
+        - values
+      properties:
+        expected_version:
+          $ref: "#/components/schemas/Version"
+        values:
+          type: object
+          additionalProperties: false
+          required:
+            - custom_prefix
+          properties:
+            custom_prefix:
+              type: string
+    AccountLastFmWrite:
+      type: object
+      required:
+        - expected_version
+        - values
+      properties:
+        expected_version:
+          $ref: "#/components/schemas/Version"
+        values:
+          type: object
+          additionalProperties: false
+          required:
+            - scrobble
+          properties:
+            scrobble:
+              type: boolean
+    AccountRpcWrite:
+      type: object
+      required:
+        - expected_version
+      properties:
+        expected_version:
+          $ref: "#/components/schemas/Version"
+    AccountIntegrationsWrite:
+      oneOf:
+        - type: object
+          required:
+            - expected_version
+            - action
+            - values
+          properties:
+            expected_version:
+              $ref: "#/components/schemas/Version"
+            action:
+              const: remove
+            values:
+              type: object
+              additionalProperties: false
+              required:
+                - nome
+              properties:
+                nome:
+                  type: string
+        - type: object
+          required:
+            - expected_version
+            - action
+            - values
+          properties:
+            expected_version:
+              $ref: "#/components/schemas/Version"
+            action:
+              const: import
+            values:
+              type: object
+              additionalProperties: false
+              required:
+                - dados
+              properties:
+                dados:
+                  type: object
+    AccountFavoritesWrite:
+      oneOf:
+        - type: object
+          required:
+            - expected_version
+            - action
+            - values
+          properties:
+            expected_version:
+              $ref: "#/components/schemas/Version"
+            action:
+              enum:
+                - add
+                - edit
+            values:
+              type: object
+              additionalProperties: false
+              required:
+                - nome
+                - url
+              properties:
+                nome:
+                  type: string
+                url:
+                  type: string
+        - type: object
+          required:
+            - expected_version
+            - action
+            - values
+          properties:
+            expected_version:
+              $ref: "#/components/schemas/Version"
+            action:
+              const: import
+            values:
+              type: object
+              additionalProperties: false
+              required:
+                - dados
+              properties:
+                dados:
+                  type: object
+    SettingsWrite:
+      description: 'Um dos corpos abaixo, conforme o formulário (`form`). Substituição: todo campo de `values` é obrigatório (exceto
+        onde indicado).'
+      oneOf:
+        - type: object
+          required:
+            - expected_version
+            - values
+          properties:
+            form:
+              const: player
+            expected_version:
+              $ref: "#/components/schemas/Version"
+            values:
+              type: object
+              additionalProperties: false
+              required:
+                - default_player_volume
+                - autoplay
+                - check_other_bots_in_vc
+                - enable_restrict_mode
+              properties:
+                default_player_volume:
+                  type: integer
+                autoplay:
+                  type: boolean
+                check_other_bots_in_vc:
+                  type: boolean
+                enable_restrict_mode:
+                  type: boolean
+        - type: object
+          required:
+            - expected_version
+            - values
+          properties:
+            form:
+              const: dj
+            expected_version:
+              $ref: "#/components/schemas/Version"
+            values:
+              type: object
+              additionalProperties: false
+              required:
+                - djroles
+              properties:
+                djroles:
+                  type: array
+                  items:
+                    type: string
+        - type: object
+          required:
+            - expected_version
+            - values
+            - form
+          properties:
+            form:
+              const: prefixo
+            expected_version:
+              $ref: "#/components/schemas/Version"
+            values:
+              type: object
+              additionalProperties: false
+              required:
+                - prefix
+              properties:
+                prefix:
+                  type: string
+        - type: object
+          required:
+            - expected_version
+            - values
+            - form
+          properties:
+            form:
+              const: status_voz
+            expected_version:
+              $ref: "#/components/schemas/Version"
+            values:
+              type: object
+              additionalProperties: false
+              required:
+                - voice_status_permanent
+                - voice_channel_status
+              properties:
+                voice_status_permanent:
+                  type: boolean
+                voice_channel_status:
+                  type: string
+        - type: object
+          required:
+            - expected_version
+            - values
+            - form
+          properties:
+            form:
+              const: idioma
+            expected_version:
+              $ref: "#/components/schemas/Version"
+            values:
+              type: object
+              additionalProperties: false
+              required:
+                - language
+              properties:
+                language:
+                  type:
+                    - string
+                    - "null"
+        - type: object
+          required:
+            - expected_version
+            - values
+            - form
+          properties:
+            form:
+              const: skin_servidor
+            expected_version:
+              $ref: "#/components/schemas/Version"
+            values:
+              type: object
+              additionalProperties: false
+              required:
+                - skin
+                - static_skin
+              properties:
+                skin:
+                  type: string
+                static_skin:
+                  type: string
+        - type: object
+          required:
+            - expected_version
+            - values
+            - form
+          properties:
+            form:
+              const: skin_global
+            expected_version:
+              $ref: "#/components/schemas/Version"
+            values:
+              type: object
+              additionalProperties: false
+              required:
+                - global_skin
+                - player_skin
+                - player_skin_static
+              properties:
+                global_skin:
+                  type: boolean
+                player_skin:
+                  type:
+                    - string
+                    - "null"
+                player_skin_static:
+                  type:
+                    - string
+                    - "null"
+        - type: object
+          required:
+            - expected_version
+            - values
+            - form
+            - action
+          properties:
+            form:
+              const: ouvir_junto
+            expected_version:
+              $ref: "#/components/schemas/Version"
+            values:
+              type: object
+              additionalProperties: false
+              required:
+                - canal
+              properties:
+                canal:
+                  type: string
+            action:
+              const: remove
+        - type: object
+          required:
+            - expected_version
+            - action
+            - scope
+            - values
+          properties:
+            form:
+              const: links
+            expected_version:
+              $ref: "#/components/schemas/Version"
+            action:
+              enum:
+                - add
+                - edit
+                - remove
+                - import
+            scope:
+              type: string
+              enum:
+                - jukebox
+                - radio
+            values:
+              type: object
+              additionalProperties: false
+              properties:
+                nome:
+                  type: string
+                url:
+                  type: string
+                descricao:
+                  type: string
+                generos:
+                  type: array
+                  items:
+                    type: string
+                icone:
+                  type:
+                    - string
+                    - "null"
+                ordem:
+                  type:
+                    - integer
+                    - "null"
+                alvo:
+                  type: string
+                dados:
+                  type:
+                    - object
+                    - array
+              description: '`add`: `nome` e `url` (os outros opcionais). `edit`: o mesmo mais `alvo` (o nome atual). `remove`:
+                só `alvo`. `import`: só `dados` (o arquivo de importação).'
