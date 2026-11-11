@@ -116,13 +116,14 @@ def _load_locale(root: Path, locale: str, reference: Mapping[str, Mapping[str, s
     return data
 
 
-def load_catalogs(root: Path | None = None) -> dict[str, LocaleData]:
+def load_catalogs(root: Path | None = None, *, only: Collection[str] | None = None) -> dict[str, LocaleData]:
     """Carrega e valida todos os locales de ``root``; o ``en-US`` (referência) primeiro. Nunca levanta; o fatal fica em ``LocaleData``.
 
-    A cobertura de cada locale é a do conjunto dos três arquivos contra o ``en-US``.
+    A cobertura de cada locale é a do conjunto dos três arquivos contra o ``en-US``. Com ``only``, os outros diretórios nem são abertos
+    (o exportador do site lê só o ``en-US`` e o ``pt-BR`` do repositório, nunca um idioma baixado do Crowdin).
     """
     base = Path(root) if root is not None else DEFAULT_ROOT
-    names = locale_directories(base)
+    names = [name for name in locale_directories(base) if only is None or name in only]
     result: dict[str, LocaleData] = {}
     reference_entries: dict[str, dict[str, str]] = {}
     reference = _load_locale_reference(base, reference_entries) if rules.REFERENCE_LOCALE in names else None

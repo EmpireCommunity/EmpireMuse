@@ -3,6 +3,8 @@
 Fica fora de ``build_panel_app`` porque a API externa, o painel genérico e o apagamento de dados (``destroy_user``) usam os
 mesmos objetos, inclusive com o painel genérico desligado. Os serviços de formulário também são únicos: o lock por escopo
 (servidor, bot ou usuário) vale entre o painel genérico e a API, que gravam os mesmos documentos.
+Ficam **fora** daqui os serviços presos a uma chave de assinatura (Jukebox, reset de rádio, apagar): cada consumidor os
+constrói com a chave dele (``cookie_secret`` no genérico, subchave derivada na API), por cima dos serviços únicos.
 """
 
 from __future__ import annotations

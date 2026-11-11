@@ -17,6 +17,7 @@ from tests.api.support_data import (
     OLD_VERSION,
     OTHER,
     STATION,
+    USER,
     DataApiCase,
 )
 from tests.panel.helpers_account import RPC_TOKEN_OLD, SESSIONKEY
@@ -387,6 +388,20 @@ class RadioFavoritesTest(DataApiCase):
         assert (removed.code, filtered.code, again.code) == (200, 200, 200)  # remover é idempotente
         assert body_of(again)["extras"]["estacoes"] == [] and body_of(again)["extras"]["filtros"] == []
         assert self.world.favorites.station_ids[int(OTHER)] != []  # a lista do outro usuário não foi tocada
+
+    def test_a_checagem_de_disponibilidade_nao_le_a_lista_do_usuario(self):
+        reads = []
+        original = self.world.favorites.stations
+
+        async def counting(user_id):
+            reads.append(user_id)
+            return await original(user_id)
+
+        self.world.favorites.stations = counting
+
+        response = self.call("DELETE", f"{RADIOS}?kind=filter&id={NODE}")
+
+        assert response.code == 200 and reads == [int(USER)]  # só a leitura da resposta; a checagem prévia não lê
 
     def test_corpo_invalido_da_400(self):
         for query in (f"kind=x&id={STATION}", "kind=station", f"id={STATION}", "kind=station&id="):

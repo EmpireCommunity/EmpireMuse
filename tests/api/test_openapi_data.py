@@ -325,6 +325,11 @@ class OpenApiDataContractTest(DataApiCase):
         if not casos <= self.ran:
             pytest.skip("só vale com todos os casos da classe rodando (o ``-k`` deixa casos de fora)")
 
-        faltando = {item for item in documented(self.spec) if item[1] not in FOUNDATION_PATHS} - self.seen
+        b4 = ("/jukebox", "/radios", "/radio-stations")  # as rotas do B4 têm o contrato delas (``test_openapi_b4``)
+        faltando = {
+            item
+            for item in documented(self.spec)
+            if item[1] not in FOUNDATION_PATHS and not any(p in item[1] for p in b4)
+        } - self.seen
 
         assert not faltando, f"documentados e nunca observados: {sorted(faltando)}"
