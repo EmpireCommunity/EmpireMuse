@@ -58,20 +58,23 @@ async def ceder():
 
 
 @pytest.mark.asyncio
-async def test_m_e1_a_ban_during_a_reload_never_disappears_from_memory(mundo):
-    mundo.banco.query_falhas_restantes = 1  # a carga do ban falha
-    mundo.banco.update_solto = asyncio.Event()
+async def test_m_e1_a_reload_during_the_ban_write_never_swaps_in_a_stale_list(mundo):
+    await mundo.bans.ensure_loaded()  # a carga de dentro do ban dá certo
+    escrita = mundo.banco.update_solto = asyncio.Event()
     ban = asyncio.ensure_future(mundo.bans.ban(ALVO, "Servidor", "x"))
-    await ceder()
-    leitura = mundo.banco.leitura_solta = asyncio.Event()  # nova carga lê o banco antes de o ban ser gravado
+    await ceder()  # o ban está com a gravação em pausa
+    mundo.bans._loaded = False  # recarga pendente enquanto o ban grava
+    leitura = mundo.banco.leitura_solta = asyncio.Event()
     recarga = asyncio.ensure_future(mundo.bans.ensure_loaded())
     await ceder()
-    mundo.banco.update_solto.set()
+
+    assert not recarga.done() and mundo.banco.leitura_solta is leitura  # a recarga espera o ban: nem leu o banco ainda
+    escrita.set()
     await ceder()
     leitura.set()
-    await asyncio.gather(ban, recarga, return_exceptions=True)
+    await asyncio.gather(ban, recarga)  # nenhuma das duas levantou
 
-    assert (await doc(mundo.banco, ALVO) is not None) == mundo.bans.is_banned(ALVO)  # banco e memória concordam
+    assert await doc(mundo.banco, ALVO) is not None and mundo.bans.is_banned(ALVO)
 
 
 @pytest.mark.asyncio
