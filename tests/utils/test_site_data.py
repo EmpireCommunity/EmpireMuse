@@ -269,6 +269,135 @@ class TestNothingPrivateLeaks:
         assert not any(key in text for key in ('"cog"', '"_cog"', '"_category"', "OWNER_IDS"))
 
 
+class TestOwnerFilterFailsClosed:
+    """Sentinela e Alicerce X1: o filtro de dono era uma lista de nomes que falha ABERTO (uma verificação nova passava em silêncio).
+    Agora toda verificação de um comando público tem de ser classificada (dono ou pública); a desconhecida é erro."""
+
+    @staticmethod
+    def _all_real_commands():
+        from disnake.ext import commands as disnake_commands
+
+        found = []
+        for cls in site_data._cog_classes():
+            stack = [c for c in getattr(cls, "__cog_commands__", []) if c.parent is None]
+            stack += [
+                c
+                for c in getattr(cls, "__cog_app_commands__", [])
+                if isinstance(c, disnake_commands.InvokableSlashCommand)
+            ]
+            while stack:
+                item = stack.pop()
+                found.append(item)
+                stack.extend(getattr(item, "commands", ()))
+                stack.extend(getattr(item, "children", {}).values())
+        return found
+
+    def test_every_check_in_the_real_code_is_classified(self):
+        """O conjunto das verificações SEM classificação no código real é vazio: uma verificação nova quebra este teste (e o build)."""
+        unclassified = {
+            name
+            for item in self._all_real_commands()
+            if site_data.is_public(item)
+            for name in site_data.unclassified_checks(item)
+        }
+
+        assert unclassified == set()
+        assert (
+            len(self._all_real_commands()) > 100
+        )  # o teste enxerga os comandos de verdade (barra, prefixo e subcomandos)
+
+    def test_an_unknown_check_on_a_public_command_raises_instead_of_being_published(self):
+        rogue = SimpleNamespace(
+            hidden=False,
+            checks=[SimpleNamespace(__qualname__="owner_like_check.<locals>.predicate")],
+            qualified_name="x",
+            name="x",
+        )
+
+        with pytest.raises(SiteDataError, match="owner_like_check"):
+            site_data.require_classified(rogue, "prefix x")
+        with pytest.raises(SiteDataError):
+            site_data._prefix_node(rogue, {}, "Cog")
+
+    def test_an_unknown_check_on_a_top_level_slash_command_raises_through_slash_commands(self, monkeypatch):
+        """Um comando de barra de verdade (``InvokableSlashCommand``) com uma verificação desconhecida faz o exportador levantar."""
+        from disnake.ext import commands as disnake_commands
+
+        def rogue_check(inter):
+            return True
+
+        @disnake_commands.slash_command(name="rogue", description="d")
+        @disnake_commands.check(rogue_check)
+        async def rogue(inter):
+            return None
+
+        cog = SimpleNamespace(__cog_name__="Fake", __cog_app_commands__=[rogue])
+        monkeypatch.setattr(site_data, "_cog_classes", lambda: iter([cog]))
+        provider = SimpleNamespace(get=lambda key: None)
+
+        with pytest.raises(SiteDataError, match="rogue_check"):
+            site_data.slash_commands(provider)
+
+    def test_a_check_without_a_name_is_unclassified_too(self):
+        assert site_data.classify_check(object()) is None
+        assert site_data.classify_check(SimpleNamespace(__qualname__="")) is None
+
+    def test_a_hidden_command_with_an_unknown_check_is_just_excluded(self):
+        hidden = SimpleNamespace(
+            hidden=True, checks=[SimpleNamespace(__qualname__="rogue")], qualified_name="x", name="x"
+        )
+
+        assert site_data._prefix_node(hidden, {}, "Cog") is None
+
+    def test_an_unknown_check_on_a_slash_subcommand_raises(self):
+        import disnake
+
+        body = SimpleNamespace(
+            name="g",
+            description="[x Y] | G",
+            name_localizations=None,
+            description_localizations=None,
+            options=[disnake.Option("s", "S", type=disnake.OptionType.sub_command)],
+        )
+        child = SimpleNamespace(hidden=False, checks=[SimpleNamespace(__qualname__="rogue_check")], children={})
+
+        with pytest.raises(SiteDataError, match="rogue_check"):
+            site_data._slash_node(["g"], body, SimpleNamespace(checks=[], children={"s": child}))
+
+    @pytest.mark.parametrize(
+        ("qualname", "expected"),
+        [
+            ("admin_owner_only.<locals>.predicate", "owner"),
+            ("radio_owner_only", "owner"),
+            ("is_owner.<locals>.predicate", "owner"),
+            ("check_voice.<locals>.predicate", "public"),
+            ("is_dj.<locals>.predicate", "public"),
+            ("bot_has_guild_permissions.<locals>.predicate", "public"),
+            ("bot_has_permissions.<locals>.predicate", "public"),
+            ("has_permissions.<locals>.predicate", "public"),
+            ("has_guild_permissions.<locals>.predicate", "public"),
+            ("radio_manager_only", "public"),
+            ("_manage_check", "public"),
+            ("my_check_voice_helper", None),
+            ("owner_only_x", None),
+            ("radio_owner_only_extra", None),
+        ],
+    )
+    def test_the_classification_by_exact_name(self, qualname, expected):
+        assert site_data.classify_check(SimpleNamespace(__qualname__=qualname)) == expected
+
+    def test_playlists_import_and_export_publish_manage_guild(self, data):
+        for id_ in ("playlists.import", "playlists.export"):
+            assert command(data, "slash", id_)["permissions"] == ["manage_guild"], id_
+
+    def test_slash_subcommands_inherit_the_top_level_default_member_permissions(self, data):
+        """O Discord aplica o ``default_member_permissions`` do topo ao grupo inteiro: os subcomandos de ``/radio`` o carregam."""
+        assert command(data, "slash", "radio")["permissions"] == ["manage_guild"]
+        for id_ in ("radio.on", "radio.off", "radio.status", "radio.station.create", "radio.playlists.list"):
+            assert command(data, "slash", id_)["permissions"] == ["manage_guild"], id_
+        assert command(data, "slash", "jukebox.thread")["permissions"] == []  # topo sem exigência: nada é inventado
+
+
 class TestOnlyTheCommittedCatalogs:
     PROBE = """
         import json, shutil, sys, tempfile
@@ -311,6 +440,42 @@ class TestOnlyTheCommittedCatalogs:
         )
 
         assert run.returncode == 2 and "outro conjunto de idiomas" in run.stderr
+
+
+class TestValidateScript:
+    """``scripts/validate_site_data.py``: o que o job de PR (CI) roda sobre o JSON gerado dentro da imagem."""
+
+    def _run(self, *args):
+        return subprocess.run(
+            [sys.executable, "scripts/validate_site_data.py", *args],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def test_a_valid_file_passes_and_the_version_is_checked(self, tmp_path, data):
+        file = tmp_path / "site-data.json"
+        file.write_text(json.dumps(data), "utf-8")
+
+        assert self._run(str(file), "--bot-version", "2.3.0-rc.1").returncode == 0
+        wrong = self._run(str(file), "--bot-version", "9.9.9")
+        assert wrong.returncode == 1 and "bot_version" in wrong.stderr
+
+    def test_an_invalid_or_unreadable_file_fails_with_the_field_path_only(self, tmp_path, data):
+        broken = json.loads(json.dumps(data))
+        del broken["slash_commands"][0]["permissions"]
+        broken["prefix_commands"][0]["segredo"] = "VALOR-SECRETO"
+        file = tmp_path / "ruim.json"
+        file.write_text(json.dumps(broken), "utf-8")
+
+        run = self._run(str(file))
+
+        assert run.returncode == 1 and "/slash_commands/0" in run.stderr
+        assert "VALOR-SECRETO" not in run.stderr  # só o caminho do campo, nunca o valor
+        (tmp_path / "nao-json.json").write_text("{", "utf-8")
+        assert self._run(str(tmp_path / "nao-json.json")).returncode == 1
+        assert self._run(str(tmp_path / "nao-existe.json")).returncode == 1
 
 
 class TestCommandLine:

@@ -219,6 +219,7 @@ jobs:
           fi
           BOT_VERSION="${BASH_REMATCH[1]}"
           # O exportador roda DENTRO da imagem que acabou de ser publicada e assinada, sem rede: o arquivo descreve o código lançado.
+          # O CI de PR (ci.yml, job site-data-image) roda o MESMO comando, com as mesmas flags, antes da tag. Se mudar um, mude o outro.
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --entrypoint python "${IMAGE_NAME}@${DIGEST}" \
             -m empiremuse.site_data --bot-version "$BOT_VERSION" > site-data.json
           jq -e --arg v "$BOT_VERSION" '.bot_version == $v and (.slash_commands | length) > 0 and (.prefix_commands | length) > 0' \

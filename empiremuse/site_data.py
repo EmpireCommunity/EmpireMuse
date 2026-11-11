@@ -20,7 +20,7 @@ import inspect
 import json
 import pkgutil
 import re
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from typing import Any, Optional
 
 import disnake
@@ -44,17 +44,61 @@ OWNER_CHECK_PREFIXES = ("admin_owner_only.", "is_owner.")
 USER_PERMISSION_PREFIXES = ("has_permissions.<locals>", "has_guild_permissions.<locals>")
 # Verificações próprias com nome (``__qualname__`` exato) que exigem uma permissão do usuário sem usar ``has_permissions``: o prefixo
 # ``radio`` e seus subcomandos públicos conferem ``manage_guild`` em execução (``radio_group_access`` ainda deixa passar o dono, que
-# é oculto no site; aqui vale o que um membro comum precisa).
-NAMED_CHECK_PERMISSIONS = {"radio_manager_only": ("manage_guild",), "radio_group_access": ("manage_guild",)}
+# é oculto no site; aqui vale o que um membro comum precisa), e ``playlists import`` e ``export`` chamam ``ensure_manage``.
+NAMED_CHECK_PERMISSIONS = {
+    "radio_manager_only": ("manage_guild",),
+    "radio_group_access": ("manage_guild",),
+    "_manage_check": ("manage_guild",),
+}
+# FALHA FECHADO: toda verificação de um comando público tem de estar classificada, ou de dono (acima) ou PÚBLICA (aqui: permissões do
+# usuário e do bot, as regras de execução de voz, DJ e fila, e as verificações nomeadas do prefixo ``radio`` e de ``playlists``). Uma
+# verificação nova que não esteja numa das duas listas faz o exportador levantar ``SiteDataError``: o build força a decisão em vez de
+# publicar, em silêncio, um comando de dono com um nome de verificação que o filtro não conhece.
+PUBLIC_CHECK_PREFIXES = (
+    "has_permissions.<locals>",
+    "has_guild_permissions.<locals>",
+    "bot_has_permissions.<locals>",
+    "bot_has_guild_permissions.<locals>",
+    "check_voice.<locals>",
+    "has_player.<locals>",
+    "is_dj.<locals>",
+    "has_source.<locals>",
+    "can_send_message_check.<locals>",
+    "check_queue_loading.<locals>",
+    "check_stage_topic.<locals>",
+    "check_yt_cooldown.<locals>",
+    "is_requester.<locals>",
+)
+PUBLIC_CHECK_NAMES = frozenset(NAMED_CHECK_PERMISSIONS)
 
 
 class SiteDataError(Exception):
     """A saída não pode ser gerada com segurança (por exemplo, versão inválida)."""
 
 
+def _qualname(check: Any) -> str:
+    return getattr(check, "__qualname__", "")
+
+
 def _is_owner_check(check: Any) -> bool:
-    name = getattr(check, "__qualname__", "")
+    name = _qualname(check)
     return name in OWNER_CHECK_NAMES or name.startswith(OWNER_CHECK_PREFIXES)
+
+
+def classify_check(check: Any) -> str | None:
+    """``"owner"``, ``"public"`` ou ``None`` (verificação que ninguém classificou)."""
+    if _is_owner_check(check):
+        return "owner"
+    name = _qualname(check)
+    if name in PUBLIC_CHECK_NAMES or name.startswith(PUBLIC_CHECK_PREFIXES):
+        return "public"
+    return None
+
+
+def unclassified_checks(command: Any) -> list[str]:
+    return [
+        _qualname(check) or repr(check) for check in getattr(command, "checks", ()) if classify_check(check) is None
+    ]
 
 
 def is_public(command: Any) -> bool:
@@ -62,6 +106,15 @@ def is_public(command: Any) -> bool:
     if getattr(command, "hidden", False):
         return False
     return not any(_is_owner_check(check) for check in getattr(command, "checks", ()))
+
+
+def require_classified(command: Any, label: str) -> None:
+    """Chamado para todo comando que passou por ``is_public``: uma verificação sem classificação (dono ou pública) é ERRO, nunca omissão."""
+    unknown = unclassified_checks(command)
+    if unknown:
+        raise SiteDataError(
+            f"verificação sem classificação em {label}: {', '.join(unknown)} (classifique-a em empiremuse/site_data.py como dono ou pública)"
+        )
 
 
 def catalog_id(command: commands.Command) -> str:
@@ -145,9 +198,12 @@ def _option(option: disnake.Option) -> dict[str, Any]:
     return entry
 
 
-def _slash_node(path: list[str], source: Any, command: Any) -> dict[str, Any]:
+def _slash_node(path: list[str], source: Any, command: Any, inherited: Sequence[str] = ()) -> dict[str, Any]:
     """Um comando, grupo ou subcomando de barra. ``source`` (o corpo ou a opção) dá nome, descrição e opções; ``command`` (o objeto
-    registrado) dá as verificações e os filhos. Subcomando de dono ou sem objeto correspondente fica de fora (falha fechado)."""
+    registrado) dá as verificações e os filhos. Subcomando de dono ou sem objeto correspondente fica de fora (falha fechado).
+
+    ``inherited``: o ``default_member_permissions`` do comando de topo, que o Discord aplica ao grupo inteiro. Ele é PROPAGADO aos
+    subcomandos (o ``permissions`` de cada nó é a soma do herdado com as verificações dele), para quem lê o nó não precisar subir a árvore."""
     nested = (disnake.OptionType.sub_command, disnake.OptionType.sub_command_group)
     children = getattr(command, "children", {})
     leaves = [(o, children.get(o.name)) for o in source.options if o.type in nested]
@@ -158,12 +214,15 @@ def _slash_node(path: list[str], source: Any, command: Any) -> dict[str, Any]:
         "name": _by_locale(source.name, source.name_localizations),
         "description": description,
         "options": [_option(o) for o in source.options if o.type not in nested],
-        "permissions": _user_permissions(command),
+        "permissions": sorted({*inherited, *_user_permissions(command)}),
     }
     if category is not None:
         node["_category"] = category
+    for _, child in leaves:
+        if child is not None and is_public(child):
+            require_classified(child, f"slash {' '.join([*path])}")
     subs = [
-        _slash_node([*path, option.name], option, child)
+        _slash_node([*path, option.name], option, child, inherited)
         for option, child in leaves
         if child is not None and is_public(child)
     ]
@@ -178,10 +237,10 @@ def slash_commands(provider: Any) -> list[dict[str, Any]]:
         for command in getattr(cls, "__cog_app_commands__", []):
             if not isinstance(command, commands.InvokableSlashCommand) or not is_public(command):
                 continue
+            require_classified(command, f"slash {command.qualified_name}")
             body = command.body
             body.localize(provider)
-            node = _slash_node([body.name], body, command)
-            node["permissions"] = sorted({*node["permissions"], *_permission_names(body.default_member_permissions)})
+            node = _slash_node([body.name], body, command, _permission_names(body.default_member_permissions))
             found.append(
                 {
                     "id": node.pop("id"),
@@ -199,6 +258,7 @@ def slash_commands(provider: Any) -> list[dict[str, Any]]:
 def _prefix_node(command: commands.Command, entries: dict[str, dict[str, str]], cog: str) -> Optional[dict[str, Any]]:
     if not is_public(command):
         return None
+    require_classified(command, f"prefix {command.qualified_name}")
     base = f"cmd.{catalog_id(command)}"
     node: dict[str, Any] = {
         "id": catalog_id(command),

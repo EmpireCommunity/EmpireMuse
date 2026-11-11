@@ -7,7 +7,8 @@ EmpireMuse-Panel fixa a versão (tag e hash), baixa, confere o hash e gera `/com
   são fechados (`additionalProperties: false`), então um campo novo sem versão do schema quebra a validação de propósito.
 - **Versão:** `schema_version` é `1`. Dentro dela só mudança aditiva; uma quebra sobe o número e o painel recusa o que não conhece.
 - **Idiomas:** `pt-BR` e `en-US` em todo texto. O `en-US` é o texto-base do Discord; o `pt-BR` vem do catálogo (`cmd.<id>.*`).
-- **Permissões:** são as do usuário (`default_member_permissions` e as verificações `has_permissions` e `has_guild_permissions`, no comando e nos subcomandos). O que o bot precisa (`bot_has_*`, como `send_messages`) nunca entra.
+- **Permissões:** são as do usuário (`default_member_permissions` e as verificações `has_permissions`, `has_guild_permissions` e as nomeadas do prefixo `radio` e de `/playlists import|export`, no comando e nos subcomandos). O que o bot precisa (`bot_has_*`, como `send_messages`) nunca entra. **O `default_member_permissions` do comando de topo é propagado aos subcomandos de barra** (o Discord o aplica ao grupo inteiro): os subcomandos de `/radio` trazem `manage_guild`, sem o leitor precisar subir a árvore.
+- **O que nunca é publicado (falha fechado):** o exportador classifica toda verificação de um comando público como *de dono* (o comando sai) ou *pública* (lista em `empiremuse/site_data.py`). Uma verificação nova que ninguém classificou **levanta `SiteDataError`** e quebra o build (e o CI de PR), em vez de publicar em silêncio um comando que pode ser de dono.
 - **Conteúdo:** comandos de barra (com opções, grupos e subcomandos), comandos de prefixo (com aliases do catálogo), categoria,
   permissões de servidor que o **usuário** precisa ter e `bot_version`. Ordem estável por `id` e nenhum campo de data: o mesmo código gera os mesmos bytes.
 - **O que nunca entra:** comando de dono, comando oculto (`hidden`), segredo e id interno (como o nome da classe do cog). Um teste do bot
@@ -40,3 +41,20 @@ sha256sum -c site-data.json.sha256
 ## Se a exportação falhar depois de a imagem ser publicada
 
 O job `docker` já publicou e assinou a imagem (o digest fica no resultado dele). Se o job `github-release` falhar (exportação, atestado ou criação da release), o caminho é **Re-run failed jobs** do mesmo workflow: ele repete só o que falhou e reaproveita o digest. **Nunca mover nem recriar a tag**: o workflow recusa reconstruir uma versão já publicada.
+
+### Verificar um ativo (o que o CI do painel roda)
+
+```bash
+gh attestation verify site-data.json \
+  --repo EmpireCommunity/EmpireMuse \
+  --signer-workflow EmpireCommunity/EmpireMuse/.github/workflows/release.yml \
+  --source-ref refs/tags/vX.Y.Z \
+  --source-digest <sha do commit da tag, o mesmo gravado no pino data/bot-release.json do painel> \
+  --deny-self-hosted-runners
+```
+
+Troque `site-data.json` por `openapi.yaml` para o outro ativo. `--source-ref` e `--source-digest` prendem o atestado à TAG e ao COMMIT pinados (um atestado de outra tag ou de outro commit do mesmo workflow é recusado); `--deny-self-hosted-runners` recusa um atestado emitido por um executor próprio. O hash do `.sha256` **não** substitui isto: quem troca o arquivo troca o hash.
+
+### O schema e o validador do painel
+
+`docs/api/site-data.schema.json` **não é um ativo da release** (ele vive no repositório, na tag) e **não limita tamanho nem rejeita caracteres de controle**: ele descreve a forma, não protege quem consome. O painel mantém o **validador próprio, mais estrito** (tipos, tamanhos, sem caractere de controle, sem HTML), e nunca confia só no schema (nota P1 F7).
