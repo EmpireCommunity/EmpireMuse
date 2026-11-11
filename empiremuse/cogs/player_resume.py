@@ -10,6 +10,7 @@ from typing import Union
 import disnake
 from disnake.ext import commands
 
+from empiremuse.utils.owner_gate import admin_owner_only
 from empiremuse.logs.context import guild_extra
 from empiremuse.rules.bot_tokens import is_radio_only_identifier
 from empiremuse.rules.radio import radio_id
@@ -61,7 +62,7 @@ class PlayerSession(commands.Cog):
 
         await self.save_info(player)
 
-    @commands.is_owner()
+    @admin_owner_only()
     @commands.command(
         hidden=True, description="Salvar informações dos players na database instantaneamente.", aliases=["svplayers"]
     )

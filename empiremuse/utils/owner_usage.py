@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Optional
 
 import disnake
 
+from empiremuse.utils.owner_gate import is_admin_owner
 from empiremuse.rules.usage import (
     KIND_GUILD,
     KIND_PLAYBACK,
@@ -58,7 +59,7 @@ class OwnerOnlyView(disnake.ui.View):
         self.invoker_id = invoker_id
 
     async def interaction_check(self, interaction: disnake.Interaction) -> bool:
-        if interaction.author.id == self.invoker_id and await self.gate_bot.is_owner(interaction.author):
+        if interaction.author.id == self.invoker_id and is_admin_owner(self.gate_bot, interaction.author):
             return True
         await interaction.response.send_message(NOT_OWNER_TEXT, ephemeral=True)
         return False
@@ -162,7 +163,7 @@ class BanReasonModal(disnake.ui.Modal):
         )
 
     async def callback(self, interaction: disnake.ModalInteraction) -> None:
-        if interaction.author.id != self.invoker_id or not await self.gate_bot.is_owner(interaction.author):
+        if interaction.author.id != self.invoker_id or not is_admin_owner(self.gate_bot, interaction.author):
             await interaction.response.send_message(NOT_OWNER_TEXT, ephemeral=True)
             return
         reason = clean_text(interaction.text_values.get("reason"), REASON_LIMIT)

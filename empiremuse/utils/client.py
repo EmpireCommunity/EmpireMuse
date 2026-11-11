@@ -66,9 +66,11 @@ from empiremuse.utils.safe_error import HTTPStatusError, safe_error
 from empiremuse.utils.db import MongoDatabase, LocalDatabase, get_prefix, DBModel, global_db_models
 from empiremuse.utils.erasure import ErasureService, ErasureTombstones
 from empiremuse.utils.erasure_grants import OwnerGrants
+from empiremuse.utils.owner_gate import log_owner_gate_boot
 from empiremuse.utils.user_locks import UserLocks
 from empiremuse.utils.app_profile import sync_app_profile
 from empiremuse.utils.guild_ban import GuildBans
+from empiremuse.rules.owner_gate import parse_owner_ids, resolve_owner_gate
 from empiremuse.utils.user_ban import UserBans, user_bans_of
 from empiremuse.utils.user_ban_gate import install_interaction_gate
 from empiremuse.utils.radio import RadioHub
@@ -168,20 +170,6 @@ def _report_module_failure(bot_name, filename: str, error: BaseException) -> Non
     """Falha de cog: módulo e tipo da exceção em WARNING (sem traceback); o traceback só em DEBUG."""
     BootReport().step(f"Cog {filename}.py de {bot_name}", "warn", f"falhou ao carregar ({type(error).__name__})")
     logger.debug("Detalhe da falha do módulo %s", filename, exc_info=(type(error), error, error.__traceback__))
-
-
-def parse_owner_ids(raw: Optional[str]) -> list[int]:
-    """IDs numéricos de ``OWNER_IDS`` (separados por ``||``); vazios são ignorados e inválidos, descartados com aviso."""
-    ids = []
-    for item in (raw or "").split("||"):
-        item = item.strip()
-        if not item:
-            continue
-        try:
-            ids.append(int(item))
-        except ValueError:
-            logger.warning("Owner_ID inválido: %s", item)
-    return ids
 
 
 def load_jishaku_if_enabled(bot) -> bool:
@@ -1073,6 +1061,7 @@ class BotPool:
         log_settings, log_warnings = parse_log_settings(self.config, os.environ)
         configure_logging(log_settings, collect_secret_values(self.config, os.environ))
         boot.flush_deferred()
+        log_owner_gate_boot(self.config)  # uma vez por pool, já com o log configurado (o arquivo do log recebe o ERROR)
         installed_version = image_version()
         boot.step("Versão do bot", "ok", str(installed_version) if installed_version else "fora da imagem Docker")
         for log_warning in log_warnings:  # logados só agora, já com o log configurado
@@ -1531,6 +1520,7 @@ class BotCore(commands.AutoShardedBot):
         self._clear_commands_task: Optional[asyncio.Task] = None
 
         self.env_owner_ids.update(parse_owner_ids(self.config["OWNER_IDS"]))
+        self.owner_gate = resolve_owner_gate(self.config["OWNER_IDS"], self.env_owner_ids)
 
     async def on_error(self, event_method: str, *args, **kwargs):
         """Exceção em um tratador de evento: ERROR com o traceback no log de erros (o padrão do disnake imprimiria no stderr)."""

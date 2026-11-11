@@ -138,10 +138,10 @@ def test_jishaku_ligado_com_owner_ids_carrega_e_converte_separador(monkeypatch):
     monkeypatch.delenv("JISHAKU_OWNER_IDS", raising=False)
     monkeypatch.delenv("JISHAKU_MASK_SECRETS", raising=False)
     monkeypatch.delenv("JISHAKU_DM_ONLY", raising=False)
-    bot = _bot_jishaku(True, "111||abc||222")
+    bot = _bot_jishaku(True, "100000000000000111||abc||100000000000000222")
 
     assert load_jishaku_if_enabled(bot) is True
     bot.load_extension.assert_called_once_with("jishaku")
-    assert os.environ["JISHAKU_OWNER_IDS"] == "111,222"
+    assert os.environ["JISHAKU_OWNER_IDS"] == "100000000000000111,100000000000000222"
     assert os.environ["JISHAKU_MASK_SECRETS"] == "true"
     assert os.environ["JISHAKU_DM_ONLY"] == "true"
