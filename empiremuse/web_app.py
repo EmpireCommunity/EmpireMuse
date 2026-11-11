@@ -513,7 +513,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
 
 
 def _is_rpc_blocked(pool: BotPool, user_id: int) -> bool:
-    bans = getattr(pool, "user_bans", None)  # sem importar ``utils.user_ban``: o servidor web não puxa o banco
+    bans = getattr(pool, "user_bans", None)  # sem importar ``utils.user_ban``: a lista de banidos vem do pool
     return bans is not None and bans.is_blocked(user_id)
 
 
