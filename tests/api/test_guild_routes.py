@@ -436,6 +436,26 @@ class IdempotencyAndLimitsTest(DataApiCase):
         assert (response.code, error_code(response)) == (401, "session_expired")
         assert self.db_writes == [] and claim.replay is None and claim.ticket is not None  # a chave está livre
 
+    def test_sessao_que_acaba_durante_a_escrita_responde_401_e_nao_guarda_a_resposta(self):
+        service = self.ctx.settings_service
+        submit = service.submit
+
+        async def submit_then_erase(*args, **kwargs):
+            outcome = await submit(*args, **kwargs)
+            self.store.destroy_user(USER)  # a sessão acaba dentro do trabalho da escrita
+            return outcome
+
+        for key in ("chave-0001", None):  # com e sem Idempotency-Key
+            with self.subTest(key=key):
+                self.token = self.new_session(USER)  # a anterior caiu junto com o ``destroy_user``
+                version = self.version_of(PLAYER, "player")
+                with patch.object(service, "submit", submit_then_erase):
+                    response = self.call("PUT", PLAYER, player_body(version), key=key)
+
+                assert (response.code, error_code(response)) == (401, "session_expired")
+        claim = self.ctx.idempotency.claim(USER, "chave-0001", "qualquer-impressao")
+        assert claim.replay is None and claim.ticket is not None  # nada guardado: a chave está livre
+
     def test_escrita_20_por_minuto_por_usuario_somando_as_sessoes(self):
         version = self.version_of(PLAYER, "player")
         second = self.new_session(USER)

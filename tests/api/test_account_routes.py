@@ -5,6 +5,8 @@ import asyncio
 import json
 from urllib.parse import urlencode
 
+from unittest.mock import patch
+
 import pytest
 
 from empiremuse.api.server import API_PREFIX
@@ -21,7 +23,6 @@ from tests.panel.helpers_account import RPC_TOKEN_OLD, SESSIONKEY
 
 pytestmark = pytest.mark.critical
 
-MAX_TURNS = 1000
 PREFIX, LASTFM, RPC, FAVORITES, INTEGRATIONS, RADIOS = (
     "/account/prefix",
     "/account/lastfm",
@@ -190,12 +191,25 @@ class IdempotencyTest(DataApiCase):
         assert (response.code, body_of(response)["error"]["fields"]) == (400, ["idempotency_key"])
 
 
+class SignalingLock:
+    """O lock do usuário que avisa (``arrived``) no instante em que a escrita o pede, antes de esperar por ele."""
+
+    def __init__(self, lock, arrived):
+        self._lock, self.arrived = lock, arrived
+
+    async def __aenter__(self):
+        self.arrived.set()  # síncrono até o ``acquire`` abaixo: quando o teste acorda, a escrita já está na fila do lock
+        await self._lock.acquire()
+
+    async def __aexit__(self, *exc):
+        self._lock.release()
+
+
 class ErasureWindowTest(DataApiCase):
     def test_escrita_que_esperava_o_lock_do_usuario_nao_grava_depois_do_apagamento(self):
         version = self.version_of("/account", "prefixo")
-        lock = self.ctx.account_service._locks.lock(
-            "users", 1001
-        )  # o lock que o apagamento e a escrita da conta dividem
+        service = self.ctx.settings_service
+        real = service.lock("users", 1001)  # o lock que o apagamento e a escrita da conta dividem
         headers = {
             "Authorization": f"Bearer {SERVICE_KEY}",
             "X-EM-Session": self.token,
@@ -203,21 +217,20 @@ class ErasureWindowTest(DataApiCase):
         }
 
         async def scenario():
-            await lock.acquire()  # o apagamento está rodando
-            pending = self.http_client.fetch(
-                self.get_url(API_PREFIX + PREFIX),
-                method="PATCH",
-                headers=headers,
-                body=json.dumps(prefix_body(version)),
-                raise_error=False,
-            )
-            for _ in range(MAX_TURNS):  # cede o laço (sem relógio) até a escrita ficar esperando o lock
-                if lock._waiters:
-                    break
-                await asyncio.sleep(0)
-            assert lock._waiters, "a escrita nunca chegou ao lock"
+            arrived = asyncio.Event()
+            signaling = SignalingLock(real, arrived)
+            await real.acquire()  # o apagamento está rodando
+            with patch.object(service, "lock", lambda scope, user_id: signaling):
+                pending = self.http_client.fetch(
+                    self.get_url(API_PREFIX + PREFIX),
+                    method="PATCH",
+                    headers=headers,
+                    body=json.dumps(prefix_body(version)),
+                    raise_error=False,
+                )
+                await arrived.wait()  # a escrita passou pelo ``prepare`` e pediu o lock
             self.store.destroy_user("1001")  # o apagamento destrói as sessões
-            lock.release()
+            real.release()
             return await pending
 
         response = self.io_loop.run_sync(scenario)
