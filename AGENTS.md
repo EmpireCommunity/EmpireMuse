@@ -37,7 +37,7 @@ Estrutura essencial do código (consulte [`docs/architecture.md`](docs/architect
 - `empiremuse/utils/music/checks.py`: Verificações de permissão, voz, DJ e algoritmo de roteamento entre múltiplos bots.
 - `empiremuse/utils/music/local_lavalink.py`: Download e execução sob demanda de binários JDK e Lavalink local.
 - `empiremuse/utils/music/lavalink_server_list.py`: Validação da lista de servidores Lavalink baixada, com fallback para `data/lavalink_servers.ini`.
-- `empiremuse/rules/`: Regras de negócio puras compartilhadas por comandos e painel (limites, texto, URLs, cota e configurações; só biblioteca padrão).
+- `empiremuse/rules/`: Regras de negócio puras compartilhadas por comandos e painel (limites, texto, URLs, cota e configurações; só biblioteca padrão). `empiremuse/rules/panel_serialize.py`: serialização da API do painel externo (lista de permissão de campos; segredos nunca saem).
 - `empiremuse/panel/`: Sub-aplicação web Tornado do painel de administração (OAuth2, sessões, rotas, serviços, templates e estáticos vendorizados).
 - `empiremuse/api/`: API do bot para painéis externos (`/api/v1`), com listener e aplicação Tornado próprios, separados de `web_app` (configuração `ExternalPanelSettings`, chave de serviço, sessões por token, limites e envelope de erro). O estado compartilhado (`SessionStore` e `TaskRunner` únicos) fica em `empiremuse/panel/state.py`.
 - `empiremuse/utils/music/request_channel.py`: Lógica unificada de setup e reset de canais de texto e fóruns de pedidos, compartilhada entre os cogs e o painel web.
