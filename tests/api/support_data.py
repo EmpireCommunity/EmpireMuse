@@ -42,12 +42,12 @@ class FakeUserFavorites:
 
     async def add_station(self, user_id, uuid):
         self._check()
-        if uuid == UNKNOWN_STATION:
-            raise FavoriteNotFound
-        if len(self.station_ids[user_id]) >= 24:
-            return AddResult.FULL
         if uuid in self.station_ids[user_id]:
             return AddResult.ALREADY
+        if len(self.station_ids[user_id]) >= 24:
+            return AddResult.FULL
+        if uuid == UNKNOWN_STATION:
+            raise FavoriteNotFound
         self.station_ids[user_id].append(uuid)
         return AddResult.ADDED
 

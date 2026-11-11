@@ -2357,7 +2357,7 @@ components:
       in: header
       required: false
       description: |
-        Torna a escrita repetível: a mesma chave com o mesmo pedido (usuário, servidor, rota e corpo) devolve a resposta de sucesso guardada, com `Idempotent-Replayed: true`, por 10 minutos (até 100 chaves por usuário). A mesma chave com outro pedido, ou com o original ainda em andamento, é `409 conflict`. Só sucesso é guardado: um erro libera a chave. Um `5xx` não diz se a escrita ocorreu; repita com a mesma chave **e** com `expected_version` (a versão impede gravar duas vezes). Fora do formato é `400` com `fields: ["idempotency_key"]`.
+        Torna a escrita repetível: a mesma chave com o mesmo pedido (usuário, servidor, rota e corpo) devolve a resposta de sucesso guardada, com `Idempotent-Replayed: true`, por 10 minutos (até 100 chaves por usuário). A mesma chave com outro pedido, ou com o original ainda em andamento, é `409 conflict`. Só sucesso é guardado: um erro libera a chave. Um `5xx` não diz se a escrita ocorreu; repita o MESMO pedido com a MESMA chave. Nas rotas versionadas, preserve também `expected_version` (a versão impede gravar duas vezes). As favoritas de rádio (`POST /account/radio-favorites` e `POST`/`DELETE /guilds/{guild_id}/radio-favorites/{server|mine}`, além do `DELETE` da conta) são por chave de item e NÃO levam `expected_version`: a mesma chave de idempotência identifica a repetição do clique; um novo clique usa uma chave nova. Fora do formato é `400` com `fields: ["idempotency_key"]`.
       schema:
         type: string
         pattern: ^[A-Za-z0-9_-]{8,64}$
