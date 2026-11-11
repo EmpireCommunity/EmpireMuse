@@ -14,8 +14,6 @@ from typing import TYPE_CHECKING, Any, Mapping
 
 import disnake
 
-from empiremuse.api.settings import external_panel_requested, load_external_panel_settings
-from empiremuse.config_loader import resolve_port
 
 from empiremuse.rules.app_profile import build_profile, panel_url_of, plan_changes
 
@@ -29,6 +27,9 @@ EDIT_TIMEOUT = 20  # s: o disnake espera o 429 por conta própria; passou disso,
 
 def public_panel_url(config: Mapping[str, Any], *, now: float) -> str:
     """O link público do modo escolhido: externo validado, vazio quando inválido, ou genérico para hospedagem própria."""
+    from empiremuse.api.settings import external_panel_requested, load_external_panel_settings
+    from empiremuse.config_loader import resolve_port
+
     if external_panel_requested(config):
         try:
             settings = load_external_panel_settings(config, web_port=resolve_port(config.get("PORT")), now=now)
