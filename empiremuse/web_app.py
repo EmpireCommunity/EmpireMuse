@@ -369,7 +369,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         except ProofUnavailable as exc:
             unavailable = exc
 
-        if self.rejected or self.ws_connection is None or self.ws_connection.is_closing():
+        if self.ws_connection is None or self.ws_connection.is_closing():
             return None  # fechou (``close`` do handler ou do protocolo, como o ping) durante a prova: nada de ``users_ws``, de sessão deslocada nem de repasse
 
         if unavailable is not None:

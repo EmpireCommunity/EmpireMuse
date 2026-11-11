@@ -8,6 +8,7 @@ from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Optional
 
 from empiremuse.rpc_protocol import PROOF_MAX_IN_FLIGHT, PROOF_TIMEOUT, authenticates
+from empiremuse.utils.db import DBModel
 
 if TYPE_CHECKING:
     from empiremuse.utils.db import LocalDatabase, MongoDatabase
@@ -15,8 +16,6 @@ if TYPE_CHECKING:
     type Database = LocalDatabase | MongoDatabase
 
 
-# Nomes de ``DBModel.users`` e da coleção global, sem importar ``utils.db``: o servidor web não puxa o banco (ver ``_is_rpc_blocked``).
-USERS_DB = "users"
 GLOBAL_COLLECTION = "global"
 
 
@@ -62,7 +61,7 @@ class TokenProof:
         try:
             docs = await asyncio.wait_for(
                 asyncio.gather(
-                    *(database.find_doc(i, db_name=USERS_DB, collection=GLOBAL_COLLECTION) for i in ids),
+                    *(database.find_doc(i, db_name=DBModel.users, collection=GLOBAL_COLLECTION) for i in ids),
                     return_exceptions=True,
                 ),
                 self._timeout,

@@ -632,3 +632,148 @@ async def test_p12_the_ban_notice_only_reaches_the_verified_connection(servidor,
     assert [json.loads(t) for t in avisos] == [{"op": "disconnect", "reason": RPC_BLOCKED_REASON}]
     assert codigo == rpc_protocol.CLOSE_REFUSED
     assert [json.loads(t) for t in textos_do_invasor] == [PROVA_NEGADA]  # o invasor só soube que o token é inválido
+
+
+# --- Ensaio e Alicerce: lacunas de prova -----------------------------------------------------------------------------
+
+LONE_SURROGATE_TOKEN = "\ud800" + "a" * 49  # 50 caracteres: passa o formato e o JSON o carrega como texto
+
+
+def test_a_token_with_a_lone_surrogate_is_just_a_wrong_token_for_the_comparison():
+    assert rpc_protocol.same_token(LONE_SURROGATE_TOKEN, TOKEN) is False
+    assert rpc_protocol.same_token(LONE_SURROGATE_TOKEN, LONE_SURROGATE_TOKEN) is True
+    assert rpc_protocol.authenticates(LONE_SURROGATE_TOKEN, TOKEN) is False
+
+
+@pytest.mark.asyncio
+async def test_p1_a_lone_surrogate_token_gets_the_same_refusal_and_counts_in_the_budget(
+    servidor, sessao, banco, ip_confiavel
+):
+    x = _snowflake()
+    banco.docs[x] = {"token": TOKEN}
+    recusa_comum = await tentar(servidor, sessao, [x], OUTRO_TOKEN)
+
+    for _ in range(rpc_protocol.PROOF_DENIED_LIMIT - 1):  # o orçamento já tem 1 (a recusa comum acima)
+        assert await tentar(servidor, sessao, [x], LONE_SURROGATE_TOKEN) == recusa_comum
+
+    assert (await tentar(servidor, sessao, [x], TOKEN)) == ([], rpc_protocol.CLOSE_RATE_LIMITED)  # contou como negada
+
+
+@pytest.mark.asyncio
+async def test_p4_a_token_written_by_the_normal_path_verifies_in_the_real_local_database(
+    iniciar_servidor, sessao, segredo, tmp_path, monkeypatch
+):
+    from empiremuse.utils.db import DBModel, LocalDatabase, global_db_models
+
+    banco_real = LocalDatabase(dir_=str(tmp_path / "banco"))
+    monkeypatch.setattr(BotPool, "database", property(lambda self: banco_real))
+    servidor = iniciar_servidor({"RPC_SERVER_SECRET": segredo, **AUTH_LIGADA})
+    x = _snowflake()
+    dados = await banco_real.get_data(x, db_name=DBModel.users, collection="global", default_model=global_db_models)
+    dados["token"] = TOKEN  # o caminho do botão /rich_presence: ``get_global_data`` + ``update_global_data``
+    await banco_real.update_data(x, dados, db_name=DBModel.users, collection="global", default_model=global_db_models)
+
+    await registrar(servidor, sessao, [x])
+
+    assert x in web_app.users_ws
+    assert await tentar(servidor, sessao, [x], OUTRO_TOKEN) == ([json.dumps(PROVA_NEGADA)], rpc_protocol.CLOSE_REFUSED)
+
+
+class _ColecaoMongoFalsa:
+    """O que o ``find_doc`` do Mongo usa; qualquer escrita quebra o teste."""
+
+    def __init__(self, docs):
+        self.docs, self.filtros = docs, []
+
+    async def find_one(self, filtro):
+        self.filtros.append(filtro)
+        return self.docs.get(filtro["_id"])
+
+    async def insert_one(self, *args, **kwargs):
+        raise AssertionError("a prova nunca escreve")
+
+    update_one = replace_one = find_one_and_update = insert_one
+
+
+@pytest.mark.asyncio
+async def test_p4_the_mongo_database_is_read_only_and_creates_nothing(iniciar_servidor, sessao, segredo, monkeypatch):
+    from empiremuse.utils.db import MongoDatabase
+
+    x, desconhecido, apagado = _snowflake(), _snowflake(), _snowflake()
+    colecao = _ColecaoMongoFalsa(
+        {str(x): {"_id": str(x), "token": TOKEN}, str(apagado): {"_id": str(apagado), "token": ""}}
+    )
+    mongo = object.__new__(MongoDatabase)
+    mongo._connect = {"global": {"users": colecao}}
+    monkeypatch.setattr(BotPool, "database", property(lambda self: mongo))
+    servidor = iniciar_servidor({"RPC_SERVER_SECRET": segredo, **AUTH_LIGADA})
+
+    ws = await registrar(servidor, sessao, [x])
+    for uid in (desconhecido, apagado):
+        assert (await tentar(servidor, sessao, [uid], TOKEN))[1] == rpc_protocol.CLOSE_REFUSED
+
+    assert x in web_app.users_ws and not ws.closed and not ({desconhecido, apagado} & set(web_app.users_ws))
+    assert {f["_id"] for f in colecao.filtros} == {str(x), str(desconhecido), str(apagado)}  # só leituras por ``_id``
+
+
+@pytest.mark.asyncio
+async def test_a_second_registration_does_not_erase_the_earlier_one_while_its_proof_is_pending(servidor, sessao, banco):
+    x, y = _snowflake(), _snowflake()
+    banco.docs[x] = {"token": TOKEN}
+    banco.docs[y] = {"token": TOKEN}
+    ws = await registrar(servidor, sessao, [x])
+    handler = web_app.users_ws[x]
+    banco.gates[y] = asyncio.Event()
+
+    await ws.send_json(com_token([y]))
+    await esperar(lambda: y in banco.calls)  # a prova do segundo registro está pendente
+
+    assert web_app.users_ws.get(x) is handler and handler.user_ids == [x]  # o primeiro só sai depois da prova
+    banco.gates[y].set()
+    await esperar(lambda: web_app.users_ws.get(y) is handler)
+    assert x not in web_app.users_ws  # provado, o segundo substitui o primeiro
+
+
+@pytest.mark.asyncio
+async def test_the_database_is_read_at_each_proof_not_captured_at_boot(servidor, sessao, banco, monkeypatch):
+    x = _snowflake()
+    banco.docs[x] = {"token": TOKEN}
+    await registrar(servidor, sessao, [x])
+
+    outro = BancoFalso()  # o banco do pool trocou depois da subida: o verificador lê o novo
+    outro.docs[x] = {"token": OUTRO_TOKEN}
+    monkeypatch.setattr(BotPool, "database", property(lambda self: outro))
+    assert await tentar(servidor, sessao, [x], TOKEN) == ([json.dumps(PROVA_NEGADA)], rpc_protocol.CLOSE_REFUSED)
+
+    monkeypatch.setattr(BotPool, "database", property(lambda self: None))  # sem banco no momento: tenta de novo depois
+    assert await tentar(servidor, sessao, [x], TOKEN) == ([], rpc_protocol.CLOSE_TRY_AGAIN_LATER)
+
+
+@pytest.mark.asyncio
+async def test_run_app_gives_the_route_the_trusted_proxy_flag_so_the_budget_is_per_visitor_ip(
+    iniciar_servidor, sessao, banco, segredo, monkeypatch
+):
+    from empiremuse.rules.client_ip import parse_trusted_proxy_cidrs
+
+    redes = parse_trusted_proxy_cidrs("127.0.0.0/8")[0]  # o par do teste (127.0.0.1) é o proxy confiável
+    monkeypatch.setattr(web_app, "_build_panel", lambda pool, config: (object(), True, redes))
+    monkeypatch.setattr(web_app, "make_router", lambda app, panel: app)
+    servidor = iniciar_servidor({"RPC_SERVER_SECRET": segredo, **AUTH_LIGADA})
+    x = _snowflake()
+    banco.docs[x] = {"token": TOKEN}
+
+    async def de(ip, token):
+        ws = await sessao.ws_connect(servidor.url_ws, headers={"X-Real-Ip": ip})
+        await ws.send_json(com_token([x], token))
+        return await ate_fechar(ws)
+
+    for _ in range(rpc_protocol.PROOF_DENIED_LIMIT):
+        assert (await de("10.0.0.1", OUTRO_TOKEN))[1] == rpc_protocol.CLOSE_REFUSED
+
+    assert await de("10.0.0.1", TOKEN) == (
+        [],
+        rpc_protocol.CLOSE_RATE_LIMITED,
+    )  # o IP esgotado (privado: só vira chave com o proxy confiável)
+    assert (await de("10.0.0.2", OUTRO_TOKEN))[
+        1
+    ] == rpc_protocol.CLOSE_REFUSED  # outro visitante segue com o seu orçamento

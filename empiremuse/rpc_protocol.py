@@ -145,7 +145,8 @@ def same_token(provided: Any, expected: Any) -> bool:
     """Compara tokens do usuário (texto, ``""`` quando ausente) em tempo constante."""
     left = provided if isinstance(provided, str) else ""
     right = expected if isinstance(expected, str) else ""
-    return hmac.compare_digest(left.encode("utf-8"), right.encode("utf-8"))
+    # ``surrogatepass``: um token com substituto isolado (válido no JSON) é um token errado comum, nunca uma exceção.
+    return hmac.compare_digest(left.encode("utf-8", "surrogatepass"), right.encode("utf-8", "surrogatepass"))
 
 
 def authenticates(provided: Any, expected: Any) -> bool:
