@@ -4300,6 +4300,8 @@ components:
         artists:
           type: array
           description: "De 1 a 10 nomes."
+          minItems: 1
+          maxItems: 10
           items:
             type: string
     CustomStationPlaylistsValues:
@@ -4317,6 +4319,8 @@ components:
         playlists:
           type: array
           description: "De 1 a 5 playlists de rádio do servidor."
+          minItems: 1
+          maxItems: 5
           items:
             type: string
     CustomStationWrite:
