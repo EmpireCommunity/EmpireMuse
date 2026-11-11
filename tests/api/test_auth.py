@@ -6,6 +6,7 @@ import pytest
 
 from tests.api.helpers import PREVIOUS_KEY, SERVICE_KEY, external_config
 from tests.api.support import USER, ApiTestCase, body_of, error_code
+from tests.api.support_data import OLD_VERSION, DataApiCase
 
 pytestmark = pytest.mark.critical
 
@@ -148,3 +149,20 @@ class LogsTest(ApiTestCase):
         assert "Uncaught exception" in "\n".join(capturado.output)
         assert SERVICE_KEY not in "\n".join(capturado.output)
         assert "SEGREDO-NA-QUERY" not in "\n".join(capturado.output)  # a query nunca vai para o log de exceção
+
+
+class QueryNeverLoggedTest(DataApiCase):
+    def test_nome_e_alvo_das_remocoes_por_query_nunca_vao_para_nenhum_log(self):
+        with self.assertLogs(level=logging.DEBUG) as captured:
+            logging.getLogger("teste").debug("início")
+            for path in (
+                f"/account/favorites?name=NOME-SECRETO-X&expected_version={OLD_VERSION}",
+                f"/account/favorites?name=NOME-SECRETO-X&expected_version={self.version_of('/account/favorites', 'favoritos')}",
+                "/account/radio-favorites?kind=station&id=ALVO-SECRETO-Y",
+                "/account/radio-favorites?kind=nada&id=ALVO-SECRETO-Y",
+            ):
+                self.call("DELETE", path)
+            self.call("DELETE", "/account/favorites?name=NOME-SECRETO-X")  # 400: erro de validação
+        text = "\n".join(captured.output)
+
+        assert "NOME-SECRETO-X" not in text and "ALVO-SECRETO-Y" not in text

@@ -131,8 +131,9 @@ def test_non_finite_numbers_are_rejected_so_the_output_is_strict_json(bad):
 
 
 def test_a_valid_form_is_strict_json():
-    body = ps.serialize_form(make_form(key="player", valores={"default_player_volume": 50.5}), ps.GUILD)
+    body = ps.serialize_form(make_form(key="player", valores={"default_player_volume": "50"}), ps.GUILD)
     json.dumps(body, allow_nan=False)
+    assert body["values"]["default_player_volume"] == 50  # o formulário mostra texto; a API entrega número
 
 
 @pytest.mark.parametrize("bad", [object(), "texto", 7, [object()], [None]])

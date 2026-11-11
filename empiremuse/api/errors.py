@@ -22,12 +22,19 @@ class ApiError(tornado.web.HTTPError):
     """Falha esperada de uma rota: vira ``{"error": {"code", "fields"?, "request_id"}}`` com o status dado."""
 
     def __init__(
-        self, status: int, code: str, *, fields: Optional[Sequence[str]] = None, retry_after: Optional[int] = None
+        self,
+        status: int,
+        code: str,
+        *,
+        fields: Optional[Sequence[str]] = None,
+        retry_after: Optional[int] = None,
+        current_version: Optional[str] = None,
     ) -> None:
         super().__init__(status)
         self.code = code
         self.fields = list(fields) if fields else None
         self.retry_after = retry_after
+        self.current_version = current_version  # só no ``409 conflict`` de versão: a versão que o formulário tem agora
 
 
 def validation_failed(*fields: str, status: int = 400) -> ApiError:
@@ -36,3 +43,7 @@ def validation_failed(*fields: str, status: int = 400) -> ApiError:
 
 def rate_limited(retry_after: int) -> ApiError:
     return ApiError(429, RATE_LIMITED, retry_after=max(1, retry_after))
+
+
+def conflict(current_version: Optional[str] = None) -> ApiError:
+    return ApiError(409, CONFLICT, current_version=current_version)

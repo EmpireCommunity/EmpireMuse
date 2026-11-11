@@ -32,6 +32,7 @@ SESSION = "/api/v1/session"
 META = "/api/v1/meta"
 HEALTH = "/api/v1/health"
 FAILURE = RuntimeError("falha inesperada")
+FOUNDATION_PATHS = {META, HEALTH, SESSIONS, SESSION}  # as rotas de dados (B3 em diante) têm o teste delas
 
 
 def load_spec() -> dict:
@@ -217,7 +218,11 @@ class OpenApiContractTest(ApiTestCase):
         assert response.headers["X-Request-ID"] == body_of(response)["error"]["request_id"] == "abc-12345_XYZ"
 
     def test_o_arquivo_documenta_exatamente_as_rotas_da_api(self):
-        served = {rule.matcher.regex.pattern.rstrip("$") for rule in build_api_app(self.ctx).wildcard_router.rules}
+        # a rota com parâmetro leva o caminho do arquivo como nome (``api/server.py``)
+        served = {
+            rule.name or rule.matcher.regex.pattern.rstrip("$")
+            for rule in build_api_app(self.ctx).wildcard_router.rules
+        }
 
         assert served == set(self.spec["paths"])
 
@@ -246,6 +251,6 @@ class OpenApiContractTest(ApiTestCase):
         if not casos <= self.ran:
             pytest.skip("só vale com todos os casos da classe rodando (o ``-k`` deixa casos de fora)")
 
-        faltando = documented(self.spec) - self.seen
+        faltando = {item for item in documented(self.spec) if item[1] in FOUNDATION_PATHS} - self.seen
 
         assert not faltando, f"documentados e nunca observados: {sorted(faltando)}"

@@ -10,6 +10,7 @@ from tornado.httpclient import AsyncHTTPClient
 from tornado.testing import AsyncTestCase
 
 from empiremuse import web_app
+from empiremuse.api.idempotency import Reply
 from empiremuse.api.runtime import start_external_api
 from empiremuse.panel.state import ensure_panel_state
 from tests.api.helpers import NOW, SERVICE_KEY, external_config
@@ -39,6 +40,19 @@ def test_modo_externo_desligado_nao_cria_estado_nem_listener(pool):
 
     assert (status.blocked, status.server) == (False, None)
     assert not hasattr(pool, "panel_sessions") and not hasattr(pool, "panel_api_server")
+
+
+def test_destruir_o_usuario_no_store_unico_limpa_as_respostas_guardadas_da_api(pool):
+    status, _ = start(pool)
+    try:
+        idempotency = status.server.request_callback.settings["default_handler_args"]["ctx"].idempotency
+        idempotency.settle(idempotency.claim("1001", "chave-0001", "f").ticket, Reply(200, {"ok": True}))
+
+        pool.panel_sessions.destroy_user("1001")  # o mesmo gancho do apagamento de dados
+
+        assert idempotency.claim("1001", "chave-0001", "f").replay is None
+    finally:
+        status.server.stop()
 
 
 def test_modo_externo_valido_sobe_o_listener_e_cria_o_estado_unico_no_pool(pool):

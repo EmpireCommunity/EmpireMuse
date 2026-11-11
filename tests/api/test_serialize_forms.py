@@ -12,7 +12,7 @@ import re
 
 import pytest
 
-from empiremuse.panel.handlers.settings import CATEGORY_FORMS
+from empiremuse.panel.services.forms import CATEGORY_FORMS
 from empiremuse.panel.services.account import AccountService
 from empiremuse.panel.services.account_base import AccountContext
 from empiremuse.panel.services.base import FormContext, Formulario

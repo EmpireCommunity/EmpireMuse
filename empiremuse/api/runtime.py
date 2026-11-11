@@ -8,11 +8,13 @@ from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Optional
 
 from empiremuse.api.context import ApiContext
+from empiremuse.api.idempotency import IdempotencyStore
 from empiremuse.api.keys import ServiceKeys
 from empiremuse.api.limits import ApiLimits
 from empiremuse.api.server import ApiHTTPServer, listen
 from empiremuse.api.settings import ExternalPanelConfigError, external_panel_requested, load_external_panel_settings
 from empiremuse.config_loader import resolve_port
+from empiremuse.panel.authz import GuildAuthorizer
 from empiremuse.panel.oauth import make_client_provider
 from empiremuse.panel.settings import PanelConfigError, load_session_limits
 from empiremuse.panel.state import ensure_panel_state
@@ -70,6 +72,10 @@ def start_external_api(
         clock=clock,
         wall_clock=wall_clock,
         bot_version=_bot_version,
+        authorizer=GuildAuthorizer(pool, clock=clock),
+        settings_service=state.settings_service,
+        account_service=state.account_service,
+        idempotency=IdempotencyStore(clock),
     )
     try:
         server = listen(ctx, settings)
@@ -81,6 +87,8 @@ def start_external_api(
             type(error).__name__,
         )
         return ExternalApiStatus(blocked=True)
+    # o apagamento de dados limpa também as respostas guardadas; só com o listener aberto
+    state.session_store.add_user_listener(ctx.idempotency.purge_user)
     pool.panel_api_server = server
     logger.info("API do painel externo ativa em %s:%d (/api/v1).", settings.bind, settings.port)
     return ExternalApiStatus(server=server)

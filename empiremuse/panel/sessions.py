@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import secrets
 import time
 from collections import OrderedDict
@@ -11,6 +12,7 @@ from typing import Callable, Optional
 
 from empiremuse.panel.settings import PanelSettings
 
+logger = logging.getLogger(__name__)
 MAX_SESSIONS_PER_USER = 5
 MAX_SESSIONS_TOTAL = 10_000
 # 36 bytes = 48 caracteres: o base64 do cookie assinado não leva "=" (que forçaria aspas no valor do cookie)
@@ -51,6 +53,16 @@ class Session:
     key_fingerprint: Optional[str] = None  # só nas sessões da API externa: a impressão da chave de serviço que a criou
 
 
+class UserCleanupError(Exception):
+    """As sessões do usuário foram destruídas, mas algum ouvinte não conseguiu limpar os dados dele. Levantada só depois de
+    todos os ouvintes rodarem; o apagamento a trata como limpeza parcial (``ok=False``)."""
+
+    def __init__(self, destroyed: int, failures: int) -> None:
+        super().__init__(f"{failures} ouvinte(s) falharam")
+        self.destroyed = destroyed
+        self.failures = failures
+
+
 class SessionStore:
     """Sessões com TTL absoluto, ociosidade e limites (5 por usuário, 10.000 no total).
 
@@ -64,6 +76,7 @@ class SessionStore:
         self._clock = clock
         self._sessions: OrderedDict[str, Session] = OrderedDict()
         self._next_sweep = clock() + SWEEP_INTERVAL_SECONDS
+        self._user_listeners: list[Callable[[str], None]] = []
 
     def create(self, user: PanelUser, guilds: tuple[ManagedGuild, ...], *, consented: bool = False) -> str:
         session_id = secrets.token_urlsafe(SESSION_ID_BYTES)
@@ -135,11 +148,26 @@ class SessionStore:
             self._sessions.pop(_api_id(token), None)
 
     def destroy_user(self, user_id: str) -> int:
-        """Destrói todas as sessões do usuário (e só as dele); devolve quantas eram."""
+        """Destrói todas as sessões do usuário (e só as dele); devolve quantas eram. Levanta ``UserCleanupError`` (depois de
+        tudo feito) se um ouvinte falhou."""
         mine = [sid for sid, session in self._sessions.items() if session.user.id == str(user_id)]
         for sid in mine:
             del self._sessions[sid]
+        failures = 0
+        for listener in self._user_listeners:  # quem guarda dados do usuário fora das sessões os descarta (sempre)
+            try:
+                listener(str(user_id))
+            except Exception as exc:  # noqa: BLE001 - os outros ouvintes e as sessões seguem; só o tipo vai ao log
+                logger.warning("Sessões: falha ao limpar dados do usuário (%s)", type(exc).__name__)
+                failures += 1
+        if failures:
+            raise UserCleanupError(len(mine), failures)
         return len(mine)
+
+    def add_user_listener(self, listener: Callable[[str], None]) -> None:
+        """Registra o que roda em ``destroy_user`` (apagamento de dados, banimento): descartar o que o usuário tem em memória."""
+        if listener not in self._user_listeners:
+            self._user_listeners.append(listener)
 
     def _is_expired(self, session: Session, now: float) -> bool:
         return now - session.created_at >= self._ttl or now - session.last_seen > self._idle

@@ -20,7 +20,7 @@ from empiremuse.api.errors import (
     ApiError,
     rate_limited,
 )
-from empiremuse.panel.sessions import Session
+from empiremuse.panel.sessions import Session, SessionStore, UserCleanupError
 from empiremuse.rules.error_code import safe_error_code
 from empiremuse.utils.user_ban import user_bans_of
 
@@ -38,6 +38,14 @@ AUTH_NONE = "none"  # só o /health, que fica na porta interna
 AUTH_KEY = "key"  # chave de serviço
 AUTH_SESSION = "session"  # chave de serviço e token de sessão
 AUTH_SESSION_OPTIONAL = "session_optional"  # a sessão, se vier e valer (reauth)
+
+
+def _destroy_user(store: SessionStore, user_id: str) -> None:
+    """Derruba as sessões do usuário; a falha de um ouvinte de limpeza não muda a resposta (já foi para o log)."""
+    try:
+        store.destroy_user(user_id)
+    except UserCleanupError:
+        pass
 
 
 class ApiHandler(tornado.web.RequestHandler):
@@ -102,7 +110,7 @@ class ApiHandler(tornado.web.RequestHandler):
             session = store.get_api(token, self.key_fingerprint)
             bans = user_bans_of(self.ctx.pool)
             if session is not None and bans is not None and bans.is_blocked(session.user.id):
-                store.destroy_user(session.user.id)  # E5: o banido perde todas as sessões
+                _destroy_user(store, session.user.id)  # E5: o banido perde todas as sessões
                 session = None
         if session is None:
             if required:
@@ -127,9 +135,9 @@ class ApiHandler(tornado.web.RequestHandler):
 
     def write_error(self, status_code: int, **kwargs: Any) -> None:
         exc = kwargs["exc_info"][1] if "exc_info" in kwargs else None
-        fields, retry_after = None, None
+        fields, retry_after, current_version = None, None, None
         if isinstance(exc, ApiError):
-            code, fields, retry_after = exc.code, exc.fields, exc.retry_after
+            code, fields, retry_after, current_version = exc.code, exc.fields, exc.retry_after, exc.current_version
         elif status_code == 404:
             code = NOT_FOUND
         elif status_code == 405:
@@ -144,6 +152,8 @@ class ApiHandler(tornado.web.RequestHandler):
         error: dict[str, Any] = {"code": code}
         if fields:
             error["fields"] = fields
+        if current_version:
+            error["current_version"] = current_version
         error["request_id"] = self.request_id
         self.finish({"error": error})
 

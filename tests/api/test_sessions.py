@@ -7,6 +7,7 @@ import pytest
 
 from empiremuse.panel.sessions import MAX_SESSIONS_PER_USER
 from empiremuse.utils.user_ban import UserBanRecord, UserBans
+from tests.api.helpers import SERVICE_KEY
 from tests.api.support import ACCESS_TOKEN, CODE, USER, VERIFIER, ApiTestCase, body_of, error_code
 
 pytestmark = pytest.mark.critical
@@ -283,6 +284,17 @@ class SharedStoreTest(ApiTestCase):
         assert generico.settings["session_store"] is self.store
         assert generico.settings["task_runner"] is self.pool.panel_tasks
 
+    def test_painel_generico_e_api_usam_os_mesmos_servicos_de_formulario_e_portanto_os_mesmos_locks(self):
+        from empiremuse.panel import build_panel_app
+        from empiremuse.panel.settings import load_panel_settings
+        from tests.panel.helpers import local_config
+
+        generico = build_panel_app(self.pool, load_panel_settings(local_config()), clock=self.clock)
+
+        assert generico.settings["settings_service"] is self.ctx.settings_service is self.pool.panel_forms
+        assert generico.settings["account_service"] is self.ctx.account_service is self.pool.panel_accounts
+        assert self.ctx.settings_service.lock("1", 100) is generico.settings["settings_service"].lock("1", 100)
+
 
 class StoreSeparationTest(ApiTestCase):
     def test_sessao_da_api_nunca_sai_pelo_leitor_do_cookie_do_painel_generico(self):
@@ -299,3 +311,18 @@ class StoreSeparationTest(ApiTestCase):
         cookie_id = self.store.create(SimpleNamespace(id="1001", username="u", global_name=None, avatar=None), ())
 
         assert self.api("GET", "/session", session=cookie_id).code == 401
+
+
+class ListenerFailureTest(ApiTestCase):
+    def test_usuario_banido_perde_a_sessao_mesmo_se_a_limpeza_de_dados_falhar(self):
+        def broken(user_id):
+            raise RuntimeError("falha")
+
+        token = self.new_session("1001")
+        self.store.add_user_listener(broken)
+        self.pool.user_bans = lista(1001)
+
+        response = self.api("GET", "/session", session=token)
+
+        assert (response.code, error_code(response)) == (401, "session_expired")
+        assert self.store.get_api(token, self.ctx.keys.match(SERVICE_KEY, self.wall())) is None

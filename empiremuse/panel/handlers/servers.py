@@ -7,26 +7,17 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlencode
 
-from empiremuse.panel.authz import GuildAccessDenied, guild_icon_url, ready_bots_with_guild
+from empiremuse.panel.authz import GuildAccessDenied, InviteLink, guild_icon_url, missing_invites, ready_bots_with_guild
 from empiremuse.panel.handlers.base import PanelHandler
 from empiremuse.panel.sessions import ManagedGuild, Session
 
 SERVERS_PATH = "/painel/servidores"
 LOGIN_PATH = "/painel/login"
-INVITE_URL = "https://discord.com/oauth2/authorize"
-INVITE_SCOPE = "bot applications.commands"
 NOT_FOUND_TITLE = "Servidor não encontrado"
 NOT_FOUND_MESSAGE = "Servidor não encontrado ou você não tem permissão para gerenciá-lo."
 MAX_BODY_BYTES = 16 * 1024
 HX_REQUEST = "HX-Request"
 CATEGORIES = ("Player", "Jukebox", "DJ", "Aparência", "Links", "Geral")
-
-
-@dataclass(frozen=True)
-class InviteLink:
-    bot_name: str
-    bot_avatar_url: str
-    url: str
 
 
 @dataclass(frozen=True)
@@ -50,35 +41,6 @@ def decode_args(handler: Any) -> dict[str, list[str]]:
 def initial_of(name: str) -> str:
     """Primeiro caractere do nome em maiúscula (para quando o servidor não tem ícone)."""
     return name.strip()[:1].upper() or "?"
-
-
-def invite_url(client_id: str, guild_id: str, permissions: int) -> str:
-    query = urlencode(
-        {
-            "client_id": client_id,
-            "scope": INVITE_SCOPE,
-            "permissions": permissions,
-            "guild_id": guild_id,
-            "disable_guild_select": "true",
-        }
-    )
-    return f"{INVITE_URL}?{query}"
-
-
-def missing_invites(pool: Any, guild_id: str) -> tuple[bool, tuple[InviteLink, ...]]:
-    """(há bot pronto no servidor, convites dos bots prontos do pool que ainda não estão nele)."""
-    present_ids = {str(bot.user.id) for bot, _ in ready_bots_with_guild(pool, int(guild_id))}
-    permissions = pool.config["INVITE_PERMISSIONS"]
-    invites = tuple(
-        InviteLink(
-            bot.user.name,
-            bot.user.display_avatar.url,
-            invite_url(str(bot.application_id or bot.user.id), guild_id, permissions),
-        )
-        for bot in pool.bots
-        if bot.is_ready() and str(bot.user.id) not in present_ids
-    )
-    return bool(present_ids), invites
 
 
 def build_card(guild: ManagedGuild, pool: Any) -> ServerCard:
