@@ -9,7 +9,8 @@ from typing import Any, Optional
 import tornado.web
 
 from empiremuse.panel.services.base import panel_translator
-from empiremuse.panel.sessions import PanelUser, Session, SessionStore, UserCleanupError
+from empiremuse.panel.sessions import PanelUser, Session, SessionStore
+from empiremuse.rules.user_cleanup import UserCleanupError
 from empiremuse.panel.settings import PanelSettings
 from empiremuse.utils.user_ban import UserBans, user_bans_of
 from empiremuse.rules.error_code import safe_error_code
