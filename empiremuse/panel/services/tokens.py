@@ -9,6 +9,7 @@ import time
 from typing import Callable, Optional
 
 TOKEN_TTL_SECONDS = 60
+SIGNING_KEY_MIN_LENGTH = 32
 MAX_USED_TOKENS = 10_000
 
 
@@ -16,6 +17,8 @@ class SignedTokens:
     """Token assinado (HMAC) ligado a usuário+servidor+escopo+alvo, com validade de 60 s e uso único."""
 
     def __init__(self, secret: str, clock: Callable[[], float] = time.monotonic) -> None:
+        if len(secret) < SIGNING_KEY_MIN_LENGTH:
+            raise ValueError(f"A chave de assinatura deve ter no mínimo {SIGNING_KEY_MIN_LENGTH} caracteres.")
         self._secret, self._clock = secret.encode("utf-8"), clock
         self._used: dict[str, float] = {}
 

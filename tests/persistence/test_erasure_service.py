@@ -398,6 +398,18 @@ async def test_memoria_caches_rpc_e_sessoes_do_painel_so_do_alvo(mundo):
 
 
 @pytest.mark.asyncio
+async def test_apagar_pelo_slash_derruba_tambem_a_sessao_da_api_externa_so_do_alvo(mundo):
+    loja = mundo.pool.panel_sessions = _loja_de_sessoes()
+    do_alvo = loja.create_api(_usuario(ALVO), (), "impressao")
+    de_outro = loja.create_api(_usuario(PREFIXO_DO_ALVO), (), "impressao")
+
+    await apagar(mundo, source="slash")
+
+    assert loja.get_api(do_alvo, "impressao") is None
+    assert loja.get_api(de_outro, "impressao") is not None
+
+
+@pytest.mark.asyncio
 async def test_sessao_do_painel_criada_durante_a_execucao_tambem_e_destruida_no_passo_6(mundo, monkeypatch):
     loja = mundo.pool.panel_sessions = _loja_de_sessoes()
     limpar = mundo.service._clear_caches

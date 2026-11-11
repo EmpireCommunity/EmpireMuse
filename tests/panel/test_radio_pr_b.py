@@ -25,7 +25,7 @@ async def test_old_confirmation_resets_only_its_original_radio_actor_guild_and_s
     radio = await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
     ctx = SimpleNamespace(pool=w.pool, guild_id=GUILD, user_id=str(ACTOR))
     now = [100.0]
-    service = RadioSetupService("test-fixture-key", clock=lambda: now[0])
+    service = RadioSetupService("test-fixture-key-0123456789-abcdefgh", clock=lambda: now[0])
     tr = get_i18n().for_locale("pt-BR")
     token_user = str(ACTOR + 1) if alteration == "user" else str(ACTOR)
     token_guild = GUILD + 1 if alteration == "guild" else GUILD

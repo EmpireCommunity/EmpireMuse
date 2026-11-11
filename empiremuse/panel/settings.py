@@ -97,6 +97,15 @@ def _check_transport(base_url: str, host: str, insecure_cookies: bool) -> None:
         raise PanelConfigError("PANEL_BASE_URL deve usar https (http só em localhost com PANEL_INSECURE_COOKIES=true).")
 
 
+def load_session_limits(config: Mapping[str, Any]) -> PanelSettings:
+    """Só os prazos de sessão (``PANEL_SESSION_*``), para o modo externo com o painel genérico desligado."""
+    return PanelSettings(
+        enabled=False,
+        session_ttl_hours=_bounded_int(config, "PANEL_SESSION_TTL_HOURS", 12, SESSION_TTL_HOURS_RANGE),
+        session_idle_minutes=_bounded_int(config, "PANEL_SESSION_IDLE_MINUTES", 60, SESSION_IDLE_MINUTES_RANGE),
+    )
+
+
 def load_panel_settings(config: Mapping[str, Any]) -> PanelSettings:
     """Monta e valida ``PanelSettings``. Com o painel desligado nada além do tipo é validado."""
     if not config.get("PANEL_ENABLED", False):
@@ -114,14 +123,15 @@ def load_panel_settings(config: Mapping[str, Any]) -> PanelSettings:
     for warning in cidr_warnings:
         logger.warning("%s", warning)
 
+    limits = load_session_limits(config)
     return PanelSettings(
         enabled=True,
         base_url=base_url,
         oauth_client_id=str(config.get("PANEL_OAUTH_CLIENT_ID") or ""),
         oauth_client_secret=oauth_secret,
         cookie_secret=_resolve_cookie_secret(config.get("PANEL_COOKIE_SECRET")),
-        session_ttl_hours=_bounded_int(config, "PANEL_SESSION_TTL_HOURS", 12, SESSION_TTL_HOURS_RANGE),
-        session_idle_minutes=_bounded_int(config, "PANEL_SESSION_IDLE_MINUTES", 60, SESSION_IDLE_MINUTES_RANGE),
+        session_ttl_hours=limits.session_ttl_hours,
+        session_idle_minutes=limits.session_idle_minutes,
         trust_proxy=bool(config.get("PANEL_TRUST_PROXY", False)),
         trusted_proxy_networks=networks,
         insecure_cookies=insecure_cookies,

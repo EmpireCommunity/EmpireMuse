@@ -263,7 +263,10 @@ class BotPool:
         self.lastfm_sessions = {}
         self.user_locks = UserLocks()
         self.erasure_tombstones = ErasureTombstones(tombstone_seconds(self.config["DBCACHE_TTL"]))
-        self.panel_sessions: Optional[Any] = None  # ``SessionStore`` do painel, registrado por ``build_panel_app``
+        # ``SessionStore`` e ``TaskRunner`` únicos (painel e API externa), de ``ensure_panel_state``
+        self.panel_sessions: Optional[Any] = None
+        self.panel_tasks: Optional[Any] = None
+        self.panel_api_server: Optional[Any] = None  # listener da API externa (``None`` com o modo externo desligado)
         self.erasure = ErasureService(self)
         self.erasure_grants = OwnerGrants()
         self.player_skins = {}
@@ -1485,6 +1488,9 @@ class BotPool:
                 return
 
         else:
+            from empiremuse.api.runtime import warn_if_relay_is_off  # só aqui: importar o bot não carrega a API
+
+            warn_if_relay_is_off(self.config)
             self.cache_updater_task = self.loop.create_task(self.cache_updater())
 
             self.loop.create_task(self.connect_rpc_ws())

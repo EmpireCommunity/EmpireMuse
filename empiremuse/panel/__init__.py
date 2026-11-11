@@ -46,9 +46,9 @@ from empiremuse.panel.services.account_erase import AccountEraseService
 from empiremuse.panel.services.jukebox import JukeboxService
 from empiremuse.panel.services.radio_setup import RadioSetupService
 from empiremuse.panel.services.service import SettingsService
-from empiremuse.panel.services.tasks import TaskRunner
-from empiremuse.panel.sessions import LoginAttemptStore, SessionStore
+from empiremuse.panel.sessions import LoginAttemptStore
 from empiremuse.panel.settings import PanelSettings
+from empiremuse.panel.state import ensure_panel_state
 
 if TYPE_CHECKING:
     from empiremuse.utils.client import BotPool
@@ -83,9 +83,9 @@ def build_panel_app(
         return None
 
     settings_service = SettingsService(getattr(pool, "user_locks", None))
-    session_store = SessionStore(settings, clock=clock)
-    pool.panel_sessions = session_store  # o apagamento de dados destrói as sessões do membro (``destroy_user``)
-    task_runner = TaskRunner(clock=clock)
+    # Um só store e um só runner por pool: a API externa e o apagamento de dados (``destroy_user``) usam os mesmos.
+    state = ensure_panel_state(pool, settings, clock=clock)
+    session_store, task_runner = state.session_store, state.task_runner
     return tornado.web.Application(
         [
             (PANEL_PREFIX, RedirectToIndexHandler),
