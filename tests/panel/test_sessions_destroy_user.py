@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from empiremuse import panel
-from empiremuse.panel.sessions import ManagedGuild, PanelUser, SessionStore
+from empiremuse.panel.sessions import ManagedGuild, PanelUser, SessionStore, UserCleanupError
 from empiremuse.utils.user_locks import UserLocks
 from tests.panel.helpers import fake_pool, https_config, load_settings
 from tests.panel.helpers_login import FakeClock
@@ -58,3 +58,39 @@ def test_painel_funciona_com_pool_sem_user_locks():
     app = panel.build_panel_app(pool, load_settings(https_config()))
 
     assert app is not None and pool.panel_sessions is app.settings["session_store"]
+
+
+def test_ouvinte_que_falha_nao_impede_os_outros_nem_a_destruicao_e_levanta_depois():
+    loja = _loja(FakeClock())
+    sid = loja.create(_usuario("1001"), GUILDS)
+    called = []
+
+    def broken(user_id):
+        raise RuntimeError("falha")
+
+    loja.add_user_listener(broken)
+    loja.add_user_listener(called.append)
+
+    with pytest.raises(UserCleanupError) as raised:
+        loja.destroy_user("1001")
+
+    assert called == ["1001"] and loja.get(sid) is None
+    assert (raised.value.destroyed, raised.value.failures) == (1, 1)
+
+
+def test_o_apagamento_marca_a_memoria_como_nao_limpa_quando_um_ouvinte_falha():
+    from empiremuse.utils.erasure import ErasureService
+
+    loja = _loja(FakeClock())
+
+    def broken(user_id):
+        raise RuntimeError("falha")
+
+    loja.add_user_listener(broken)
+    service = ErasureService(SimpleNamespace(panel_sessions=loja), rpc_closer=lambda user_id: 0)
+
+    result = service._close_connections(1001)
+
+    assert result.ok is False
+    loja._user_listeners.clear()
+    assert service._close_connections(1001).ok is True

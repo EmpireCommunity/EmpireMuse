@@ -3,13 +3,14 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable, Optional
 
-from empiremuse.api.data import DataHandler, form_reply
+from empiremuse.api.data import STATUS_SESSION_GONE, DataHandler, form_reply
 from empiremuse.api.errors import BOT_UNAVAILABLE, ApiError
 from empiremuse.api.idempotency import Reply
 from empiremuse.api.writes import Write, parse_account_write, parse_favorite_removal, parse_radio_removal
 from empiremuse.panel.services.account import AccountOutcome
+from empiremuse.panel.services.account_base import Refusal
 from empiremuse.rules.panel_serialize import ACCOUNT, new_rpc_token, serialize_favorites_export, serialize_form
 
 FAVORITES = "favoritos"
@@ -23,6 +24,23 @@ class AccountHandler(DataHandler):
     async def get(self) -> None:
         forms = await self.ctx.account_service.read_all(self.account_context())
         self.write({"forms": {key: serialize_form(form, ACCOUNT) for key, form in forms.items()}})
+
+
+class SessionGuardedSection:
+    """Uma seção da conta que, no ``guard`` (o serviço o roda **sob o lock do usuário**, o mesmo do apagamento de dados),
+    recusa a escrita se a sessão já acabou. Uma escrita que esperava o lock enquanto o apagamento rodava não grava de novo."""
+
+    def __init__(self, section: Any, alive: Callable[[], bool]) -> None:
+        self._section = section
+        self._alive = alive
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._section, name)
+
+    async def guard(self, ctx: Any, doc: dict, action: str) -> Optional[Refusal]:
+        if not self._alive():
+            return Refusal(STATUS_SESSION_GONE, "")
+        return await self._section.guard(ctx, doc, action)
 
 
 class AccountSectionHandler(DataHandler):
@@ -48,7 +66,7 @@ class AccountSectionHandler(DataHandler):
         """``request_input`` (o corpo ou a query) é o que a ``Idempotency-Key`` compara."""
         ctx = self.account_context()
         service = self.ctx.account_service
-        section = service.section(self.section_key)
+        section = SessionGuardedSection(service.section(self.section_key), self.session_alive)
 
         async def work() -> Reply:
             return self.account_reply(await service.submit(section, ctx, write.action, write.service_args()))

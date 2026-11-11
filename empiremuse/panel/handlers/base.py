@@ -9,7 +9,7 @@ from typing import Any, Optional
 import tornado.web
 
 from empiremuse.panel.services.base import panel_translator
-from empiremuse.panel.sessions import PanelUser, Session, SessionStore
+from empiremuse.panel.sessions import PanelUser, Session, SessionStore, UserCleanupError
 from empiremuse.panel.settings import PanelSettings
 from empiremuse.utils.user_ban import UserBans, user_bans_of
 from empiremuse.rules.error_code import safe_error_code
@@ -102,7 +102,10 @@ class PanelResponseMixin:
             bans = self.user_bans
             # E5 (MJ-E3): único leitor do store. Banido perde a sessão (todas as dela) e segue anônimo; cobre o login em voo e a sessão aberta.
             if session is not None and bans is not None and bans.is_blocked(session.user.id):
-                store.destroy_user(session.user.id)
+                try:
+                    store.destroy_user(session.user.id)
+                except UserCleanupError:
+                    pass  # as sessões já caíram; o aviso do ouvinte que falhou já foi para o log
                 self.clear_panel_cookie(SESSION_COOKIE)
                 session = None
             self._current_session = session

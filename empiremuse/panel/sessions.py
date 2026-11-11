@@ -53,6 +53,16 @@ class Session:
     key_fingerprint: Optional[str] = None  # só nas sessões da API externa: a impressão da chave de serviço que a criou
 
 
+class UserCleanupError(Exception):
+    """As sessões do usuário foram destruídas, mas algum ouvinte não conseguiu limpar os dados dele. Levantada só depois de
+    todos os ouvintes rodarem; o apagamento a trata como limpeza parcial (``ok=False``)."""
+
+    def __init__(self, destroyed: int, failures: int) -> None:
+        super().__init__(f"{failures} ouvinte(s) falharam")
+        self.destroyed = destroyed
+        self.failures = failures
+
+
 class SessionStore:
     """Sessões com TTL absoluto, ociosidade e limites (5 por usuário, 10.000 no total).
 
@@ -138,15 +148,20 @@ class SessionStore:
             self._sessions.pop(_api_id(token), None)
 
     def destroy_user(self, user_id: str) -> int:
-        """Destrói todas as sessões do usuário (e só as dele); devolve quantas eram."""
+        """Destrói todas as sessões do usuário (e só as dele); devolve quantas eram. Levanta ``UserCleanupError`` (depois de
+        tudo feito) se um ouvinte falhou."""
         mine = [sid for sid, session in self._sessions.items() if session.user.id == str(user_id)]
         for sid in mine:
             del self._sessions[sid]
+        failures = 0
         for listener in self._user_listeners:  # quem guarda dados do usuário fora das sessões os descarta (sempre)
             try:
                 listener(str(user_id))
-            except Exception as exc:  # noqa: BLE001 - as sessões já foram destruídas; só o tipo vai ao log
+            except Exception as exc:  # noqa: BLE001 - os outros ouvintes e as sessões seguem; só o tipo vai ao log
                 logger.warning("Sessões: falha ao limpar dados do usuário (%s)", type(exc).__name__)
+                failures += 1
+        if failures:
+            raise UserCleanupError(len(mine), failures)
         return len(mine)
 
     def add_user_listener(self, listener: Callable[[str], None]) -> None:

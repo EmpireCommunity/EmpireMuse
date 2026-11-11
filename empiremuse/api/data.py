@@ -11,6 +11,7 @@ from empiremuse.api.errors import (
     CONFLICT,
     FORBIDDEN,
     NOT_FOUND,
+    SESSION_EXPIRED,
     ApiError,
     conflict,
     validation_failed,
@@ -29,6 +30,7 @@ from empiremuse.rules.panel_serialize import error_fields, serialize_form
 IDEMPOTENCY_HEADER = "Idempotency-Key"
 REPLAYED_HEADER = "Idempotent-Replayed"
 STATUS_OK, STATUS_FORBIDDEN, STATUS_CONFLICT, STATUS_INVALID, STATUS_UNAVAILABLE = 200, 403, 409, 422, 503
+STATUS_SESSION_GONE = 401  # a recusa da seção protegida (``SessionGuardedSection``): a sessão acabou durante a escrita
 FIELD_ALIASES = {"acao": "action"}  # o nome que o serviço dá ao campo, no nome que a API recebe
 
 
@@ -48,6 +50,8 @@ def form_reply(status: int, form: Formulario, scope: str) -> Reply:
         raise ApiError(403, FORBIDDEN)
     if status == STATUS_UNAVAILABLE:
         raise ApiError(503, BOT_UNAVAILABLE)
+    if status == STATUS_SESSION_GONE:
+        raise ApiError(401, SESSION_EXPIRED)
     raise ApiError(500, BOT_UNAVAILABLE)  # status que a API não conhece: falha fechada
 
 
@@ -87,8 +91,14 @@ class DataHandler(ApiHandler):
         ``replayable=False`` (o token novo do RPC, que só pode sair uma vez) ignora a chave: o bot nunca guarda segredo.
         """
         key = self._idempotency_key() if replayable else None
+        # houve ``await`` desde o ``prepare``: um apagamento ou banimento pode ter derrubado a sessão
+        if not self.session_alive():
+            raise ApiError(401, SESSION_EXPIRED)
         if key is None:
-            self.send(await work())
+            reply = await work()
+            if not self.session_alive():
+                raise ApiError(401, SESSION_EXPIRED)
+            self.send(reply)
             return
         fingerprint = request_fingerprint(self.request.method, self.request.path, body)
         try:
@@ -102,9 +112,17 @@ class DataHandler(ApiHandler):
         reply: Optional[Reply] = None
         try:
             reply = await work()
+            if not self.session_alive():
+                reply = None  # a sessão acabou durante a escrita: nada fica guardado
         finally:
             self.ctx.idempotency.settle(claim.ticket, reply)
+        if reply is None:
+            raise ApiError(401, SESSION_EXPIRED)
         self.send(reply)
+
+    def session_alive(self) -> bool:
+        """A sessão desta requisição ainda existe (não foi encerrada pelo apagamento de dados nem pelo banimento)."""
+        return self.ctx.store.get_api(self.session_token, self.key_fingerprint) is not None
 
     # ------------------------------------------------------------------ contextos (o usuário é sempre o da sessão)
 

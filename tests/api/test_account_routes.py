@@ -1,11 +1,14 @@
 """B3 · conta (contrato T-456 §4 "Conta", m4, m5, §14): só o usuário da sessão, ``expected_version`` em toda escrita, nenhum
 segredo em resposta alguma e o token novo do RPC uma só vez."""
 
+import asyncio
 import json
 from urllib.parse import urlencode
 
 import pytest
 
+from empiremuse.api.server import API_PREFIX
+from tests.api.helpers import SERVICE_KEY
 from tests.api.support import body_of, error_code
 from tests.api.support_data import (
     NODE,
@@ -18,6 +21,7 @@ from tests.panel.helpers_account import RPC_TOKEN_OLD, SESSIONKEY
 
 pytestmark = pytest.mark.critical
 
+MAX_TURNS = 1000
 PREFIX, LASTFM, RPC, FAVORITES, INTEGRATIONS, RADIOS = (
     "/account/prefix",
     "/account/lastfm",
@@ -184,6 +188,42 @@ class IdempotencyTest(DataApiCase):
         response = self.call("PATCH", PREFIX, prefix_body(self.version_of("/account", "prefixo")), key="curta")
 
         assert (response.code, body_of(response)["error"]["fields"]) == (400, ["idempotency_key"])
+
+
+class ErasureWindowTest(DataApiCase):
+    def test_escrita_que_esperava_o_lock_do_usuario_nao_grava_depois_do_apagamento(self):
+        version = self.version_of("/account", "prefixo")
+        lock = self.ctx.account_service._locks.lock(
+            "users", 1001
+        )  # o lock que o apagamento e a escrita da conta dividem
+        headers = {
+            "Authorization": f"Bearer {SERVICE_KEY}",
+            "X-EM-Session": self.token,
+            "Content-Type": "application/json",
+        }
+
+        async def scenario():
+            await lock.acquire()  # o apagamento está rodando
+            pending = self.http_client.fetch(
+                self.get_url(API_PREFIX + PREFIX),
+                method="PATCH",
+                headers=headers,
+                body=json.dumps(prefix_body(version)),
+                raise_error=False,
+            )
+            for _ in range(MAX_TURNS):  # cede o laço (sem relógio) até a escrita ficar esperando o lock
+                if lock._waiters:
+                    break
+                await asyncio.sleep(0)
+            assert lock._waiters, "a escrita nunca chegou ao lock"
+            self.store.destroy_user("1001")  # o apagamento destrói as sessões
+            lock.release()
+            return await pending
+
+        response = self.io_loop.run_sync(scenario)
+
+        assert (response.code, error_code(response)) == (401, "session_expired")
+        assert self.world.user_doc()["custom_prefix"] == "!" and self.db_writes == []
 
 
 class LastFmAndRpcTest(DataApiCase):

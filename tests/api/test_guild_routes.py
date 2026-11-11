@@ -420,6 +420,22 @@ class IdempotencyAndLimitsTest(DataApiCase):
 
         assert (again.code, error_code(again)) == (404, "not_found")  # perdeu a permissão: nem a resposta guardada sai
 
+    def test_sessao_que_acaba_durante_a_autorizacao_nao_escreve_nem_guarda_a_resposta(self):
+        version = self.version_of(PLAYER, "player")
+        authorize = self.ctx.authorizer.authorize
+
+        async def authorize_then_erase(*args, **kwargs):
+            access = await authorize(*args, **kwargs)
+            self.store.destroy_user(USER)  # o apagamento (ou banimento) derruba a sessão no meio do pedido
+            return access
+
+        with patch.object(self.ctx.authorizer, "authorize", authorize_then_erase):
+            response = self.call("PUT", PLAYER, player_body(version), key="chave-0001")
+        claim = self.ctx.idempotency.claim(USER, "chave-0001", "qualquer-impressao")
+
+        assert (response.code, error_code(response)) == (401, "session_expired")
+        assert self.db_writes == [] and claim.replay is None and claim.ticket is not None  # a chave está livre
+
     def test_escrita_20_por_minuto_por_usuario_somando_as_sessoes(self):
         version = self.version_of(PLAYER, "player")
         second = self.new_session(USER)

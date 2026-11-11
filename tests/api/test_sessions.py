@@ -7,6 +7,7 @@ import pytest
 
 from empiremuse.panel.sessions import MAX_SESSIONS_PER_USER
 from empiremuse.utils.user_ban import UserBanRecord, UserBans
+from tests.api.helpers import SERVICE_KEY
 from tests.api.support import ACCESS_TOKEN, CODE, USER, VERIFIER, ApiTestCase, body_of, error_code
 
 pytestmark = pytest.mark.critical
@@ -310,3 +311,18 @@ class StoreSeparationTest(ApiTestCase):
         cookie_id = self.store.create(SimpleNamespace(id="1001", username="u", global_name=None, avatar=None), ())
 
         assert self.api("GET", "/session", session=cookie_id).code == 401
+
+
+class ListenerFailureTest(ApiTestCase):
+    def test_usuario_banido_perde_a_sessao_mesmo_se_a_limpeza_de_dados_falhar(self):
+        def broken(user_id):
+            raise RuntimeError("falha")
+
+        token = self.new_session("1001")
+        self.store.add_user_listener(broken)
+        self.pool.user_bans = lista(1001)
+
+        response = self.api("GET", "/session", session=token)
+
+        assert (response.code, error_code(response)) == (401, "session_expired")
+        assert self.store.get_api(token, self.ctx.keys.match(SERVICE_KEY, self.wall())) is None

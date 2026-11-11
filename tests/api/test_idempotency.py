@@ -148,6 +148,9 @@ def test_purgar_o_usuario_descarta_as_respostas_e_os_pedidos_em_andamento_so_del
     assert store.claim("2", "de-outro", "f").replay == OK  # o outro usuário não muda
     store.purge_user("sem-nada")  # usuário sem entradas: nada acontece
     assert in_flight.ticket is not None
+    assert (
+        store.claim("1", "andamento", "f").ticket is not None
+    )  # antes do purge a mesma chave daria conflito (em andamento)
 
 
 def test_pedido_que_fecha_depois_do_apagamento_nao_guarda_a_resposta():
