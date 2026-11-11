@@ -142,6 +142,17 @@ DEFAULT_CONFIG = {
     "PANEL_TRUSTED_PROXY_CIDRS": "",
     "PANEL_INSECURE_COOKIES": False,
     ##################################################
+    ### Painel externo (API em /api/v1, listener próprio): ###
+    ##################################################
+    "EXTERNAL_PANEL_URL": "",
+    "EXTERNAL_PANEL_API_SECRET": "",
+    "EXTERNAL_PANEL_API_SECRET_PREVIOUS": "",
+    "EXTERNAL_PANEL_API_PREVIOUS_UNTIL": "",
+    "EXTERNAL_PANEL_SIGNING_SECRET": "",
+    "EXTERNAL_PANEL_API_PORT": "",
+    "EXTERNAL_PANEL_API_BIND": "",
+    "EXTERNAL_PANEL_API_CIDRS": "",
+    ##################################################
     ### Sistema de música - Local lavalink stuffs: ###
     ##################################################
     "RUN_LOCAL_LAVALINK": False,

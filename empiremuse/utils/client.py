@@ -275,7 +275,10 @@ class BotPool:
         self.lastfm_sessions = {}
         self.user_locks = UserLocks()
         self.erasure_tombstones = ErasureTombstones(tombstone_seconds(self.config["DBCACHE_TTL"]))
-        self.panel_sessions: Optional[Any] = None  # ``SessionStore`` do painel, registrado por ``build_panel_app``
+        # ``SessionStore`` e ``TaskRunner`` únicos (painel e API externa), de ``ensure_panel_state``
+        self.panel_sessions: Optional[Any] = None
+        self.panel_tasks: Optional[Any] = None
+        self.panel_api_server: Optional[Any] = None  # listener da API externa (``None`` com o modo externo desligado)
         self.erasure = ErasureService(self)
         self.erasure_grants = OwnerGrants()
         self.player_skins = {}

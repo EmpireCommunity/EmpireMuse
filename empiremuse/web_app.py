@@ -792,7 +792,11 @@ def run_app(pool: BotPool, config: dict = None):
         except IndexError:
             pass
 
-    panel_app, trust_proxy, trusted_networks = _build_panel(pool, config)
+    from empiremuse.api.runtime import start_external_api  # só aqui: importar o bot não carrega a API
+
+    external = start_external_api(pool, config)
+    # Modo externo pedido e inválido: nenhum painel sobe, nem o genérico (sem fallback); o bot e o relé seguem.
+    panel_app, trust_proxy, trusted_networks = (None, False, ()) if external.blocked else _build_panel(pool, config)
     trusted = bool(panel_app and trust_proxy)
     ws_proof = _build_registration_proof(pool, config)
 
@@ -841,6 +845,19 @@ def _shutdown_panel(panel_app) -> None:
         logging.getLogger(__name__).warning("Falha ao encerrar as tarefas do painel (%s)", type(exc).__name__)
 
 
+def _shutdown_external_api(pool: BotPool, panel_app) -> None:
+    """Fecha o listener da API externa e cancela as tarefas compartilhadas quando não há painel genérico para fazê-lo."""
+    server = getattr(pool, "panel_api_server", None)
+    if server is not None:
+        server.stop()
+    runner = getattr(pool, "panel_tasks", None)
+    if panel_app is None and runner is not None:
+        try:
+            tornado.ioloop.IOLoop.current().run_sync(runner.shutdown, timeout=5)
+        except Exception as exc:
+            logging.getLogger(__name__).warning("Falha ao encerrar as tarefas do painel (%s)", type(exc).__name__)
+
+
 def start(pool: BotPool, config: dict = None):
     if not config:
         config = load_config()
@@ -849,6 +866,7 @@ def start(pool: BotPool, config: dict = None):
         tornado.ioloop.IOLoop.instance().start()
     finally:
         _shutdown_panel(panel_app)
+        _shutdown_external_api(pool, panel_app)
 
 
 if __name__ == "__main__":

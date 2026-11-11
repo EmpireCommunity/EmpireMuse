@@ -7,13 +7,12 @@ import base64
 import hashlib
 import re
 import secrets
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Protocol
 from urllib.parse import urlencode
 
 import aiohttp
 
 from empiremuse.panel.sessions import ManagedGuild, PanelUser
-from empiremuse.panel.settings import PanelSettings
 
 DISCORD_API = "https://discord.com/api/v10"
 AUTHORIZE_URL = "https://discord.com/oauth2/authorize"
@@ -29,8 +28,23 @@ PERMISSION_MANAGE_GUILD = 0x20
 MANAGEMENT_PERMISSIONS = PERMISSION_ADMINISTRATOR | PERMISSION_MANAGE_GUILD
 
 
+class OAuthSettings(Protocol):
+    """O que o cliente OAuth lê da configuração: ``PanelSettings`` (painel genérico) e ``ExternalPanelSettings`` (API externa)."""
+
+    redirect_uri: str
+    oauth_client_secret: str
+    oauth_client_id: str
+
+
 class DiscordOAuthError(Exception):
-    """Falha na comunicação com o Discord. A mensagem nunca contém tokens, código ou segredos."""
+    """Falha na comunicação com o Discord. A mensagem nunca contém tokens, código ou segredos.
+
+    ``status`` é o status HTTP da resposta do Discord (``None`` quando não houve resposta).
+    """
+
+    def __init__(self, message: str, status: Optional[int] = None) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 def _default_session() -> aiohttp.ClientSession:
@@ -46,7 +60,7 @@ def make_pkce_pair() -> tuple[str, str]:
 
 class DiscordOAuthClient:
     def __init__(
-        self, settings: PanelSettings, client_id: str, session_factory: Callable[[], Any] = _default_session
+        self, settings: OAuthSettings, client_id: str, session_factory: Callable[[], Any] = _default_session
     ) -> None:
         self._settings = settings
         self._client_id = client_id
@@ -118,7 +132,7 @@ class DiscordOAuthClient:
             async with self._session_factory() as session:
                 async with session.request(method, DISCORD_API + path, **kwargs) as response:
                     if response.status >= 400:
-                        raise DiscordOAuthError(f"O Discord respondeu com status {response.status}.")
+                        raise DiscordOAuthError(f"O Discord respondeu com status {response.status}.", response.status)
                     return await response.json(content_type=None)
         except DiscordOAuthError:
             raise
@@ -130,7 +144,7 @@ def _bearer(access_token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {access_token}"}
 
 
-def resolve_client_id(pool: Any, settings: PanelSettings) -> str:
+def resolve_client_id(pool: Any, settings: OAuthSettings) -> str:
     """``PANEL_OAUTH_CLIENT_ID`` ou, se vazio, o id da aplicação do primeiro bot do pool ("" se indisponível)."""
     if settings.oauth_client_id:
         return settings.oauth_client_id
@@ -142,7 +156,7 @@ def resolve_client_id(pool: Any, settings: PanelSettings) -> str:
 
 
 def make_client_provider(
-    pool: Any, settings: PanelSettings, oauth_client: Optional[DiscordOAuthClient] = None
+    pool: Any, settings: OAuthSettings, oauth_client: Optional[DiscordOAuthClient] = None
 ) -> Callable[[], Optional[DiscordOAuthClient]]:
     """Devolve uma função que entrega o cliente OAuth, resolvendo o client_id só no primeiro uso
     (os bots podem ainda não estar prontos quando o servidor web sobe)."""

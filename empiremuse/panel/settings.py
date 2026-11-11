@@ -97,6 +97,15 @@ def _check_transport(base_url: str, host: str, insecure_cookies: bool) -> None:
         raise PanelConfigError("PANEL_BASE_URL deve usar https (http só em localhost com PANEL_INSECURE_COOKIES=true).")
 
 
+def load_session_limits(config: Mapping[str, Any]) -> PanelSettings:
+    """Só os prazos de sessão (``PANEL_SESSION_*``), para o modo externo com o painel genérico desligado."""
+    return PanelSettings(
+        enabled=False,
+        session_ttl_hours=_bounded_int(config, "PANEL_SESSION_TTL_HOURS", 12, SESSION_TTL_HOURS_RANGE),
+        session_idle_minutes=_bounded_int(config, "PANEL_SESSION_IDLE_MINUTES", 60, SESSION_IDLE_MINUTES_RANGE),
+    )
+
+
 def load_panel_settings(config: Mapping[str, Any]) -> PanelSettings:
     """Monta e valida ``PanelSettings``. Com o painel desligado nada além do tipo é validado."""
     if not config.get("PANEL_ENABLED", False):
