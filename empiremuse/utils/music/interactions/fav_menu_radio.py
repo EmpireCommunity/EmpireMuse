@@ -63,6 +63,7 @@ class FavMenuRadioMixin:
         self.radio_refs: list[tuple[str, str]] = []  # ``custom``/``genre`` do membro NESTE servidor (J2a)
         self.current_ref: str | None = None
         self.radio_refs_page = False  # o Discord só dá 5 linhas: as ``custom``/``genre`` têm a própria página
+        self.radio_refs_unavailable = False
         self.radio_unavailable = False
         self.current_station: str | None = None
         self.current_filter: str | None = None
@@ -74,21 +75,29 @@ class FavMenuRadioMixin:
     # ------------------------------------------------------------------ dados
 
     async def load_radio(self) -> None:
-        """Lê as favoritas e os filtros de quem abriu o menu. Banco fora do ar vira ``radio_unavailable`` (tentar de novo)."""
+        """Lê as listas pessoais; refs indisponíveis não descartam as estações ao vivo nem os filtros."""
         favorites = self.bot.pool.radio.user_favorites
         user = self.ctx.author.id
         try:
             stations = await favorites.stations(user)
             nodes = await favorites.filters(user)
-            refs = await self._load_refs(user)
         except RadioUnavailable:
             self.radio_unavailable = True
+            self.radio_refs_unavailable = True
+            self.current_ref = None
             self.radio_stations, self.radio_filters, self.radio_refs = [], [], []
             return
         self.radio_unavailable = False
         self.radio_stations = list(stations)
         self.radio_filters = [(node, self._filter_label(node)) for node in nodes]
-        self.radio_refs = refs
+        try:
+            self.radio_refs = await self._load_refs(user)
+        except RadioUnavailable:
+            self.radio_refs_unavailable = True
+            self.radio_refs = []
+            self.current_ref = None
+        else:
+            self.radio_refs_unavailable = False
 
     async def _load_refs(self, user: int) -> list[tuple[str, str]]:
         """As ``custom``/``genre`` do membro no servidor do comando (sem servidor, como na DM, não há o que listar)."""
@@ -116,19 +125,48 @@ class FavMenuRadioMixin:
 
     def add_radio_components(self) -> None:
         if self.radio_unavailable:
-            self._add_button(self.tr("radio.favorites.retry.label"), "🔄", self.radio_retry_callback)
+            self._add_button(
+                self.tr("radio.favorites.retry.label"),
+                "🔄",
+                self.radio_retry_callback,
+                custom_id="user_fav_radio_retry",
+            )
         elif self.radio_refs_page:
+            if self.radio_refs_unavailable:
+                self._add_button(
+                    self.tr("radio.favorites.retry.label"),
+                    "🔄",
+                    self.radio_retry_callback,
+                    custom_id="user_fav_radio_retry",
+                )
             self._add_radio_ref_select()
             add = self._add_button
             no_refs = not self.radio_refs
-            add(self.tr("radio.favorites.remove_ref.label"), "♻️", self.radio_remove_ref_callback, disabled=no_refs)
-            add(self.tr("radio.favorites.clear_refs.label"), "🚮", self.radio_clear_refs_callback, disabled=no_refs)
-            add(self.tr("radio.favorites.back.label"), "↩️", self.radio_toggle_refs_callback)
+            add(
+                self.tr("radio.favorites.remove_ref.label"),
+                "♻️",
+                self.radio_remove_ref_callback,
+                custom_id="user_fav_radio_remove_ref",
+                disabled=no_refs,
+            )
+            add(
+                self.tr("radio.favorites.clear_refs.label"),
+                "🚮",
+                self.radio_clear_refs_callback,
+                custom_id="user_fav_radio_clear_refs",
+                disabled=no_refs,
+            )
+            add(
+                self.tr("radio.favorites.back.label"),
+                "↩️",
+                self.radio_toggle_refs_callback,
+                custom_id="user_fav_radio_back",
+            )
         else:
             self._add_radio_station_select()
             self._add_radio_filter_select()
             self._add_radio_buttons()
-        self._add_button(self.tr("fav.close.label"), "❌", self.cancel_callback)
+        self._add_button(self.tr("fav.close.label"), "❌", self.cancel_callback, custom_id="user_fav_radio_close")
 
     def _add_radio_station_select(self) -> None:
         if not self.radio_stations:
@@ -149,6 +187,7 @@ class FavMenuRadioMixin:
             options=options,
             min_values=1,
             max_values=1,
+            custom_id="user_fav_radio_station_select",
             placeholder=fit(self.tr("radio.favorites.stations.placeholder"), PLACEHOLDER_LIMIT),
         )
         select.callback = self.radio_select_station_callback
@@ -168,6 +207,7 @@ class FavMenuRadioMixin:
             options=options,
             min_values=1,
             max_values=1,
+            custom_id="user_fav_radio_filter_select",
             placeholder=fit(self.tr("radio.favorites.filters.placeholder"), PLACEHOLDER_LIMIT),
         )
         select.callback = self.radio_select_filter_callback
@@ -192,6 +232,7 @@ class FavMenuRadioMixin:
             options=options,
             min_values=1,
             max_values=1,
+            custom_id="user_fav_radio_ref_select",
             placeholder=fit(self.tr("radio.favorites.refs.placeholder"), PLACEHOLDER_LIMIT),
         )
         select.callback = self.radio_select_ref_callback
@@ -201,12 +242,41 @@ class FavMenuRadioMixin:
         tr = self.tr
         no_stations, no_filters = not self.radio_stations, not self.radio_filters
         add = self._add_button
-        add(tr("radio.favorites.remove_station.label"), "♻️", self.radio_remove_station_callback, disabled=no_stations)
-        add(tr("radio.favorites.clear_stations.label"), "🚮", self.radio_clear_stations_callback, disabled=no_stations)
-        add(tr("radio.favorites.remove_filter.label"), "♻️", self.radio_remove_filter_callback, disabled=no_filters)
-        add(tr("radio.favorites.clear_filters.label"), "🚮", self.radio_clear_filters_callback, disabled=no_filters)
+        add(
+            tr("radio.favorites.remove_station.label"),
+            "♻️",
+            self.radio_remove_station_callback,
+            custom_id="user_fav_radio_remove_station",
+            disabled=no_stations,
+        )
+        add(
+            tr("radio.favorites.clear_stations.label"),
+            "🚮",
+            self.radio_clear_stations_callback,
+            custom_id="user_fav_radio_clear_stations",
+            disabled=no_stations,
+        )
+        add(
+            tr("radio.favorites.remove_filter.label"),
+            "♻️",
+            self.radio_remove_filter_callback,
+            custom_id="user_fav_radio_remove_filter",
+            disabled=no_filters,
+        )
+        add(
+            tr("radio.favorites.clear_filters.label"),
+            "🚮",
+            self.radio_clear_filters_callback,
+            custom_id="user_fav_radio_clear_filters",
+            disabled=no_filters,
+        )
         if self._radio_guild_id() is not None:
-            add(tr("radio.favorites.refs.label"), "🎼", self.radio_toggle_refs_callback)
+            add(
+                tr("radio.favorites.refs.label"),
+                "🎼",
+                self.radio_toggle_refs_callback,
+                custom_id="user_fav_radio_open_refs",
+            )
 
     # ------------------------------------------------------------------ texto
 
@@ -241,7 +311,13 @@ class FavMenuRadioMixin:
 
     def _radio_refs_txt(self) -> str:
         tr = self.tr
-        txt = tr("radio.favorites.refs.heading", total=len(self.radio_refs), max=MAX_CUSTOM_FAVORITES)
+        txt = tr(
+            "radio.favorites.refs.heading",
+            total="—" if self.radio_refs_unavailable else len(self.radio_refs),
+            max=MAX_CUSTOM_FAVORITES,
+        )
+        if self.radio_refs_unavailable:
+            return txt + tr("radio.favorites.refs.unavailable")
         if not self.radio_refs:
             return txt + tr("radio.favorites.refs.empty")
         lines = [
@@ -308,6 +384,9 @@ class FavMenuRadioMixin:
         )
 
     async def radio_remove_ref_callback(self, inter: disnake.MessageInteraction) -> None:
+        if self.radio_refs_unavailable:
+            await self._radio_guarded(inter, None, "", {})
+            return
         ref = self.current_ref
         guild_id = self._radio_guild_id()
         if ref is None or guild_id is None:
@@ -324,6 +403,9 @@ class FavMenuRadioMixin:
         )
 
     async def radio_clear_refs_callback(self, inter: disnake.MessageInteraction) -> None:
+        if self.radio_refs_unavailable:
+            await self._radio_guarded(inter, None, "", {})
+            return
         guild_id = self._radio_guild_id()
         if guild_id is None:
             await inter.send(self.tr("fav.select_item"), ephemeral=True)

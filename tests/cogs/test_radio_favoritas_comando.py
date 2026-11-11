@@ -13,7 +13,7 @@ pytestmark = [pytest.mark.critical, pytest.mark.asyncio]
 
 
 @pytest.mark.parametrize("role", ["manager", "administrator", "owner", "member", "absent"])
-async def test_command_rechecks_guild_authority_and_never_reads_personal_favorites(role):
+async def test_command_rechecks_guild_authority_and_never_reads_personal_favorites(role: str) -> None:
     w = build(manage_guild=role == "manager")
     for bot in w.bots:
         guild = bot.get_guild(GUILD)
@@ -44,7 +44,7 @@ async def test_command_rechecks_guild_authority_and_never_reads_personal_favorit
     w.hub.user_favorites.filters.assert_not_awaited()
 
 
-async def test_command_opens_server_list_only_with_neutralized_names():
+async def test_command_opens_server_list_only_with_neutralized_names() -> None:
     w = build()
     w.inter.send = AsyncMock()
     await w.hub.favorites.add(GUILD, 7, station(1, "@everyone https://evil.example Rádio"))

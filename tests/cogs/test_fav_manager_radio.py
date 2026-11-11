@@ -5,6 +5,7 @@ Backend REAL (``RadioHub`` sobre banco em memória); só o Discord, o diretório
 """
 
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock
 
 import disnake
@@ -467,15 +468,15 @@ async def test_the_server_gate_answers_the_click_before_the_slow_member_lookup(w
 ROCK = {"name": "Queen Rock", "kind": "artists", "source": {"artists": ["Queen"]}}
 
 
-def tr_label(world, key):
+def tr_label(world: World, key: str) -> str:
     return world.tr(key)
 
 
-async def make_custom(world, doc=ROCK):
+async def make_custom(world: World, doc: dict[str, Any] = ROCK) -> str:
     return (await world.hub.stations.create(GUILD, doc)).id
 
 
-async def test_server_menu_lists_custom_and_genre_and_removes_each_through_the_gate(world):
+async def test_server_menu_lists_custom_and_genre_and_removes_each_through_the_gate(world: World) -> None:
     custom = await make_custom(world)
     await world.hub.favorites.add(GUILD, ADMIN, station(1))
     await world.hub.favorites.add_ref(GUILD, ADMIN, custom, exists=AsyncMock(return_value=True))
@@ -502,7 +503,7 @@ async def test_server_menu_lists_custom_and_genre_and_removes_each_through_the_g
     assert [f.uuid for f in stations] == [uuid(1)] and refs == []
 
 
-async def test_server_clear_removes_the_refs_too_and_a_deleted_custom_stays_listed_as_removed(world):
+async def test_server_clear_removes_the_refs_too_and_a_deleted_custom_stays_listed_as_removed(world: World) -> None:
     custom = await make_custom(world)
     await world.hub.favorites.add_ref(GUILD, ADMIN, custom, exists=AsyncMock(return_value=True))
     await world.hub.stations.delete(
@@ -517,7 +518,7 @@ async def test_server_clear_removes_the_refs_too_and_a_deleted_custom_stays_list
     assert await world.hub.favorites.list_all(GUILD) == ([], [])
 
 
-async def test_member_menu_lists_own_custom_and_genre_removes_and_clears_without_touching_others(world):
+async def test_member_menu_lists_own_custom_and_genre_removes_and_clears_without_touching_others(world: World) -> None:
     custom = await make_custom(world)
     custom_favorites = world.hub.custom_favorites
     for ref in (custom, "g:rock"):
@@ -544,14 +545,14 @@ async def test_member_menu_lists_own_custom_and_genre_removes_and_clears_without
     assert view.log == world.tr("radio.favorites.nothing_changed")
 
 
-async def test_member_ref_writes_respect_the_erasure_tombstone(world):
+async def test_member_ref_writes_respect_the_erasure_tombstone(world: World) -> None:
     await make_custom(world)
     view, _ = await open_radio(world)
     await world.hub.custom_favorites.toggle(GUILD, MEMBER, "g:rock")
     await view.load_radio()
     real_find = world.hub.custom_favorites._find
 
-    async def erased_meanwhile(key):
+    async def erased_meanwhile(key: str) -> dict[str, Any] | None:
         doc = await real_find(key)
         world.pool.erasure_tombstones.mark(MEMBER)  # apagar dados no meio da operação
         return doc
@@ -562,7 +563,7 @@ async def test_member_ref_writes_respect_the_erasure_tombstone(world):
     assert view.log == world.tr("radio.owner.unavailable")
 
 
-def all_texts(view):
+def all_texts(view: FavMenuView) -> tuple[str, str]:
     """O texto da página principal e o da página das ``custom``/``genre``."""
     view.radio_refs_page = False
     main = view.radio_manager_txt()
@@ -572,7 +573,7 @@ def all_texts(view):
     return main, refs
 
 
-async def full_world(world):
+async def full_world(world: World) -> None:
     """As três listas cheias: 24 estações, 10 filtros e 24 entradas ``custom``/``genre`` do membro."""
     from empiremuse.rules.radio_genres import shipped_catalog
 
@@ -582,7 +583,7 @@ async def full_world(world):
         await world.hub.custom_favorites.toggle(GUILD, MEMBER, ref)
 
 
-async def test_every_member_page_fits_the_2000_character_limit_with_the_three_lists_full(world):
+async def test_every_member_page_fits_the_2000_character_limit_with_the_three_lists_full(world: World) -> None:
     await full_world(world)
     view, _ = await open_radio(world)
     view.log = "x" * 100
@@ -593,7 +594,7 @@ async def test_every_member_page_fits_the_2000_character_limit_with_the_three_li
     assert all("\\n" not in world.tr(key) for key in ("radio.favorites.refs.heading", "radio.favorites.refs.empty"))
 
 
-async def test_a_genre_gone_from_the_catalog_shows_as_removed_and_stays_removable(world):
+async def test_a_genre_gone_from_the_catalog_shows_as_removed_and_stays_removable(world: World) -> None:
     await world.hub.custom_favorites.toggle(GUILD, MEMBER, "g:ghost_genre")
     view, _ = await open_radio(world)
     await view.radio_toggle_refs_callback(FakeInter(MEMBER))
@@ -605,7 +606,7 @@ async def test_a_genre_gone_from_the_catalog_shows_as_removed_and_stays_removabl
     assert view.log == world.tr("radio.favorites.log.ref_gone")  # sem "(removida) removida"
 
 
-async def test_refs_page_escapes_markdown_once_in_the_member_and_the_server_lists(world):
+async def test_refs_page_escapes_markdown_once_in_the_member_and_the_server_lists(world: World) -> None:
     custom = await make_custom(world, {**ROCK, "name": "Rock_FM [x]"})
     await world.hub.custom_favorites.toggle(GUILD, MEMBER, custom)
     await world.hub.favorites.add_ref(GUILD, ADMIN, custom, exists=AsyncMock(return_value=True))
@@ -617,19 +618,20 @@ async def test_refs_page_escapes_markdown_once_in_the_member_and_the_server_list
         assert "Rock\\_FM" in text and "\\\\" not in text  # uma barra por caractere, nunca duas
 
 
-async def test_member_ref_load_failure_shows_retry_on_the_member_page(world):
+async def test_member_ref_load_failure_shows_retry_on_the_member_page(world: World) -> None:
     view, _ = await open_radio(world)
 
-    async def down(user, *args):
+    async def down(user: int, *args: Any) -> None:
         raise RadioUnavailable
 
     world.hub.custom_favorites.list = down
     await view.load_radio()
-    assert view.radio_unavailable
-    assert world.tr("radio.owner.unavailable") in view.radio_manager_txt()
+    assert not view.radio_unavailable and view.radio_refs_unavailable
+    view.radio_refs_page = True
+    assert world.tr("radio.favorites.refs.unavailable") in view.radio_manager_txt()
 
 
-async def test_server_clear_keeps_the_member_custom_favorites(world):
+async def test_server_clear_keeps_the_member_custom_favorites(world: World) -> None:
     custom = await make_custom(world)
     await world.hub.custom_favorites.toggle(GUILD, MEMBER, custom)
     await world.hub.favorites.add_ref(GUILD, ADMIN, custom, exists=AsyncMock(return_value=True))
@@ -642,11 +644,11 @@ async def test_server_clear_keeps_the_member_custom_favorites(world):
     assert await world.hub.custom_favorites.list(GUILD, MEMBER) == [custom]  # a lista pessoal é outra
 
 
-async def test_member_clear_respects_the_erasure_tombstone(world):
+async def test_member_clear_respects_the_erasure_tombstone(world: World) -> None:
     await world.hub.custom_favorites.toggle(GUILD, MEMBER, "g:rock")
     real_find = world.hub.custom_favorites._find
 
-    async def erased_meanwhile(key):
+    async def erased_meanwhile(key: str) -> dict[str, Any] | None:
         doc = await real_find(key)
         world.pool.erasure_tombstones.mark(MEMBER)
         return doc
@@ -658,12 +660,12 @@ async def test_member_clear_respects_the_erasure_tombstone(world):
     assert await world.hub.custom_favorites.list(GUILD, MEMBER) == ["g:rock"]  # nada foi gravado
 
 
-async def test_server_reload_failure_keeps_the_log_of_the_change_that_happened(world):
+async def test_server_reload_failure_keeps_the_log_of_the_change_that_happened(world: World) -> None:
     await world.hub.favorites.add(GUILD, ADMIN, station(1))
     view = (await open_server(world)).sent[0]["view"]
     view.current = uuid(1)
 
-    async def down(pool, tr, guild_id):
+    async def down(pool: Any, tr: Any, guild_id: int) -> None:
         raise RadioUnavailable
 
     original = fav_menu_server.load_server_list
@@ -675,3 +677,59 @@ async def test_server_reload_failure_keeps_the_log_of_the_change_that_happened(w
     assert (await world.hub.favorites.list_all(GUILD))[0] == []  # a remoção aconteceu
     assert "Rádio 1" in view.log  # e o aviso dela segue na tela
     assert world.tr("radio.owner.unavailable") in view.log
+
+
+async def test_server_ref_label_failure_preserves_live_management_and_retry(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    custom = await make_custom(world)
+    await world.hub.favorites.add(GUILD, ADMIN, station(1))
+    await world.hub.favorites.add_ref(GUILD, ADMIN, custom, exists=AsyncMock(return_value=True))
+    original = world.hub.stations.get
+    monkeypatch.setattr(world.hub.stations, "get", AsyncMock(side_effect=RadioUnavailable))
+    opened = await open_server(world)
+    view = opened.sent[0]["view"]
+    assert view.refs_unavailable and [s.uuid for s in view.stations] == [uuid(1)]
+    assert world.tr("radio.favorites.refs.unavailable") in view.build_txt()
+    assert world.tr("radio.favorites.server.empty") not in view.build_txt()
+    assert next(
+        c for c in view.children if getattr(c, "label", "") == world.tr("radio.favorites.server.clear.label")
+    ).disabled
+    view.current = uuid(1)
+    await view.remove_callback(FakeInter(ADMIN))
+    assert await world.hub.favorites.list_all(GUILD) == ([], [custom])
+    await view.confirm_clear_callback(FakeInter(ADMIN))  # nem callback antigo apaga refs invisíveis
+    assert (await world.hub.favorites.list_all(GUILD))[1] == [custom]
+    monkeypatch.setattr(world.hub.stations, "get", original)
+    world.managers.discard(ADMIN)
+    refused = FakeInter(ADMIN)
+    await view.retry_callback(refused)
+    assert refused.calls_named("followup")[0]["content"] == world.tr("radio.refused.no_manage_guild")
+    assert view.refs_unavailable  # a releitura também exige a permissão atual
+    world.managers.add(ADMIN)
+    await view.retry_callback(FakeInter(ADMIN))
+    assert not view.refs_unavailable and view.refs == [(custom, "Queen Rock")]
+
+
+async def test_member_ref_label_failure_preserves_live_filters_and_retry(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    custom = await make_custom(world)
+    await world.hub.custom_favorites.toggle(GUILD, MEMBER, custom)
+    await world.seed()
+    original = world.hub.stations.get
+    monkeypatch.setattr(world.hub.stations, "get", AsyncMock(side_effect=RadioUnavailable))
+    view, _ = await open_radio(world)
+    assert not view.radio_unavailable and view.radio_refs_unavailable
+    assert len(view.radio_stations) == 2 and len(view.radio_filters) == 1
+    view.current_station = uuid(1)
+    await view.radio_remove_station_callback(FakeInter(MEMBER))
+    assert [s.uuid for s in await world.hub.user_favorites.stations(MEMBER)] == [uuid(2)]
+    await view.radio_toggle_refs_callback(FakeInter(MEMBER))
+    assert world.tr("radio.favorites.refs.unavailable") in view.radio_manager_txt()
+    assert world.tr("radio.favorites.retry.label") in labels(view)
+    await view.radio_clear_refs_callback(FakeInter(MEMBER))
+    assert await world.hub.custom_favorites.list(GUILD, MEMBER) == [custom]
+    monkeypatch.setattr(world.hub.stations, "get", original)
+    await view.radio_retry_callback(FakeInter(MEMBER))
+    assert not view.radio_refs_unavailable and view.radio_refs == [(custom, "Queen Rock")]

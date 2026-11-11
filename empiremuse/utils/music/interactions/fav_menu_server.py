@@ -11,15 +11,21 @@ Gancho (cogs/radio.py, de quem é o comando): ``await open_server_favorites(inte
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
+
 import disnake
 
-from empiremuse.rules.i18n import fit
+from empiremuse.rules.i18n import Translator, fit
 from empiremuse.rules.text import external_text
 from empiremuse.utils.others import paginator
 from empiremuse.utils.radio.favorite_refs import is_genre, ref_labels
-from empiremuse.utils.radio.favorites import MAX_FAVORITES, FavoriteForbidden
+from empiremuse.utils.radio.favorites import MAX_FAVORITES, FavoriteForbidden, FavoriteStation
 from empiremuse.utils.radio.perms import can_manage_guild
 from empiremuse.utils.radio.premium import RadioUnavailable
+
+if TYPE_CHECKING:
+    from empiremuse.utils.client import BotPool
 
 VIEW_TIMEOUT_S = 180
 LABEL_LIMIT = 100
@@ -45,19 +51,35 @@ async def open_server_favorites(inter: disnake.ApplicationCommandInteraction, tr
     await inter.send(view.build_txt(), view=view, ephemeral=True, allowed_mentions=NO_MENTIONS)
 
 
-async def load_server_list(pool, tr, guild_id: int):
-    """As ao vivo e as ``custom``/``genre`` do servidor (``refs`` = ``[(id, rótulo)]``), na ordem de inserção de cada grupo."""
+async def load_server_list(
+    pool: BotPool, tr: Translator, guild_id: int
+) -> tuple[list[FavoriteStation], list[tuple[str, str]] | None]:
+    """Ao vivo e rótulos das refs; ``None`` indica rótulos indisponíveis, sem descartar as ao vivo."""
     stations, refs = await pool.radio.favorites.list_all(guild_id)
-    return stations, await ref_labels(pool.radio, tr, guild_id, refs)
+    try:
+        labels = await ref_labels(pool.radio, tr, guild_id, refs)
+    except RadioUnavailable:
+        labels = None  # desconhecidas, nunca uma lista vazia; as ao vivo continuam disponíveis
+    return stations, labels
 
 
 class ServerRadioFavoritesView(disnake.ui.View):
-    def __init__(self, *, pool, inter, tr, guild_id: int, stations, refs=()) -> None:
+    def __init__(
+        self,
+        *,
+        pool,
+        inter,
+        tr,
+        guild_id: int,
+        stations: Sequence[FavoriteStation],
+        refs: Sequence[tuple[str, str]] | None = (),
+    ) -> None:
         super().__init__(timeout=VIEW_TIMEOUT_S)
         self.pool, self.inter, self.tr, self.guild_id = pool, inter, tr, guild_id
         self.author_id = inter.author.id
         self.stations = list(stations)
-        self.refs: list[tuple[str, str]] = list(refs)
+        self.refs_unavailable = refs is None
+        self.refs: list[tuple[str, str]] = list(refs or ())
         self.current: str | None = None
         self.confirming = False
         self.log = ""
@@ -66,19 +88,23 @@ class ServerRadioFavoritesView(disnake.ui.View):
 
     def build_txt(self) -> str:
         tr = self.tr
-        txt = tr("radio.favorites.server.heading", total=self.total, max=MAX_FAVORITES)
+        txt = tr(
+            "radio.favorites.server.heading", total="—" if self.refs_unavailable else self.total, max=MAX_FAVORITES
+        )
         if self.total:
             lines = [
                 f"> ` {n:02} ` ⭐ {external_text(s.name, TEXT_NAME_LIMIT, markdown=False)}"
                 for n, s in enumerate(self.stations, 1)
             ]
-            lines += [
+            lines = lines + [
                 f"> ` {n:02} ` {GENRE_EMOJI if is_genre(ref) else CUSTOM_EMOJI} {external_text(label, TEXT_NAME_LIMIT)}"
                 for n, (ref, label) in enumerate(self.refs, len(self.stations) + 1)
             ]
             txt += paginator("\n".join(lines), max_size=TEXT_LIST_MAX_SIZE)[0] + "\n"
-        else:
+        elif not self.refs_unavailable:
             txt += tr("radio.favorites.server.empty")
+        if self.refs_unavailable:
+            txt += tr("radio.favorites.refs.unavailable")
         if self.confirming:
             txt += tr("radio.favorites.server.clear_confirm", total=self.total)
         if self.log:
@@ -94,13 +120,27 @@ class ServerRadioFavoritesView(disnake.ui.View):
             return
         if self.total:
             self._add_select()
+        else:
+            self.current = None
         empty = not self.total
         self._button(self.tr("fav.remove.label"), "♻️", self.remove_callback, disabled=empty)
-        self._button(self.tr("radio.favorites.server.clear.label"), "🚮", self.ask_clear_callback, disabled=empty)
+        self._button(
+            self.tr("radio.favorites.server.clear.label"),
+            "🚮",
+            self.ask_clear_callback,
+            disabled=empty or self.refs_unavailable,
+        )
+        if self.refs_unavailable:
+            self._button(self.tr("radio.favorites.retry.label"), "🔄", self.retry_callback)
         self._button(self.tr("fav.close.label"), "❌", self.close_callback)
 
     def _button(self, label: str, emoji: str, callback, **kwargs) -> None:
-        button = disnake.ui.Button(label=fit(label, 80), emoji=emoji, **kwargs)
+        button = disnake.ui.Button(
+            label=fit(label, 80),
+            emoji=emoji,
+            custom_id="guild_fav_radio_" + callback.__name__.removesuffix("_callback"),
+            **kwargs,
+        )
         button.callback = callback
         self.add_item(button)
 
@@ -122,6 +162,7 @@ class ServerRadioFavoritesView(disnake.ui.View):
             for value, label, emoji in entries
         ]
         select = disnake.ui.Select(
+            custom_id="guild_fav_radio_select",
             options=options,
             min_values=1,
             max_values=1,
@@ -172,6 +213,9 @@ class ServerRadioFavoritesView(disnake.ui.View):
         ):  # o gate no clique, não só ao desenhar
             await inter.followup.send(self.tr("radio.refused.no_manage_guild"), ephemeral=True)
             return
+        if self.refs_unavailable:
+            await inter.edit_original_message(content=self.build_txt(), view=self, allowed_mentions=NO_MENTIONS)
+            return
         self.confirming = True
         await inter.edit_original_message(content=self.build_txt(), view=self, allowed_mentions=NO_MENTIONS)
 
@@ -183,10 +227,13 @@ class ServerRadioFavoritesView(disnake.ui.View):
         self.confirming = False
         await self._change(
             inter,
-            lambda favorites: favorites.clear(self.guild_id, inter.author.id),
+            None if self.refs_unavailable else lambda favorites: favorites.clear(self.guild_id, inter.author.id),
             "radio.favorites.server.cleared",
             {},
         )
+
+    async def retry_callback(self, inter: disnake.MessageInteraction) -> None:
+        await self._change(inter, None, "", {})
 
     async def close_callback(self, inter: disnake.MessageInteraction) -> None:
         await inter.response.edit_message(content=self.tr("fav.closed"), view=None)
@@ -202,15 +249,19 @@ class ServerRadioFavoritesView(disnake.ui.View):
             await inter.followup.send(self.tr("radio.refused.no_manage_guild"), ephemeral=True)
             return
         try:
-            changed = await operation(favorites)
+            changed = await operation(favorites) if operation is not None else None
         except FavoriteForbidden:
             self.log = self.tr("radio.refused.no_manage_guild")
         except RadioUnavailable:
             self.log = self.tr("radio.owner.unavailable")
         else:
-            self.log = self.tr(log_key, **fmt) if changed else self.tr("radio.favorites.nothing_changed")
+            self.log = ""
+            if operation is not None:
+                self.log = self.tr(log_key, **fmt) if changed else self.tr("radio.favorites.nothing_changed")
             try:  # o aviso do que mudou vem ANTES de reler: uma releitura que falha não esconde uma mudança que aconteceu
-                self.stations, self.refs = await load_server_list(self.pool, self.tr, self.guild_id)
+                self.stations, refs = await load_server_list(self.pool, self.tr, self.guild_id)
+                self.refs_unavailable = refs is None
+                self.refs = list(refs or ())
             except RadioUnavailable:
                 self.log += "\n" + self.tr("radio.owner.unavailable")
         await inter.edit_original_message(content=self.build_txt(), view=self, allowed_mentions=NO_MENTIONS)

@@ -76,6 +76,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - Código sem uso do `/radio setup`: `choose_station`, `StationSelect`, `apply_live` e os textos `radio.setup.no_stations`, `pick_station`, `select_placeholder`, `expired`, `confirm_station` e `station_saved`. Desde o R1 o setup liga a rádio em espera e a estação se escolhe no painel; nada muda para o usuário.
 
 ### Corrigido
+- Menus de favoritas do Discord: falhas ao resolver rótulos de estações personalizadas e gêneros agora mantêm a gerência de rádios ao vivo (e os filtros pessoais) disponível, com aviso e botão para tentar de novo na seção afetada. Limpar a lista inteira do servidor fica desabilitado enquanto as referências são desconhecidas. Componentes usam IDs estáveis com prefixo da funcionalidade, e os botões pt-BR/en-US explicitam estações personalizadas e gêneros.
 - Apagamento e banimento de usuário: a falha de um ouvinte de limpeza das sessões do painel (`UserCleanupError`) não zera mais a contagem de sessões destruídas no apagamento nem é tratada como corte de acesso falho no banimento (as sessões já caíram); o erro passou a viver em `empiremuse/rules/user_cleanup.py`.
 - Confirmações de favoritas pessoais e do servidor preservam um único escape de markdown nos nomes de estação do diretório.
 - Favoritas pessoais de rádio distinguem estação ausente de falha no diretório ou limite de consultas: a consulta estrita preserva a reserva de fichas e responde indisponibilidade sem gravar dados.
