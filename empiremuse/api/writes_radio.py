@@ -72,6 +72,6 @@ def parse_reset_token(body: Mapping[str, Any]) -> str:
     return token
 
 
-def read_station_version(query: Mapping[str, str]) -> Optional[str]:
+def read_station_version(query: Mapping[str, str]) -> str:
     """``DELETE /radio-stations/{id}?expected_version=``."""
     return read_rev(query)

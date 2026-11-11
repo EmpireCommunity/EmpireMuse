@@ -1,7 +1,6 @@
 """Contrato das rotas de Jukebox e de rádios (B4, ``docs/api/openapi.yaml``): as respostas reais validam contra o arquivo e todo
 par rota+status documentado dessas rotas é observado (o arquivo não promete resposta que o bot não dá)."""
 
-import asyncio
 from contextlib import contextmanager
 from unittest.mock import patch
 
@@ -13,7 +12,7 @@ from empiremuse.utils.radio.setup import RadioForbidden
 from empiremuse.utils.servers import ServerConfigUnavailable
 from tests.api.support import body_of
 from tests.api.support_jukebox import BASE as JUKEBOX, JukeboxApiCase
-from tests.api.support_radio import ALFA, BASE, CHANNEL, LIVE_UUID, OMEGA, OTHER_UUID, RadioApiCase, station
+from tests.api.support_radio import ALFA, BASE, CHANNEL, LIVE_UUID, OTHER_UUID, RadioApiCase, station
 from tests.api.test_openapi_contract import SpecChecker, documented, load_spec
 
 pytestmark = pytest.mark.critical
@@ -399,6 +398,3 @@ class OpenApiJukeboxContractTest(CommonCoverage, JukeboxApiCase):
         faltando = {item for item in documented(self.spec) if is_jukebox(item[1])} - self.seen
 
         assert not faltando, f"documentados e nunca observados: {sorted(faltando)}"
-
-
-_ = (asyncio, OMEGA)

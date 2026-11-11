@@ -20,8 +20,8 @@ from tests.api.support_radio import (
     keys_of,
     station,
 )
-from tests.panel.helpers_radio import LogoResult
-from tests.api.support import ApiTestCase  # noqa: F401
+from empiremuse.rules.errors import RuleError
+from tests.panel.helpers_radio import LogoResult, make_channel
 
 pytestmark = pytest.mark.critical
 
@@ -162,9 +162,7 @@ class RadioChatWriteTest(RadioApiCase):
         radio = self.seed_live()
         no_premium = self.call("PUT", self.radio_url(radio, "/chat"), rev_body(radio, CHAT))
         self.premium()
-        self.world.channels[CHANNEL] = __import__("tests.panel.helpers_radio", fromlist=["x"]).make_channel(
-            CHANNEL, "Sala DJ", ALFA, manage_messages=False
-        )
+        self.world.channels[CHANNEL] = make_channel(CHANNEL, "Sala DJ", ALFA, manage_messages=False)
 
         no_messages = self.call("PUT", self.radio_url(radio, "/chat"), rev_body(radio, CHAT))
 
@@ -232,7 +230,7 @@ class RadioChatWriteTest(RadioApiCase):
         assert body_of(first) == body_of(again) and len(self.radio.store.updates) == 1
         assert (other.code, error_code(other)) == (409, "conflict")
 
-    def test_limite_de_escrita_por_usuario(self):
+    def test_limite_de_escrita_por_usuario_no_chat(self):
         self.premium()
         radio = self.seed_live()
         while self.ctx.limits.user_write.allow("1001"):
@@ -527,9 +525,7 @@ class RadioResetTest(RadioApiCase):
     def test_o_token_e_gasto_mesmo_quando_o_bot_recusa_e_nao_vale_de_novo(self):
         radio = self.seed_live()
         token = self.prepare(radio)
-        self.radio.setup.fail_with = RadioInvalid(
-            __import__("empiremuse.rules.errors", fromlist=["x"]).RuleError("x", "y")
-        )
+        self.radio.setup.fail_with = RadioInvalid(RuleError("x", "y"))
 
         refused = self.reset(radio, token)
         self.radio.setup.fail_with = None
@@ -568,7 +564,10 @@ class RadioResetTest(RadioApiCase):
             token = self.prepare(radio)
             self.reset(radio, token)
 
-        assert [call.args[1:] for call in record.call_args_list] == [("radios/reset", 200)] * 2
+        assert [call.args[1:] for call in record.call_args_list] == [
+            ("radios/reset_prepare", 200),
+            ("radios/reset", 200),
+        ]
 
 
 class RadioLogoTest(RadioApiCase):
@@ -590,7 +589,7 @@ class RadioLogoTest(RadioApiCase):
         denied = self.new_session("3003")
 
         responses = [
-            self.api("GET", self.radio_url(alfa, "/logo").replace("/guilds", "/guilds")),  # sem sessão
+            self.api("GET", self.radio_url(alfa, "/logo")),  # sem sessão
             self.get(self.radio_url(alfa, "/logo"), session=denied),
             self.get(f"{BASE}/radios/{omega.id}/logo"),
             self.get(f"{BASE}/radios/{alfa.id}x/logo"),
@@ -634,6 +633,15 @@ class RadioStationsRoutesTest(RadioApiCase):
             response = self.call("POST", f"{BASE}/radio-stations", {"values": {**self.CREATE, "name": "Minha   rádio"}})
 
         assert response.code == 201 and body_of(response)["name"] == "Minha rádio"
+
+    def test_apagar_sem_versao_de_estacao_existente_e_400_e_nada_e_apagado(self):
+        self.premium()
+        item = self.radio.stations.seed(ALFA, "Minha")
+
+        response = self.call("DELETE", f"{BASE}/radio-stations/{item.id}")
+
+        assert (response.code, body_of(response)["error"]["fields"]) == (400, ["expected_version"])
+        assert item.id in self.radio.stations.docs
 
     def test_exige_premium_em_todas_as_rotas_e_nada_e_gravado(self):
         station_ = self.radio.stations.seed(ALFA, "Minha")

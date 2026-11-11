@@ -16,7 +16,9 @@ from empiremuse.api.signing import PURPOSE_JUKEBOX, PURPOSE_RADIO_RESET, derive_
 from empiremuse.panel.authz import GuildAuthorizer
 from empiremuse.panel.oauth import DiscordOAuthClient, DiscordOAuthError
 from empiremuse.panel.services.jukebox import JukeboxService
+from empiremuse.panel.services.radio import RadioPage
 from empiremuse.panel.services.radio_setup import RadioSetupService
+from empiremuse.panel.services.radio_stations import StationsPage
 from empiremuse.panel.settings import load_session_limits
 from empiremuse.panel.state import ensure_panel_state
 from tests.api.helpers import NOW, SERVICE_KEY, WEB_PORT, external_config
@@ -127,8 +129,8 @@ class ApiTestCase(AsyncHTTPTestCase):
             settings_service=state.settings_service,
             account_service=state.account_service,
             idempotency=IdempotencyStore(self.clock),
-            radio_page=state.radio_page,
-            stations_page=state.stations_page,
+            radio_page=RadioPage(),
+            stations_page=StationsPage(),
             jukebox_service=JukeboxService(
                 state.task_runner,
                 state.settings_service,

@@ -248,19 +248,26 @@ class RadioResetPrepareHandler(RadioRoute):
     @radio_endpoint
     async def post(self, guild_id: str, radio_id: str) -> None:
         found = await self.radio_context(guild_id, radio_id, write=True)
-        self.json_body()
-        record_panel_action(found.ctx, f"{CATEGORY}/reset", 200)
-        self.write(
-            {
-                "confirm_token": self.ctx.radio_setup_service.reset_token(found.ctx, found.radio),
-                "expires_in": CONFIRM_TTL_SECONDS,
-                "radio": {
-                    "id": str(found.radio.id),
-                    "kind": str(found.radio.kind),
-                    "enabled": bool(found.radio.enabled),
+        body = self.json_body()
+
+        async def work() -> Reply:
+            record_panel_action(found.ctx, f"{CATEGORY}/reset_prepare", 200)  # nada foi apagado
+            return Reply(
+                200,
+                {
+                    "confirm_token": self.ctx.radio_setup_service.reset_token(found.ctx, found.radio),
+                    "expires_in": CONFIRM_TTL_SECONDS,
+                    "radio": {
+                        "id": str(found.radio.id),
+                        "kind": str(found.radio.kind),
+                        "enabled": bool(found.radio.enabled),
+                    },
                 },
-            }
-        )
+            )
+
+        await self.run_write(
+            body, work, replayable=False
+        )  # a sessão é conferida antes e depois; token novo a cada pedido
 
 
 class RadioResetHandler(RadioRoute):

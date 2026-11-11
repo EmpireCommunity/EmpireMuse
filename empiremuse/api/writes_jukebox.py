@@ -12,7 +12,6 @@ from typing import Any, Mapping, Optional
 
 from empiremuse.api.errors import validation_failed
 from empiremuse.api.writes import BOOL, TEXT, Spec, optional, read_choice, read_version, required, values_to_args
-from empiremuse.panel.services.base import HEX16
 from empiremuse.panel.services.jukebox_options import AUTO_DELETE, TEXT_REQUESTS
 
 TASK_CONFIGURE, TASK_RESET = "configure", "reset"
@@ -54,8 +53,6 @@ def parse_task_request(body: Mapping[str, Any]) -> TaskRequest:
     """``POST /jukebox/tasks``: ``{expected_version, action, values?, confirm_token?}``."""
     action = read_choice(body, "action", TASK_ACTIONS)
     version = read_version(body)
-    if not HEX16.fullmatch(version):  # ``read_version`` já confere; defesa se a regra mudar
-        raise validation_failed("expected_version")
     args = values_to_args(body.get("values"), CONFIGURE_SPEC) if action == TASK_CONFIGURE else {}
     if action == TASK_RESET and body.get("values") not in (None, {}):
         raise validation_failed("values")
