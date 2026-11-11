@@ -221,11 +221,14 @@ def _slash_node(path: list[str], source: Any, command: Any, inherited: Sequence[
     for option, child in leaves:
         if child is not None and is_public(child):
             require_classified(child, f"slash {' '.join([*path, option.name])}")
-    subs = [
-        _slash_node([*path, option.name], option, child, inherited)
-        for option, child in leaves
-        if child is not None and is_public(child)
-    ]
+    subs = sorted(  # por id, como os de prefixo: a saída não depende da ordem de declaração no código
+        (
+            _slash_node([*path, option.name], option, child, inherited)
+            for option, child in leaves
+            if child is not None and is_public(child)
+        ),
+        key=lambda item: item["id"],
+    )
     if subs:
         node["subcommands"] = subs
     return node

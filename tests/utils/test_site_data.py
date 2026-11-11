@@ -11,6 +11,7 @@ import sys
 import textwrap
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from disnake.ext import commands
@@ -41,7 +42,7 @@ def run_python(code: str) -> subprocess.CompletedProcess[str]:
 
 
 @pytest.fixture(scope="module")
-def data():
+def data() -> dict[str, Any]:
     run = subprocess.run(
         [sys.executable, "-m", "empiremuse.site_data", "--bot-version", "2.3.0-rc.1"],
         cwd=ROOT,
@@ -53,26 +54,26 @@ def data():
     return json.loads(run.stdout)
 
 
-def flatten(nodes):
+def flatten(nodes: Any) -> list[dict[str, Any]]:
     for node in nodes:
         yield node
         yield from flatten(node.get("subcommands", ()))
 
 
-def every_command(data):
+def every_command(data: dict[str, Any]) -> list[dict[str, Any]]:
     return list(flatten([*data["slash_commands"], *data["prefix_commands"]]))
 
 
-def command(data, kind, id_):
+def command(data: dict[str, Any], kind: str, id_: str) -> dict[str, Any]:
     return next(node for node in flatten(data[f"{kind}_commands"]) if node["id"] == id_)
 
 
 class TestOffline:
-    def test_builds_without_network_or_discord(self):
+    def test_builds_without_network_or_discord(self) -> None:
         run = run_python(
             """
             import socket
-            def denied(*_a, **_k):
+            def denied(*_a, **_k) -> None:
                 raise AssertionError("o exportador não pode usar a rede")
             socket.socket.connect = denied
             socket.getaddrinfo = denied
@@ -86,12 +87,12 @@ class TestOffline:
 
 
 class TestShape:
-    def test_it_matches_the_published_schema(self, data):
+    def test_it_matches_the_published_schema(self, data: dict[str, Any]) -> None:
         Draft202012Validator.check_schema(SCHEMA)
 
         Draft202012Validator(SCHEMA).validate(data)
 
-    def test_the_schema_requires_kind_and_permissions_on_the_top_level_only(self, data):
+    def test_the_schema_requires_kind_and_permissions_on_the_top_level_only(self, data: dict[str, Any]) -> None:
         validator = Draft202012Validator(SCHEMA)
         top = json.loads(json.dumps(data))
         del top["slash_commands"][0]["kind"]
@@ -103,13 +104,23 @@ class TestShape:
         next(n for n in sub["slash_commands"] if "subcommands" in n)["subcommands"][0]["kind"] = "slash"
         assert not validator.is_valid(sub)  # o subcomando não tem kind
 
-    def test_it_is_stable_and_has_no_dates(self, data):
+    def test_every_level_is_ordered_by_id_slash_and_prefix_alike(self, data: dict[str, Any]) -> None:
+        def ordered(nodes: list[dict[str, Any]]) -> None:
+            ids = [node["id"] for node in nodes]
+            assert ids == sorted(ids), ids
+            for node in nodes:
+                ordered(node.get("subcommands", []))
+
+        ordered(data["slash_commands"])
+        ordered(data["prefix_commands"])
+
+    def test_it_is_stable_and_has_no_dates(self, data: dict[str, Any]) -> None:
         text = render(data)
 
         assert text.endswith("}\n") and not re.search(r"20\d\d-\d\d-\d\d", text)
         assert list(data) == ["schema_version", "bot_version", "locales", "slash_commands", "prefix_commands"]
 
-    def test_the_catalog_content_is_there_in_both_languages(self, data):
+    def test_the_catalog_content_is_there_in_both_languages(self, data: dict[str, Any]) -> None:
         play = command(data, "slash", "play")
         assert {o["required"] for o in play["options"]} >= {True, False} and play["name"]["pt-BR"] != ""
         assert command(data, "slash", "queue.display")["path"] == ["queue", "display"]  # subcomando
@@ -121,11 +132,11 @@ class TestShape:
         assert command(data, "prefix", "now_playing")["path"] == ["nowplaying"]  # PREFIX_CATALOG_IDS
 
     @pytest.mark.parametrize("version", ["2.3.0", "2.3.0-rc.1", "dev"])
-    def test_a_release_version_is_accepted(self, version):
+    def test_a_release_version_is_accepted(self, version: str) -> None:
         assert validated_version(version) == version
 
     @pytest.mark.parametrize("version", ["", "v2.3.0", "2.3", "2.3.0-beta", "2.3.0\n", "x; rm -rf /"])
-    def test_anything_else_is_refused(self, version):
+    def test_anything_else_is_refused(self, version: str) -> None:
         with pytest.raises(SiteDataError):
             validated_version(version)
 
@@ -133,27 +144,29 @@ class TestShape:
 class TestPermissionsAreTheUsers:
     """A exigência do bot (``bot_has_guild_permissions``) não é do usuário; a do usuário vem das verificações e do ``default_member_permissions``."""
 
-    def test_the_bots_own_requirements_never_show(self, data):
+    def test_the_bots_own_requirements_never_show(self, data: dict[str, Any]) -> None:
         for kind in ("slash", "prefix"):
             assert command(data, kind, "play")["permissions"] == []
             assert command(data, kind, "search")["permissions"] == []
         assert command(data, "prefix", "addposition")["permissions"] == []  # send_messages é do bot
 
-    def test_what_the_user_needs_shows_on_commands_and_on_slash_subcommands(self, data):
+    def test_what_the_user_needs_shows_on_commands_and_on_slash_subcommands(self, data: dict[str, Any]) -> None:
         assert command(data, "slash", "language")["permissions"] == ["manage_guild"]  # default_member_permissions
         assert command(data, "prefix", "setprefix")["permissions"] == ["manage_guild"]  # has_guild_permissions
         for kind in ("slash", "prefix"):
             assert command(data, kind, "jukebox.setup")["permissions"] == ["manage_guild"]
             assert command(data, kind, "jukebox.reset")["permissions"] == ["manage_guild"]  # manage_threads é do bot
 
-    def test_the_radio_prefix_publishes_manage_guild_and_never_the_owner_alternative(self, data):
+    def test_the_radio_prefix_publishes_manage_guild_and_never_the_owner_alternative(
+        self, data: dict[str, Any]
+    ) -> None:
         for id_ in ("radio", "radio.status", "radio.on", "radio.off", "radio.reset", "radio.setup"):
             assert command(data, "prefix", id_)["permissions"] == ["manage_guild"], id_
         ids = {node["id"] for node in flatten(data["prefix_commands"])}
         assert ids.isdisjoint({"radio.premium", "radio.pauseall", "radio.resumeall"})  # o dono continua de fora
 
-    def test_only_the_users_checks_count_with_the_real_decorators(self):
-        async def handler(ctx):
+    def test_only_the_users_checks_count_with_the_real_decorators(self) -> None:
+        async def handler(ctx) -> None:
             return None
 
         for decorator in (
@@ -182,17 +195,19 @@ class TestNothingPrivateLeaks:
             SimpleNamespace(hidden=False, checks=[SimpleNamespace(__qualname__="radio_owner_only")]),
         ],
     )
-    def test_the_filter_drops_hidden_and_owner_commands(self, command_like):
+    def test_the_filter_drops_hidden_and_owner_commands(self, command_like: Any) -> None:
         assert is_public(command_like) is False
 
     @pytest.mark.parametrize(
         "name",
         ["check_voice.<locals>.p", "RadioPrefixCommands.<lambda>", "my_radio_owner_only_x", "not_is_owner.<locals>.p"],
     )
-    def test_a_plain_check_passes_the_filter_and_the_name_match_is_exact(self, name):
+    def test_a_plain_check_passes_the_filter_and_the_name_match_is_exact(self, name: str) -> None:
         assert is_public(SimpleNamespace(hidden=False, checks=[SimpleNamespace(__qualname__=name)]))
 
-    def test_the_real_radio_owner_commands_are_not_public_even_without_hidden(self, monkeypatch):
+    def test_the_real_radio_owner_commands_are_not_public_even_without_hidden(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         radio = next(cls for cls in site_data._cog_classes() if cls.__cog_name__ == "Radio")
         group = next(c for c in radio.__cog_commands__ if c.qualified_name == "radio")
         owner = [sub for sub in group.commands if sub.name in {"premium", "pauseall", "resumeall"}]
@@ -205,7 +220,7 @@ class TestNothingPrivateLeaks:
             is_public(group) is True
         )  # o grupo é público (a gerência do servidor usa); só os subcomandos de dono saem
 
-    def test_a_slash_subcommand_with_an_owner_check_is_dropped_and_one_without_a_registered_object_too(self):
+    def test_a_slash_subcommand_with_an_owner_check_is_dropped_and_one_without_a_registered_object_too(self) -> None:
         import disnake
 
         sub = disnake.OptionType.sub_command
@@ -232,7 +247,7 @@ class TestNothingPrivateLeaks:
 
         assert [child["id"] for child in node["subcommands"]] == ["grupo.publico"]
 
-    def test_no_known_owner_command_or_alias_is_exported(self, data):
+    def test_no_known_owner_command_or_alias_is_exported(self, data: dict[str, Any]) -> None:
         exported = {node["id"] for node in every_command(data)}
         for node in every_command(data):
             exported.update(node["path"])
@@ -242,7 +257,7 @@ class TestNothingPrivateLeaks:
 
         assert exported & OWNER_IDS_AND_ALIASES == set()
 
-    def test_every_hidden_or_owner_command_in_the_code_is_absent(self, data):
+    def test_every_hidden_or_owner_command_in_the_code_is_absent(self, data: dict[str, Any]) -> None:
         """Recalcula, de forma independente do filtro, quem é de dono no código (oculto ou com verificação de dono) e exige que fique de fora."""
         exported = {node["id"] for node in flatten(data["prefix_commands"])}
         private = []
@@ -262,7 +277,7 @@ class TestNothingPrivateLeaks:
 
         assert set(private) & exported == set()
 
-    def test_no_internal_id_or_private_key_in_the_output(self, data):
+    def test_no_internal_id_or_private_key_in_the_output(self, data: dict[str, Any]) -> None:
         text = render(data)
 
         assert not SNOWFLAKE.search(text)
@@ -274,7 +289,7 @@ class TestOwnerFilterFailsClosed:
     Agora toda verificação de um comando público tem de ser classificada (dono ou pública); a desconhecida é erro."""
 
     @staticmethod
-    def _all_real_commands():
+    def _all_real_commands() -> list[Any]:
         from disnake.ext import commands as disnake_commands
 
         found = []
@@ -292,7 +307,7 @@ class TestOwnerFilterFailsClosed:
                 stack.extend(getattr(item, "children", {}).values())
         return found
 
-    def test_every_check_in_the_real_code_is_classified(self):
+    def test_every_check_in_the_real_code_is_classified(self) -> None:
         """O conjunto das verificações SEM classificação no código real é vazio: uma verificação nova quebra este teste (e o build)."""
         unclassified = {
             name
@@ -306,7 +321,7 @@ class TestOwnerFilterFailsClosed:
             len(self._all_real_commands()) > 100
         )  # o teste enxerga os comandos de verdade (barra, prefixo e subcomandos)
 
-    def test_an_unknown_check_on_a_public_command_raises_instead_of_being_published(self):
+    def test_an_unknown_check_on_a_public_command_raises_instead_of_being_published(self) -> None:
         rogue = SimpleNamespace(
             hidden=False,
             checks=[SimpleNamespace(__qualname__="owner_like_check.<locals>.predicate")],
@@ -319,16 +334,18 @@ class TestOwnerFilterFailsClosed:
         with pytest.raises(SiteDataError):
             site_data._prefix_node(rogue, {}, "Cog")
 
-    def test_an_unknown_check_on_a_top_level_slash_command_raises_through_slash_commands(self, monkeypatch):
+    def test_an_unknown_check_on_a_top_level_slash_command_raises_through_slash_commands(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Um comando de barra de verdade (``InvokableSlashCommand``) com uma verificação desconhecida faz o exportador levantar."""
         from disnake.ext import commands as disnake_commands
 
-        def rogue_check(inter):
+        def rogue_check(inter) -> None:
             return True
 
         @disnake_commands.slash_command(name="rogue", description="d")
         @disnake_commands.check(rogue_check)
-        async def rogue(inter):
+        async def rogue(inter) -> None:
             return None
 
         cog = SimpleNamespace(__cog_name__="Fake", __cog_app_commands__=[rogue])
@@ -338,18 +355,18 @@ class TestOwnerFilterFailsClosed:
         with pytest.raises(SiteDataError, match="rogue_check"):
             site_data.slash_commands(provider)
 
-    def test_a_check_without_a_name_is_unclassified_too(self):
+    def test_a_check_without_a_name_is_unclassified_too(self) -> None:
         assert site_data.classify_check(object()) is None
         assert site_data.classify_check(SimpleNamespace(__qualname__="")) is None
 
-    def test_a_hidden_command_with_an_unknown_check_is_just_excluded(self):
+    def test_a_hidden_command_with_an_unknown_check_is_just_excluded(self) -> None:
         hidden = SimpleNamespace(
             hidden=True, checks=[SimpleNamespace(__qualname__="rogue")], qualified_name="x", name="x"
         )
 
         assert site_data._prefix_node(hidden, {}, "Cog") is None
 
-    def test_an_unknown_check_on_a_slash_subcommand_raises(self):
+    def test_an_unknown_check_on_a_slash_subcommand_raises(self) -> None:
         import disnake
 
         body = SimpleNamespace(
@@ -383,14 +400,14 @@ class TestOwnerFilterFailsClosed:
             ("radio_owner_only_extra", None),
         ],
     )
-    def test_the_classification_by_exact_name(self, qualname, expected):
+    def test_the_classification_by_exact_name(self, qualname: str, expected: str | None) -> None:
         assert site_data.classify_check(SimpleNamespace(__qualname__=qualname)) == expected
 
-    def test_playlists_import_and_export_publish_manage_guild(self, data):
+    def test_playlists_import_and_export_publish_manage_guild(self, data: dict[str, Any]) -> None:
         for id_ in ("playlists.import", "playlists.export"):
             assert command(data, "slash", id_)["permissions"] == ["manage_guild"], id_
 
-    def test_slash_subcommands_inherit_the_top_level_default_member_permissions(self, data):
+    def test_slash_subcommands_inherit_the_top_level_default_member_permissions(self, data: dict[str, Any]) -> None:
         """O Discord aplica o ``default_member_permissions`` do topo ao grupo inteiro: os subcomandos de ``/radio`` o carregam."""
         assert command(data, "slash", "radio")["permissions"] == ["manage_guild"]
         for id_ in ("radio.on", "radio.off", "radio.status", "radio.station.create", "radio.playlists.list"):
@@ -421,7 +438,7 @@ class TestOnlyTheCommittedCatalogs:
         print(json.dumps({"opened": sorted(opened), "marker": "MARCADOR-DO-CROWDIN" in text}))
     """
 
-    def test_no_other_locale_directory_is_opened_by_the_whole_process(self):
+    def test_no_other_locale_directory_is_opened_by_the_whole_process(self) -> None:
         """O ``localized()`` dos cogs chama ``get_i18n()`` na importação: o singleton restrito tem de existir ANTES, senão ele abre tudo."""
         run = run_python(self.PROBE.replace("PRELUDE", ""))
 
@@ -429,7 +446,7 @@ class TestOnlyTheCommittedCatalogs:
         report = json.loads(run.stdout)
         assert report["opened"] == ["en-US", "pt-BR"] and report["marker"] is False
 
-    def test_an_existing_unrestricted_singleton_makes_the_export_fail_instead_of_continuing(self):
+    def test_an_existing_unrestricted_singleton_makes_the_export_fail_instead_of_continuing(self) -> None:
         run = run_python(
             """
             from empiremuse.i18n.service import get_i18n
@@ -445,7 +462,7 @@ class TestOnlyTheCommittedCatalogs:
 class TestValidateScript:
     """``scripts/validate_site_data.py``: o que o job de PR (CI) roda sobre o JSON gerado dentro da imagem."""
 
-    def _run(self, *args):
+    def _run(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [sys.executable, "scripts/validate_site_data.py", *args],
             cwd=ROOT,
@@ -454,7 +471,7 @@ class TestValidateScript:
             check=False,
         )
 
-    def test_a_valid_file_passes_and_the_version_is_checked(self, tmp_path, data):
+    def test_a_valid_file_passes_and_the_version_is_checked(self, tmp_path: Path, data: dict[str, Any]) -> None:
         file = tmp_path / "site-data.json"
         file.write_text(json.dumps(data), "utf-8")
 
@@ -462,7 +479,9 @@ class TestValidateScript:
         wrong = self._run(str(file), "--bot-version", "9.9.9")
         assert wrong.returncode == 1 and "bot_version" in wrong.stderr
 
-    def test_an_invalid_or_unreadable_file_fails_with_the_field_path_only(self, tmp_path, data):
+    def test_an_invalid_or_unreadable_file_fails_with_the_field_path_only(
+        self, tmp_path: Path, data: dict[str, Any]
+    ) -> None:
         broken = json.loads(json.dumps(data))
         del broken["slash_commands"][0]["permissions"]
         broken["prefix_commands"][0]["segredo"] = "VALOR-SECRETO"
@@ -479,7 +498,7 @@ class TestValidateScript:
 
 
 class TestCommandLine:
-    def test_it_writes_the_file(self, tmp_path):
+    def test_it_writes_the_file(self, tmp_path: Path) -> None:
         out = tmp_path / "site-data.json"
 
         run = subprocess.run(
@@ -493,7 +512,7 @@ class TestCommandLine:
         assert run.returncode == 0, run.stderr
         assert json.loads(out.read_text("utf-8"))["bot_version"] == "2.3.0"
 
-    def test_an_invalid_version_fails_without_writing(self, tmp_path, capsys):
+    def test_an_invalid_version_fails_without_writing(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         out = tmp_path / "site-data.json"
 
         assert main(["--bot-version", "bad", "--out", str(out)]) == 2
