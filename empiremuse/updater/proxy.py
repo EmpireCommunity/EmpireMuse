@@ -51,7 +51,7 @@ DEFAULT_DOCKER_SOCKET = "/var/run/docker.sock"
 DEFAULT_LISTEN_SOCKET = "/run/empiremuse-updater/updater.sock"
 DEFAULT_PROJECT_NAME = "empiremuse"
 DEFAULT_SERVICE = "bot"
-DEFAULT_IMAGE_REPO = "or4cu1o/empiremuse"
+DEFAULT_IMAGE_REPO = "empirecommunity/empiremuse"
 
 MAX_BODY = 64 * 1024
 MAX_TAIL = 200

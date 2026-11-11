@@ -10,8 +10,8 @@
     "description": "Bot de música multi-instância para Discord em Python 3.14 com suporte a nós Lavalink externos e servidor local embutido (porta padrão 6000). Validado pela documentação oficial do Pterodactyl em 2026-10-24; não verificado num painel real. Memória mínima: 768 MB, recomendada: 1 GB.",
     "features": null,
     "docker_images": {
-        "EmpireMuse 2": "or4cu1o/empiremuse:2",
-        "EmpireMuse latest": "or4cu1o/empiremuse:latest"
+        "EmpireMuse 2": "empirecommunity/empiremuse:2",
+        "EmpireMuse latest": "empirecommunity/empiremuse:latest"
     },
     "file_denylist": [],
     "startup": "python -m empiremuse",

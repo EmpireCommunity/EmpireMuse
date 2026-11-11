@@ -9,9 +9,9 @@ name: empiremuse
 services:
   bot:
     container_name: empiremuse
-    # Imagem oficial do Docker Hub. Em produção, prefira fixar uma versão exata (ex.: or4cu1o/empiremuse:2.0.2
+    # Imagem oficial do Docker Hub. Em produção, prefira fixar uma versão exata (ex.: empirecommunity/empiremuse:2.3.0
     # ou digest). A tag :2 é flutuante (acompanha a série 2.x) e a latest aponta para a última versão estável.
-    image: ${EMPIREMUSE_IMAGE:-or4cu1o/empiremuse:latest}
+    image: ${EMPIREMUSE_IMAGE:-empirecommunity/empiremuse:latest}
     pull_policy: missing
     restart: unless-stopped
     stop_grace_period: 30s

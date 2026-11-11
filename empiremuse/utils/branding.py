@@ -12,7 +12,7 @@ from empiremuse.version import image_version
 
 BOT_NAME = "EmpireMuse"
 GITHUB_REPO = "EmpireCommunity/EmpireMuse"
-DOCKER_IMAGE_REPO = "or4cu1o/empiremuse"
+DOCKER_IMAGE_REPO = "empirecommunity/empiremuse"
 REPO_URL = f"https://github.com/{GITHUB_REPO}"
 SOURCE_REPO_GIT = REPO_URL + ".git"
 RAW_BASE_URL = "https://raw.githubusercontent.com/EmpireCommunity/EmpireMuse/main"

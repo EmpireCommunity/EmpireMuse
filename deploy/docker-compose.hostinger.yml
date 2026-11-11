@@ -6,7 +6,7 @@
 # Auto-update (docs/guides/auto-update.md): o serviço updater-proxy abaixo deixa o comando /update trocar a imagem do bot.
 # As DUAS linhas de imagem (bot e updater-proxy) usam tag@sha256 com o digest do image-digest.txt da release
 # (docs/guides/release.md); o digest abaixo é um MARCADOR de zeros e precisa ser trocado na implantação. A linha do bot
-# tem de manter exatamente a forma "    image: or4cu1o/empiremuse:X.Y.Z@sha256:..." (4 espaços): é a que o auxiliar edita.
+# tem de manter exatamente a forma "    image: empirecommunity/empiremuse:X.Y.Z@sha256:..." (4 espaços): é a que o auxiliar edita.
 # A versão da linha atual também pode ser de teste ("X.Y.Z-rc.N@sha256:..."): o /update leva a próxima estável; só estáveis são oferecidas.
 # Sem o auto-update, apague o serviço updater-proxy, o volume updater-sock e, no bot, UPDATE_PROXY_SOCKET e o volume.
 name: empiremuse
@@ -14,7 +14,7 @@ name: empiremuse
 services:
   bot:
     container_name: empiremuse
-    image: or4cu1o/empiremuse:2.2.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    image: empirecommunity/empiremuse:2.3.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
     pull_policy: missing
     restart: unless-stopped
     stop_grace_period: 30s
@@ -187,7 +187,7 @@ services:
     # Nome completo (docker.io/...): a linha nunca casa com a do bot, que é a que o auxiliar edita. O digest é
     # obrigatório: o "Update project" do painel puxa e recria todos os serviços, e só com tag um token vazado do Hub
     # viraria root pelo proxy. Troque o marcador pelo digest do image-digest.txt da mesma release.
-    image: docker.io/or4cu1o/empiremuse:2.2.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    image: docker.io/empirecommunity/empiremuse:2.3.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
     pull_policy: missing
     restart: unless-stopped
     command: ["/usr/local/bin/python3", "-I", "-S", "/app/empiremuse/updater/proxy.py"]
