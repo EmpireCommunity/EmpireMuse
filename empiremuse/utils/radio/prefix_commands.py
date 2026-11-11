@@ -38,6 +38,23 @@ def _guild_id(raw: str) -> int | None:
     return int(raw) if raw.isdecimal() and 0 < int(raw) < 1 << 64 else None
 
 
+async def radio_owner_only(ctx: CustomContext) -> bool:
+    """A verificação dos subcomandos de dono do prefixo ``radio``. Tem nome próprio (e não uma ``lambda``) para o exportador do site
+    (``empiremuse/site_data.py``) reconhecê-la pelo nome e nunca publicar esses comandos, mesmo que percam o ``hidden=True``."""
+    return await ctx.cog.owner_check(ctx)
+
+
+async def radio_manager_only(ctx: CustomContext) -> bool:
+    """A verificação dos subcomandos públicos do prefixo ``radio``: ``manage_guild`` no servidor (conferido em execução). Tem nome próprio
+    para o exportador do site publicar a exigência (``empiremuse/site_data.py`` mapeia o nome para ``manage_guild``)."""
+    return await ctx.cog.manager_check(ctx)
+
+
+async def radio_group_access(ctx: CustomContext) -> bool:
+    """A verificação do prefixo ``radio`` sozinho: quem gerencia o servidor OU quem está em ``OWNER_IDS`` (a alternativa do dono fica)."""
+    return await ctx.cog.group_check(ctx)
+
+
 RADIO_COOLDOWN = commands.CooldownMapping.from_cooldown(1, 10, commands.BucketType.guild)
 
 
@@ -59,7 +76,7 @@ class RadioPrefixCommands:
     # ------------------------------------------------------------------ prefixo ``radio`` (aliases ``rd`` e ``247``)
 
     @commands.group(name="radio", aliases=["rd", "247"], invoke_without_command=True)
-    @commands.check(lambda ctx: ctx.cog.group_check(ctx))
+    @commands.check(radio_group_access)
     async def radio_prefix(self, ctx: CustomContext):
         """Sozinho, o status das rádios do servidor; os subcomandos fazem o resto."""
         await self.prefix_status(ctx)
@@ -80,13 +97,13 @@ class RadioPrefixCommands:
         return found
 
     @radio_prefix.command(name="status")
-    @commands.check(lambda ctx: ctx.cog.manager_check(ctx))
+    @commands.check(radio_manager_only)
     async def prefix_status(self, ctx: CustomContext):
         tr = await self._prefix_gate(ctx)
         await ctx.send(await self._status_text(tr, ctx.guild.id), allowed_mentions=disnake.AllowedMentions.none())
 
     @radio_prefix.command(name="on", aliases=["ligar"])
-    @commands.check(lambda ctx: ctx.cog.manager_check(ctx))
+    @commands.check(radio_manager_only)
     async def prefix_on(
         self, ctx: CustomContext, channel: Optional[Union[disnake.VoiceChannel, disnake.StageChannel]] = None
     ):
@@ -97,7 +114,7 @@ class RadioPrefixCommands:
         )
 
     @radio_prefix.command(name="off", aliases=["desligar"])
-    @commands.check(lambda ctx: ctx.cog.manager_check(ctx))
+    @commands.check(radio_manager_only)
     async def prefix_off(
         self, ctx: CustomContext, channel: Optional[Union[disnake.VoiceChannel, disnake.StageChannel]] = None
     ):
@@ -109,7 +126,7 @@ class RadioPrefixCommands:
         )
 
     @radio_prefix.command(name="reset", aliases=["redefinir"])
-    @commands.check(lambda ctx: ctx.cog.manager_check(ctx))
+    @commands.check(radio_manager_only)
     async def prefix_reset(
         self, ctx: CustomContext, channel: Optional[Union[disnake.VoiceChannel, disnake.StageChannel]] = None
     ):
@@ -120,7 +137,7 @@ class RadioPrefixCommands:
         await ctx.send(content, view=view, allowed_mentions=disnake.AllowedMentions.none())
 
     @radio_prefix.command(name="setup", aliases=["configurar"])
-    @commands.check(lambda ctx: ctx.cog.manager_check(ctx))
+    @commands.check(radio_manager_only)
     async def prefix_setup(self, ctx: CustomContext):
         """A configuração tem seletores (bot, tipo e estação): só existe no comando de barra."""
         tr = await self._tr(ctx)
@@ -129,7 +146,7 @@ class RadioPrefixCommands:
     # ------------------------------------------------------------------ premium
 
     @radio_prefix.command(name="premium", hidden=True)
-    @commands.check(lambda ctx: ctx.cog.owner_check(ctx))
+    @commands.check(radio_owner_only)
     async def radio_premium(self, ctx: CustomContext, action: str = "", guild: str = ""):
         """``radio premium conceder|revogar <id do servidor>`` e ``radio premium listar``."""
         tr = await self._tr(ctx)
@@ -156,7 +173,7 @@ class RadioPrefixCommands:
     # ------------------------------------------------------------------ pausar todas
 
     @radio_prefix.command(name="pauseall", aliases=["pausartodas"], hidden=True)
-    @commands.check(lambda ctx: ctx.cog.owner_check(ctx))
+    @commands.check(radio_owner_only)
     async def radio_pause_all(self, ctx: CustomContext):
         tr = await self._tr(ctx)
         try:
@@ -167,7 +184,7 @@ class RadioPrefixCommands:
         await ctx.send(tr("radio.owner.paused_all" if changed else "radio.owner.paused_all_already"))
 
     @radio_prefix.command(name="resumeall", aliases=["retomartodas"], hidden=True)
-    @commands.check(lambda ctx: ctx.cog.owner_check(ctx))
+    @commands.check(radio_owner_only)
     async def radio_resume_all(self, ctx: CustomContext):
         tr = await self._tr(ctx)
         try:
