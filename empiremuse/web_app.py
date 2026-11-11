@@ -4,7 +4,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import Callable
+import time
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Optional
 
 import aiohttp
@@ -21,6 +22,7 @@ from packaging import version
 from empiremuse import paths
 from empiremuse.config_loader import load_config, resolve_port
 from empiremuse.rules.client_ip import UNKNOWN_PEER, IPNetwork, resolve_client_ip
+from empiremuse.rules.rpc_proof import DeniedBudget, LogThrottle, proof_ip_key
 from empiremuse.rules.servers import is_main_identifier
 from empiremuse.rules.user_ban import RPC_BLOCKED_REASON
 from empiremuse.rpc_protocol import (
@@ -37,6 +39,13 @@ from empiremuse.rpc_protocol import (
     WEBSOCKET_PING_INTERVAL,
     WEBSOCKET_PING_TIMEOUT,
     MAX_USER_IDS,
+    PROOF_DENIED_CACHE_SIZE,
+    PROOF_DENIED_LIMIT,
+    PROOF_DENIED_REASON,
+    PROOF_DENIED_WINDOW,
+    PROOF_LOG_INTERVAL,
+    PROOF_RATE_REASON,
+    BUSY_REASON,
     RPC_KEY_HEADER,
     TOKEN_LENGTHS,
     USER_OP,
@@ -53,6 +62,7 @@ from empiremuse.rpc_protocol import (
     same_secret,
 )
 from empiremuse.utils import branding
+from empiremuse.utils.rpc_proof import ProofUnavailable, TokenProof
 
 # Limite de corpo de requisição da porta inteira (painel, relé do RPC e página de status): 64 KiB.
 MAX_BODY_SIZE = 64 * 1024
@@ -72,6 +82,9 @@ DEFAULT_BIND_ADDRESS = "0.0.0.0"
 
 users_ws = {}
 bots_ws = []
+
+# Um aviso de "prova indisponível" por intervalo (o banco instável gera uma rajada de recusas 1013).
+_proof_unavailable_log = LogThrottle(PROOF_LOG_INTERVAL, time.monotonic)
 
 
 def _logo_url() -> str:
@@ -183,6 +196,9 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         config: Optional[dict] = None,
         connections: Optional[set] = None,
         is_blocked: Optional[Callable[[int], bool]] = None,
+        token_verifier: Optional[TokenProof] = None,
+        trusted_ip: bool = False,
+        denied_budget: Optional[DeniedBudget] = None,
     ):
         config = config or {}
         self.is_blocked = is_blocked or (
@@ -192,6 +208,10 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         self.server_auth = bool(config.get("ENABLE_RPC_AUTH"))
         self.allowed_origins = parse_allowed_origins(config.get("RPC_ALLOWED_ORIGINS"))
         self.connections = connections if connections is not None else set()
+        # Sem padrão permissivo: ``None`` quer dizer "sem prova", e só ``run_app`` decide isso (um por ``run_app``, como ``connections``).
+        self.token_verifier = token_verifier
+        self.trusted_ip = trusted_ip
+        self.denied_budget = denied_budget
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -211,7 +231,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
 
     def open(self, *args, **kwargs):
         if len(self.connections) >= MAX_CONNECTIONS:
-            self._reject(CLOSE_TRY_AGAIN_LATER, "Servidor ocupado, tente novamente mais tarde.")
+            self._reject(CLOSE_TRY_AGAIN_LATER, BUSY_REASON)
             return
 
         self.connections.add(self)
@@ -238,7 +258,8 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         self._reject(CLOSE_MALFORMED, "Mensagem inválida.")
         return None
 
-    def on_message(self, message):
+    def on_message(self, message) -> Optional[Awaitable[None]]:
+        # Devolve o awaitable do registro: o Tornado só lê a próxima mensagem da conexão depois dele (a ordem por conexão).
         if self.rejected:
             return
 
@@ -253,9 +274,10 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         if self.is_bot:
             self._on_bot_message(data)
         elif "user_ids" in data:
-            self._on_registration(data)
+            return self._on_registration(data)
         else:
             self._on_message_without_ids(data)
+        return None
 
     def _on_message_without_ids(self, data: dict) -> None:
         if data.get("bot_id") or "user" in data:
@@ -266,11 +288,11 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         logger.info("Relé RPC: desconectando %s por falta de ids de usuário.", self.request.remote_ip)
         self._disconnect("Desconectando por falta de ids de usuário")
 
-    def _on_registration(self, data: dict) -> None:
+    def _on_registration(self, data: dict) -> Optional[Awaitable[None]]:
         if data.get("bot"):
             self._register_bot(data)
-        else:
-            self._register_user(data)
+            return None
+        return self._register_user(data)
 
     def _register_bot(self, data: dict) -> None:
         if not self.authenticated:
@@ -287,7 +309,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         self.is_bot = True
         bots_ws.append(self)
 
-    def _register_user(self, data: dict) -> None:
+    async def _register_user(self, data: dict) -> None:
         ids = data["user_ids"]
         if not is_valid_id_list(ids):
             self._reject(CLOSE_MALFORMED, "Lista de ids inválida.")
@@ -309,6 +331,12 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             self._disconnect("O token precisa ter 50 caracteres...")
             return
 
+        ids = list(dict.fromkeys(ids))  # um ID repetido gera uma consulta só
+        if self.token_verifier is not None:
+            ids = await self._prove_ownership(ids, token)
+            if ids is None:
+                return
+
         # E5 (Q14): o ID banido tem os MESMOS efeitos locais de um livre (entra em ``user_ids`` e ``users_ws``; ``_forget_users`` e
         # ``_replace_session`` se comportam igual; o token é guardado igual), senão o estado de banimento vazaria por quem é derrubado. A
         # diferença é só para fora: ``_relay_registration`` o tira do repasse aos bots e ``_on_bot_message`` não entrega nada a ele. O aviso de
@@ -323,6 +351,51 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             self._replace_session(u_id)
 
         self._relay_registration(data)
+
+    async def _prove_ownership(self, ids: list[int], token: str) -> Optional[list[int]]:
+        """Os IDs que o token enviado prova (``None`` se o registro já foi respondido ou a conexão fechou).
+
+        Nada daqui escreve ID ou token no log, nem consulta banimento. Efeito local e repasse só depois, no bloco síncrono de quem chama.
+        """
+        key = proof_ip_key(self.request.remote_ip, self.trusted_ip)
+        if key is not None and self.denied_budget is not None and self.denied_budget.exhausted(key):
+            self._reject(CLOSE_RATE_LIMITED, PROOF_RATE_REASON)  # antes de qualquer consulta
+            return None
+
+        unavailable: Optional[ProofUnavailable] = None
+        verified: frozenset[int] = frozenset()
+        try:
+            verified = await self.token_verifier.verify(ids, token)
+        except ProofUnavailable as exc:
+            unavailable = exc
+
+        if self.rejected or self.ws_connection is None:
+            return None  # fechou durante a prova: nada de ``users_ws``, de sessão deslocada nem de repasse
+
+        if unavailable is not None:
+            self._warn_proof_unavailable(unavailable)
+            self._reject(CLOSE_TRY_AGAIN_LATER, BUSY_REASON)  # sem ``op disconnect``: o app reconecta
+            return None
+
+        if not verified:
+            if key is not None and self.denied_budget is not None:
+                self.denied_budget.record(key)
+            self._disconnect(PROOF_DENIED_REASON)
+            return None
+
+        return [i for i in ids if i in verified]
+
+    @staticmethod
+    def _warn_proof_unavailable(exc: ProofUnavailable) -> None:
+        suppressed = _proof_unavailable_log.take()
+        if suppressed is None:
+            return
+        cause = exc.args[0] if exc.args else type(exc).__name__
+        logger.warning(
+            "Relé RPC: prova do token indisponível (%s); registros recusados com 1013 (%d suprimidos desde o último aviso).",
+            cause,
+            suppressed,
+        )
 
     def _replace_session(self, user_id: int) -> None:
         previous = users_ws.get(user_id)
@@ -693,6 +766,25 @@ def _warn_if_exposed_without_auth(config: dict, bind_address: str) -> None:
         )
 
 
+def _build_registration_proof(pool: BotPool, config: dict) -> dict:
+    """Os kwargs da rota ``/ws`` para a prova do token no registro (um verificador e um orçamento por ``run_app``).
+
+    Sem a prova (auth desligada, ou relé sem banco) o registro é o de antes; o relé sem banco avisa no boot, sem padrão silencioso.
+    """
+    if not config.get("ENABLE_RPC_AUTH"):
+        return {}
+    if pool.database is None:
+        logger.warning(
+            "O relé RPC não tem acesso ao banco: o registro NÃO prova a posse do ID. "
+            "Rode o relé no processo do bot (RUN_RPC_SERVER=true)."
+        )
+        return {}
+    return {
+        "token_verifier": TokenProof(lambda: pool.database),
+        "denied_budget": DeniedBudget(PROOF_DENIED_LIMIT, PROOF_DENIED_WINDOW, PROOF_DENIED_CACHE_SIZE, time.monotonic),
+    }
+
+
 def run_app(pool: BotPool, config: dict = None):
     if not config:
         try:
@@ -701,6 +793,8 @@ def run_app(pool: BotPool, config: dict = None):
             pass
 
     panel_app, trust_proxy, trusted_networks = _build_panel(pool, config)
+    trusted = bool(panel_app and trust_proxy)
+    ws_proof = _build_registration_proof(pool, config)
 
     app = tornado.web.Application(
         [
@@ -712,7 +806,13 @@ def run_app(pool: BotPool, config: dict = None):
             (
                 r"/ws",
                 WebSocketHandler,
-                {"config": config, "connections": set(), "is_blocked": lambda user_id: _is_rpc_blocked(pool, user_id)},
+                {
+                    "config": config,
+                    "connections": set(),
+                    "is_blocked": lambda user_id: _is_rpc_blocked(pool, user_id),
+                    "trusted_ip": trusted,
+                    **ws_proof,
+                },
             ),
         ],
         websocket_max_message_size=MAX_MESSAGE_SIZE,
@@ -720,7 +820,6 @@ def run_app(pool: BotPool, config: dict = None):
         websocket_ping_timeout=WEBSOCKET_PING_TIMEOUT,
     )
 
-    trusted = bool(panel_app and trust_proxy)
     server = tornado.httpserver.HTTPServer(
         ClientIpRouter(make_router(app, panel_app), trusted, trusted_networks),
         xheaders=trusted,
