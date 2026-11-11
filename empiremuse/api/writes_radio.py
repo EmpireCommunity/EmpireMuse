@@ -50,7 +50,7 @@ def read_rev(source: Mapping[str, Any]) -> str:
     version = source.get("expected_version")
     if not isinstance(version, str) or not REV.fullmatch(version):
         raise validation_failed("expected_version")
-    return version
+    return str(int(version))  # forma canônica (``01`` é ``1``): é a que se compara e a que o ``409`` devolve
 
 
 def parse_versioned(body: Mapping[str, Any], spec: Spec) -> Write:

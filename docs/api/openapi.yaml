@@ -4276,25 +4276,47 @@ components:
           type: string
           maxLength: 400
     CustomStationValues:
+      description: "Uma fonte só, conforme `kind`: `artists` exige `artists`; `playlists` exige `playlists`."
+      oneOf:
+        - $ref: "#/components/schemas/CustomStationArtistsValues"
+        - $ref: "#/components/schemas/CustomStationPlaylistsValues"
+      discriminator:
+        propertyName: kind
+        mapping:
+          artists: "#/components/schemas/CustomStationArtistsValues"
+          playlists: "#/components/schemas/CustomStationPlaylistsValues"
+    CustomStationArtistsValues:
       type: object
       additionalProperties: false
-      required: [name, kind]
+      required: [name, kind, artists]
       properties:
         name:
           type: string
           description: De 1 a 32 caracteres, único no servidor.
         kind:
           type: string
+          const: artists
           description: Só `artists` e `playlists` se criam e se editam; `genre` existe apenas na leitura (estação legada).
-          enum: [artists, playlists]
         artists:
           type: array
-          description: "`kind: artists`: de 1 a 10 nomes."
+          description: "De 1 a 10 nomes."
           items:
             type: string
+    CustomStationPlaylistsValues:
+      type: object
+      additionalProperties: false
+      required: [name, kind, playlists]
+      properties:
+        name:
+          type: string
+          description: De 1 a 32 caracteres, único no servidor.
+        kind:
+          type: string
+          const: playlists
+          description: Só `artists` e `playlists` se criam e se editam; `genre` existe apenas na leitura (estação legada).
         playlists:
           type: array
-          description: "`kind: playlists`: de 1 a 5 playlists de rádio do servidor."
+          description: "De 1 a 5 playlists de rádio do servidor."
           items:
             type: string
     CustomStationWrite:

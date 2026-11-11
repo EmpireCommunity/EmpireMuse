@@ -801,6 +801,35 @@ class RadioStationsRoutesTest(RadioApiCase):
         assert {(r.code, body_of(r)["error"]["fields"][0]) for r in responses} == {(400, "artists")}
         assert self.radio.stations.docs == {}
 
+    def test_versao_com_zero_a_esquerda_e_a_mesma_versao_na_conferencia_do_409(self):
+        self.premium()
+        item = self.radio.stations.seed(ALFA, "Minha")
+
+        stale = self.call("DELETE", f"{BASE}/radio-stations/{item.id}?expected_version=0{item.rev + 3}")
+        deleted = self.call("DELETE", f"{BASE}/radio-stations/{item.id}?expected_version=0{item.rev}")
+
+        assert (stale.code, body_of(stale)["error"]["current_version"]) == (409, str(item.rev))
+        assert deleted.code == 204 and self.radio.stations.docs == {}
+
+    def test_apagar_repetido_com_a_mesma_chave_devolve_o_204_guardado_sem_tocar_na_store(self):
+        self.premium()
+        item = self.radio.stations.seed(ALFA, "Minha")
+        url = f"{BASE}/radio-stations/{item.id}?expected_version={item.rev}"
+
+        first = self.call("DELETE", url, key="chave-de-teste-1")
+        with (
+            patch.object(self.radio.stations, "get", AsyncMock()) as get,
+            patch.object(self.radio.stations, "delete", AsyncMock()) as delete,
+        ):
+            again = self.call("DELETE", url, key="chave-de-teste-1")
+        other = self.call("DELETE", url, key="chave-de-teste-1", session=self.other)
+        sem_chave = self.call("DELETE", url)
+
+        assert first.code == again.code == 204 and again.headers["Idempotent-Replayed"] == "true"
+        assert not get.await_count and not delete.await_count  # a repetição não toca na store
+        assert (other.code, error_code(other)) == (404, "not_found")  # a chave é por usuário: nada vem de outro
+        assert sem_chave.code == 404  # sem a chave a estação já não existe
+
     def test_apagar_em_uso_com_versao_velha_da_409_com_a_atual_antes_do_in_use(self):
         self.premium()
         used = self.radio.stations.seed(ALFA, "Em uso")
@@ -836,4 +865,6 @@ class RadioStationsRoutesTest(RadioApiCase):
         no_version = self.call("DELETE", f"{url}/{'a' * 24}")
 
         assert (plain.code, not_object.code) == (415, 400)
-        assert no_version.code == 404  # a estação não existe: o ``404`` vem antes de conferir a versão
+        assert (
+            no_version.code == 400
+        )  # o pedido mal formado é recusado antes de procurar a estação (que vai na escrita)

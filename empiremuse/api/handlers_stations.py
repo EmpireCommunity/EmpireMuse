@@ -108,11 +108,15 @@ class StationHandler(RadioRoute):
 
     @radio_endpoint
     async def delete(self, guild_id: str, station_id: str) -> None:
-        ctx, station = await self.station_context(guild_id, station_id, write=True)
+        ctx, premium = await self.guild_context(guild_id, write=True)
+        self.require_premium(premium)
         query = self.query_arguments("expected_version")
         version = read_station_version(query)
 
         async def work() -> Reply:
+            # a estação é procurada aqui dentro: quem repete um apagar que já deu certo (mesma Idempotency-Key) recebe
+            # o 204 guardado e não um 404; o servidor e o premium já foram conferidos antes de consultar a chave
+            station = await self.station_of(ctx, station_id)
             await self.fail_if_stale(ctx, station, version)  # versão velha é 409, mesmo com a estação em uso
             if await self.hub(ctx).stations.radios_using(ctx.guild_id, station.id):  # em uso: recusa, nada é apagado
                 record_panel_action(ctx, f"{CATEGORY}/estacoes/apagar", 400)

@@ -87,11 +87,15 @@ class RadioRoute(DataHandler):
         ctx, premium = await self.guild_context(guild_id, write=write)
         if not premium:
             raise ApiError(403, FORBIDDEN)
+        return ctx, await self.station_of(ctx, station_id)
+
+    async def station_of(self, ctx: FormContext, station_id: str) -> Any:
+        """A estação do servidor do contexto; a de outro servidor (ou que não existe) é ``404``."""
         wanted = station_id_of(station_id)
         station = await self.hub(ctx).stations.get(ctx.guild_id, wanted) if wanted is not None else None
         if station is None or not station_belongs_to(station, ctx.guild_id):
             raise not_found()
-        return ctx, station
+        return station
 
     @staticmethod
     def require_premium(premium: bool) -> None:
