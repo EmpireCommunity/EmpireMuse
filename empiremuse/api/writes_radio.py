@@ -40,7 +40,6 @@ RESERVE_SPEC: Spec = {"reserva": required(TEXT_OR_NULL)}
 CUSTOM_STATION_SPEC: Spec = {
     "name": required(TEXT),
     "kind": required(TEXT),
-    "genre": optional(TEXT),
     "artists": optional(LINES),
     "playlists": optional(NAMES),
 }

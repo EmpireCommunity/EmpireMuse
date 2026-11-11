@@ -1815,7 +1815,7 @@ paths:
       operationId: listRadioStations
       summary: "As estações personalizadas do servidor"
       description: |
-        Exige premium. Cada estação traz a `version` (`rev` decimal), a fonte, os artistas que o Last.fm não achou (`unknown`) e as rádios que a usam. Traz também o catálogo de gêneros e os nomes das playlists de rádio, para montar o formulário.
+        Exige premium. Cada estação traz a `version` (`rev` decimal), a fonte, os artistas que o Last.fm não achou (`unknown`) e as rádios que a usam. Traz também o catálogo de gêneros e os nomes das playlists de rádio, para montar o formulário. `name`, `source` e `playlists` são os valores guardados, só para devolver numa escrita (ida e volta); o que se mostra ao usuário é `display` e `playlists_display`.
       security:
         - ServiceKey: []
           SessionToken: []
@@ -1911,7 +1911,7 @@ paths:
       operationId: writeCustomStation
       summary: "Edita uma estação personalizada"
       description: |
-        Substituição, com `expected_version` (CAS em `rev`). A estação é sempre do servidor do caminho; de outro dá `404`.
+        Substituição, com `expected_version` (CAS em `rev`). Os valores de `name` e `source` são os guardados (os que a leitura devolve em `name`/`source`), nunca os de `display`. A estação é sempre do servidor do caminho; de outro dá `404`.
       security:
         - ServiceKey: []
           SessionToken: []
@@ -1967,7 +1967,7 @@ paths:
       operationId: deleteRadioStation
       summary: "Apaga uma estação personalizada"
       description: |
-        `expected_version` na query. Uma estação em uso por alguma rádio é recusada (`400` com `in_use` em `fields`).
+        `expected_version` na query, conferida primeiro (versão velha dá `409` com `current_version`, mesmo em uso). Uma estação em uso por alguma rádio é recusada (`400` com `in_use` em `fields`).
       security:
         - ServiceKey: []
           SessionToken: []

@@ -41,6 +41,7 @@ class JukeboxReadTest(JukeboxApiCase):
         permissions = self.world.guild.members[int(OTHER_USER)].guild_permissions
         permissions.administrator = permissions.manage_guild = False  # já não gerencia o servidor
         outro = self.new_session(OTHER_USER)
+        self.world.pool.servers.forget_all()  # sem cache: qualquer leitura apareceria
         self.world.db.reads.clear()
 
         responses = [self.call("GET", BASE, session=outro), self.call("GET", "/guilds/999/jukebox")]

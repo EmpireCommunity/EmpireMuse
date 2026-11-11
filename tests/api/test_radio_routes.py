@@ -762,13 +762,40 @@ class RadioStationsRoutesTest(RadioApiCase):
         assert body["playlists"] == ["rock.fm"] and len(body["playlists_display"]) == 1
         assert body["playlists_display"][0] != "rock.fm"
 
+    def test_genre_nao_se_escreve_nem_como_tipo_nem_como_campo_a_mais(self):
+        self.premium()
+        item = self.radio.stations.seed(ALFA, "Minha")
+        cases = [
+            ({"kind": "genre"}, "kind"),
+            ({"kind": "artists", "genre": "rock"}, "genre"),
+            ({"kind": "playlists", "playlists": ["x"], "genre": "rock"}, "genre"),
+        ]
+
+        for values, field in cases:
+            body = {"values": {**self.CREATE, "name": "Nova", **values}}
+            created = self.call("POST", f"{BASE}/radio-stations", body)
+            edited = self.call("PUT", f"{BASE}/radio-stations/{item.id}", {"expected_version": str(item.rev), **body})
+
+            assert [(r.code, body_of(r)["error"]["fields"]) for r in (created, edited)] == [(400, [field])] * 2, values
+        assert self.radio.stations.updates == []
+
+    def test_playlist_de_nome_alterado_pelo_tratamento_volta_da_leitura_para_a_criacao(self):
+        self.premium()
+        url = f"{BASE}/radio-stations"
+        with patch.object(self.ctx.stations_page, "playlist_names", AsyncMock(return_value=("rock.fm",))):
+            name = body_of(self.get(url))["playlists"][0]
+            response = self.call("POST", url, {"values": {"name": "Pl", "kind": "playlists", "playlists": [name]}})
+
+        assert name == "rock.fm" and response.code == 201, response.body
+        assert body_of(response)["source"] == {"playlists": ["rock.fm"]}
+
     def test_separador_de_linha_que_nao_e_o_n_e_recusado_nos_artistas(self):
         self.premium()
         url = f"{BASE}/radio-stations"
 
         responses = [
             self.call("POST", url, {"values": {**self.CREATE, "artists": [f"Queen{sep}Abba"]}})
-            for sep in ("\r", "\x0b", "\x1c", "\x85", "\u2028", "\u2029")
+            for sep in ("\r", "\r\n", "\x0b", "\x0c", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029")
         ]
 
         assert {(r.code, body_of(r)["error"]["fields"][0]) for r in responses} == {(400, "artists")}
@@ -782,10 +809,12 @@ class RadioStationsRoutesTest(RadioApiCase):
             **{**self.radio.store.docs[radio.id].__dict__, "source": {"station": used.id}}
         )
 
-        response = self.call("DELETE", f"{BASE}/radio-stations/{used.id}?expected_version={used.rev + 5}")
+        with patch("empiremuse.api.handlers_stations.record_panel_action") as record:
+            response = self.call("DELETE", f"{BASE}/radio-stations/{used.id}?expected_version={used.rev + 5}")
 
         assert (response.code, body_of(response)["error"]["current_version"]) == (409, str(used.rev))
         assert used.id in self.radio.stations.docs
+        assert [call.args[1:] for call in record.call_args_list] == [("radios/estacoes/apagar", 409)]
 
     def test_escrita_reconfere_agora_e_registra_o_rotulo_do_generico(self):
         self.premium()

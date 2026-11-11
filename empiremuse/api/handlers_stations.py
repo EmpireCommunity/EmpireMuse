@@ -127,6 +127,7 @@ class StationHandler(RadioRoute):
     async def fail_if_stale(self, ctx: FormContext, station: Any, version: str) -> None:
         current = await self.hub(ctx).stations.get(ctx.guild_id, station.id)
         if current is None or str(current.rev) != version:
+            record_panel_action(ctx, f"{CATEGORY}/estacoes/apagar", 409)
             raise conflict(str(current.rev) if current is not None else None)
 
     async def fail_unless_ok(self, status: int, ctx: FormContext, station: Any, fields: Any = ()) -> None:
