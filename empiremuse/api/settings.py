@@ -64,7 +64,7 @@ class ExternalPanelSettings:
 
     @property
     def redirect_uri(self) -> str:
-        return f"{self.base_url}{CALLBACK_PATH}"  # ``base_url`` pode levar prefixo de caminho (``…/panel``)
+        return f"{self.base_url}{CALLBACK_PATH}"
 
 
 def _text(config: Mapping[str, Any], key: str) -> str:
@@ -97,13 +97,25 @@ def _normalized_prefix(path: str) -> str:
     return prefix
 
 
+PORT_TEXT = re.compile(r"[1-9][0-9]{0,4}", re.ASCII)
+
+
+def _check_port_text(netloc: str) -> None:
+    """Porta explícita só como ``[1-9][0-9]{0,4}``: nada de ``:`` vazio, ``:0``, zero à esquerda ou sinal (o ``int`` os aceitaria)."""
+    hostport = netloc.rpartition("]")[2] if netloc.startswith("[") else netloc
+    if ":" in hostport and not PORT_TEXT.fullmatch(hostport.partition(":")[2]):
+        raise ExternalPanelConfigError(f"{URL_KEY} inválida: a porta é um número de 1 a 65535, sem zero à esquerda.")
+
+
 def _parse_url(config: Mapping[str, Any]) -> str:
     raw = _text(config, URL_KEY)
     if not raw:
         raise ExternalPanelConfigError(f"{URL_KEY} é obrigatória no modo externo.")
-    if "\\" in raw or any(ord(char) <= 0x20 or ord(char) == 0x7F for char in raw) or "@" in raw:
+    # Só ASCII visível (0x21 a 0x7E): barra de controle, espaço, NBSP, homógrafo cirílico e a barra de largura total (U+FF0F)
+    # não passam. ``%`` é recusado em qualquer parte (host, porta, caminho): nada de nome codificado (``pai%6eel``).
+    if "\\" in raw or "%" in raw or "@" in raw or not all(0x21 <= ord(char) <= 0x7E for char in raw):
         raise ExternalPanelConfigError(
-            f"{URL_KEY} inválida: sem espaços, controles, barra invertida ou usuário e senha."
+            f"{URL_KEY} inválida: só ASCII visível, sem %, barra invertida ou usuário e senha."
         )
     try:
         parts = urlsplit(raw)
@@ -112,10 +124,13 @@ def _parse_url(config: Mapping[str, Any]) -> str:
         raise ExternalPanelConfigError(f"{URL_KEY} inválida: informe uma URL absoluta https válida.") from None
     if parts.query or parts.fragment or "?" in raw or "#" in raw:
         raise ExternalPanelConfigError(f"{URL_KEY} inválida: não deve conter query nem fragmento.")
+    _check_port_text(parts.netloc)
     prefix = _normalized_prefix(parts.path)
     try:
         # o genérico segue recusando qualquer caminho: aqui ele só valida esquema, host e porta da origem
-        origin, host = _parse_base_url(f"{parts.scheme}://{parts.netloc}")
+        origin, host = _parse_base_url(
+            f"{parts.scheme}://{parts.netloc.lower()}"
+        )  # esquema e host sempre em minúsculas
         _check_transport(origin, host, bool(config.get("PANEL_INSECURE_COOKIES", False)))
     except PanelConfigError as error:
         raise ExternalPanelConfigError(str(error).replace("PANEL_BASE_URL", URL_KEY)) from None

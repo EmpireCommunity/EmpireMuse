@@ -122,6 +122,52 @@ def test_b1c_prefixo_invalido_recusa(suffix):
         load(external_config(EXTERNAL_PANEL_URL=PANEL_URL + suffix))
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://painel.example.com/\u00a0panel",  # NBSP
+        "https://painel.example.com/panel\uff0f",  # barra de largura total (U+FF0F)
+        "https://pai\u00a0nel.example.com",
+        "https://ex\u0430mple.com",  # homógrafo cirílico (а)
+        "https://pai%6eel.example.com",
+        "https://painel.example.com/pa%6eel",
+        "https://painel.example.com/%41",
+        "https://painel.example.com:44%33",
+        "https://painel.example.com/panel\u007f",
+        "https://painel.example.com/pan\u00e9l",
+    ],
+)
+def test_b1c_so_ascii_visivel_e_nenhum_percent_em_parte_alguma(url):
+    with pytest.raises(ExternalPanelConfigError):
+        load(external_config(EXTERNAL_PANEL_URL=url))
+
+
+@pytest.mark.parametrize("port", ["", "0", "00", "080", "+80", "-1", "65536", "999999", "1_0", "x"])
+def test_b1c_porta_explicita_so_como_inteiro_sem_zero_a_esquerda(port):
+    with pytest.raises(ExternalPanelConfigError):
+        load(external_config(EXTERNAL_PANEL_URL=f"https://painel.example.com:{port}/panel"))
+
+
+def test_b1c_porta_valida_e_aceita_e_mantida():
+    assert load(external_config(EXTERNAL_PANEL_URL="https://painel.example.com:8443/panel")).base_url == (
+        "https://painel.example.com:8443/panel"
+    )
+
+
+@pytest.mark.parametrize(
+    ("raw", "base"),
+    [
+        ("HTTPS://Painel.example.com/panel", "https://painel.example.com/panel"),
+        ("https://PAINEL.EXAMPLE.COM", "https://painel.example.com"),
+        ("https://Painel.example.com/Panel/", "https://painel.example.com/Panel"),  # o caminho NÃO muda de caixa
+    ],
+)
+def test_b1c_esquema_e_host_em_minusculas_o_caminho_como_veio(raw, base):
+    settings = load(external_config(EXTERNAL_PANEL_URL=raw))
+
+    assert settings.base_url == base and settings.redirect_uri == base + "/auth/callback"
+
+
 @pytest.mark.parametrize("userinfo", ["u@", "u:p@"])
 def test_b1c_userinfo_segue_recusado_com_prefixo(userinfo):
     with pytest.raises(ExternalPanelConfigError):
