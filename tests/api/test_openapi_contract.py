@@ -6,6 +6,7 @@ promete resposta que o bot não dá, e uma resposta nova sem documentação queb
 """
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -14,7 +15,7 @@ from referencing import Registry, Resource
 from referencing.jsonschema import DRAFT202012
 from ruamel.yaml import YAML
 
-from empiremuse.api.handlers import HealthHandler
+from empiremuse.api.handlers import HealthHandler, StatusHandler
 from empiremuse.api.server import build_api_app
 from tests.api.support import CODE, VERIFIER, ApiTestCase, body_of
 from tests.api.test_sessions import lista
@@ -31,8 +32,9 @@ SESSIONS = "/api/v1/sessions"
 SESSION = "/api/v1/session"
 META = "/api/v1/meta"
 HEALTH = "/api/v1/health"
+STATUS = "/api/v1/status"
 FAILURE = RuntimeError("falha inesperada")
-FOUNDATION_PATHS = {META, HEALTH, SESSIONS, SESSION}  # as rotas de dados (B3 em diante) têm o teste delas
+FOUNDATION_PATHS = {META, HEALTH, STATUS, SESSIONS, SESSION}  # as rotas de dados (B3 em diante) têm o teste delas
 
 
 def load_spec() -> dict:
@@ -128,6 +130,23 @@ class OpenApiContractTest(ApiTestCase):
     def test_meta_erro_inesperado(self):
         with patch("empiremuse.api.handlers.resolve_client_id", side_effect=FAILURE):
             self.expect("GET", META, self.api("GET", "/meta"), 500, "bot_unavailable")
+
+    def test_status(self):
+        self.pool.bots[:] = [SimpleNamespace(is_ready=lambda: True, user="Muse#0001", guilds=[1, 2])]
+        self.pool.commit = "0123456789abcdef0123456789abcdef01234567"
+        self.expect("GET", STATUS, self.api("GET", "/status"), 200)
+        self.expect("GET", STATUS, self.api("GET", "/status", key=None), 401, "forbidden")
+        self.expect("GET", STATUS, self.api("GET", "/status", key="errada"), 401, "forbidden")
+
+    def test_status_nada_subiu_limite_e_erro_inesperado(self):
+        self.pool.bots.clear()
+        self.expect("GET", STATUS, self.api("GET", "/status"), 503, "bot_unavailable")
+        self.exhaust_key_failures()
+        self.expect("GET", STATUS, self.api("GET", "/status", key="errada"), 429, "rate_limited")
+
+    def test_status_erro_inesperado(self):
+        with patch.object(StatusHandler, "get", side_effect=FAILURE):
+            self.expect("GET", STATUS, self.api("GET", "/status"), 500, "bot_unavailable")
 
     def test_health(self):
         self.expect("GET", HEALTH, self.api("GET", "/health", key=None), 200)

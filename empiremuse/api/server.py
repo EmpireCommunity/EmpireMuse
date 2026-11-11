@@ -13,7 +13,7 @@ import tornado.web
 
 from empiremuse.api.base import NotFoundHandler, log_request
 from empiremuse.api.context import ApiContext
-from empiremuse.api.handlers import HealthHandler, MetaHandler, SessionHandler, SessionsHandler
+from empiremuse.api.handlers import HealthHandler, MetaHandler, SessionHandler, SessionsHandler, StatusHandler
 from empiremuse.api.handlers_account import account_routes
 from empiremuse.api.handlers_guilds import guild_routes
 from empiremuse.api.settings import ExternalPanelSettings, IPNetwork
@@ -37,6 +37,7 @@ def build_api_app(ctx: ApiContext) -> tornado.web.Application:
         [
             (API_PREFIX + "/meta", MetaHandler, args),
             (API_PREFIX + "/health", HealthHandler, args),
+            (API_PREFIX + "/status", StatusHandler, args),
             (API_PREFIX + "/sessions", SessionsHandler, args),
             (API_PREFIX + "/session", SessionHandler, args),
             *data_routes,

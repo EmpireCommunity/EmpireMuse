@@ -7,6 +7,9 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Adicionado
+- API para painéis externos: `GET /api/v1/status` (aditivo na v1, chave de serviço, sem sessão, só leitura) devolve o que a página de status já mostra, sem dado novo e sem dado pessoal: o estado geral (`ok`, `degraded` ou `restarting`), o nome e o número de servidores de cada bot pronto, a contagem de bots pendentes e com falha, a versão e o commit curto. Nunca traz avatar, convite, identificador ou erro de bot com falha, mensagem do operador nem flags de RPC. `/meta` passa a listar o recurso `status`.
+
 ### Breaking
 - Os tokens agora vêm um por variável: `TOKEN` (principal), `TOKEN_RESERVE_<NOME>` e `TOKEN_RADIO_<NOME>`. `TOKEN_BOT_*`, `TOKEN_1..n`, vários tokens em `TOKEN` e o `guild_bots.json` não são mais lidos. Migre o `.env` e o compose antes de atualizar; `TOKEN` ausente, inválido ou com mais de um token impede a subida. O `/update` não migra o compose.
 - Bots só-rádio passam a ser definidos pelo prefixo `TOKEN_RADIO_`; o comando de dono `radio bot` e a leitura de `bot_roles` foram removidos. Na escolha da rádio 24 h, os só-rádio aparecem antes das reservas.

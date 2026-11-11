@@ -29,7 +29,10 @@ from empiremuse.utils.user_ban import user_bans_of
 logger = logging.getLogger(__name__)
 
 API_VERSIONS = ["v1"]
-FEATURES = ["sessions", "reauth", "account", "guilds", "guild-settings", "idempotency-key"]
+FEATURES = ["sessions", "reauth", "account", "guilds", "guild-settings", "idempotency-key", "status"]
+STATUS_NAME_MAX = 80  # ``str(bot.user)`` aparado: o nome é texto externo para quem consome
+STATUS_COMMIT_LENGTH = 12
+_COMMIT = re.compile(r"[0-9a-f]{7,40}", re.ASCII)
 CODE_MAX_LENGTH = 512
 _CODE_VERIFIER = re.compile(r"[A-Za-z0-9._~-]{43,128}", re.ASCII)  # RFC 7636
 _CODE_REFUSED = 400  # só o 400 diz que o código é inválido, já usado ou vencido; 401 é o client OAuth recusado
@@ -57,6 +60,53 @@ class HealthHandler(ApiHandler):
 
     def get(self) -> None:
         self.write({"status": "ok"})
+
+
+def _short_commit(commit: object) -> str | None:
+    """O commit como hexadecimal curto, ou ``None`` se não houver ou não for um hash (nunca texto livre)."""
+    if isinstance(commit, str) and _COMMIT.fullmatch(commit):
+        return commit[:STATUS_COMMIT_LENGTH]
+    return None
+
+
+class StatusHandler(ApiHandler):
+    """``GET /status`` (B8, contrato §4 r8.3): o que a página de status do painel genérico já mostra, SEM dado novo e sem dado pessoal.
+
+    Corpo exato: ``state``, ``bots`` (``ready`` com ``name`` e ``guilds``; ``pending`` e ``failed`` só contagem), ``bot_version`` e ``commit``.
+    Fora de propósito: avatar, convite, identificador dos bots com falha, texto de erro, mensagem livre do operador e flags de RPC.
+    """
+
+    auth = AUTH_KEY
+
+    def get(self) -> None:
+        pool = self.ctx.pool
+        restarting = (
+            getattr(pool, "killing_state", False) is True
+        )  # a mesma regra da página de status (``"ratelimit"`` não conta)
+        bots = list(getattr(pool, "bots", None) or [])
+        failed = len(getattr(pool, "failed_bots", None) or {})
+        if not restarting and not bots and not failed:
+            raise ApiError(503, BOT_UNAVAILABLE)  # nada subiu ainda: o painel mostra "indisponível"
+        ready = [] if restarting else [bot for bot in bots if bot.is_ready()]
+        pending = 0 if restarting else len(bots) - len(ready)
+        if restarting:
+            state = "restarting"
+        elif pending or failed or not ready:
+            state = "degraded"
+        else:
+            state = "ok"
+        self.write(
+            {
+                "state": state,
+                "bots": {
+                    "ready": [{"name": str(bot.user)[:STATUS_NAME_MAX], "guilds": len(bot.guilds)} for bot in ready],
+                    "pending": pending,
+                    "failed": failed,
+                },
+                "bot_version": self.ctx.bot_version(),
+                "commit": _short_commit(getattr(pool, "commit", None)),
+            }
+        )
 
 
 class MetaHandler(ApiHandler):

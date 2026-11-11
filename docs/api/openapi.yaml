@@ -122,6 +122,46 @@ paths:
                 $ref: "#/components/schemas/Health"
         "500":
           $ref: "#/components/responses/Unexpected"
+  /api/v1/status:
+    get:
+      tags: [Meta]
+      operationId: getStatus
+      summary: Estado dos bots para a página de status do painel
+      description: |
+        **Aditivo na v1.** O que a página de status do painel genérico já mostra, **sem dado novo e sem dado pessoal**: o estado
+        geral, o nome e o número de servidores de cada bot pronto, a contagem de bots pendentes e com falha, a versão e o commit.
+        Chave de serviço, **sem sessão**, só leitura. Gasta o balde de leitura da chave: o painel faz uma chamada a cada 15 s, no
+        máximo (cache e chamada única em voo).
+
+        `state`: `restarting` (o bot está encerrando; `ready` vem vazio), `degraded` (há bot pendente ou com falha, ou nenhum pronto)
+        ou `ok`. **Fora do corpo, de propósito:** avatar, link de convite, identificador e texto de erro dos bots com falha, a
+        mensagem livre do operador e as flags de RPC. `503 bot_unavailable` enquanto nenhum bot subiu nem falhou.
+      security:
+        - ServiceKey: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200":
+          description: O estado dos bots.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "401":
+          $ref: "#/components/responses/KeyRejected"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
   /api/v1/sessions:
     post:
       tags: [Sessão]
@@ -1307,6 +1347,49 @@ components:
           items:
             type: string
           examples: [["sessions", "reauth"]]
+    Status:
+      type: object
+      additionalProperties: false
+      required: [state, bots, bot_version, commit]
+      properties:
+        state:
+          type: string
+          enum: [ok, degraded, restarting]
+        bots:
+          type: object
+          additionalProperties: false
+          required: [ready, pending, failed]
+          properties:
+            ready:
+              type: array
+              description: Os bots prontos, na ordem do pool. Vazio quando `state` é `restarting`.
+              items:
+                type: object
+                additionalProperties: false
+                required: [name, guilds]
+                properties:
+                  name:
+                    type: string
+                    description: "`str(bot.user)`, aparado em 80 caracteres. Texto externo: quem consome o escapa."
+                    maxLength: 80
+                  guilds:
+                    type: integer
+                    minimum: 0
+            pending:
+              type: integer
+              minimum: 0
+              description: Quantos bots ainda não ficaram prontos (só a contagem).
+            failed:
+              type: integer
+              minimum: 0
+              description: Quantos bots falharam ao subir (só a contagem; nunca o identificador nem o erro).
+        bot_version:
+          type: string
+          examples: ["2.4.0"]
+        commit:
+          type: [string, "null"]
+          description: Os 12 primeiros hexadecimais do commit em execução, ou `null` se o bot não sabe (nunca texto livre).
+          pattern: "^[0-9a-f]{7,12}$"
     Health:
       type: object
       additionalProperties: false
