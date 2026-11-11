@@ -160,15 +160,16 @@ def _wait(stamps: list[float], limit: int, now: float) -> float:
     return max(0.0, ordered[len(ordered) - limit] + RATE_WINDOW_S - now)
 
 
-def allow_erasure(ok: Sequence[float], tries: Sequence[float], global_ok: Sequence[float], now: float) -> Decision:
+def allow_erasure(ok: Sequence[float], tries: Sequence[float], global_runs: Sequence[float], now: float) -> Decision:
     """Limites por hora. ``ok`` e ``tries`` são do usuário: só ``OK`` entra em ``ok``; toda tentativa entra em ``tries`` (``PARTIAL`` só aqui).
+    ``global_runs`` são as EXECUÇÕES de todos os usuários (``OK`` e ``PARTIAL``): o teto global conta execuções, não só sucessos.
 
     Passou de um limite: ``allowed=False`` e o tempo até todos os limites estourados abrirem.
     """
     checks = (
         ("user_ok", _wait(_recent(ok, now), ERASE_OK_PER_HOUR, now)),
         ("user_tries", _wait(_recent(tries, now), ERASE_TRIES_PER_HOUR, now)),
-        ("global", _wait(_recent(global_ok, now), ERASE_GLOBAL_PER_HOUR, now)),
+        ("global", _wait(_recent(global_runs, now), ERASE_GLOBAL_PER_HOUR, now)),
     )
     blocked = [(reason, wait) for reason, wait in checks if wait > 0]
     if not blocked:
@@ -196,6 +197,15 @@ def consent_is_recent(consented_at: float | None, now: float, max_age_s: float =
     ``consented_at`` é ``None`` quando a sessão nasceu de um login silencioso: esse nunca autoriza apagar.
     """
     return consented_at is not None and now - consented_at <= max_age_s
+
+
+def login_is_recent(created_at: float, now: float, max_age_s: float = ERASE_MAX_SESSION_AGE_S) -> bool:
+    """O login que criou a sessão da API externa é recente o bastante para apagar (``painel-api-contrato.md`` §3.5).
+
+    A sessão da API nunca tem ``consented_at`` (o bot não vê o ``prompt``); a medida é a idade do login, ``Session.created_at``,
+    no mesmo relógio do ``SessionStore``. O painel genérico segue exigindo ``consent_is_recent``.
+    """
+    return now - created_at <= max_age_s
 
 
 def _get_path(doc: Mapping[str, Any], path: str) -> Any:

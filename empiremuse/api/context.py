@@ -18,6 +18,7 @@ from empiremuse.panel.services.radio import RadioPage
 from empiremuse.panel.services.radio_setup import RadioSetupService
 from empiremuse.panel.services.radio_stations import StationsPage
 from empiremuse.panel.services.service import SettingsService
+from empiremuse.panel.services.tokens import SignedTokens
 from empiremuse.panel.sessions import SessionStore
 
 
@@ -36,6 +37,7 @@ class ApiContext:
     settings_service: SettingsService  # os mesmos serviços do painel genérico (e os mesmos locks)
     account_service: AccountService
     idempotency: IdempotencyStore
+    erase_tokens: SignedTokens  # preso à subchave ``erasure`` (``api/signing.py``): o ``confirm_token`` do apagamento
     radio_page: RadioPage  # B4: instâncias da API (``runtime.py``), não do pool: só dividem o cache de nomes entre as rotas da API
     stations_page: StationsPage
     jukebox_service: JukeboxService  # preso à subchave ``jukebox`` (``api/signing.py``), nunca à ``cookie_secret``

@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from empiremuse.rules.user_ban import RPC_BLOCKED_REASON
+from empiremuse.rules.user_cleanup import UserCleanupError
 from empiremuse.utils import user_ban as user_ban_module
 from empiremuse.utils.db import LocalDatabase
 from empiremuse.utils.user_ban import AlreadyBanned, UserBans, UserBansUnavailable, user_bans_of
@@ -89,6 +90,21 @@ async def test_ban_closes_panel_sessions_and_rpc_with_the_new_reason(mundo):
 
     mundo.sessoes.destroy_user.assert_called_once_with(str(ALVO))
     assert mundo.rpc == [(ALVO, RPC_BLOCKED_REASON)]
+
+
+@pytest.mark.asyncio
+async def test_a_cleanup_listener_failure_after_the_sessions_fell_is_not_a_failed_panel_cut(mundo, caplog):
+    mundo.sessoes.destroy_user.side_effect = UserCleanupError(2, 1)  # as sessões já caíram; só um ouvinte falhou
+
+    with caplog.at_level("WARNING"):
+        resultado = await mundo.bans.ban(DONO, ALVO, "")
+
+    assert any(
+        "1 ouvinte(s) de limpeza falharam" in record.getMessage() for record in caplog.records
+    )  # o log traz quantos falharam
+
+    assert (resultado.status, resultado.failed) == ("OK", ())  # o acesso foi cortado: nada de ``panel_sessions``
+    assert mundo.bans.is_blocked(ALVO) and mundo.rpc == [(ALVO, RPC_BLOCKED_REASON)]  # e o RPC segue sendo cortado
 
 
 @pytest.mark.asyncio
