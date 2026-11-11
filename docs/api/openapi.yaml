@@ -803,6 +803,103 @@ paths:
           $ref: "#/components/responses/Unexpected"
         "503":
           $ref: "#/components/responses/NotReady"
+  /api/v1/account/erasure/prepare:
+    post:
+      tags:
+        - Conta
+      operationId: prepareAccountErasure
+      summary: Prepara o apagamento dos dados (emite o `confirm_token`)
+      description: |
+        Confere o login recente (no máximo 30 minutos, medido pela criação da sessão; `401 reauth_required` quando passa) e emite o
+        `confirm_token`: 60 segundos, uso único, preso ao usuário, a esta sessão e à finalidade (reautenticar troca a sessão e o
+        token antigo morre). Nada é apagado aqui. O painel pede este passo ao abrir a caixa de confirmação e repete se o token
+        expirar. Não leva corpo (se vier, é ignorado) e a `Idempotency-Key` também (um token novo a cada pedido, nunca guardado). `summary` traz só
+        códigos estáveis do que sai e do que fica; o texto é do painel.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+      responses:
+        "200":
+          description: O `confirm_token` e o resumo.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErasurePrepared"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+  /api/v1/account/erasure:
+    post:
+      tags:
+        - Conta
+      operationId: eraseAccount
+      summary: Apaga os dados do usuário da sessão
+      description: |
+        Confere o login recente (`401 reauth_required`), o `confirm_token` (expirado, já usado, de outra sessão, de outro usuário ou de
+        outra finalidade = `400` com `fields: ["confirm_token"]`, sem distinguir o motivo) e a palavra digitada (`APAGAR` ou `DELETE`, exatas:
+        sem ignorar maiúsculas nem espaços; qualquer outra = `400` com `fields: ["typed"]` e **o token não é gasto**; a tela escolhe a
+        palavra pelo idioma da página e o bot aceita as duas em qualquer idioma). O alvo é sempre o usuário da sessão: um `user_id` no corpo
+        não é lido. Chama o mesmo serviço de apagamento do comando do Discord, com os mesmos limites por hora (só `OK` conta nas 3 por
+        usuário; teto global de 60 por hora): excedido dá `429` com `Retry-After` e nada é apagado.
+
+        `status`: `OK` (nada sobrou), `PARTIAL` (parte apagada; **não promete que repetir resolve**: o painel mostra "apagamos
+        parte" e aponta o suporte) ou `BUSY` (o serviço está ocupado; nada foi apagado). Com `OK` ou `PARTIAL` **todas** as sessões do
+        usuário já foram destruídas, inclusive a deste pedido (o painel destrói a dele). O `confirm_token` é gasto antes da chamada:
+        com `BUSY` ou `429` o painel pede outro `prepare`. A `Idempotency-Key` é ignorada. O corpo da resposta nunca traz contagens
+        nem nomes de armazenamento.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ErasureRequest"
+      responses:
+        "200":
+          description: O resultado da execução.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErasureResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "415":
+          $ref: "#/components/responses/UnsupportedMedia"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
   /api/v1/guilds:
     get:
       tags:
@@ -2202,7 +2299,7 @@ components:
     Unauthorized:
       description: |
         `forbidden`: chave de serviço ausente, errada ou vencida. `session_expired`: `X-EM-Session` ausente, inválido,
-        expirado, de outra chave, ou usuário banido. Futuramente também `reauth_required` (login com mais de 30 minutos).
+        expirado, de outra chave, ou usuário banido. `reauth_required`: login com mais de 30 minutos, nas rotas de apagar dados.
       headers:
         Cache-Control:
           $ref: "#/components/headers/CacheControl"
@@ -3423,6 +3520,60 @@ components:
     ErrorConflict:
       description: "`conflict`, com `current_version` quando a versão esperada é velha."
       $ref: "#/components/schemas/Error"
+    ErasurePrepared:
+      type: object
+      additionalProperties: false
+      required: [confirm_token, expires_in, summary]
+      properties:
+        confirm_token:
+          type: string
+          description: Opaco, de uso único, preso a usuário, sessão e finalidade. Nunca vai para log.
+          maxLength: 512
+        expires_in:
+          type: integer
+          description: Segundos de validade (60).
+        summary:
+          type: object
+          additionalProperties: false
+          required: [erases, keeps, backups_up_to_weeks]
+          properties:
+            erases:
+              type: array
+              description: Códigos estáveis do que o apagamento remove (o texto é do painel).
+              items:
+                type: string
+                enum: [preferences, lastfm_and_scrobbles, saved_queue, radio_favorites, radio_editor_ids, sessions]
+            keeps:
+              type: array
+              description: Códigos estáveis do que fica.
+              items:
+                type: string
+                enum: [access_and_security_logs, live_player_records, server_settings_and_statistics, lastfm_remote_data]
+            backups_up_to_weeks:
+              type: integer
+              description: Cópias de segurança do provedor podem guardar dados já apagados por até tantas semanas.
+    ErasureRequest:
+      type: object
+      required: [confirm_token, typed]
+      properties:
+        confirm_token:
+          type: string
+          maxLength: 512
+        typed:
+          type: string
+          enum: [APAGAR, DELETE]
+          description: |
+            A palavra de confirmação, **exata** (sem ignorar maiúsculas nem espaços): `APAGAR` (painel em pt-BR) ou `DELETE` (en-US).
+            O bot aceita as duas em qualquer idioma; qualquer outro valor é `400` com `fields: ["typed"]` e o `confirm_token` não é gasto.
+          maxLength: 64
+    ErasureResult:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [OK, PARTIAL, BUSY]
     AccountPrefixWrite:
       type: object
       required:

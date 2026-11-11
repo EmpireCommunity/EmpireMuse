@@ -8,7 +8,8 @@ from types import SimpleNamespace
 import pytest
 
 from empiremuse import panel
-from empiremuse.panel.sessions import ManagedGuild, PanelUser, SessionStore, UserCleanupError
+from empiremuse.panel.sessions import ManagedGuild, PanelUser, SessionStore
+from empiremuse.rules.user_cleanup import UserCleanupError
 from empiremuse.utils.user_locks import UserLocks
 from tests.panel.helpers import fake_pool, https_config, load_settings
 from tests.panel.helpers_login import FakeClock
@@ -94,3 +95,21 @@ def test_o_apagamento_marca_a_memoria_como_nao_limpa_quando_um_ouvinte_falha():
     assert result.ok is False
     loja._user_listeners.clear()
     assert service._close_connections(1001).ok is True
+
+
+def test_o_apagamento_conta_as_sessoes_destruidas_mesmo_quando_um_ouvinte_falha():
+    from empiremuse.utils.erasure import ErasureService
+
+    loja = _loja(FakeClock())
+    for _ in range(2):
+        loja.create(_usuario("1001"), GUILDS)
+
+    def broken(user_id):
+        raise RuntimeError("falha")
+
+    loja.add_user_listener(broken)
+    service = ErasureService(SimpleNamespace(panel_sessions=loja), rpc_closer=lambda user_id: 0)
+
+    result = service._close_connections(1001)
+
+    assert (result.count, result.ok) == (2, False)  # as duas sessões caíram (contam); a limpeza é parcial

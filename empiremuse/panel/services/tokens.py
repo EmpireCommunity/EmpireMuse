@@ -41,14 +41,19 @@ class SignedTokens:
         self._forget_expired()
         if int(fields[4]) <= self._clock() or fields[5] in self._used:
             return "invalido"
+        if len(self._used) >= MAX_USED_TOKENS:
+            return "invalido"  # o registro de usos está cheio de tokens NÃO vencidos: sem espaço para garantir o uso único, recusa (nunca expulsa um uso)
         if fields[:4] != [user_id, str(guild_id), scope, target]:
             return "outro"
         return None
 
     def consume(self, token: str) -> None:
         payload = token.partition("~")[0].split(".")
-        while len(self._used) >= MAX_USED_TOKENS:
-            del self._used[next(iter(self._used))]
+        self._forget_expired()
+        if (
+            len(self._used) >= MAX_USED_TOKENS
+        ):  # ``check`` já recusa antes; nunca se expulsa um uso (reabriria um token já gasto)
+            raise OverflowError("registro de tokens usados cheio")
         self._used[payload[5]] = float(payload[4])
 
     def _forget_expired(self) -> None:
