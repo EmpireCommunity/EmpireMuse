@@ -32,6 +32,18 @@ logger = logging.getLogger(__name__)
 BANS_DB = "global"
 
 
+class GuildBanError(Exception):
+    """Base dos erros de banimento de servidor que o dono vê (nunca o texto de exceção do banco)."""
+
+
+class AlreadyBanned(GuildBanError):
+    """O servidor já está banido: o registro original (``banned_at``, motivo) não é sobrescrito."""
+
+
+class GuildBansUnavailable(GuildBanError):
+    """A lista não está carregada (banco fora do ar): ``ban`` e ``unban`` nunca valem sem ela."""
+
+
 class GuildBans:
     def __init__(self, pool: BotPool) -> None:
         self.pool = pool
@@ -51,41 +63,56 @@ class GuildBans:
         """Os banimentos, do mais recente para o mais antigo."""
         return sorted(self._records.values(), key=lambda record: (record.banned_at, record.guild_id), reverse=True)
 
-    async def ensure_loaded(self) -> None:
-        """Carrega a lista do banco uma vez; se o banco falhar, avisa e tenta de novo na próxima chamada."""
-        if self._loaded:
-            return
+    async def ensure_loaded(self) -> bool:
+        """Carrega a lista do banco uma vez; falha do banco devolve ``False`` (tenta de novo na próxima chamada)."""
         async with self._lock:
-            if self._loaded:
-                return
-            try:
-                documents = await self.pool.database.query_data(db_name=DBModel.banned_guilds, collection=BANS_DB)
-                loaded = {}
-                for document in documents:
-                    if (record := ban_from_doc(document)) is not None:
-                        loaded[record.guild_id] = record
-            except Exception as exc:  # noqa: BLE001 - sem a lista o bot segue; os banimentos valem quando o banco voltar
-                logger.warning("Lista de servidores banidos não carregada (%s)", type(exc).__name__)
-                return
-            self._records = loaded
-            self._loaded = True
+            return await self._load_locked()
+
+    async def _load_locked(self) -> bool:
+        """Carga com o lock já tomado (o lock não é reentrante): ban e unban carregam e gravam sob o mesmo lock."""
+        if self._loaded:
+            return True
+        try:
+            documents = await self.pool.database.query_data(db_name=DBModel.banned_guilds, collection=BANS_DB)
+        except Exception as exc:  # noqa: BLE001 - sem a lista o bot segue; os banimentos valem quando o banco voltar
+            logger.warning("Lista de servidores banidos não carregada (%s)", type(exc).__name__)
+            return False
+        loaded: dict[int, BanRecord] = {}
+        malformed = 0
+        for document in documents:
+            if (record := ban_from_doc(document)) is None:
+                malformed += 1
+            else:
+                loaded[record.guild_id] = record
+        if malformed:  # m-E4: só a contagem vai ao log, nunca os IDs
+            logger.warning("Lista de servidores banidos: %d documento(s) malformado(s) ignorado(s)", malformed)
+        self._records = loaded
+        self._loaded = True
+        return True
 
     async def ban(self, guild_id: int, name: object, reason: object) -> BanRecord:
         """Grava o banimento (o erro do banco sobe: o dono precisa saber que não valeu) e só então guarda em memória."""
-        await self.ensure_loaded()
-        record = new_ban_record(guild_id, name, reason, int(time.time() * MS_PER_SECOND))
-        await self.pool.database.update_data(
-            guild_id, ban_to_doc(record), db_name=DBModel.banned_guilds, collection=BANS_DB
-        )
-        self._records[record.guild_id] = record
+        async with self._lock:
+            if not await self._load_locked():
+                raise GuildBansUnavailable
+            if guild_id in self._records:
+                raise AlreadyBanned
+            record = new_ban_record(guild_id, name, reason, int(time.time() * MS_PER_SECOND))
+            await self.pool.database.update_data(
+                guild_id, ban_to_doc(record), db_name=DBModel.banned_guilds, collection=BANS_DB
+            )
+            self._records = {**self._records, record.guild_id: record}
         return record
 
     async def unban(self, guild_id: int) -> bool:
-        await self.ensure_loaded()
-        if guild_id not in self._records:
-            return False
-        await self.pool.database.delete_data(guild_id, DBModel.banned_guilds, BANS_DB)
-        del self._records[guild_id]
+        """Lista não carregada = erro (nunca ``False``); ``False`` só quando o servidor não está banido."""
+        async with self._lock:
+            if not await self._load_locked():
+                raise GuildBansUnavailable
+            if guild_id not in self._records:
+                return False
+            await self.pool.database.delete_data(guild_id, DBModel.banned_guilds, BANS_DB)
+            self._records = {gid: rec for gid, rec in self._records.items() if gid != guild_id}
         return True
 
     async def _leave(self, bot: BotCore, guild: Any) -> bool:
