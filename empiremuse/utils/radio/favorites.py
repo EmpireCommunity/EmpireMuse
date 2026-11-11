@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import logging
 from enum import StrEnum
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any, NamedTuple
 
+from empiremuse.rules.radio_station import valid_station_id
 from empiremuse.rules.radio_stations import Station, valid_uuid
 from empiremuse.rules.text import external_text
+from empiremuse.utils.radio.directory import DirectoryError
 from empiremuse.utils.radio.perms import can_manage_guild
 from empiremuse.utils.radio.premium import CAS_ATTEMPTS, GLOBAL_DB, RadioUnavailable
 
@@ -23,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 FAVORITES_DB = "radio_favorites"
 MAX_FAVORITES = 24
+SERVER_FAVORITES_MAX = MAX_FAVORITES  # o teto da lista do servidor vale para a SOMA de ao vivo, ``custom`` e ``genre``
 NAME_LIMIT = 100
 
 
@@ -86,32 +90,127 @@ class RadioFavorites:
                 )  # sem escapar de novo: o nome já veio escapado
         return found[:MAX_FAVORITES]
 
+    @staticmethod
+    def _refs(doc: dict[str, Any] | None) -> list[str]:
+        """Os ids ``custom`` (24 hex) e ``genre`` (``g:<id>``) do documento, SEM nome (resolvido na leitura); documento antigo, sem ``refs``, lê normal."""
+        raw = doc.get("refs") if isinstance(doc, dict) else None
+        found: list[str] = []
+        for item in raw if isinstance(raw, list) else []:
+            if valid_station_id(item) and item not in found:
+                found.append(item)
+        return found[:MAX_FAVORITES]
+
+    @classmethod
+    def _read(cls, doc: dict[str, Any] | None) -> tuple[list[FavoriteStation], list[str]]:
+        """``(estações ao vivo, refs)`` com o teto de 24 sobre a SOMA: o que passa do teto (dado gravado ruim) sai da leitura."""
+        stations = cls._stations(doc)
+        refs = cls._refs(doc)
+        room = max(0, MAX_FAVORITES - len(stations))
+        if len(refs) > room:
+            logger.warning(
+                "Favoritas do servidor passam do teto de %d: %d refs fora da leitura", MAX_FAVORITES, len(refs) - room
+            )  # sem ids nem nomes
+        return stations, refs[:room]
+
+    @staticmethod
+    def _document(guild_id: int, stations: list[FavoriteStation], refs: list[str], rev: int) -> dict[str, Any]:
+        """O documento SEMPRE com as duas listas: todo escritor preserva a outra (um que regravasse só ``stations`` perderia ``refs``).
+        Nunca guarda quem adicionou (a exclusão de dados depende disso: este documento não tem id de usuário)."""
+        return {
+            "_id": str(int(guild_id)),
+            "stations": [{"uuid": f.uuid, "name": f.name} for f in stations],
+            "refs": list(refs),
+            "rev": rev,
+        }
+
     async def list(self, guild_id: int) -> list[FavoriteStation]:
         return self._stations(await self._find(guild_id))
 
+    async def list_all(self, guild_id: int) -> tuple[list[FavoriteStation], list[str]]:
+        """As duas listas do servidor, na ordem de inserção de cada uma (ao vivo e depois ``custom``/``genre``)."""
+        return self._read(await self._find(guild_id))
+
     async def add(self, guild_id: int, actor_id: int, station: Station) -> AddResult:
-        """Põe a estação na lista do servidor. ``ALREADY`` se já estava e ``FULL`` com 24; ``RadioUnavailable`` se o banco não respondeu."""
+        """Põe a estação na lista do servidor. ``ALREADY`` se já estava e ``FULL`` com 24 (somando os ``custom``/``genre``); ``RadioUnavailable`` se o banco não respondeu."""
         await self._authorize(guild_id, actor_id)
         for _ in range(CAS_ATTEMPTS):
             doc = await self._find(guild_id)
-            current = self._stations(doc)
+            current, refs = self._read(doc)
             if any(f.uuid == station.uuid for f in current):
                 return AddResult.ALREADY
-            if len(current) >= MAX_FAVORITES:
+            if len(current) + len(refs) >= MAX_FAVORITES:
                 return AddResult.FULL
             rev = doc["rev"] if isinstance(doc, dict) and isinstance(doc.get("rev"), int) else 0
-            updated = {
-                "_id": str(int(guild_id)),
-                "stations": [
-                    *({"uuid": f.uuid, "name": f.name} for f in current),
-                    {
-                        "uuid": station.uuid,
-                        "name": external_text(station.name, NAME_LIMIT, markdown=False),
-                    },  # o nome da estação já passou pela função única (R-11),
-                ],
-                "rev": rev + 1,
-            }
-            if await self._save(guild_id, updated, rev if doc is not None else None):
+            added = FavoriteStation(station.uuid, external_text(station.name, NAME_LIMIT, markdown=False))
+            # o nome da estação já passou pela função única (R-11)
+            if await self._save(
+                guild_id, self._document(guild_id, [*current, added], refs, rev + 1), rev if doc is not None else None
+            ):
+                return AddResult.ADDED
+        raise RadioUnavailable
+
+    async def add_live(
+        self,
+        guild_id: int,
+        actor_id: int,
+        uuid: str,
+        resolve: Callable[[str], Awaitable[Station | None]],
+    ) -> AddResult:
+        """Como ``add``, mas a estação só é lida do diretório (``resolve``) DEPOIS de ``ALREADY`` e ``FULL``: um pedido que não muda nada nunca gasta o
+        balde do diretório, e a leitura é feita uma vez só (um retry do CAS não volta a ele). Estação que o diretório não conhece: ``FavoriteNotFound``;
+        diretório fora: ``RadioUnavailable``. O nome nunca vem do chamador."""
+        if not valid_uuid(uuid):
+            raise FavoriteNotFound
+        await self._authorize(guild_id, actor_id)
+        resolved: list[FavoriteStation] = []
+        for _ in range(CAS_ATTEMPTS):
+            doc = await self._find(guild_id)
+            current, refs = self._read(doc)
+            if any(f.uuid == uuid for f in current):
+                return AddResult.ALREADY
+            if len(current) + len(refs) >= MAX_FAVORITES:
+                return AddResult.FULL
+            if not resolved:
+                try:
+                    station = await resolve(uuid)
+                except DirectoryError as error:
+                    raise RadioUnavailable from error
+                if station is None:
+                    raise FavoriteNotFound
+                resolved.append(FavoriteStation(uuid, external_text(station.name, NAME_LIMIT, markdown=False)))
+            rev = doc["rev"] if isinstance(doc, dict) and isinstance(doc.get("rev"), int) else 0
+            if await self._save(
+                guild_id,
+                self._document(guild_id, [*current, resolved[0]], refs, rev + 1),
+                rev if doc is not None else None,
+            ):
+                return AddResult.ADDED
+        raise RadioUnavailable
+
+    async def add_ref(
+        self, guild_id: int, actor_id: int, ref: str, exists: Callable[[str], Awaitable[bool]]
+    ) -> AddResult:
+        """Põe uma estação do servidor (24 hex) ou um gênero (``g:<id>``) na lista do servidor, sem nome (resolvido na leitura). ``exists`` só é
+        chamado depois de ``ALREADY`` e ``FULL`` e uma vez; ``False`` = ``FavoriteNotFound`` (a de outro servidor é igual a uma que não existe)."""
+        if not valid_station_id(ref):
+            raise FavoriteNotFound
+        await self._authorize(guild_id, actor_id)
+        checked = False
+        for _ in range(CAS_ATTEMPTS):
+            doc = await self._find(guild_id)
+            current, refs = self._read(doc)
+            if ref in refs:
+                return AddResult.ALREADY
+            if len(current) + len(refs) >= MAX_FAVORITES:
+                return AddResult.FULL
+            if not checked:
+                if not await exists(ref):
+                    raise FavoriteNotFound
+                checked = True
+            rev = doc["rev"] if isinstance(doc, dict) and isinstance(doc.get("rev"), int) else 0
+            if await self._save(
+                guild_id, self._document(guild_id, current, [*refs, ref], rev + 1), rev if doc is not None else None
+            ):
                 return AddResult.ADDED
         raise RadioUnavailable
 
@@ -120,28 +219,29 @@ class RadioFavorites:
             raise FavoriteForbidden
 
     async def remove(self, guild_id: int, actor_id: int, uuid: str) -> bool:
-        return await self._remove(guild_id, actor_id, uuid)
+        return await self._remove(guild_id, actor_id, uuid=uuid)
+
+    async def remove_ref(self, guild_id: int, actor_id: int, ref: str) -> bool:
+        return await self._remove(guild_id, actor_id, ref=ref)
 
     async def clear(self, guild_id: int, actor_id: int) -> bool:
-        return await self._remove(guild_id, actor_id, None)
+        """Limpa a lista do servidor INTEIRA (o botão do Discord): as ao vivo e os ``custom``/``genre``."""
+        return await self._remove(guild_id, actor_id, everything=True)
 
-    async def _remove(self, guild_id: int, actor_id: int, uuid: str | None) -> bool:
+    async def _remove(
+        self, guild_id: int, actor_id: int, *, uuid: str | None = None, ref: str | None = None, everything: bool = False
+    ) -> bool:
         await self._authorize(guild_id, actor_id)
         for _ in range(CAS_ATTEMPTS):
             doc = await self._find(guild_id)
-            current = self._stations(doc)
-            updated = [f for f in current if uuid is not None and f.uuid != uuid]
-            if updated == current:
+            current, refs = self._read(doc)
+            updated = [] if everything else [f for f in current if f.uuid != uuid]
+            updated_refs = [] if everything else [r for r in refs if r != ref]
+            if updated == current and updated_refs == refs:
                 return False
             rev = doc["rev"] if isinstance(doc, dict) and isinstance(doc.get("rev"), int) else 0
             if await self._save(
-                guild_id,
-                {
-                    "_id": str(int(guild_id)),
-                    "stations": [{"uuid": f.uuid, "name": f.name} for f in updated],
-                    "rev": rev + 1,
-                },
-                rev if doc is not None else None,
+                guild_id, self._document(guild_id, updated, updated_refs, rev + 1), rev if doc is not None else None
             ):
                 return True
         raise RadioUnavailable

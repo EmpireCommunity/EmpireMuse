@@ -6,12 +6,21 @@ from __future__ import annotations
 from typing import Any, Callable, Optional
 
 from empiremuse.api.data import STATUS_SESSION_GONE, DataHandler, form_reply
-from empiremuse.api.errors import BOT_UNAVAILABLE, ApiError
+from empiremuse.api.errors import BOT_UNAVAILABLE, ApiError, not_found, validation_failed
 from empiremuse.api.idempotency import Reply
-from empiremuse.api.writes import Write, parse_account_write, parse_favorite_removal, parse_radio_removal
+from empiremuse.api.writes import (
+    ACCOUNT_KINDS,
+    Write,
+    parse_account_write,
+    parse_favorite_removal,
+    parse_radio_favorite,
+    parse_radio_removal,
+)
 from empiremuse.panel.services.account import AccountOutcome
 from empiremuse.panel.services.account_base import Refusal
 from empiremuse.rules.panel_serialize import ACCOUNT, new_rpc_token, serialize_favorites_export, serialize_form
+from empiremuse.utils.radio.favorites import AddResult, FavoriteNotFound
+from empiremuse.utils.radio.premium import RadioUnavailable
 
 FAVORITES = "favoritos"
 INTEGRATIONS = "integracoes"
@@ -143,12 +152,46 @@ class IntegrationsHandler(AccountSectionHandler):
 
 
 class RadioFavoritesHandler(AccountSectionHandler):
-    """Estações e locais de rádio favoritos do usuário (J3): listar e remover; remover é idempotente e não leva versão."""
+    """Estações e locais de rádio favoritos do usuário (J3): listar, ADICIONAR (B9) e remover; os dois últimos são por chave, idempotentes e sem versão.
+    Só ``station`` (uuid do diretório) e ``filter`` (nó de local): ``custom``/``genre`` dependem de servidor e ficam em ``/guilds/{g}/radio-favorites/mine``."""
 
     section_key = RADIOS
 
     async def get(self) -> None:
         await self.read_section()
+
+    async def post(self) -> None:
+        """``POST {kind: station|filter, id}``: o usuário é o da SESSÃO (``user_id`` de corpo é ignorado). Ordem: formato, leitura, já está (``200``), cheia
+        (``400`` ``limit``), diretório ou árvore de locais (``404`` se não conhece, ``503`` se fora), CAS. Estação ao vivo não exige premium. O nome vem do diretório."""
+        body = self.json_body()
+        favorite = parse_radio_favorite(body, ACCOUNT_KINDS)
+        ctx = self.account_context()
+        service = self.ctx.account_service
+        section = service.section(RADIOS)
+        favorites = getattr(getattr(ctx.pool, "radio", None), "user_favorites", None)
+        if favorites is None or not section.available(ctx):
+            raise ApiError(503, BOT_UNAVAILABLE)  # a rádio não está ligada neste bot (o mesmo sinal da seção)
+
+        async def work() -> Reply:
+            try:
+                if favorite.kind == "station":
+                    result = await favorites.add_station(ctx.user_id, favorite.id)
+                else:
+                    result = await favorites.add_filter(ctx.user_id, favorite.id)
+            except FavoriteNotFound:
+                raise not_found() from None
+            except RadioUnavailable:
+                raise ApiError(503, BOT_UNAVAILABLE) from None
+            if result is AddResult.FULL:
+                raise validation_failed("limit")
+            updated = await service.read(section, ctx)
+            if updated.extras.get("indisponivel") or not updated.extras.get("disponivel"):
+                raise ApiError(
+                    503, BOT_UNAVAILABLE
+                )  # a escrita pode ter ocorrido; nunca confirma uma lista vazia inventada
+            return Reply(200, serialize_form(updated, ACCOUNT))
+
+        await self.run_write(body, work)
 
     async def delete(self) -> None:
         query = self.query_arguments("kind", "id")

@@ -10,7 +10,7 @@ import pytest
 from empiremuse.api.data import DataHandler
 from empiremuse.utils.servers import ServerConfigUnavailable
 from tests.api.support import body_of
-from tests.api.support_data import NODE, OLD_VERSION, OTHER, STATION, USER, DataApiCase
+from tests.api.support_data import NODE, OLD_VERSION, OTHER, STATION, UNKNOWN_STATION, USER, DataApiCase
 from tests.api.test_openapi_contract import FOUNDATION_PATHS, SpecChecker, documented, load_spec
 
 pytestmark = pytest.mark.critical
@@ -72,7 +72,7 @@ class OpenApiDataContractTest(DataApiCase):
     def cover_common(self, method, template, path, *, crash, body=None, unavailable=None):
         """401 sem sessão, 503 (se a rota tem), 500 (``crash`` faz o contexto da rota falhar) e, por último, 429 (o balde do
         usuário fica esgotado)."""
-        write = method in ("PUT", "PATCH", "DELETE")
+        write = method in ("POST", "PUT", "PATCH", "DELETE")
         no_session = self.api(method, path, body=body)
         self.expect(method, template, no_session, 401, "session_expired")
         if unavailable is not None:
@@ -208,6 +208,42 @@ class OpenApiDataContractTest(DataApiCase):
             "DELETE", path, f"{path}?kind=filter&id={NODE}", crash=self.crash_account, unavailable=self.bots_not_ready
         )
 
+    def test_account_radio_favorites_add(self):
+        path = "/account/radio-favorites"
+        new = "dddddddd-dddd-dddd-dddd-dddddddddddd"
+        body = {"kind": "station", "id": new}
+        self.expect("POST", path, self.call("POST", path, body), 200)
+        assert new in self.world.favorites.station_ids[int(USER)]
+        self.expect("POST", path, self.call("POST", path, {"kind": "filter", "id": "br-rj"}), 200)
+        self.expect("POST", path, self.call("POST", path, body), 200)  # já está: o mesmo 200
+        for wrong in (
+            {"kind": "custom", "id": "a" * 24},
+            {"kind": "genre", "id": "g:rock"},
+            {"kind": "station", "id": "nao-uuid"},
+            {"kind": "filter"},
+        ):
+            self.expect("POST", path, self.call("POST", path, wrong), 400, "validation_failed")
+        self.expect("POST", path, self.call("POST", path, {"kind": "station", "id": UNKNOWN_STATION}), 404, "not_found")
+        self.world.favorites.station_ids[int(USER)] = [f"{n:08x}-0000-0000-0000-000000000000" for n in range(24)]
+        self.expect("POST", path, self.call("POST", path, body), 400, "validation_failed")  # cheia: ``limit``
+        self.world.favorites.broken = True
+        self.expect("POST", path, self.call("POST", path, {"kind": "station", "id": STATION}), 503, "bot_unavailable")
+        self.world.favorites.broken = False
+        plain = self.call("POST", path, raw_body="x", headers={"Content-Type": "text/plain"})
+        self.expect("POST", path, plain, 415, "validation_failed")
+        self.call("POST", path, {"kind": "filter", "id": "br-mg"}, key="chave-0002")
+        self.expect(
+            "POST", path, self.call("POST", path, {"kind": "filter", "id": "br-ba"}, key="chave-0002"), 409, "conflict"
+        )
+        self.cover_common(
+            "POST",
+            path,
+            path,
+            body={"kind": "filter", "id": "br-pr"},
+            crash=self.crash_account,
+            unavailable=self.bots_not_ready,
+        )
+
     # ------------------------------------------------------------------ servidores
 
     def test_guilds(self):
@@ -325,7 +361,12 @@ class OpenApiDataContractTest(DataApiCase):
         if not casos <= self.ran:
             pytest.skip("só vale com todos os casos da classe rodando (o ``-k`` deixa casos de fora)")
 
-        b4 = ("/jukebox", "/radios", "/radio-stations")  # as rotas do B4 têm o contrato delas (``test_openapi_b4``)
+        b4 = (
+            "/jukebox",
+            "/radios",
+            "/radio-stations",
+            "/guilds/{guild_id}/radio-favorites",
+        )  # B4 e B9 têm o contrato delas (``test_openapi_b4``, ``test_openapi_b9``)
         erasure = (
             BASE + "/account/erasure"
         )  # as rotas de apagar dados (B5) têm o contrato delas (``test_openapi_erasure``)

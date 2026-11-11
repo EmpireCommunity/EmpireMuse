@@ -19,6 +19,7 @@ from empiremuse.api.handlers_erasure import erasure_routes
 from empiremuse.api.handlers_guilds import guild_routes
 from empiremuse.api.handlers_jukebox import jukebox_routes
 from empiremuse.api.handlers_radio import radio_routes
+from empiremuse.api.handlers_radio_favorites import radio_favorite_routes
 from empiremuse.api.handlers_stations import station_routes
 from empiremuse.api.settings import ExternalPanelSettings, IPNetwork
 
@@ -41,6 +42,7 @@ def build_api_app(ctx: ApiContext) -> tornado.web.Application:
             *guild_routes(),
             *jukebox_routes(),
             *radio_routes(),
+            *radio_favorite_routes(),
             *station_routes(),
         ]
     ]

@@ -11,6 +11,7 @@ formulário vem no ``values`` (o checkbox desmarcado é ``false``, não a ausên
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Mapping, NamedTuple, Optional, Sequence
 
@@ -19,6 +20,8 @@ from empiremuse.panel.services.base import HEX16
 from empiremuse.panel.services.listen_along import ACTION as LISTEN_ALONG_REMOVE
 from empiremuse.rules.panel_serialize import FIELD_NAME
 from empiremuse.rules.playlists import SCOPES
+from empiremuse.rules.radio_stations import valid_uuid
+from empiremuse.utils.radio.user_favorites import valid_node
 
 BOOL, INT, INT_OR_NULL, TEXT, TEXT_OR_NULL, IDS, GENRES, JSON_DOC, LINES, NAMES = (
     "bool",
@@ -302,3 +305,41 @@ def parse_radio_removal(query: Mapping[str, str]) -> RadioRemoval:
     if kind == "station":
         return RadioRemoval("radio_estacao_remover", "estacao", target)
     return RadioRemoval("radio_filtro_remover", "filtro", target)
+
+
+class RadioFavorite(NamedTuple):
+    kind: str
+    id: str
+
+
+SERVER_KINDS = ("station", "custom", "genre")  # lista do servidor
+MINE_KINDS = ("custom", "genre")  # favoritas do usuário que dependem do servidor (a ao vivo é da conta)
+ACCOUNT_KINDS = ("station", "filter")  # lista do usuário, global
+_CUSTOM_ID = re.compile(r"[0-9a-f]{24}", re.ASCII)
+_GENRE_ID = re.compile(r"g:[a-z][a-z0-9_]{1,23}", re.ASCII)
+
+
+def _favorite_id_ok(kind: str, value: object) -> bool:
+    """O ``id`` no formato do ``kind``: uuid do diretório (``station``), 24 hexadecimais (``custom``), ``g:<id>`` (``genre``), id de nó (``filter``)."""
+    if not isinstance(value, str):
+        return False
+    match kind:
+        case "station":
+            return valid_uuid(value)
+        case "custom":
+            return _CUSTOM_ID.fullmatch(value) is not None
+        case "genre":
+            return _GENRE_ID.fullmatch(value) is not None
+        case "filter":
+            return valid_node(value)
+    return False
+
+
+def parse_radio_favorite(source: Mapping[str, Any], kinds: Sequence[str]) -> RadioFavorite:
+    """``{kind, id}`` do corpo (POST) ou da query (DELETE) de uma lista de favoritas de rádio. ``kind`` fora do conjunto da ROTA e ``id`` fora do
+    formato do ``kind`` são ``400`` com o campo. ``node``, ``user_id``, ``guild_id`` e o resto são ignorados (o usuário e o servidor vêm da sessão e do caminho)."""
+    kind = read_choice(source, "kind", kinds)
+    ident = source.get("id")
+    if not _favorite_id_ok(kind, ident):
+        raise validation_failed("id")
+    return RadioFavorite(kind, str(ident))

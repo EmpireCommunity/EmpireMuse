@@ -7,6 +7,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from empiremuse.utils.erasure import ErasureTombstones
+
 from empiremuse.rules.radio import (
     KIND_LIVE,
     PANEL_MENU_ID,
@@ -40,7 +42,7 @@ pytestmark = pytest.mark.critical
 @pytest.fixture
 def world():
     db = FakeDb()
-    hub = RadioHub(SimpleNamespace(database=db))
+    hub = RadioHub(SimpleNamespace(database=db, erasure_tombstones=ErasureTombstones()))
     return SimpleNamespace(db=db, hub=hub)
 
 

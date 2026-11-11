@@ -6,7 +6,7 @@ info:
   description: |
     Fonte da verdade da API `/api/v1` (contrato T-456, §4 e §7). O que o bot serve hoje é a **fundação (B1)**:
     `/meta`, `/health`, as sessões de usuário e o envelope de erro; mais **conta, servidores e configurações (B3)**.
-    Jukebox, rádios e apagar dados entram nos PRs seguintes, que estendem este arquivo.
+    Jukebox, rádios e apagar dados entram nos PRs seguintes, que estendem este arquivo (as rádios favoritas, do usuário e do servidor, são o B9).
 
     **Rede.** A API vive num listener próprio e interno (`EXTERNAL_PANEL_API_BIND` e `EXTERNAL_PANEL_API_PORT`), nunca na
     porta pública. O navegador só fala com o painel; quem chama a API é o servidor do painel.
@@ -753,6 +753,58 @@ paths:
                 $ref: "#/components/schemas/AccountRadiosForm"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+    post:
+      tags:
+        - Conta
+      operationId: addRadioFavorite
+      summary: Adiciona uma estação ao vivo ou um local favorito
+      description: |
+        Sem versão e idempotente: adicionar o que já está dá `200` sem consultar o diretório. Ordem: formato (`400`), já está (`200`), lista cheia (`400` com `limit` em `fields`: 24 estações, 10 locais) e só então o diretório (estação) ou a árvore de locais (nó): o que eles não conhecem é `404`; diretório ou banco fora do ar é `503`, nunca `404`. O nome vem do diretório, nunca do corpo. Só `station` e `filter`: `custom` e `genre` dependem de servidor e ficam em `POST /guilds/{guild_id}/radio-favorites/mine` (aqui são `400` com `kind` em `fields`). Estação ao vivo não exige premium.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RadioFavoriteAccountWrite"
+      responses:
+        "200":
+          description: A seção atualizada.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountRadiosForm"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMedia"
         "429":
           $ref: "#/components/responses/RateLimited"
         "500":
@@ -2103,6 +2155,254 @@ paths:
           $ref: "#/components/responses/Unexpected"
         "503":
           $ref: "#/components/responses/NotReady"
+  /api/v1/guilds/{guild_id}/radio-favorites:
+    get:
+      tags:
+        - Rádios
+      operationId: getGuildRadioFavorites
+      summary: As rádios favoritas do servidor e as do próprio usuário neste servidor
+      description: |
+        `server` é a lista do servidor (ao vivo, `custom` e `genre`, até 24 somados) e `mine` as `custom`/`genre` do PRÓPRIO usuário neste servidor (até 24); as ao vivo e os filtros do usuário ficam em `GET /account/radio-favorites`. Cada item é `{kind, id, name, missing?}`: `name` é texto tratado (sem menção nem link vivos; nunca volta numa escrita) e `null` em `genre` (o painel traduz o `id`); `missing: true` quando uma `custom`/`genre` já não resolve (estação apagada, gênero fora do catálogo): segue listada e removível e conta no teto até sair. Ordem de inserção (as ao vivo primeiro). Nenhuma rota lê a lista pessoal de outro usuário.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+      responses:
+        "200":
+          description: As duas listas.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuildRadioFavorites"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+  /api/v1/guilds/{guild_id}/radio-favorites/server:
+    post:
+      tags:
+        - Rádios
+      operationId: addServerRadioFavorite
+      summary: Adiciona à lista do servidor
+      description: |
+        Só quem gerencia o servidor **agora** (dono, ADMINISTRATOR ou Gerenciar Servidor; quem não passa recebe o `404` de sempre, `403` só numa corrida entre o cache e o Discord). `kind`: `station` (uuid do diretório), `custom` (24 hexadecimais, estação do servidor) ou `genre` (`g:` + id do catálogo). `custom` e `genre` exigem premium do servidor agora (`403`). Sem versão e idempotente: já está = `200` sem consultar o diretório; lista cheia (24 somados) = `400` com `limit` em `fields`, antes de qualquer consulta externa; estação ou gênero que não existe, inclusive a `custom` de outro servidor, é o mesmo `404`; diretório ou banco fora do ar é `503`. O nome vem do diretório ou da store, nunca do corpo; `node`, `user_id` e `guild_id` no corpo são ignorados.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RadioFavoriteServerWrite"
+      responses:
+        "200":
+          description: A lista do servidor atualizada.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RadioFavoriteList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenAction"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMedia"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+    delete:
+      tags:
+        - Rádios
+      operationId: removeServerRadioFavorite
+      summary: Remove da lista do servidor
+      description: |
+        Mesma permissão do `POST`. Remover o que não está dá `200` do mesmo jeito. O alvo vai na query.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+        - $ref: "#/components/parameters/ServerRadioFavoriteKind"
+        - $ref: "#/components/parameters/RadioFavoriteId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: A lista do servidor atualizada.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RadioFavoriteList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenAction"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+  /api/v1/guilds/{guild_id}/radio-favorites/mine:
+    post:
+      tags:
+        - Rádios
+      operationId: addMyRadioFavorite
+      summary: Adiciona às favoritas do próprio usuário neste servidor
+      description: |
+        Só `custom` e `genre` (a estação ao vivo é da conta: `station` aqui é `400` com `kind` em `fields`). A lista é do usuário da sessão neste servidor (a chave do documento é montada no bot, nunca de corpo). `custom` e `genre` exigem premium do servidor agora (`403`). Sem versão e idempotente, com a mesma ordem e os mesmos erros de `POST …/server`; teto de 24 somados.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RadioFavoriteMineWrite"
+      responses:
+        "200":
+          description: A lista atualizada.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RadioFavoriteList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenAction"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMedia"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+    delete:
+      tags:
+        - Rádios
+      operationId: removeMyRadioFavorite
+      summary: Remove das favoritas do próprio usuário neste servidor
+      description: |
+        Remover o que não está dá `200` do mesmo jeito (quem perdeu o premium limpa a própria lista). O alvo vai na query.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+        - $ref: "#/components/parameters/MyRadioFavoriteKind"
+        - $ref: "#/components/parameters/RadioFavoriteId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: A lista atualizada.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RadioFavoriteList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+
 components:
   securitySchemes:
     ServiceKey:
@@ -2154,7 +2454,7 @@ components:
       in: header
       required: false
       description: |
-        Torna a escrita repetível: a mesma chave com o mesmo pedido (usuário, servidor, rota e corpo) devolve a resposta de sucesso guardada, com `Idempotent-Replayed: true`, por 10 minutos (até 100 chaves por usuário). A mesma chave com outro pedido, ou com o original ainda em andamento, é `409 conflict`. Só sucesso é guardado: um erro libera a chave. Um `5xx` não diz se a escrita ocorreu; repita com a mesma chave **e** com `expected_version` (a versão impede gravar duas vezes). Fora do formato é `400` com `fields: ["idempotency_key"]`.
+        Torna a escrita repetível: a mesma chave com o mesmo pedido (usuário, servidor, rota e corpo) devolve a resposta de sucesso guardada, com `Idempotent-Replayed: true`, por 10 minutos (até 100 chaves por usuário). A mesma chave com outro pedido, ou com o original ainda em andamento, é `409 conflict`. Só sucesso é guardado: um erro libera a chave. Um `5xx` não diz se a escrita ocorreu; repita o MESMO pedido com a MESMA chave. Nas rotas versionadas, preserve também `expected_version` (a versão impede gravar duas vezes). As favoritas de rádio (`POST /account/radio-favorites` e `POST`/`DELETE /guilds/{guild_id}/radio-favorites/{server|mine}`, além do `DELETE` da conta) são por chave de item e NÃO levam `expected_version`: a mesma chave de idempotência identifica a repetição do clique; um novo clique usa uma chave nova. Fora do formato é `400` com `fields: ["idempotency_key"]`.
       schema:
         type: string
         pattern: ^[A-Za-z0-9_-]{8,64}$
@@ -2186,6 +2486,34 @@ components:
       in: query
       required: true
       description: O `uuid` da estação ou o `node` do local (os mesmos de `GET /account/radio-favorites`).
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    ServerRadioFavoriteKind:
+      name: kind
+      in: query
+      required: true
+      schema:
+        type: string
+        enum:
+          - station
+          - custom
+          - genre
+    MyRadioFavoriteKind:
+      name: kind
+      in: query
+      required: true
+      schema:
+        type: string
+        enum:
+          - custom
+          - genre
+    RadioFavoriteId:
+      name: id
+      in: query
+      required: true
+      description: O `uuid` (`station`), os 24 hexadecimais da estação do servidor (`custom`) ou `g:` + o id do gênero (`genre`).
       schema:
         type: string
         minLength: 1
@@ -4598,3 +4926,102 @@ components:
           description: Os mesmos nomes, na mesma ordem, tratados para exibição.
           items:
             type: string
+    RadioFavoriteAccountWrite:
+      type: object
+      required:
+        - kind
+        - id
+      properties:
+        kind:
+          type: string
+          enum:
+            - station
+            - filter
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: O `uuid` da estação do diretório (`station`) ou o id do nó de local (`filter`).
+    RadioFavoriteServerWrite:
+      type: object
+      required:
+        - kind
+        - id
+      properties:
+        kind:
+          type: string
+          enum:
+            - station
+            - custom
+            - genre
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+    RadioFavoriteMineWrite:
+      type: object
+      required:
+        - kind
+        - id
+      properties:
+        kind:
+          type: string
+          enum:
+            - custom
+            - genre
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+    RadioFavoriteItem:
+      type: object
+      additionalProperties: false
+      required:
+        - kind
+        - id
+        - name
+      properties:
+        kind:
+          type: string
+          enum:
+            - station
+            - custom
+            - genre
+        id:
+          type: string
+        name:
+          type:
+            - string
+            - "null"
+          description: Texto tratado (sem menção nem link vivos); `null` em `genre`.
+        missing:
+          type: boolean
+          const: true
+          description: Só presente (e `true`) quando a `custom`/`genre` já não resolve; segue listada e removível.
+    RadioFavoriteList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - max
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/RadioFavoriteItem"
+        max:
+          type: integer
+        total:
+          type: integer
+    GuildRadioFavorites:
+      type: object
+      additionalProperties: false
+      required:
+        - server
+        - mine
+      properties:
+        server:
+          $ref: "#/components/schemas/RadioFavoriteList"
+        mine:
+          $ref: "#/components/schemas/RadioFavoriteList"

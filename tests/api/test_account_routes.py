@@ -389,6 +389,36 @@ class RadioFavoritesTest(DataApiCase):
         assert body_of(again)["extras"]["estacoes"] == [] and body_of(again)["extras"]["filtros"] == []
         assert self.world.favorites.station_ids[int(OTHER)] != []  # a lista do outro usuário não foi tocada
 
+    @pytest.mark.regression
+    def test_post_nao_devolve_lista_vazia_quando_a_releitura_falha_depois_de_adicionar(self):
+        favorites = self.world.favorites
+        original = favorites.add_station
+        target = "dddddddd-dddd-dddd-dddd-dddddddddddd"
+
+        async def add_then_fail_read(user_id, uuid):
+            result = await original(user_id, uuid)
+            favorites.broken = True
+            return result
+
+        favorites.add_station = add_then_fail_read
+        response = self.call("POST", RADIOS, {"kind": "station", "id": target})
+
+        assert (response.code, error_code(response)) == (503, "bot_unavailable")
+        assert target in favorites.station_ids[int(USER)]  # a escrita ocorreu: a resposta não pode fingir lista vazia
+
+    @pytest.mark.regression
+    def test_post_ja_salva_antes_de_cheia_e_cheia_antes_de_consultar_o_diretorio(self):
+        self.world.favorites.station_ids[int(USER)] = [
+            STATION,
+            *[f"{n:08x}-aaaa-aaaa-aaaa-aaaaaaaaaaaa" for n in range(23)],
+        ]
+        already = self.call("POST", RADIOS, {"kind": "station", "id": STATION})
+        full = self.call("POST", RADIOS, {"kind": "station", "id": "cccccccc-cccc-cccc-cccc-cccccccccccc"})
+
+        assert already.code == 200
+        assert (full.code, error_code(full)) == (400, "validation_failed")
+        assert body_of(full)["error"]["fields"] == ["limit"]
+
     def test_a_checagem_de_disponibilidade_nao_le_a_lista_do_usuario(self):
         reads = []
         original = self.world.favorites.stations
