@@ -23,7 +23,7 @@ async def test_command_rechecks_guild_authority_and_never_reads_personal_favorit
             guild.get_member = lambda uid: None
             guild.fetch_member = AsyncMock(side_effect=ConnectionError)
     w.inter.send = AsyncMock()
-    w.hub.favorites.list = AsyncMock(return_value=[])
+    w.hub.favorites.list_all = AsyncMock(return_value=([], []))
     w.hub.user_favorites.stations = AsyncMock(side_effect=AssertionError("personal data must stay private"))
     w.hub.user_favorites.filters = AsyncMock(side_effect=AssertionError("personal data must stay private"))
 
@@ -34,11 +34,11 @@ async def test_command_rechecks_guild_authority_and_never_reads_personal_favorit
     sent = w.inter.send.await_args
     assert sent.kwargs["ephemeral"] is True
     if role in {"manager", "administrator", "owner"}:
-        w.hub.favorites.list.assert_awaited_once_with(GUILD)
+        w.hub.favorites.list_all.assert_awaited_once_with(GUILD)
         assert isinstance(sent.kwargs["view"], ServerRadioFavoritesView)
         sent.kwargs["view"].stop()
     else:
-        w.hub.favorites.list.assert_not_awaited()
+        w.hub.favorites.list_all.assert_not_awaited()
         assert "Gerenciar Servidor" in sent.args[0]
     w.hub.user_favorites.stations.assert_not_awaited()
     w.hub.user_favorites.filters.assert_not_awaited()

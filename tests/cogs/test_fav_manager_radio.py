@@ -144,6 +144,7 @@ async def test_radio_mode_in_an_ephemeral_message_lists_and_offers_only_remove_a
         tr("radio.favorites.clear_stations.label"),
         tr("radio.favorites.remove_filter.label"),
         tr("radio.favorites.clear_filters.label"),
+        tr("radio.favorites.refs.label"),
         tr("fav.close.label"),
     ]
     assert view.mode == ViewMode.radio_favorites
@@ -458,3 +459,100 @@ async def test_the_server_gate_answers_the_click_before_the_slow_member_lookup(w
         assert click.calls_named("followup")[0]["ephemeral"] is True  # a recusa vai por follow-up, nunca por inter.send
         assert click.calls_named("followup")[0]["content"] == world.tr("radio.refused.no_manage_guild")
         assert not click.calls_named("send")
+
+
+# ---------------------------------------------------------------------- J2a: custom e gênero nas duas listas
+
+ROCK = {"name": "Queen Rock", "kind": "artists", "source": {"artists": ["Queen"]}}
+
+
+def tr_label(world, key):
+    return world.tr(key)
+
+
+async def make_custom(world, doc=ROCK):
+    return (await world.hub.stations.create(GUILD, doc)).id
+
+
+async def test_server_menu_lists_custom_and_genre_and_removes_each_through_the_gate(world):
+    custom = await make_custom(world)
+    await world.hub.favorites.add(GUILD, ADMIN, station(1))
+    await world.hub.favorites.add_ref(GUILD, ADMIN, custom, exists=AsyncMock(return_value=True))
+    await world.hub.favorites.add_ref(GUILD, ADMIN, "g:rock", exists=AsyncMock(return_value=True))
+
+    view = (await open_server(world)).sent[0]["view"]
+    text = view.build_txt()
+    assert "(3/" in text and "🎼" in text and "🎛️" in text and world.tr("radio.genre.rock") in text
+    assert "Queen Rock" in text
+    select = next(c for c in view.children if isinstance(c, disnake.ui.Select))
+    assert [o.value for o in select.options] == [uuid(1), custom, "g:rock"]
+
+    world.managers.discard(ADMIN)
+    view.current = custom
+    await view.remove_callback(FakeInter(ADMIN))  # recusado no clique: nada muda
+    assert (await world.hub.favorites.list_all(GUILD))[1] == [custom, "g:rock"]
+
+    world.managers.add(ADMIN)
+    await view.remove_callback(FakeInter(ADMIN))
+    assert (await world.hub.favorites.list_all(GUILD))[1] == ["g:rock"]
+    view.current = "g:rock"
+    await view.remove_callback(FakeInter(ADMIN))
+    stations, refs = await world.hub.favorites.list_all(GUILD)
+    assert [f.uuid for f in stations] == [uuid(1)] and refs == []
+
+
+async def test_server_clear_removes_the_refs_too_and_a_deleted_custom_stays_listed_as_removed(world):
+    custom = await make_custom(world)
+    await world.hub.favorites.add_ref(GUILD, ADMIN, custom, exists=AsyncMock(return_value=True))
+    await world.hub.stations.delete(
+        GUILD, custom, expected_rev=(await world.hub.stations.get(GUILD, custom)).rev
+    )  # a estação sumiu: segue listada e removível
+    view = (await open_server(world)).sent[0]["view"]
+    assert world.tr("radio.favorites.ref.missing") in view.build_txt()
+
+    await view.ask_clear_callback(FakeInter(ADMIN))
+    await view.confirm_clear_callback(FakeInter(ADMIN))
+
+    assert await world.hub.favorites.list_all(GUILD) == ([], [])
+
+
+async def test_member_menu_lists_own_custom_and_genre_removes_and_clears_without_touching_others(world):
+    custom = await make_custom(world)
+    custom_favorites = world.hub.custom_favorites
+    for ref in (custom, "g:rock"):
+        await custom_favorites.toggle(GUILD, MEMBER, ref)
+    await custom_favorites.toggle(GUILD, OTHER_MEMBER, custom)
+    await world.seed()
+
+    view, inter = await open_radio(world)
+    text = inter.calls_named("edit_original_message")[0]["content"]
+    assert "(2/24)" in text and world.tr("radio.genre.rock") in text and "Queen Rock" in text
+    await view.radio_toggle_refs_callback(FakeInter(MEMBER))  # a página própria cabe nas 5 linhas do Discord
+    assert view.radio_refs_page and tr_label(world, "radio.favorites.remove_ref.label") in labels(view)
+
+    view.current_ref = custom
+    await view.radio_remove_ref_callback(FakeInter(MEMBER))
+    assert await custom_favorites.list(GUILD, MEMBER) == ["g:rock"]
+    await view.radio_clear_refs_callback(FakeInter(MEMBER))
+    assert await custom_favorites.list(GUILD, MEMBER) == []
+    assert await custom_favorites.list(GUILD, OTHER_MEMBER) == [custom]  # o documento de outro membro nunca é tocado
+    await view.radio_clear_refs_callback(FakeInter(MEMBER))
+    assert view.log == world.tr("radio.favorites.nothing_changed")
+
+
+async def test_member_ref_writes_respect_the_erasure_tombstone(world):
+    await make_custom(world)
+    view, _ = await open_radio(world)
+    await world.hub.custom_favorites.toggle(GUILD, MEMBER, "g:rock")
+    await view.load_radio()
+    real_find = world.hub.custom_favorites._find
+
+    async def erased_meanwhile(key):
+        doc = await real_find(key)
+        world.pool.erasure_tombstones.mark(MEMBER)  # apagar dados no meio da operação
+        return doc
+
+    world.hub.custom_favorites._find = erased_meanwhile
+    view.current_ref = "g:rock"
+    await view.radio_remove_ref_callback(FakeInter(MEMBER))
+    assert view.log == world.tr("radio.owner.unavailable")
