@@ -20,6 +20,9 @@ pytestmark = [pytest.mark.critical, pytest.mark.regression]
         ("fd00::1", False, None),
         ("unknown", True, None),  # UNKNOWN_PEER
         ("lixo", True, None),
+        ("::ffff:8.8.8.8", False, "8.8.8.8"),  # IPv4 mapeado vale como o IPv4, não como ::/64
+        ("::ffff:10.0.0.5", False, None),
+        ("::ffff:10.0.0.5", True, "10.0.0.5"),
         ("fe80::1%eth0", True, None),  # com escopo não é chave
         ("", True, None),
         (None, True, None),

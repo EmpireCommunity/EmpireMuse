@@ -405,13 +405,23 @@ async def test_p6_a_mixed_list_with_one_failing_id_refuses_the_whole_registratio
 # --- P7: a conexão fecha durante a prova -----------------------------------------------------------------------------
 
 
+CLOSINGS = {
+    "handler": lambda handler: (
+        handler.close()
+    ),  # ``close_rpc_for`` e quem fecha pelo handler: ``ws_connection`` vira ``None``
+    "protocol": lambda handler: handler.ws_connection.close(reason="ping timed out"),  # o ``periodic_ping`` do Tornado
+}
+
+
+@pytest.mark.parametrize("token", [TOKEN, OUTRO_TOKEN], ids=["valid token", "invalid token"])
+@pytest.mark.parametrize("closing", CLOSINGS)
 @pytest.mark.asyncio
 async def test_p7_closing_during_the_proof_registers_nothing_displaces_nobody_and_raises_nothing(
-    servidor, sessao, banco, segredo, provas, caplog
+    servidor, sessao, banco, segredo, provas, caplog, closing, token
 ):
-    """O servidor fecha a conexão com a prova pendente (``close_rpc_for``, tempo do ping): o token é válido, mas o registro não vale.
+    """O servidor fecha a conexão com a prova pendente (``close_rpc_for``, ping): nada de registro, de deslocamento nem de erro no log.
 
-    Um fechamento do cliente só é visto depois da prova (o Tornado lê em série); este é o caso que a guarda cobre.
+    Um fechamento do cliente só é visto depois da prova (o Tornado lê em série): é um resíduo aceito do contrato, não este teste.
     """
     x = _snowflake()
     banco.docs[x] = {"token": TOKEN}
@@ -423,9 +433,9 @@ async def test_p7_closing_during_the_proof_registers_nothing_displaces_nobody_an
     banco.gates[x] = asyncio.Event()
 
     ws_b = await _conectar(servidor, sessao)
-    await ws_b.send_json(com_token([x]))
+    await ws_b.send_json(com_token([x], token))
     await esperar(lambda: len(banco.calls) == 2)  # a prova do invasor está pendente
-    provas.handlers[-1].close()  # fechamento pelo servidor: ``ws_connection`` vira ``None``
+    CLOSINGS[closing](provas.handlers[-1])
     banco.gates[x].set()
     await esperar(lambda: len(provas.terminadas) == 1)  # a prova terminou depois do fechamento
 

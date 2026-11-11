@@ -28,6 +28,10 @@ def proof_ip_key(remote_ip: Optional[str], trusted: bool) -> Optional[str]:
         return None
     if isinstance(address, ipaddress.IPv6Address) and address.scope_id:
         return None
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+        address = (
+            address.ipv4_mapped
+        )  # como em ``client_ip``: o par IPv4 mapeado é o IPv4, senão todos cairiam em ``::/64``
     if not (trusted or address.is_global):
         return None
     if isinstance(address, ipaddress.IPv6Address):
