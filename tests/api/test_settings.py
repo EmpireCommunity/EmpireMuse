@@ -68,7 +68,6 @@ def test_falta_de_qualquer_configuracao_recusa_subir(faltando):
         "https://usuario:senha@painel.example.com",
         "https://usuario@painel.example.com",
         "https://painel.example.com\\@evil.example",
-        "https://painel.example.com/caminho",
         "https://painel.example.com?x=1",
         "https://pai\nnel.example.com",
         "https://painel.example.com:99999",
@@ -77,6 +76,64 @@ def test_falta_de_qualquer_configuracao_recusa_subir(faltando):
 def test_url_do_painel_invalida_recusa(url):
     with pytest.raises(ExternalPanelConfigError):
         load(external_config(EXTERNAL_PANEL_URL=url))
+
+
+@pytest.mark.parametrize(
+    ("suffix", "base"),
+    [
+        ("", ""),
+        ("/", ""),
+        ("/panel", "/panel"),
+        ("/panel/", "/panel"),
+        ("/a/b", "/a/b"),
+        ("/a-b_c.d~e/9", "/a-b_c.d~e/9"),
+    ],
+)
+def test_b1c_prefixo_de_caminho_aceito_e_o_redirect_uri_o_leva(suffix, base):
+    settings = load(external_config(EXTERNAL_PANEL_URL=PANEL_URL + suffix))
+
+    assert settings.base_url == PANEL_URL + base
+    assert settings.redirect_uri == PANEL_URL + base + "/auth/callback"
+
+
+@pytest.mark.parametrize(
+    "suffix",
+    [
+        "//x",
+        "//",
+        "/a//b",
+        "/a/../b",
+        "/./a",
+        "/..",
+        "/.",
+        "/%2e",
+        "/a%2Fb",
+        "/a?x",
+        "/a#x",
+        "/a\\b",
+        "/a b",
+        "/ç",
+        "/a;b",
+        "/a:b",
+    ],
+)
+def test_b1c_prefixo_invalido_recusa(suffix):
+    with pytest.raises(ExternalPanelConfigError):
+        load(external_config(EXTERNAL_PANEL_URL=PANEL_URL + suffix))
+
+
+@pytest.mark.parametrize("userinfo", ["u@", "u:p@"])
+def test_b1c_userinfo_segue_recusado_com_prefixo(userinfo):
+    with pytest.raises(ExternalPanelConfigError):
+        load(external_config(EXTERNAL_PANEL_URL=f"https://{userinfo}painel.example.com/panel"))
+
+
+def test_b1c_o_painel_generico_segue_recusando_qualquer_caminho():
+    from empiremuse.panel.settings import PanelConfigError, _parse_base_url
+
+    for url in (PANEL_URL + "/panel", PANEL_URL + "/a/b"):
+        with pytest.raises(PanelConfigError):
+            _parse_base_url(url)
 
 
 def test_url_com_barra_final_e_normalizada():

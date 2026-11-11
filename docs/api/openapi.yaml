@@ -1297,8 +1297,10 @@ components:
           pattern: "^[0-9]{1,20}$"
         redirect_uri:
           type: string
-          description: "`EXTERNAL_PANEL_URL` + `/auth/callback`, o único `redirect_uri` aceito."
-          examples: ["https://painel.example.com/auth/callback"]
+          description: "`EXTERNAL_PANEL_URL` + `/auth/callback`, o único `redirect_uri` aceito. A URL pode levar um prefixo de caminho (`https://muse.example.com/panel` dá `https://muse.example.com/panel/auth/callback`)."
+          examples:
+            - "https://painel.example.com/auth/callback"
+            - "https://muse.example.com/panel/auth/callback"
         features:
           type: array
           description: Recursos ativos nesta versão da API; cresce de forma aditiva.

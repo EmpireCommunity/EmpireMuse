@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import ipaddress
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Mapping
+from urllib.parse import urlsplit
 
 from empiremuse.panel.settings import PanelConfigError, _check_transport, _parse_base_url
 
@@ -62,7 +64,7 @@ class ExternalPanelSettings:
 
     @property
     def redirect_uri(self) -> str:
-        return f"{self.base_url}{CALLBACK_PATH}"
+        return f"{self.base_url}{CALLBACK_PATH}"  # ``base_url`` pode levar prefixo de caminho (``…/panel``)
 
 
 def _text(config: Mapping[str, Any], key: str) -> str:
@@ -75,6 +77,26 @@ def external_panel_requested(config: Mapping[str, Any]) -> bool:
     return any(_text(config, key) for key in EXTERNAL_KEYS)
 
 
+PATH_SEGMENT = re.compile(r"[A-Za-z0-9._~-]+", re.ASCII)
+DOT_SEGMENTS = frozenset({".", ".."})
+
+
+def _normalized_prefix(path: str) -> str:
+    """O prefixo de caminho do painel (``/panel``, ``/a/b``) sem a barra final; vazio é válido (``/`` também).
+
+    Cada segmento: só ``A-Za-z0-9._~-``, nunca vazio, ``.`` nem ``..``; sem ``%`` (nada de caminho codificado). Falha fechado.
+    """
+    prefix = path.removesuffix("/")
+    if not prefix:
+        return ""
+    segments = prefix.split("/")
+    if segments[0] != "" or any(not PATH_SEGMENT.fullmatch(s) or s in DOT_SEGMENTS for s in segments[1:]):
+        raise ExternalPanelConfigError(
+            f"{URL_KEY} inválida: o caminho só aceita segmentos de A-Z a-z 0-9 . _ ~ - (sem vazio, . ou ..)."
+        )
+    return prefix
+
+
 def _parse_url(config: Mapping[str, Any]) -> str:
     raw = _text(config, URL_KEY)
     if not raw:
@@ -84,11 +106,20 @@ def _parse_url(config: Mapping[str, Any]) -> str:
             f"{URL_KEY} inválida: sem espaços, controles, barra invertida ou usuário e senha."
         )
     try:
-        url, host = _parse_base_url(raw)
-        _check_transport(url, host, bool(config.get("PANEL_INSECURE_COOKIES", False)))
+        parts = urlsplit(raw)
+        parts.port  # noqa: B018 - valida a porta
+    except ValueError:
+        raise ExternalPanelConfigError(f"{URL_KEY} inválida: informe uma URL absoluta https válida.") from None
+    if parts.query or parts.fragment or "?" in raw or "#" in raw:
+        raise ExternalPanelConfigError(f"{URL_KEY} inválida: não deve conter query nem fragmento.")
+    prefix = _normalized_prefix(parts.path)
+    try:
+        # o genérico segue recusando qualquer caminho: aqui ele só valida esquema, host e porta da origem
+        origin, host = _parse_base_url(f"{parts.scheme}://{parts.netloc}")
+        _check_transport(origin, host, bool(config.get("PANEL_INSECURE_COOKIES", False)))
     except PanelConfigError as error:
         raise ExternalPanelConfigError(str(error).replace("PANEL_BASE_URL", URL_KEY)) from None
-    return url
+    return origin + prefix
 
 
 def _parse_port(config: Mapping[str, Any], web_port: int) -> int:
