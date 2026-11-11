@@ -182,7 +182,9 @@ def parse_owner_ids(raw: Optional[str]) -> list[int]:
         try:
             ids.append(int(item))
         except ValueError:
-            logger.warning("Owner_ID inválido: %s", item)
+            logger.warning(
+                "OWNER_IDS tem um item que não é um ID numérico: ignorado."
+            )  # sem o valor: ele pode ser digitação de um ID
     return ids
 
 
@@ -292,7 +294,6 @@ class BotPool:
         self.usage = UsageRecorder(self)
         self.guild_bans = GuildBans(self)
         self.user_bans = UserBans(self, owners=frozenset(parse_owner_ids(self.config["OWNER_IDS"])))
-        log_owner_gate_boot(self.config)  # uma vez por pool
         self.i18n = get_i18n()
         self.i18n.pool = self
         self.servers = ServerStore(self)
@@ -1076,6 +1077,7 @@ class BotPool:
         log_settings, log_warnings = parse_log_settings(self.config, os.environ)
         configure_logging(log_settings, collect_secret_values(self.config, os.environ))
         boot.flush_deferred()
+        log_owner_gate_boot(self.config)  # uma vez por pool, já com o log configurado (o arquivo do log recebe o ERROR)
         installed_version = image_version()
         boot.step("Versão do bot", "ok", str(installed_version) if installed_version else "fora da imagem Docker")
         for log_warning in log_warnings:  # logados só agora, já com o log configurado

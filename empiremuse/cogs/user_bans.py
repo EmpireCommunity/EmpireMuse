@@ -56,7 +56,7 @@ class UserBansCog(commands.Cog, name="UserBans"):
     @admin_owner_only()
     @panel_command(description="Banir ou desbanir um usuário.", emoji="🔨", alt_name="Banir/desbanir usuário")
     async def userbans(self, ctx: Union[disnake.MessageInteraction, commands.Context]):
-        """Entrada do painel do dono. Só ``env_owner_ids`` (``is_owner`` também chega aqui, pela equipe da aplicação: não basta)."""
+        """Entrada do painel do dono. Só ``env_owner_ids``: o portão acima (``OWNER_IDS`` ou, sem ela, o dono da aplicação) não basta."""
         if not isinstance(ctx, disnake.MessageInteraction):
             return None  # por prefixo não faz nada: o painel é o único caminho (o comando é oculto)
         tr = self.bot.pool.i18n.for_locale(self.bot.pool.i18n.resolve(None, ctx.locale))

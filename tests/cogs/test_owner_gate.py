@@ -21,6 +21,7 @@ from empiremuse.cogs import error_handler, hardreset, legacy_cmds, ll_yt_oauth, 
 from empiremuse.cogs.error_handler import ErrorHandler
 from empiremuse.music_cog.voice_status import VoiceStatusMixin
 from empiremuse.rules.owner_gate import OwnerGateMode
+from empiremuse.utils import client
 from empiremuse.utils.client import BotCore, BotPool
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.owner_gate import is_admin_owner, log_owner_gate_boot
@@ -282,23 +283,41 @@ async def test_the_real_bot_is_owner_still_accepts_owner_ids_for_the_limit_bypas
         ("100000000000000001", None),
     ],
 )
-def test_a5_boot_logs_one_record_per_mode_and_never_the_value(raw, level, caplog):
-    caplog.set_level(logging.DEBUG, logger="empiremuse.utils.owner_gate")
+def test_a5_boot_logs_one_record_per_mode_and_never_the_value_anywhere(raw, level, caplog):
+    caplog.set_level(
+        logging.DEBUG
+    )  # o log inteiro: o aviso de item inválido do ``parse_owner_ids`` também não mostra o valor
 
     log_owner_gate_boot({"OWNER_IDS": raw})
 
     records = [r for r in caplog.records if r.name == "empiremuse.utils.owner_gate"]
     assert [r.levelno for r in records] == ([] if level is None else [level])
-    assert all(raw not in r.getMessage() for r in records if raw)
+    if raw and level == logging.ERROR:
+        assert raw not in caplog.text
 
 
-def test_a5_the_pool_logs_the_mode_once_however_many_bots_it_has(monkeypatch, caplog):
+def test_a5_the_pool_logs_the_mode_once_in_setup_right_after_the_log_is_configured(monkeypatch, caplog):
+    class Stop(Exception):
+        pass
+
+    def stop(*args, **kwargs):
+        raise Stop
+
     monkeypatch.setenv("OWNER_IDS", "1,2")
-    caplog.set_level(logging.DEBUG, logger="empiremuse.utils.owner_gate")
+    caplog.set_level(logging.DEBUG)
+    pool = BotPool()
+    assert not [
+        r for r in caplog.records if r.name == "empiremuse.utils.owner_gate"
+    ]  # construir o pool (e os bots) não loga
 
-    BotPool()
+    order = []
+    monkeypatch.setattr(client, "configure_logging", lambda *a, **k: order.append("log"))
+    monkeypatch.setattr(client, "log_owner_gate_boot", lambda config: order.append("owner_gate"))
+    monkeypatch.setattr(client, "image_version", stop)
+    with pytest.raises(Stop):
+        pool.setup()
 
-    assert [r.levelno for r in caplog.records if r.name == "empiremuse.utils.owner_gate"] == [logging.ERROR]
+    assert order == ["log", "owner_gate"]  # o ERROR sai com o log configurado, então chega ao arquivo
 
 
 # --- A6: item 8 -------------------------------------------------------------------------------------------------------------
