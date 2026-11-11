@@ -33,8 +33,8 @@ info:
     **Versão.** Dentro da v1 só mudam coisas de forma aditiva; uma quebra vira `/api/v2` lado a lado por 6 meses, com
     `Deprecation` e `Sunset`.
   license:
-    name: Proprietary
-    identifier: LicenseRef-EmpireMuse
+    name: GNU General Public License v2.0 only
+    identifier: GPL-2.0-only
 servers:
   - url: "{origin}"
     description: Listener interno da API (EXTERNAL_PANEL_API_BIND e EXTERNAL_PANEL_API_PORT).
