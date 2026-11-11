@@ -1,0 +1,612 @@
+openapi: 3.1.0
+info:
+  title: API do bot EmpireMuse para painéis externos
+  version: 1.0.0
+  summary: Contrato público e versionado entre o bot e um painel externo (BFF).
+  description: |
+    Fonte da verdade da API `/api/v1` (contrato T-456, §4 e §7). O que o bot serve hoje é a **fundação (B1)**:
+    `/meta`, `/health`, as sessões de usuário e o envelope de erro. As rotas de dados (conta, servidores, configurações,
+    Jukebox, rádios, apagar dados) entram nos PRs seguintes, que estendem este arquivo.
+
+    **Rede.** A API vive num listener próprio e interno (`EXTERNAL_PANEL_API_BIND` e `EXTERNAL_PANEL_API_PORT`), nunca na
+    porta pública. O navegador só fala com o painel; quem chama a API é o servidor do painel.
+
+    **Credenciais.**
+    - Chave de serviço: `Authorization: Bearer <EXTERNAL_PANEL_API_SECRET>`, em toda rota menos `/health`.
+    - Token de sessão: `X-EM-Session: <token>`, que identifica o usuário. O `user_id` vem sempre da sessão, nunca de
+      corpo, caminho ou cabeçalho.
+    - O bot ignora cookies, não envia `Set-Cookie` e não envia nenhum `Access-Control-*` (sem CORS).
+
+    **Corpos.** Os corpos de requisição são JSON e exigem `Content-Type: application/json`; o corpo máximo é de 16 KiB
+    (acima disso a conexão é fechada, sem resposta). Datas são ISO 8601 em UTC com `Z`, em segundos.
+
+    **Cabeçalhos de toda resposta** (inclusive erros): `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` e
+    `X-Request-ID`. O painel pode mandar o próprio `X-Request-ID` (8 a 64 caracteres de `A-Za-z0-9_-`); fora desse
+    formato o bot gera outro. O id nunca carrega o IP do usuário.
+
+    **Erros.** Toda falha vem no envelope `{"error": {"code", "fields"?, "request_id"}}`, sem texto de usuário final
+    nem rastreio. O `code` é estável e o status acompanha a situação; o mesmo `code` com status diferente
+    (`forbidden` em 401 e 403) distingue-se pelo status. Método não declarado numa rota dá `405 validation_failed` com
+    `fields: ["method"]`; caminho desconhecido, em qualquer método e sem exigir a chave, dá `404 not_found`. Um `5xx`
+    não diz se uma escrita ocorreu: o painel só repete escrita com `Idempotency-Key` (rotas de escrita, B3 em diante).
+
+    **Versão.** Dentro da v1 só mudam coisas de forma aditiva; uma quebra vira `/api/v2` lado a lado por 6 meses, com
+    `Deprecation` e `Sunset`.
+  license:
+    name: GNU General Public License v2.0 only
+    identifier: GPL-2.0-only
+servers:
+  - url: "{origin}"
+    description: Listener interno da API (EXTERNAL_PANEL_API_BIND e EXTERNAL_PANEL_API_PORT).
+    variables:
+      origin:
+        default: http://127.0.0.1:6100
+tags:
+  - name: Meta
+    description: Descoberta e saúde.
+  - name: Sessão
+    description: Login do usuário pelo OAuth do Discord, reautenticação e logout.
+paths:
+  /api/v1/meta:
+    get:
+      tags: [Meta]
+      operationId: getMeta
+      summary: Versões, versão do bot, client_id e redirect_uri do OAuth
+      description: |
+        O painel usa o `client_id` para montar o OAuth (com `state` e PKCE) e confere o `redirect_uri` esperado.
+        `503 bot_unavailable` enquanto os bots não subiram e o `client_id` não resolve.
+      security:
+        - ServiceKey: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200":
+          description: Metadados da API.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Meta"
+        "401":
+          $ref: "#/components/responses/KeyRejected"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+  /api/v1/health:
+    get:
+      tags: [Meta]
+      operationId: getHealth
+      summary: Healthcheck do painel
+      description: |
+        **Sem chave**, só na porta interna, para o healthcheck do painel sem chave na linha de comando. O corpo é fixo e
+        não traz mais nada. Não entra em nenhum limite.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200":
+          description: O bot responde.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+  /api/v1/sessions:
+    post:
+      tags: [Sessão]
+      operationId: createSession
+      summary: Troca o code do Discord por uma sessão (login e reautenticação)
+      description: |
+        O **bot** troca o `code` com o `client_secret` (que nunca sai do bot), lê usuário e servidores, revoga o token do
+        Discord e cria a sessão. O `redirect_uri` vem do ambiente do bot, nunca do corpo. O `session_token` aparece
+        **só nesta resposta**; do outro lado o bot guarda apenas o SHA-256, preso à impressão da chave de serviço que o
+        criou. As sessões vivem em memória: reiniciar o bot dá `401 session_expired` e novo login.
+
+        **Reautenticação** (`reauth: true`, login recente): exige um `X-EM-Session` válido; o usuário do `code` tem de ser
+        o da sessão (senão `403 reauth_user_mismatch` e nada muda). Nunca renova no lugar: o bot emite um token novo e
+        **destrói o antigo**. Sem sessão válida, `reauth` dá `401 session_expired`.
+
+        Usuário banido pelo dono recebe `403 forbidden` sem motivo (o token do Discord é revogado do mesmo jeito); com a
+        lista de banidos ainda não carregada o login fica fechado em `503 bot_unavailable`. Um `code` recusado pelo
+        Discord (inválido, já usado ou vencido) é `400 validation_failed` com `fields: ["code"]`; falha ao falar com o
+        Discord é `502 discord_unavailable`. Esta rota também gasta o balde de criação de sessões (120 por minuto por
+        chave).
+      security:
+        - ServiceKey: []
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - name: X-EM-Session
+          in: header
+          required: false
+          description: "Só com `reauth: true`. Um token ausente ou inválido é ignorado nesta rota (e `reauth` o recusa)."
+          schema:
+            $ref: "#/components/schemas/SessionToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionCreate"
+      responses:
+        "201":
+          description: Sessão criada.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionCreated"
+        "400":
+          description: |
+            Corpo, tipo ou campo inválido (`fields` nomeia, em ordem: `code`, `code_verifier`, `reauth`), JSON que não é
+            objeto, ou `code` recusado pelo Discord (`fields: ["code"]`).
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorValidationFailed"
+        "401":
+          description: |
+            `forbidden`: chave de serviço ausente, errada ou vencida (para o painel é erro de configuração, nunca erro do
+            usuário). `session_expired`: `reauth` sem sessão válida, ou a sessão morreu durante a troca com o Discord.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorUnauthorized"
+        "403":
+          description: |
+            `reauth_user_mismatch`: o usuário do `code` não é o da sessão. `forbidden`: usuário banido pelo dono.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorForbidden"
+        "415":
+          description: "`Content-Type` diferente de `application/json` (`fields: [\"content_type\"]`)."
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorValidationFailed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "502":
+          description: Falha ao falar com o Discord (troca do código ou leitura do usuário e dos servidores).
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDiscordUnavailable"
+        "503":
+          $ref: "#/components/responses/NotReady"
+  /api/v1/session:
+    get:
+      tags: [Sessão]
+      operationId: getSession
+      summary: Dados da sessão atual
+      description: |
+        Devolve usuário, servidores (pré-filtro: só onde o usuário é dono, administrador ou tem Gerenciar Servidor) e as
+        datas, **sem** o `session_token`. A cada requisição o bot confere o banimento do usuário: banido perde todas as
+        sessões e recebe `401 session_expired`. `expires_at` é o fim absoluto (TTL); a ociosidade pode encerrar antes.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+      responses:
+        "200":
+          description: A sessão.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionInfo"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+    delete:
+      tags: [Sessão]
+      operationId: deleteSession
+      summary: Encerra a sessão atual (logout)
+      description: |
+        Repetir dá `401 session_expired`, que o painel ignora ao sair. A escrita gasta o balde de escrita do usuário
+        (20 por minuto).
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+      responses:
+        "204":
+          description: Sessão encerrada, sem corpo.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+components:
+  securitySchemes:
+    ServiceKey:
+      type: http
+      scheme: bearer
+      description: Chave de serviço do painel (`EXTERNAL_PANEL_API_SECRET`). A chave anterior vale até o fim do dia UTC de `EXTERNAL_PANEL_API_PREVIOUS_UNTIL`.
+    SessionToken:
+      type: apiKey
+      in: header
+      name: X-EM-Session
+      description: Token de sessão (256 bits, opaco) emitido por `POST /api/v1/sessions`, preso à chave que o criou.
+  parameters:
+    RequestId:
+      name: X-Request-ID
+      in: header
+      required: false
+      description: Id de correlação do painel, ecoado na resposta e no envelope de erro.
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9_-]{8,64}$"
+    SessionToken:
+      name: X-EM-Session
+      in: header
+      required: true
+      schema:
+        $ref: "#/components/schemas/SessionToken"
+  headers:
+    CacheControl:
+      required: true
+      description: Sempre `no-store`.
+      schema:
+        const: no-store
+    ContentTypeOptions:
+      required: true
+      description: Sempre `nosniff`.
+      schema:
+        const: nosniff
+    RequestIdOut:
+      required: true
+      description: Id de correlação (o do painel, se tiver formato seguro; senão gerado pelo bot).
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9_-]{8,64}$"
+    RetryAfter:
+      required: true
+      description: Segundos até tentar de novo.
+      schema:
+        type: integer
+        minimum: 1
+  responses:
+    KeyRejected:
+      description: |
+        Chave de serviço ausente, errada ou vencida (`forbidden`). Para o painel é erro de configuração, nunca erro do
+        usuário.
+      headers:
+        Cache-Control:
+          $ref: "#/components/headers/CacheControl"
+        X-Content-Type-Options:
+          $ref: "#/components/headers/ContentTypeOptions"
+        X-Request-ID:
+          $ref: "#/components/headers/RequestIdOut"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorForbidden"
+    Unauthorized:
+      description: |
+        `forbidden`: chave de serviço ausente, errada ou vencida. `session_expired`: `X-EM-Session` ausente, inválido,
+        expirado, de outra chave, ou usuário banido. Futuramente também `reauth_required` (login com mais de 30 minutos).
+      headers:
+        Cache-Control:
+          $ref: "#/components/headers/CacheControl"
+        X-Content-Type-Options:
+          $ref: "#/components/headers/ContentTypeOptions"
+        X-Request-ID:
+          $ref: "#/components/headers/RequestIdOut"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorUnauthorized"
+    RateLimited:
+      description: |
+        Limite excedido (`rate_limited`) com `Retry-After` em segundos. Limites em memória: leitura 120 e escrita 20 por
+        minuto por usuário, 600 por minuto por chave, 120 logins por minuto por chave; mais de 30 falhas de chave por
+        minuto num par TCP bloqueiam esse par **só para chave errada** (a chave certa sempre passa).
+      headers:
+        Cache-Control:
+          $ref: "#/components/headers/CacheControl"
+        X-Content-Type-Options:
+          $ref: "#/components/headers/ContentTypeOptions"
+        X-Request-ID:
+          $ref: "#/components/headers/RequestIdOut"
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorRateLimited"
+    Unexpected:
+      description: |
+        Erro inesperado (`bot_unavailable`), sem rastreio no corpo; o `request_id` liga ao log do bot. Não diz se uma
+        escrita ocorreu.
+      headers:
+        Cache-Control:
+          $ref: "#/components/headers/CacheControl"
+        X-Content-Type-Options:
+          $ref: "#/components/headers/ContentTypeOptions"
+        X-Request-ID:
+          $ref: "#/components/headers/RequestIdOut"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorBotUnavailable"
+    NotReady:
+      description: O bot ainda não está pronto (bots não subiram, lista de banidos não carregada); tente de novo.
+      headers:
+        Cache-Control:
+          $ref: "#/components/headers/CacheControl"
+        X-Content-Type-Options:
+          $ref: "#/components/headers/ContentTypeOptions"
+        X-Request-ID:
+          $ref: "#/components/headers/RequestIdOut"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorBotUnavailable"
+  schemas:
+    Meta:
+      type: object
+      additionalProperties: false
+      required: [api_versions, bot_version, client_id, redirect_uri, features]
+      properties:
+        api_versions:
+          type: array
+          items:
+            type: string
+            pattern: "^v[0-9]+$"
+          examples: [["v1"]]
+        bot_version:
+          type: string
+          examples: ["2.4.0"]
+        client_id:
+          type: string
+          description: ID do aplicativo do Discord usado no OAuth do painel.
+          pattern: "^[0-9]{1,20}$"
+        redirect_uri:
+          type: string
+          description: "`EXTERNAL_PANEL_URL` + `/auth/callback`, o único `redirect_uri` aceito."
+          examples: ["https://painel.example.com/auth/callback"]
+        features:
+          type: array
+          description: Recursos ativos nesta versão da API; cresce de forma aditiva.
+          items:
+            type: string
+          examples: [["sessions", "reauth"]]
+    Health:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          const: ok
+    SessionToken:
+      type: string
+      description: 256 bits em base64 urlsafe, sem preenchimento.
+      pattern: "^[A-Za-z0-9_-]{43}$"
+    SessionCreate:
+      type: object
+      required: [code, code_verifier]
+      properties:
+        code:
+          type: string
+          description: Código do OAuth do Discord (ASCII, uso único).
+          minLength: 1
+          maxLength: 512
+          pattern: "^[\\x00-\\x7F]+$"
+        code_verifier:
+          type: string
+          description: PKCE (RFC 7636), o mesmo que gerou o `code_challenge` do painel.
+          pattern: "^[A-Za-z0-9._~-]{43,128}$"
+        reauth:
+          type: boolean
+          default: false
+          description: Reautenticação; exige `X-EM-Session` válido e troca o token.
+    SessionInfo:
+      type: object
+      additionalProperties: false
+      required: [user, guilds, expires_at, authenticated_at]
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        guilds:
+          type: array
+          items:
+            $ref: "#/components/schemas/Guild"
+        expires_at:
+          $ref: "#/components/schemas/Timestamp"
+        authenticated_at:
+          $ref: "#/components/schemas/Timestamp"
+    SessionCreated:
+      description: Igual à sessão, mais o `session_token` (devolvido uma única vez).
+      type: object
+      additionalProperties: false
+      required: [session_token, user, guilds, expires_at, authenticated_at]
+      properties:
+        session_token:
+          $ref: "#/components/schemas/SessionToken"
+        user:
+          $ref: "#/components/schemas/User"
+        guilds:
+          type: array
+          items:
+            $ref: "#/components/schemas/Guild"
+        expires_at:
+          $ref: "#/components/schemas/Timestamp"
+        authenticated_at:
+          $ref: "#/components/schemas/Timestamp"
+    User:
+      type: object
+      additionalProperties: false
+      required: [id, username, global_name, avatar]
+      properties:
+        id:
+          type: string
+          pattern: "^[0-9]+$"
+        username:
+          type: string
+          minLength: 1
+        global_name:
+          type: [string, "null"]
+        avatar:
+          type: [string, "null"]
+          description: Hash do avatar no Discord.
+    Guild:
+      type: object
+      additionalProperties: false
+      required: [id, name, icon, owner, permissions]
+      properties:
+        id:
+          type: string
+          pattern: "^[0-9]{1,20}$"
+        name:
+          type: string
+        icon:
+          type: [string, "null"]
+        owner:
+          type: boolean
+        permissions:
+          type: string
+          description: Inteiro de permissões do Discord **como texto** (o valor passa de 2^53).
+          pattern: "^[0-9]+$"
+    Timestamp:
+      type: string
+      description: ISO 8601 em UTC com `Z`, em segundos.
+      pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+      examples: ["2026-11-11T12:00:00Z"]
+    ErrorCode:
+      type: string
+      description: Código estável. O status HTTP acompanha a situação; o `code` é a chave.
+      enum:
+        - validation_failed
+        - conflict
+        - forbidden
+        - not_found
+        - rate_limited
+        - reauth_required
+        - reauth_user_mismatch
+        - session_expired
+        - discord_unavailable
+        - bot_unavailable
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, request_id]
+          properties:
+            code:
+              $ref: "#/components/schemas/ErrorCode"
+            fields:
+              type: array
+              description: "Só em `validation_failed`: nomes dos campos (ou `method` e `content_type`) que falharam."
+              items:
+                type: string
+            request_id:
+              type: string
+              description: Liga a resposta ao log do bot; o mesmo valor vai no cabeçalho `X-Request-ID`.
+              pattern: "^[A-Za-z0-9_-]{8,64}$"
+    # Variantes por código e status: o cliente gerado distingue pelo status e pelo `code`.
+    ErrorValidationFailed:
+      description: "`validation_failed`, com `fields` quando se sabe qual campo falhou."
+      $ref: "#/components/schemas/Error"
+    ErrorUnauthorized:
+      description: "`forbidden` (chave), `session_expired` ou `reauth_required`."
+      $ref: "#/components/schemas/Error"
+    ErrorForbidden:
+      description: "`forbidden` ou `reauth_user_mismatch`."
+      $ref: "#/components/schemas/Error"
+    ErrorRateLimited:
+      description: "`rate_limited`."
+      $ref: "#/components/schemas/Error"
+    ErrorDiscordUnavailable:
+      description: "`discord_unavailable`."
+      $ref: "#/components/schemas/Error"
+    ErrorBotUnavailable:
+      description: "`bot_unavailable`."
+      $ref: "#/components/schemas/Error"
