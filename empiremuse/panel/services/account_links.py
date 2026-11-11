@@ -223,6 +223,11 @@ class RadioFavoritesSection(AccountSection):
         hub = getattr(ctx.pool, "radio", None)
         return getattr(hub, "user_favorites", None)
 
+    @classmethod
+    def available(cls, ctx: AccountContext) -> bool:
+        """A rádio está ligada neste bot? Só confere se o armazém existe: não lê a lista do usuário."""
+        return cls._favorites(ctx) is not None
+
     @staticmethod
     def _filter_label(tree: Any, node_id: str) -> str:
         steps = [tree.label(node, PANEL_LOCALE) for node in tree.path(node_id)] if tree is not None else []

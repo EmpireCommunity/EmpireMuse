@@ -12,10 +12,13 @@ from empiremuse.api.idempotency import IdempotencyStore
 from empiremuse.api.keys import ServiceKeys
 from empiremuse.api.limits import ApiLimits
 from empiremuse.api.server import ApiHTTPServer, listen
+from empiremuse.api.signing import PURPOSE_JUKEBOX, PURPOSE_RADIO_RESET, derive_key
 from empiremuse.api.settings import ExternalPanelConfigError, external_panel_requested, load_external_panel_settings
 from empiremuse.config_loader import resolve_port
 from empiremuse.panel.authz import GuildAuthorizer
 from empiremuse.panel.oauth import make_client_provider
+from empiremuse.panel.services.jukebox import JukeboxService
+from empiremuse.panel.services.radio_setup import RadioSetupService
 from empiremuse.panel.settings import PanelConfigError, load_session_limits
 from empiremuse.panel.state import ensure_panel_state
 from empiremuse.version import image_version
@@ -76,6 +79,16 @@ def start_external_api(
         settings_service=state.settings_service,
         account_service=state.account_service,
         idempotency=IdempotencyStore(clock),
+        radio_page=state.radio_page,
+        stations_page=state.stations_page,
+        # os serviços presos a uma chave de assinatura não ficam no estado do pool: cada consumidor os cria com a subchave dele
+        jukebox_service=JukeboxService(
+            state.task_runner,
+            state.settings_service,
+            derive_key(settings.signing_secret, PURPOSE_JUKEBOX),
+            clock,
+        ),
+        radio_setup_service=RadioSetupService(derive_key(settings.signing_secret, PURPOSE_RADIO_RESET), clock),
     )
     try:
         server = listen(ctx, settings)
