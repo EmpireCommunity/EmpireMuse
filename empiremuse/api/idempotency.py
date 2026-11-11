@@ -3,7 +3,7 @@
 O escopo é usuário + chave; a impressão guardada junto cobre método, caminho (servidor e rota) e o corpo. A mesma chave
 com outra impressão, ou ainda em andamento, é ``409``: nunca devolve a resposta de outro escopo. Só respostas de sucesso
 são guardadas; um erro (inclusive ``5xx``, que não diz se a escrita ocorreu) libera a chave para a nova tentativa, e a
-versão esperada (CAS) impede que ela grave duas vezes.
+versão esperada (CAS) impede que ela grave duas vezes. No teto global saem primeiro as entradas fechadas.
 """
 
 from __future__ import annotations
@@ -110,7 +110,12 @@ class IdempotencyStore:
             self._drop((user_id, keys[0]))
             keys = self._user_keys.get(user_id)
         while len(self._entries) >= MAX_KEYS_TOTAL:
-            self._drop(next(iter(self._entries)))
+            self._drop(self._oldest_closed() or next(iter(self._entries)))
+
+    def _oldest_closed(self) -> Optional[tuple[str, str]]:
+        """A entrada fechada mais antiga: no teto global sai ela antes de qualquer pedido ainda em andamento (descartar um
+        em andamento deixaria a mesma chave executar duas vezes)."""
+        return next((entry_key for entry_key, entry in self._entries.items() if entry.reply is not None), None)
 
     def _drop(self, entry_key: tuple[str, str]) -> None:
         self._entries.pop(entry_key, None)

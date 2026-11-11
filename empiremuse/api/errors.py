@@ -47,3 +47,7 @@ def rate_limited(retry_after: int) -> ApiError:
 
 def conflict(current_version: Optional[str] = None) -> ApiError:
     return ApiError(409, CONFLICT, current_version=current_version)
+
+
+def not_found() -> ApiError:
+    return ApiError(404, NOT_FOUND)
