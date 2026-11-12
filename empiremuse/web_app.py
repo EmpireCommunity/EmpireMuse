@@ -21,6 +21,7 @@ from packaging import version
 
 from empiremuse import paths
 from empiremuse.config_loader import load_config, resolve_port
+from empiremuse.rules.app_profile import panel_url_of
 from empiremuse.rules.client_ip import UNKNOWN_PEER, IPNetwork, parse_trusted_proxy_cidrs, resolve_client_ip
 from empiremuse.rules.rpc_proof import DeniedBudget, LogThrottle, proof_ip_key
 from empiremuse.rules.servers import is_main_identifier
@@ -172,7 +173,8 @@ class IndexHandler(tornado.web.RequestHandler):
                 prefixo=self.pool.config["DEFAULT_PREFIX"],
                 commit=commit,
                 commit_url=f"{self.pool.remote_git_url}/commit/{commit}" if commit else "",
-                painel_url="/painel/" if self.panel_enabled else "",
+                painel_url=self.pool.public_panel_url,
+                generic_panel_enabled=self.panel_enabled,
                 suporte_url=branding.SUPPORT_SERVER_URL,
                 nome_bot=branding.BOT_NAME,
                 repo_url=branding.REPO_URL,
@@ -740,21 +742,21 @@ class ClientIpRouter(tornado.routing.Router):
         return self.inner.find_handler(request, **kwargs)
 
 
-def _build_panel(pool: BotPool, config: dict):
+def _build_panel(pool: BotPool, config: dict, trusted_networks: tuple[IPNetwork, ...]):
     """Cria a aplicação do painel (None se desligado ou com configuração inválida; o servidor segue sem ele)."""
     from empiremuse.panel import build_panel_app
     from empiremuse.panel.settings import PanelConfigError, load_panel_settings
 
     try:
-        settings = load_panel_settings(config)
+        settings = load_panel_settings(config, trusted_proxy_networks=trusted_networks)
     except PanelConfigError as e:
         logging.getLogger("empiremuse.panel").warning("Painel web desativado por configuração inválida: %s", e)
-        return None, False, ()
+        return None
 
     panel_app = build_panel_app(pool, settings)
     if panel_app:
         logging.getLogger("empiremuse.panel").info("Painel web ativo em %s/painel/", settings.base_url)
-    return panel_app, settings.trust_proxy, settings.trusted_proxy_networks
+    return panel_app
 
 
 def _warn_if_exposed_without_auth(config: dict, bind_address: str) -> None:
@@ -794,20 +796,22 @@ def run_app(pool: BotPool, config: dict = None):
 
     from empiremuse.api.runtime import start_external_api  # só aqui: importar o bot não carrega a API
 
+    pool.public_panel_url = ""
     external = start_external_api(pool, config)
-    # Modo externo pedido e inválido: nenhum painel sobe, nem o genérico (sem fallback); o bot e o relé seguem.
-    if external.blocked:
-        panel_app = None
-        # Sem painel não há ``PanelSettings``: a confiança no proxy vem direto da configuração (o /ws e a página de status
-        # continuam vendo o IP do visitante, não o do proxy).
-        trust_proxy = bool(config.get("PANEL_TRUST_PROXY", False))
-        trusted_networks, cidr_warnings = parse_trusted_proxy_cidrs(config.get("PANEL_TRUSTED_PROXY_CIDRS"))
-        for warning in cidr_warnings:
-            logger.warning("%s", warning)
-        trusted = trust_proxy
-    else:
-        panel_app, trust_proxy, trusted_networks = _build_panel(pool, config)
-        trusted = bool(panel_app and trust_proxy)
+    # A confiança do /ws e do status depende só da configuração, mesmo sem app genérico.
+    trusted = bool(config.get("PANEL_TRUST_PROXY", False))
+    trusted_networks, cidr_warnings = parse_trusted_proxy_cidrs(config.get("PANEL_TRUSTED_PROXY_CIDRS"))
+    for warning in cidr_warnings:
+        logger.warning("%s", warning)
+    panel_app = None
+    panel_routes = None
+    if external.server is not None:
+        from empiremuse.panel.redirect import build_redirect_app
+
+        panel_routes = build_redirect_app(external.panel_url)
+    elif not external.blocked:
+        panel_app = _build_panel(pool, config, trusted_networks)  # sem modo externo, preserva a hospedagem própria
+        panel_routes = panel_app
     ws_proof = _build_registration_proof(pool, config)
 
     app = tornado.web.Application(
@@ -815,7 +819,11 @@ def run_app(pool: BotPool, config: dict = None):
             (
                 r"/",
                 IndexHandler,
-                {"pool": pool, "config": config, "panel_enabled": panel_app is not None},
+                {
+                    "pool": pool,
+                    "config": config,
+                    "panel_enabled": panel_app is not None,
+                },
             ),
             (
                 r"/ws",
@@ -835,13 +843,14 @@ def run_app(pool: BotPool, config: dict = None):
     )
 
     server = tornado.httpserver.HTTPServer(
-        ClientIpRouter(make_router(app, panel_app), trusted, trusted_networks),
+        ClientIpRouter(make_router(app, panel_routes), trusted, trusted_networks),
         xheaders=trusted,
         max_body_size=MAX_BODY_SIZE,
     )
     bind_address = config.get("WEB_BIND_ADDRESS") or DEFAULT_BIND_ADDRESS
     _warn_if_exposed_without_auth(config, bind_address)
     server.listen(resolve_port(config.get("PORT")), address=bind_address)
+    pool.public_panel_url = external.panel_url or panel_url_of(config.get("PANEL_BASE_URL"), panel_app is not None)
     return panel_app
 
 
@@ -861,6 +870,7 @@ def _shutdown_external_api(pool: BotPool, panel_app) -> None:
     if server is not None:
         server.stop()
     runner = getattr(pool, "panel_tasks", None)
+    # API e genérico compartilham um único TaskRunner; com genérico, _shutdown_panel já o encerrou.
     if panel_app is None and runner is not None:
         try:
             tornado.ioloop.IOLoop.current().run_sync(runner.shutdown, timeout=5)

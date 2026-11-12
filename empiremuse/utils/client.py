@@ -193,6 +193,7 @@ def load_jishaku_if_enabled(bot) -> bool:
 
 
 class BotPool:
+    public_panel_url: str = ""  # preenchida por run_app somente depois de abrir os listeners
     killing_state = False
     # Defaults de classe (como o killing_state): fakes de BotPool criados com __new__ não passam pelo __init__.
     update_ready_checked = False  # on_pool_ready roda uma vez, na primeira vez em que o pool fica saudável

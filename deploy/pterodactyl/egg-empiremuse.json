@@ -1023,7 +1023,7 @@
             "name": "Presenças em status customizado",
             "description": "Mensagens de status personalizado fixadas no bot, separadas por barra dupla.",
             "env_variable": "CUSTOM_STATUS_PRESENCES",
-            "default_value": "🎵 /play ou !play | ajuda: !help||⚙️ Painel: muse.empirecommunity.org/painel||🎧 Tocando em {players_count} calls",
+            "default_value": "🎵 /play ou !play | ajuda: !help||⚙️ Painel: {panel_url}||🎧 Tocando em {players_count} calls",
             "user_viewable": true,
             "user_editable": true,
             "rules": "nullable|string"

@@ -122,7 +122,7 @@ def test_n3_bot_sobe_e_toca_run_app_com_configuracao_externa_invalida_nao_sobe_o
 
 def test_painel_generico_segue_como_antes_sem_nenhuma_variavel_externa(monkeypatch):
     chamado = []
-    monkeypatch.setattr(web_app, "_build_panel", lambda pool, config: chamado.append(1) or (None, False, ()))
+    monkeypatch.setattr(web_app, "_build_panel", lambda pool, config, networks: chamado.append(1))
     monkeypatch.setattr(web_app.tornado.httpserver, "HTTPServer", lambda *a, **k: MagicMock())
 
     web_app.run_app(MagicMock(), config={"PORT": "6000"})
@@ -201,6 +201,7 @@ class ListenerPublicoTest(AsyncTestCase):
         pool = SimpleNamespace(bots=[], database=None)
         publica, interna = free_port(), free_port()
         config = {
+            **local_config(PANEL_INSECURE_COOKIES=False),  # o genérico estaria ligado: a API válida deve substituí-lo
             "PORT": str(publica),
             "WEB_BIND_ADDRESS": "127.0.0.1",
             **external_config(EXTERNAL_PANEL_API_PORT=str(interna)),
@@ -208,21 +209,125 @@ class ListenerPublicoTest(AsyncTestCase):
         web_app.run_app(pool, config=config)
         cabecalhos = {"Authorization": f"Bearer {SERVICE_KEY}"}
 
-        async def pedir(porta, caminho):
+        async def pedir(porta, caminho, method="GET"):
             return await AsyncHTTPClient().fetch(
-                f"http://127.0.0.1:{porta}{caminho}", headers=cabecalhos, raise_error=False
+                f"http://127.0.0.1:{porta}{caminho}",
+                method=method,
+                body="" if method == "POST" else None,
+                headers=cabecalhos,
+                raise_error=False,
+                follow_redirects=False,
             )
 
         async def tudo():
-            return [await pedir(publica, c) for c in ("/api/v1/health", "/api/v1/meta", "/api/v1/sessions")] + [
-                await pedir(interna, "/api/v1/health")
+            publicas = [await pedir(publica, c) for c in ("/api/v1/health", "/api/v1/meta", "/api/v1/sessions")]
+            redirects = [
+                await pedir(publica, "/painel/callback?code=segredo&state=outro", method)
+                for method in ("GET", "HEAD", "POST")
             ]
+            return publicas, await pedir(interna, "/api/v1/health"), redirects
 
         try:
-            *publicas, interna_ok = self.io_loop.run_sync(tudo)
+            publicas, interna_ok, redirects = self.io_loop.run_sync(tudo)
         finally:
             pool.panel_api_server.stop()
 
         assert interna_ok.code == 200 and json.loads(interna_ok.body) == {"status": "ok"}
         for resposta in publicas:
             assert resposta.code == 404 and b"api_versions" not in resposta.body and b'"status"' not in resposta.body
+
+        get, head, post = redirects
+        for response in (get, head):
+            assert response.code == 302 and response.headers["Location"] == config["EXTERNAL_PANEL_URL"]
+            assert "Set-Cookie" not in response.headers and b"segredo" not in response.body
+        assert post.code == 404 and "Location" not in post.headers
+
+
+def test_b6_modo_externo_valido_substitui_o_generico_por_redirect_mesmo_com_panel_enabled(monkeypatch):
+    from empiremuse.api.runtime import ExternalApiStatus
+
+    captured = {}
+
+    class Server:
+        def __init__(self, router, **kwargs):
+            captured["router"] = router
+
+        def listen(self, port, **kwargs):
+            pass
+
+    monkeypatch.setattr(
+        "empiremuse.api.runtime.start_external_api",
+        lambda *args: ExternalApiStatus(server=object(), panel_url="https://muse.empirecommunity.org/panel"),
+    )
+    monkeypatch.setattr(web_app, "_build_panel", lambda *args: pytest.fail("o genérico não pode subir junto da API"))
+    monkeypatch.setattr(web_app.tornado.httpserver, "HTTPServer", Server)
+    config = {
+        "PORT": "6000",
+        "PANEL_ENABLED": True,
+        "PANEL_TRUST_PROXY": True,
+        "PANEL_TRUSTED_PROXY_CIDRS": "192.0.2.0/24",
+    }
+    assert web_app.run_app(SimpleNamespace(database=None), config=config) is None
+    assert captured["router"].trust_proxy is True
+    assert captured["router"].trusted_networks
+
+
+def test_b6_config_generica_invalida_nao_desliga_a_confianca_no_ip_configurada(monkeypatch):
+    captured = {}
+
+    class Server:
+        def __init__(self, router, **kwargs):
+            captured["router"], captured["kwargs"] = router, kwargs
+
+        def listen(self, port, **kwargs):
+            pass
+
+    monkeypatch.setattr(web_app.tornado.httpserver, "HTTPServer", Server)
+    config = {
+        "PORT": "6000",
+        "PANEL_ENABLED": True,
+        "PANEL_BASE_URL": "invalid",
+        "PANEL_TRUST_PROXY": True,
+        "PANEL_TRUSTED_PROXY_CIDRS": "192.0.2.0/24",
+    }
+    assert web_app.run_app(SimpleNamespace(database=None), config=config) is None
+    assert captured["router"].trust_proxy is True
+    assert captured["kwargs"]["xheaders"] is True
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    ("mode", "bind_fails"),
+    [("active", False), ("blocked", False), ("off", False), ("generic", False), ("active", True), ("generic", True)],
+)
+def test_url_publicada_so_depois_do_listener_aberto(monkeypatch, mode, bind_fails):
+    from empiremuse.api.runtime import ExternalApiStatus
+
+    external_url = "https://muse.empirecommunity.org/panel"
+    status = (
+        ExternalApiStatus(server=object(), panel_url=external_url)
+        if mode == "active"
+        else ExternalApiStatus(blocked=mode == "blocked")
+    )
+    pool = SimpleNamespace(database=None, public_panel_url="https://stale.example")
+    panel_app = object() if mode == "generic" else None
+    monkeypatch.setattr("empiremuse.api.runtime.start_external_api", lambda *args: status)
+    monkeypatch.setattr(web_app, "_build_panel", lambda *args: panel_app)
+
+    def listen(*args, **kwargs):
+        assert pool.public_panel_url == ""  # nada anunciado antes de o bind ter sucesso
+        if bind_fails:
+            raise OSError("port unavailable")
+
+    monkeypatch.setattr(
+        web_app.tornado.httpserver, "HTTPServer", lambda *args, **kwargs: SimpleNamespace(listen=listen)
+    )
+    config = {"PORT": "6000", "PANEL_BASE_URL": "https://self.example"}
+    if bind_fails:
+        with pytest.raises(OSError, match="port unavailable"):
+            web_app.run_app(pool, config=config)
+        assert pool.public_panel_url == ""
+    else:
+        assert web_app.run_app(pool, config=config) is panel_app
+        expected = external_url if mode == "active" else "https://self.example/painel" if mode == "generic" else ""
+        assert pool.public_panel_url == expected

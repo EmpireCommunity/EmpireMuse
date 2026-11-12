@@ -1,5 +1,7 @@
 > EmpireMuse é obra derivada do [MuseHeart-MusicBot](https://github.com/zRitsu/MuseHeart-MusicBot) (zRitsu), sob licença GPL-2.0.
 
+> Painel da comunidade: https://muse.empirecommunity.org/panel. Este guia descreve o genérico para hospedagem própria, disponível somente quando todas as variáveis EXTERNAL_PANEL_* estão vazias. Com o modo externo válido, /painel redireciona apenas GET/HEAD com 302 para a URL externa fixa; formulários antigos dão 404. Configuração externa inválida não cai no genérico. Na release, remover o callback OAuth antigo no portal do Discord.
+
 # Guia de Configuração e Uso do Painel Web
 
 O **EmpireMuse** possui um painel web integrado que permite a administradores gerenciarem configurações de servidores e usuários ajustarem suas preferências diretamente pelo navegador, com login oficial via Discord.

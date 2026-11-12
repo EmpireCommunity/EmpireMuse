@@ -23,7 +23,7 @@
 
 - 🤖 [Convidar o EmpireMuse 1](https://discord.com/oauth2/authorize?client_id=1149485958480285756&permissions=2533601240804560&scope=bot) para o seu servidor
 - 💬 [Servidor do Discord](https://empirecommunity.org/discord)
-- 🌐 [Página do projeto](https://muse.empirecommunity.org) (status; painel web em `/painel`)
+- 🌐 [Página do projeto](https://muse.empirecommunity.org) (site e painel em `/panel`)
 
 O repositório é público e mantido pela equipe para a comunidade EmpireHub, sem compromisso de suporte à hospedagem própria por terceiros.
 
@@ -83,6 +83,12 @@ Participe do nosso servidor oficial [Discord EmpireHUB](https://empirecommunity.
 </details>
 
 ---
+
+## Painel externo e hospedagem própria
+
+O painel da comunidade fica em [muse.empirecommunity.org/panel](https://muse.empirecommunity.org/panel), em português e inglês. Com o modo `EXTERNAL_PANEL_*` válido, a API escuta na rede interna e o painel genérico não sobe: `GET` e `HEAD /painel` (e seus subcaminhos) respondem `302` para a `EXTERNAL_PANEL_URL` validada, fixa, sem transportar caminho ou query. `POST /painel/*` responde `404`; o callback antigo nunca transfere `code` ou `state`. Os perfis do bot, a presença padrão e a página de status usam o endereço externo somente depois que o listener abre. O redirecionamento depende de `RUN_RPC_SERVER=true`, assim como a API externa; ambos continuam ligados ao servidor do relé.
+
+Com todas as variáveis `EXTERNAL_PANEL_*` vazias, o genérico abaixo continua disponível para hospedagem própria. Configuração externa inválida ou listener indisponível não ativa nenhum painel como alternativa. A confiança do IP de `/ws` e da página de status vem de `PANEL_TRUST_PROXY` e `PANEL_TRUSTED_PROXY_CIDRS`, independente do genérico. Veja a decisão no [ADR-0006](docs/adr/0006-painel-externo-e-generico.md).
 
 ## Painel Web Integrado
 
