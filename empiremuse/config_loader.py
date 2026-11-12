@@ -8,7 +8,12 @@ import disnake
 from dotenv import dotenv_values
 
 from empiremuse import paths
-from empiremuse.rules.app_profile import DEFAULT_DESCRIPTION, DEFAULT_RESERVE_DESCRIPTION, DEFAULT_TAGS
+from empiremuse.rules.app_profile import (
+    DEFAULT_DESCRIPTION,
+    DEFAULT_PANEL_PRESENCE,
+    DEFAULT_RESERVE_DESCRIPTION,
+    DEFAULT_TAGS,
+)
 from empiremuse.rules.usage import clamp_retention_days
 from empiremuse.utils import branding
 
@@ -182,7 +187,9 @@ DEFAULT_CONFIG = {
     "WATCHING_PRESENCES": "",
     "PLAYING_PRESENCES": "",
     "STREAMING_PRESENCES": "",
-    "CUSTOM_STATUS_PRESENCES": "🎵 /play ou !play | ajuda: !help||⚙️ Painel: muse.empirecommunity.org/panel||🎧 Tocando em {players_count} calls",
+    "CUSTOM_STATUS_PRESENCES": "🎵 /play ou !play | ajuda: !help||"
+    + DEFAULT_PANEL_PRESENCE
+    + "||🎧 Tocando em {players_count} calls",
     ###############
     ### Intents ###
     ###############

@@ -5,14 +5,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from empiremuse.rules.app_profile import DEFAULT_PANEL_PRESENCE, LEGACY_PANEL_PRESENCE
 from empiremuse.utils.app_profile import public_panel_url, sync_app_profile
 
 pytestmark = pytest.mark.critical
-
-
-@pytest.mark.parametrize("url", ["", "https://muse.empirecommunity.org/panel", "https://self.example/painel"])
-def test_url_usa_somente_estado_runtime(url):
-    assert public_panel_url(SimpleNamespace(public_panel_url=url)) == url
 
 
 def test_sem_servidor_nao_anuncia_url_nem_le_configuracao():
@@ -40,7 +36,7 @@ async def test_perfil_publica_o_link_novo_sem_sufixo_painel():
 
 
 @pytest.mark.parametrize("url", ["", "https://muse.empirecommunity.org/panel", "https://self.example/painel"])
-@pytest.mark.parametrize("text", ["⚙️ Painel: muse.empirecommunity.org/panel", "⚙️ Painel: {panel_url}"])
+@pytest.mark.parametrize("text", [LEGACY_PANEL_PRESENCE, DEFAULT_PANEL_PRESENCE])
 def test_presenca_compartilha_a_url_runtime_e_omite_painel_indisponivel(url, text):
     from empiremuse.cogs.misc import Misc
 

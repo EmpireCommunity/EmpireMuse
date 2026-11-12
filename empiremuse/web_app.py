@@ -116,10 +116,7 @@ class IndexHandler(tornado.web.RequestHandler):
         self.set_header("X-Frame-Options", "DENY")
         self.set_header("Referrer-Policy", "same-origin")
 
-    def initialize(
-        self, pool: Optional[BotPool] = None, config: dict = None, panel_enabled: bool = False, panel_url: str = ""
-    ):
-        self.panel_url = panel_url
+    def initialize(self, pool: Optional[BotPool] = None, config: dict = None, panel_enabled: bool = False):
         self.panel_enabled = panel_enabled
         self.pool = pool
         self.config = config
@@ -176,7 +173,7 @@ class IndexHandler(tornado.web.RequestHandler):
                 prefixo=self.pool.config["DEFAULT_PREFIX"],
                 commit=commit,
                 commit_url=f"{self.pool.remote_git_url}/commit/{commit}" if commit else "",
-                painel_url=self.panel_url or ("/painel/" if self.panel_enabled else ""),
+                painel_url=self.pool.public_panel_url,
                 generic_panel_enabled=self.panel_enabled,
                 suporte_url=branding.SUPPORT_SERVER_URL,
                 nome_bot=branding.BOT_NAME,
@@ -826,7 +823,6 @@ def run_app(pool: BotPool, config: dict = None):
                     "pool": pool,
                     "config": config,
                     "panel_enabled": panel_app is not None,
-                    "panel_url": external.panel_url,
                 },
             ),
             (

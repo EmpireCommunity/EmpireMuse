@@ -295,18 +295,39 @@ def test_b6_config_generica_invalida_nao_desliga_a_confianca_no_ip_configurada(m
     assert captured["kwargs"]["xheaders"] is True
 
 
-@pytest.mark.parametrize("mode", ["active", "blocked", "off"])
-def test_url_publicada_so_depois_do_listener_aberto(monkeypatch, mode):
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    ("mode", "bind_fails"),
+    [("active", False), ("blocked", False), ("off", False), ("generic", False), ("active", True), ("generic", True)],
+)
+def test_url_publicada_so_depois_do_listener_aberto(monkeypatch, mode, bind_fails):
     from empiremuse.api.runtime import ExternalApiStatus
 
-    url = "https://muse.empirecommunity.org/panel"
+    external_url = "https://muse.empirecommunity.org/panel"
     status = (
-        ExternalApiStatus(server=object(), panel_url=url)
+        ExternalApiStatus(server=object(), panel_url=external_url)
         if mode == "active"
         else ExternalApiStatus(blocked=mode == "blocked")
     )
-    pool = SimpleNamespace(database=None)
+    pool = SimpleNamespace(database=None, public_panel_url="https://stale.example")
+    panel_app = object() if mode == "generic" else None
     monkeypatch.setattr("empiremuse.api.runtime.start_external_api", lambda *args: status)
-    monkeypatch.setattr(web_app.tornado.httpserver, "HTTPServer", lambda *args, **kwargs: MagicMock())
-    web_app.run_app(pool, config={"PORT": "6000"})
-    assert pool.public_panel_url == (url if mode == "active" else "")
+    monkeypatch.setattr(web_app, "_build_panel", lambda *args: panel_app)
+
+    def listen(*args, **kwargs):
+        assert pool.public_panel_url == ""  # nada anunciado antes de o bind ter sucesso
+        if bind_fails:
+            raise OSError("port unavailable")
+
+    monkeypatch.setattr(
+        web_app.tornado.httpserver, "HTTPServer", lambda *args, **kwargs: SimpleNamespace(listen=listen)
+    )
+    config = {"PORT": "6000", "PANEL_BASE_URL": "https://self.example"}
+    if bind_fails:
+        with pytest.raises(OSError, match="port unavailable"):
+            web_app.run_app(pool, config=config)
+        assert pool.public_panel_url == ""
+    else:
+        assert web_app.run_app(pool, config=config) is panel_app
+        expected = external_url if mode == "active" else "https://self.example/painel" if mode == "generic" else ""
+        assert pool.public_panel_url == expected
