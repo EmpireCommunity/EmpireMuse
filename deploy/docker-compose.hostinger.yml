@@ -151,7 +151,7 @@ services:
       LISTENING_PRESENCES: ""
       WATCHING_PRESENCES: ""
       PLAYING_PRESENCES: ""
-      CUSTOM_STATUS_PRESENCES: "🎵 /play ou !play | ajuda: !help||⚙️ Painel: muse.empirecommunity.org/painel||🎧 Tocando em {players_count} calls"
+      CUSTOM_STATUS_PRESENCES: "🎵 /play ou !play | ajuda: !help||⚙️ Painel: muse.empirecommunity.org/panel||🎧 Tocando em {players_count} calls"
       STREAMING_PRESENCES: ""
     volumes:
       - empiremuse-data:/data

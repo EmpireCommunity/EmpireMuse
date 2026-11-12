@@ -27,10 +27,13 @@ class ExternalPanelRedirectHandler(tornado.web.RequestHandler):
         self.get()
 
     def write_error(self, status_code: int, **kwargs) -> None:
+        self.set_status(404, reason="Not Found")
         self.set_header("Content-Type", "text/plain; charset=utf-8")
         self.finish("Not Found")
 
     def log_exception(self, typ, value, tb) -> None:
+        if isinstance(value, tornado.web.HTTPError):
+            return
         logger.error("Falha no redirecionamento do painel (%s).", typ.__name__)
 
 

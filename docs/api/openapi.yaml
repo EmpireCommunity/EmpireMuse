@@ -132,7 +132,7 @@ paths:
       operationId: getStatus
       summary: Estado dos bots para a página de status do painel
       description: |
-        **Aditivo na v1.** O que a página de status do painel genérico já mostra, **sem dado novo e sem dado pessoal**: o estado
+        **Aditivo na v1.** O que a página de status do bot já mostra, **sem dado novo e sem dado pessoal**: o estado
         geral, o nome e o número de servidores de cada bot pronto, a contagem de bots pendentes e com falha, a versão e o commit.
         Chave de serviço, **sem sessão**, só leitura. Gasta o balde de leitura da chave: o painel faz uma chamada a cada 15 s, no
         máximo (cache e chamada única em voo).

@@ -122,7 +122,7 @@ def test_n3_bot_sobe_e_toca_run_app_com_configuracao_externa_invalida_nao_sobe_o
 
 def test_painel_generico_segue_como_antes_sem_nenhuma_variavel_externa(monkeypatch):
     chamado = []
-    monkeypatch.setattr(web_app, "_build_panel", lambda pool, config: chamado.append(1) or (None, False, ()))
+    monkeypatch.setattr(web_app, "_build_panel", lambda pool, config, networks: chamado.append(1))
     monkeypatch.setattr(web_app.tornado.httpserver, "HTTPServer", lambda *a, **k: MagicMock())
 
     web_app.run_app(MagicMock(), config={"PORT": "6000"})
@@ -293,3 +293,20 @@ def test_b6_config_generica_invalida_nao_desliga_a_confianca_no_ip_configurada(m
     assert web_app.run_app(SimpleNamespace(database=None), config=config) is None
     assert captured["router"].trust_proxy is True
     assert captured["kwargs"]["xheaders"] is True
+
+
+@pytest.mark.parametrize("mode", ["active", "blocked", "off"])
+def test_url_publicada_so_depois_do_listener_aberto(monkeypatch, mode):
+    from empiremuse.api.runtime import ExternalApiStatus
+
+    url = "https://muse.empirecommunity.org/panel"
+    status = (
+        ExternalApiStatus(server=object(), panel_url=url)
+        if mode == "active"
+        else ExternalApiStatus(blocked=mode == "blocked")
+    )
+    pool = SimpleNamespace(database=None)
+    monkeypatch.setattr("empiremuse.api.runtime.start_external_api", lambda *args: status)
+    monkeypatch.setattr(web_app.tornado.httpserver, "HTTPServer", lambda *args, **kwargs: MagicMock())
+    web_app.run_app(pool, config={"PORT": "6000"})
+    assert pool.public_panel_url == (url if mode == "active" else "")

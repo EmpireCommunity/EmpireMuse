@@ -106,7 +106,9 @@ def load_session_limits(config: Mapping[str, Any]) -> PanelSettings:
     )
 
 
-def load_panel_settings(config: Mapping[str, Any]) -> PanelSettings:
+def load_panel_settings(
+    config: Mapping[str, Any], *, trusted_proxy_networks: tuple[IPNetwork, ...] | None = None
+) -> PanelSettings:
     """Monta e valida ``PanelSettings``. Com o painel desligado nada além do tipo é validado."""
     if not config.get("PANEL_ENABLED", False):
         return PanelSettings(enabled=False)
@@ -119,9 +121,11 @@ def load_panel_settings(config: Mapping[str, Any]) -> PanelSettings:
     if not oauth_secret:
         raise PanelConfigError("PANEL_OAUTH_CLIENT_SECRET é obrigatório com o painel ativo.")
 
-    networks, cidr_warnings = parse_trusted_proxy_cidrs(config.get("PANEL_TRUSTED_PROXY_CIDRS"))
-    for warning in cidr_warnings:
-        logger.warning("%s", warning)
+    networks = trusted_proxy_networks
+    if networks is None:
+        networks, cidr_warnings = parse_trusted_proxy_cidrs(config.get("PANEL_TRUSTED_PROXY_CIDRS"))
+        for warning in cidr_warnings:
+            logger.warning("%s", warning)
 
     limits = load_session_limits(config)
     return PanelSettings(

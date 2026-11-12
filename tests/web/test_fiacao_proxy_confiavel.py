@@ -1,4 +1,4 @@
-"""Fiação de ``PANEL_TRUSTED_PROXY_CIDRS``: ``_build_panel`` guarda a lista e ``run_app`` a entrega ao ``ClientIpRouter``."""
+"""Fiação de ``PANEL_TRUSTED_PROXY_CIDRS``: ``run_app`` entrega a mesma lista ao painel e ao ``ClientIpRouter``."""
 
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -17,18 +17,19 @@ def test_build_panel_devolve_a_lista_configurada(monkeypatch) -> None:
     import empiremuse.panel as panel
     from tests.panel.helpers import local_config
 
-    monkeypatch.setattr(panel, "build_panel_app", lambda pool, settings: object())
+    capturado = []
+    monkeypatch.setattr(panel, "build_panel_app", lambda pool, settings: capturado.append(settings) or object())
     config = local_config(PANEL_TRUST_PROXY=True, PANEL_TRUSTED_PROXY_CIDRS="192.0.2.0/24")
 
-    app, trust_proxy, redes = web_app._build_panel(MagicMock(), config)
+    app = web_app._build_panel(MagicMock(), config, REDES)
 
-    assert app is not None and trust_proxy is True and redes == REDES
+    assert app is not None and capturado[0].trusted_proxy_networks is REDES
 
 
 def test_build_panel_com_configuracao_invalida_nao_confia_em_ninguem(monkeypatch) -> None:
-    app, trust_proxy, redes = web_app._build_panel(MagicMock(), {"PANEL_ENABLED": True, "PANEL_BASE_URL": "lixo"})
+    app = web_app._build_panel(MagicMock(), {"PANEL_ENABLED": True, "PANEL_BASE_URL": "lixo"}, REDES)
 
-    assert (app, trust_proxy, redes) == (None, False, ())
+    assert app is None
 
 
 @pytest.mark.parametrize(
@@ -45,9 +46,7 @@ def test_run_app_entrega_a_lista_e_o_xheaders_ao_servidor(monkeypatch, painel_at
             capturado["porta"] = porta
 
     monkeypatch.setattr(web_app.tornado.httpserver, "HTTPServer", ServidorFalso)
-    monkeypatch.setattr(
-        web_app, "_build_panel", lambda pool, config: (object() if painel_ativo else None, confia, REDES)
-    )
+    monkeypatch.setattr(web_app, "_build_panel", lambda pool, config, networks: object() if painel_ativo else None)
     monkeypatch.setattr(web_app, "make_router", lambda app, panel: app)
     monkeypatch.setenv("PORT", "18080")
 
@@ -58,3 +57,15 @@ def test_run_app_entrega_a_lista_e_o_xheaders_ao_servidor(monkeypatch, painel_at
     assert isinstance(roteador, web_app.ClientIpRouter)
     assert roteador.trusted_networks == REDES and roteador.trust_proxy is esperado
     assert capturado["kwargs"]["xheaders"] is esperado
+
+
+def test_cidrs_invalidos_avisam_uma_vez_com_generico_ativo(monkeypatch, caplog):
+    from tests.panel.helpers import local_config
+
+    monkeypatch.setattr("empiremuse.panel.build_panel_app", lambda *args: object())
+    monkeypatch.setattr(web_app, "make_router", lambda app, panel: app)
+    monkeypatch.setattr(web_app.tornado.httpserver, "HTTPServer", lambda *args, **kwargs: MagicMock())
+    config = local_config(PORT="6000", PANEL_TRUSTED_PROXY_CIDRS="192.0.2.0/24,invalid")
+    web_app.run_app(SimpleNamespace(database=None), config=config)
+    warnings = [record for record in caplog.records if "CIDR" in record.message]
+    assert len(warnings) == 1

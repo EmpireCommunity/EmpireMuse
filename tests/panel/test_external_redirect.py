@@ -38,14 +38,16 @@ class ExternalRedirectTest(AsyncHTTPTestCase):
                 assert b"segredo" not in response.body and b"evil.example" not in response.body
 
     def test_post_e_outros_metodos_nao_redirecionam_nem_executam_o_generico(self):
-        for method in ("POST", "PUT", "PATCH", "DELETE", "OPTIONS"):
+        for method in ("POST", "PUT", "PATCH", "DELETE", "OPTIONS", "PROPFIND", "TRACE", "CONNECT"):
             response = self.fetch(
                 "/painel/callback?code=segredo",
                 method=method,
                 body="code=corpo" if method in ("POST", "PUT", "PATCH") else None,
                 follow_redirects=False,
+                allow_nonstandard_methods=True,
             )
             assert response.code == 404
+            assert response.reason == "Not Found" and response.body == b"Not Found"
             assert "Location" not in response.headers and "Set-Cookie" not in response.headers
             assert b"segredo" not in response.body and b"corpo" not in response.body
 
@@ -62,3 +64,15 @@ class ExternalRedirectTest(AsyncHTTPTestCase):
             self.fetch("/painel/callback?code=segredo&state=outro", follow_redirects=False)
         assert logged.called
         assert "segredo" not in str(logged.call_args_list) and "outro" not in str(logged.call_args_list)
+
+    def test_http_errors_nao_geram_error_mas_excecoes_inesperadas_sim(self):
+        from unittest.mock import patch
+
+        from empiremuse.panel.redirect import ExternalPanelRedirectHandler, logger
+
+        with patch.object(logger, "error") as logged:
+            self.fetch("/painel/callback?code=segredo", method="POST", body="")
+            logged.assert_not_called()
+            ExternalPanelRedirectHandler.log_exception(None, RuntimeError, RuntimeError("segredo"), None)
+            logged.assert_called_once()
+            assert "segredo" not in str(logged.call_args)

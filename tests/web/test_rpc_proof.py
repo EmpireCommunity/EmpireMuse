@@ -756,7 +756,7 @@ async def test_run_app_gives_the_route_the_trusted_proxy_flag_so_the_budget_is_p
     from empiremuse.rules.client_ip import parse_trusted_proxy_cidrs
 
     redes = parse_trusted_proxy_cidrs("127.0.0.0/8")[0]  # o par do teste (127.0.0.1) é o proxy confiável
-    monkeypatch.setattr(web_app, "_build_panel", lambda pool, config: (object(), True, redes))
+    monkeypatch.setattr(web_app, "_build_panel", lambda pool, config, networks: object())
     monkeypatch.setattr(web_app, "make_router", lambda app, panel: app)
     servidor = iniciar_servidor(
         {

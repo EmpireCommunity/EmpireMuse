@@ -20,6 +20,7 @@ from empiremuse.i18n import localized
 from empiremuse.rules.text import format_int, format_mib
 from empiremuse.rules.bot_tokens import is_radio_only_identifier
 from empiremuse.rules.bot_roles import Peer, invite_order, main_missing_notice, notifier
+from empiremuse.utils.app_profile import public_panel_url
 from empiremuse.utils import branding
 from empiremuse.utils.branding import asset_url
 from empiremuse.utils.db import DBModel
@@ -55,6 +56,13 @@ class Misc(commands.Cog):
     def placeholders(self, text: str):
         if not text:
             return ""
+
+        if "{panel_url}" in text or "muse.empirecommunity.org/panel" in text:
+            panel_url = public_panel_url(self.bot.pool)
+            if not panel_url:
+                return ""
+            # Compatibilidade com a presença padrão já copiada nos deploys; URLs personalizadas permanecem literais.
+            text = text.replace("muse.empirecommunity.org/panel", "{panel_url}").replace("{panel_url}", panel_url)
 
         try:
             text = text.replace("{owner}", str(self.bot.owner))
