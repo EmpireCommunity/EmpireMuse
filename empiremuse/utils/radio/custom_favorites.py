@@ -137,3 +137,15 @@ class CustomFavorites:
             if await self._write(key, doc, [i for i in current if i != station_id], user_id, read_at):
                 return True
         raise RadioUnavailable
+
+    async def clear(self, guild_id: int, user_id: int) -> bool:
+        """Esvazia as favoritas do membro neste servidor (o Limpar do Discord); ``False`` se já estava vazia."""
+        key = self._key(guild_id, user_id)
+        read_at = self._read_at()
+        for _ in range(CAS_ATTEMPTS):
+            doc = await self._find(key)
+            if not self._ids(doc):
+                return False
+            if await self._write(key, doc, [], user_id, read_at):
+                return True
+        raise RadioUnavailable
