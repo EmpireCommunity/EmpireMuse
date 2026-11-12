@@ -54,3 +54,22 @@ def test_presenca_compartilha_a_url_runtime_e_omite_painel_indisponivel(url, tex
         uptime=datetime(2026, 1, 1, tzinfo=timezone.utc),
     )
     assert Misc.placeholders(SimpleNamespace(bot=bot), text) == (f"⚙️ Painel: {url}" if url else "")
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    "text", ["⚙️ Painel: https://muse.empirecommunity.org/panel", "Visite muse.empirecommunity.org/panel/docs"]
+)
+@pytest.mark.parametrize("url", ["", "https://other.example/panel"])
+def test_presenca_personalizada_preserva_url_literal(text, url):
+    from datetime import datetime, timezone
+    from empiremuse.cogs.misc import Misc
+
+    bot = SimpleNamespace(
+        pool=SimpleNamespace(public_panel_url=url),
+        users=[],
+        music=SimpleNamespace(players={}),
+        guilds=[],
+        uptime=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+    assert Misc.placeholders(SimpleNamespace(bot=bot), text) == text

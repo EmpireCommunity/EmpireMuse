@@ -57,12 +57,14 @@ class Misc(commands.Cog):
         if not text:
             return ""
 
-        if "{panel_url}" in text or "muse.empirecommunity.org/panel" in text:
+        # Compatibilidade somente com o texto padrão copiado nos deploys; URLs personalizadas são literais.
+        if text == "⚙️ Painel: muse.empirecommunity.org/panel":
+            text = "⚙️ Painel: {panel_url}"
+        if "{panel_url}" in text:
             panel_url = public_panel_url(self.bot.pool)
             if not panel_url:
                 return ""
-            # Compatibilidade com a presença padrão já copiada nos deploys; URLs personalizadas permanecem literais.
-            text = text.replace("muse.empirecommunity.org/panel", "{panel_url}").replace("{panel_url}", panel_url)
+            text = text.replace("{panel_url}", panel_url)
 
         try:
             text = text.replace("{owner}", str(self.bot.owner))
