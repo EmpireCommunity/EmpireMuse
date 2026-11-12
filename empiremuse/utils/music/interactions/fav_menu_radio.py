@@ -129,7 +129,7 @@ class FavMenuRadioMixin:
                 self.tr("radio.favorites.retry.label"),
                 "🔄",
                 self.radio_retry_callback,
-                custom_id="user_fav_radio_retry",
+                custom_id=f"user_fav_radio_retry:{self._custom_id_suffix}",
             )
         elif self.radio_refs_page:
             if self.radio_refs_unavailable:
@@ -137,7 +137,7 @@ class FavMenuRadioMixin:
                     self.tr("radio.favorites.retry.label"),
                     "🔄",
                     self.radio_retry_callback,
-                    custom_id="user_fav_radio_retry",
+                    custom_id=f"user_fav_radio_retry:{self._custom_id_suffix}",
                 )
             self._add_radio_ref_select()
             add = self._add_button
@@ -146,27 +146,32 @@ class FavMenuRadioMixin:
                 self.tr("radio.favorites.remove_ref.label"),
                 "♻️",
                 self.radio_remove_ref_callback,
-                custom_id="user_fav_radio_remove_ref",
+                custom_id=f"user_fav_radio_remove_ref:{self._custom_id_suffix}",
                 disabled=no_refs,
             )
             add(
                 self.tr("radio.favorites.clear_refs.label"),
                 "🚮",
                 self.radio_clear_refs_callback,
-                custom_id="user_fav_radio_clear_refs",
+                custom_id=f"user_fav_radio_clear_refs:{self._custom_id_suffix}",
                 disabled=no_refs,
             )
             add(
                 self.tr("radio.favorites.back.label"),
                 "↩️",
                 self.radio_toggle_refs_callback,
-                custom_id="user_fav_radio_back",
+                custom_id=f"user_fav_radio_back:{self._custom_id_suffix}",
             )
         else:
             self._add_radio_station_select()
             self._add_radio_filter_select()
             self._add_radio_buttons()
-        self._add_button(self.tr("fav.close.label"), "❌", self.cancel_callback, custom_id="user_fav_radio_close")
+        self._add_button(
+            self.tr("fav.close.label"),
+            "❌",
+            self.cancel_callback,
+            custom_id=f"user_fav_radio_close:{self._custom_id_suffix}",
+        )
 
     def _add_radio_station_select(self) -> None:
         if not self.radio_stations:
@@ -187,7 +192,7 @@ class FavMenuRadioMixin:
             options=options,
             min_values=1,
             max_values=1,
-            custom_id="user_fav_radio_station_select",
+            custom_id=f"user_fav_radio_station_select:{self._custom_id_suffix}",
             placeholder=fit(self.tr("radio.favorites.stations.placeholder"), PLACEHOLDER_LIMIT),
         )
         select.callback = self.radio_select_station_callback
@@ -207,7 +212,7 @@ class FavMenuRadioMixin:
             options=options,
             min_values=1,
             max_values=1,
-            custom_id="user_fav_radio_filter_select",
+            custom_id=f"user_fav_radio_filter_select:{self._custom_id_suffix}",
             placeholder=fit(self.tr("radio.favorites.filters.placeholder"), PLACEHOLDER_LIMIT),
         )
         select.callback = self.radio_select_filter_callback
@@ -232,7 +237,7 @@ class FavMenuRadioMixin:
             options=options,
             min_values=1,
             max_values=1,
-            custom_id="user_fav_radio_ref_select",
+            custom_id=f"user_fav_radio_ref_select:{self._custom_id_suffix}",
             placeholder=fit(self.tr("radio.favorites.refs.placeholder"), PLACEHOLDER_LIMIT),
         )
         select.callback = self.radio_select_ref_callback
@@ -246,28 +251,28 @@ class FavMenuRadioMixin:
             tr("radio.favorites.remove_station.label"),
             "♻️",
             self.radio_remove_station_callback,
-            custom_id="user_fav_radio_remove_station",
+            custom_id=f"user_fav_radio_remove_station:{self._custom_id_suffix}",
             disabled=no_stations,
         )
         add(
             tr("radio.favorites.clear_stations.label"),
             "🚮",
             self.radio_clear_stations_callback,
-            custom_id="user_fav_radio_clear_stations",
+            custom_id=f"user_fav_radio_clear_stations:{self._custom_id_suffix}",
             disabled=no_stations,
         )
         add(
             tr("radio.favorites.remove_filter.label"),
             "♻️",
             self.radio_remove_filter_callback,
-            custom_id="user_fav_radio_remove_filter",
+            custom_id=f"user_fav_radio_remove_filter:{self._custom_id_suffix}",
             disabled=no_filters,
         )
         add(
             tr("radio.favorites.clear_filters.label"),
             "🚮",
             self.radio_clear_filters_callback,
-            custom_id="user_fav_radio_clear_filters",
+            custom_id=f"user_fav_radio_clear_filters:{self._custom_id_suffix}",
             disabled=no_filters,
         )
         if self._radio_guild_id() is not None:
@@ -275,7 +280,7 @@ class FavMenuRadioMixin:
                 tr("radio.favorites.refs.label"),
                 "🎼",
                 self.radio_toggle_refs_callback,
-                custom_id="user_fav_radio_open_refs",
+                custom_id=f"user_fav_radio_open_refs:{self._custom_id_suffix}",
             )
 
     # ------------------------------------------------------------------ texto

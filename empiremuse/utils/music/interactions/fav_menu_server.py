@@ -11,6 +11,7 @@ Gancho (cogs/radio.py, de quem é o comando): ``await open_server_favorites(inte
 
 from __future__ import annotations
 
+import secrets
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
@@ -75,6 +76,7 @@ class ServerRadioFavoritesView(disnake.ui.View):
         refs: Sequence[tuple[str, str]] | None = (),
     ) -> None:
         super().__init__(timeout=VIEW_TIMEOUT_S)
+        self._custom_id_suffix = secrets.token_hex(8)  # único por view efêmera, inclusive sem message_id
         self.pool, self.inter, self.tr, self.guild_id = pool, inter, tr, guild_id
         self.author_id = inter.author.id
         self.stations = list(stations)
@@ -138,7 +140,7 @@ class ServerRadioFavoritesView(disnake.ui.View):
         button = disnake.ui.Button(
             label=fit(label, 80),
             emoji=emoji,
-            custom_id="guild_fav_radio_" + callback.__name__.removesuffix("_callback"),
+            custom_id=f"guild_fav_radio_{callback.__name__.removesuffix('_callback')}:{self._custom_id_suffix}",
             **kwargs,
         )
         button.callback = callback
@@ -162,7 +164,7 @@ class ServerRadioFavoritesView(disnake.ui.View):
             for value, label, emoji in entries
         ]
         select = disnake.ui.Select(
-            custom_id="guild_fav_radio_select",
+            custom_id=f"guild_fav_radio_select:{self._custom_id_suffix}",
             options=options,
             min_values=1,
             max_values=1,

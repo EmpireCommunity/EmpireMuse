@@ -150,7 +150,9 @@ async def test_radio_mode_in_an_ephemeral_message_lists_and_offers_only_remove_a
         tr("fav.close.label"),
     ]
     assert view.mode == ViewMode.radio_favorites
-    assert all(getattr(c, "custom_id", "") != "favmanager_play_button" for c in view.children)  # sem Tocar (J2a)
+    assert all(
+        not getattr(c, "custom_id", "").startswith("favmanager_play_button") for c in view.children
+    )  # sem Tocar (J2a)
 
 
 async def test_radio_mode_in_a_public_message_opens_a_new_ephemeral_one_and_leaves_the_public_one_alone(world):
@@ -733,3 +735,73 @@ async def test_member_ref_label_failure_preserves_live_filters_and_retry(
     monkeypatch.setattr(world.hub.stations, "get", original)
     await view.radio_retry_callback(FakeInter(MEMBER))
     assert not view.radio_refs_unavailable and view.radio_refs == [(custom, "Queen Rock")]
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize("kind", ["personal", "server", "favorites", "integrations"])
+@pytest.mark.parametrize("other_user", [MEMBER, OTHER_MEMBER], ids=["mesmo-membro", "outro-membro"])
+async def test_concurrent_views_dispatch_to_their_own_view_in_one_store(world, kind, other_user):
+    import asyncio
+
+    from disnake.ui.view import ViewStore
+
+    views = []
+    for user in (MEMBER, other_user):
+        ctx = FakeInter(user)
+        if kind == "server":
+            view = ServerRadioFavoritesView(
+                pool=world.pool, inter=ctx, tr=world.tr, guild_id=GUILD, stations=[station(1), station(2)]
+            )
+            view.update_components()
+        elif kind == "personal":
+            view = menu(world, ctx, mode=ViewMode.radio_favorites, radio_private=True)
+            view.radio_stations = [station(1), station(2)]
+            view.update_components()
+        else:
+            mode = ViewMode.fav_manager if kind == "favorites" else ViewMode.integrations_manager
+            view = menu(world, ctx, mode=mode)
+            view.data["fav_links" if kind == "favorites" else "integration_links"] = {"Test": "https://example.com"}
+            view.play_callback = AsyncMock()
+            view._add_play_button()
+        views.append(view)
+
+    store = ViewStore(SimpleNamespace())
+    try:
+        for view in views:
+            store.add_view(view)  # registro efêmero inicial, sem message_id
+
+        # Use os callbacks reais de seleção; no Tocar, só o destino do dispatch interessa.
+        for index, view in enumerate(views):
+            item = next(
+                (
+                    child
+                    for child in view.children
+                    if child.custom_id.startswith(("user_fav_radio_station_select", "guild_fav_radio_select"))
+                ),
+                view.children[0],
+            )
+            inter = FakeInter(view.ctx.author.id if kind != "server" else view.author_id, values=[uuid(2)])
+            inter.resolved_values = inter.values
+            inter.message.id = 100 + index
+            inter.data = SimpleNamespace(component_type=item.type, custom_id=item.custom_id, values=[uuid(2)])
+            store.dispatch(inter)
+            await asyncio.gather(
+                *(task for task in asyncio.all_tasks() if task.get_name().startswith("disnake-ui-view-dispatch-"))
+            )
+            if kind in ("personal", "server"):
+                selected = "current_station" if kind == "personal" else "current"
+                assert getattr(view, selected) == uuid(2)
+                if index == 0:
+                    assert getattr(views[1], selected) == uuid(1)
+                assert inter.calls_named("defer") == [{}]
+            else:
+                view.play_callback.assert_awaited_once_with(inter)
+                if index == 0:
+                    views[1].play_callback.assert_not_awaited()
+
+        assert {child.custom_id for child in views[0].children}.isdisjoint(
+            child.custom_id for child in views[1].children
+        )
+    finally:
+        for view in views:
+            view.stop()
