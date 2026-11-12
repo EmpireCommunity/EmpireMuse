@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from empiremuse.rules.app_profile import DEFAULT_PANEL_PRESENCE, LEGACY_PANEL_PRESENCE
+from empiremuse.rules.app_profile import DEFAULT_PANEL_PRESENCE, LEGACY_PANEL_PRESENCES
 from empiremuse.utils.app_profile import public_panel_url, sync_app_profile
 
 pytestmark = pytest.mark.critical
@@ -36,7 +36,7 @@ async def test_perfil_publica_o_link_novo_sem_sufixo_painel():
 
 
 @pytest.mark.parametrize("url", ["", "https://muse.empirecommunity.org/panel", "https://self.example/painel"])
-@pytest.mark.parametrize("text", [LEGACY_PANEL_PRESENCE, DEFAULT_PANEL_PRESENCE])
+@pytest.mark.parametrize("text", [*LEGACY_PANEL_PRESENCES, DEFAULT_PANEL_PRESENCE])
 def test_presenca_compartilha_a_url_runtime_e_omite_painel_indisponivel(url, text):
     from empiremuse.cogs.misc import Misc
 
@@ -54,7 +54,13 @@ def test_presenca_compartilha_a_url_runtime_e_omite_painel_indisponivel(url, tex
 
 @pytest.mark.regression
 @pytest.mark.parametrize(
-    "text", ["⚙️ Painel: https://muse.empirecommunity.org/panel", "Visite muse.empirecommunity.org/panel/docs"]
+    "text",
+    [
+        "⚙️ Painel: https://muse.empirecommunity.org/panel",
+        "Visite muse.empirecommunity.org/panel/docs",
+        "⚙️ Painel: https://muse.empirecommunity.org/painel",
+        "Visite muse.empirecommunity.org/painel/docs",
+    ],
 )
 @pytest.mark.parametrize("url", ["", "https://other.example/panel"])
 def test_presenca_personalizada_preserva_url_literal(text, url):

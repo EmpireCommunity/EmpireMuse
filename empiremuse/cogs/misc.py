@@ -17,7 +17,7 @@ from disnake.ext import commands
 
 from empiremuse import paths
 from empiremuse.i18n import localized
-from empiremuse.rules.app_profile import DEFAULT_PANEL_PRESENCE, LEGACY_PANEL_PRESENCE
+from empiremuse.rules.app_profile import DEFAULT_PANEL_PRESENCE, LEGACY_PANEL_PRESENCES
 from empiremuse.rules.text import format_int, format_mib
 from empiremuse.rules.bot_tokens import is_radio_only_identifier
 from empiremuse.rules.bot_roles import Peer, invite_order, main_missing_notice, notifier
@@ -59,7 +59,7 @@ class Misc(commands.Cog):
             return ""
 
         # Compatibilidade somente com o texto padrão copiado nos deploys; URLs personalizadas são literais.
-        if text == LEGACY_PANEL_PRESENCE:
+        if text in LEGACY_PANEL_PRESENCES:
             text = DEFAULT_PANEL_PRESENCE
         if "{panel_url}" in text:
             panel_url = public_panel_url(self.bot.pool)
