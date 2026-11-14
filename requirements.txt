@@ -4,7 +4,7 @@ user_agent
 requests>=2.31.0
 pymongo>=4.13
 tinymongo[serialization]
-dnspython>=2.6.1
+dnspython>=2.9.2
 psutil
 aiofiles
 empiremuse-jishaku @ https://github.com/EmpireCommunity/EmpireMuse-jishaku/releases/download/v2.6.6.post3/empiremuse_jishaku-2.6.6.post3-py3-none-any.whl
