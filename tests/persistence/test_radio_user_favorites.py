@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from empiremuse.utils.user_locks import UserLocks
 from empiremuse.utils.erasure import ErasureTombstones
 
 from empiremuse.utils.radio import RadioHub
@@ -31,7 +32,7 @@ class MemoryDb(FakeDb):
 @pytest.fixture
 def world():
     db = MemoryDb()
-    hub = RadioHub(SimpleNamespace(database=db, erasure_tombstones=ErasureTombstones()))
+    hub = RadioHub(SimpleNamespace(database=db, erasure_tombstones=ErasureTombstones(), user_locks=UserLocks()))
     hub.directory = SimpleNamespace(
         by_uuid_strict=AsyncMock(
             side_effect=lambda value: station(int(value[-12:]), "@everyone https://evil.example Rádio")

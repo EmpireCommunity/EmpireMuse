@@ -52,7 +52,7 @@ def test_nome_fora_do_padrao_exato_nunca_vence(nome: str) -> None:
         ("", 183, False),
         ("  ", 183, False),
         (183, 183, False),
-        ("30", 30, False),
+        ("30", 30, True),
         (" 730 ", 730, False),
         ("abc", 183, True),
         ("1.5", 183, True),
@@ -68,3 +68,11 @@ def test_parse_retention_days(bruto: object, dias: int, avisa: bool) -> None:
 
     assert resultado == dias
     assert (aviso is not None) is avisa
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize("days", [30, 182])
+def test_short_retention_warns_without_changing_the_operators_value(days):
+    actual, warning = parse_retention_days(days)
+    assert actual == days
+    assert warning and "183" in warning

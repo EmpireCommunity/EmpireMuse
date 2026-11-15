@@ -107,7 +107,7 @@ class EraseBase(HttpBase):
         calls = []
         locks = self.pool.user_locks
 
-        async def erase_user(user_id, *, source):
+        async def erase_user(user_id, *, source, still_valid=None):
             calls.append((user_id, source, locks.lock(user_id).locked()))
             outcome = handlers["outcome"]
             if isinstance(outcome, Exception):
@@ -378,7 +378,7 @@ def test_erase_user_that_takes_the_user_lock_itself_completes_through_the_servic
         pool = SimpleNamespace(user_locks=UserLocks())
         done = []
 
-        async def erase_user(user_id, *, source):
+        async def erase_user(user_id, *, source, still_valid=None):
             async with pool.user_locks.lock(user_id):  # como o ``erase_user`` real: pega o lock sozinho
                 done.append((user_id, source))
             return ErasureReport(ErasureStatus.OK, {}, ())
@@ -390,3 +390,28 @@ def test_erase_user_that_takes_the_user_lock_itself_completes_through_the_servic
 
     outcome, done = asyncio.run(scenario())
     assert outcome.erased and done == [(7, "panel")]
+
+
+class RevokedAtLockTest(EraseBase):
+    @pytest.mark.regression
+    def test_session_revoked_at_lock_renders_401_without_redirecting_the_form(self):
+        from contextlib import asynccontextmanager
+
+        browser = self.logged_in()
+        locks = self.pool.user_locks
+
+        @asynccontextmanager
+        async def revoked_lock(user):
+            async with locks.lock(user):
+                self.pool.panel_sessions.destroy_user(str(user))
+                yield
+
+        self.pool.user_locks = SimpleNamespace(lock=revoked_lock)
+        response = self.post_erase(browser)
+        assert response.code == 401 and "Location" not in response.headers
+        body = response.body.decode()
+        assert "Sessão encerrada" in body and "Entre novamente" in body
+        assert "form-apagar" not in body and "O que será apagado" not in body
+        assert "Nada é apagado" not in body
+        assert self.stored(UID) and self.stored_queue(UID)
+        assert not self.pool.erasure._global_runs

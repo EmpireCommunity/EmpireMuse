@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from empiremuse.utils.user_locks import UserLocks
 from empiremuse.utils.erasure import ErasureTombstones
 
 from empiremuse.utils.radio import RadioHub
@@ -46,7 +47,7 @@ def perms(manager: bool = True):
 @pytest.fixture
 def world():
     db = FakeDb()
-    pool = SimpleNamespace(database=db, erasure_tombstones=ErasureTombstones(), **vars(perms()))
+    pool = SimpleNamespace(database=db, erasure_tombstones=ErasureTombstones(), user_locks=UserLocks(), **vars(perms()))
     hub = RadioHub(pool)
     hub.directory = SimpleNamespace(by_uuid_strict=AsyncMock(side_effect=lambda value: station(int(value[-12:]))))
     hub.locations = SimpleNamespace(node=lambda value: object() if value.startswith("node:") else None)

@@ -24,7 +24,14 @@ import hashlib
 from typing import Any
 
 from empiremuse.api.data import DataHandler
-from empiremuse.api.errors import BOT_UNAVAILABLE, REAUTH_REQUIRED, ApiError, rate_limited, validation_failed
+from empiremuse.api.errors import (
+    BOT_UNAVAILABLE,
+    REAUTH_REQUIRED,
+    SESSION_EXPIRED,
+    ApiError,
+    rate_limited,
+    validation_failed,
+)
 from empiremuse.panel.services.account_erase import CONFIRMATION_WORD, AccountEraseService, EraseOutcome, EraseResult
 from empiremuse.panel.services.tokens import TOKEN_TTL_SECONDS
 from empiremuse.rules.erasure import login_is_recent
@@ -98,7 +105,7 @@ class ErasureRunHandler(ErasureHandler):
         tokens.consume(
             confirm_token
         )  # sem ``await`` entre o ``check`` e o ``consume``: dois pedidos não gastam o mesmo token
-        outcome = await AccountEraseService.run(self.ctx.pool, user_id=user_id)
+        outcome = await AccountEraseService.run(self.ctx.pool, user_id=user_id, still_valid=self.session_alive)
         self._respond(outcome)
 
     @staticmethod
@@ -117,6 +124,8 @@ class ErasureRunHandler(ErasureHandler):
         return token, typed  # type: ignore[return-value]
 
     def _respond(self, outcome: EraseOutcome) -> None:
+        if outcome.result is EraseResult.SESSION_REVOKED:
+            raise ApiError(401, SESSION_EXPIRED)
         if outcome.result is EraseResult.RATE_LIMITED:
             raise rate_limited(outcome.retry_after_s)
         if outcome.result is EraseResult.UNAVAILABLE:

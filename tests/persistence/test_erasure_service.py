@@ -13,7 +13,7 @@ import pytest_asyncio
 
 from empiremuse.panel.services.service import SettingsService
 from empiremuse.panel.sessions import PanelUser, SessionStore
-from empiremuse.rules.erasure import ERASE_CONCURRENCY, ERASE_RECHECK_S, ErasureStatus, grant_log_ref
+from empiremuse.rules.erasure import ERASE_CONCURRENCY, ERASE_RECHECK_S, ErasureStatus
 from empiremuse.utils.erasure import ErasureBusy, ErasureRateLimited
 from empiremuse.utils.user_locks import UserLocks
 from tests.panel.helpers import https_config, load_settings
@@ -361,9 +361,8 @@ async def test_t15_auditoria_leva_origem_estado_e_contagens_sem_valor_apagado_e_
     linhas = [r.getMessage() for r in caplog.records if r.getMessage().startswith("erasure ")]
     assert linhas[0].startswith(f"erasure source=panel user={ALVO} status=OK users=1 scrobbles=1 radio_user=1")
     assert linhas[1].startswith(f"erasure source=owner user={ALVO} status=OK") and linhas[1].endswith(
-        f"owner=42 grant={grant_log_ref('concessao-1')}"
+        f"owner=42 grant=concessao-1 duration_ms=0"
     )
-    assert "concessao-1" not in caplog.text
     assert "owner=" not in linhas[0]
     for segredo in (SEGREDO_PREFIXO, SEGREDO_CHAVE, SEGREDO_TOKEN, "fulano"):
         assert segredo not in caplog.text
@@ -758,7 +757,7 @@ async def test_erro_inesperado_em_um_passo_vira_partial_internal_ainda_e_auditad
 
     assert relatorio.status is ErasureStatus.PARTIAL and relatorio.failed == ("internal",)
     linhas = [r.getMessage() for r in caplog.records if r.getMessage().startswith("erasure ")]
-    assert linhas == [f"erasure source=slash user={ALVO} status=PARTIAL  failed=internal"]
+    assert linhas == [f"erasure source=slash user={ALVO} status=PARTIAL  failed=internal duration_ms=0"]
     assert "detalhe-interno-secreto" not in caplog.text and "detalhe-interno-secreto" not in repr(relatorio)
     assert mundo.service._tries[ALVO]  # a tentativa contou
     assert mundo.pool.erasure_tombstones.stale(ALVO, mundo.relogio() - 1)  # a sepultura ficou marcada

@@ -162,7 +162,7 @@ class TestRetencao:
         [
             (183, 183, False),
             ("365", 365, False),
-            ("30", 30, False),
+            ("30", 30, True),
             ("730", 730, False),
             ("abc", 183, True),
             (5, 30, True),

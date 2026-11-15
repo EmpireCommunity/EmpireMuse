@@ -402,7 +402,7 @@ Outros arquivos locais: `.app_commands_sync_data/<id>.json` (hash dos comandos j
 | **App de RPC (Rich Presence)** | `empiremuse/web_app.py`, `empiremuse/utils/music/models/player_state.py` | Aplicativo desktop [EmpireCommunity/EmpireMuse-RPC-app](https://github.com/EmpireCommunity/EmpireMuse-RPC-app) (origem: upstream, GPL-3.0); URLs em `empiremuse/utils/branding.py`. |
 | **Spotify** | `empiremuse/utils/music/audio_sources/spotify.py` | API oficial por *client credentials* (`SPOTIFY_CLIENT_ID/SECRET`); só metadados, o áudio vem de outra fonte. Veja `known-issues.md`. |
 | **Deezer** | `empiremuse/utils/music/audio_sources/deezer.py` | API pública sem credenciais; metadados. |
-| **Last.fm** | `empiremuse/utils/music/lastfm_tools.py`, `empiremuse/cogs/lastfm.py` | Scrobble e perfil; exige `LASTFM_KEY/SECRET`. |
+| **Last.fm** | `empiremuse/utils/music/lastfm_tools.py`, `empiremuse/utils/music/lastfm_view.py`, `empiremuse/cogs/lastfm.py` | Scrobble e perfil; exige `LASTFM_KEY/SECRET`. |
 | **YouTube / SoundCloud (yt-dlp)** | `CustomYTDL` (`empiremuse/utils/music/models/helpers.py`), `BotPool.__init__` em `empiremuse/utils/client.py` | `allowed_extractors` restrito a YouTube/SoundCloud no pool; extração sem download. |
 | **YouTube OAuth** | `empiremuse/cogs/ll_yt_oauth.py` | Autenticação do plugin `youtube-plugin` do Lavalink. A geração de `poToken` (`nodriver`, `Node.refresh_potoken`) foi removida. |
 | **Discord** | `disnake` (2.12.2 do PyPI, `requirements.txt:1`) | Slash/prefix/menus de contexto; `AutoShardedBot`. |
@@ -442,7 +442,7 @@ Linhas medidas com `wc -l` (total do projeto: ~34,5 mil linhas Python; testes em
 | `empiremuse/cogs/player_resume.py` | Salvar e retomar sessões de players | 854 |
 | `empiremuse/cogs/misc.py` | Comandos gerais (ping, convite, sobre, …) | 1.042 |
 | `empiremuse/cogs/legacy_cmds.py` | Comandos legados/administrativos (prefixo) | 1.177 |
-| `empiremuse/cogs/lastfm.py` | Integração Last.fm | 739 |
+| `empiremuse/cogs/lastfm.py` | Integração Last.fm | 730 |
 | `empiremuse/cogs/error_handler.py` | Tratamento global de erros e relatório | 511 |
 | `empiremuse/cogs/help_cog.py` | Comando de ajuda | 406 |
 | `empiremuse/cogs/ll_yt_oauth.py` | OAuth do YouTube para o Lavalink | 290 |

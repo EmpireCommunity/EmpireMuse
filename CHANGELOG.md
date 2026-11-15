@@ -7,6 +7,9 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Corrigido
+- Last.fm: a vinculação responde quando expira, a rede falha ou o serviço retorna dados inválidos; encerrar uma tela preserva o scrobble alterado pelo controlador, inclusive após alterná-lo na tela.
+
 ### Adicionado
 - API para painéis externos: `GET /api/v1/status` (aditivo na v1, chave de serviço, sem sessão, só leitura) devolve o que a página de status já mostra, sem dado novo e sem dado pessoal: o estado geral (`ok`, `degraded` ou `restarting`), o nome e o número de servidores de cada bot pronto, a contagem de bots pendentes e com falha, a versão e o commit curto. Nunca traz avatar, convite, identificador ou erro de bot com falha, mensagem do operador nem flags de RPC. `/meta` passa a listar o recurso `status`.
 
@@ -20,6 +23,9 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ### Segurança
 - Dependências: `dnspython` 2.9.0 → 2.9.2 (alerta #5 do Dependabot, severidade alta) e `tornado` 6.6 → 6.6.1 (alerta #6, severidade baixa), com o lock de produção regerado com hashes pelo `uv` e isenção pontual de corte temporal por pacote; substitui os PRs #250 e #251 do Dependabot, que falhavam na checagem de sincronia do lock.
+- Ajusta a retomada e o horário dos avisos do log diário e o ciclo de vinculação do Last.fm, com regressões de concorrência.
+- Apagamento de dados: corrige respostas do Last.fm após reconhecimento da interação, evita disputa de botões no limite de 24 h e mostra uma página própria quando a sessão termina. A conferência de sessão só aceita `True`, e o controle de scrobble compartilha a trava do apagamento. O truncamento do log diário permanece após reinício.
+- Apagamento de dados: serializa gravações concorrentes de favoritas e Last.fm, reconfere a sessão após aguardar o lock e registra a duração da execução. Concessões do dono usam ID de auditoria separado do código de confirmação; botões de pedidos anteriores a um reinício avisam que expiraram. O log diário reserva espaço para o aviso de truncamento e alerta quando a retenção configurada fica abaixo de 183 dias.
 - API B9: falha ao reler as favoritas da conta depois de adicionar responde `503`, em vez de confirmar uma lista vazia; a documentação de repetição distingue as rotas por item sem versão. O dublê de testes segue a ordem do store: já está, cheia, diretório.
 - Comandos de administração só para `OWNER_IDS`: `shell`, `hardreset`, `ytoauth`, `update`, `servers`, o painel do dono, `saveplayers` e os demais comandos de dono passam a seguir somente `OWNER_IDS`; quem é da equipe do aplicativo no Discord e não está lá perde o acesso, e deixa de contornar as permissões do servidor (`setprefix`, `resetprefix`, `djrole`, `jukebox` e o status de voz). `OWNER_IDS` preenchido sem nenhum ID válido (o separador é `||`, não vírgula) nega todos os comandos de dono e registra um ERROR na subida; `OWNER_IDS` vazio deixa só o dono da aplicação de cada bot, com um aviso. Confira o `OWNER_IDS` antes de atualizar.
 - API para painéis externos (fundação, sem rotas de dados ainda): `EXTERNAL_PANEL_*` liga um modo externo com listener e aplicação próprios (`/api/v1`), separados da porta pública, com chave de serviço mais token de sessão emitido pelo bot, rotação da chave com prazo conferido a cada uso, login e reautenticação presos ao mesmo usuário, limites por usuário, por chave e por par TCP, erro em envelope com código estável e logs sem corpo, query nem credenciais. A configuração é fail-closed: qualquer variável `EXTERNAL_PANEL_*` preenchida com algo faltando ou inválido impede a API e o painel do bot de subir (o bot segue tocando), sem cair no painel genérico (e, com `RUN_RPC_SERVER=false`, nada abre e o boot registra um erro). Fora do loopback é obrigatório informar a sub-rede em `EXTERNAL_PANEL_API_CIDRS`; conexões de fora dela são fechadas sem resposta. Variáveis novas no `.example.env`.
