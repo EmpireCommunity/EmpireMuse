@@ -480,3 +480,35 @@ class TestBackgroundErrors:
             await asyncio.sleep(0)
 
         assert "ValueError" in caplog.text and "segredo" not in caplog.text
+
+
+class TestShutdownDeadline:
+    """O encerramento do pool espera as rádios com prazo (PR 257): um ``close`` travado é avisado e não segura os bots."""
+
+    @pytest.mark.asyncio
+    async def test_a_stuck_close_times_out_with_a_warning(self, caplog):
+        from empiremuse.utils.client import close_radios
+
+        never = asyncio.Event()
+
+        class Stuck:
+            async def close(self):
+                await never.wait()
+
+        with caplog.at_level(logging.WARNING, logger="empiremuse.utils.client"):
+            await close_radios(Stuck(), timeout=0)  # prazo zero: vence na hora, sem relógio de verdade
+
+        assert any("não encerraram" in record.getMessage() for record in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_a_failing_close_is_logged_and_swallowed(self, caplog):
+        from empiremuse.utils.client import close_radios
+
+        class Broken:
+            async def close(self):
+                raise RuntimeError("x")
+
+        with caplog.at_level(logging.WARNING, logger="empiremuse.utils.client"):
+            await close_radios(Broken())
+
+        assert any("Falha ao encerrar as rádios" in record.getMessage() for record in caplog.records)

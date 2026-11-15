@@ -270,7 +270,10 @@ def custom_payload(
         elif view.searching:
             lines.append(f"-# {tr('radio.panel.custom.searching')}")
         elif view.title.strip():
-            song, artist = stored_text(view.title, TITLE_LIMIT), stored_text(view.artist, TITLE_LIMIT)
+            song, artist = (
+                external_text(view.title, TITLE_LIMIT),
+                external_text(view.artist, TITLE_LIMIT),
+            )  # faixa do Last.fm: guardada crua
             lines.append(
                 tr("radio.panel.live.now", song=song, artist=artist)
                 if artist

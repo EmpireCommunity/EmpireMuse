@@ -15,7 +15,10 @@ import disnake
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Optional
 
+from empiremuse.rules.icy import TITLE_LIMIT as ICY_TITLE_LIMIT
 from empiremuse.rules.radio import VOLUME_DEFAULT, Radio
+from empiremuse.rules.radio_stations import NAME_LIMIT as STATION_NAME_LIMIT
+from empiremuse.rules.text import stored_text, unescape_markdown
 from empiremuse.utils.radio.directory import DirectoryError
 from empiremuse.utils.radio.discord_ports import DiscordRadioPorts
 from empiremuse.utils.radio.live import StationFailure
@@ -63,6 +66,10 @@ class LiveRadioPorts(DiscordRadioPorts):
     def _configure_player(self, player: Any) -> None:
         player.loop = False  # um fluxo só: quando acaba, quem decide é o runner (recuo), nunca a fila
         player.radio_live = True
+
+    async def _stage_name(self) -> object:
+        """O tópico do palco sai do nome guardado escapado: sem o escape (o destino é texto puro e passa por ``external_text``)."""
+        return unescape_markdown(str(await self._panel_name(self.radio)))
 
     async def _panel_name(self, current: Radio) -> object:
         known = self._names.get(self.active)
@@ -151,8 +158,9 @@ class LiveRadioPorts(DiscordRadioPorts):
             track.info["uri"] = (
                 ""  # o endereço local (com o token) só existe para o Lavalink: nenhuma tela, comando ou RPC o mostra
             )
-            track.info["title"] = station.name
-            track.title = station.name  # o status do canal de voz lê o atributo (o carregamento põe "Unknown title")
+            # o nome guardado vem escapado (``check_station``): a faixa leva o texto sem o escape, como qualquer faixa, e o status do canal de voz
+            # (``voice_status_value``) escapa uma vez só
+            track.info["title"] = track.title = stored_text(station.name, STATION_NAME_LIMIT, markdown=False) or "—"
             track.author = self._live_label(
                 player
             )  # e o "autor" é o que está no ar: o título do fluxo quando ele chega, senão "Ao vivo"
@@ -204,7 +212,9 @@ class LiveRadioPorts(DiscordRadioPorts):
         track = getattr(player, "current", None)
         if player is None or track is None or not getattr(player, "radio_live", False):
             return
-        author = title or self._live_label(player)
+        author = (stored_text(title, ICY_TITLE_LIMIT, markdown=False) if title else "") or self._live_label(
+            player
+        )  # o título ICY vem escapado
         if track.author == author:
             return
         track.author = author

@@ -803,6 +803,33 @@ class TestLiveLoadsOnlyOnTheLocalNode:
             await w.hub.relay.close()
 
     @pytest.mark.asyncio
+    @pytest.mark.regression
+    async def test_the_voice_status_escapes_the_stored_station_name_and_icy_title_only_once(self):
+        """O nome guardado (``check_station``) e o título ICY já vêm escapados: a faixa leva o texto sem o escape e o status escapa uma vez (PR 257)."""
+        from empiremuse.rules.text import external_text
+        from empiremuse.rules.voice_status import voice_status_value
+
+        w, ports = await self.world_with_player()
+        w.hub.directory.fresh_for_play.return_value = STATION._replace(name=external_text("Rock*FM_1", 100))
+        try:
+            assert await ports.connect() is True
+            await ports.play_live()
+
+            live = w.player.queue[-1]
+            assert live.title == "Rock*FM_1" and live.info["title"] == "Rock*FM_1"
+            assert voice_status_value(live.title) == "Rock\\*FM\\_1"  # um escape só
+
+            w.player.current, w.player.radio_live = live, True
+            ports._announce(external_text("A*B_C", 120))  # o título ICY guardado pelo ``icy.clean_title``
+            assert voice_status_value(live.author) == "A\\*B\\_C"
+            ports._names[ports.active] = external_text("Rock*FM_1", 100)
+            assert (
+                await ports._stage_name() == "Rock*FM_1"
+            )  # tópico do palco: texto puro, sem a barra do escape guardado
+        finally:
+            await w.hub.relay.close()
+
+    @pytest.mark.asyncio
     async def test_with_the_real_node_guard_the_relay_load_and_play_are_not_refused_and_the_same_address_from_a_user_is(
         self,
     ):

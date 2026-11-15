@@ -122,3 +122,12 @@ class TestStoredText:
         assert (
             stored_text(stored, 100, markdown=markdown) == expected
         )  # o NFKC da 2ª passada faz do ponto de líder um ponto: segue sem menção
+
+    @pytest.mark.regression
+    def test_a_literal_backslash_survives_only_on_the_right_path(self):
+        """A barra de um texto guardado CRU é do texto: ``external_text`` a mantém; ``stored_text`` só serve ao que foi guardado escapado (PR 257)."""
+        raw = "AC\\DC \\o/"
+
+        assert external_text(raw, 100, markdown=False) == raw
+        assert stored_text(external_text(raw, 100), 100, markdown=False) == raw  # guardado escapado: volta inteiro
+        assert stored_text(raw, 100, markdown=False) == "ACDC o/"  # por isso ``stored_text`` nunca recebe texto cru

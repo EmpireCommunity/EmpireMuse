@@ -157,9 +157,11 @@ def unescape_markdown(text: str) -> str:
 
 
 def stored_text(value: Any, limit: int, *, markdown: bool = True) -> str:
-    """``external_text`` para texto que foi GUARDADO já escapado (nome e país de estação do diretório, que ``check_station`` escapa).
+    """``external_text`` para texto que foi GUARDADO já escapado: nome e país de estação do diretório (``check_station``) e o título ICY
+    (``icy.clean_title``), os dois passados por ``external_text`` antes de guardar.
 
     O escape antigo sai antes, então o destino recebe um escape só (``markdown=True``) ou nenhum (``markdown=False``: opção de select, status
-    de voz, tópico de palco, API), nunca a barra visível. Texto guardado cru passa igual.
+    de voz, tópico de palco, API), nunca a barra visível. SÓ para esses campos: num texto guardado cru (nome de estação do servidor, faixa do
+    Last.fm, nome de playlist, opções do local) a barra é do próprio texto e sumiria (``AC\\DC`` viraria ``ACDC``); ali vale ``external_text``.
     """
     return external_text(unescape_markdown("" if value is None else str(value)), limit, markdown=markdown)

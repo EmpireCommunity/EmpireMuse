@@ -15,7 +15,7 @@ from empiremuse.panel.services.radio_live import StationView
 from empiremuse.panel.services.radio_local import LocalView, Paging
 from empiremuse.panel.services.radio_stations import KIND_ARTISTS, KIND_GENRE, KIND_PLAYLISTS, channel_label
 from empiremuse.rules.radio import CHAT_FIELDS, KIND_LIVE
-from empiremuse.rules.text import stored_text
+from empiremuse.rules.text import external_text, stored_text
 
 NAME_LIMIT = 100
 TITLE_LIMIT = 200
@@ -23,7 +23,12 @@ SOURCE_ID_LIMIT = 64
 
 
 def safe_text(value: Any, limit: int = NAME_LIMIT) -> Optional[str]:
-    """Texto de fora como pode ser publicado (sem menção nem link vivos, sem o escape de markdown, nem o que já veio gravado); ``None`` se vazio."""
+    """Texto de fora guardado CRU como pode ser publicado (sem menção nem link vivos, sem escape de markdown); ``None`` se vazio."""
+    return external_text(value, limit, markdown=False) or None
+
+
+def safe_stored_text(value: Any, limit: int = NAME_LIMIT) -> Optional[str]:
+    """``safe_text`` para o que foi guardado já escapado (nome e país do diretório, título ICY): o escape antigo sai, a barra nunca aparece."""
     return stored_text(value, limit, markdown=False) or None
 
 
@@ -31,8 +36,8 @@ def station_view_entry(view: StationView) -> dict[str, Any]:
     """Uma estação do diretório: nunca a URL do fluxo nem a do logo."""
     return {
         "uuid": view.uuid,
-        "name": safe_text(view.nome),
-        "country": safe_text(view.pais),
+        "name": safe_stored_text(view.nome),
+        "country": safe_stored_text(view.pais),
         "codec": safe_text(view.codec, 16),
         "bitrate": view.bitrate,
         "unavailable": view.indisponivel,
@@ -70,7 +75,7 @@ async def radio_entry(
         "version": str(radio.rev),
         "bot": {"id": str(radio.bot_id), "name": str(bot.user.name) if bot is not None else None},
         "channel": {"id": str(radio.channel_id), "name": str(channel.name) if channel is not None else None},
-        "title": safe_text(getattr(state, "title", None), TITLE_LIMIT) if state is not None else None,
+        "title": safe_stored_text(getattr(state, "title", None), TITLE_LIMIT) if state is not None else None,
         "can_edit": bool(premium and await page.can_edit(ctx, radio)),
         "chat": {name: radio.chat.get(name) for name in CHAT_FIELDS},
         "source": source_ids(radio),

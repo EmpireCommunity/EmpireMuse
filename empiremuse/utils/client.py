@@ -112,6 +112,17 @@ commands_logger = logging.getLogger("empiremuse.commands")
 
 UPDATE_WATCH_INTERVAL = 5  # segundos entre as checagens de saúde do pool enquanto há uma atualização pendente
 PLAYLIST_REFRESH_READY_WAIT = 300  # s que a migração dos ícones espera os bots ficarem prontos para redesenhar o painel
+RADIO_CLOSE_TIMEOUT = 10.0  # s que o encerramento espera as rádios pararem antes de fechar os bots mesmo assim
+
+
+async def close_radios(manager: Any, timeout: float = RADIO_CLOSE_TIMEOUT) -> None:
+    """Para ticker, health check, relay e tarefas das rádios com prazo: um fechamento travado nunca segura o encerramento do pool."""
+    try:
+        await asyncio.wait_for(manager.close(), timeout)
+    except asyncio.TimeoutError:
+        logger.warning("Rádios não encerraram em %.0f s; o pool fecha assim mesmo", timeout)
+    except Exception:
+        logger.warning("Falha ao encerrar as rádios", exc_info=True)
 
 
 def _playlist_cache_file():
@@ -716,10 +727,7 @@ class BotPool:
             self.jukebox_panel.close()
         radio = getattr(self, "radio", None)
         if radio is not None:  # ticker, health check, relay e tarefas das rádios param antes de os bots fecharem
-            try:
-                await radio.manager.close()
-            except Exception:
-                logger.warning("Falha ao encerrar as rádios", exc_info=True)
+            await close_radios(radio.manager)
         self.i18n.close()  # leituras de idioma que ficaram pendentes
         for bot in self.get_all_bots():
             try:
