@@ -124,6 +124,15 @@ class TestStationDoc:
             self.check("artists", {"artists": ["Queen"]}, count=MAX_STATIONS_PER_GUILD - 1), RuleError
         )
 
+    @pytest.mark.regression
+    @pytest.mark.parametrize("name", ["", "minha"], ids=["invalid_name", "taken_name"])
+    def test_at_the_cap_the_limit_wins_over_a_name_error(self, name):
+        """Crivo (PR 256): sem a pré-conferência do handler, criar no teto com nome inválido ou repetido respondia ``name`` e não
+        ``limit``, como antes."""
+        error = self.check("artists", {"artists": ["Queen"]}, name=name, taken={"minha"}, count=MAX_STATIONS_PER_GUILD)
+
+        assert (error.code, error.key) == (STATION_LIMIT, "limit")
+
     @pytest.mark.parametrize("name", ["", "   ", "x" * 33, "a\u202eb", "a\nb", 5, None])
     def test_a_bad_name_is_refused(self, name):
         assert self.check("artists", {"artists": ["Queen"]}, name=name).code == STATION_NAME_INVALID

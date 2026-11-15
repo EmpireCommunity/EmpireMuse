@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 from empiremuse.utils.radio.favorites import AddResult, FavoriteNotFound
 from empiremuse.utils.radio.premium import RadioUnavailable
+from empiremuse.utils.radio.user_favorites import USER_FILTERS_MAX, USER_LIVE_FAVORITES_MAX
 from tests.api.support import ApiTestCase
 from tests.panel.helpers_account import FAV_CONFIG, OTHER_UID, RPC_TOKEN_OLD, SESSIONKEY, AccountWorld, UserFakeDB
 from tests.panel.helpers_settings import UID, SettingsWorld
@@ -44,7 +45,7 @@ class FakeUserFavorites:
         self._check()
         if uuid in self.station_ids[user_id]:
             return AddResult.ALREADY
-        if len(self.station_ids[user_id]) >= 24:
+        if len(self.station_ids[user_id]) >= USER_LIVE_FAVORITES_MAX:
             return AddResult.FULL
         if uuid == UNKNOWN_STATION:
             raise FavoriteNotFound
@@ -52,11 +53,14 @@ class FakeUserFavorites:
         return AddResult.ADDED
 
     async def add_filter(self, user_id, node):
+        """A ordem do armazém real (``UserRadioFavorites.add_filter``): já está, cheio (10) e só então a árvore conhece o nó."""
         self._check()
-        if node == "desconhecido":
-            raise FavoriteNotFound
         if node in self.filter_ids[user_id]:
             return AddResult.ALREADY
+        if len(self.filter_ids[user_id]) >= USER_FILTERS_MAX:
+            return AddResult.FULL
+        if node == "desconhecido":
+            raise FavoriteNotFound
         self.filter_ids[user_id].append(node)
         return AddResult.ADDED
 

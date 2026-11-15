@@ -101,14 +101,15 @@ class RadioFavorites:
         return found[:MAX_FAVORITES]
 
     @classmethod
-    def _read(cls, doc: dict[str, Any] | None) -> tuple[list[FavoriteStation], list[str]]:
-        """``(estações ao vivo, refs)`` com o teto de 24 sobre a SOMA: o que passa do teto (dado gravado ruim) sai da leitura."""
+    def _read(cls, doc: dict[str, Any] | None, *, writing: bool = False) -> tuple[list[FavoriteStation], list[str]]:
+        """``(estações ao vivo, refs)`` com o teto de 24 sobre a SOMA: o que passa do teto (dado gravado ruim) sai da leitura.
+        Só quem escreve (``writing``) avisa no log: é ele que grava a lista já cortada; a leitura da lista não repete o aviso a cada vez."""
         stations = cls._stations(doc)
         refs = cls._refs(doc)
         room = max(0, MAX_FAVORITES - len(stations))
-        if len(refs) > room:
+        if writing and len(refs) > room:
             logger.warning(
-                "Favoritas do servidor passam do teto de %d: %d refs fora da leitura", MAX_FAVORITES, len(refs) - room
+                "Favoritas do servidor passam do teto de %d: %d refs fora da escrita", MAX_FAVORITES, len(refs) - room
             )  # sem ids nem nomes
         return stations, refs[:room]
 
@@ -135,7 +136,7 @@ class RadioFavorites:
         await self._authorize(guild_id, actor_id)
         for _ in range(CAS_ATTEMPTS):
             doc = await self._find(guild_id)
-            current, refs = self._read(doc)
+            current, refs = self._read(doc, writing=True)
             if any(f.uuid == station.uuid for f in current):
                 return AddResult.ALREADY
             if len(current) + len(refs) >= MAX_FAVORITES:
@@ -165,7 +166,7 @@ class RadioFavorites:
         resolved: list[FavoriteStation] = []
         for _ in range(CAS_ATTEMPTS):
             doc = await self._find(guild_id)
-            current, refs = self._read(doc)
+            current, refs = self._read(doc, writing=True)
             if any(f.uuid == uuid for f in current):
                 return AddResult.ALREADY
             if len(current) + len(refs) >= MAX_FAVORITES:
@@ -198,7 +199,7 @@ class RadioFavorites:
         checked = False
         for _ in range(CAS_ATTEMPTS):
             doc = await self._find(guild_id)
-            current, refs = self._read(doc)
+            current, refs = self._read(doc, writing=True)
             if ref in refs:
                 return AddResult.ALREADY
             if len(current) + len(refs) >= MAX_FAVORITES:
@@ -234,7 +235,7 @@ class RadioFavorites:
         await self._authorize(guild_id, actor_id)
         for _ in range(CAS_ATTEMPTS):
             doc = await self._find(guild_id)
-            current, refs = self._read(doc)
+            current, refs = self._read(doc, writing=True)
             updated = [] if everything else [f for f in current if f.uuid != uuid]
             updated_refs = [] if everything else [r for r in refs if r != ref]
             if updated == current and updated_refs == refs:

@@ -169,6 +169,12 @@ class Hit(NamedTuple):
 class RegionResult(NamedTuple):
     hits: tuple
     partial: bool
+    reason: Optional[str] = None
+
+
+class SearchResult(NamedTuple):
+    stations: list
+    reason: Optional[str] = None
 
 
 class LogoResult(NamedTuple):
@@ -194,6 +200,10 @@ class FakeDirectory:
         self.strict_error = None
         self.region_hits = []
         self.region_partial = False
+        self.region_reason = (
+            None  # ``limited``/``unavailable``: o pedido que não saiu inteiro (como ``RegionResult.reason``)
+        )
+        self.search_reason = None  # idem para a busca (``SearchResult.reason``), só com a lista vazia
         self.region_calls = []  # (node.id, key)
         self.logos = {}  # uuid -> LogoResult; ausente = LogoResult(None, False)
         self.logo_calls = []
@@ -204,11 +214,18 @@ class FakeDirectory:
 
     async def region(self, node, *, key=None):
         self.region_calls.append((node.id, key))
-        return RegionResult(tuple(Hit(s, 10, True, "geo") for s in self.region_hits), self.region_partial)
+        return RegionResult(
+            tuple(Hit(s, 10, True, "geo") for s in self.region_hits), self.region_partial, self.region_reason
+        )
 
     async def search(self, term, *, key=None):
+        return (await self.search_result(term, key=key)).stations
+
+    async def search_result(self, term, *, key=None):
         self.calls.append((term, key))
-        return list(self.results)
+        if self.search_reason is not None:
+            return SearchResult([], self.search_reason)
+        return SearchResult(list(self.results))
 
     async def by_uuid(self, uuid):
         self.by_uuid_calls.append(uuid)
@@ -474,6 +491,10 @@ class FakeStations:
             raise self.fail_with
 
     def _validate(self, guild_id, raw, *, skip=None, playlists=()):
+        if skip is None and sum(1 for s in self.docs.values() if s.guild_id == guild_id) >= self.MAX:
+            raise RadioInvalid(
+                RuleError("station_limit", "limit")
+            )  # o teto vem antes do nome, como em ``check_station_doc``
         name = str(raw.get("name") or "").strip()
         if not 1 <= len(name) <= 32:
             raise RadioInvalid(RuleError("station_name", "name"))
@@ -498,8 +519,6 @@ class FakeStations:
             known = set(playlists) | set(self.playlists.get(guild_id, ()))
             if not 1 <= len(wanted) <= 5 or any(p not in known for p in wanted):
                 raise RadioInvalid(RuleError("station_playlists", "playlists"))
-        if skip is None and sum(1 for s in self.docs.values() if s.guild_id == guild_id) >= self.MAX:
-            raise RadioInvalid(RuleError("station_limit", "limit"))
         return name, kind, source
 
     async def list_for_guild(self, guild_id):

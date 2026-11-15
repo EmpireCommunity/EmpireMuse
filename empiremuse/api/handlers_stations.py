@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from empiremuse.api.errors import conflict, validation_failed
+from empiremuse.api.errors import conflict
 from empiremuse.api.idempotency import Reply
 from empiremuse.api.radio_base import (
     GUILD_ID,
@@ -30,9 +30,10 @@ CATEGORY = "radios"
 STATUS_CREATED, STATUS_NO_CONTENT = 201, 204
 
 
-def view_error_fields(view: StationsView) -> list[str]:
-    """Os campos com erro de um resultado do serviço: o formulário de criar ou o da estação editada."""
-    found = set(error_fields(view.form))
+def view_error_fields(view: StationsView, refused: tuple[str, ...] = ()) -> list[str]:
+    """Os campos com erro de um resultado do serviço: o formulário de criar ou o da estação editada, mais a recusa da store
+    sem campo no formulário (``limit``, ``in_use``), decidida sob a trava dela."""
+    found = set(error_fields(view.form)) | set(refused)
     for row in view.rows:
         found.update(error_fields(row.form))
     return sorted(found)
@@ -77,13 +78,9 @@ class StationsHandler(RadioRoute):
         await self.run_write(body, work)
 
     async def create(self, ctx: FormContext, args: dict[str, list[str]]) -> Reply:
-        stations = self.hub(ctx).stations
-        if len(await stations.list_for_guild(ctx.guild_id)) >= STATIONS_MAX:
-            record_panel_action(ctx, f"{CATEGORY}/estacoes", 400)
-            raise validation_failed("limit")
-        outcome = await self.ctx.stations_page.create(ctx, args, "", self.tr)
+        outcome = await self.ctx.stations_page.create(ctx, args, "", self.tr)  # a 11ª estação é recusada pela store
         record_panel_action(ctx, f"{CATEGORY}/estacoes", outcome.status)
-        raise_for_status(outcome.status, view_error_fields(outcome.view))
+        raise_for_status(outcome.status, view_error_fields(outcome.view, outcome.refused))
         saved = outcome.station  # a que a store devolveu: o nome gravado pode diferir do enviado
         return Reply(STATUS_CREATED, await custom_station_entry(ctx, saved))
 
@@ -118,12 +115,10 @@ class StationHandler(RadioRoute):
             # o 204 guardado e não um 404; o servidor e o premium já foram conferidos antes de consultar a chave
             station = await self.station_of(ctx, station_id)
             await self.fail_if_stale(ctx, station, version)  # versão velha é 409, mesmo com a estação em uso
-            if await self.hub(ctx).stations.radios_using(ctx.guild_id, station.id):  # em uso: recusa, nada é apagado
-                record_panel_action(ctx, f"{CATEGORY}/estacoes/apagar", 400)
-                raise validation_failed("in_use")
+            # em uso: a store recusa sob a trava dela (``in_use``) e nada é apagado
             outcome = await self.ctx.stations_page.delete(ctx, station, {"versao": [version]}, "", self.tr)
             record_panel_action(ctx, f"{CATEGORY}/estacoes/apagar", outcome.status)
-            await self.fail_unless_ok(outcome.status, ctx, station, view_error_fields(outcome.view))
+            await self.fail_unless_ok(outcome.status, ctx, station, view_error_fields(outcome.view, outcome.refused))
             return Reply(STATUS_NO_CONTENT, None)
 
         # a impressão da ``Idempotency-Key`` usa a versão canônica: ``01`` e ``1`` são o mesmo pedido

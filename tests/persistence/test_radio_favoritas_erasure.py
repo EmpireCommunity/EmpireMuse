@@ -108,3 +108,28 @@ async def test_a_member_write_that_started_before_the_erasure_never_recreates_th
     assert await mundo.hub.custom_favorites.add(
         SERVIDOR, ALVO, CUSTOM, yes
     )  # uso NOVO, com leitura depois do apagamento: grava
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize("write", ["account_station", "account_filter", "member_custom"])
+async def test_without_the_tombstone_registry_every_favorites_write_fails_closed_and_stores_nothing(write):
+    """B9 small items: a conferência da sepultura lê ``pool.erasure_tombstones`` direto. Um pool sem ele (montagem errada) falha antes de
+    gravar, nunca pula a conferência e recria o documento de quem pode ter sido apagado."""
+    from tests.persistence.test_radio_store import FakeDb
+    from empiremuse.utils.user_locks import UserLocks
+
+    db = FakeDb()
+    pool = SimpleNamespace(database=db, user_locks=UserLocks(), get_all_bots=lambda: [])  # sem ``erasure_tombstones``
+    hub = RadioHub(pool)
+    hub.directory = SimpleNamespace(by_uuid_strict=AsyncMock(side_effect=lambda value: station(int(value[-12:]))))
+    hub.locations = SimpleNamespace(node=lambda value: object())
+    calls = {
+        "account_station": lambda: hub.user_favorites.add_station(ALVO, uuid(1)),
+        "account_filter": lambda: hub.user_favorites.add_filter(ALVO, "node:a"),
+        "member_custom": lambda: hub.custom_favorites.add(SERVIDOR, ALVO, CUSTOM, yes),
+    }
+
+    with pytest.raises(AttributeError, match="erasure_tombstones"):
+        await calls[write]()
+
+    assert not any(db.tables.get(name) for name in (USER_FAVORITES_DB, CUSTOM_FAVORITES_DB))

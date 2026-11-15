@@ -143,8 +143,11 @@ def check_station_doc(
     """O pedido (``name``, ``kind``, ``source``) de criar ou editar uma estação; ``RuleError(code, campo)`` no primeiro defeito.
 
     ``playlists`` = nomes das playlists do servidor; ``taken`` = ``name_norm`` das OUTRAS estações do servidor; ``count`` = quantas estações o
-    servidor tem SEM a que está sendo editada (``MAX_STATIONS_PER_GUILD`` ou mais recusa a criação). Campo desconhecido é ignorado.
+    servidor tem SEM a que está sendo editada (``MAX_STATIONS_PER_GUILD`` ou mais recusa a criação, antes de olhar o pedido: no teto a
+    resposta é ``limit``, seja qual for o nome). Campo desconhecido é ignorado.
     """
+    if count >= MAX_STATIONS_PER_GUILD:
+        return RuleError(STATION_LIMIT, FIELD_LIMIT, limit=MAX_STATIONS_PER_GUILD)
     if not isinstance(raw, Mapping):
         return RuleError(STATION_NAME_INVALID, FIELD_NAME, limit=NAME_MAX)
     name = clean_title(raw.get("name"), 1, NAME_MAX)
@@ -154,8 +157,6 @@ def check_station_doc(
     name_norm = normalize_name(name)
     if name_norm in set(taken):
         return RuleError(STATION_NAME_TAKEN, FIELD_NAME, name)
-    if count >= MAX_STATIONS_PER_GUILD:
-        return RuleError(STATION_LIMIT, FIELD_LIMIT, limit=MAX_STATIONS_PER_GUILD)
     kind = raw.get("kind")
     if kind not in CREATE_KINDS:
         return RuleError(STATION_KIND_INVALID, FIELD_KIND)

@@ -12,7 +12,7 @@ genérico (``panel/services``); a saída passa só por ``radio_data.py``.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 from empiremuse.api.errors import FORBIDDEN, ApiError, not_found, validation_failed
 from empiremuse.api.idempotency import Reply
@@ -194,6 +194,11 @@ class RadioReserveHandler(RadioWriteHandler):
         return outcome.status, outcome.radio, ["reserva"]
 
 
+def with_reason(body: dict[str, Any], reason: Optional[str]) -> dict[str, Any]:
+    """Acrescenta o ``reason`` (``DirectoryReason``) só quando a lista veio vazia sem a busca ter rodado; ausente = a lista é o resultado."""
+    return {**body, "reason": reason} if reason is not None and not body["stations"] else body
+
+
 class RadioSearchHandler(RadioRoute):
     """``GET …/radios/{r}/stations?q=``: busca no diretório (só rádio ao vivo, só quem pode editar; R-7)."""
 
@@ -206,9 +211,9 @@ class RadioSearchHandler(RadioRoute):
         if isinstance(check_search_term(raw), RuleError):  # termo fora da regra nunca chega ao diretório
             raise validation_failed("q")
         self.spend_directory_budget()
-        results, _hint = await self.ctx.radio_page.live.search(found.ctx, found.radio, raw, self.tr)
+        results, _hint, reason = await self.ctx.radio_page.live.search(found.ctx, found.radio, raw, self.tr)
         record_panel_action(found.ctx, f"{CATEGORY}/estacoes", 200)
-        self.write({"stations": [station_view_entry(view) for view in results]})
+        self.write(with_reason({"stations": [station_view_entry(view) for view in results]}, reason))
 
 
 class RadioLocalHandler(RadioRoute):
@@ -227,18 +232,18 @@ class RadioLocalHandler(RadioRoute):
         if wanted and node is None:  # id forjado ou de uma árvore antiga
             raise validation_failed("node")
         results: tuple = ()
-        paging = None
+        paging = reason = None
         if node is not None and getattr(node, "final", False):
             self.spend_directory_budget()
-            results, _hint, paging = await live.stations(ctx, radio, node, parse_page(query.get("pagina")), self.tr)
+            page = parse_page(query.get("pagina"))
+            results, _hint, paging, reason = await live.stations(ctx, radio, node, page, self.tr)
         record_panel_action(ctx, f"{CATEGORY}/local", 200)
-        self.write(
-            {
-                **local_entry(live.local_view(ctx, node)),
-                "stations": [station_view_entry(view) for view in results],
-                "paging": paging_entry(paging),
-            }
-        )
+        body = {
+            **local_entry(live.local_view(ctx, node)),
+            "stations": [station_view_entry(view) for view in results],
+            "paging": paging_entry(paging),
+        }
+        self.write(with_reason(body, reason))
 
 
 class RadioResetPrepareHandler(RadioRoute):

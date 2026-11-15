@@ -842,7 +842,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          $ref: "#/components/responses/Conflict"
+          $ref: "#/components/responses/IdempotencyConflict"
         "415":
           $ref: "#/components/responses/UnsupportedMedia"
         "429":
@@ -888,7 +888,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "409":
-          $ref: "#/components/responses/Conflict"
+          $ref: "#/components/responses/IdempotencyConflict"
         "429":
           $ref: "#/components/responses/RateLimited"
         "500":
@@ -1303,7 +1303,7 @@ paths:
       operationId: startJukeboxTask
       summary: "Configura ou reinicia a Jukebox"
       description: |
-        `action: configure` (com `values`) ou `reset`. Configurar num **canal existente** limpa as mensagens dele e reiniciar apaga o painel: os dois pedem confirmação em **dois passos**. O passo 1 (sem `confirm_token`) não faz nada e devolve `200` com `requires_confirmation` e o `confirm_token`; o passo 2 repete o mesmo pedido **com** o token e devolve `202` com o `task_id`. O token é preso a usuário, servidor, finalidade e canal, vale 60 s e uma vez só. Criar um canal novo e usar um fórum não pedem confirmação (`202` direto). A `Idempotency-Key` vale no passo 2 e também em um `configure` que cria a tarefa direto (sem limpar canal): repetir devolve o mesmo `task_id` com `Idempotent-Replayed`. O passo 1 ignora a chave (cada pedido emite um token novo).
+        `action: configure` (com `values`) ou `reset`. Configurar num **canal existente** limpa as mensagens dele e reiniciar apaga o painel: os dois pedem confirmação em **dois passos**. O passo 1 (sem `confirm_token`) não faz nada e devolve `200` com `requires_confirmation` e o `confirm_token`; o passo 2 repete o mesmo pedido **com** o token e devolve `202` com o `task_id`. O token é preso a usuário, servidor, finalidade e canal, vale 60 s e uma vez só. Criar um canal novo e usar um fórum não pedem confirmação (`202` direto); um `confirm_token` enviado num plano que não limpa canal é ignorado, não é gasto, e a resposta é o mesmo `202` direto (o `400` com `confirm_token` em `fields` vale só quando o plano pede confirmação). A `Idempotency-Key` vale no passo 2 e também em um `configure` que cria a tarefa direto (sem limpar canal): repetir devolve o mesmo `task_id` com `Idempotent-Replayed`. O passo 1 ignora a chave (cada pedido emite um token novo).
         Acompanhe por `GET …/tasks/{task_id}`. `409` com `current_version` se `expected_version` é velha; `409` sem `current_version` se já há uma tarefa no servidor; `429` se o usuário já tem 5 tarefas em andamento. `400` com `confirm_token` em `fields` para token inválido, vencido, usado ou de outro contexto.
       security:
         - ServiceKey: []
@@ -1373,7 +1373,8 @@ paths:
       operationId: getJukeboxTask
       summary: "O estado de uma tarefa da Jukebox"
       description: |
-        Só o usuário que a criou, e só no servidor dela: a tarefa de outro usuário, a de outro servidor, a vencida (15 minutos depois de acabar) e um `task_id` que não existe dão o mesmo `404`. O texto do resultado não sai (só o estado).
+        Só o usuário que a criou, e só no servidor dela: a tarefa de outro usuário, a de outro servidor, a vencida (15 minutos depois de acabar) e um `task_id` que não existe dão o mesmo `404`. O texto do resultado não sai (só o estado e, em `erro`, o `reason`).
+        A tarefa vive na memória do bot: depois de um reinício este `GET` dá `404`. Um `404` durante o acompanhamento é resultado desconhecido, nem falha nem sucesso; o painel relê `GET …/jukebox` para ver o estado atual.
       security:
         - ServiceKey: []
           SessionToken: []
@@ -2284,7 +2285,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          $ref: "#/components/responses/Conflict"
+          $ref: "#/components/responses/IdempotencyConflict"
         "415":
           $ref: "#/components/responses/UnsupportedMedia"
         "429":
@@ -2335,7 +2336,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          $ref: "#/components/responses/Conflict"
+          $ref: "#/components/responses/IdempotencyConflict"
         "429":
           $ref: "#/components/responses/RateLimited"
         "500":
@@ -2389,7 +2390,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          $ref: "#/components/responses/Conflict"
+          $ref: "#/components/responses/IdempotencyConflict"
         "415":
           $ref: "#/components/responses/UnsupportedMedia"
         "429":
@@ -2438,7 +2439,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          $ref: "#/components/responses/Conflict"
+          $ref: "#/components/responses/IdempotencyConflict"
         "429":
           $ref: "#/components/responses/RateLimited"
         "500":
@@ -2784,6 +2785,19 @@ components:
     Conflict:
       description: '`conflict`. Versão velha: traz `current_version` (a versão que o formulário tem agora). Também `Idempotency-Key`
         já usada com outro pedido ou ainda em andamento (sem `current_version`).'
+      headers:
+        Cache-Control:
+          $ref: "#/components/headers/CacheControl"
+        X-Content-Type-Options:
+          $ref: "#/components/headers/ContentTypeOptions"
+        X-Request-ID:
+          $ref: "#/components/headers/RequestIdOut"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorConflict"
+    IdempotencyConflict:
+      description: "`conflict`, sem `current_version` (estas escritas não têm versão): a `Idempotency-Key` foi usada com outro pedido, ou o pedido original ainda está em andamento. Repita o MESMO pedido com a MESMA chave, ou use uma chave nova para outra ação."
       headers:
         Cache-Control:
           $ref: "#/components/headers/CacheControl"
@@ -4384,6 +4398,11 @@ components:
       type: string
       description: "`pendente`, `executando`, `ok` ou `erro`; só `ok` e `erro` são finais."
       enum: [pendente, executando, ok, erro]
+    JukeboxTaskReason:
+      type: string
+      description: |
+        Código estável da falha, sem texto de usuário final: `timeout` (passou do prazo), `interrupted` (o bot estava desligando enquanto a tarefa rodava; depois de um reinício o `GET` da tarefa responde `404`, que o painel trata como resultado desconhecido), `missing_permissions` (o bot não tem as permissões no canal ou no servidor), `channel_unavailable` (o canal escolhido já não existe), `category_unavailable` (a categoria escolhida já não existe), `refused` (outra recusa) e `unexpected` (falha sem código). O conjunto pode crescer na v1.x: para um código que não conhece, ou que falta numa tarefa em `erro`, o painel mostra um texto genérico neutro, que não afirma que o item sumiu nem pede para tentar de novo.
+      enum: [timeout, interrupted, missing_permissions, channel_unavailable, category_unavailable, refused, unexpected]
     JukeboxTask:
       type: object
       additionalProperties: false
@@ -4398,6 +4417,9 @@ components:
           $ref: "#/components/schemas/JukeboxTaskState"
         final:
           type: boolean
+        reason:
+          description: Sempre presente quando `state` é `erro` (`unexpected` se a falha não tem código) e ausente nos outros estados.
+          $ref: "#/components/schemas/JukeboxTaskReason"
     JukeboxTaskAccepted:
       type: object
       additionalProperties: false
@@ -4411,7 +4433,7 @@ components:
     JukeboxConfirmation:
       type: object
       additionalProperties: false
-      required: [requires_confirmation, confirm_token]
+      required: [requires_confirmation, confirm_token, expires_in]
       properties:
         requires_confirmation:
           const: true
@@ -4419,8 +4441,12 @@ components:
           type: string
           description: Vale 60 s e uma vez só; preso a usuário, servidor, finalidade e canal. Repita o pedido com ele em `confirm_token`.
           maxLength: 400
+        expires_in:
+          type: integer
+          description: Segundos de validade (60).
     JukeboxConfigureValues:
       type: object
+      description: "Os nomes da escrita seguem o painel genérico e ficam congelados na v1 (`modo`, `canal`, `titulo_forum`, `tipo`, `categoria`); a leitura (`GET …/jukebox`) devolve o canal configurado em `channel`."
       additionalProperties: false
       required: [modo]
       properties:
@@ -4519,6 +4545,7 @@ components:
           type: boolean
         channel:
           type: [object, "null"]
+          description: "O canal configurado (`null` sem Jukebox). Na escrita (`POST …/jukebox/tasks`) ele é escolhido por `values.modo` e `values.canal`, os nomes congelados do painel genérico."
           additionalProperties: false
           required: [id, name, missing]
           properties:
@@ -4751,6 +4778,11 @@ components:
           properties:
             reserva:
               type: [string, "null"]
+    DirectoryReason:
+      type: string
+      description: |
+        Por que uma lista do diretório veio vazia sem a busca ter rodado de fato: `limited` (o limite do servidor no diretório acabou por agora) ou `unavailable` (o diretório falhou). Só aparece com a lista vazia; ausente, a busca rodou e a lista é o resultado. O conjunto pode crescer na v1.x: para um código que não conhece, o painel mostra um texto genérico neutro, que não afirma que o item sumiu nem pede para tentar de novo.
+      enum: [limited, unavailable]
     RadioStationSearch:
       type: object
       additionalProperties: false
@@ -4760,6 +4792,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DirectoryStation"
+        reason:
+          $ref: "#/components/schemas/DirectoryReason"
     RadioLocal:
       type: object
       additionalProperties: false
@@ -4801,6 +4835,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DirectoryStation"
+        reason:
+          description: Só com `stations` vazia no nó final, quando o pedido ao diretório não saiu inteiro; ausente, a lista é o resultado.
+          $ref: "#/components/schemas/DirectoryReason"
         paging:
           type: [object, "null"]
           additionalProperties: false

@@ -721,9 +721,11 @@ class RadioStationsRoutesTest(RadioApiCase):
         for index in range(9):
             self.radio.stations.seed(ALFA, f"Pronta {index}")
         limit = self.call("POST", url, {"values": {**self.CREATE, "name": "Onze"}})
+        limit_taken = self.call("POST", url, {"values": self.CREATE})  # no teto, o nome repetido não muda a resposta
 
         assert body_of(duplicate)["error"]["fields"] == ["name"] and body_of(bad_kind)["error"]["fields"] == ["kind"]
         assert body_of(wrong_type)["error"]["fields"] == ["artists"] and body_of(limit)["error"]["fields"] == ["limit"]
+        assert body_of(limit_taken)["error"]["fields"] == ["limit"]
         assert {r.code for r in (duplicate, bad_kind, wrong_type, limit)} == {400}
 
     def test_apagar_estacao_em_uso_e_recusado_e_nada_e_apagado(self):
@@ -740,6 +742,22 @@ class RadioStationsRoutesTest(RadioApiCase):
             400,
             ["in_use"],
         ) and used.id in self.radio.stations.docs
+
+    def test_apagar_estacao_em_uso_por_radios_que_nao_se_resolvem_segue_recusado_como_in_use(self):
+        """Crivo (PR 256): a store recusa com rádios que já não se resolvem (sumiram entre a recusa e a releitura); a recusa segue
+        ``in_use`` (texto genérico, sem canal) e nada é apagado."""
+        self.premium()
+        used = self.radio.stations.seed(ALFA, "Em uso")
+        radio = self.seed_custom()
+        self.radio.store.docs[radio.id] = self.radio.store.docs[radio.id].__class__(
+            **{**self.radio.store.docs[radio.id].__dict__, "source": {"station": used.id}}
+        )
+
+        with patch.object(self.radio.store, "get", AsyncMock(return_value=None)):
+            response = self.call("DELETE", f"{BASE}/radio-stations/{used.id}?expected_version={used.rev}")
+
+        assert (response.code, body_of(response)["error"]["fields"]) == (400, ["in_use"])
+        assert used.id in self.radio.stations.docs
 
     def test_nome_de_fora_sai_sem_mencao_e_sem_segredo_na_lista(self):
         self.premium()
