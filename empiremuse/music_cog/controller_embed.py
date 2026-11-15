@@ -334,21 +334,21 @@ async def _pc_fav_embed_save(self, req):
 
     await interaction.response.defer()
 
+    limit = await quota_for(self.bot, interaction.author, "MAX_USER_FAVS")
     async with self.bot.pool.user_locks.lock(interaction.author.id):
         user_data = await self.bot.get_global_data(interaction.author.id, db_name=DBModel.users)
 
-        limit = await quota_for(self.bot, interaction.author, "MAX_USER_FAVS")
-
         saved = save_track(user_data["fav_links"], embed.author.name[1:], embed.author.url, limit=limit)
 
-        if isinstance(saved, RuleError):
-            await interaction.edit_original_message(track_fav_error_text(saved))
-            return True
+        if not isinstance(saved, RuleError):
+            fav_name = saved.name
+            user_data["fav_links"] = saved.entries
 
-        fav_name = saved.name
-        user_data["fav_links"] = saved.entries
+            await self.bot.update_global_data(interaction.author.id, user_data, db_name=DBModel.users)
 
-        await self.bot.update_global_data(interaction.author.id, user_data, db_name=DBModel.users)
+    if isinstance(saved, RuleError):
+        await interaction.edit_original_message(track_fav_error_text(saved))
+        return True
 
     req.embed = embed
     req.fav_name = fav_name

@@ -301,3 +301,17 @@ def test_daily_cap_reserves_the_truncation_marker_inside_the_budget(tmp_path):
     contents = (tmp_path / nome(0)).read_bytes()
     assert len(contents) <= 512
     assert contents.decode().count(file_log.TRUNCATED_MARKER) == 1
+
+
+@pytest.mark.regression
+def test_restarted_handler_discards_even_small_lines_after_the_daily_marker(tmp_path):
+    for restart in range(2):
+        handler = DailyRetentionFileHandler(tmp_path, max_day_bytes=512, now=Relogio())
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        if not restart:
+            handler.emit(logging.LogRecord("test", logging.INFO, __file__, 0, "x" * 600, (), None))
+        handler.emit(logging.LogRecord("test", logging.INFO, __file__, 0, "small", (), None))
+        handler.close()
+    contents = (tmp_path / nome(0)).read_text()
+    assert contents.count(file_log.TRUNCATED_MARKER) == 1
+    assert "small" not in contents

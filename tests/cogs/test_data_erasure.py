@@ -811,4 +811,39 @@ async def test_listener_never_competes_with_current_process_grant_view(state):
     inter.response.edit_message.assert_not_awaited()
     w.pool.erasure.erase_user.assert_not_awaited()
     w.clock.t += OWNER_GRANT_TTL_S
+    assert w.pool.erasure_grants.issued_here(grant.code) is True
+    w.clock.t += 300
     assert w.pool.erasure_grants.issued_here(grant.code) is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+@pytest.mark.parametrize("action,prefix", [("confirmed", "erasure_grant"), ("cancelled", "erasure_grant_cancel")])
+@pytest.mark.parametrize("listener_first", [True, False])
+async def test_expiry_boundary_live_view_owns_the_single_response(action, prefix, listener_first):
+    w = world()
+    grant = w.pool.erasure_grants.issue(OWNER, HOLDER)
+    view = views.ErasureGrantView(w.bot, w.tr, HOLDER, grant=grant)
+    w.clock.t = grant.expires_at
+    inter = click(HOLDER)
+    inter.data = SimpleNamespace(custom_id=f"{prefix}:{grant.code}")
+    listener = data_erasure.DataErasure(w.bot)
+    if listener_first:
+        await listener.expired_grant(inter)
+    assert not view.is_finished()
+    await getattr(view, action)(inter)
+    if not listener_first:
+        await listener.expired_grant(inter)
+    inter.response.edit_message.assert_awaited_once()
+    w.pool.erasure.erase_user.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_expired_listener_failed_edit_is_guarded(caplog):
+    w = world()
+    old = world().pool.erasure_grants.issue(OWNER, HOLDER)
+    inter = click(HOLDER)
+    inter.data = SimpleNamespace(custom_id=f"erasure_grant:{old.code}")
+    inter.response.edit_message.side_effect = RuntimeError("private detail")
+    await data_erasure.DataErasure(w.bot).expired_grant(inter)
+    assert "RuntimeError" in caplog.text and "private detail" not in caplog.text

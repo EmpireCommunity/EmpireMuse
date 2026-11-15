@@ -78,8 +78,6 @@ async def test_lastfm_toggle_after_erasure_does_not_write_an_old_view(mundo):
     await view.scrobble_enable(inter)
     bot.update_global_data.assert_not_awaited()
     assert view.session_key == ""
-    await view.disconnect_account(inter)
-    assert inter.response.defer.await_count == 2
 
 
 async def test_global_budget_reserves_inflight_erasure_and_audits_duration(mundo, caplog):
@@ -213,24 +211,41 @@ async def test_embed_reply_after_erasure_never_saves_the_prepared_document(mundo
     assert not await existe(mundo, "global", "users", ALVO)
 
 
-@pytest.mark.parametrize("guard", [lambda: False, lambda: 1 / 0])
-async def test_revoked_session_at_lock_never_marks_counts_or_erases(mundo, guard):
+@pytest.mark.parametrize(
+    "guard,raises",
+    [(lambda: False, False), (lambda: 1, False), (lambda: "yes", False), (lambda: None, False), (lambda: 1 / 0, True)],
+)
+async def test_revoked_session_at_lock_never_marks_counts_or_erases(mundo, guard, raises, caplog):
     from empiremuse.utils.erasure import ErasureSessionRevoked
     from tests.support.erasure_world import gravar_usuario
 
     await gravar_usuario(mundo, ALVO, custom_prefix="keep")
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+
     entered = asyncio.Event()
-    lock = mundo.pool.user_locks.lock(ALVO)
-    async with lock:
+    locks = mundo.pool.user_locks
 
-        async def request():
+    @asynccontextmanager
+    async def observed_lock(user):
+        async with locks.lock(user):
             entered.set()
-            return await mundo.service.erase_user(ALVO, source="panel", still_valid=guard)
+            yield
 
-        task = asyncio.create_task(request())
-        await entered.wait()
+    mundo.pool.user_locks = SimpleNamespace(lock=observed_lock)
+    async with locks.lock(ALVO):
+        task = asyncio.create_task(mundo.service.erase_user(ALVO, source="panel", still_valid=guard))
+        turn = asyncio.Event()
+        asyncio.get_running_loop().call_soon(turn.set)
+        await turn.wait()
+        assert not entered.is_set() and not task.done()
     with pytest.raises(ErasureSessionRevoked):
         await task
+    assert entered.is_set()
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == int(raises)
+    if warnings:
+        assert warnings[0].args == ("ZeroDivisionError",)
     assert await existe(mundo, "global", "users", ALVO)
     assert not mundo.pool.erasure_tombstones._erased_at
     assert not mundo.service._global_runs and not mundo.service._tries and not mundo.service._tasks
@@ -245,3 +260,149 @@ async def test_owner_erasure_audits_only_the_public_grant_id(mundo, caplog):
     await mundo.service.erase_user(ALVO, source="owner", owner_id=42, grant_id=grant.grant_id)
     assert f"grant={grant.grant_id}" in caplog.text
     assert grant.code not in caplog.text
+
+
+@pytest.mark.parametrize("action,erased", [("disconnect", False), ("disconnect", True), ("toggle", True)])
+async def test_lastfm_real_post_wait_flow_uses_original_edit_after_defer(mundo, monkeypatch, action, erased):
+    from copy import deepcopy
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, Mock
+    from empiremuse.cogs.lastfm import LastFMView, LastFmCog
+    from empiremuse.utils.db import global_db_models
+    from empiremuse.i18n import get_i18n
+
+    bot = SimpleNamespace(pool=mundo.pool, get_cog=lambda _: None, get_color=lambda: 0)
+    bot.pool.i18n = get_i18n()
+    doc = deepcopy(global_db_models["users"])
+    bot.get_global_data = AsyncMock(side_effect=lambda *a, **kw: deepcopy(doc))
+    bot.update_global_data = AsyncMock()
+    inter = SimpleNamespace(
+        bot=bot,
+        author=SimpleNamespace(id=ALVO),
+        guild=None,
+        permissions=SimpleNamespace(embed_links=True),
+        response=SimpleNamespace(defer=AsyncMock()),
+        edit_original_message=AsyncMock(),
+    )
+    button = SimpleNamespace(
+        author=inter.author,
+        guild=None,
+        response=SimpleNamespace(
+            defer=AsyncMock(),
+            is_done=Mock(return_value=True),
+            edit_message=AsyncMock(side_effect=AssertionError("already responded")),
+        ),
+        edit_original_message=AsyncMock(),
+    )
+
+    async def wait(view):
+        if action == "disconnect":
+            await view.disconnect_account(button)
+        else:
+            doc["lastfm"].update(sessionkey="key", username="name")
+            view.session_key = "key"
+            await view.scrobble_enable(button)
+        if erased:
+            mundo.relogio.avancar(1)
+            mundo.pool.erasure_tombstones.mark(ALVO)
+        view.stop()
+
+    monkeypatch.setattr(LastFMView, "wait", wait)
+    cog = LastFmCog.__new__(LastFmCog)
+    cog.bot = bot
+    await cog.lastfm.callback(cog, inter)
+    button.response.defer.assert_awaited_once()
+    button.response.edit_message.assert_not_awaited()
+    assert button.edit_original_message.await_count == (2 if action == "toggle" else 1)
+    if erased:
+        assert button.edit_original_message.await_args.kwargs["content"] == get_i18n().for_locale("pt-BR")(
+            "legacy.lastfm.erased_while_linking"
+        )
+    else:
+        assert "desvinculada" in button.edit_original_message.await_args.kwargs["embeds"][-1].footer.text
+
+
+async def test_controller_scrobble_holds_user_lock_until_write_and_replies_after_release(mundo):
+    from copy import deepcopy
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from empiremuse.music_cog.controller_buttons import _pc_lastfm
+    from empiremuse.utils.db import global_db_models
+    from empiremuse.i18n import get_i18n
+
+    entered, release = asyncio.Event(), asyncio.Event()
+    lock = mundo.pool.user_locks.lock(ALVO)
+    doc = deepcopy(global_db_models["users"])
+    doc["lastfm"].update(username="name", sessionkey="key", scrobble=False)
+    bot = SimpleNamespace(pool=mundo.pool, get_color=lambda *_: 0)
+    bot.pool.i18n = get_i18n()
+
+    async def read(*args, **kwargs):
+        assert lock.locked()
+        return doc
+
+    async def write(*args, **kwargs):
+        assert lock.locked()
+        entered.set()
+        await release.wait()
+
+    async def reply(**kwargs):
+        assert not lock.locked()
+
+    bot.get_global_data, bot.update_global_data = read, write
+    inter = SimpleNamespace(
+        author=SimpleNamespace(id=ALVO),
+        guild=None,
+        response=SimpleNamespace(defer=AsyncMock()),
+        edit_original_message=AsyncMock(side_effect=reply),
+    )
+    task = asyncio.create_task(_pc_lastfm(SimpleNamespace(bot=bot), SimpleNamespace(cmd=None, interaction=inter)))
+    await entered.wait()
+    assert lock.locked()
+    inter.edit_original_message.assert_not_awaited()
+    release.set()
+    await task
+    inter.edit_original_message.assert_awaited_once()
+    assert not doc["lastfm"]["scrobble"]  # a cópia lida não foi alterada
+    assert mundo.pool.lastfm_sessions[ALVO]["scrobble"] is True
+
+
+@pytest.mark.parametrize("source", ["track", "embed"])
+async def test_controller_favorite_limit_and_error_reply_release_the_user_lock(mundo, monkeypatch, source):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    import disnake
+    from empiremuse.music_cog import controller_buttons, controller_embed
+
+    lock = mundo.pool.user_locks.lock(ALVO)
+
+    async def quota(*args):
+        assert not lock.locked()
+        return 1
+
+    async def reply(*args, **kwargs):
+        assert not lock.locked()
+
+    bot = SimpleNamespace(
+        pool=mundo.pool,
+        get_color=lambda *_: 0,
+        get_global_data=AsyncMock(return_value={"fav_links": {"Existing": "https://example.org"}}),
+        update_global_data=AsyncMock(),
+    )
+    bot.pool.add_fav_embed_cooldown = SimpleNamespace(
+        get_bucket=lambda _: SimpleNamespace(update_rate_limit=lambda: None)
+    )
+    inter = SimpleNamespace(
+        author=SimpleNamespace(id=ALVO),
+        guild=SimpleNamespace(me=None),
+        response=SimpleNamespace(defer=AsyncMock()),
+        edit_original_message=AsyncMock(side_effect=reply),
+        message=SimpleNamespace(embeds=[disnake.Embed().set_author(name=" Track", url="https://example.com")]),
+    )
+    req = SimpleNamespace(interaction=inter, info={"name": "Track", "url": "https://example.com"}, select_type="track")
+    module = controller_buttons if source == "track" else controller_embed
+    monkeypatch.setattr(module, "quota_for", quota)
+    handler = module._pc_favorite_save if source == "track" else module._pc_fav_embed_save
+    assert await handler(SimpleNamespace(bot=bot), req) is True
+    inter.edit_original_message.assert_awaited_once()
+    bot.update_global_data.assert_not_awaited()

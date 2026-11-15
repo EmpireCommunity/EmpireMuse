@@ -175,9 +175,10 @@ class ErasureService:
             if still_valid is not None:
                 try:
                     valid = still_valid()
-                except Exception:
+                except Exception as exc:
+                    logger.warning("apagamento: falha ao conferir sessão (%s)", type(exc).__name__)
                     valid = False
-                if not valid:
+                if valid is not True:
                     raise ErasureSessionRevoked
             self._check_limits(user_id)
             if self._running >= ERASE_CONCURRENCY:

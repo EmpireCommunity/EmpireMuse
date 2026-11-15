@@ -2,6 +2,7 @@
 """Botões do controlador do player: pedir música, last.fm, favoritar a faixa atual e letras."""
 
 import asyncio
+import copy
 from typing import Union, Optional
 
 import disnake
@@ -142,7 +143,6 @@ async def _pc_lastfm(self, req):
     await interaction.response.defer(ephemeral=True, with_message=True)
     tombstones = self.bot.pool.erasure_tombstones
     read_at = tombstones.now()  # antes de ler (gancho d)
-    user_data = await self.bot.get_global_data(interaction.author.id, db_name=DBModel.users)
 
     async def no_account() -> bool:
         try:
@@ -163,16 +163,17 @@ async def _pc_lastfm(self, req):
         )
         return True
 
-    if not user_data["lastfm"]["sessionkey"]:
+    async with self.bot.pool.user_locks.lock(interaction.author.id):
+        user_data = copy.deepcopy(await self.bot.get_global_data(interaction.author.id, db_name=DBModel.users))
+        missing = tombstones.stale(interaction.author.id, read_at) or not user_data["lastfm"]["sessionkey"]
+        if not missing:
+            lastfm = user_data["lastfm"]
+            lastfm["scrobble"] = not lastfm["scrobble"]
+            await self.bot.update_global_data(interaction.author.id, user_data, db_name=DBModel.users)
+            self.bot.pool.lastfm_sessions[interaction.author.id] = dict(lastfm)
+    if missing:
         return await no_account()
 
-    user_data["lastfm"]["scrobble"] = not user_data["lastfm"]["scrobble"]
-    if tombstones.stale(interaction.author.id, read_at):  # dados apagados depois da leitura: o vínculo não existe mais
-        return await no_account()
-
-    self.bot.pool.lastfm_sessions[interaction.author.id] = user_data["lastfm"]
-    await self.bot.update_global_data(interaction.author.id, user_data, db_name=DBModel.users)
-    lastfm = user_data["lastfm"]
     account = md_link(lastfm["username"], f"https://www.last.fm/user/{lastfm['username']}", code=False)
     tr = await self.bot.pool.i18n.for_guild(interaction.guild)
     await interaction.edit_original_message(
@@ -402,25 +403,25 @@ async def _pc_favorite_save(self, req):
 
     await interaction.response.defer()
 
+    limit = await quota_for(self.bot, interaction.author, "MAX_USER_FAVS")
     async with self.bot.pool.user_locks.lock(interaction.author.id):
         user_data = await self.bot.get_global_data(interaction.author.id, db_name=DBModel.users)
 
-        limit = await quota_for(self.bot, interaction.author, "MAX_USER_FAVS")
-
         saved = save_track(user_data["fav_links"], info["name"], info["url"], limit=limit)
 
-        if isinstance(saved, RuleError):
-            await interaction.edit_original_message(
-                embed=disnake.Embed(
-                    color=self.bot.get_color(interaction.guild.me), description=track_fav_error_text(saved)
-                ),
-                view=None,
-            )
-            return True
+        if not isinstance(saved, RuleError):
+            user_data["fav_links"] = saved.entries
 
-        user_data["fav_links"] = saved.entries
+            await self.bot.update_global_data(interaction.author.id, user_data, db_name=DBModel.users)
 
-        await self.bot.update_global_data(interaction.author.id, user_data, db_name=DBModel.users)
+    if isinstance(saved, RuleError):
+        await interaction.edit_original_message(
+            embed=disnake.Embed(
+                color=self.bot.get_color(interaction.guild.me), description=track_fav_error_text(saved)
+            ),
+            view=None,
+        )
+        return True
 
     self.bot.dispatch("fav_add", interaction.user, user_data, md_link(info["name"], info["url"]))
 

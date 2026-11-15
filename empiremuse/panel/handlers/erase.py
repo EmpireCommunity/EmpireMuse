@@ -92,7 +92,9 @@ class AccountEraseHandler(AuthenticatedHandler):
     def _respond(self, outcome: EraseOutcome) -> None:
         if outcome.result is EraseResult.SESSION_REVOKED:
             self.forget_session()
-            self._page(401, "erro", "", False)
+            self.render_error(
+                401, "Sessão encerrada", "Sua sessão foi encerrada. Entre novamente para consultar sua conta."
+            )
             return
         if outcome.result is EraseResult.LOGIN_REQUIRED:
             # 303 de volta ao GET: ele não oferece formulário, só o link para entrar de novo (um POST seguido de 302 ao Discord

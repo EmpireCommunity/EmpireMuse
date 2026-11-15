@@ -15,7 +15,9 @@ from dataclasses import dataclass, field
 
 from empiremuse.rules.erasure import OWNER_GRANT_TTL_S, OWNER_GRANTS_PER_HOUR, RATE_WINDOW_S, SNOWFLAKE_LIMIT
 
+GRANT_ID_BYTES = 6
 GRANT_CODE_BYTES = 16
+GRANT_LISTENER_GRACE_S = 300
 _CODE_SHAPE = re.compile(r"[A-Za-z0-9_-]{16,64}")  # token_urlsafe(16) tem 22; nada de espaço, quebra de linha ou vazio
 
 
@@ -58,12 +60,16 @@ class OwnerGrants:
         self._ttl = ttl_s
         self._per_hour = per_hour
         self._by_code: dict[str, Grant] = {}
-        self._issued_codes: dict[str, float] = {}  # retidos até o prazo original, inclusive após resgate/revogação
+        self._issued_codes: dict[
+            str, float
+        ] = {}  # retidos até o prazo original + margem do listener, inclusive após resgate/revogação
         self._pending_code: dict[int, str] = {}  # titular -> código
         self._issued: dict[int, list[float]] = {}  # dono -> instantes de emissão na última hora
 
     def _prune(self, now: float) -> None:
-        self._issued_codes = {code: expiry for code, expiry in self._issued_codes.items() if expiry > now}
+        self._issued_codes = {
+            code: expiry for code, expiry in self._issued_codes.items() if expiry + GRANT_LISTENER_GRACE_S > now
+        }
         for code, grant in list(self._by_code.items()):
             if grant.expires_at <= now:
                 self._drop(grant)
@@ -91,7 +97,11 @@ class OwnerGrants:
         if len(stamps) >= self._per_hour:
             raise GrantLimited("owner_limit", max(0.0, min(stamps) + RATE_WINDOW_S - now))
         grant = Grant(
-            secrets.token_hex(6), secrets.token_urlsafe(GRANT_CODE_BYTES), owner_id, target_id, now + self._ttl
+            secrets.token_hex(GRANT_ID_BYTES),
+            secrets.token_urlsafe(GRANT_CODE_BYTES),
+            owner_id,
+            target_id,
+            now + self._ttl,
         )
         self._by_code[grant.code] = grant
         self._issued_codes[grant.code] = grant.expires_at
@@ -100,7 +110,7 @@ class OwnerGrants:
         return grant
 
     def issued_here(self, code: str) -> bool:
-        """Só distingue códigos emitidos por este processo até o prazo original; nunca autentica nem resgata."""
+        """Só distingue códigos emitidos por este processo até o prazo original + 300 s; nunca autentica nem resgata."""
         self._prune(self._clock())
         return code in self._issued_codes
 

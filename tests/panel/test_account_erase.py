@@ -409,6 +409,9 @@ class RevokedAtLockTest(EraseBase):
         self.pool.user_locks = SimpleNamespace(lock=revoked_lock)
         response = self.post_erase(browser)
         assert response.code == 401 and "Location" not in response.headers
-        assert LOGIN_LINK in response.body.decode()
+        body = response.body.decode()
+        assert "Sessão encerrada" in body and "Entre novamente" in body
+        assert "form-apagar" not in body and "O que será apagado" not in body
+        assert "Nada é apagado" not in body
         assert self.stored(UID) and self.stored_queue(UID)
         assert not self.pool.erasure._global_runs

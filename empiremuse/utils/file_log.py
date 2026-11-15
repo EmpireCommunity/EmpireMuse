@@ -25,6 +25,7 @@ LOG_DIR_MODE = 0o700
 LOG_FILE_MODE = 0o600
 logger = logging.getLogger(__name__)
 PRUNE_INTERVAL = timedelta(hours=1)
+TRUNCATION_TAIL_BYTES = 4096
 TRUNCATED_MARKER = "log do dia truncado: teto diário de bytes atingido; o resto do dia é descartado"
 
 __all__ = [
@@ -78,6 +79,7 @@ class DailyRetentionFileHandler(logging.FileHandler):
         self._day: date | None = None
         self._written = 0
         self._truncated = False
+        self._truncation_cache: tuple[str, int] | None = None
         self._last_prune: datetime | None = None
         self.last_prune_removed = 0
         self.last_prune_failed = 0
@@ -122,7 +124,13 @@ class DailyRetentionFileHandler(logging.FileHandler):
             self._written = os.lstat(self.baseFilename).st_size
         except FileNotFoundError:
             self._written = 0
+        self._truncation_cache = None
         self._truncated = self._written >= self.max_day_bytes
+        if self._written and not self._truncated:
+            fd = os.open(self.baseFilename, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            with os.fdopen(fd, "rb") as existing:
+                existing.seek(max(0, self._written - TRUNCATION_TAIL_BYTES))
+                self._truncated = TRUNCATED_MARKER.encode("utf-8") in existing.read(TRUNCATION_TAIL_BYTES)
         self._prune(moment)
 
     def _prune(self, moment: datetime) -> None:
@@ -150,16 +158,23 @@ class DailyRetentionFileHandler(logging.FileHandler):
                 self._switch_to(moment)
             data = self.format(record) + "\n"
             size = len(data.encode("utf-8", "backslashreplace"))
-            if (
-                self._truncated
-                or self._written + size + len(self._truncation_line().encode("utf-8", "backslashreplace"))
-                > self.max_day_bytes
-            ):
+            _, marker_size = self._truncation()
+            if self._truncated or self._written + size + marker_size > self.max_day_bytes:
                 self._drop_rest_of_day()
                 return
             self._write(data, size)
         except Exception:
             self.handleError(record)
+
+    def setFormatter(self, fmt: logging.Formatter | None) -> None:  # noqa: N802 - API do logging
+        super().setFormatter(fmt)
+        self._truncation_cache = None
+
+    def _truncation(self) -> tuple[str, int]:
+        if self._truncation_cache is None:
+            marker = self._truncation_line()
+            self._truncation_cache = marker, len(marker.encode("utf-8", "backslashreplace"))
+        return self._truncation_cache
 
     def _truncation_line(self) -> str:
         return (
@@ -169,8 +184,7 @@ class DailyRetentionFileHandler(logging.FileHandler):
     def _drop_rest_of_day(self) -> None:
         if not self._truncated:
             self._truncated = True  # antes do aviso: o aviso volta a este handler e já cai no "resto do dia"
-            marker = self._truncation_line()
-            size = len(marker.encode("utf-8", "backslashreplace"))
+            marker, size = self._truncation()
             if self._written + size <= self.max_day_bytes:
                 self._write(marker, size)
             logger.warning(

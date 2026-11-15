@@ -34,7 +34,7 @@ from empiremuse.rules.erasure import (  # noqa: F401 - CONFIRM_ID, CANCEL_ID e G
     OWNER_GRANT_TTL_S,
     ErasureStatus,
 )
-from empiremuse.rules.i18n import fit
+from empiremuse.rules.i18n import Translator, fit
 from empiremuse.utils.erasure import ErasureBusy, ErasureRateLimited
 from empiremuse.utils.erasure_grants import Grant, GrantLimited
 
@@ -101,7 +101,25 @@ async def clear_buttons(message: Optional[disnake.Message], label: str) -> None:
         await guarded(label, message.edit(view=None))
 
 
-class ErasureConfirmView(disnake.ui.View):
+class HolderView(disnake.ui.View):
+    """Guarda de titular e idioma comum às duas confirmações."""
+
+    bot: BotCore
+    holder_id: int
+
+    def reply_translator(self, interaction: disnake.MessageInteraction) -> Translator:
+        return translator_for(self.bot.pool, interaction.locale)
+
+    async def interaction_check(self, interaction: disnake.MessageInteraction) -> bool:
+        if interaction.author.id != self.holder_id:
+            await interaction.response.send_message(
+                self.reply_translator(interaction)("erasure.not_yours"), ephemeral=True
+            )
+            return False
+        return True
+
+
+class ErasureConfirmView(HolderView):
     """Confirmação curta do slash, exclusiva do titular que invocou o comando."""
 
     def __init__(self, bot: BotCore, tr, holder_id: int, *, origin: Optional[disnake.Interaction] = None) -> None:
@@ -121,17 +139,6 @@ class ErasureConfirmView(disnake.ui.View):
         confirm.callback, cancel.callback = self.confirmed, self.cancelled
         self.add_item(confirm)
         self.add_item(cancel)
-
-    def reply_translator(self, interaction):
-        return translator_for(self.bot.pool, interaction.locale)
-
-    async def interaction_check(self, interaction: disnake.MessageInteraction) -> bool:
-        if interaction.author.id != self.holder_id:
-            await interaction.response.send_message(
-                self.reply_translator(interaction)("erasure.not_yours"), ephemeral=True
-            )
-            return False
-        return True
 
     async def cancelled(self, interaction: disnake.MessageInteraction) -> None:
         self.stop()
@@ -155,7 +162,7 @@ class ErasureConfirmView(disnake.ui.View):
             )
 
 
-class ErasureGrantView(disnake.ui.View):
+class ErasureGrantView(HolderView):
     """DM do titular: uso único, com prazo da concessão, código privado e ID público distintos."""
 
     def __init__(self, bot: BotCore, tr, holder_id: int, *, grant: Grant) -> None:
@@ -175,17 +182,6 @@ class ErasureGrantView(disnake.ui.View):
         confirm.callback, cancel.callback = self.confirmed, self.cancelled
         self.add_item(confirm)
         self.add_item(cancel)
-
-    def reply_translator(self, interaction):
-        return translator_for(self.bot.pool, interaction.locale)
-
-    async def interaction_check(self, interaction: disnake.MessageInteraction) -> bool:
-        if interaction.author.id != self.holder_id:
-            await interaction.response.send_message(
-                self.reply_translator(interaction)("erasure.not_yours"), ephemeral=True
-            )
-            return False
-        return True
 
     async def cancelled(self, interaction: disnake.MessageInteraction) -> None:
         self.stop()

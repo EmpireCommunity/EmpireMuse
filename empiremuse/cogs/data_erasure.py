@@ -13,9 +13,9 @@ import disnake
 from disnake.ext import commands
 
 from empiremuse.i18n import localized
-from empiremuse.utils.erasure_views import ErasureConfirmView, translator_for
 from empiremuse.rules.erasure import GRANT_PREFIX
 from empiremuse.utils.erasure_grants import valid_grant_code
+from empiremuse.utils.erasure_views import ErasureConfirmView, guarded, translator_for
 
 if TYPE_CHECKING:
     from empiremuse.utils.client import BotCore
@@ -36,7 +36,9 @@ class DataErasure(commands.Cog):
         if self.bot.pool.erasure_grants.issued_here(code):
             return  # nunca disputa o reconhecimento com a view do processo atual, mesmo após resgate/revogação
         tr = translator_for(self.bot.pool, inter.locale)
-        await inter.response.edit_message(content=tr("erasure.grant_expired"), view=None)
+        await guarded(
+            "aviso de concessão expirada", inter.response.edit_message(content=tr("erasure.grant_expired"), view=None)
+        )
 
     @commands.slash_command(
         name=localized("cmd.delete_my_data.name"),
