@@ -5,6 +5,7 @@ lados mudam juntos, então cada função e cada limite têm o valor atual pinado
 junto com a constante). Quando uma etapa seguinte alterar uma regra de propósito, o teste que a pina é invertido nela.
 """
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -33,6 +34,14 @@ class TestTexto:
     )
     def test_clean_title(self, entrada, baixo, alto, esperado):
         assert text.clean_title(entrada, baixo, alto) == esperado
+
+    @pytest.mark.regression
+    @pytest.mark.parametrize(
+        ("escapado", "recusado"), [("\\ud800", True), ("\\u2028", True), ("\\u2029", True), ("\\ud83c\\udfb5", False)]
+    )
+    def test_surrogate_isolado_e_separadores_de_linha_sao_recusados_e_o_par_do_emoji_passa(self, escapado, recusado):
+        """V-158-1 na regra compartilhada: ``Cs``, ``Zl`` e ``Zp`` chegam por escape JSON; o par de surrogates (🎵) é um caractere só."""
+        assert text.has_control_or_format(json.loads(f'"Ro{escapado}ck"')) is recusado
 
     def test_clean_import_name_recusa_repetido_sem_diferenciar_a_caixa(self):
         assert text.clean_import_name("Rock", 2, 25, {}) == "Rock"

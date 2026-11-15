@@ -18,7 +18,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - Avisos de permissão (enviar mensagens, conectar, canal cheio) e da fila salva saem no idioma escolhido pelo servidor, e não no idioma do Discord do servidor.
 - Jukebox: um pedido digitado que falha volta a mostrar o erro; a passagem do painel para outro bot que falha espera cada vez mais entre as novas tentativas (de 5 s a 5 min).
 - Playlists do servidor: nomes com emojis encadeados ("🔴 🔵 Rock" ao lado de "🔵 Rock") são migrados na mesma subida.
-- Playlists do servidor: nome, descrição e gênero com separador de linha Unicode ou caractere corrompido são recusados com o mesmo aviso dos demais caracteres inválidos.
+- Texto digitado (playlists, favoritos, rádios, descrição de link do servidor e status do canal de voz) com separador de linha Unicode ou caractere corrompido é recusado com o mesmo aviso dos demais caracteres inválidos; nos textos de terceiros que entram no status e no perfil do app, esses caracteres são removidos.
 - `Ver uso` (dono): nome de canal ou servidor que começa com `-` ou `1.` não vira mais lista.
 - Status padrão do bot: `CUSTOM_STATUS_PRESENCES` aceita `{prefix}` e o texto padrão mostra o prefixo configurado, em vez de `!` fixo; com `INTERACTION_COMMAND_ONLY` essa presença não aparece. Quem copiou o texto padrão antigo não precisa mudar nada.
 - `ytoauth`: a resposta do nó local é liberada depois de aplicar o token.

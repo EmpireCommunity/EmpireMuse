@@ -9,9 +9,14 @@ from typing import Any, Mapping, Optional
 from empiremuse.rules.usage import escape_markdown
 
 
+_REFUSED_CATEGORIES = ("Cc", "Cf", "Cs", "Zl", "Zp")
+
+
 def has_control_or_format(text: str) -> bool:
-    """O texto tem caractere de controle (``Cc``) ou de formatação (``Cf``, como U+202E e U+200B)?"""
-    return any(unicodedata.category(char) in ("Cc", "Cf") for char in text)
+    """O texto tem caractere de controle (``Cc``, inclusive ``\\n`` e ``\\r``), de formatação (``Cf``, como U+202E e U+200B),
+    surrogate isolado (``Cs``, que o JSON aceita por escape) ou separador de linha/parágrafo (``Zl``/``Zp``, U+2028/U+2029)?
+    """
+    return any(unicodedata.category(char) in _REFUSED_CATEGORIES for char in text)
 
 
 def clean_title(raw: Any, low: int, high: int) -> Optional[str]:

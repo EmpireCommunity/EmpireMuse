@@ -158,12 +158,11 @@ def normalize_url(url: str) -> str:
 
 # U+200D junta os emojis compostos (👮‍♂️). Só vale entre dois caracteres visíveis; os demais ``Cf`` (U+200B, U+202E…) seguem recusados.
 _JOINER_BETWEEN_VISIBLE = re.compile("(?<=[^\\s\u200d])\u200d(?=[^\\s\u200d])")
-# Quebras de linha e o que o JSON deixa entrar por escape: surrogate isolado (U+D800\u2013U+DFFF) e os separadores U+2028/U+2029.
-_BREAK_OR_SURROGATE = re.compile("[\n\r\u2028\u2029\ud800-\udfff]")
 
 
 def _bad_text(text: str) -> bool:
-    return has_control_or_format(_JOINER_BETWEEN_VISIBLE.sub("", text)) or _BREAK_OR_SURROGATE.search(text) is not None
+    """A regra compartilhada (``\\n``/``\\r`` s\u00e3o ``Cc``; surrogate isolado e U+2028/U+2029 tamb\u00e9m caem nela), com o ZWJ do emoji liberado."""
+    return has_control_or_format(_JOINER_BETWEEN_VISIBLE.sub("", text))
 
 
 def check_name(raw: Any) -> str | RuleError:

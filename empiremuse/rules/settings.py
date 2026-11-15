@@ -51,7 +51,7 @@ def validate_prefix(raw: Any) -> str | RuleError:
 
 def validate_voice_status(raw: str) -> str | RuleError:
     """Status automático do canal de voz: quebras de linha viram espaço, até 496 caracteres, sem controle/formatação
-    (``Cc``/``Cf``) e, se não for vazio, com pelo menos um placeholder válido. Vazio desativa o status."""
+    (``has_control_or_format``) e, se não for vazio, com pelo menos um placeholder válido. Vazio desativa o status."""
     text = normalize_status(raw)
     if len(text) > VOICE_STATUS_MAX_LENGTH:
         return RuleError(STATUS_TOO_LONG, limit=VOICE_STATUS_MAX_LENGTH)
