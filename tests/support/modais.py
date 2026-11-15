@@ -82,6 +82,9 @@ class ModalBot:
 
     async def update_global_data(self, id_, data, *, db_name):
         self.salvos_usuario.append(copy.deepcopy(data))
+        self.user_data = copy.deepcopy(
+            data
+        )  # a próxima leitura (``change_user_doc`` relê sob o lock) vê o que foi gravado
 
     async def get_data(self, id_, *, db_name):
         return self.guild_data

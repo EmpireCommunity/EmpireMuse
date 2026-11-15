@@ -27,6 +27,7 @@ from empiremuse.rules.settings import validate_prefix
 from empiremuse.rules.usage import render_text
 from empiremuse.updater.git_flow import (
     EXIT_RESTART,
+    Runner,
     UpdateError,
     UpdateRollbackFailed,
     apply_git_update,
@@ -63,7 +64,7 @@ from empiremuse.utils.music.lavalink_server_list import validated_server_list
 from empiremuse.utils.music.models import LavalinkPlayer
 from empiremuse.utils.others import CustomContext, string_to_file, CommandArgparse, select_bot_pool
 from empiremuse.utils.owner_panel import panel_command, PanelView
-from empiremuse.utils.user_docs import SKIP, change_user_doc
+from empiremuse.utils.user_docs import SKIP, Skip, change_user_doc
 from empiremuse.version import image_version
 
 MSG_INVALID_PREFIX = "**O prefixo não pode conter espaços ou ter acima de 5 caracteres.**"
@@ -230,7 +231,7 @@ class Owner(commands.Cog):
         """Valores de segredo conhecidos (configuração do bot e ambiente do processo) que nunca saem em claro."""
         return self.bot.pool.secret_values()
 
-    def _update_runner(self):
+    def _update_runner(self) -> Runner:
         """O runner do ``git``/``uv`` do atualizador: mascara também os segredos da configuração de arquivo e os tokens dos bots."""
         return masking_runner(self.secret_values)
 
@@ -956,10 +957,11 @@ class Owner(commands.Cog):
         # antes de qualquer espera: apagamento depois disto descarta a gravação
         read_at = self.bot.pool.erasure_tombstones.now()
 
-        def clear_prefix(doc: dict):
+        def clear_prefix(doc: dict) -> Optional[Skip]:
             if not doc["custom_prefix"]:
                 return SKIP
             doc["custom_prefix"] = ""
+            return None
 
         change = await change_user_doc(self.bot, ctx.author.id, clear_prefix, read_at=read_at)
         if change.erased:

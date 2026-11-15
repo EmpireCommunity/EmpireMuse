@@ -26,7 +26,6 @@ from empiremuse.utils.music.errors import (
     GenericError,
 )
 from empiremuse.utils.music.user_limits import quota_for, track_fav_error_text
-from empiremuse.utils.user_docs import change_user_doc, normalize_integration_links
 from empiremuse.utils.music.interactions import (
     SelectInteraction,
 )
@@ -69,9 +68,9 @@ def _pc_modal_fav_options(self, req):
         )
 
 
-async def _pc_modal_integration_options(self, req):
-    """Monta o seletor de integrações do modal de pedido."""
-    interaction = req.interaction
+def _pc_modal_integration_options(self, req) -> bool:
+    """Monta o seletor de integrações do modal de pedido. ``True`` se há integração no formato antigo: quem chama a normaliza no
+    banco DEPOIS de enviar o modal (a primeira resposta não espera o lock do usuário)."""
     modal_components = req.modal_components
     user_data = req.user_data
 
@@ -81,7 +80,7 @@ async def _pc_modal_integration_options(self, req):
         update = False
 
         for k, v in list(user_data["integration_links"].items())[:25]:
-            # formato antigo: aqui só a cópia local; o documento é regravado abaixo, sob o lock
+            # formato antigo: aqui só a cópia local; o documento é regravado por quem chama, sob o lock
             if not isinstance(v, dict):
                 v = {"url": v, "avatar": None}
                 update = True
@@ -106,14 +105,9 @@ async def _pc_modal_integration_options(self, req):
             )
         )
 
-        if update:
-            # relido e normalizado sob o lock do usuário: nada do documento lido antes volta ao banco
-            await change_user_doc(
-                self.bot,
-                interaction.author.id,
-                normalize_integration_links,
-                read_at=self.bot.pool.erasure_tombstones.now(),
-            )
+        return update
+
+    return False
 
 
 async def _pc_modal_send(self, req):

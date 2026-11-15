@@ -45,7 +45,8 @@ class PlayerLifecycleMixin:
         reg_query: dict = None,
         user_read_at: float = None,
     ):
-        tombstones = self.bot.pool.erasure_tombstones
+        # antes de qualquer espera. Com ``user_data`` vale a hora em que quem chamou o leu (``None`` = desconhecida, falha fechado)
+        read_at = user_read_at if user_data else self.bot.pool.erasure_tombstones.now()
 
         if not player.current:
             if warn_message:
@@ -67,13 +68,11 @@ class PlayerLifecycleMixin:
             player.update = True
 
         if reg_query is not None:
-            # com ``user_data`` vale a hora em que quem chamou o leu (``None`` = desconhecida, falha fechado em ``stale``); sem ele, agora
-            read_at = user_read_at if user_data else tombstones.now()
 
             def remember(doc: dict) -> None:
                 try:
                     doc["last_tracks"].remove(reg_query)
-                except Exception:
+                except ValueError:  # ainda não estava nas recentes
                     pass
 
                 if len(doc["last_tracks"]) > 6:

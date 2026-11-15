@@ -51,7 +51,7 @@ async def change_user_doc(
     return UserDocChange(False, True, doc, result)
 
 
-def normalize_integration_links(doc: dict) -> Any:
+def normalize_integration_links(doc: dict) -> Optional[Skip]:
     """``change`` de ``change_user_doc``: integrações no formato antigo (``{nome: url}``) viram ``{nome: {url, avatar}}``."""
     links = doc["integration_links"]
     old = [name for name, value in links.items() if not isinstance(value, dict)]

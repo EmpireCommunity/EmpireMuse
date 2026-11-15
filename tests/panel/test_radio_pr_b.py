@@ -83,15 +83,16 @@ async def test_two_confirmations_at_once_with_the_same_token_reach_the_bot_only_
     tr = get_i18n().for_locale("pt-BR")
     token = service.tokens.issue(str(ACTOR), GUILD, TOKEN_SCOPE, f"{radio.id}:{radio.rev}")
     args = {"versao": [str(radio.rev)], "acao": ["confirmar_reiniciar"], "token": [token]}
-    release, original = asyncio.Event(), w.hub.setup.reset
+    entered, release, original = asyncio.Event(), asyncio.Event(), w.hub.setup.reset
 
     async def slow_reset(*call):
+        entered.set()
         await release.wait()
         return await original(*call)
 
     w.hub.setup.reset = AsyncMock(side_effect=slow_reset)
     first = asyncio.ensure_future(service.reset(ctx, radio, args, "/reset", ("bot", "call"), tr))
-    await asyncio.sleep(0)  # o primeiro chega à chamada do bot e fica esperando
+    await entered.wait()  # o primeiro chegou à chamada do bot e está esperando
 
     status, _ = await service.reset(ctx, radio, args, "/reset", ("bot", "call"), tr)
     release.set()

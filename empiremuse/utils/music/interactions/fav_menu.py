@@ -12,7 +12,7 @@ import disnake
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.checks import check_pool_bots
 from empiremuse.utils.music.converters import time_format, md_link
-from empiremuse.utils.user_docs import SKIP, change_user_doc
+from empiremuse.utils.user_docs import SKIP, Skip, change_user_doc
 from empiremuse.utils.others import (
     CustomContext,
     PlayerControls,
@@ -211,7 +211,7 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, FavMenuRadioMixin, d
             self.data = await self.bot.get_global_data(inter.author.id, db_name=DBModel.users)
         else:
 
-            def clear(doc: dict):
+            def clear(doc: dict) -> Union[Skip, dict]:
                 if not doc[field]:
                     return SKIP
                 removed = dict(doc[field])  # a cópia entregue ao membro é exatamente o que saiu do banco

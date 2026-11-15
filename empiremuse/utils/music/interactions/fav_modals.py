@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Optional
+from typing import Any, Callable, Optional
 
 import disnake
 
@@ -81,14 +81,15 @@ async def _erased_meanwhile(view, inter: disnake.ModalInteraction, change: UserD
     return True
 
 
-def _merge_into(field: str, clean_data: dict, limit: int):
+def _merge_into(field: str, clean_data: dict, limit: int) -> Callable[[dict], Optional[Skip]]:
     """``change`` de ``change_user_doc``: junta ``clean_data`` à lista ``field`` do documento relido; estouro de cota não grava."""
 
-    def merge(doc: dict):
+    def merge(doc: dict) -> Optional[Skip]:
         merged = merge_import(doc[field], clean_data, limit)
         if isinstance(merged, RuleError):
             return Skip(merged)
         doc[field] = merged
+        return None
 
     return merge
 
@@ -233,6 +234,7 @@ class FavModalImport(disnake.ui.Modal):
         return parsed
 
     async def _import_favorites_file(self, inter: disnake.ModalInteraction) -> bool:
+        read_at = self.view.bot.pool.erasure_tombstones.now()  # antes de qualquer espera: ver ``_erased_meanwhile``
         parsed = await self._read_favorites_file(inter)
         if parsed is None:
             return False
@@ -249,8 +251,6 @@ class FavModalImport(disnake.ui.Modal):
                 await inter.edit_original_message(_name_error_text(tr, clean_name, FAV_NAME_MIN, FAV_NAME_MAX))
                 return False
             clean_data[clean_name] = url
-
-        read_at = self.view.bot.pool.erasure_tombstones.now()  # antes de qualquer espera: ver ``_erased_meanwhile``
 
         limit = await quota_for(self.view.bot, inter.author, "MAX_USER_FAVS")
 
@@ -295,9 +295,8 @@ class FavModalImport(disnake.ui.Modal):
 
             clean_data[clean_name] = entry
 
-        await inter.response.defer(ephemeral=True)
-
         read_at = self.view.bot.pool.erasure_tombstones.now()  # antes de qualquer espera: ver ``_erased_meanwhile``
+        await inter.response.defer(ephemeral=True)
 
         limit = await quota_for(self.view.bot, inter.author, "MAX_USER_INTEGRATIONS")
 
@@ -385,15 +384,14 @@ class FavModalAdd(disnake.ui.Modal):
                 )
                 return
 
-            await inter.response.defer(ephemeral=True)
-
             read_at = self.view.bot.pool.erasure_tombstones.now()  # antes de qualquer espera: ver ``_erased_meanwhile``
+            await inter.response.defer(ephemeral=True)
 
             name_max = name_limit(self.view.bot.config["USER_FAV_MAX_NAME_LENGTH"])
             limit = await quota_for(self.view.bot, inter.author, "MAX_USER_FAVS")
             new_name = inter.text_values["user_fav_name"]
 
-            def save(doc: dict):
+            def save(doc: dict) -> Optional[Skip]:
                 saved = save_entry(
                     doc["fav_links"],
                     self.name,
@@ -406,6 +404,7 @@ class FavModalAdd(disnake.ui.Modal):
                 if isinstance(saved, RuleError):
                     return Skip(saved)
                 doc["fav_links"] = saved
+                return None
 
             change = await change_user_doc(self.view.bot, inter.author.id, save, read_at=read_at)
             if await _erased_meanwhile(self.view, inter, change):
@@ -441,12 +440,11 @@ class FavModalAdd(disnake.ui.Modal):
     async def _add_integration(self, inter: disnake.ModalInteraction) -> bool:
         """Adiciona/edita uma integração a partir do link de um perfil; ``False`` se nada foi gravado."""
         tr = self.view.tr
+        read_at = self.view.bot.pool.erasure_tombstones.now()  # antes de qualquer espera: ver ``_erased_meanwhile``
         try:
             await inter.response.defer(ephemeral=True, with_message=True)
         except disnake.HTTPException, disnake.InteractionResponded:
             pass
-
-        read_at = self.view.bot.pool.erasure_tombstones.now()  # antes de qualquer espera: ver ``_erased_meanwhile``
 
         typed_url = inter.text_values["user_integration_url"].strip()
 
@@ -482,7 +480,7 @@ class FavModalAdd(disnake.ui.Modal):
         if (data := await self._lookup_profile(inter, url, source)) is None:
             return False
 
-        def save(doc: dict):
+        def save(doc: dict) -> Any:  # ``Skip`` com o erro da regra, ou o resultado de ``save_external``
             saved = save_external(
                 doc["integration_links"],
                 fix_characters(data["title"], 80),

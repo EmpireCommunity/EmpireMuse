@@ -19,7 +19,7 @@ from empiremuse.rules.title_match import title_matches
 from empiremuse.utils.branding import asset_url
 from empiremuse.utils.db import DBModel, scrobble_model
 from empiremuse.utils.user_ban import user_bans_of
-from empiremuse.utils.user_docs import SKIP, change_user_doc
+from empiremuse.utils.user_docs import SKIP, Skip, change_user_doc
 from empiremuse.utils.safe_error import HTTPStatusError, safe_error
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.music.lastfm_tools import LastFmException
@@ -441,13 +441,14 @@ class LastFmCog(commands.Cog):
         """O Last.fm recusou ``session_key`` (consulta já feita, fora do lock): ela sai do documento relido sob o lock do usuário,
         só se ainda for a guardada (um vínculo novo feito nesse meio tempo fica) e se os dados não foram apagados desde ``read_at``."""
 
-        def forget(doc: dict):
+        def forget(doc: dict) -> Optional[Skip]:
             lastfm = doc["lastfm"]
             if lastfm["sessionkey"] != session_key or not (session_key or (username and lastfm["username"])):
                 return SKIP
             lastfm["sessionkey"] = ""
             if username:
                 lastfm["username"] = ""
+            return None
 
         await change_user_doc(self.bot, user_id, forget, read_at=read_at)
 

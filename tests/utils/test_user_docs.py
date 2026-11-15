@@ -74,13 +74,23 @@ class Bot:
 
 async def test_a_write_queued_behind_the_erasure_reads_and_writes_nothing():
     bot = Bot(custom_prefix="!")
-    lock = bot.pool.user_locks.lock(MEMBRO)
+    lock, na_fila = bot.pool.user_locks.lock(MEMBRO), asyncio.Event()
     await lock.acquire()  # o apagamento está rodando
+
+    class Sinaliza:
+        async def __aenter__(self):
+            na_fila.set()  # síncrono até o ``acquire``: quando o teste acorda, a escrita já está na fila do lock
+            await lock.acquire()
+
+        async def __aexit__(self, *exc):
+            lock.release()
+
+    bot.pool.user_locks = SimpleNamespace(lock=lambda user_id: Sinaliza())
     read_at = bot.pool.erasure_tombstones.now()
     pendente = asyncio.ensure_future(
         change_user_doc(bot, MEMBRO, lambda doc: doc.__setitem__("custom_prefix", "?"), read_at=read_at)
     )
-    await asyncio.sleep(0)  # a escrita entra na fila do lock
+    await na_fila.wait()
     bot.relogio[0] += 1
     bot.pool.erasure_tombstones.mark(MEMBRO)  # fim da exclusão
     lock.release()
