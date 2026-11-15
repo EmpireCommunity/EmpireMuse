@@ -141,6 +141,20 @@ class JukeboxTaskFlowTest(JukeboxApiCase):
         assert direct.code == 202
         self.drain_tasks()
 
+    def test_token_num_plano_que_nao_limpa_canal_e_ignorado_sem_ser_gasto(self):
+        """Opção A (PR 256): ``confirm_token`` num configurar que não limpa canal nenhum (canal novo) não é conferido nem gasto, e a
+        resposta é o ``202`` direto."""
+        version = self.state()["version"]
+        token = body_of(self.start_task(configure_body(version)))["confirm_token"]
+        tokens = self.ctx.jukebox_service.tokens
+
+        with patch.object(tokens, "consume", wraps=tokens.consume) as consume:
+            direct = self.start_task(configure_body(version, SETUP_NEW_CHANNEL, confirm_token=token))
+
+        assert direct.code == 202 and len(body_of(direct)["task_id"]) == 32
+        consume.assert_not_called()
+        self.drain_tasks()
+
     def test_token_de_uso_unico_vencido_de_outra_finalidade_ou_de_outro_canal_e_recusado(self):
         self.world.configured_text()
         version = self.state()["version"]

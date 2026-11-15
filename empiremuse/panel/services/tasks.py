@@ -36,7 +36,7 @@ Job = Callable[[], Awaitable[str]]
 
 REASON_REFUSED = "refused"  # recusa do módulo compartilhado sem código mais preciso
 REASON_TIMEOUT = "timeout"
-REASON_INTERRUPTED = "interrupted"  # o bot reiniciou (``shutdown``) com a tarefa em andamento
+REASON_INTERRUPTED = "interrupted"  # o bot estava desligando (``shutdown``) com a tarefa em andamento
 REASON_UNEXPECTED = "unexpected"
 
 

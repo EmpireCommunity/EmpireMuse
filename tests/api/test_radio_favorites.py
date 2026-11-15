@@ -2,6 +2,7 @@
 admin da lista do servidor (G agora e o ator da sessão), tetos, formato e o mesmo ``404`` sem oráculo, premium só para ``custom``/``genre``, idempotência,
 nenhum dado pessoal novo e o contrato (``openapi.yaml``) com todo status documentado observado."""
 
+import asyncio
 import logging
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -12,6 +13,7 @@ from empiremuse.utils.user_locks import UserLocks
 from empiremuse.utils.erasure import ErasureTombstones
 
 from empiremuse.api.data import DataHandler
+from empiremuse.api.handlers_radio_favorites import ref_items
 from empiremuse.rules.radio_station import shipped_catalog
 from empiremuse.utils.radio.custom_favorites import CUSTOM_FAVORITES_DB, CustomFavorites
 from empiremuse.utils.radio.directory import DirectoryError
@@ -505,3 +507,27 @@ class RadioFavoritesContract(FavoritesApiCase):
         } - self.seen
 
         assert not faltando, f"documentados e nunca observados: {sorted(faltando)}"
+
+
+def test_ref_items_reads_the_server_stations_once_and_another_guild_custom_is_missing():
+    """Crivo (PR 256): as ``custom`` saem de uma leitura só das estações do servidor (nunca uma por favorita); a de outro servidor não
+    está nela e sai ``missing``, igual a uma apagada. O gênero vem do catálogo, sem banco."""
+    ours = [SimpleNamespace(id="a" * 24, name="Rock"), SimpleNamespace(id="b" * 24, name="Pop")]
+    reads = []
+
+    async def list_for_guild(guild_id):
+        reads.append(guild_id)
+        return ours
+
+    hub = SimpleNamespace(stations=SimpleNamespace(list_for_guild=list_for_guild))
+    refs = ["a" * 24, "c" * 24, GENRE, "b" * 24]  # "c…" é de outro servidor
+
+    items = asyncio.run(ref_items(hub, SimpleNamespace(guild_id=42), refs))
+
+    assert reads == [42]
+    assert [(i["id"], i.get("missing", False)) for i in items] == [
+        ("a" * 24, False),
+        ("c" * 24, True),
+        (GENRE, False),
+        ("b" * 24, False),
+    ]

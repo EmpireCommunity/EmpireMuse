@@ -4401,7 +4401,7 @@ components:
     JukeboxTaskReason:
       type: string
       description: |
-        Código estável da falha, sem texto de usuário final: `timeout` (passou do prazo), `interrupted` (o bot reiniciou com a tarefa em andamento), `missing_permissions` (o bot não tem as permissões no canal ou no servidor), `channel_unavailable` (o canal escolhido já não existe), `category_unavailable` (a categoria escolhida já não existe), `refused` (outra recusa) e `unexpected` (falha sem código). O conjunto pode crescer na v1.x: o painel mostra um texto genérico para um código que não conhece ou que falta.
+        Código estável da falha, sem texto de usuário final: `timeout` (passou do prazo), `interrupted` (o bot estava desligando enquanto a tarefa rodava; depois de um reinício o `GET` da tarefa responde `404`, que o painel trata como resultado desconhecido), `missing_permissions` (o bot não tem as permissões no canal ou no servidor), `channel_unavailable` (o canal escolhido já não existe), `category_unavailable` (a categoria escolhida já não existe), `refused` (outra recusa) e `unexpected` (falha sem código). O conjunto pode crescer na v1.x: para um código que não conhece, ou que falta numa tarefa em `erro`, o painel mostra um texto genérico neutro, que não afirma que o item sumiu nem pede para tentar de novo.
       enum: [timeout, interrupted, missing_permissions, channel_unavailable, category_unavailable, refused, unexpected]
     JukeboxTask:
       type: object
@@ -4781,7 +4781,7 @@ components:
     DirectoryReason:
       type: string
       description: |
-        Por que uma lista do diretório veio vazia sem a busca ter rodado de fato: `limited` (o limite do servidor no diretório acabou por agora) ou `unavailable` (o diretório falhou). Só aparece com a lista vazia; ausente, a busca rodou e a lista é o resultado. O conjunto pode crescer na v1.x: o painel trata um código que não conhece como `unavailable`.
+        Por que uma lista do diretório veio vazia sem a busca ter rodado de fato: `limited` (o limite do servidor no diretório acabou por agora) ou `unavailable` (o diretório falhou). Só aparece com a lista vazia; ausente, a busca rodou e a lista é o resultado. O conjunto pode crescer na v1.x: para um código que não conhece, o painel mostra um texto genérico neutro, que não afirma que o item sumiu nem pede para tentar de novo.
       enum: [limited, unavailable]
     RadioStationSearch:
       type: object

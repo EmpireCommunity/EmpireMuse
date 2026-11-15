@@ -491,6 +491,10 @@ class FakeStations:
             raise self.fail_with
 
     def _validate(self, guild_id, raw, *, skip=None, playlists=()):
+        if skip is None and sum(1 for s in self.docs.values() if s.guild_id == guild_id) >= self.MAX:
+            raise RadioInvalid(
+                RuleError("station_limit", "limit")
+            )  # o teto vem antes do nome, como em ``check_station_doc``
         name = str(raw.get("name") or "").strip()
         if not 1 <= len(name) <= 32:
             raise RadioInvalid(RuleError("station_name", "name"))
@@ -515,8 +519,6 @@ class FakeStations:
             known = set(playlists) | set(self.playlists.get(guild_id, ()))
             if not 1 <= len(wanted) <= 5 or any(p not in known for p in wanted):
                 raise RadioInvalid(RuleError("station_playlists", "playlists"))
-        if skip is None and sum(1 for s in self.docs.values() if s.guild_id == guild_id) >= self.MAX:
-            raise RadioInvalid(RuleError("station_limit", "limit"))
         return name, kind, source
 
     async def list_for_guild(self, guild_id):
