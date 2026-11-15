@@ -64,7 +64,6 @@ class StationStore:
     def __init__(self, pool: BotPool, radios: RadioStore) -> None:
         self.pool = pool
         self.radios = radios
-        self._locks: dict[int, asyncio.Lock] = {}
         self.on_updated: Callable[[CustomStation], Awaitable[None]] | None = (
             None  # o hub liga: as rádios que tocam a estação a recarregam
         )
@@ -74,7 +73,9 @@ class StationStore:
         return self.pool.database
 
     def _lock(self, guild_id: int) -> asyncio.Lock:
-        return self._locks.setdefault(int(guild_id), asyncio.Lock())
+        return self.radios.station_lock(
+            guild_id
+        )  # uma trava só por servidor, dividida com ``RadioStore.set_custom_station``
 
     # ------------------------------------------------------------------ banco
 

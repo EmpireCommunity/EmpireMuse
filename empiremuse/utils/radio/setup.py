@@ -17,6 +17,7 @@ nem põe nome de canal ou de bot no log (R-12).
 from __future__ import annotations
 
 import asyncio
+import weakref
 import dataclasses
 import logging
 from dataclasses import dataclass
@@ -87,10 +88,19 @@ class RadioSetup:
     def __init__(self, hub: RadioHub, pool: Any) -> None:
         self.hub = hub
         self.pool = pool
-        self._locks: dict[int, asyncio.Lock] = {}
+        # Uma trava por servidor só enquanto alguém a segura ou espera (PI 111): a referência fraca some com o último usuário.
+        self._locks: weakref.WeakValueDictionary[int, asyncio.Lock] = weakref.WeakValueDictionary()
 
     def _lock(self, guild_id: int) -> asyncio.Lock:
         return self._locks.setdefault(int(guild_id), asyncio.Lock())
+
+    def _refuse_early(self, guild_id: int, actor_id: int) -> None:
+        """Pré-checagem FORA da trava, só com o cache: quem já aparece sem ``manage_guild`` é recusado sem entrar na fila do servidor (não
+        atrasa o gerente, PI 111). Membro fora do cache passa; a checagem que vale continua dentro da trava (``check_actor``/``check_manager``)."""
+        guild = self._guild(guild_id)
+        member = guild.get_member(actor_id) if guild is not None else None
+        if member is not None and not _manages(guild, member, actor_id):
+            raise RadioForbidden(REASON_MANAGE_GUILD)
 
     # ------------------------------------------------------------------ o que o Discord mostra
 
@@ -160,8 +170,7 @@ class RadioSetup:
         member = await self._member(guild, actor_id) if guild is not None else None
         if member is None:
             raise RadioForbidden(REASON_MANAGE_GUILD)
-        permissions = member.guild_permissions
-        if not (permissions.manage_guild or permissions.administrator or guild.owner_id == actor_id):
+        if not _manages(guild, member, actor_id):
             raise RadioForbidden(REASON_MANAGE_GUILD)
         return guild, member
 
@@ -239,6 +248,7 @@ class RadioSetup:
             guild_id, actor_id, channel_id, bot_id = int(guild_id), int(actor_id), int(channel_id), int(bot_id)
         except TypeError, ValueError:
             raise RadioInvalid(RuleError(CHANNEL_INVALID, "channel_id")) from None
+        self._refuse_early(guild_id, actor_id)
         async with self._lock(guild_id):
             resolved_actor = await self.check_actor(guild_id, actor_id)
             # Antes de qualquer recusa que revele ocupação, Jukebox ou permissões do bot.
@@ -326,6 +336,7 @@ class RadioSetup:
         Ficam as estações do servidor, o premium, o ``radio_only`` do bot, a saúde das estações e as outras rádios.
         """
         guild_id, actor_id = int(guild_id), int(actor_id)
+        self._refuse_early(guild_id, actor_id)
         async with self._lock(guild_id):
             await self.check_manager(guild_id, actor_id)
             current = await self._current(guild_id, radio_id, rev, check_rev=False)
@@ -351,6 +362,12 @@ class RadioSetup:
             await channel.get_partial_message(radio.panel_message_id).delete()
         except disnake.HTTPException as error:
             logger.info("Painel da rádio não apagado (%s)", type(error).__name__)
+
+
+def _manages(guild: Any, member: Any, actor_id: int) -> bool:
+    """``manage_guild``, administrador ou dono do servidor."""
+    permissions = member.guild_permissions
+    return bool(permissions.manage_guild or permissions.administrator or guild.owner_id == actor_id)
 
 
 def _new_radio(rid: str, channel_id: int, kind: str) -> Radio:

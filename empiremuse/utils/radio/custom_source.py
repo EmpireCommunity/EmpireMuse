@@ -3,7 +3,7 @@
 - **Pool:** gênero e artistas vêm do Last.fm (``hub.lastfm``); playlists vêm do ``playlist_tracks`` que as portas fornecem (a mesma leitura da R1). Tudo é unido,
   deduplicado e cortado em 300 faixas com até 30 por artista (``rules.radio_shuffle.build_pool``).
 - **Sorteio:** ``next_pick`` com o histórico só na memória. A faixa que NÃO resolve (nenhum stream tocável) entra no cache negativo de 24 h
-  (``global.radio_resolved``) e sai do sorteio; a que resolve é guardada ali por 7 dias; cinco falhas seguidas pausam a estação ("sem faixas tocáveis") e a nova tentativa fica por conta de quem chama.
+  (``global.radio_resolved``) e sai do sorteio; falha da BUSCA (nó fora, 429, ``TransientResolve``) só conta na sequência; a que resolve é guardada ali por 7 dias; cinco falhas seguidas pausam a estação ("sem faixas tocáveis") e a nova tentativa fica por conta de quem chama.
 - Nada aqui toca o Discord nem o Lavalink: a resolução da faixa chega como função (``resolve``).
 """
 
@@ -52,6 +52,10 @@ class EmptyStation(Exception):
 class NoPlayableTracks(Exception):
     """A FONTE está quebrada (pool vazio depois de reconstruído, ou Last.fm fora sem lista velha): a estação para de tocar, continua ligada e tenta de
     novo em ``RETRY_AFTER_S``. Falha de faixa nunca é isto (regra do dono: a rádio não para, pula para a próxima)."""
+
+
+class TransientResolve(Exception):
+    """A busca da faixa falhou (nó fora, limite 429, rede): o defeito não é DELA, então não entra no cache negativo global."""
 
 
 class StreakLimit(Exception):
@@ -215,7 +219,11 @@ class CustomSession:
             pick = next_pick(candidates, self.history, self.rng)
             if pick is None:
                 raise StreakLimit
-            resolved = await resolve(pick)
+            try:
+                resolved = await resolve(pick)
+            except TransientResolve:
+                self.streak += 1  # conta na sequência (no limite o runner recua), sem marcar a faixa por 24 h para todos os servidores
+                continue
             if resolved is None:
                 await self.failure(pick)
                 continue

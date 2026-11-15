@@ -227,3 +227,31 @@ class TestThePortsUseTheCache:
 
         assert await ports._resolve(TRACK) is None
         assert await ResolvedTracks(db).get(TRACK) is None
+
+
+class TestASearchFailureIsNotTheTracksFault:
+    """PI 72: nó fora ou 429 não põe a faixa no cache negativo global de 24 h; só "nenhum stream tocável" põe."""
+
+    @pytest.mark.regression
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(("outcome", "marked"), [("flagged", False), ("raises", False), ("no_result", True)])
+    async def test_only_a_real_miss_enters_the_negative_cache(self, outcome, marked):
+        from empiremuse.utils.music.models.player_autoqueue import RESOLVE_ERROR
+        from empiremuse.utils.radio.custom_source import StreakLimit
+
+        db = FakeDb()
+        ports, _ = TestThePortsUseTheCache.make_ports(db, resolves=False)
+
+        async def resolve_track(partial):
+            if outcome == "raises":
+                raise RuntimeError("node down")
+            if outcome == "flagged":  # o que ``resolve_track`` grava quando a busca do nó levantou (429, rede)
+                partial.info.setdefault("extra", {})[RESOLVE_ERROR] = True
+
+        ports._player().resolve_track = resolve_track
+        session = CustomSession([TRACK], ResolvedTracks(db))
+
+        with pytest.raises(StreakLimit):
+            await session.next_playable(ports._resolve)
+
+        assert await ResolvedTracks(db).failed(TRACK) is marked

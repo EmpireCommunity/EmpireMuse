@@ -41,13 +41,13 @@ async def test_reset_deletes_before_stopping_and_stops_even_when_delete_fails(fa
     assert w.hub.manager.is_running(radio.id) and w.ports.played
     caplog.set_level("INFO", logger="empiremuse.utils.radio.setup")
     events = []
-    delete = w.db.delete_data
+    delete = w.db.delete_doc_cas
 
-    async def delete_hook(id_, db_name, collection):
+    async def delete_hook(id_, **kwargs):
         events.append("delete")
         if failure:
             raise ConnectionError("banco indisponível")
-        await delete(id_, db_name, collection)
+        return await delete(id_, **kwargs)
 
     real_stop = w.hub.manager.stop_radios
 
@@ -56,7 +56,7 @@ async def test_reset_deletes_before_stopping_and_stops_even_when_delete_fails(fa
         events.append("stop")
         await real_stop(radios)
 
-    w.db.delete_data = delete_hook
+    w.db.delete_doc_cas = delete_hook  # o apagar da rádio é condicional ao ``rev`` (PI 75 L1)
     w.hub.manager.stop_radios = AsyncMock(side_effect=stop)
     w.hub.setup._delete_panel = AsyncMock()
     if failure:

@@ -70,3 +70,28 @@ async def test_missing_persisted_clock_uses_the_in_memory_origin_after_a_success
     finally:
         await w.hub.manager.deactivate(radio.id)
         await w.hub.manager.close()
+
+
+@pytest.mark.regression
+async def test_a_radio_turned_off_while_activating_gets_no_runner(monkeypatch):
+    """PI 119 s4: o ``/radio off`` chega durante o ``ensure_clock`` da ativação; o ``deactivate`` não acha runner e a ativação não pode criar um depois."""
+    w = await world()
+    radio = await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2, source={"playlist": "p"})
+    radio = await w.hub.store.set_enabled(radio.id, True)
+    manager = w.hub.manager
+    manager.ports_factory = lambda value: FakePorts()
+    original_clock = w.hub.store.ensure_clock
+
+    async def clock_then_turned_off(value):
+        done = await original_clock(value)
+        await w.hub.store.set_enabled(value.id, False)  # o desligar concorrente
+        await manager.deactivate(value.id)
+        return done
+
+    monkeypatch.setattr(w.hub.store, "ensure_clock", clock_then_turned_off)
+    try:
+        await manager.activate(radio)
+
+        assert not manager.is_running(radio.id)
+    finally:
+        await manager.close()

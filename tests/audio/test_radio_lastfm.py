@@ -207,3 +207,48 @@ class TestRate:
                 await w.feed.tag_tracks("rock")
 
         assert "SECRETKEY" not in caplog.text
+
+
+class _NestedResponse:
+    """Uma resposta HTTP 200 cujo corpo é JSON aninhado demais (``[`` × 100 000, dentro do ``MAX_BODY``)."""
+
+    status = 200
+
+    def __init__(self):
+        self.content = SimpleNamespace(iter_chunked=self._chunks)
+
+    async def _chunks(self, size):
+        yield b"[" * 100_000
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+class _Session:
+    def __init__(self, **kwargs):
+        pass
+
+    def get(self, *args, **kwargs):
+        return _NestedResponse()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_too_deeply_nested_body_is_unavailable_not_a_crash(monkeypatch):
+    """PI 72: ``json.loads`` estoura a recursão com ``[`` × 100 000; a falha é "Last.fm fora", nunca ``RecursionError`` subindo."""
+    from empiremuse.utils.radio import lastfm_feed
+
+    monkeypatch.setattr(lastfm_feed.aiohttp, "ClientSession", _Session)
+    w = make(Calls({}))
+
+    with pytest.raises(LastFmUnavailable):
+        await w.feed._http_json({"method": "tag.gettoptracks"})

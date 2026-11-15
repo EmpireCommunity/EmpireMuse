@@ -323,6 +323,17 @@ class LocalDatabase(BaseDB):
         self.cache.clear()
         return dropped
 
+    async def delete_doc_cas(self, id_, *, expected_rev: int, db_name: str, collection: str) -> bool:
+        """Apaga o documento só se o ``rev`` guardado ainda é ``expected_rev``."""
+        id_ = str(id_)
+        table = self._connect[collection][db_name]
+        stored = table.find_one({"_id": id_})
+        if not stored or stored.get("rev") != expected_rev:
+            return False
+        table.delete_one({"_id": id_})
+        self.cache.pop(f"{collection}:{db_name}:{id_}", None)
+        return True
+
     async def delete_data(self, id_, db_name: str, collection: str):
         try:
             self._connect[collection][db_name].delete_one({"_id": str(id_)})
@@ -511,6 +522,12 @@ class MongoDatabase(BaseDB):
                 await database.drop_collection(table)
         self.cache.clear()
         return dropped
+
+    async def delete_doc_cas(self, id_, *, expected_rev: int, db_name: str, collection: str) -> bool:
+        """Apaga o documento só se o ``rev`` guardado ainda é ``expected_rev`` (filtro ``{_id, rev}``, atômico no servidor)."""
+        self.cache.pop(f"{collection}:{db_name}:{id_}", None)
+        result = await self._connect[collection][db_name].delete_one({"_id": str(id_), "rev": expected_rev})
+        return result.deleted_count == 1
 
     async def delete_data(self, id_, db_name: str, collection: str):
         try:

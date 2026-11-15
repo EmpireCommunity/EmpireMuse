@@ -203,10 +203,12 @@ class RadioManager:
             logger.warning("Relógio virtual da rádio não gravado (%s)", type(error).__name__)
         # Leitura indisponível propaga. Após o último await, reconfere também ativações concorrentes.
         # Nenhum await separa essas checagens do registro do runner no processo único.
-        if await self.hub.store.get(radio.id) is None:
-            return  # apagada durante a ativação: nunca criar runner órfão
+        current = await self.hub.store.get(radio.id)
+        if current is None or not current.enabled:
+            return  # apagada ou desligada durante a ativação (o ``deactivate`` não achou runner): nunca criar runner órfão
         if self.is_running(radio.id):
             return
+        radio = current  # o runner parte do documento de agora, não do que chegou ao ``activate``
         runner = self._runner_for(radio)
         if runner is None:
             return
