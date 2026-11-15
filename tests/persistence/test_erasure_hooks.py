@@ -104,6 +104,7 @@ async def _fila(mundo):
 
 @pytest.mark.asyncio
 async def test_r2_save_scrobble_com_leitura_anterior_ao_apagamento_descarta_sem_gravar(mundo, monkeypatch):
+    await gravar_usuario(mundo, ALVO, lastfm_sessionkey=CHAVE, lastfm_scrobble=True)
     cog = _cog(mundo)
     ler = mundo.local.get_data
 

@@ -81,24 +81,25 @@ class CustomFavorites:
         )  # direto (falha se faltar); ANTES de ler: um apagamento depois disto invalida a gravação
 
     async def _write(self, key: str, doc: dict[str, Any] | None, ids: list[str], user_id: int, read_at: float) -> bool:
-        if self.pool.erasure_tombstones.stale(
-            user_id, read_at
-        ):  # dados apagados depois da leitura: não recria o documento de quem foi apagado
-            raise RadioUnavailable
-        rev = doc["rev"] if isinstance(doc, dict) and isinstance(doc.get("rev"), int) else 0
-        try:
-            return bool(
-                await self.pool.database.save_doc_cas(
-                    key,
-                    {"_id": key, "stations": ids, "rev": rev + 1},
-                    expected_rev=rev if doc is not None else None,
-                    db_name=CUSTOM_FAVORITES_DB,
-                    collection=GLOBAL_DB,
+        async with self.pool.user_locks.lock(user_id):
+            if self.pool.erasure_tombstones.stale(
+                user_id, read_at
+            ):  # dados apagados depois da leitura: não recria o documento de quem foi apagado
+                raise RadioUnavailable
+            rev = doc["rev"] if isinstance(doc, dict) and isinstance(doc.get("rev"), int) else 0
+            try:
+                return bool(
+                    await self.pool.database.save_doc_cas(
+                        key,
+                        {"_id": key, "stations": ids, "rev": rev + 1},
+                        expected_rev=rev if doc is not None else None,
+                        db_name=CUSTOM_FAVORITES_DB,
+                        collection=GLOBAL_DB,
+                    )
                 )
-            )
-        except Exception as error:  # noqa: BLE001
-            logger.warning("Favoritas da personalizada não gravadas (%s)", type(error).__name__)
-            raise RadioUnavailable from error
+            except Exception as error:  # noqa: BLE001
+                logger.warning("Favoritas da personalizada não gravadas (%s)", type(error).__name__)
+                raise RadioUnavailable from error
 
     async def add(
         self, guild_id: int, user_id: int, station_id: str, exists: Callable[[str], Awaitable[bool]]

@@ -34,7 +34,6 @@ from empiremuse.rules.erasure import (
     build_report,
     custom_favorite_key_matches,
     fingerprint,
-    grant_log_ref,
     only_defaults,
     read_is_stale,
     reset_to_default,
@@ -52,6 +51,10 @@ SOURCES = frozenset({"slash", "panel", "owner"})
 CAS_ATTEMPTS = 3
 USERS = next(store for store in STORES if store.key == "users")
 SCROBBLES = next(store for store in STORES if store.key == "scrobbles")
+
+
+class ErasureSessionRevoked(Exception):
+    """A sessão foi encerrada enquanto o pedido esperava o lock; nenhuma execução começou."""
 
 
 class ErasureBusy(Exception):
@@ -147,12 +150,19 @@ class ErasureService:
     # ------------------------------------------------------------------ entrada
 
     async def erase_user(
-        self, user_id: int, *, source: Source, owner_id: Optional[int] = None, grant_id: Optional[str] = None
+        self,
+        user_id: int,
+        *,
+        source: Source,
+        owner_id: Optional[int] = None,
+        grant_id: Optional[str] = None,
+        still_valid: Optional[Callable[[], bool]] = None,
     ) -> ErasureReport:
         """Apaga tudo o que é do membro (§2 do contrato) e devolve o relatório.
 
         Levanta ``ErasureRateLimited`` e ``ErasureBusy`` (nada é apagado). Falha de armazenamento e erro inesperado em qualquer passo nunca
         levantam: viram ``PARTIAL`` (``failed=("internal",)`` no segundo caso) e a auditoria e a contagem de limite ainda rodam.
+        ``still_valid`` reconfere a sessão sob o lock antes de qualquer execução; falso ou exceção levanta ``ErasureSessionRevoked``.
         Agenda a passada 2 a ``ERASE_RECHECK_S``. ``source="owner"`` exige ``owner_id`` e ``grant_id`` não vazios (vão para a auditoria).
 
         PEGA o lock do usuário sozinho (``pool.user_locks``): QUEM CHAMA NÃO PODE SEGURÁ-LO (``asyncio.Lock`` não é reentrante; segurar trava
@@ -162,16 +172,25 @@ class ErasureService:
         if source not in SOURCES or (source == "owner" and not (owner_id and grant_id)):
             raise ValueError("source/owner_id/grant_id inválidos")
         async with self.pool.user_locks.lock(user_id):
+            if still_valid is not None:
+                try:
+                    valid = still_valid()
+                except Exception:
+                    valid = False
+                if not valid:
+                    raise ErasureSessionRevoked
             self._check_limits(user_id)
             if self._running >= ERASE_CONCURRENCY:
                 raise ErasureBusy
             self._running += 1
+            started = self._clock()
+            self._global_runs.append(started)  # reserva antes do primeiro await, inclusive em cancelamento
             try:
                 snapshot, report = await self._run(user_id)
             finally:
                 self._running -= 1
             self._record(user_id, report.status)
-            self._audit(user_id, source, report, owner_id, grant_id)
+            self._audit(user_id, source, report, owner_id, grant_id, max(0, int((self._clock() - started) * 1000)))
             self._schedule_recheck(user_id, snapshot)
         return report
 
@@ -188,7 +207,6 @@ class ErasureService:
         self._tries.setdefault(user_id, []).append(now)
         if status is ErasureStatus.OK:
             self._ok.setdefault(user_id, []).append(now)
-        self._global_runs.append(now)  # OK e PARTIAL: ambos gastaram a execução
         self._prune_limits(now)
 
     def _prune_limits(self, now: float) -> None:
@@ -394,7 +412,12 @@ class ErasureService:
 
     @staticmethod
     def _audit(
-        user_id: int, source: str, report: ErasureReport, owner_id: Optional[int], grant_id: Optional[str]
+        user_id: int,
+        source: str,
+        report: ErasureReport,
+        owner_id: Optional[int],
+        grant_id: Optional[str],
+        duration_ms: int,
     ) -> None:
         """Passo 6: só origem, usuário, estado e contagens (nenhum valor apagado). O ID é registro de segurança (retenção do log).
 
@@ -405,7 +428,8 @@ class ErasureService:
         if report.failed:
             text, args = text + " failed=%s", [*args, ",".join(report.failed)]
         if source == "owner":
-            text, args = text + " owner=%s grant=%s", [*args, owner_id, grant_log_ref(grant_id or "")]
+            text, args = text + " owner=%s grant=%s", [*args, owner_id, grant_id]
+        text, args = text + " duration_ms=%d", [*args, duration_ms]
         # ``empiremuse_emit``: o agregador de logs junta WARNING de mesmo template; sem isto a 2ª execução em 60 s perderia ID, estado e contagens
         logger.warning(text, *args, extra={"empiremuse_emit": True})
 

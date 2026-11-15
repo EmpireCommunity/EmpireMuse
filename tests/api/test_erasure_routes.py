@@ -66,7 +66,7 @@ class ErasureCase(DataApiCase):
         """Troca ``pool.erasure`` por um dublê; ``calls`` guarda (usuário, fonte, lock do usuário preso?)."""
         calls, locks = [], self.pool.user_locks
 
-        async def erase_user(user_id, *, source):
+        async def erase_user(user_id, *, source, still_valid=None):
             calls.append((user_id, source, locks.lock(user_id).locked()))
             if isinstance(outcome, Exception):
                 raise outcome
@@ -383,3 +383,25 @@ class OutcomeTest(ErasureCase):
         assert self.call("POST", ERASE, None, raw_body="[1]", headers={"Content-Type": "application/json"}).code == 400
         assert self.call("POST", ERASE, None, raw_body="x").code == 415
         assert json.loads(self.call("POST", ERASE, {}).body)["error"]["fields"] == ["confirm_token", "typed"]
+
+
+class RevokedAtLockTest(ErasureCase):
+    @pytest.mark.regression
+    def test_session_revoked_at_lock_returns_401_and_preserves_data_and_budget(self):
+        from contextlib import asynccontextmanager
+
+        token = self.prepare()
+        locks = self.pool.user_locks
+
+        @asynccontextmanager
+        async def revoked_lock(user):
+            async with locks.lock(user):
+                self.store.destroy_user(str(user))
+                yield
+
+        self.pool.user_locks = SimpleNamespace(lock=revoked_lock)
+        response = self.erase(token)
+        assert (response.code, error_code(response)) == (401, "session_expired")
+        assert self.stored(UID)
+        assert not self.service._global_runs and not self.service._tries
+        assert not self.pool.erasure_tombstones._erased_at

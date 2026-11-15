@@ -150,20 +150,29 @@ class DailyRetentionFileHandler(logging.FileHandler):
                 self._switch_to(moment)
             data = self.format(record) + "\n"
             size = len(data.encode("utf-8", "backslashreplace"))
-            if self._truncated or self._written + size > self.max_day_bytes:
+            if (
+                self._truncated
+                or self._written + size + len(self._truncation_line().encode("utf-8", "backslashreplace"))
+                > self.max_day_bytes
+            ):
                 self._drop_rest_of_day()
                 return
             self._write(data, size)
         except Exception:
             self.handleError(record)
 
+    def _truncation_line(self) -> str:
+        return (
+            self.format(logging.LogRecord(__name__, logging.WARNING, __file__, 0, TRUNCATED_MARKER, None, None)) + "\n"
+        )
+
     def _drop_rest_of_day(self) -> None:
         if not self._truncated:
             self._truncated = True  # antes do aviso: o aviso volta a este handler e já cai no "resto do dia"
-            marker = self.format(
-                logging.LogRecord(__name__, logging.WARNING, __file__, 0, TRUNCATED_MARKER, None, None)
-            )
-            self._write(marker + "\n", 0)
+            marker = self._truncation_line()
+            size = len(marker.encode("utf-8", "backslashreplace"))
+            if self._written + size <= self.max_day_bytes:
+                self._write(marker, size)
             logger.warning(
                 "Log do dia truncado: o teto diário de %d bytes foi atingido; o resto do dia é descartado.",
                 self.max_day_bytes,

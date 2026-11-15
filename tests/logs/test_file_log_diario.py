@@ -289,3 +289,15 @@ class TestRelogioPadraoEAviso:
         handler.close()
 
         assert stat.S_IMODE((tmp_path / ".logs" / nome(0)).stat().st_mode) == 0o600
+
+
+@pytest.mark.regression
+def test_daily_cap_reserves_the_truncation_marker_inside_the_budget(tmp_path):
+    handler = DailyRetentionFileHandler(tmp_path, max_day_bytes=512, now=Relogio())
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    for _ in range(8):
+        handler.emit(logging.LogRecord("test", logging.INFO, __file__, 0, "á" * 60, (), None))
+    handler.close()
+    contents = (tmp_path / nome(0)).read_bytes()
+    assert len(contents) <= 512
+    assert contents.decode().count(file_log.TRUNCATED_MARKER) == 1

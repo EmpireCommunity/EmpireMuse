@@ -402,24 +402,25 @@ async def _pc_favorite_save(self, req):
 
     await interaction.response.defer()
 
-    user_data = await self.bot.get_global_data(interaction.author.id, db_name=DBModel.users)
+    async with self.bot.pool.user_locks.lock(interaction.author.id):
+        user_data = await self.bot.get_global_data(interaction.author.id, db_name=DBModel.users)
 
-    limit = await quota_for(self.bot, interaction.author, "MAX_USER_FAVS")
+        limit = await quota_for(self.bot, interaction.author, "MAX_USER_FAVS")
 
-    saved = save_track(user_data["fav_links"], info["name"], info["url"], limit=limit)
+        saved = save_track(user_data["fav_links"], info["name"], info["url"], limit=limit)
 
-    if isinstance(saved, RuleError):
-        await interaction.edit_original_message(
-            embed=disnake.Embed(
-                color=self.bot.get_color(interaction.guild.me), description=track_fav_error_text(saved)
-            ),
-            view=None,
-        )
-        return True
+        if isinstance(saved, RuleError):
+            await interaction.edit_original_message(
+                embed=disnake.Embed(
+                    color=self.bot.get_color(interaction.guild.me), description=track_fav_error_text(saved)
+                ),
+                view=None,
+            )
+            return True
 
-    user_data["fav_links"] = saved.entries
+        user_data["fav_links"] = saved.entries
 
-    await self.bot.update_global_data(interaction.author.id, user_data, db_name=DBModel.users)
+        await self.bot.update_global_data(interaction.author.id, user_data, db_name=DBModel.users)
 
     self.bot.dispatch("fav_add", interaction.user, user_data, md_link(info["name"], info["url"]))
 

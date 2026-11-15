@@ -121,17 +121,27 @@ class LastFMView(disnake.ui.View):
             )
             return
 
-        self.scrobble_enabled = not self.scrobble_enabled
         self.interaction = interaction
         await interaction.response.defer()
-        user_data = await self.ctx.bot.get_global_data(interaction.author.id, db_name=DBModel.users)
-        user_data["lastfm"]["scrobble"] = self.scrobble_enabled
-        await self.ctx.bot.update_global_data(interaction.author.id, user_data, db_name=DBModel.users)
+        bot = self.ctx.bot
+        tombstones = bot.pool.erasure_tombstones
+        read_at = tombstones.now()
+        async with bot.pool.user_locks.lock(interaction.author.id):
+            user_data = copy.deepcopy(await bot.get_global_data(interaction.author.id, db_name=DBModel.users))
+            if tombstones.stale(interaction.author.id, read_at) or not user_data["lastfm"]["sessionkey"]:
+                self.session_key = ""
+                self.scrobble_enabled = False
+            else:
+                self.scrobble_enabled = not user_data["lastfm"]["scrobble"]
+                user_data["lastfm"]["scrobble"] = self.scrobble_enabled
+                await bot.update_global_data(interaction.author.id, user_data, db_name=DBModel.users)
+                bot.pool.lastfm_sessions[interaction.author.id] = user_data["lastfm"]
         self.clear_items()
         self.build_components()
         await interaction.edit_original_message(view=self)
 
     async def disconnect_account(self, interaction: disnake.MessageInteraction):
+        await interaction.response.defer()
         self.clear_session = True
         self.session_key = ""
         self.interaction = interaction
@@ -568,20 +578,27 @@ class LastFmCog(commands.Cog):
         tombstones = self.bot.pool.erasure_tombstones
         for u in users:
             read_at = tombstones.now()
-            data = await self.bot.pool.local_database.get_data(
-                u.id, collection="scrobbles", db_name=DBModel.users, default_model=scrobble_model
-            )
-            data["tracks"].append(
-                {
-                    "query": query,
-                    "duration": track.duration,
-                }
-            )
-            if tombstones.stale(u.id, read_at):  # apagamento depois da leitura (gancho b): descarta sem gravar
-                continue
-            await self.bot.pool.local_database.update_data(
-                u.id, data, collection="scrobbles", db_name=DBModel.users, default_model=scrobble_model
-            )
+            async with self.bot.pool.user_locks.lock(u.id):
+                if tombstones.stale(u.id, read_at):
+                    continue
+                doc = await self.bot.pool.database.find_doc(u.id, collection="global", db_name=DBModel.users)
+                lastfm = (doc or {}).get("lastfm", {})
+                if not lastfm.get("sessionkey") or not lastfm.get("scrobble"):
+                    continue
+                data = await self.bot.pool.local_database.get_data(
+                    u.id, collection="scrobbles", db_name=DBModel.users, default_model=scrobble_model
+                )
+                data["tracks"].append(
+                    {
+                        "query": query,
+                        "duration": track.duration,
+                    }
+                )
+                if tombstones.stale(u.id, read_at):  # apagamento depois da leitura (gancho b): descarta sem gravar
+                    continue
+                await self.bot.pool.local_database.update_data(
+                    u.id, data, collection="scrobbles", db_name=DBModel.users, default_model=scrobble_model
+                )
 
     @commands.Cog.listener("on_wavelink_track_end")
     async def startscrooble(
