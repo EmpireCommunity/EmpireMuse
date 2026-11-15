@@ -13,6 +13,7 @@ from empiremuse.rules.voice_status import resolve_voice_status
 from empiremuse.utils.client import BotCore
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.jukebox_panel import fetch_panel_message
+from empiremuse.utils.user_docs import change_user_doc
 from empiremuse.utils.music.skin_store import load_custom_skins
 from empiremuse.utils.music.models import (
     LavalinkPlayer,
@@ -66,26 +67,22 @@ class PlayerLifecycleMixin:
             player.update = True
 
         if reg_query is not None:
-            if user_data:
-                read_at = user_read_at  # ``None`` (hora da leitura desconhecida) falha fechado em ``stale``
-            else:
-                read_at = tombstones.now()  # antes de ler (gancho a)
-                user_data = await self.bot.get_global_data(inter.author.id, db_name=DBModel.users)
+            # com ``user_data`` vale a hora em que quem chamou o leu (``None`` = desconhecida, falha fechado em ``stale``); sem ele, agora
+            read_at = user_read_at if user_data else tombstones.now()
 
-            try:
-                user_data["last_tracks"].remove(reg_query)
-            except Exception:
-                pass
+            def remember(doc: dict) -> None:
+                try:
+                    doc["last_tracks"].remove(reg_query)
+                except Exception:
+                    pass
 
-            if len(user_data["last_tracks"]) > 6:
-                user_data["last_tracks"].pop(0)
+                if len(doc["last_tracks"]) > 6:
+                    doc["last_tracks"].pop(0)
 
-            user_data["last_tracks"].append(reg_query)
+                doc["last_tracks"].append(reg_query)
 
-            if tombstones.stale(inter.author.id, read_at):  # apagamento depois da leitura: descarta sem gravar
-                return
-
-            await self.bot.update_global_data(inter.author.id, user_data, db_name=DBModel.users)
+            # relido sob o lock do usuário (gancho a): um apagamento depois de ``read_at`` descarta, e o resto do documento não regride
+            await change_user_doc(self.bot, inter.author.id, remember, read_at=read_at)
 
     async def create_player(
         self,

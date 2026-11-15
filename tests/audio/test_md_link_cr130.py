@@ -12,6 +12,8 @@ import disnake
 import pytest
 
 from empiremuse.i18n import get_i18n
+from empiremuse.utils.erasure import ErasureTombstones
+from empiremuse.utils.user_locks import UserLocks
 from empiremuse.utils.music.interactions.common import ViewMode
 from empiremuse.utils.music.interactions.fav_menu import FavMenuView
 from tests.support.marcas_md import NOME_COM_MARCAS, destinos, links_alheios, marcas_soltas
@@ -33,7 +35,7 @@ def visao(modo: str, nome: str, valor, onde: str):
         update_data=AsyncMock(),
         get_guild=lambda _id: guild,
         get_color=lambda *a: 0,
-        pool=SimpleNamespace(get_all_bots=lambda: []),
+        pool=SimpleNamespace(get_all_bots=lambda: [], erasure_tombstones=ErasureTombstones(), user_locks=UserLocks()),
     )
     v.data = {"fav_links": {}, "integration_links": {}}
     v.guild_data = {"player_controller": {"fav_links": {}}}

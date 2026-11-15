@@ -26,6 +26,7 @@ from empiremuse.utils.music.errors import (
     GenericError,
 )
 from empiremuse.utils.music.user_limits import quota_for, track_fav_error_text
+from empiremuse.utils.user_docs import change_user_doc, normalize_integration_links
 from empiremuse.utils.music.interactions import (
     SelectInteraction,
 )
@@ -80,9 +81,9 @@ async def _pc_modal_integration_options(self, req):
         update = False
 
         for k, v in list(user_data["integration_links"].items())[:25]:
+            # formato antigo: aqui só a cópia local; o documento é regravado abaixo, sob o lock
             if not isinstance(v, dict):
                 v = {"url": v, "avatar": None}
-                user_data["integration_links"][k] = v
                 update = True
 
             emoji, platform = music_source_emoji_url(v["url"], self.bot)
@@ -106,7 +107,13 @@ async def _pc_modal_integration_options(self, req):
         )
 
         if update:
-            await self.bot.update_global_data(interaction.author.id, user_data, db_name=DBModel.users)
+            # relido e normalizado sob o lock do usuário: nada do documento lido antes volta ao banco
+            await change_user_doc(
+                self.bot,
+                interaction.author.id,
+                normalize_integration_links,
+                read_at=self.bot.pool.erasure_tombstones.now(),
+            )
 
 
 async def _pc_modal_send(self, req):

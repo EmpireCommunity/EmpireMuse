@@ -34,6 +34,7 @@ from empiremuse.rules.text import format_mib
 from empiremuse.utils.music.jukebox_confirm import confirm_purge
 from empiremuse.utils.music.converters import time_format, md_link, md_code, perms_translations
 from empiremuse.utils.music.errors import GenericError, NoVoice
+from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.utils.music.interactions import SkinEditorMenu, EmbedPaginatorInteraction, ButtonInteraction
 from empiremuse.utils.music.skin_store import load_custom_skins
 from empiremuse.utils.music.models import LavalinkPlayer
@@ -64,6 +65,7 @@ from empiremuse.utils.music.jukebox_channel import (
     validate_jukebox_target,  # noqa: F401
 )
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
+from empiremuse.utils.user_docs import change_user_doc
 
 logger = logging.getLogger(__name__)
 
@@ -1595,17 +1597,22 @@ class MusicSettings(commands.Cog):
 
         await inter.response.defer(ephemeral=True)
 
+        read_at = self.bot.pool.erasure_tombstones.now()  # antes de ler: apagamento depois disto descarta a gravação
         data = await self.bot.get_global_data(inter.author.id, db_name=DBModel.users)
+        new_token = inter.text_values["token_input"]
 
-        if inter.text_values["token_input"] == data["token"]:
+        if new_token == data["token"]:
             await inter.send("Seu token é igual ao token atual!", ephemeral=True)
             return
 
-        await self.bot.get_cog("RPCCog").close_presence(inter)
+        await self.bot.get_cog("RPCCog").close_presence(inter)  # rede: antes do lock do usuário
 
-        data["token"] = inter.text_values["token_input"]
-
-        await self.bot.update_global_data(id_=inter.author.id, data=data, db_name=DBModel.users)
+        change = await change_user_doc(
+            self.bot, inter.author.id, lambda doc: doc.__setitem__("token", new_token), read_at=read_at
+        )
+        if change.erased:
+            await inter.edit_original_message(await guild_text(self.bot, inter.guild, "fav.erased_while_saving"))
+            return
 
         await inter.edit_original_message(
             f"O seu token foi importado/editado com sucesso!\nNota: Adicione/Atualize o token no app de RPC e reinicie o app."
@@ -1994,6 +2001,16 @@ class RPCCog(commands.Cog):
 
         await inter.send(embed=embed, components=components, ephemeral=True)
 
+    async def _store_rpc_token(self, inter: disnake.MessageInteraction, token: str, read_at: float) -> bool:
+        """Grava o token do RPC do autor sob o lock do usuário; ``False`` (com o aviso já enviado) se os dados dele foram apagados
+        desde ``read_at``."""
+        change = await change_user_doc(
+            self.bot, inter.author.id, lambda doc: doc.__setitem__("token", token), read_at=read_at
+        )
+        if change.erased:
+            await inter.send(await guild_text(self.bot, inter.guild, "fav.erased_while_saving"), ephemeral=True)
+        return not change.erased
+
     @commands.Cog.listener("on_button_click")
     async def rpc_button_event(self, inter: disnake.MessageInteraction):
         if not inter.data.custom_id.startswith("rpc_"):
@@ -2008,16 +2025,19 @@ class RPCCog(commands.Cog):
         if button_id == "rpc_gen":
             await inter.response.defer()
 
+            # antes de ler: apagamento depois disto descarta a gravação
+            read_at = self.bot.pool.erasure_tombstones.now()
             data = await self.bot.get_global_data(id_=user_id, db_name=DBModel.users)
 
             if data["token"]:
-                await self.close_presence(inter)
+                await self.close_presence(inter)  # rede: antes do lock do usuário
 
-            data["token"] = generate_rpc_token()
-            await self.bot.update_global_data(id_=user_id, data=data, db_name=DBModel.users)
+            new_token = generate_rpc_token()
+            if not await self._store_rpc_token(inter, new_token, read_at):
+                return
             msg = (
                 f"O token para usar no app de RPC (Rich Presence) foi gerado com sucesso!\n\n"
-                f"`Token gerado:` ||{data['token']}||\n\n"
+                f"`Token gerado:` ||{new_token}||\n\n"
                 f"Cole o token no app de RPC e **reinicie o app**."
             )
 
@@ -2057,12 +2077,11 @@ class RPCCog(commands.Cog):
         elif button_id == "rpc_remove":
             await inter.response.defer()
 
-            await self.close_presence(inter)
+            read_at = self.bot.pool.erasure_tombstones.now()  # antes de qualquer espera
+            await self.close_presence(inter)  # rede: antes do lock do usuário
 
-            data = await self.bot.get_global_data(id_=user_id, db_name=DBModel.users)
-
-            data["token"] = ""
-            await self.bot.update_global_data(id_=user_id, data=data, db_name=DBModel.users)
+            if not await self._store_rpc_token(inter, "", read_at):
+                return
             msg = "O token foi removido com sucesso!\nAgora o sistema de rpc estará desativado no seu usuário."
 
         else:  # button_id == "rpc_close"

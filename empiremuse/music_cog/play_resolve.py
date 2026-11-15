@@ -10,6 +10,7 @@ import disnake
 
 import empiremuse.wavelink as wavelink
 from empiremuse.utils.db import DBModel
+from empiremuse.utils.user_docs import change_user_doc, normalize_integration_links
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
 from empiremuse.utils.music.audio_sources.deezer import deezer_regex
 from empiremuse.utils.music.audio_sources.spotify import spotify_regex_w_user
@@ -87,11 +88,10 @@ class PlayResolveMixin:
         elif query.startswith("> itg:"):
             integration_data = user_data["integration_links"][query[7:]]
 
+            # formato antigo: cópia local; o documento é relido e regravado sob o lock
             if not isinstance(integration_data, dict):
                 integration_data = {"url": integration_data, "avatar": None}
-                user_data["integration_links"][query[7:]] = integration_data
-                if not self.bot.pool.erasure_tombstones.stale(inter.author.id, req.user_read_at):
-                    await self.bot.update_global_data(inter.author.id, user_data, db_name=DBModel.users)
+                await change_user_doc(self.bot, inter.author.id, normalize_integration_links, read_at=req.user_read_at)
 
             query = integration_data["url"]
 

@@ -19,6 +19,7 @@ from empiremuse.rules.title_match import title_matches
 from empiremuse.utils.branding import asset_url
 from empiremuse.utils.db import DBModel, scrobble_model
 from empiremuse.utils.user_ban import user_bans_of
+from empiremuse.utils.user_docs import SKIP, change_user_doc
 from empiremuse.utils.safe_error import HTTPStatusError, safe_error
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.music.lastfm_tools import LastFmException
@@ -105,20 +106,14 @@ class LastFmCog(commands.Cog):
                 lastfm_user = await self.bot.last_fm.user_info(current_session_key)
             except LastFmException as e:
                 if e.code == 9:
-                    data["lastfm"]["sessionkey"] = ""
-                    data["lastfm"]["username"] = ""
+                    # a chave conferida já não vale: sai do documento relido, só se ainda for ela (consulta feita fora do lock)
+                    await self._forget_session_key(inter.author.id, current_session_key, read_at, username=True)
                     current_session_key = ""
-                    if not self.bot.pool.erasure_tombstones.stale(inter.author.id, read_at):
-                        await self.bot.update_global_data(inter.author.id, data, db_name=DBModel.users)
                 else:
                     raise e
 
-        else:
-            data["lastfm"]["sessionkey"] = ""
-            data["lastfm"]["username"] = ""
-            current_session_key = ""
-            if not self.bot.pool.erasure_tombstones.stale(inter.author.id, read_at):
-                await self.bot.update_global_data(inter.author.id, data, db_name=DBModel.users)
+        elif data["lastfm"]["username"]:  # usuário guardado sem chave de sessão: sobra de um vínculo antigo
+            await self._forget_session_key(inter.author.id, "", read_at, username=True)
 
         embed_color = self.bot.get_color()
 
@@ -440,6 +435,22 @@ class LastFmCog(commands.Cog):
             self.bot.pool.lastfm_sessions[user_id] = dict(lastfm)
         return True
 
+    async def _forget_session_key(
+        self, user_id: int, session_key: str, read_at: float, *, username: bool = False
+    ) -> None:
+        """O Last.fm recusou ``session_key`` (consulta já feita, fora do lock): ela sai do documento relido sob o lock do usuário,
+        só se ainda for a guardada (um vínculo novo feito nesse meio tempo fica) e se os dados não foram apagados desde ``read_at``."""
+
+        def forget(doc: dict):
+            lastfm = doc["lastfm"]
+            if lastfm["sessionkey"] != session_key or not (session_key or (username and lastfm["username"])):
+                return SKIP
+            lastfm["sessionkey"] = ""
+            if username:
+                lastfm["username"] = ""
+
+        await change_user_doc(self.bot, user_id, forget, read_at=read_at)
+
     async def _abort_erased(self, inter, view: LastFMView, msg) -> None:
         """O apagamento dos dados do membro aconteceu enquanto ele vinculava ou desvinculava: nada é gravado."""
         text = await guild_text(self.bot, inter.guild, "legacy.lastfm.erased_while_linking")
@@ -679,9 +690,9 @@ class LastFmCog(commands.Cog):
                 if isinstance(e, LastFmException):
                     logger.warning("last.fm failed! %s - code: %s", type(e).__name__, e.code)
                     if e.code == 9:
-                        user_data = await self.bot.get_global_data(fminfo["user_id"], db_name=DBModel.users)
-                        user_data["lastfm"]["sessionkey"] = ""
-                        await self.bot.update_global_data(fminfo["user_id"], user_data, db_name=DBModel.users)
+                        await self._forget_session_key(
+                            fminfo["user_id"], fminfo["sessionkey"], read_ats[fminfo["user_id"]]
+                        )
                         try:
                             del self.bot.pool.lastfm_sessions[fminfo["user_id"]]
                         except KeyError:

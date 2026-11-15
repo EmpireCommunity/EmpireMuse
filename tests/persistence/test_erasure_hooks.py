@@ -558,7 +558,7 @@ async def test_play_resolve_integracao_em_formato_antigo_nao_regrava_o_documento
     )
     gravacoes = AsyncMock()
     cog = Music.__new__(Music)
-    cog.bot = SimpleNamespace(pool=mundo.pool, update_global_data=gravacoes)
+    cog.bot = SimpleNamespace(pool=mundo.pool, update_global_data=gravacoes, get_global_data=_ler_do_banco(mundo))
     inter = SimpleNamespace(author=SimpleNamespace(id=ALVO))
 
     def requisicao():
@@ -609,8 +609,7 @@ async def test_lastfm_comando_captura_o_read_at_no_inicio_e_aborta_se_apagaram_d
 
     await LastFmCog.lastfm.callback(cog, interacao)
 
-    usos = gravar_.await_args_list
-    assert len(usos) == 1  # só a limpeza da chave inválida do começo; _save_link não gravou
+    gravar_.assert_not_awaited()  # sem vínculo não há o que limpar no começo, e o _save_link não gravou
     texto = interacao.edit_original_message.await_args.kwargs["content"]
     assert texto == (await get_i18n().for_guild(None))("legacy.lastfm.erased_while_linking")
 
@@ -667,12 +666,23 @@ async def test_r2_save_link_apagado_durante_a_releitura_aborta_sem_gravar(mundo)
     assert mundo.pool.lastfm_sessions == {}
 
 
+def _ler_do_banco(mundo):
+    """``bot.get_global_data`` sobre o banco real do mundo: é de onde ``change_user_doc`` relê o documento sob o lock."""
+
+    async def ler(user_id, *, db_name):
+        return await mundo.database.get_data(
+            user_id, db_name=db_name, collection="global", default_model=global_db_models
+        )
+
+    return ler
+
+
 def _menu_de_favoritos(mundo, doc, leitura):
     from empiremuse.cogs.music import Music
 
     gravacoes = AsyncMock()
     cog = Music.__new__(Music)
-    cog.bot = SimpleNamespace(pool=mundo.pool, update_global_data=gravacoes)
+    cog.bot = SimpleNamespace(pool=mundo.pool, update_global_data=gravacoes, get_global_data=_ler_do_banco(mundo))
     requisicao = SimpleNamespace(
         bot=cog.bot,
         emoji=None,
@@ -699,6 +709,7 @@ async def test_r2_menu_de_favoritos_nao_regrava_documento_lido_antes_do_apagamen
     def doc_antigo():
         return {"integration_links": {"k": "https://x/perfil"}}
 
+    await gravar_usuario(mundo, ALVO, **doc_antigo())
     cog, req, gravacoes = _menu_de_favoritos(mundo, doc_antigo(), leitura)
     await cog._play_fav_options(req)  # sem apagamento: migra o formato e grava
     assert gravacoes.await_count == 1

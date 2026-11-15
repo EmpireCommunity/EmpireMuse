@@ -10,6 +10,8 @@ import pytest
 
 from empiremuse.cogs.music_settings import RPCCog
 from empiremuse.utils import client
+from empiremuse.utils.erasure import ErasureTombstones
+from empiremuse.utils.user_locks import UserLocks
 from tests.cogs.test_ytoauth_dm import Cenario, REFRESH
 
 pytestmark = [pytest.mark.critical, pytest.mark.regression]
@@ -146,7 +148,11 @@ def test_rpc_entrypoints_generate_protocol_tokens(entrypoint):
         token = parsed.new["token"]
     else:
         data = {"token": ""}
-        bot = SimpleNamespace(get_global_data=AsyncMock(return_value=data), update_global_data=AsyncMock())
+        bot = SimpleNamespace(
+            get_global_data=AsyncMock(return_value=data),
+            update_global_data=AsyncMock(),
+            pool=SimpleNamespace(erasure_tombstones=ErasureTombstones(), user_locks=UserLocks()),
+        )
         cog = RPCCog.__new__(RPCCog)
         cog.bot = bot
         interaction = SimpleNamespace(
@@ -159,8 +165,8 @@ def test_rpc_entrypoints_generate_protocol_tokens(entrypoint):
 
         asyncio.run(cog.rpc_button_event(interaction))
 
-        token = data["token"]
         bot.update_global_data.assert_awaited_once()
+        token = bot.update_global_data.await_args.args[1]["token"]  # gravado numa cópia relida sob o lock do usuário
     assert len(token) == 50
     assert set(token) <= set(string.ascii_letters + string.digits)
 

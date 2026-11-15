@@ -57,11 +57,13 @@ from empiremuse.utils.erasure_views import OwnerRequestView
 from empiremuse.utils.music.checks import check_voice, check_requester_channel, can_connect
 from empiremuse.utils.music.converters import URL_REG, md_link
 from empiremuse.utils.music.errors import GenericError, NoVoice, code_suffix, log_unexpected_error
+from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.utils.music.interactions import SelectBotVoice
 from empiremuse.utils.music.lavalink_server_list import validated_server_list
 from empiremuse.utils.music.models import LavalinkPlayer
 from empiremuse.utils.others import CustomContext, string_to_file, CommandArgparse, select_bot_pool
 from empiremuse.utils.owner_panel import panel_command, PanelView
+from empiremuse.utils.user_docs import SKIP, change_user_doc
 from empiremuse.version import image_version
 
 MSG_INVALID_PREFIX = "**O prefixo não pode conter espaços ou ter acima de 5 caracteres.**"
@@ -929,11 +931,14 @@ class Owner(commands.Cog):
         if isinstance(prefix, RuleError):
             raise GenericError(MSG_INVALID_PREFIX)
 
-        user_data = await self.bot.get_global_data(ctx.author.id, db_name=DBModel.users)
-
-        user_data["custom_prefix"] = prefix
+        # antes de qualquer espera: apagamento depois disto descarta a gravação
+        read_at = self.bot.pool.erasure_tombstones.now()
+        change = await change_user_doc(
+            self.bot, ctx.author.id, lambda doc: doc.__setitem__("custom_prefix", prefix), read_at=read_at
+        )
+        if change.erased:
+            raise GenericError(await guild_text(self.bot, ctx.guild, "fav.erased_while_saving"))
         self.bot.pool.user_prefix_cache[ctx.author.id] = prefix
-        await self.bot.update_global_data(ctx.author.id, user_data, db_name=DBModel.users)
 
         prefix = disnake.utils.escape_markdown(prefix)
 
@@ -948,14 +953,20 @@ class Owner(commands.Cog):
     @commands.cooldown(1, 10, commands.BucketType.guild)
     @commands.command()
     async def resetuserprefix(self, ctx: CustomContext):
-        user_data = await self.bot.get_global_data(ctx.author.id, db_name=DBModel.users)
+        # antes de qualquer espera: apagamento depois disto descarta a gravação
+        read_at = self.bot.pool.erasure_tombstones.now()
 
-        if not user_data["custom_prefix"]:
+        def clear_prefix(doc: dict):
+            if not doc["custom_prefix"]:
+                return SKIP
+            doc["custom_prefix"] = ""
+
+        change = await change_user_doc(self.bot, ctx.author.id, clear_prefix, read_at=read_at)
+        if change.erased:
+            raise GenericError(await guild_text(self.bot, ctx.guild, "fav.erased_while_saving"))
+        if not change.saved:
             raise GenericError("**Você não possui prefixo configurado.**")
-
-        user_data["custom_prefix"] = ""
         self.bot.pool.user_prefix_cache[ctx.author.id] = ""
-        await self.bot.update_global_data(ctx.author.id, user_data, db_name=DBModel.users)
 
         embed = disnake.Embed(
             description=f"**O seu prefixo de usuário foi removido com sucesso.**",
