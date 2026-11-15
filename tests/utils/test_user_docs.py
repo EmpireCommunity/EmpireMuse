@@ -22,7 +22,7 @@ from empiremuse.utils.user_locks import UserLocks
 pytestmark = [pytest.mark.critical, pytest.mark.asyncio]
 
 MEMBRO = 42
-ERASED_TEXT = get_i18n().for_locale("pt-BR")("fav.erased_while_saving")
+ERASED_TEXT = get_i18n().for_locale("pt-BR")("erasure.erased_while_saving")
 
 
 class Bot:
@@ -33,13 +33,21 @@ class Bot:
         self.doc = {"custom_prefix": "", "token": "", "fav_links": {}, "integration_links": {}, **doc}
         self.gravados: list[dict] = []
         self.leituras = 0
+        self.config = {"MAX_USER_FAVS": 0}  # sem limite: a cota não consulta o dono
         self.pool = SimpleNamespace(
             erasure_tombstones=ErasureTombstones(clock=lambda: self.relogio[0]),
             user_locks=UserLocks(),
             user_prefix_cache={},
             i18n=get_i18n(),
             get_all_bots=lambda: [],  # o RPC fecha a presença do token antigo antes de gravar: aqui não há player
+            add_fav_embed_cooldown=SimpleNamespace(
+                get_bucket=lambda inter: SimpleNamespace(update_rate_limit=lambda: None)
+            ),
         )
+
+    @staticmethod
+    def get_color(*args):
+        return 0
 
     async def get_global_data(self, id_, *, db_name):
         self.leituras += 1
@@ -165,11 +173,31 @@ async def _menu(bot, acao):
     return aviso.await_args.args[0]
 
 
+async def _favorito_do_player(bot, modulo, salvar):
+    """Os botões de favoritar do player: a faixa atual (``controller_buttons``) e o link do embed (``controller_embed``)."""
+    from importlib import import_module
+
+    inter = _interacao()
+    inter.guild = SimpleNamespace(id=1, preferred_locale="pt-BR", me=None)
+    inter.message.embeds = [SimpleNamespace(author=SimpleNamespace(name=" Pop", url="https://example.com/pop"))]
+    req = SimpleNamespace(
+        interaction=inter, info={"name": "Pop", "url": "https://example.com/pop"}, select_type="Track"
+    )
+
+    tratado = await getattr(import_module(f"empiremuse.music_cog.{modulo}"), salvar)(SimpleNamespace(bot=bot), req)
+
+    assert tratado is True  # o fluxo para aqui: a resposta de "salvo" não é montada
+    aviso = inter.edit_original_message.await_args
+    return aviso.args[0] if aviso.args else aviso.kwargs["embed"].description
+
+
 ESCRITORES = {
     "prefixo": _prefixo,
     "token-do-rpc": _token_do_rpc,
     "remover-favorito": lambda bot: _menu(bot, "remove_callback"),
     "limpar-favoritos": lambda bot: _menu(bot, "clear_callback"),
+    "favoritar-a-faixa-atual": lambda bot: _favorito_do_player(bot, "controller_buttons", "_pc_favorite_save"),
+    "favoritar-o-link-do-embed": lambda bot: _favorito_do_player(bot, "controller_embed", "_pc_fav_embed_save"),
 }
 
 

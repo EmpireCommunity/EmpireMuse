@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import asyncio
+import logging
 from typing import Union, Optional
 
 import disnake
@@ -58,6 +59,8 @@ from empiremuse.music_cog.controller_buttons import (
     _pc_command_args,
 )
 from empiremuse.music_cog.controller_state import ControllerState
+
+logger = logging.getLogger(__name__)
 
 
 class PlayerControllerMixin:
@@ -156,9 +159,14 @@ class PlayerControllerMixin:
 
                 if legacy_integrations:
                     # depois do modal: relido e normalizado sob o lock do usuário, nada do documento lido antes volta ao banco
-                    await change_user_doc(
-                        self.bot, req.interaction.user.id, normalize_integration_links, read_at=read_at
-                    )
+                    try:
+                        await change_user_doc(
+                            self.bot, req.interaction.user.id, normalize_integration_links, read_at=read_at
+                        )
+                    except Exception as exc:
+                        # o modal já é a resposta desta interação: não há como avisar o membro, e o formato antigo segue
+                        # válido para leitura. Só o tipo vai ao log.
+                        logger.warning("Integrações não normalizadas depois do modal (%s)", type(exc).__name__)
 
                 return
 

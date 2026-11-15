@@ -39,6 +39,11 @@ def run(
     processo) e sai com 75: o próximo boot tenta de novo, até ``MAX_RESTORE_ATTEMPTS``; depois disso desiste e grava
     ``rolled_back`` com ``restore_attempts = GAVE_UP_ATTEMPTS`` (o aviso pós-boot diz que a reversão falhou). Sem como
     gravar o contador (disco cheio ou só leitura) NÃO restaura nem sai com 75: sem o teto seria um laço; a subida segue.
+
+    Limite da máscara: o ``runner`` padrão é o ``run_exec`` puro, porque a guarda roda antes de o pool e a configuração de
+    arquivo carregarem. A saída do git e do instalador que vai ao log numa falha é mascarada pelos segredos do ambiente e
+    pela forma de token do Discord; um segredo que só existe na configuração de arquivo não é conhecido aqui. Esses
+    processos rodam com o ambiente mínimo do atualizador, sem os segredos do bot.
     """
     pending = read_pending(runtime_dir, now)
     if pending is None or pending.flow != "git" or pending.status not in ("applying", "pending"):

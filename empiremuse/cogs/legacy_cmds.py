@@ -938,7 +938,7 @@ class Owner(commands.Cog):
             self.bot, ctx.author.id, lambda doc: doc.__setitem__("custom_prefix", prefix), read_at=read_at
         )
         if change.erased:
-            raise GenericError(await guild_text(self.bot, ctx.guild, "fav.erased_while_saving"))
+            raise GenericError(await guild_text(self.bot, ctx.guild, "erasure.erased_while_saving"))
         self.bot.pool.user_prefix_cache[ctx.author.id] = prefix
 
         prefix = disnake.utils.escape_markdown(prefix)
@@ -965,7 +965,7 @@ class Owner(commands.Cog):
 
         change = await change_user_doc(self.bot, ctx.author.id, clear_prefix, read_at=read_at)
         if change.erased:
-            raise GenericError(await guild_text(self.bot, ctx.guild, "fav.erased_while_saving"))
+            raise GenericError(await guild_text(self.bot, ctx.guild, "erasure.erased_while_saving"))
         if not change.saved:
             raise GenericError("**Você não possui prefixo configurado.**")
         self.bot.pool.user_prefix_cache[ctx.author.id] = ""

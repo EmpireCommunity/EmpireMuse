@@ -1595,9 +1595,10 @@ class MusicSettings(commands.Cog):
         if inter.data.custom_id != "rpc_token_create":
             return
 
+        # antes de qualquer espera (o defer incluído): apagamento depois disto descarta a gravação
+        read_at = self.bot.pool.erasure_tombstones.now()
         await inter.response.defer(ephemeral=True)
 
-        read_at = self.bot.pool.erasure_tombstones.now()  # antes de ler: apagamento depois disto descarta a gravação
         data = await self.bot.get_global_data(inter.author.id, db_name=DBModel.users)
         new_token = inter.text_values["token_input"]
 
@@ -1611,7 +1612,7 @@ class MusicSettings(commands.Cog):
             self.bot, inter.author.id, lambda doc: doc.__setitem__("token", new_token), read_at=read_at
         )
         if change.erased:
-            await inter.edit_original_message(await guild_text(self.bot, inter.guild, "fav.erased_while_saving"))
+            await inter.edit_original_message(await guild_text(self.bot, inter.guild, "erasure.erased_while_saving"))
             return
 
         await inter.edit_original_message(
@@ -2008,7 +2009,7 @@ class RPCCog(commands.Cog):
             self.bot, inter.author.id, lambda doc: doc.__setitem__("token", token), read_at=read_at
         )
         if change.erased:
-            await inter.send(await guild_text(self.bot, inter.guild, "fav.erased_while_saving"), ephemeral=True)
+            await inter.send(await guild_text(self.bot, inter.guild, "erasure.erased_while_saving"), ephemeral=True)
         return not change.erased
 
     @commands.Cog.listener("on_button_click")
@@ -2022,11 +2023,12 @@ class RPCCog(commands.Cog):
             await inter.send(f"Apenas <@{user_id}> pode usar os botões da mensagem!", ephemeral=True)
             return
 
+        # antes de qualquer espera (o defer incluído): apagamento depois disto descarta a gravação
+        read_at = self.bot.pool.erasure_tombstones.now()
+
         if button_id == "rpc_gen":
             await inter.response.defer()
 
-            # antes de ler: apagamento depois disto descarta a gravação
-            read_at = self.bot.pool.erasure_tombstones.now()
             data = await self.bot.get_global_data(id_=user_id, db_name=DBModel.users)
 
             if data["token"]:
@@ -2077,7 +2079,6 @@ class RPCCog(commands.Cog):
         elif button_id == "rpc_remove":
             await inter.response.defer()
 
-            read_at = self.bot.pool.erasure_tombstones.now()  # antes de qualquer espera
             await self.close_presence(inter)  # rede: antes do lock do usuário
 
             if not await self._store_rpc_token(inter, "", read_at):

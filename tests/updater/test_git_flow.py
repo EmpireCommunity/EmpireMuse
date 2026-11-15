@@ -1227,3 +1227,15 @@ def test_masking_runner_hides_file_config_secrets_that_are_not_in_the_environmen
 
     assert segredo in cru.output  # o runner padrão só conhece o ambiente
     assert segredo not in mascarado.output and mascarado.output.startswith("antes ") and mascarado.returncode == 0
+
+
+@pytest.mark.regression
+def test_run_exec_masks_a_discord_shaped_token_from_no_list_and_ignores_a_secret_too_short_to_mask():
+    """A forma de token do Discord é mascarada mesmo fora das listas; um valor curto demais não vira máscara da saída inteira."""
+    from tests.rules.test_bot_tokens import token
+
+    codigo = f"print('token {token('z')} fim 0 true')"
+
+    resultado = asyncio.run(run_exec(sys.executable, "-c", codigo, cwd=None, env={}, timeout=60, secrets=("0", "true")))
+
+    assert resultado.output.strip() == "token *** fim 0 true" and resultado.returncode == 0

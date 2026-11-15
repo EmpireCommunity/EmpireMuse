@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import copy
 import datetime
 import logging
 from typing import TYPE_CHECKING, Optional, List
@@ -89,6 +88,8 @@ class LastFmCog(commands.Cog):
         except AttributeError:
             pass
 
+        # início do fluxo (gancho e), antes de qualquer espera (o defer incluído): ver ``_save_link``
+        read_at = self.bot.pool.erasure_tombstones.now()
         cog = self.bot.get_cog("Music")
 
         if cog:
@@ -96,7 +97,6 @@ class LastFmCog(commands.Cog):
         else:
             await inter.response.defer(ephemeral=True)
 
-        read_at = self.bot.pool.erasure_tombstones.now()  # início do fluxo (gancho e): ver ``_save_link``
         data = await self.bot.get_global_data(inter.author.id, db_name=DBModel.users)
 
         lastfm_user = None
@@ -399,40 +399,31 @@ class LastFmCog(commands.Cog):
         """Grava o resultado do fluxo (vincular, desvincular, liga/desliga) e devolve ``True``; ``False`` se abortou sem gravar.
 
         O fluxo segura ``read_at`` (o início) por até 5 minutos e cada clique renova o prazo: se os dados foram apagados depois dele, ou se ele é
-        velho demais para confiar (``ERASE_TOMBSTONE_S``), aborta e avisa o membro. Se passa, RELÊ o documento e altera só ``lastfm.*`` na cópia
-        relida (o ``username`` vem do relido, e um favorito adicionado durante o fluxo não some); confere de novo antes de gravar.
+        velho demais para confiar (``ERASE_TOMBSTONE_S``), aborta e avisa o membro. Se passa, ``change_user_doc`` RELÊ o documento sob o lock do
+        usuário (o mesmo de ``erase_user``) e altera só ``lastfm.*`` na cópia relida: o ``username`` vem do relido e um favorito adicionado
+        durante o fluxo não some. Nenhum chamador segura o lock; o aviso ao membro e o cache ficam fora dele.
         """
         user_id = inter.author.id
-        tombstones = self.bot.pool.erasure_tombstones
-        # O lock do usuário é o mesmo de ``erase_user``: com ele tomado o apagamento não marca nem apaga entre a releitura, as
-        # conferências e a gravação (senão o ``await`` regravaria o documento relido e o recriaria). Nenhum chamador o segura
-        # (``asyncio.Lock`` não é reentrante); o aviso ao membro e o cache ficam fora do lock.
-        async with self.bot.pool.user_locks.lock(user_id):
-            if tombstones.stale(user_id, read_at):
-                aborted = True
-            else:
-                fresh_read_at = tombstones.now()
-                fresh = copy.deepcopy(await self.bot.get_global_data(user_id, db_name=DBModel.users))
-                if view.clear_session:  # Desvincular: o usuário também sai (P3)
-                    lastfm = clear_lastfm_link(fresh)
-                else:
-                    lastfm = fresh["lastfm"]
-                    if view.account_linked:
-                        lastfm["scrobble"] = view.scrobble_enabled
-                        lastfm.update(sessionkey=view.session_key, username=view.username or lastfm["username"])
-                    # Preferências de uma view antiga preservam a identidade relida sob a trava.
-                aborted = tombstones.stale(user_id, fresh_read_at)
-                if not aborted:
-                    await self.bot.update_global_data(user_id, data=fresh, db_name=DBModel.users)
-                    # apagado durante a gravação (sem o lock de quem apaga): não enche o cache (``lastfm_sessions``)
-                    aborted = tombstones.stale(user_id, fresh_read_at)
-        if aborted:
+
+        def link(doc: dict) -> dict:
+            if view.clear_session:  # Desvincular: o usuário também sai (P3)
+                return clear_lastfm_link(doc)
+            lastfm = doc["lastfm"]
+            if view.account_linked:
+                lastfm["scrobble"] = view.scrobble_enabled
+                lastfm.update(sessionkey=view.session_key, username=view.username or lastfm["username"])
+            # Preferências de uma view antiga preservam a identidade relida sob a trava.
+            return lastfm
+
+        change = await change_user_doc(self.bot, user_id, link, read_at=read_at)
+        if change.erased:
             await self._abort_erased(inter, view, msg)
             return False
+        # logo depois do lock, sem nenhuma espera no meio: um apagamento não entra entre a gravação e o cache
         if view.clear_session:
             self.bot.pool.lastfm_sessions.pop(user_id, None)
         else:
-            self.bot.pool.lastfm_sessions[user_id] = dict(lastfm)
+            self.bot.pool.lastfm_sessions[user_id] = dict(change.result)
         return True
 
     async def _forget_session_key(

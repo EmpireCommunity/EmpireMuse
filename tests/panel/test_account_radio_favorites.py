@@ -197,3 +197,27 @@ class AccountRadioRemoveTest(RadioAccountCase):
         self.remove(self.logged_in(), "radio_estacao_remover", "estacao", A)
         text = self.all_log_text()
         assert A not in text and "Alfa" not in text and SP not in text
+
+
+class AccountRadioErasureTest(RadioAccountCase):
+    @pytest.mark.regression
+    def test_a_session_ended_while_the_station_was_removed_does_not_reread_the_user_document(self):
+        """O apagamento de dados encerra a sessão enquanto a seção remove a estação: a resposta é 401 e o documento do usuário
+        não é relido (essa leitura recriaria o documento padrão de quem acabou de ser apagado)."""
+        self.seed()
+        browser = self.logged_in()
+        form = self.radio_forms(browser, "radio_estacao_remover")[0]
+        store = self.panel_app.settings["session_store"]
+        remove = self.favorites.remove_station
+
+        async def removes_and_the_erasure_ends_the_session(user, uuid):
+            changed = await remove(user, uuid)
+            store.destroy_user(str(UID))
+            self.db.reads.clear()
+            return changed
+
+        self.favorites.remove_station = removes_and_the_erasure_ends_the_session
+        response = self.post_raw(browser, URL, form.pairs())
+
+        assert response.code == 401 and "Sessão encerrada" in response.body.decode()
+        assert ("global", UID) not in self.db.reads

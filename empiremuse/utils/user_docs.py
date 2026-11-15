@@ -9,7 +9,7 @@ toda consulta externa (cota, perfil, Last.fm) ANTES; a resposta ao Discord vai D
 from __future__ import annotations
 
 import copy
-from typing import Any, Callable, NamedTuple, Optional
+from typing import Any, Callable, NamedTuple, Optional, Union
 
 from empiremuse.utils.db import DBModel
 
@@ -37,7 +37,10 @@ async def change_user_doc(
 
     ``read_at`` é ``pool.erasure_tombstones.now()`` capturado no começo da ação do membro (antes de qualquer leitura ou espera);
     ``None`` (hora desconhecida) falha fechado. ``change(doc)`` é síncrona, altera a cópia no lugar e devolve o que quiser; se
-    devolver ``SKIP`` ou ``Skip(motivo)`` (ou levantar) nada é gravado. O chamador atualiza caches e responde ao membro depois, fora do lock.
+    devolver ``SKIP`` ou ``Skip(motivo)`` nada é gravado. O chamador atualiza caches e responde ao membro depois, fora do lock.
+
+    Uma exceção de ``change``, da leitura ou da gravação sobe para o chamador com o lock já solto. Se foi ``change`` ou a leitura
+    que levantou, nada foi gravado; se foi a gravação, vale o que o banco disser (a cópia alterada é descartada).
     """
     tombstones = bot.pool.erasure_tombstones
     async with bot.pool.user_locks.lock(user_id):
@@ -58,3 +61,15 @@ def normalize_integration_links(doc: dict) -> Optional[Skip]:
     for name in old:
         links[name] = {"url": links[name], "avatar": None}
     return None if old else SKIP
+
+
+def toggle_lastfm_scrobble(doc: dict) -> Union[Skip, dict]:
+    """``change`` de ``change_user_doc``: inverte o scrobble de quem tem o Last.fm vinculado e devolve ``doc["lastfm"]``.
+
+    Sem vínculo (sem chave de sessão) nada é gravado.
+    """
+    lastfm = doc["lastfm"]
+    if not lastfm["sessionkey"]:
+        return SKIP
+    lastfm["scrobble"] = not lastfm["scrobble"]
+    return lastfm

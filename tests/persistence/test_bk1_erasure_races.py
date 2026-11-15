@@ -142,6 +142,7 @@ async def test_controller_favorite_cannot_land_after_erasure(mundo, monkeypatch)
         author=SimpleNamespace(id=ALVO),
         user=SimpleNamespace(id=ALVO),
         guild=None,
+        guild_id=SERVIDOR,
         response=SimpleNamespace(defer=AsyncMock()),
         edit_original_message=AsyncMock(),
         edit_original_response=AsyncMock(),

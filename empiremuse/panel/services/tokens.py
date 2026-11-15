@@ -3,6 +3,9 @@
 O token vale só no processo que o emitiu: a chave de assinatura leva um sal aleatório por instância, porque o registro de usos
 fica em memória e a validade usa o relógio monotônico. Depois de um reinício (do processo ou da máquina) um token antigo, gasto
 ou não, é só "inválido" e o usuário pede outro.
+
+O sal nunca sai da memória do processo. Por isso o segredo configurado (``signing_secret``) sozinho não basta para assinar:
+quem o obtiver por um vazamento da configuração não consegue forjar um token aceito por uma instância em execução.
 """
 
 from __future__ import annotations

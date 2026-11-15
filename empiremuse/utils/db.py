@@ -126,6 +126,16 @@ async def get_prefix(bot: BotCore, message: disnake.Message):
     return guild_prefix
 
 
+def migration_saved_on_read(db_name: str) -> bool:
+    """A migração de ``ver`` feita por ``get_data`` é regravada na própria leitura? Nunca no documento de um membro (``users``).
+
+    Essa regravação não passa pelo lock do usuário nem pela conferência do apagamento de dados: se o apagamento rodasse entre
+    a leitura e a escrita, o documento apagado voltaria ao banco. O documento do membro é devolvido já migrado, só em memória,
+    e vai para o banco na próxima gravação dele (``change_user_doc`` e a conta do painel, que usam o lock do usuário).
+    """
+    return db_name != DBModel.users
+
+
 class BaseDB:
     def __init__(self, cache_maxsize: int = 1000, cache_ttl=300):
         self.cache = TTLCache(maxsize=cache_maxsize, ttl=cache_ttl)
@@ -194,7 +204,8 @@ class LocalDatabase(BaseDB):
             data = update_values(deepcopy(default_model[db_name]), data)
             data["ver"] = default_model[db_name]["ver"]
 
-            await self.update_data(id_, data, db_name=db_name, collection=collection)
+            if migration_saved_on_read(db_name):
+                await self.update_data(id_, data, db_name=db_name, collection=collection)
 
         return data
 
@@ -395,7 +406,8 @@ class MongoDatabase(BaseDB):
         elif data["ver"] != default_model[db_name]["ver"]:
             data = update_values(deepcopy(default_model[db_name]), data)
             data["ver"] = default_model[db_name]["ver"]
-            await self.update_data(id_, data, db_name=db_name, collection=collection)
+            if migration_saved_on_read(db_name):
+                await self.update_data(id_, data, db_name=db_name, collection=collection)
 
         return data
 

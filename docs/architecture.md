@@ -354,7 +354,10 @@ Auxiliar em `empiremuse/utils/music/user_limits.py`: cálculo de cota do usuári
 `global`) em `empiremuse/utils/client.py`.
 
 **Modelos e versionamento** (`db_models` e `global_db_models` em `empiremuse/utils/db.py`): cada documento tem `ver`; se a versão difere do modelo,
-`update_values` mescla o padrão com os dados salvos (`LocalDatabase.get_data`, `MongoDatabase.get_data` e `update_values` em `empiremuse/utils/db.py`).
+`update_values` mescla o padrão com os dados salvos (`LocalDatabase.get_data`, `MongoDatabase.get_data` e `update_values` em `empiremuse/utils/db.py`). O documento
+migrado é regravado na própria leitura, menos o de um membro (`users`): esse volta migrado só em memória e vai para o banco na próxima
+gravação do próprio membro, que passa pelo lock do usuário (`migration_saved_on_read`). Uma regravação na leitura não tem esse lock nem a
+conferência do apagamento de dados e poderia recriar um documento recém-apagado.
 
 | Banco/coleção | Modelo | Conteúdo |
 |---|---|---|

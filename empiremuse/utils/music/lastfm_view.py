@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import copy
 import datetime
 from typing import Optional
 
@@ -11,10 +10,10 @@ import aiohttp
 import disnake
 from disnake.ext import commands
 
-from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.converters import md_link
 from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.utils.music.lastfm_tools import LastFmException
+from empiremuse.utils.user_docs import change_user_doc, toggle_lastfm_scrobble
 
 AUTH_TOKEN_TIMEOUT_S = 15
 
@@ -95,22 +94,24 @@ class LastFMView(disnake.ui.View):
             return
 
         self.interaction = interaction
-        await interaction.response.defer()
         bot = self.ctx.bot
-        tombstones = bot.pool.erasure_tombstones
-        read_at = tombstones.now()
-        async with bot.pool.user_locks.lock(interaction.author.id):
-            user_data = copy.deepcopy(await bot.get_global_data(interaction.author.id, db_name=DBModel.users))
-            if tombstones.stale(interaction.author.id, read_at) or not user_data["lastfm"]["sessionkey"]:
-                self.session_key = ""
-                self.scrobble_enabled = False
-            else:
-                self.session_key = user_data["lastfm"]["sessionkey"]
-                self.username = user_data["lastfm"]["username"]
-                self.scrobble_enabled = not user_data["lastfm"]["scrobble"]
-                user_data["lastfm"]["scrobble"] = self.scrobble_enabled
-                await bot.update_global_data(interaction.author.id, user_data, db_name=DBModel.users)
-                bot.pool.lastfm_sessions[interaction.author.id] = dict(user_data["lastfm"])
+        read_at = bot.pool.erasure_tombstones.now()  # antes de qualquer espera
+        await interaction.response.defer()
+
+        # relido e alterado sob o lock do usuário, o mesmo do apagamento de dados
+        change = await change_user_doc(bot, interaction.author.id, toggle_lastfm_scrobble, read_at=read_at)
+        if change.saved:
+            lastfm = change.result
+            # logo depois do lock, sem nenhuma espera no meio: um apagamento não entra entre a gravação e o cache
+            bot.pool.lastfm_sessions[interaction.author.id] = dict(lastfm)
+            self.session_key, self.username, self.scrobble_enabled = (
+                lastfm["sessionkey"],
+                lastfm["username"],
+                lastfm["scrobble"],
+            )
+        else:  # dados apagados desde o clique, ou sem vínculo
+            self.session_key = ""
+            self.scrobble_enabled = False
         self.clear_items()
         self.build_components()
         await interaction.edit_original_message(view=self)

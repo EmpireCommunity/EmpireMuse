@@ -162,10 +162,10 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, FavMenuRadioMixin, d
             await inter.send(self.tr("fav.select_item"), ephemeral=True)
             return
 
+        # antes de qualquer espera (o defer incluído): apagamento depois disto descarta a gravação
+        read_at = self.bot.pool.erasure_tombstones.now()
         await inter.response.defer(ephemeral=True)
 
-        # antes de qualquer espera: apagamento depois disto descarta a gravação
-        read_at = self.bot.pool.erasure_tombstones.now()
         field = _USER_LIST_FIELDS.get(self.mode)
         name = self.current
 
@@ -180,7 +180,7 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, FavMenuRadioMixin, d
                 read_at=read_at,
             )
             if change.erased:
-                await inter.edit_original_message(self.tr("fav.erased_while_saving"))
+                await inter.edit_original_message(self.tr("erasure.erased_while_saving"))
                 return
             self.data = change.doc
 
@@ -201,10 +201,10 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, FavMenuRadioMixin, d
         await inter.edit_original_message(content=self.build_txt(), view=self)
 
     async def clear_callback(self, inter: disnake.MessageInteraction):
+        # antes de qualquer espera (o defer incluído): apagamento depois disto descarta a gravação
+        read_at = self.bot.pool.erasure_tombstones.now()
         await inter.response.defer(ephemeral=True)
 
-        # antes de qualquer espera: apagamento depois disto descarta a gravação
-        read_at = self.bot.pool.erasure_tombstones.now()
         field = _USER_LIST_FIELDS.get(self.mode)
 
         if field is None:
@@ -220,7 +220,7 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, FavMenuRadioMixin, d
 
             change = await change_user_doc(self.bot, inter.author.id, clear, read_at=read_at)
             if change.erased:
-                await inter.send(self.tr("fav.erased_while_saving"), ephemeral=True)
+                await inter.send(self.tr("erasure.erased_while_saving"), ephemeral=True)
                 return
             self.data = change.doc
 
@@ -232,7 +232,7 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, FavMenuRadioMixin, d
                 text, filename = self.tr("fav.cleared"), "favs.json"
             else:
                 if not change.saved:
-                    await inter.response.edit_message(content=self.tr("fav.itg.none_saved"), view=None)
+                    await inter.edit_original_message(content=self.tr("fav.itg.none_saved"), view=None)
                     return
                 self.log = self.tr("fav.itg.log.cleared")
                 text, filename = self.tr("fav.itg.cleared"), "integrations.json"

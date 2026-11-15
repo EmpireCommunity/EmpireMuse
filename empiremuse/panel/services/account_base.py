@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Any, NamedTuple, Optional
+from typing import Any, Callable, NamedTuple, Optional
 
 from empiremuse.panel.services.base import Args
 from empiremuse.utils.music.user_limits import quota_for
@@ -92,8 +92,13 @@ class AccountSection:
     def apply(self, doc: dict, new: dict[str, Any]) -> None:
         raise NotImplementedError
 
-    async def submit_own(self, service: Any, ctx: AccountContext, action: str, args: Args) -> Any:
-        """Só para ``own_store``: grava no armazenamento da própria seção e devolve o ``AccountOutcome``."""
+    async def submit_own(
+        self, service: Any, ctx: AccountContext, action: str, args: Args, alive: Callable[[], bool]
+    ) -> Any:
+        """Só para ``own_store``: grava no armazenamento da própria seção e devolve o ``AccountOutcome``.
+
+        ``alive`` é o de ``AccountService.submit`` e segue para ``service.finish_own``, que só relê o documento do usuário
+        com a sessão ainda viva."""
         raise NotImplementedError
 
     async def before_store(self, ctx: AccountContext, doc: dict) -> None:

@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from empiremuse import paths
-from empiremuse.rules.owner_shell import collect_secret_values, mask_secrets
+from empiremuse.rules.owner_shell import MIN_SECRET_LENGTH, collect_secret_values, mask_shell_output
 from empiremuse.rules.release import (
     Version,
     changelog_sections,
@@ -169,8 +169,11 @@ async def run_exec(
 ) -> ExecResult:
     """Roda ``args`` sem shell. Saída (stdout e stderr juntos) mascarada e truncada nos últimos ``max_output`` caracteres.
 
-    A máscara cobre os segredos do ambiente e os de ``secrets`` (os da configuração lida de arquivo e os tokens dos bots, que
-    não estão em ``os.environ``; quem tem o pool usa ``masking_runner``). Falha ao iniciar vira o código 127 e tempo esgotado, 124.
+    A máscara cobre os segredos do ambiente, os de ``secrets`` (os da configuração lida de arquivo e os tokens dos bots, que
+    não estão em ``os.environ``; quem tem o pool usa ``masking_runner``) e, por último, todo texto com a forma de um token do
+    Discord, que não precisa estar em nenhuma das duas listas. Um valor de ``secrets`` com menos de ``MIN_SECRET_LENGTH``
+    caracteres é ignorado, como em ``collect_secret_values``: trocar cada "0" ou "true" da saída a deixaria ilegível sem
+    proteger nada. Falha ao iniciar vira o código 127 e tempo esgotado, 124.
     """
     try:
         process = await asyncio.create_subprocess_exec(
@@ -191,9 +194,8 @@ async def run_exec(
     except asyncio.CancelledError:
         await _reap(process)  # cancelado (ex.: desligamento): o git/pip não pode seguir vivo sem dono
         raise
-    text = mask_secrets(
-        stdout.decode("utf-8", errors="replace"), collect_secret_values(os.environ) | frozenset(secrets)
-    )
+    known = collect_secret_values(os.environ) | frozenset(value for value in secrets if len(value) >= MIN_SECRET_LENGTH)
+    text = mask_shell_output(stdout.decode("utf-8", errors="replace"), known)
     return ExecResult(process.returncode or 0, text[-max_output:])
 
 

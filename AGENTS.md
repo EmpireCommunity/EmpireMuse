@@ -125,7 +125,7 @@ O arquivo de maior risco tocado define o nível da mudança (Baixo, Médio ou Al
 | **Alto** | Relé RPC (`/ws`) e prova do token | `empiremuse/web_app.py` (`WebSocketHandler`, `run_app`), `empiremuse/rpc_protocol.py`, `empiremuse/rules/rpc_proof.py`, `empiremuse/utils/rpc_proof.py` |
 | **Alto** | Atualizador e cadeia de suprimentos | `empiremuse/updater/`, `Dockerfile`, `deploy/`, `.github/workflows/`, `requirements*.txt` e locks com hashes, `assets/SHA256SUMS` |
 | **Alto** | Dados pessoais | `empiremuse/cogs/usage_tracker.py`, `empiremuse/utils/usage.py`, `empiremuse/cogs/lastfm.py`, `empiremuse/cogs/ll_yt_oauth.py` (tokens) |
-| **Alto** | Exclusão de dados | `purge_events` e `delete_data` em `empiremuse/utils/db.py` |
+| **Alto** | Exclusão de dados | `purge_events` e `delete_data` em `empiremuse/utils/db.py`, `empiremuse/utils/user_locks.py`, `empiremuse/utils/user_docs.py`, `empiremuse/utils/erasure.py`, `empiremuse/utils/erasure_views.py`, `empiremuse/panel/services/tokens.py` (token assinado das confirmações) |
 | **Médio** | Player e áudio | `empiremuse/utils/music/`, `empiremuse/music_cog/`, `empiremuse/wavelink/` |
 | **Médio** | Comportamento do bot e do painel | `empiremuse/cogs/`, `empiremuse/rules/`, `empiremuse/panel/` (rotas e serviços fora de auth) |
 | **Baixo** | Conteúdo e valores | `assets/` (exceto `SHA256SUMS`), textos e traduções, `docs/`, estilos, valores padrão de config, bumps de versão |

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Union
 
 import disnake
 
@@ -14,7 +14,7 @@ from empiremuse.rules.errors import (
     RuleError,
 )
 from empiremuse.rules.favorites import check_import_name, name_limit
-from empiremuse.rules.integrations import import_entry as integration_entry, save_external
+from empiremuse.rules.integrations import ExternalSave, import_entry as integration_entry, save_external
 from empiremuse.rules.limits import (
     FAV_NAME_MAX,
     FAV_NAME_MIN,
@@ -77,7 +77,7 @@ async def _erased_meanwhile(view, inter: disnake.ModalInteraction, change: UserD
     ele é avisado. O documento é relido e alterado sob o lock do usuário; cota e consultas externas vêm antes do lock."""
     if not change.erased:
         return False
-    await inter.edit_original_message(content=view.tr("fav.erased_while_saving"))
+    await inter.edit_original_message(content=view.tr("erasure.erased_while_saving"))
     return True
 
 
@@ -480,7 +480,7 @@ class FavModalAdd(disnake.ui.Modal):
         if (data := await self._lookup_profile(inter, url, source)) is None:
             return False
 
-        def save(doc: dict) -> Any:  # ``Skip`` com o erro da regra, ou o resultado de ``save_external``
+        def save(doc: dict) -> Union[Skip, ExternalSave]:  # ``Skip`` leva o erro da regra
             saved = save_external(
                 doc["integration_links"],
                 fix_characters(data["title"], 80),

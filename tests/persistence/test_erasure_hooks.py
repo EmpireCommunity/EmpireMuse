@@ -406,7 +406,7 @@ async def test_last_tracks_leitura_propria_depois_do_apagamento_grava_so_o_uso_n
 
 
 def _fluxo(mundo, *, desvincular=False, chave="", usuario=""):
-    async def grava(user_id, *, data, db_name):
+    async def grava(user_id, data, *, db_name):
         return await mundo.database.update_data(
             user_id, data, db_name=db_name, collection="global", default_model=global_db_models
         )
@@ -646,26 +646,6 @@ async def test_r2_save_link_relê_e_grava_so_o_lastfm_favorito_novo_fica_e_o_usu
     assert gravado["lastfm"] == {"username": "do_relido", "sessionkey": "NOVA", "scrobble": True}
 
 
-@pytest.mark.asyncio
-async def test_r2_save_link_apagado_durante_a_releitura_aborta_sem_gravar(mundo):
-    await gravar_usuario(mundo, ALVO, lastfm_sessionkey=CHAVE)
-    cog, visao, interacao = _fluxo(mundo, chave="NOVA", usuario="novo")
-    lido_em = mundo.pool.erasure_tombstones.now()
-    ler = cog.bot.get_global_data
-
-    async def le_e_o_apagamento_acontece(user_id, *, db_name):
-        doc = await ler(user_id, db_name=db_name)
-        mundo.pool.erasure_tombstones.mark(ALVO)
-        return doc
-
-    cog.bot.get_global_data = le_e_o_apagamento_acontece
-
-    assert await cog._save_link(interacao, visao, None, lido_em) is False
-
-    interacao.edit_original_message.assert_awaited_once()
-    assert mundo.pool.lastfm_sessions == {}
-
-
 def _ler_do_banco(mundo):
     """``bot.get_global_data`` sobre o banco real do mundo: é de onde ``change_user_doc`` relê o documento sob o lock."""
 
@@ -862,25 +842,6 @@ async def test_lastfm_comando_apagado_durante_o_user_info_o_blank_out_do_codigo_
 
 
 @pytest.mark.asyncio
-async def test_r2_save_link_apagado_durante_a_gravacao_nao_enche_o_cache_do_lastfm(mundo):
-    await gravar_usuario(mundo, ALVO, lastfm_sessionkey=CHAVE)
-    cog, visao, interacao = _fluxo(mundo, chave="NOVA", usuario="novo")
-    lido_em = mundo.pool.erasure_tombstones.now()
-    grava = cog.bot.update_global_data
-
-    async def grava_e_o_apagamento_acontece(user_id, *, data, db_name):
-        await grava(user_id, data=data, db_name=db_name)
-        mundo.pool.erasure_tombstones.mark(ALVO)
-
-    cog.bot.update_global_data = grava_e_o_apagamento_acontece
-
-    assert await cog._save_link(interacao, visao, None, lido_em) is False
-
-    assert mundo.pool.lastfm_sessions == {}
-    interacao.edit_original_message.assert_awaited_once()
-
-
-@pytest.mark.asyncio
 async def test_r2_modal_de_integracao_apagado_durante_a_consulta_externa_nao_grava_e_avisa(mundo, monkeypatch):
     from empiremuse.utils.music.interactions import fav_modals
 
@@ -922,7 +883,7 @@ async def test_r2_modal_de_integracao_apagado_durante_a_consulta_externa_nao_gra
     assert await modal._add_integration(interacao) is False
 
     gravacoes.assert_not_awaited()
-    assert interacao.edit_original_message.await_args.kwargs["content"] == traduzir("fav.erased_while_saving")
+    assert interacao.edit_original_message.await_args.kwargs["content"] == traduzir("erasure.erased_while_saving")
 
 
 @pytest.mark.asyncio

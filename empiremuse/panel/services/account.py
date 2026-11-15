@@ -113,12 +113,18 @@ class AccountService:
         self, section: AccountSection, ctx: AccountContext, action: str, args: Args, *, alive: Callable[[], bool]
     ) -> AccountOutcome:
         """Grava uma seção. ``alive`` (obrigatório: painel genérico e API passam o seu) diz se a sessão de quem pediu ainda
-        existe e é conferido SOB o lock do usuário, o mesmo do apagamento de dados: uma escrita que esperava o lock enquanto
-        o apagamento rodava levanta ``AccountSessionGone`` em vez de regravar o documento. Só ``True`` literal deixa seguir."""
+        existe; só ``True`` literal deixa seguir, qualquer outra resposta levanta ``AccountSessionGone``.
+
+        Seção do documento do usuário: ``alive`` é conferido SOB o lock do usuário, o mesmo do apagamento de dados, antes de
+        qualquer leitura. Uma escrita que esperava o lock enquanto o apagamento rodava não lê nem regrava o documento.
+
+        Seção com armazenamento próprio (``own_store``): ``alive`` é conferido ANTES de entregar a ação à seção, sem o lock do
+        usuário (o armazém da seção tem a própria trava e a própria conferência de apagamento), e de novo SOB o lock em
+        ``finish_own``, antes de reler o documento do usuário para montar a resposta."""
         if section.own_store:  # dados fora do documento do usuário (ex.: rádios favoritas): a seção decide
             if alive() is not True:
                 raise AccountSessionGone
-            return await section.submit_own(self, ctx, action, args)
+            return await section.submit_own(self, ctx, action, args, alive)
         async with self._locks.lock(USERS_LOCK_SCOPE, ctx.user_id):
             if alive() is not True:  # antes de qualquer leitura
                 raise AccountSessionGone
@@ -137,10 +143,25 @@ class AccountService:
             return await self._save(section, ctx, doc, action, parsed)
 
     async def finish_own(
-        self, section: AccountSection, ctx: AccountContext, status: int, message: str, kind: str
+        self,
+        section: AccountSection,
+        ctx: AccountContext,
+        status: int,
+        message: str,
+        kind: str,
+        *,
+        alive: Callable[[], bool],
     ) -> AccountOutcome:
-        """Resposta de uma seção com armazenamento próprio: a seção relida, com a mensagem do resultado."""
-        form = await self.build(section, ctx, await self.load(ctx), message=message, kind=kind)
+        """Resposta de uma seção com armazenamento próprio: a seção relida, com a mensagem do resultado.
+
+        O documento do usuário só é relido com a sessão de quem pediu ainda viva, conferida sob o lock do usuário (como em
+        ``submit``): se o apagamento de dados rodou enquanto a seção trabalhava, a leitura recriaria o documento padrão de
+        quem acabou de ser apagado. Nesse caso nada é lido e sobe ``AccountSessionGone``."""
+        async with self._locks.lock(USERS_LOCK_SCOPE, ctx.user_id):
+            if alive() is not True:  # antes de qualquer leitura
+                raise AccountSessionGone
+            doc = await self.load(ctx)
+        form = await self.build(section, ctx, doc, message=message, kind=kind)
         return AccountOutcome(status, form)
 
     async def _fail(
