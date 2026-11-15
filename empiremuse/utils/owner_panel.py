@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import disnake
 from disnake.ext import commands
 
+from empiremuse.utils.owner_gate import is_admin_owner
 from empiremuse.utils.music.errors import error_code_text, log_unexpected_error, parse_error
 
 if TYPE_CHECKING:
@@ -59,7 +60,7 @@ class PanelView(disnake.ui.View):
         await edit(embed=interaction.message.embeds[0], view=self)
 
     async def interaction_check(self, interaction: disnake.MessageInteraction):
-        if not (await self.bot.is_owner(interaction.user)):
+        if not is_admin_owner(self.bot, interaction.user):
             await interaction.send("Apenas meu(s) desenvolvedor(es) pode(m) usar essas opções.", ephemeral=True)
             return
 

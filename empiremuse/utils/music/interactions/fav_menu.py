@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import secrets
 from io import BytesIO
 from typing import Union, TYPE_CHECKING
 
@@ -60,6 +61,7 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, FavMenuRadioMixin, d
         radio_private: bool = False,
     ):
         super().__init__(timeout=180)
+        self._custom_id_suffix = secrets.token_hex(8)  # único por view efêmera, inclusive sem message_id
         self.mode = mode
         self.bot = bot
         self.ctx = ctx

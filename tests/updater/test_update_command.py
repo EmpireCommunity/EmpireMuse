@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 import pytest
 import pytest_asyncio
 
+from empiremuse.rules.owner_gate import OwnerGateMode
 from empiremuse import paths
 from empiremuse.cogs import legacy_cmds
 from empiremuse.cogs.legacy_cmds import Owner
@@ -70,7 +71,8 @@ def cog():
         pool=pool,
         config={},
         user=SimpleNamespace(id=BOT_ID),
-        is_owner=AsyncMock(return_value=True),
+        owner_gate=OwnerGateMode.ENV,
+        env_owner_ids={DONO},
         get_color=lambda *args: 0,
     )
     cog = Owner.__new__(Owner)
@@ -138,7 +140,6 @@ def pendente_em_disco(runtime):
 
 
 async def test_a_non_owner_is_refused_even_through_the_panel(cog, ambiente, monkeypatch):
-    cog.bot.is_owner.return_value = False
     planejar = modo_git(ambiente, monkeypatch)
 
     with pytest.raises(GenericError):
@@ -697,7 +698,6 @@ async def test_a_failed_rollback_is_recorded_as_an_error_in_the_log(cog, ambient
 
 
 async def test_a_non_owner_is_refused_in_the_docker_mode_even_through_the_panel(cog, docker):
-    cog.bot.is_owner.return_value = False
 
     with pytest.raises(GenericError):
         await Owner.update.callback(cog, ctx_painel(autor=7))

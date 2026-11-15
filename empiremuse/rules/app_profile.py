@@ -16,6 +16,11 @@ DESCRIPTION_LIMIT = 400  # limite do Discord para a descrição da aplicação, 
 TAGS_MAX = 5
 TAG_MAX_LENGTH = 20
 PANEL_PATH = "/painel"
+DEFAULT_PANEL_PRESENCE = "⚙️ Painel: {panel_url}"
+LEGACY_PANEL_PRESENCES = (
+    "⚙️ Painel: muse.empirecommunity.org/panel",
+    "⚙️ Painel: muse.empirecommunity.org/painel",
+)
 
 DEFAULT_DESCRIPTION = "\n".join(
     (

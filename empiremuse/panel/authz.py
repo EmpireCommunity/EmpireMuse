@@ -13,6 +13,7 @@ import time
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Optional
+from urllib.parse import urlencode
 
 import aiohttp
 import disnake
@@ -30,6 +31,8 @@ CACHE_SECONDS = 30.0
 MAX_CACHE_ENTRIES = 10_000
 FETCH_TIMEOUT_SECONDS = 5.0
 _GUILD_ID = re.compile(r"[0-9]{1,20}", re.ASCII)
+INVITE_URL = "https://discord.com/oauth2/authorize"
+INVITE_SCOPE = "bot applications.commands"
 
 
 class GuildAccessDenied(Exception):
@@ -68,6 +71,42 @@ def ready_bots_with_guild(pool: BotPool, guild_id: int) -> list[tuple[Any, Any]]
         if guild is not None:
             found.append((bot, guild))
     return found
+
+
+@dataclass(frozen=True)
+class InviteLink:
+    bot_name: str
+    bot_avatar_url: str
+    url: str
+
+
+def invite_url(client_id: str, guild_id: str, permissions: int) -> str:
+    query = urlencode(
+        {
+            "client_id": client_id,
+            "scope": INVITE_SCOPE,
+            "permissions": permissions,
+            "guild_id": guild_id,
+            "disable_guild_select": "true",
+        }
+    )
+    return f"{INVITE_URL}?{query}"
+
+
+def missing_invites(pool: Any, guild_id: str) -> tuple[bool, tuple[InviteLink, ...]]:
+    """(há bot pronto no servidor, convites dos bots prontos do pool que ainda não estão nele)."""
+    present_ids = {str(bot.user.id) for bot, _ in ready_bots_with_guild(pool, int(guild_id))}
+    permissions = pool.config["INVITE_PERMISSIONS"]
+    invites = tuple(
+        InviteLink(
+            bot.user.name,
+            bot.user.display_avatar.url,
+            invite_url(str(bot.application_id or bot.user.id), guild_id, permissions),
+        )
+        for bot in pool.bots
+        if bot.is_ready() and str(bot.user.id) not in present_ids
+    )
+    return bool(present_ids), invites
 
 
 class GuildAuthorizer:

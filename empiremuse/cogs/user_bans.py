@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Union
 import disnake
 from disnake.ext import commands
 
+from empiremuse.utils.owner_gate import admin_owner_only
 from empiremuse.rules.user_ban import parse_ban_command
 from empiremuse.utils.owner_panel import panel_command
 from empiremuse.utils.user_ban_views import UserBanPanelView, is_env_owner, prepare_confirmation
@@ -52,10 +53,10 @@ class UserBansCog(commands.Cog, name="UserBans"):
         if prepared.view is not None:
             prepared.view.sent_message = sent  # type: ignore[attr-defined]
 
-    @commands.is_owner()
+    @admin_owner_only()
     @panel_command(description="Banir ou desbanir um usuário.", emoji="🔨", alt_name="Banir/desbanir usuário")
     async def userbans(self, ctx: Union[disnake.MessageInteraction, commands.Context]):
-        """Entrada do painel do dono. Só ``env_owner_ids`` (``is_owner`` também chega aqui, pela equipe da aplicação: não basta)."""
+        """Entrada do painel do dono. Só ``env_owner_ids``: o portão acima (``OWNER_IDS`` ou, sem ela, o dono da aplicação) não basta."""
         if not isinstance(ctx, disnake.MessageInteraction):
             return None  # por prefixo não faz nada: o painel é o único caminho (o comando é oculto)
         tr = self.bot.pool.i18n.for_locale(self.bot.pool.i18n.resolve(None, ctx.locale))

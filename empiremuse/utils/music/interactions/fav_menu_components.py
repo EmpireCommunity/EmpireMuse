@@ -137,7 +137,12 @@ class FavMenuComponentsMixin:
     def _add_play_button(self):
         if self.mode == ViewMode.fav_manager:
             if self.data["fav_links"] and not self.light_mode:
-                self._add_button(self.tr("fav.play.label"), "▶", self.play_callback, custom_id="favmanager_play_button")
+                self._add_button(
+                    self.tr("fav.play.label"),
+                    "▶",
+                    self.play_callback,
+                    custom_id=f"favmanager_play_button:{self._custom_id_suffix}",
+                )
 
         elif self.mode == ViewMode.integrations_manager:
             if self.data["integration_links"]:
@@ -145,5 +150,5 @@ class FavMenuComponentsMixin:
                     self.tr("fav.itg.play.label"),
                     "▶",
                     self.play_callback,
-                    custom_id="favmanager_play_button",
+                    custom_id=f"favmanager_play_button:{self._custom_id_suffix}",
                 )

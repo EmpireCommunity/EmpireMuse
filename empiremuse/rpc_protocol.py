@@ -38,6 +38,18 @@ MAX_BOT_IDS = 250
 RATE_LIMIT_MESSAGES = 20
 RATE_LIMIT_WINDOW = 10.0
 
+# Prova do token no registro do usuário (T-533a): o tempo é bem abaixo do ping (30 s) porque, enquanto o registro espera, o laço de
+# leitura da conexão não responde ao pong.
+PROOF_TIMEOUT = 4.0
+PROOF_MAX_IN_FLIGHT = 16
+PROOF_DENIED_LIMIT = 5
+PROOF_DENIED_WINDOW = 60.0
+PROOF_DENIED_CACHE_SIZE = 4096
+PROOF_LOG_INTERVAL = 60.0
+PROOF_DENIED_REASON = "Token inválido ou ausente. Gere um token com /rich_presence, cole no app e reinicie o app."
+PROOF_RATE_REASON = "Tentativas inválidas demais. Tente novamente mais tarde."
+BUSY_REASON = "Servidor ocupado, tente novamente mais tarde."
+
 MIN_ID = 10**14  # 15 dígitos
 MAX_ID = 10**20  # exclusivo: no máximo 20 dígitos
 MAX_VERSION_LENGTH = 32
@@ -133,7 +145,8 @@ def same_token(provided: Any, expected: Any) -> bool:
     """Compara tokens do usuário (texto, ``""`` quando ausente) em tempo constante."""
     left = provided if isinstance(provided, str) else ""
     right = expected if isinstance(expected, str) else ""
-    return hmac.compare_digest(left.encode("utf-8"), right.encode("utf-8"))
+    # ``surrogatepass``: um token com substituto isolado (válido no JSON) é um token errado comum, nunca uma exceção.
+    return hmac.compare_digest(left.encode("utf-8", "surrogatepass"), right.encode("utf-8", "surrogatepass"))
 
 
 def authenticates(provided: Any, expected: Any) -> bool:

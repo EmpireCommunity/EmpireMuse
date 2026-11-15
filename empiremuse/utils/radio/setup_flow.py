@@ -1,8 +1,7 @@
 """`/radio setup` e `/radio reset` no Discord (contrato-nomes-radios §2): a tela em cima do ``pool.radio.setup`` (``utils/radio/setup.py``).
 
 O comando só junta o que o usuário escolheu (canal, bot, tipo) e chama ``configure``; quem decide é o ``setup.py`` (as mesmas checagens do painel web). Depois
-de configurar, o fluxo pede a estação: ``custom`` mostra um select das estações do servidor (com a dica de criar em ``/radio station create``) e ``live``
-abre o seletor de local da R4. Escolhida a estação, a rádio está pronta para o ``/radio on``. O reset pede confirmação efêmera (botão, 60 s).
+de configurar, ``arrive`` liga a rádio em espera e a estação se escolhe no painel. O reset pede confirmação efêmera (botão, 60 s).
 """
 
 from __future__ import annotations
@@ -14,8 +13,6 @@ import disnake
 
 from empiremuse.rules.i18n import fit
 from empiremuse.rules.radio import KIND_CUSTOM, KIND_LIVE, Radio
-from empiremuse.rules.radio_stations import Station
-from empiremuse.rules.text import external_text
 from empiremuse.utils.ephemeral import CONFIRMATION_TTL_S, ERROR_TTL_S, cleanup_later
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.radio import actions, radio_commands
@@ -30,8 +27,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 CONFIRM_TIMEOUT_S = 60.0
-SELECT_TIMEOUT_S = 300.0
-NAME_LIMIT = 80
 KNOWN_CODES = frozenset(
     {
         "reserve_only",
@@ -143,124 +138,6 @@ async def _start_waiting(cog: RadioCog, inter: Any, radio: Radio, channel: Any) 
         allow_no_station=True,
     )
     await cog.hub.manager.activate(enabled, wait=False, fresh=True)
-
-
-async def choose_station(cog: RadioCog, inter: Any, tr: Any, radio: Radio, channel: Any) -> None:
-    """Depois de configurar: a estação que a rádio toca. Sem ela a rádio existe, mas não liga."""
-    if radio.kind == KIND_LIVE:
-        picker = cog._picker(
-            inter,
-            tr,
-            lambda click, station, station_list: apply_live(cog, click, tr, radio.id, station, station_list),
-            tr("radio.setup.confirm_station", channel=channel.name),
-        )
-        rendered = await picker.render()
-        done = tr(
-            "radio.setup.done", channel=channel.mention, bot=f"<@{radio.bot_id}>", kind=tr("radio.setup.kind.live")
-        )
-        rendered["content"] = f"{done}\n{rendered.get('content') or ''}".strip()
-        await inter.edit_original_message(**rendered, allowed_mentions=disnake.AllowedMentions.none())
-        return
-    stations = await cog.hub.stations.list_for_guild(inter.guild_id)
-    lines = [
-        tr("radio.setup.done", channel=channel.mention, bot=f"<@{radio.bot_id}>", kind=tr("radio.setup.kind.custom"))
-    ]
-    if not cog.hub.lastfm.configured:
-        lines.append(tr("radio.setup.lastfm_missing"))
-    if not stations:
-        lines.append(tr("radio.setup.no_stations"))
-        await inter.edit_original_message(content="\n".join(lines), allowed_mentions=disnake.AllowedMentions.none())
-        return
-    lines.append(tr("radio.setup.pick_station"))
-    view = StationSelect(cog, tr, radio.id, inter.author.id, stations)
-    await inter.edit_original_message(
-        content="\n".join(lines), view=view, allowed_mentions=disnake.AllowedMentions.none()
-    )
-
-
-async def _save_source(cog: RadioCog, tr: Any, interaction: Any, radio_id: str, write: Any) -> Radio:
-    """Grava a estação escolhida na rádio de AGORA (o select vive minutos: premium, ``manage_guild`` e ``rev`` são conferidos aqui)."""
-    hub = cog.hub
-    try:
-        await hub.setup.check_actor(interaction.guild_id, interaction.author.id)
-        fresh = await hub.store.get(radio_id)
-        if fresh is None:
-            raise RadioNotFound
-        updated = await write(fresh)
-    except (RadioForbidden, RadioNotFound, RadioConflict, RadioInvalid, RadioUnavailable) as error:
-        raise refusal(tr, error) from None
-    if updated.enabled:
-        await hub.manager.change_station(updated)  # ligada: troca ao vivo, pelo recuo
-    return updated
-
-
-async def apply_live(
-    cog: RadioCog, click: Any, tr: Any, radio_id: str, station: Station, station_list: tuple[str, ...]
-) -> str:
-    async def write(fresh: Radio) -> Radio:
-        if fresh.kind != KIND_LIVE:
-            raise RadioInvalid(_kind_error())
-        return await cog.hub.store.set_station(
-            fresh.id,
-            station.uuid,
-            expected_rev=fresh.rev,
-            updated_by=str(click.author.id),
-            station_list=station_list or None,
-        )
-
-    await _save_source(cog, tr, click, radio_id, write)
-    return tr("radio.setup.station_saved", station=external_text(station.name, NAME_LIMIT))
-
-
-def _kind_error():
-    from empiremuse.rules.errors import RuleError
-    from empiremuse.rules.radio import SOURCE_INVALID
-
-    return RuleError(SOURCE_INVALID, "kind")
-
-
-class StationSelect(disnake.ui.View):
-    """O select das estações do servidor para uma rádio ``custom``; só para quem abriu. Nada do usuário vai em ``custom_id``."""
-
-    def __init__(self, cog: RadioCog, tr: Any, radio_id: str, author_id: int, stations: list[Any]) -> None:
-        super().__init__(timeout=SELECT_TIMEOUT_S)
-        self.cog, self.tr, self.radio_id, self.author_id = cog, tr, radio_id, author_id
-        self.by_id = {s.id: s for s in stations[:25]}
-        select = disnake.ui.StringSelect(
-            custom_id="radio_setup_station",
-            placeholder=fit(tr("radio.setup.select_placeholder"), 150),
-            options=[
-                disnake.SelectOption(label=fit(external_text(s.name, NAME_LIMIT), 100), value=s.id)
-                for s in self.by_id.values()
-            ],
-        )
-        select.callback = self.picked
-        self.add_item(select)
-
-    async def interaction_check(self, interaction: disnake.MessageInteraction) -> bool:
-        if interaction.author.id != self.author_id:
-            await interaction.response.send_message(self.tr("radio.setup.not_yours"), ephemeral=True)
-            return False
-        return True
-
-    async def picked(self, interaction: disnake.MessageInteraction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        station = self.by_id.get(interaction.values[0])
-        if station is None:
-            raise GenericError(self.tr("radio.setup.expired"))
-
-        async def write(fresh: Radio) -> Radio:
-            if fresh.kind != KIND_CUSTOM:
-                raise RadioInvalid(_kind_error())
-            return await self.cog.hub.store.set_custom_station(
-                fresh.id, station.id, expected_rev=fresh.rev, updated_by=str(interaction.author.id)
-            )
-
-        await _save_source(self.cog, self.tr, interaction, self.radio_id, write)
-        self.stop()
-        await interaction.edit_original_message(
-            content=self.tr("radio.setup.station_saved", station=external_text(station.name, NAME_LIMIT)), view=None
-        )
 
 
 async def prepare_reset(cog: RadioCog, tr: Any, author: Any, guild_id: int, channel: Any) -> tuple[str, ConfirmReset]:

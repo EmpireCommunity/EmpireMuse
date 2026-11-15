@@ -86,6 +86,7 @@ class CustomView(NamedTuple):
 class StationsOutcome(NamedTuple):
     status: int
     view: StationsView
+    station: Any = None  # só em ``create`` com sucesso: a estação que a store devolveu (nome já normalizado)
 
 
 def station_id_of(raw: str) -> Optional[str]:
@@ -252,7 +253,7 @@ class StationsPage:
             return StationsOutcome(STATUS_INVALID, await self.view(ctx, action, tr, form=form))
         _audit(ctx, saved, "criada")
         form = self.form(action, tr, genres=genres, playlists=playlists, message=SAVED_TEXT, kind=KIND_OK)
-        return StationsOutcome(STATUS_OK, await self.view(ctx, action, tr, form=form))
+        return StationsOutcome(STATUS_OK, await self.view(ctx, action, tr, form=form), saved)
 
     async def update(self, ctx: FormContext, station: Any, args: Args, action: str, tr: Translator) -> StationsOutcome:
         item_action = f"{action}/{station.id}"

@@ -115,7 +115,7 @@ class TestServidorHttp:
                 chamadas.append(porta)
 
         monkeypatch.setattr(web_app.tornado.httpserver, "HTTPServer", ServidorFalso)
-        monkeypatch.setattr(web_app, "_build_panel", lambda pool, config: (None, False, ()))
+        monkeypatch.setattr(web_app, "_build_panel", lambda pool, config, networks: None)
         monkeypatch.setattr(web_app, "make_router", lambda app, panel: app)
         return web_app, chamadas
 

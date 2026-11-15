@@ -16,7 +16,7 @@ import logging
 import time
 from typing import Any, Callable, NamedTuple, Optional
 
-from empiremuse.panel.handlers.radio_logo import logo_path
+from empiremuse.panel.services.radio_logo import logo_path
 from empiremuse.panel.services.base import (
     CONFLICT_TEXT,
     KIND_ERROR,

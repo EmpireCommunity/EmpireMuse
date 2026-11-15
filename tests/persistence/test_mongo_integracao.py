@@ -8,6 +8,7 @@ Tudo roda num banco com nome único, apagado no fim.
 import asyncio
 import os
 import uuid
+from datetime import timedelta
 
 import pytest
 
@@ -76,7 +77,7 @@ def test_mongo_database_round_trip_against_a_real_mongod():
 
 
 async def _ciclo_apagar_dados():
-    """``delete_many`` e ``save_doc_cas`` (apagar meus dados, E1) contra o mongod real: o CI não roda este arquivo."""
+    """``delete_many`` e ``save_doc_cas`` (apagar meus dados, E1) contra o mongod real (o CI roda este arquivo com o serviço mongo, sem skip)."""
     banco = MongoDatabase(URI, timeout=5)
     nome = f"litmus_{uuid.uuid4().hex}"
     colecao = "radio_custom_favorites"
@@ -115,3 +116,57 @@ async def _ciclo_apagar_dados():
 
 def test_mongo_delete_many_and_save_doc_cas_against_a_real_mongod():
     asyncio.run(_ciclo_apagar_dados())
+
+
+async def _ciclo_lista_de_banidos():
+    """Lista de banidos (``banned_users``/``banned_guilds``): grava, relê sem cache, e o delete tira da lista."""
+    banco = MongoDatabase(URI, timeout=5)
+    nome = f"litmus_{uuid.uuid4().hex}"
+    try:
+        for modelo, id_ in ((DBModel.banned_users, 45), (DBModel.banned_guilds, 77)):
+            await banco.update_data(id_, {"banned_at": 1, "reason": "teste"}, db_name=modelo, collection=nome)
+            banco.cache.clear()
+            lista = await banco.query_data(db_name=modelo, collection=nome)
+            assert [(d["_id"], d["reason"]) for d in lista] == [(str(id_), "teste")]
+
+            await banco.delete_data(id_, modelo, nome)
+            assert await banco.query_data(db_name=modelo, collection=nome) == []
+    finally:
+        await banco._connect.drop_database(nome)
+        await banco._connect.close()
+
+
+def test_mongo_ban_list_round_trip_against_a_real_mongod():
+    asyncio.run(_ciclo_lista_de_banidos())
+
+
+async def _ciclo_registro_de_uso():
+    """Registro de uso (``usage_events``): índices, insert em lote com TTL, patch e consulta por servidor, do mais novo ao mais velho."""
+    banco = MongoDatabase(URI, timeout=5)
+    nome = f"litmus_{uuid.uuid4().hex}"
+    modelo = DBModel.usage_events
+    try:
+        await banco.ensure_event_indexes(db_name=modelo, collection=nome)
+        await banco.ensure_event_indexes(db_name=modelo, collection=nome)  # idempotente
+        indices = await banco._connect[nome][modelo].index_information()
+        assert any(i.get("expireAfterSeconds") == 0 for i in indices.values())
+
+        docs = [
+            {"_id": "e1", "guild": 9, "ts": 100},
+            {"_id": "e2", "guild": 9, "ts": 200},
+            {"_id": "e3", "guild": 8, "ts": 300},
+        ]
+        await banco.append_events(docs, db_name=modelo, collection=nome, expire_after=timedelta(days=1))
+        await banco.patch_event("e1", {"ok": True}, db_name=modelo, collection=nome)
+
+        achados = await banco.find_events({"guild": 9, "ts": {"$gte": 0}}, db_name=modelo, collection=nome, limit=10)
+        assert [d["_id"] for d in achados] == ["e2", "e1"]
+        assert achados[1]["ok"] is True and "expire_at" in achados[0]
+        assert len(await banco.find_events({}, db_name=modelo, collection=nome, limit=1)) == 1
+    finally:
+        await banco._connect.drop_database(nome)
+        await banco._connect.close()
+
+
+def test_mongo_usage_events_round_trip_against_a_real_mongod():
+    asyncio.run(_ciclo_registro_de_uso())

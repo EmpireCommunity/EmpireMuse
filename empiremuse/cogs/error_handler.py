@@ -9,6 +9,7 @@ import disnake
 from aiohttp import ClientSession
 from disnake.ext import commands
 
+from empiremuse.utils.owner_gate import is_admin_owner
 from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.logs.errors import command_context
 from empiremuse.logs.redact import sanitize_value, scrub
@@ -277,7 +278,7 @@ class ErrorHandler(commands.Cog):
         except AttributeError:
             bot = self.bot
 
-        if isinstance(error, commands.MissingPermissions) and (await bot.is_owner(ctx.author)):
+        if isinstance(error, commands.MissingPermissions) and is_admin_owner(bot, ctx.author):
             try:
                 await ctx.reinvoke()
             except Exception as e:

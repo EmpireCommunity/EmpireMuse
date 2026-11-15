@@ -240,7 +240,7 @@ class UserBanModal(disnake.ui.Modal):
 
 
 class UserBanPanelView(disnake.ui.View):
-    """Entrada do painel do dono: dois botões que abrem o modal. NÃO herda ``PanelView`` nem ``OwnerOnlyView`` (usam ``is_owner``)."""
+    """Entrada do painel do dono: dois botões que abrem o modal. NÃO herda ``PanelView`` nem ``OwnerOnlyView`` (usam o portão ``is_admin_owner``, que no fallback aceita o dono da aplicação)."""
 
     def __init__(self, bot: BotCore, tr, owner_id: int) -> None:
         super().__init__(timeout=PANEL_TIMEOUT_S)

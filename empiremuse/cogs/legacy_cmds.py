@@ -14,6 +14,7 @@ from disnake.ext import commands
 from disnake.http import Route
 
 import empiremuse.wavelink as wavelink
+from empiremuse.utils.owner_gate import admin_owner_only, is_admin_owner
 from empiremuse import paths
 from empiremuse.config_loader import load_config
 from empiremuse.rules.erasure import OWNER_COMMAND_NAME, owner_target_id, parse_owner_request
@@ -290,7 +291,7 @@ class Owner(commands.Cog):
         )
 
     @commands.cooldown(1, 10, commands.BucketType.user)
-    @commands.is_owner()
+    @admin_owner_only()
     @commands.command(
         hidden=True,
         aliases=["gls", "lavalink", "lllist", "lavalinkservers"],
@@ -326,7 +327,7 @@ class Owner(commands.Cog):
         """
         return bool(self.bot.config["RUN_LOCAL_LAVALINK"] or self.bot.pool.lavalink_instance)
 
-    @commands.is_owner()
+    @admin_owner_only()
     @commands.max_concurrency(1, commands.BucketType.default)
     @commands.command(hidden=True, aliases=["restartll", "rtll", "rll"])
     async def restartlavalink(self, ctx: CustomContext):
@@ -341,7 +342,7 @@ class Owner(commands.Cog):
             )
         )
 
-    @commands.is_owner()
+    @admin_owner_only()
     @commands.max_concurrency(1, commands.BucketType.default)
     @commands.command(
         hidden=True, aliases=["ull", "updatell", "llupdate", "llu"], extras={"flags": updatelavalink_flags}
@@ -396,7 +397,7 @@ class Owner(commands.Cog):
             )
         )
 
-    @commands.is_owner()
+    @admin_owner_only()
     @panel_command(
         aliases=["rcfg"],
         description="Recarregar as configs do bot.",
@@ -414,7 +415,7 @@ class Owner(commands.Cog):
         else:
             return txt
 
-    @commands.is_owner()
+    @admin_owner_only()
     @panel_command(aliases=["rds", "recarregarskins"], description="Recarregar skins.", emoji="🎨")
     async def reloadskins(self, ctx: Union[CustomContext, disnake.MessageInteraction]):
         for m in list(sys.modules):
@@ -435,7 +436,7 @@ class Owner(commands.Cog):
         else:
             return txt
 
-    @commands.is_owner()
+    @admin_owner_only()
     @panel_command(
         aliases=["recarregar"],
         description="Recarregar módulos.",
@@ -504,7 +505,7 @@ class Owner(commands.Cog):
         if lock.locked():
             lock.release()
 
-    @commands.is_owner()
+    @admin_owner_only()
     @commands.max_concurrency(1, commands.BucketType.default)
     @panel_command(
         aliases=["up", "atualizar"],
@@ -514,7 +515,7 @@ class Owner(commands.Cog):
     )
     async def update(self, ctx: Union[CustomContext, disnake.MessageInteraction], *, opts: str = ""):
         # O decorador vale por bot; a conferência de dono e a trava valem aqui, no fluxo (e para o botão do painel).
-        if not await self.bot.is_owner(ctx.author):
+        if not is_admin_owner(self.bot, ctx.author):
             raise GenericError("**Apenas meu(s) desenvolvedor(es) pode(m) atualizar o bot.**")
         pool = self.bot.pool
         if pool.update_lock.locked():
@@ -846,7 +847,7 @@ class Owner(commands.Cog):
         ]
         return "\n\n".join(part for part in parts if part)
 
-    @commands.is_owner()
+    @admin_owner_only()
     @commands.command(hidden=True, aliases=["menu"])
     async def panel(self, ctx: CustomContext):
         embed = disnake.Embed(title="PAINEL DE CONTROLE.", color=self.bot.get_color(ctx.guild.me))
@@ -947,7 +948,7 @@ class Owner(commands.Cog):
 
         await ctx.send(embed=embed)
 
-    @commands.is_owner()
+    @admin_owner_only()
     @commands.command(
         aliases=["guildprefix", "sgp", "gp"],
         hidden=True,
@@ -982,7 +983,7 @@ class Owner(commands.Cog):
 
         await ctx.send(embed=embed)
 
-    @commands.is_owner()
+    @admin_owner_only()
     @commands.command(hidden=True)
     async def cleardm(self, ctx: CustomContext, amount: int = 20):
         counter = 0
@@ -1009,14 +1010,14 @@ class Owner(commands.Cog):
         if inter.data.custom_id != "close_shell_result":
             return
 
-        if not await self.bot.is_owner(inter.author):
+        if not is_admin_owner(self.bot, inter.author):
             return await inter.send("**Apenas meu dono pode usar este botão!**", ephemeral=True)
 
         await inter.response.edit_message(
             content="```ini\n🔒 - [Shell Fechado!] - 🔒```", attachments=None, view=None, embed=None
         )
 
-    @commands.is_owner()
+    @admin_owner_only()
     @commands.command(aliases=["sh"], hidden=True)
     async def shell(self, ctx: CustomContext, *, command: str):
         if command.startswith("```") and command.endswith("```"):
@@ -1171,7 +1172,7 @@ class Owner(commands.Cog):
 
         await player.process_next()
 
-    @commands.is_owner()
+    @admin_owner_only()
     @commands.command(
         hidden=True,
         aliases=["setbotbanner"],
@@ -1180,7 +1181,7 @@ class Owner(commands.Cog):
     async def setbanner(self, ctx: CustomContext, url: str = ""):
         await self.setavatar.callback(self=self, ctx=ctx, url=url, mode="banner")
 
-    @commands.is_owner()
+    @admin_owner_only()
     @commands.command(
         hidden=True,
         aliases=["setbotavatar"],

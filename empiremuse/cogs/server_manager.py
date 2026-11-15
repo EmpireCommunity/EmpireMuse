@@ -6,6 +6,7 @@ from typing import Union, TYPE_CHECKING, Optional
 import disnake
 from disnake.ext import commands
 
+from empiremuse.utils.owner_gate import admin_owner_only
 from empiremuse.utils.guild_ban import bans_of
 from empiremuse.utils.music.converters import fix_characters
 from empiremuse.utils.owner_usage import BanReasonModal, OwnerOnlyView, send_banned, send_usage
@@ -236,7 +237,7 @@ class ServerManagerCog(commands.Cog):
         self.bot = bot
 
     @commands.max_concurrency(1, commands.BucketType.default)
-    @commands.is_owner()
+    @admin_owner_only()
     @commands.command(
         name="servers", aliases=["servermanager"], hidden=True, description="Gerenciar servidores em que o bot está."
     )

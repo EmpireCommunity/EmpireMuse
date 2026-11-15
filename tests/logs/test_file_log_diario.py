@@ -4,6 +4,7 @@ import logging
 import os
 import stat
 import sys
+import time
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -289,3 +290,59 @@ class TestRelogioPadraoEAviso:
         handler.close()
 
         assert stat.S_IMODE((tmp_path / ".logs" / nome(0)).stat().st_mode) == 0o600
+
+
+@pytest.mark.regression
+def test_daily_cap_reserves_the_truncation_marker_inside_the_budget(tmp_path):
+    handler = DailyRetentionFileHandler(tmp_path, max_day_bytes=512, now=Relogio())
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    for _ in range(8):
+        handler.emit(logging.LogRecord("test", logging.INFO, __file__, 0, "á" * 60, (), None))
+    handler.close()
+    contents = (tmp_path / nome(0)).read_bytes()
+    assert len(contents) <= 512
+    assert contents.decode().count(file_log.TRUNCATED_MARKER) == 1
+
+
+@pytest.mark.regression
+def test_restarted_handler_discards_even_small_lines_after_the_daily_marker(tmp_path):
+    for restart in range(2):
+        handler = DailyRetentionFileHandler(tmp_path, max_day_bytes=512, now=Relogio())
+        if not restart:
+            handler.emit(logging.LogRecord("test", logging.INFO, __file__, 0, "x" * 600, (), None))
+        handler.emit(logging.LogRecord("test", logging.INFO, __file__, 0, "small", (), None))
+        handler.close()
+    contents = (tmp_path / nome(0)).read_text()
+    assert contents.count(file_log.TRUNCATED_MARKER) == 1
+    assert "small" not in contents
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    "message",
+    [file_log.TRUNCATED_MARKER, "usuário: " + file_log.TRUNCATED_MARKER, "antes\n" + file_log.TRUNCATED_MARKER],
+)
+def test_user_marker_phrase_does_not_disable_logs_after_restart(tmp_path, message):
+    handler = DailyRetentionFileHandler(tmp_path, now=Relogio())
+    handler.handle(registro(message))
+    handler.close()
+    handler = DailyRetentionFileHandler(tmp_path, now=Relogio())
+    handler.handle(registro("depois do reinício"))
+    handler.close()
+    assert "depois do reinício" in (tmp_path / nome(0)).read_text()
+
+
+@pytest.mark.regression
+def test_marker_uses_truncation_time_instead_of_first_emit(tmp_path, monkeypatch):
+    clock = Relogio()
+    monkeypatch.setattr(logging.time, "time_ns", lambda: int(clock().timestamp() * 1e9))
+    handler = DailyRetentionFileHandler(tmp_path, max_day_bytes=512, now=clock)
+    handler.handle(registro("primeiro"))
+    clock.avancar(seconds=10)
+    expected = handler._truncation_line().strip()
+    handler.handle(registro("x" * 600))
+    handler.close()
+    lines = (tmp_path / nome(0)).read_text().splitlines()
+    assert lines[-1] == expected
+    assert lines[-1].startswith(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(clock().timestamp())) + ",000")
+    assert lines[0].startswith(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(AGORA.timestamp())) + ",000")

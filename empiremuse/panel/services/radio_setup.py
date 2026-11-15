@@ -289,6 +289,33 @@ class RadioSetupService:
         self._audit(ctx, radio, "redefinida")
         return STATUS_OK, view(message=tr("panel.radio.setup.reset_done"), kind=KIND_OK, removed=True)
 
+    # ------------------------------------------------------------------ redefinir sem versão (API)
+
+    def reset_token(self, ctx: FormContext, radio: Any) -> str:
+        """O token de confirmação da API: preso a usuário, servidor, finalidade e ``radio.id``, **sem** a versão (o reset
+        apaga sem recusar tela velha, R1)."""
+        return self.tokens.issue(ctx.user_id, ctx.guild_id, TOKEN_SCOPE, str(radio.id))
+
+    async def reset_with_token(self, ctx: FormContext, radio: Any, token: str) -> int:
+        """Redefine com o token de ``reset_token``: ``200``, ``422`` (token inválido, vencido, usado ou de outro contexto),
+        ``404``, ``403``, ``409`` ou ``422`` (recusa do bot). O token é gasto **antes** da chamada ao bot, para valer uma
+        vez só mesmo com dois pedidos ao mesmo tempo; se o bot recusar, o usuário pede outro."""
+        if self.tokens.check(token, ctx.user_id, ctx.guild_id, TOKEN_SCOPE, str(radio.id)) is not None:
+            return STATUS_INVALID
+        self.tokens.consume(token)
+        try:
+            await self.api(ctx).reset(ctx.guild_id, int(ctx.user_id), str(radio.id), None)
+        except RadioNotFound:
+            return STATUS_NOT_FOUND
+        except RadioForbidden:
+            return STATUS_FORBIDDEN
+        except RadioConflict:
+            return STATUS_CONFLICT
+        except RadioInvalid:
+            return STATUS_INVALID
+        self._audit(ctx, radio, "redefinida")
+        return STATUS_OK
+
     @staticmethod
     def _audit(ctx: FormContext, radio: Any, what: str) -> None:
         logger.info(  # só ids (R-12): nomes de canal e de bot nunca vão para o log

@@ -2,7 +2,8 @@
 
 Contrato ``apagar-dados-contrato.md`` §3.2. Este serviço **não segura o lock do usuário** em volta de ``erase_user``: o lock
 (``pool.user_locks``) é um ``asyncio.Lock`` não reentrante e ``erase_user`` o pega sozinho; segurá-lo aqui travaria na primeira chamada.
-Por isso a conferência do pedido (login recente e palavra ``APAGAR``) acontece antes da chamada, fora do lock; o XSRF é do Tornado.
+A conferência do pedido (login recente e palavra ``APAGAR``) acontece antes da chamada; a sessão é reconferida pelo callable síncrono
+``still_valid`` logo após adquirir o lock, antes de qualquer execução. O XSRF é do Tornado.
 
 Quem chama lê ``user_id`` e ``consented_at`` da sessão **antes** (o passo 2 do apagamento destrói todas as sessões do membro) e não consulta
 a sessão depois. Os textos daqui nunca mostram contagens nem nomes de armazenamento e o de ``PARTIAL`` não promete que repetir resolve.
@@ -18,7 +19,7 @@ from math import ceil
 from typing import TYPE_CHECKING, Optional
 
 from empiremuse.rules.erasure import ErasureStatus, consent_is_recent
-from empiremuse.utils.erasure import ErasureBusy, ErasureRateLimited
+from empiremuse.utils.erasure import ErasureBusy, ErasureRateLimited, ErasureSessionRevoked
 
 if TYPE_CHECKING:
     from empiremuse.utils.client import BotPool
@@ -44,6 +45,7 @@ def msg_rate_limited(retry_after_s: float) -> str:
 class EraseResult(StrEnum):
     DONE = "done"  # OK: nada sobrou
     PARTIAL = "partial"  # parte apagada; o texto não promete que repetir resolve
+    SESSION_REVOKED = "session_revoked"
     LOGIN_REQUIRED = "login_required"  # sem consentimento recente (login silencioso ou antigo): o handler responde 303 ao GET, nada foi apagado
     BAD_CONFIRMATION = "bad_confirmation"
     RATE_LIMITED = "rate_limited"
@@ -71,20 +73,35 @@ class AccountEraseService:
         return consent_is_recent(consented_at, self._clock())
 
     async def erase(
-        self, pool: BotPool, *, user_id: int, consented_at: Optional[float], confirmation: Optional[str]
+        self,
+        pool: BotPool,
+        *,
+        user_id: int,
+        consented_at: Optional[float],
+        confirmation: Optional[str],
+        still_valid: Optional[Callable[[], bool]] = None,
     ) -> EraseOutcome:
         """Confere o login recente com consentimento e a palavra de confirmação, e só então apaga. ``user_id`` é sempre o da sessão."""
         if not self.consent_is_recent(consented_at):
             return EraseOutcome(EraseResult.LOGIN_REQUIRED)
         if confirmation != CONFIRMATION_WORD:
             return EraseOutcome(EraseResult.BAD_CONFIRMATION, MSG_BAD_CONFIRMATION)
+        return await self.run(pool, user_id=user_id, still_valid=still_valid)
+
+    @staticmethod
+    async def run(pool: BotPool, *, user_id: int, still_valid: Optional[Callable[[], bool]] = None) -> EraseOutcome:
+        """Chama o serviço de apagamento do bot (o único) e traduz o resultado. **Não confere nada**: quem chama (o painel genérico
+        e a API externa, cada um com a sua regra de login recente e de confirmação) já conferiu. ``still_valid`` é repassado ao núcleo,
+        que reconfere a sessão sob o lock. ``user_id`` é sempre o da sessão."""
         service = getattr(pool, "erasure", None)
         if service is None:
             return EraseOutcome(EraseResult.UNAVAILABLE, MSG_UNAVAILABLE)
         try:
             report = await service.erase_user(
-                user_id, source="panel"
+                user_id, source="panel", still_valid=still_valid
             )  # sem lock aqui: ``erase_user`` serializa sozinho
+        except ErasureSessionRevoked:
+            return EraseOutcome(EraseResult.SESSION_REVOKED)
         except ErasureRateLimited as exc:
             retry = max(1, ceil(exc.retry_after_s))
             return EraseOutcome(EraseResult.RATE_LIMITED, msg_rate_limited(exc.retry_after_s), retry)

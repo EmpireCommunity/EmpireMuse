@@ -21,6 +21,23 @@ jobs:
     name: CI (Lint, Compile e Testes)
     runs-on: ubuntu-latest
 
+    # mongod descartável só para os testes de integração (tests/persistence/test_mongo_integracao.py). Imagem pinada por digest (8.0.38: a 8.0.34 do
+    # deploy/docker-compose.deps.yml não sobe em runner com kernel >= 6.19, SERVER-121912), sem autenticação e sem dado de produção: a porta só existe neste runner e o teste recusa
+    # qualquer host que não seja local. O health check é o gate: o job só começa os passos depois de o mongod responder ao ping.
+    services:
+      mongo:
+        image: mongo:8.0.38@sha256:d97fea17ccb8d004cd137be8dab54d70d0df11be69c9f422aefe4484c8414ab7
+        ports:
+          - 127.0.0.1:27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping: 1}).ok' | grep -q 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      MONGO_TEST_URI: mongodb://127.0.0.1:27017
+
     steps:
       - name: Checkout do repositório
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -70,8 +87,8 @@ jobs:
 
       - name: Verificar integridade e sincronia dos lockfiles
         run: |
-          uv pip compile --generate-hashes --universal --exclude-newer 2026-10-20T00:00:00Z --exclude-newer-package yt-dlp=2026-10-26T22:30:00Z --exclude-newer-package certifi=2026-10-23T12:00:00Z --exclude-newer-package brotli=2026-10-22T15:00:00Z --exclude-newer-package brotlicffi=2026-10-22T17:00:00Z --exclude-newer-package tornado=2026-10-21T15:32:00Z requirements.txt -o requirements-lock.txt
-          uv pip compile --generate-hashes --universal --exclude-newer 2026-10-20T00:00:00Z --exclude-newer-package pytest-asyncio=2026-10-25T21:06:00Z requirements-dev.txt -o requirements-dev-lock.txt
+          uv pip compile --generate-hashes --universal --exclude-newer 2026-10-20T00:00:00Z --exclude-newer-package yt-dlp=2026-10-26T22:30:00Z --exclude-newer-package certifi=2026-10-23T12:00:00Z --exclude-newer-package brotli=2026-10-22T15:00:00Z --exclude-newer-package brotlicffi=2026-10-22T17:00:00Z --exclude-newer-package tornado=2026-11-09T21:10:00Z --exclude-newer-package dnspython=2026-11-03T23:57:00Z requirements.txt -o requirements-lock.txt
+          uv pip compile --generate-hashes --universal --exclude-newer 2026-10-20T00:00:00Z --exclude-newer-package pytest-asyncio=2026-11-01T18:27:00Z requirements-dev.txt -o requirements-dev-lock.txt
           uv pip compile --generate-hashes --universal --exclude-newer 2026-10-20T00:00:00Z build-constraints.in -o build-constraints.txt
           git diff --exit-code requirements-lock.txt requirements-dev-lock.txt build-constraints.txt
 
@@ -172,13 +189,118 @@ jobs:
         if: steps.detect-changes.outputs.code == 'true'
         run: pytest -q -m smoke -p no:cacheprovider
 
+      - name: Testes de integração do Mongo rodam de verdade (sem skip)
+        if: steps.detect-changes.outputs.code == 'true'
+        shell: bash
+        run: |
+          # Sem MONGO_TEST_URI o módulo é pulado em silêncio; este passo falha se os testes não PASSAREM contra o mongod do serviço.
+          # pipefail (default do shell bash do Actions, explícito aqui) impede que o tee esconda o código de saída do pytest.
+          set -o pipefail
+          MINIMO=4
+          pytest -q -m integration -rA -p no:cacheprovider | tee "$RUNNER_TEMP/mongo-integracao.txt"
+          PASSARAM="$(grep -c '^PASSED tests/persistence/test_mongo_integracao.py::' "$RUNNER_TEMP/mongo-integracao.txt" || true)"
+          echo "Testes Mongo PASSED: $PASSARAM (mínimo $MINIMO)"
+          if [ "$PASSARAM" -lt "$MINIMO" ]; then echo "::error::Esperava ao menos $MINIMO testes Mongo PASSED, vieram $PASSARAM"; exit 1; fi
+          if grep -q '^SKIPPED' "$RUNNER_TEMP/mongo-integracao.txt"; then echo "::error::teste de integração pulado"; exit 1; fi
+
       - name: Execução dos testes automatizados (pytest)
         if: steps.detect-changes.outputs.code == 'true'
         run: pytest -q --durations=30 --cov --cov-report=term-missing:skip-covered
 
       - name: Cobertura das áreas críticas (≥ 90%)
         if: steps.detect-changes.outputs.code == 'true'
-        run: coverage report --fail-under=90 --skip-covered --include="empiremuse/panel/*,empiremuse/web_app.py,empiremuse/rpc_protocol.py,empiremuse/rules/*,empiremuse/config_loader.py,empiremuse/utils/db.py,empiremuse/serialization/*,empiremuse/utils/music/legacy_notice.py,empiremuse/utils/music/session_store.py,empiremuse/updater/*,empiremuse/logs/*,empiremuse/health.py,empiremuse/version.py"
+        run: coverage report --fail-under=90 --skip-covered --include="empiremuse/panel/*,empiremuse/web_app.py,empiremuse/rpc_protocol.py,empiremuse/rules/*,empiremuse/config_loader.py,empiremuse/utils/db.py,empiremuse/api/*,empiremuse/utils/owner_gate.py,empiremuse/utils/rpc_proof.py,empiremuse/serialization/*,empiremuse/utils/music/legacy_notice.py,empiremuse/utils/music/session_store.py,empiremuse/updater/*,empiremuse/logs/*,empiremuse/health.py,empiremuse/version.py"
+
+  site-data-image:
+    name: Exportador do site na imagem (sem publicar)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    # O caminho do release (release.yml, job github-release) só roda numa tag: uma falha determinística do exportador queimaria uma versão
+    # depois de a imagem ser publicada. Este job faz o MESMO caminho no PR, sem publicar nada: constrói a imagem e roda o exportador dentro
+    # dela com as mesmas flags de endurecimento. DIFERENÇA: o release.yml NÃO roda o scripts/validate_site_data.py; aqui, além do `jq`,
+    # o JSON é validado contra o schema publicado (só no PR; a falha de schema aparece antes da tag).
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Detectar alterações que afetam o exportador
+        id: detect-changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git fetch origin "$BASE_REF:refs/remotes/origin/$BASE_REF"
+          # Falha FECHADO: com `set -e`, um `git diff` que falha derruba o passo (job vermelho) em vez de pular o exportador em silêncio;
+          # needed só vira false depois de um diff que DEU CERTO e não tocou nenhum arquivo da lista.
+          set -e
+          DIFF_FILES="$(git diff --name-only "origin/$BASE_REF...HEAD")"
+          NEEDED="false"
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            case "$file" in
+              empiremuse/*|scripts/*|docs/api/*|data/*|assets/*|pyproject.toml|build-constraints.in|build-constraints.txt|.dockerignore|Dockerfile|LICENSE|CREDITS.md|requirements*|.github/ci-uv-requirements.txt|.github/workflows/release.yml|.github/workflows/ci.yml)
+                NEEDED="true"
+                break
+                ;;
+            esac
+          done <<< "$DIFF_FILES"
+          echo "needed=$NEEDED" >> "$GITHUB_OUTPUT"
+          echo "Exportador afetado: $NEEDED"
+
+      - name: Configurar Docker Buildx
+        if: steps.detect-changes.outputs.needed == 'true'
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Construir a imagem (sem publicar)
+        if: steps.detect-changes.outputs.needed == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: empiremuse-site-data-check:ci
+          build-args: |
+            EMPIREMUSE_VERSION=0.0.0-rc.0
+          cache-from: type=gha,scope=site-data-image
+          # PR só LÊ o cache; só o push na main escreve (mode=max em todo PR esgotaria a cota de 10 GB do repositório)
+          cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max,scope=site-data-image' || '' }}
+
+      - name: Gerar site-data.json dentro da imagem (sem rede, contêiner endurecido)
+        if: steps.detect-changes.outputs.needed == 'true'
+        run: |
+          # As MESMAS flags do job github-release do release.yml: se uma delas quebrar o exportador, quebra aqui antes da tag.
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --entrypoint python empiremuse-site-data-check:ci \
+            -m empiremuse.site_data --bot-version "0.0.0-rc.0" > site-data.json
+          jq -e --arg v "0.0.0-rc.0" '.bot_version == $v and (.slash_commands | length) > 0 and (.prefix_commands | length) > 0' site-data.json > /dev/null
+
+      - name: Configurar Python 3.14
+        if: steps.detect-changes.outputs.needed == 'true'
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+
+      - name: Instalar uv
+        if: steps.detect-changes.outputs.needed == 'true'
+        run: python -m pip install --require-hashes -r .github/ci-uv-requirements.txt
+
+      - name: Instalar dependências de desenvolvimento com hashes (jsonschema)
+        if: steps.detect-changes.outputs.needed == 'true'
+        run: uv pip install --system --require-hashes --build-constraint build-constraints.txt -r requirements-dev-lock.txt
+
+      - name: Validar o site-data.json contra o schema publicado
+        if: steps.detect-changes.outputs.needed == 'true'
+        run: python scripts/validate_site_data.py site-data.json --bot-version "0.0.0-rc.0"
 
   ci-py315:
     name: CI Python 3.15 (não bloqueante)
@@ -256,7 +378,7 @@ jobs:
 
       - name: Cobertura das áreas críticas (≥ 90%)
         if: steps.detect-changes.outputs.code == 'true'
-        run: coverage report --fail-under=90 --skip-covered --include="empiremuse/panel/*,empiremuse/web_app.py,empiremuse/rpc_protocol.py,empiremuse/rules/*,empiremuse/config_loader.py,empiremuse/utils/db.py,empiremuse/serialization/*,empiremuse/utils/music/legacy_notice.py,empiremuse/utils/music/session_store.py,empiremuse/updater/*,empiremuse/logs/*,empiremuse/health.py,empiremuse/version.py"
+        run: coverage report --fail-under=90 --skip-covered --include="empiremuse/panel/*,empiremuse/web_app.py,empiremuse/rpc_protocol.py,empiremuse/rules/*,empiremuse/config_loader.py,empiremuse/utils/db.py,empiremuse/api/*,empiremuse/utils/owner_gate.py,empiremuse/utils/rpc_proof.py,empiremuse/serialization/*,empiremuse/utils/music/legacy_notice.py,empiremuse/utils/music/session_store.py,empiremuse/updater/*,empiremuse/logs/*,empiremuse/health.py,empiremuse/version.py"
 
   deploy-check:
     name: Deploy (compose, segredos e gitleaks)

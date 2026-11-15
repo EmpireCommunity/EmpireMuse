@@ -5,6 +5,8 @@ Os testes sobem o servidor real (run_app) numa porta livre e usam HTTP de verdad
 
 import asyncio
 import re
+
+import pytest
 from types import SimpleNamespace
 
 import tornado.httpclient
@@ -52,7 +54,18 @@ def make_pool(config, bots=(), failed=None, killing=False, commit=""):
     )
 
 
-def get_index(monkeypatch, *, bots=(), failed=None, killing=False, commit="", path="/", ws=False, **overrides):
+def get_index(
+    monkeypatch,
+    *,
+    bots=(),
+    failed=None,
+    killing=False,
+    commit="",
+    path="/",
+    ws=False,
+    runtime_panel_url=None,
+    **overrides,
+):
     web_app = require("empiremuse.web_app")
     config = local_config(PORT=0, **overrides)
     pool = make_pool(config, bots, failed, killing, commit)
@@ -68,6 +81,8 @@ def get_index(monkeypatch, *, bots=(), failed=None, killing=False, commit="", pa
 
     async def main():
         web_app.run_app(pool, config=pool.config)
+        if runtime_panel_url is not None:
+            pool.public_panel_url = runtime_panel_url
         if ws:
             connection = await tornado.websocket.websocket_connect(f"ws://127.0.0.1:{seen['port']}/ws")
             connection.close()
@@ -103,6 +118,26 @@ class TestPoolStatus:
 class TestLinks:
     def test_no_panel_link_when_the_panel_config_is_invalid(self, monkeypatch):
         assert "/painel" not in page(monkeypatch, PANEL_ENABLED=True, PANEL_BASE_URL="lixo")
+
+    def test_link_externo_no_status_nao_aponta_ao_generico_nem_ao_favicon_antigo(self, monkeypatch):
+        from empiremuse.api.runtime import ExternalApiStatus
+
+        monkeypatch.setattr(
+            "empiremuse.api.runtime.start_external_api",
+            lambda *args: ExternalApiStatus(server=object(), panel_url="https://muse.empirecommunity.org/panel"),
+        )
+        body = page(monkeypatch, bots=READY, PANEL_ENABLED=True)
+        assert 'href="https://muse.empirecommunity.org/panel"' in body
+        assert "/painel" not in body
+
+    @pytest.mark.regression
+    @pytest.mark.parametrize("runtime_url", ["https://runtime.example/panel", ""])
+    def test_status_usa_url_do_pool_sem_fallback_para_configuracao(self, monkeypatch, runtime_url):
+        body = page(monkeypatch, bots=READY, runtime_panel_url=runtime_url)
+        if runtime_url:
+            assert f'href="{runtime_url}"' in body
+        assert 'href="/painel/"' not in body
+        assert 'href="http://localhost:8080/painel"' not in body
 
     def test_external_links_open_safely(self, monkeypatch):
         body = page(monkeypatch, bots=READY)

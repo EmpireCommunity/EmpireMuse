@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -64,8 +64,9 @@ class CatalogProvider(LocalizationProtocol):
 class I18n:
     """Os catálogos e o que se faz com eles. ``load()`` é idempotente; o resto só lê o que já foi carregado."""
 
-    def __init__(self, root: Path | None = None) -> None:
+    def __init__(self, root: Path | None = None, *, only: Collection[str] | None = None) -> None:
         self.root = Path(root) if root is not None else loader.DEFAULT_ROOT
+        self.only = frozenset(only) if only is not None else None  # só estes locales são lidos (o exportador do site)
         self.pool: BotPool | None = None
         self.provider = CatalogProvider(self)
         self._loaded: dict[str, LocaleData] = {}
@@ -86,7 +87,7 @@ class I18n:
         """Lê e valida ``locales/``. ``en-US``/``pt-BR`` quebrado levanta ``I18nError``; outro locale inválido só fica desligado."""
         if self._is_loaded and not force:
             return self._loaded
-        loaded = loader.load_catalogs(self.root)
+        loaded = loader.load_catalogs(self.root, only=self.only)
         problems = loader.required_errors(loaded)
         if problems:
             for problem in problems:
@@ -308,6 +309,22 @@ def get_i18n() -> I18n:
     global _INSTANCE
     if _INSTANCE is None:
         _INSTANCE = I18n()
+    return _INSTANCE
+
+
+def install_i18n(*, only: Collection[str]) -> I18n:
+    """Instala, ANTES de qualquer cog ser importado, o ``I18n`` único que só lê os locales de ``only`` (o exportador do site).
+
+    ``localized()`` chama ``get_i18n()`` quando um cog é importado; sem isto ele criaria um ``I18n`` que abre TODOS os diretórios de
+    idioma. Se já existe um singleton, ele só serve se tiver exatamente o mesmo ``only``; senão falha (``RuntimeError``).
+    """
+    global _INSTANCE
+    wanted = frozenset(only)
+    if _INSTANCE is not None:
+        if _INSTANCE.only != wanted:
+            raise RuntimeError("o I18n do processo já existe com outro conjunto de idiomas")
+        return _INSTANCE
+    _INSTANCE = I18n(only=wanted)
     return _INSTANCE
 
 

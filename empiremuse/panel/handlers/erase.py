@@ -73,10 +73,16 @@ class AccountEraseHandler(AuthenticatedHandler):
             return
         # A sessão é lida AQUI, uma vez: o apagamento destrói todas as sessões do membro e depois dele ela não é consultada.
         user_id, consented_at = int(self.session.user.id), self.session.consented_at
+        session_id = self.session_id
+        store = self.application.settings["session_store"]
         confirmation = (decode_args(self).get(CONFIRMATION_FIELD) or [""])[0]
         try:
             outcome = await self.erasure.erase(
-                self.application.settings["pool"], user_id=user_id, consented_at=consented_at, confirmation=confirmation
+                self.application.settings["pool"],
+                user_id=user_id,
+                consented_at=consented_at,
+                confirmation=confirmation,
+                still_valid=lambda: store.get(session_id) is not None,
             )
         except Exception:
             self.forget_session()  # o passo 2 pode ter destruído a sessão antes do erro
@@ -84,6 +90,12 @@ class AccountEraseHandler(AuthenticatedHandler):
         self._respond(outcome)
 
     def _respond(self, outcome: EraseOutcome) -> None:
+        if outcome.result is EraseResult.SESSION_REVOKED:
+            self.forget_session()
+            self.render_error(
+                401, "Sessão encerrada", "Sua sessão foi encerrada. Entre novamente para consultar sua conta."
+            )
+            return
         if outcome.result is EraseResult.LOGIN_REQUIRED:
             # 303 de volta ao GET: ele não oferece formulário, só o link para entrar de novo (um POST seguido de 302 ao Discord
             # esbarraria no ``form-action 'self'`` da CSP, e o login silencioso não prova presença).

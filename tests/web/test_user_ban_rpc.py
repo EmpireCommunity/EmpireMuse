@@ -55,6 +55,13 @@ async def observar(ws, espera: float = 0.5):
             return textos, ws.close_code
 
 
+async def _aguardar_estado(pronto, teto: float = 2.0):
+    """Cede o loop até ``pronto()`` ser verdadeiro: o servidor roda no mesmo loop, então o estado dele é o evento (sem sleep real). O ``teto`` só barra travamento."""
+    async with asyncio.timeout(teto):
+        while not pronto():
+            await asyncio.sleep(0)
+
+
 async def mensagens_ate_fechar(ws) -> list[dict]:
     textos = []
     while True:
@@ -96,7 +103,9 @@ async def _resultado_do_vetor_b(servidor, sessao, proprio, novo):
     """
     ws = await _registrar_usuario(servidor, sessao, [proprio], _token_do_app())
     await ws.send_json({"op": "rpc_update", "user_ids": [novo], "token": _token_do_app(), "version": "3.0.0"})
-    await asyncio.sleep(ASSENTAR)
+    await _aguardar_estado(
+        lambda: novo in web_app.users_ws and proprio not in web_app.users_ws
+    )  # o servidor já reenviou
     await _registrar_usuario(servidor, sessao, [proprio], _token_do_app())  # alguém assume o ID antigo
     apos_o_antigo = await observar(ws)  # a primeira conexão NÃO é derrubada: já esqueceu ``proprio``
     dona_do_novo = web_app.users_ws.get(novo) is not None

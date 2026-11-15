@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import disnake
 
-from empiremuse.rules.app_profile import build_profile, panel_url_of, plan_changes
+from empiremuse.rules.app_profile import build_profile, plan_changes
 
 if TYPE_CHECKING:
     from empiremuse.utils.client import BotCore
@@ -21,6 +21,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 EDIT_TIMEOUT = 20  # s: o disnake espera o 429 por conta própria; passou disso, desiste sem travar a tarefa
+
+
+def public_panel_url(pool: Any) -> str:
+    """URL anunciada pelo servidor em execução, sem reler configuração nem segredos."""
+    return getattr(pool, "public_panel_url", "")
 
 
 async def sync_app_profile(bot: BotCore, bots: int) -> None:
@@ -50,7 +55,7 @@ async def _sync(bot: BotCore, bots: int) -> None:
         tags=config["APP_TAGS"],
         prefix=config["DEFAULT_PREFIX"],
         bots=bots,
-        panel_url=panel_url_of(config["PANEL_BASE_URL"], config["PANEL_ENABLED"]),
+        panel_url=public_panel_url(bot.pool),
         support_url=config["SUPPORT_SERVER"],
         main=main.user.name if main is not None and main.user is not None else "",
     )

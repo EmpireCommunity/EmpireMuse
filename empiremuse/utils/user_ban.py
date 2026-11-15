@@ -30,6 +30,7 @@ from empiremuse.rules.user_ban import (
     user_ban_from_doc,
     user_ban_to_doc,
 )
+from empiremuse.rules.user_cleanup import UserCleanupError
 from empiremuse.utils.db import DBModel
 
 if TYPE_CHECKING:
@@ -208,6 +209,9 @@ class UserBans:
             sessions = getattr(self.pool, "panel_sessions", None)
             if sessions is not None:
                 sessions.destroy_user(str(user_id))
+        except UserCleanupError as exc:
+            # as sessões já caíram (o acesso foi cortado); só um ouvinte de limpeza falhou e o aviso dele já foi ao log: não é ``FAILED_PANEL``
+            logger.warning("Banimento: sessões destruídas, mas %d ouvinte(s) de limpeza falharam", exc.failures)
         except Exception as exc:  # noqa: BLE001 - o ban já foi gravado; o dono recebe o parcial
             logger.warning("Banimento: sessões do painel não destruídas (%s)", type(exc).__name__)
             failed.append(FAILED_PANEL)

@@ -66,6 +66,8 @@ visão administrativa, voto, log ou mensagem pública. Painel exige sessão e XS
 ignore `user_id` enviado no corpo. Não adicionar Tocar nem estrela no player nesta
 J3: pertencem à J2a/J2b. Não há porta nem stub de reprodução nesta unidade.
 
+Nos menus do Discord, falha na resolução dos rótulos de `custom`/`genre` não oculta as estações ao vivo nem os filtros pessoais. A seção afetada mostra indisponibilidade (contagem desconhecida, nunca lista vazia) e oferece tentar de novo. No servidor, Limpar fica desabilitado até a releitura completa; callbacks antigos também não limpam referências desconhecidas. Remover uma estação ao vivo continua disponível. A releitura administrativa reconfere a permissão; a pessoal conserva o gate efêmero e a identidade da interação. Os componentes usam `guild_fav_radio_*` e `user_fav_radio_*`, sem identidade pessoal nos IDs.
+
 ## Persistência e exclusão futura
 
 Um documento por usuário, `_id` decimal em `global.radio_user`:

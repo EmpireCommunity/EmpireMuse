@@ -237,7 +237,9 @@ class JukeboxService:
         bot_name = str(getattr(ctx.bot.user, "name", "") or "") or None
         if not config.channel:
             return CurrentJukebox(False, None, False, bot_name)
-        channel = ctx.bot.get_channel(config.channel)
+        channel = ctx.bot.get_channel(config.channel)  # o cache do bot é de todos os servidores: só vale o deste
+        if channel is not None and getattr(getattr(channel, "guild", None), "id", None) != ctx.guild_id:
+            channel = None
         name = str(channel.name) if channel is not None else None
         return CurrentJukebox(True, name, name is None, bot_name)
 

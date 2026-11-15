@@ -8,6 +8,9 @@ from unittest.mock import AsyncMock, MagicMock
 import disnake
 import pytest
 
+from empiremuse.utils.user_locks import UserLocks
+from empiremuse.utils.erasure import ErasureTombstones
+
 from empiremuse.cogs import radio as radio_cog
 from empiremuse.i18n import get_i18n
 from empiremuse.rules.radio import radio_id
@@ -73,7 +76,13 @@ def build(
         make_bot(1, "TOKEN", channel, manage_guild=manage_guild),
         *(make_bot(n, f"TOKEN_RESERVE_{n}", channel, manage_guild=manage_guild) for n in free_bots),
     ]
-    pool = SimpleNamespace(database=db, i18n=get_i18n(), get_all_bots=lambda: bots)
+    pool = SimpleNamespace(
+        database=db,
+        i18n=get_i18n(),
+        get_all_bots=lambda: bots,
+        erasure_tombstones=ErasureTombstones(),
+        user_locks=UserLocks(),
+    )
     pool.radio = RadioHub(pool)
     ports = FakePorts()
     pool.radio.manager.ports_factory = lambda radio: ports
