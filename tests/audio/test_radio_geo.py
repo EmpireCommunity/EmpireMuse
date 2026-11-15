@@ -7,13 +7,13 @@ from empiremuse.rules.radio_geo import (
     StateIndex,
     clamp_clicks,
     distance_km,
-    guild_country,
     norm,
     parse_node_id,
     resolve_state,
     search_term,
     valid_coordinates,
 )
+from empiremuse.utils.radio.locations import guild_country_of
 
 pytestmark = pytest.mark.critical
 
@@ -107,23 +107,23 @@ class TestResolveState:
 
 class TestGuildCountry:
     def test_known_languages(self):
-        assert guild_country("pt-BR", TREE_COUNTRIES) == "BR"
-        assert guild_country("en-US", TREE_COUNTRIES) == "US"
-        assert guild_country("en-GB", TREE_COUNTRIES) == "GB"
-        assert guild_country("fr", TREE_COUNTRIES) == "FR"  # sem território: os likely_subtags do CLDR
-        assert guild_country("ja", TREE_COUNTRIES) == "JP"
-        assert guild_country("uk", TREE_COUNTRIES) == "UA"
+        assert guild_country_of("pt-BR", TREE_COUNTRIES) == "BR"
+        assert guild_country_of("en-US", TREE_COUNTRIES) == "US"
+        assert guild_country_of("en-GB", TREE_COUNTRIES) == "GB"
+        assert guild_country_of("fr", TREE_COUNTRIES) == "FR"  # sem território: os likely_subtags do CLDR
+        assert guild_country_of("ja", TREE_COUNTRIES) == "JP"
+        assert guild_country_of("uk", TREE_COUNTRIES) == "UA"
 
     def test_a_region_that_is_not_a_country_an_unknown_language_and_a_country_outside_the_tree_give_none(self):
-        assert guild_country("es-419", TREE_COUNTRIES) is None  # 419 é a América Latina, não um país
-        assert guild_country("no", TREE_COUNTRIES) is None  # o Babel não conhece "no": UnknownLocaleError
-        assert guild_country("pt-BR", {"US"}) is None  # BR fora da árvore
+        assert guild_country_of("es-419", TREE_COUNTRIES) is None  # 419 é a América Latina, não um país
+        assert guild_country_of("no", TREE_COUNTRIES) is None  # o Babel não conhece "no": UnknownLocaleError
+        assert guild_country_of("pt-BR", {"US"}) is None  # BR fora da árvore
         for junk in (None, 5, "", "x" * 40, "!!!", "pt_BR; DROP"):
-            assert guild_country(junk, TREE_COUNTRIES) is None
+            assert guild_country_of(junk, TREE_COUNTRIES) is None
 
     @pytest.mark.parametrize("locale", DISCORD_LOCALES)
     def test_every_discord_locale_answers_without_raising(self, locale):
-        result = guild_country(locale, TREE_COUNTRIES)
+        result = guild_country_of(locale, TREE_COUNTRIES)
 
         assert result is None or result in TREE_COUNTRIES
 

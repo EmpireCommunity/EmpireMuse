@@ -15,7 +15,8 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable, Mapping
+import re
+from collections.abc import Callable, Container, Mapping
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -33,6 +34,8 @@ from empiremuse.rules.radio_geo import (
 )
 
 logger = logging.getLogger(__name__)
+
+_LOCALE = re.compile(r"[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8}){0,3}")
 
 DEFAULT_PATH = Path(__file__).parent / "data" / "locations.json"
 SCHEMA_VERSION = 1
@@ -341,7 +344,7 @@ class LocationTree:
 
     def _top(self, tr: Translator, locale: str, guild_locale: str | None) -> list[LocOption]:
         options: list[LocOption] = []
-        home = guild_country(guild_locale, self._countries) if guild_locale else None
+        home = guild_country_of(guild_locale, self._countries) if guild_locale else None
         if home is not None:
             label = fit(tr("radio.local.guild_country", country=self._country_name(home, locale)), LABEL_LIMIT)
             options.append(LocOption(country_id(home), label, "", self._countries[home]["n"]))
@@ -370,3 +373,26 @@ class LocationTree:
             else self._count_text(tr, state["n"])
         )
         return LocOption(sid, self._state_label(state, tr), description, state["n"])
+
+
+def locale_territory(locale: object) -> str | None:
+    """O território do idioma do servidor: o do locale (``pt-BR`` → BR) e, sem ele, os ``likely_subtags`` do CLDR pelo Babel (``fr`` → FR,
+    ``ja`` → JP, ``uk`` → UA). Fora do formato ou idioma desconhecido (o Babel levanta ``UnknownLocaleError`` com ``no``) dá ``None``."""
+    if not isinstance(locale, str) or _LOCALE.fullmatch(locale) is None:
+        return None
+    from babel import Locale, UnknownLocaleError
+    from babel.core import get_global
+
+    try:
+        parsed = Locale.parse(locale.replace("-", "_"))
+    except ValueError, UnknownLocaleError, TypeError:
+        return None
+    if parsed.territory is not None:
+        return str(parsed.territory)
+    likely = get_global("likely_subtags").get(parsed.language)
+    return likely.rsplit("_", 1)[-1] if isinstance(likely, str) else None
+
+
+def guild_country_of(locale: object, available: Container[str]) -> str | None:
+    """O país do idioma do servidor se ele está na árvore (o atalho ⭐), senão ``None``."""
+    return guild_country(locale_territory(locale), available)

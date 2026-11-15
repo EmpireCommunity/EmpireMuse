@@ -118,6 +118,23 @@ class TestTheDrawDoesNotHammerTheDatabase:
 
         assert db.reads <= len(pool)  # uma leitura por faixa do pool no total, nunca uma por faixa a cada sorteio
 
+    @pytest.mark.regression
+    @pytest.mark.asyncio
+    async def test_a_draw_after_the_absence_expired_reads_only_the_pick(self):
+        """CodeRabbit #200: com a ausência vencida (``ABSENT_TTL_S``), cada sorteio relia o pool inteiro (até 300 ``find_doc`` em série)."""
+        now = [1000.0]
+        db = CountingDb()
+        pool = [Track(f"Artista {i // 10}", f"Faixa {i}") for i in range(300)]
+        session = CustomSession(pool, ResolvedTracks(db, clock=lambda: now[0]))
+        now[0] += ABSENT_TTL_S + 1
+
+        async def resolve(track):
+            return object()
+
+        await session.next_playable(resolve)
+
+        assert db.reads == 1  # só a escolhida é conferida no cache negativo
+
     @pytest.mark.asyncio
     async def test_the_absence_is_forgotten_after_a_few_minutes(self):
         now = [1000.0]

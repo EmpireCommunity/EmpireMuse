@@ -721,6 +721,12 @@ class BotPool:
             task.cancel()
         if self.jukebox_panel:
             self.jukebox_panel.close()
+        radio = getattr(self, "radio", None)
+        if radio is not None:  # ticker, health check, relay e tarefas das rádios param antes de os bots fecharem
+            try:
+                await radio.manager.close()
+            except Exception:
+                logger.warning("Falha ao encerrar as rádios", exc_info=True)
         self.i18n.close()  # leituras de idioma que ficaram pendentes
         for bot in self.get_all_bots():
             try:

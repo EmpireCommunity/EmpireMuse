@@ -210,13 +210,11 @@ class CustomSession:
 
     async def next_playable(self, resolve: Resolve) -> tuple[Track, Any]:
         """Sorteia e resolve até achar uma faixa tocável. ``StreakLimit`` quando a sequência de falhas chega a ``FAIL_STREAK_MAX`` ou não há o que sortear."""
+        skipped: set[tuple[str, str]] = set()  # sorteadas nesta chamada que estavam no cache negativo
         while True:
             if self.streak >= FAIL_STREAK_MAX:
                 raise StreakLimit
-            candidates = [t for t in self.pool if not await self.failed.failed(t)]
-            if not candidates and self.rebuilt:
-                candidates = list(self.pool)
-            pick = next_pick(candidates, self.history, self.rng)
+            pick = await self._draw(skipped)
             if pick is None:
                 raise StreakLimit
             try:
@@ -229,6 +227,17 @@ class CustomSession:
                 continue
             self.history = remember(self.history, pick)
             return pick, resolved
+
+    async def _draw(self, skipped: set[tuple[str, str]]) -> Track | None:
+        """Uma faixa fora do cache negativo, conferindo SÓ a sorteada (nunca o pool inteiro a cada sorteio). Se todas estão nele e o pool já foi
+        reconstruído, a estação o ignora e tenta assim mesmo; sem isso, ``None``."""
+        while True:
+            pick = next_pick([t for t in self.pool if track_key(t) not in skipped], self.history, self.rng)
+            if pick is None:
+                return next_pick(self.pool, self.history, self.rng) if self.rebuilt and skipped else None
+            if not await self.failed.failed(pick):
+                return pick
+            skipped.add(track_key(pick))
 
     async def failure(self, track: Track) -> None:
         """A faixa falhou (não resolveu, não carregou, travou): cache negativo pela chave dela e mais uma na sequência."""
