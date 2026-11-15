@@ -11,7 +11,16 @@ from typing import Any, NamedTuple, Optional
 
 import disnake
 
-from empiremuse.panel.services.base import DIGITS, Args, ForbiddenAction, FormContext, ParseResult, SettingsForm, first
+from empiremuse.panel.services.base import (
+    DIGITS,
+    Args,
+    ForbiddenAction,
+    FormContext,
+    ParseResult,
+    SettingsForm,
+    channel_in_guild,
+    first,
+)
 from empiremuse.panel.services.player import active_player
 
 logger = logging.getLogger(__name__)
@@ -80,8 +89,8 @@ class ListenAlongForm(SettingsForm):
     def _channel_name(self, ctx: FormContext, channel_id: str) -> Optional[str]:
         if not DIGITS.fullmatch(channel_id):
             return None
-        for bot in ctx.pool.get_all_bots():
-            channel = bot.get_channel(int(channel_id))
+        for bot in ctx.pool.get_all_bots():  # o id vem do documento do servidor: só vale um canal deste servidor
+            channel = channel_in_guild(bot, channel_id, ctx.guild_id)
             if channel is not None:
                 return str(channel.name)
         return None

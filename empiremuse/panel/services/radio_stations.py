@@ -25,6 +25,7 @@ from empiremuse.panel.services.base import (
     Args,
     FormContext,
     Formulario,
+    channel_in_guild,
     first,
 )
 from empiremuse.panel.services.radio import FORBIDDEN_KEY, STATUS_FORBIDDEN, RadioPage
@@ -440,8 +441,7 @@ class StationsPage:
 
 
 def channel_label(ctx: FormContext, radio: Any) -> str:
-    bot = RadioPage.bot_of(ctx, radio)
-    channel = bot.get_channel(int(radio.channel_id)) if bot is not None else None
+    channel = channel_in_guild(RadioPage.bot_of(ctx, radio), radio.channel_id, ctx.guild_id)
     return str(channel.name) if channel is not None else f"#{radio.channel_id}"
 
 

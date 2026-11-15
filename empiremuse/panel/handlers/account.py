@@ -10,7 +10,7 @@ import json
 from typing import Optional
 
 from empiremuse.panel.handlers.servers import MAX_BODY_BYTES, AuthenticatedHandler, decode_args
-from empiremuse.panel.services.account import AccountOutcome, AccountService
+from empiremuse.panel.services.account import AccountOutcome, AccountService, AccountSessionGone
 from empiremuse.panel.services.account_base import ACTION_UNKNOWN_TEXT, AccountContext, AccountSection
 from empiremuse.panel.services.base import KIND_ERROR
 
@@ -65,7 +65,16 @@ class AccountHandler(AccountBaseHandler):
         if section is None:
             self._reject_plain(422, *_UNKNOWN_ACTION)
             return
-        outcome = await self.accounts.submit(section, ctx, action, args)
+        # a sessão é reconferida sob o lock do usuário: o apagamento de dados a destrói e a escrita enfileirada não grava
+        session_id, store = self.session_id, self.application.settings["session_store"]
+        try:
+            outcome = await self.accounts.submit(
+                section, ctx, action, args, alive=lambda: store.get(session_id) is not None
+            )
+        except AccountSessionGone:
+            self.forget_session()
+            self.render_error(401, "Sessão encerrada", "Sua sessão foi encerrada. Entre novamente para usar sua conta.")
+            return
         await self._respond(ctx, section, outcome)
 
     async def _rate_limited(self, ctx: AccountContext, section: Optional[AccountSection]) -> None:

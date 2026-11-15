@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import copy
 import logging
-from typing import Any, NamedTuple, Optional
+from typing import Any, Callable, NamedTuple, Optional
 
 from empiremuse.panel.services.account_base import ACCOUNT_PATH, AccountContext, AccountSection, Parsed
 from empiremuse.panel.services.account_links import FavoritesSection, IntegrationsSection, RadioFavoritesSection
@@ -40,6 +40,10 @@ USERS_LOCK_SCOPE = USERS_SCOPE
 class AccountOutcome(NamedTuple):
     status: int
     form: Formulario
+
+
+class AccountSessionGone(Exception):
+    """A sessão de quem pediu a escrita acabou (apagamento de dados ou banimento) antes de ela rodar: nada foi lido nem gravado."""
 
 
 class AccountService:
@@ -105,10 +109,19 @@ class AccountService:
 
     # ------------------------------------------------------------------ escrita
 
-    async def submit(self, section: AccountSection, ctx: AccountContext, action: str, args: Args) -> AccountOutcome:
+    async def submit(
+        self, section: AccountSection, ctx: AccountContext, action: str, args: Args, *, alive: Callable[[], bool]
+    ) -> AccountOutcome:
+        """Grava uma seção. ``alive`` (obrigatório: painel genérico e API passam o seu) diz se a sessão de quem pediu ainda
+        existe e é conferido SOB o lock do usuário, o mesmo do apagamento de dados: uma escrita que esperava o lock enquanto
+        o apagamento rodava levanta ``AccountSessionGone`` em vez de regravar o documento. Só ``True`` literal deixa seguir."""
         if section.own_store:  # dados fora do documento do usuário (ex.: rádios favoritas): a seção decide
+            if alive() is not True:
+                raise AccountSessionGone
             return await section.submit_own(self, ctx, action, args)
         async with self._locks.lock(USERS_LOCK_SCOPE, ctx.user_id):
+            if alive() is not True:  # antes de qualquer leitura
+                raise AccountSessionGone
             doc = await self.load(ctx)
             refusal = await section.guard(ctx, doc, action)
             if refusal is not None:

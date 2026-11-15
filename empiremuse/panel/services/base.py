@@ -53,6 +53,23 @@ def panel_translator(pool: Any) -> Translator:
     return panel_i18n(pool).for_locale(PANEL_LOCALE)
 
 
+def channel_in_guild(bot: Any, channel_id: Any, guild_id: int) -> Optional[Any]:
+    """O canal ``channel_id`` do cache de ``bot``, só se ele é do servidor ``guild_id``; senão ``None``.
+
+    O cache do bot cobre todos os servidores em que ele está: um id guardado na configuração de um servidor nunca pode
+    revelar o nome (nem as permissões) de um canal de outro. Bot ausente, id que não é número e canal sem servidor = ``None``.
+    """
+    if bot is None:
+        return None
+    try:
+        channel = bot.get_channel(int(channel_id))
+    except TypeError, ValueError:
+        return None
+    if channel is None or getattr(getattr(channel, "guild", None), "id", None) != guild_id:
+        return None
+    return channel
+
+
 def load_json_object(raw: str) -> Optional[dict]:
     """JSON de importação: o objeto, ou ``None`` se não for JSON válido ou não for um objeto."""
     try:

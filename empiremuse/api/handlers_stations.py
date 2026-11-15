@@ -126,7 +126,8 @@ class StationHandler(RadioRoute):
             await self.fail_unless_ok(outcome.status, ctx, station, view_error_fields(outcome.view))
             return Reply(STATUS_NO_CONTENT, None)
 
-        await self.run_write(query, work)
+        # a impressão da ``Idempotency-Key`` usa a versão canônica: ``01`` e ``1`` são o mesmo pedido
+        await self.run_write({"expected_version": version}, work)
 
     async def fail_if_stale(self, ctx: FormContext, station: Any, version: str) -> None:
         current = await self.hub(ctx).stations.get(ctx.guild_id, station.id)

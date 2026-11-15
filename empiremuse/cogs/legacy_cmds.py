@@ -6,6 +6,7 @@ import re
 import sys
 import time
 from functools import partial
+from collections.abc import Iterable
 from typing import Union, Optional
 
 import disnake
@@ -32,6 +33,7 @@ from empiremuse.updater.git_flow import (
     fetch_remote_changelog,
     git_env,
     latest_official_version,
+    masking_runner,
     plan_git_update,
     run_exec,
 )
@@ -134,8 +136,9 @@ async def run_command(cmd: str):
     return str(r.stdout)
 
 
-async def run_git(*args: str, git_dir: str) -> str:
-    """Git de leitura sem shell: ``--git-dir`` absoluto, ambiente mínimo (sem ``GIT_DIR`` herdado), saída mascarada.
+async def run_git(*args: str, git_dir: str, secrets: Iterable[str] = ()) -> str:
+    """Git de leitura sem shell: ``--git-dir`` absoluto, ambiente mínimo (sem ``GIT_DIR`` herdado), saída mascarada
+    (segredos do ambiente e os de ``secrets``).
 
     A árvore de trabalho é a pasta de execução. ``git_dir`` relativo vale contra o cwd do PROCESSO, como o
     ``os.path.isdir`` de quem chama, e por isso é resolvido antes de o git mudar de pasta.
@@ -156,6 +159,7 @@ async def run_git(*args: str, git_dir: str) -> str:
         env=git_env(os.environ),
         timeout=GIT_READ_TIMEOUT,
         max_output=MAX_GIT_READ_OUTPUT,
+        secrets=secrets,
     )
     if result.returncode != 0:
         raise CommandFailed(f"{result.output}\n\nStatus Code: {result.returncode}")
@@ -223,6 +227,10 @@ class Owner(commands.Cog):
     def secret_values(self) -> frozenset:
         """Valores de segredo conhecidos (configuração do bot e ambiente do processo) que nunca saem em claro."""
         return self.bot.pool.secret_values()
+
+    def _update_runner(self):
+        """O runner do ``git``/``uv`` do atualizador: mascara também os segredos da configuração de arquivo e os tokens dos bots."""
+        return masking_runner(self.secret_values)
 
     def log_owner_command(self, ctx, name: str, detail: str = ""):
         """Registra quem executou qual comando de owner (o horário vem do formato do log), sem a saída e sem segredos."""
@@ -603,7 +611,11 @@ class Owner(commands.Cog):
         A imagem Docker não tem ``git``: no modo ``panel`` a versão vem das releases do GitHub (mesma fonte e elegibilidade
         do fluxo Docker); no ``manual`` vem do ``ls-remote``. Sem a versão a resposta traz a ação do modo mesmo assim.
         """
-        latest = await (self._latest_release_version() if mode == MODE_PANEL else latest_official_version())
+        latest = await (
+            self._latest_release_version()
+            if mode == MODE_PANEL
+            else latest_official_version(runner=self._update_runner())
+        )
         installed = image_version() if mode == MODE_PANEL else None
         self.log_owner_command(ctx, "update", f"{mode} {installed or '?'}->{latest or '?'}")
         if mode == MODE_PANEL:
@@ -720,7 +732,7 @@ class Owner(commands.Cog):
     async def _offer_git_update(self, ctx) -> tuple[bool, Optional[str]]:
         """Planeja e pede a confirmação. Devolve ``(trava_entregue, texto)``; a trava só é entregue se a janela foi enviada."""
         try:
-            plan = await plan_git_update(paths.PROJECT_DIR)
+            plan = await plan_git_update(paths.PROJECT_DIR, runner=self._update_runner())
         except UpdateError as error:
             raise GenericError(f"**{error}**") from error
         if plan is None:
@@ -754,7 +766,9 @@ class Owner(commands.Cog):
             progress = disnake.Embed(colour=self.bot.get_color(), description=f"⏳ Atualizando para {plan.target}...")
             await interaction.response.edit_message(embed=progress, view=None)
             try:
-                await apply_git_update(plan, request, paths.PROJECT_DIR, paths.get_runtime_dir())
+                await apply_git_update(
+                    plan, request, paths.PROJECT_DIR, paths.get_runtime_dir(), runner=self._update_runner()
+                )
             except UpdateRollbackFailed as error:
                 # O ``applying`` ficou no disco: reinicia já, para o boot_guard reverter num processo limpo.
                 logger.error("update: a reversão automática falhou e o applying ficou no disco: %s", error)
@@ -824,7 +838,9 @@ class Owner(commands.Cog):
         git_log = []
 
         count = amount if amount and amount > 0 else 10
-        data = (await run_git("log", f"-{count}", self.git_format, git_dir=git_dir)).split("\n")
+        data = (
+            await run_git("log", f"-{count}", self.git_format, git_dir=git_dir, secrets=self.secret_values())
+        ).split("\n")
 
         git_log += format_git_log(data)
 

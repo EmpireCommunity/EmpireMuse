@@ -771,16 +771,17 @@ def _warn_if_exposed_without_auth(config: dict, bind_address: str) -> None:
 def _build_registration_proof(pool: BotPool, config: dict) -> dict:
     """Os kwargs da rota ``/ws`` para a prova do token no registro (um verificador e um orçamento por ``run_app``).
 
-    Sem a prova (auth desligada, ou relé sem banco) o registro é o de antes; o relé sem banco avisa no boot, sem padrão silencioso.
+    Só a auth desligada deixa o registro sem prova. Com ela ligada o verificador vai sempre para a rota, inclusive no relé sem banco: ele
+    falha fechado (``ProofUnavailable`` a cada registro de usuário, close 1013) e o boot avisa com ERROR. Recusar o registro, e não a
+    subida, mantém de pé o status e o repasse entre bots e se desfaz sozinho se o banco aparecer depois (o verificador lê o banco a cada prova).
     """
     if not config.get("ENABLE_RPC_AUTH"):
         return {}
     if pool.database is None:
-        logger.warning(
-            "O relé RPC não tem acesso ao banco: o registro NÃO prova a posse do ID. "
-            "Rode o relé no processo do bot (RUN_RPC_SERVER=true)."
+        logger.error(
+            "O relé RPC não tem acesso ao banco e ENABLE_RPC_AUTH está ligado: nenhum registro de usuário será aceito "
+            "(a posse do ID não pode ser provada). Rode o relé no processo do bot (RUN_RPC_SERVER=true)."
         )
-        return {}
     return {
         "token_verifier": TokenProof(lambda: pool.database),
         "denied_budget": DeniedBudget(PROOF_DENIED_LIMIT, PROOF_DENIED_WINDOW, PROOF_DENIED_CACHE_SIZE, time.monotonic),

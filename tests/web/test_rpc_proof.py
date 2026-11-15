@@ -548,7 +548,7 @@ async def test_p9_a_second_registration_on_the_same_connection_waits_for_the_fir
 # --- P10: ligação em run_app -----------------------------------------------------------------------------------------
 
 
-def test_p10_run_app_wires_the_verifier_only_with_auth_and_a_database(monkeypatch, caplog):
+def test_p10_run_app_wires_the_verifier_whenever_auth_is_on(caplog):
     com_banco = SimpleNamespace(database=object())
     sem_banco = SimpleNamespace(database=None)
 
@@ -557,26 +557,33 @@ def test_p10_run_app_wires_the_verifier_only_with_auth_and_a_database(monkeypatc
         rpc_protocol.PROOF_DENIED_LIMIT
     )
     assert web_app._build_registration_proof(com_banco, {"ENABLE_RPC_AUTH": False}) == {}
+    assert web_app._build_registration_proof(sem_banco, {"ENABLE_RPC_AUTH": False}) == {}
     assert caplog.records == []  # auth desligada: nem verificador nem aviso
 
-    with caplog.at_level(logging.WARNING):
-        assert web_app._build_registration_proof(sem_banco, {"ENABLE_RPC_AUTH": True}) == {}
-    assert "NÃO prova a posse do ID" in caplog.text and "RUN_RPC_SERVER=true" in caplog.text
+    with caplog.at_level(logging.ERROR):
+        fechado = web_app._build_registration_proof(sem_banco, {"ENABLE_RPC_AUTH": True})
+    assert isinstance(fechado["token_verifier"], TokenProof)  # sem banco a rota ainda recebe o verificador
+    assert "nenhum registro de usuário será aceito" in caplog.text and "RUN_RPC_SERVER=true" in caplog.text
 
 
 @pytest.mark.asyncio
-async def test_p10_a_relay_without_a_database_registers_as_before_and_warns_at_boot(
+async def test_p10_a_relay_without_a_database_refuses_every_user_registration(
     iniciar_servidor, sessao, segredo, caplog
 ):
-    with caplog.at_level(logging.WARNING):
+    """BK-2: com a auth ligada e sem banco o relé falha fechado (1013, sem ``op disconnect``); o registro de bot segue valendo."""
+    with caplog.at_level(logging.ERROR):
         servidor = iniciar_servidor(
             {"RPC_SERVER_SECRET": segredo, **AUTH_LIGADA}
         )  # BotPool sem banco: ``database`` é None
     x = _snowflake()
 
-    await registrar(servidor, sessao, [x], token=_token_do_app())
+    assert await tentar(servidor, sessao, [x], _token_do_app()) == ([], rpc_protocol.CLOSE_TRY_AGAIN_LATER)
 
-    assert x in web_app.users_ws and "NÃO prova a posse do ID" in caplog.text
+    assert x not in web_app.users_ws and "nenhum registro de usuário será aceito" in caplog.text
+    bot_id = _snowflake()  # o registro de bot não depende do banco: segue valendo
+    ws_bot = await _conectar(servidor, sessao, chave=segredo)
+    await ws_bot.send_json({"user_ids": [bot_id], "bot": True})
+    await esperar(lambda: any(bot_id in ws.bot_ids for ws in web_app.bots_ws))
 
 
 # --- P11: log --------------------------------------------------------------------------------------------------------

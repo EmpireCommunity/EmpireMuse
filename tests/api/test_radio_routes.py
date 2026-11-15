@@ -55,6 +55,16 @@ def assert_clean(text):
 
 
 class RadioReadTest(RadioApiCase):
+    @pytest.mark.regression
+    def test_canal_de_outro_servidor_guardado_na_radio_nao_revela_o_nome_dele(self):
+        """BK-2: o cache do bot cobre todos os servidores; um id alheio na rádio sai sem nome e não dá edição."""
+        self.premium()
+        self.seed_live(channel=789)  # 789 é um canal de Ômega; o bot 1 está nos dois servidores
+
+        entry = body_of(self.get(f"{BASE}/radios"))["radios"][0]
+
+        assert entry["channel"] == {"id": "789", "name": None} and entry["can_edit"] is False
+
     def test_lista_com_premium_traz_estado_estacoes_e_opcoes_sem_url_de_fluxo_nem_segredo(self):
         self.premium()
         radio = self.seed_live(reserve=OTHER_UUID)
@@ -829,6 +839,38 @@ class RadioStationsRoutesTest(RadioApiCase):
         assert not get.await_count and not delete.await_count  # a repetição não toca na store
         assert (other.code, error_code(other)) == (404, "not_found")  # a chave é por usuário: nada vem de outro
         assert sem_chave.code == 404  # sem a chave a estação já não existe
+
+    @pytest.mark.regression
+    def test_apagar_repetido_depois_de_perder_o_acesso_ou_o_premium_nao_devolve_o_204_guardado(self):
+        """BK-2: a autorização do servidor e o premium são conferidos antes de consultar a ``Idempotency-Key``."""
+        self.premium()
+        item = self.radio.stations.seed(ALFA, "Minha")
+        url = f"{BASE}/radio-stations/{item.id}?expected_version={item.rev}"
+        assert self.call("DELETE", url, key="chave-de-teste-2").code == 204
+
+        self.radio.premium.docs.clear()
+        sem_premium = self.call("DELETE", url, key="chave-de-teste-2")
+        self.premium()
+        self.revoke()
+        sem_acesso = self.call("DELETE", url, key="chave-de-teste-2")
+
+        assert (sem_premium.code, error_code(sem_premium)) == (403, "forbidden")
+        assert (sem_acesso.code, error_code(sem_acesso)) == (404, "not_found")
+        assert "Idempotent-Replayed" not in sem_premium.headers and "Idempotent-Replayed" not in sem_acesso.headers
+
+    @pytest.mark.regression
+    def test_apagar_repetido_com_a_versao_escrita_de_outro_jeito_ainda_e_repeticao(self):
+        """BK-2: a impressão da chave usa a versão canônica (``01`` é ``1``), não o texto cru da query."""
+        self.premium()
+        item = self.radio.stations.seed(ALFA, "Minha")
+        base = f"{BASE}/radio-stations/{item.id}?expected_version="
+
+        first = self.call("DELETE", f"{base}{item.rev}", key="chave-de-teste-3")
+        again = self.call("DELETE", f"{base}0{item.rev}", key="chave-de-teste-3")
+        other = self.call("DELETE", f"{base}{item.rev + 1}", key="chave-de-teste-3")
+
+        assert first.code == again.code == 204 and again.headers["Idempotent-Replayed"] == "true"
+        assert (other.code, error_code(other)) == (409, "conflict")  # outra versão continua sendo outro pedido
 
     def test_apagar_em_uso_com_versao_velha_da_409_com_a_atual_antes_do_in_use(self):
         self.premium()

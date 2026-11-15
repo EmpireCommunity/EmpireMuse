@@ -348,7 +348,7 @@ async def test_the_old_process_stops_its_ready_check_before_the_update_is_applie
     pool.update_watch_task = Mock()
     vistos = {}
 
-    async def aplicar(*args):
+    async def aplicar(*args, **kwargs):
         vistos["checado"] = pool.update_ready_checked
         vistos["cancelamentos"] = pool.update_watch_task.cancel.call_count
 
@@ -368,7 +368,7 @@ async def test_the_old_process_does_not_mark_the_new_pending_update_as_ready(cog
     pool.config, pool.bots, pool.pool_is_healthy = {"RUN_RPC_SERVER": False}, [], lambda: True
     cog.bot.pool = pool
 
-    async def aplicar(*args):
+    async def aplicar(*args, **kwargs):
         pendente_em_disco(ambiente.runtime)
 
     monkeypatch.setattr(legacy_cmds, "apply_git_update", aplicar)

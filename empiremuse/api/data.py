@@ -23,6 +23,7 @@ from empiremuse.api.idempotency import (
     request_fingerprint,
 )
 from empiremuse.panel.authz import GuildAccess, GuildAccessDenied, ready_bots_with_guild
+from empiremuse.panel.services.account import AccountOutcome, AccountSessionGone
 from empiremuse.panel.services.account_base import AccountContext
 from empiremuse.panel.services.base import Formulario, FormContext
 from empiremuse.rules.panel_serialize import error_fields, serialize_form
@@ -30,7 +31,6 @@ from empiremuse.rules.panel_serialize import error_fields, serialize_form
 IDEMPOTENCY_HEADER = "Idempotency-Key"
 REPLAYED_HEADER = "Idempotent-Replayed"
 STATUS_OK, STATUS_FORBIDDEN, STATUS_CONFLICT, STATUS_INVALID, STATUS_UNAVAILABLE = 200, 403, 409, 422, 503
-STATUS_SESSION_GONE = 401  # a recusa da seção protegida (``SessionGuardedSection``): a sessão acabou durante a escrita
 FIELD_ALIASES = {"acao": "action"}  # o nome que o serviço dá ao campo, no nome que a API recebe
 
 
@@ -50,8 +50,6 @@ def form_reply(status: int, form: Formulario, scope: str) -> Reply:
         raise ApiError(403, FORBIDDEN)
     if status == STATUS_UNAVAILABLE:
         raise ApiError(503, BOT_UNAVAILABLE)
-    if status == STATUS_SESSION_GONE:
-        raise ApiError(401, SESSION_EXPIRED)
     raise ApiError(500, BOT_UNAVAILABLE)  # status que a API não conhece: falha fechada
 
 
@@ -84,11 +82,20 @@ class DataHandler(ApiHandler):
             raise validation_failed("idempotency_key")
         return key
 
-    async def run_write(self, body: Any, work: Callable[[], Awaitable[Reply]], *, replayable: bool = True) -> None:
+    async def run_write(
+        self,
+        body: Any,
+        work: Callable[[], Awaitable[Reply]],
+        *,
+        replayable: bool = True,
+        keep: Callable[[Reply], bool] = lambda reply: True,
+    ) -> None:
         """Executa uma escrita já autorizada. Com ``Idempotency-Key`` (e ``replayable``), a mesma chave com o mesmo pedido
         repete a resposta de sucesso; com outro pedido, ou com o original ainda em andamento, é ``409``.
 
         ``replayable=False`` (o token novo do RPC, que só pode sair uma vez) ignora a chave: o bot nunca guarda segredo.
+        ``keep`` decide, pela resposta que a escrita DE FATO deu, se ela fica guardada para repetição (a resposta sai de
+        qualquer jeito); o que não fica guardado libera a chave.
         """
         key = self._idempotency_key() if replayable else None
         # houve ``await`` desde o ``prepare``: um apagamento ou banimento pode ter derrubado a sessão
@@ -115,7 +122,7 @@ class DataHandler(ApiHandler):
             if not self.session_alive():
                 reply = None  # a sessão acabou durante a escrita: nada fica guardado
         finally:
-            self.ctx.idempotency.settle(claim.ticket, reply)
+            self.ctx.idempotency.settle(claim.ticket, reply if reply is not None and keep(reply) else None)
         if reply is None:
             raise ApiError(401, SESSION_EXPIRED)
         self.send(reply)
@@ -125,6 +132,14 @@ class DataHandler(ApiHandler):
         return self.ctx.store.get_api(self.session_token, self.key_fingerprint) is not None
 
     # ------------------------------------------------------------------ contextos (o usuário é sempre o da sessão)
+
+    async def submit_alive(self, section: Any, ctx: AccountContext, action: str, args: Any) -> AccountOutcome:
+        """Escrita numa seção da conta, com a sessão desta requisição reconferida sob o lock do usuário (o mesmo do
+        apagamento de dados): uma escrita que esperava o lock enquanto o apagamento rodava é ``401`` e não grava."""
+        try:
+            return await self.ctx.account_service.submit(section, ctx, action, args, alive=self.session_alive)
+        except AccountSessionGone:
+            raise ApiError(401, SESSION_EXPIRED) from None
 
     def account_context(self) -> AccountContext:
         pool = self.ctx.pool

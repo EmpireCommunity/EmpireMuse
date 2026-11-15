@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
+from empiremuse.api.handlers_jukebox import JukeboxTasksHandler
 from tests.api.support import body_of, error_code
 from tests.api.support_jukebox import BASE, OTHER_USER, JukeboxApiCase, dump
 from tests.panel.helpers_jukebox import GID
@@ -243,6 +244,22 @@ class JukeboxTaskFlowTest(JukeboxApiCase):
         assert first.code == second.code == 202 and body_of(first)["task_id"] == body_of(second)["task_id"]
         assert second.headers["Idempotent-Replayed"] == "true" and started == 1
         assert (other_body.code, error_code(other_body)) == (409, "conflict")
+
+    @pytest.mark.regression
+    def test_idempotency_key_nunca_guarda_a_resposta_do_passo_1_mesmo_se_a_conferencia_previa_errar(self):
+        """BK-2: o que fica guardado é decidido pela resposta obtida sob a trava (``202``), nunca um ``confirm_token``."""
+        self.world.configured_text()
+        version = self.state()["version"]
+
+        with patch.object(
+            JukeboxTasksHandler, "creates_task_directly", lambda *args: True
+        ):  # a conferência de fora diverge
+            first = self.start_task(reset_body(version), key="chave-de-teste-3")
+            again = self.start_task(reset_body(version), key="chave-de-teste-3")
+
+        assert first.code == again.code == 200 and "Idempotent-Replayed" not in again.headers
+        assert body_of(first)["confirm_token"] != body_of(again)["confirm_token"]  # cada pedido emite o seu
+        assert self.ctx.idempotency._entries == {}  # nenhum token guardado no bot; a chave ficou livre
 
     def test_idempotency_key_em_canal_novo_repete_o_mesmo_task_id(self):
         version = self.state()["version"]

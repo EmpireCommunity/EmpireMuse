@@ -1206,3 +1206,24 @@ def test_a_crlf_file_written_under_the_targets_own_gitattributes_is_still_the_ta
     assert not os.path.lexists(attr_do_alvo.repo / "script.bat")
     assert (attr_do_alvo.repo / ".gitattributes").read_text() == "# sem regras\n"  # o do prev voltou
     assert git(attr_do_alvo.repo, "status", "--porcelain", "--untracked-files=no") == ""
+
+
+# ============================================================================ máscara da saída: segredos fora do ambiente (BK-2)
+
+
+@pytest.mark.regression
+def test_masking_runner_hides_file_config_secrets_that_are_not_in_the_environment():
+    """Um segredo que só existe na configuração de arquivo (ou um token de bot) não está em ``os.environ``: sai mascarado."""
+    from empiremuse.updater.git_flow import masking_runner
+
+    segredo = "valor-so-do-arquivo-0123456789"
+    codigo = f"print('antes {segredo} depois')"
+
+    async def rodar(runner):
+        return await runner(sys.executable, "-c", codigo, cwd=None, env={}, timeout=60)
+
+    cru = asyncio.run(rodar(run_exec))
+    mascarado = asyncio.run(rodar(masking_runner(lambda: frozenset({segredo}))))
+
+    assert segredo in cru.output  # o runner padrão só conhece o ambiente
+    assert segredo not in mascarado.output and mascarado.output.startswith("antes ") and mascarado.returncode == 0

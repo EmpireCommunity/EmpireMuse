@@ -132,6 +132,13 @@ class JukeboxHandler(JukeboxRoute):
         return form_reply(outcome.status, outcome.form, GUILD)
 
 
+def creates_task(reply: Reply) -> bool:
+    """Só a resposta que criou a tarefa (``202`` com ``task_id``) fica guardada para a ``Idempotency-Key``: a repetição devolve
+    o mesmo ``task_id``. O passo 1 (``200`` com ``confirm_token``) nunca é guardado, e isso é decidido pelo resultado obtido
+    sob a trava do servidor, não pela conferência prévia de ``creates_task_directly``, feita fora dela."""
+    return reply.status == STATUS_ACCEPTED
+
+
 class JukeboxTasksHandler(JukeboxRoute):
     """``POST /guilds/{g}/jukebox/tasks``: começa a configurar ou a reiniciar (``202``) depois da confirmação."""
 
@@ -143,14 +150,14 @@ class JukeboxTasksHandler(JukeboxRoute):
         async def work() -> Reply:
             return await self.start(ctx, request)
 
-        await self.run_write(body, work, replayable=self.creates_task_directly(ctx, request))
+        await self.run_write(body, work, replayable=self.creates_task_directly(ctx, request), keep=creates_task)
 
     def creates_task_directly(self, ctx: FormContext, request: TaskRequest) -> bool:
         """``True`` quando este pedido cria a tarefa (passo 2, ou configurar sem limpar o canal): a repetição com a mesma
         ``Idempotency-Key`` devolve o mesmo ``task_id``. O passo 1 só emite um token (nada a repetir).
 
-        A repetibilidade depende de ``validate_setup`` decidir ``purges`` só pelo modo e pelo tipo do canal (fórum ou não):
-        se essa regra passar a depender de outra coisa (estado do servidor, por exemplo), revise isto."""
+        Esta conferência roda fora da trava do servidor e só decide se a chave é usada; o que fica guardado é decidido por
+        ``creates_task``, pela resposta obtida sob a trava (uma divergência entre as duas nunca guarda um ``confirm_token``)."""
         if request.confirm_token is not None:
             return True
         if request.action != TASK_CONFIGURE:

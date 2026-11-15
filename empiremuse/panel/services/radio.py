@@ -26,6 +26,7 @@ from empiremuse.panel.services.base import (
     Args,
     FormContext,
     Formulario,
+    channel_in_guild,
     first,
 )
 from empiremuse.panel.services.radio_live import LivePage, LiveView
@@ -123,10 +124,8 @@ class RadioPage:
         if bot is None or not ctx.user_id.isdigit():
             return False
         guild = bot.get_guild(ctx.guild_id)
-        channel = bot.get_channel(int(radio.channel_id))
+        channel = channel_in_guild(bot, radio.channel_id, ctx.guild_id)
         if guild is None or channel is None:
-            return False
-        if getattr(getattr(channel, "guild", None), "id", ctx.guild_id) != ctx.guild_id:
             return False
         member = guild.get_member(int(ctx.user_id))
         if member is None:
@@ -143,7 +142,7 @@ class RadioPage:
             if not belongs_to(radio, ctx.guild_id):  # defesa em profundidade (R-6): a store já filtra pelo servidor
                 continue
             bot = self.bot_of(ctx, radio)
-            channel = bot.get_channel(int(radio.channel_id)) if bot is not None else None
+            channel = channel_in_guild(bot, radio.channel_id, ctx.guild_id)
             state = ctx.pool.radio.service.state(radio.id)
             form = None
             can_edit = editable and await self.can_edit(ctx, radio)

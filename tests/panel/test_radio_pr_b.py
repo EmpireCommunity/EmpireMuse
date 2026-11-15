@@ -68,3 +68,33 @@ class StaleResetHttpTest(SetupBase):
         from tests.panel.test_radio_page import ALFA
 
         self.radio.setup.options.assert_awaited_once_with(ALFA, int(self.fake.user["id"]))
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_two_confirmations_at_once_with_the_same_token_reach_the_bot_only_once():
+    """BK-2: o token é gasto antes da chamada ao bot; o segundo envio é recusado enquanto o primeiro ainda espera."""
+    import asyncio
+
+    w = await world()
+    radio = await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
+    ctx = SimpleNamespace(pool=w.pool, guild_id=GUILD, user_id=str(ACTOR))
+    service = RadioSetupService("test-fixture-key-0123456789-abcdefgh", clock=lambda: 100.0)
+    tr = get_i18n().for_locale("pt-BR")
+    token = service.tokens.issue(str(ACTOR), GUILD, TOKEN_SCOPE, f"{radio.id}:{radio.rev}")
+    args = {"versao": [str(radio.rev)], "acao": ["confirmar_reiniciar"], "token": [token]}
+    release, original = asyncio.Event(), w.hub.setup.reset
+
+    async def slow_reset(*call):
+        await release.wait()
+        return await original(*call)
+
+    w.hub.setup.reset = AsyncMock(side_effect=slow_reset)
+    first = asyncio.ensure_future(service.reset(ctx, radio, args, "/reset", ("bot", "call"), tr))
+    await asyncio.sleep(0)  # o primeiro chega à chamada do bot e fica esperando
+
+    status, _ = await service.reset(ctx, radio, args, "/reset", ("bot", "call"), tr)
+    release.set()
+
+    assert status == 422 and (await first)[0] == 200
+    w.hub.setup.reset.assert_awaited_once()
