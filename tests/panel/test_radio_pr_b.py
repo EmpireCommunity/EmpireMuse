@@ -86,8 +86,11 @@ async def test_two_confirmations_at_once_with_the_same_token_reach_the_bot_only_
     entered, release, original = asyncio.Event(), asyncio.Event(), w.hub.setup.reset
 
     async def slow_reset(*call):
-        entered.set()
-        await release.wait()
+        if (
+            not entered.is_set()
+        ):  # só o primeiro envio espera: um segundo que chegue ao bot segue, e o teste falha no fim
+            entered.set()
+            await release.wait()
         return await original(*call)
 
     w.hub.setup.reset = AsyncMock(side_effect=slow_reset)
@@ -99,8 +102,11 @@ async def test_two_confirmations_at_once_with_the_same_token_reach_the_bot_only_
         first.result()  # propaga a exceção do ``reset``, se houve
         pytest.fail("service.reset terminou antes de chamar o bot")
 
-    status, _ = await service.reset(ctx, radio, args, "/reset", ("bot", "call"), tr)
-    release.set()
+    try:
+        status, _ = await service.reset(ctx, radio, args, "/reset", ("bot", "call"), tr)
+    finally:
+        release.set()  # o primeiro envio sempre é liberado, mesmo se o segundo levantar
+        first_status = (await first)[0]
 
-    assert status == 422 and (await first)[0] == 200
+    assert status == 422 and first_status == 200
     w.hub.setup.reset.assert_awaited_once()
