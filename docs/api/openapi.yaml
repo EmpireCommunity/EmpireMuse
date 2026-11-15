@@ -949,6 +949,9 @@ paths:
         não é lido. Chama o mesmo serviço de apagamento do comando do Discord, com os mesmos limites por hora (só `OK` conta nas 3 por
         usuário; teto global de 60 por hora): excedido dá `429` com `Retry-After` e nada é apagado.
 
+        Depois de adquirir o lock do usuário, reconfere a sessão: se ela foi encerrada durante a espera,
+        responde `401 session_expired`, sem apagar dados nem gastar o limite de execuções. O `confirm_token` já foi gasto.
+
         `status`: `OK` (nada sobrou), `PARTIAL` (parte apagada; **não promete que repetir resolve**: o painel mostra "apagamos
         parte" e aponta o suporte) ou `BUSY` (o serviço está ocupado; nada foi apagado). Com `OK` ou `PARTIAL` **todas** as sessões do
         usuário já foram destruídas, inclusive a deste pedido (o painel destrói a dele). O `confirm_token` é gasto antes da chamada:

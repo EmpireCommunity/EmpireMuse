@@ -1,7 +1,7 @@
 """Concessões do comando do dono (§3.4): o dono PEDE, só o clique do titular apaga.
 
 A concessão é de uso único, vale ``OWNER_GRANT_TTL_S``, é amarrada ao ID do titular e mora só em memória (um reinício a invalida e o dono
-reemite). O ``custom_id`` do botão carrega apenas o código dela. Esta classe não apaga nada nem decide quem pode ser dono: guarda, confere e
+reemite). O ``custom_id`` do botão carrega apenas o código dela, distinto do ID público de auditoria. Esta classe não apaga nada nem decide quem pode ser dono: guarda, confere e
 conta. Limites: ``OWNER_GRANTS_PER_HOUR`` por dono e 1 pendente por titular.
 """
 
@@ -11,17 +11,20 @@ import re
 import secrets
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from empiremuse.rules.erasure import OWNER_GRANT_TTL_S, OWNER_GRANTS_PER_HOUR, RATE_WINDOW_S, SNOWFLAKE_LIMIT
 
+GRANT_ID_BYTES = 6
 GRANT_CODE_BYTES = 16
+GRANT_LISTENER_GRACE_S = 300
 _CODE_SHAPE = re.compile(r"[A-Za-z0-9_-]{16,64}")  # token_urlsafe(16) tem 22; nada de espaço, quebra de linha ou vazio
 
 
 @dataclass(frozen=True)
 class Grant:
     grant_id: str
+    code: str = field(repr=False)
     owner_id: int
     target_id: int
     expires_at: float
@@ -57,10 +60,16 @@ class OwnerGrants:
         self._ttl = ttl_s
         self._per_hour = per_hour
         self._by_code: dict[str, Grant] = {}
+        self._issued_codes: dict[
+            str, float
+        ] = {}  # retidos até o prazo original + margem do listener, inclusive após resgate/revogação
         self._pending_code: dict[int, str] = {}  # titular -> código
         self._issued: dict[int, list[float]] = {}  # dono -> instantes de emissão na última hora
 
     def _prune(self, now: float) -> None:
+        self._issued_codes = {
+            code: expiry for code, expiry in self._issued_codes.items() if expiry + GRANT_LISTENER_GRACE_S > now
+        }
         for code, grant in list(self._by_code.items()):
             if grant.expires_at <= now:
                 self._drop(grant)
@@ -72,8 +81,8 @@ class OwnerGrants:
                 del self._issued[owner]
 
     def _drop(self, grant: Grant) -> None:
-        self._by_code.pop(grant.grant_id, None)
-        if self._pending_code.get(grant.target_id) == grant.grant_id:
+        self._by_code.pop(grant.code, None)
+        if self._pending_code.get(grant.target_id) == grant.code:
             del self._pending_code[grant.target_id]
 
     def issue(self, owner_id: int, target_id: int) -> Grant:
@@ -87,28 +96,40 @@ class OwnerGrants:
         stamps = self._issued.get(owner_id, [])
         if len(stamps) >= self._per_hour:
             raise GrantLimited("owner_limit", max(0.0, min(stamps) + RATE_WINDOW_S - now))
-        grant = Grant(secrets.token_urlsafe(GRANT_CODE_BYTES), owner_id, target_id, now + self._ttl)
-        self._by_code[grant.grant_id] = grant
-        self._pending_code[target_id] = grant.grant_id
+        grant = Grant(
+            secrets.token_hex(GRANT_ID_BYTES),
+            secrets.token_urlsafe(GRANT_CODE_BYTES),
+            owner_id,
+            target_id,
+            now + self._ttl,
+        )
+        self._by_code[grant.code] = grant
+        self._issued_codes[grant.code] = grant.expires_at
+        self._pending_code[target_id] = grant.code
         self._issued[owner_id] = [*stamps, now]
         return grant
 
-    def redeem(self, grant_id: str, clicker_id: int) -> Grant | None:
+    def issued_here(self, code: str) -> bool:
+        """Só distingue códigos emitidos por este processo até o prazo original + 300 s; nunca autentica nem resgata."""
+        self._prune(self._clock())
+        return code in self._issued_codes
+
+    def redeem(self, code: str, clicker_id: int) -> Grant | None:
         """Consome a concessão se ela existe, não expirou e ``clicker_id`` é o titular; senão ``None`` e NADA é consumido.
 
         Quem não é o titular não gasta a concessão (ela continua valendo para o titular). Código fora do formato (vazio, em branco) é recusado.
         """
-        if not valid_grant_code(grant_id) or not _valid_id(clicker_id):
+        if not valid_grant_code(code) or not _valid_id(clicker_id):
             return None
         self._prune(self._clock())
-        grant = self._by_code.get(grant_id)
+        grant = self._by_code.get(code)
         if grant is None or grant.target_id != clicker_id:
             return None
         self._drop(grant)
         return grant
 
-    def revoke(self, grant_id: str) -> None:
+    def revoke(self, code: str) -> None:
         """Cancela (o titular recusou ou a DM não saiu): libera o pendente do titular."""
-        grant = self._by_code.get(grant_id) if isinstance(grant_id, str) else None
+        grant = self._by_code.get(code) if isinstance(code, str) else None
         if grant is not None:
             self._drop(grant)

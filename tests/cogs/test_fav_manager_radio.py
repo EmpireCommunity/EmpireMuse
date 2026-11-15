@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock
 import disnake
 import pytest
 
+from empiremuse.utils.user_locks import UserLocks
 from empiremuse.utils.erasure import ErasureTombstones
 
 from empiremuse.i18n import get_i18n
@@ -49,7 +50,11 @@ class World:
         )
         bot = SimpleNamespace(get_guild=lambda gid: guild if gid == GUILD else None)
         self.pool = SimpleNamespace(
-            database=self.db, get_all_bots=lambda: [bot], i18n=get_i18n(), erasure_tombstones=ErasureTombstones()
+            database=self.db,
+            get_all_bots=lambda: [bot],
+            i18n=get_i18n(),
+            erasure_tombstones=ErasureTombstones(),
+            user_locks=UserLocks(),
         )
         self.hub = RadioHub(self.pool)
         self.pool.radio = self.hub

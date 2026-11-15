@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import disnake
 
 import empiremuse.cogs.legacy_cmds as legacy_cmds
+from empiremuse.utils.user_locks import UserLocks
 from empiremuse.utils.erasure import ErasureTombstones
 from empiremuse.i18n import get_i18n
 from empiremuse.cogs.music import Music
@@ -52,6 +53,7 @@ class BotDeComandos:
             default_static_skin="simple",
             get_all_bots=lambda: [self],
             erasure_tombstones=ErasureTombstones(),
+            user_locks=UserLocks(),
         )
         self.music = SimpleNamespace(players={})
         self.user = SimpleNamespace(id=7, name="Bot", display_name="Bot", mention="<@7>")

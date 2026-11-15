@@ -3,6 +3,7 @@
 Sessão, bot, player e provedores são fakes; nada sai da máquina.
 """
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from types import SimpleNamespace
@@ -94,19 +95,22 @@ async def test_the_post_request_uses_https_and_sends_the_credentials_in_the_body
 
 
 async def test_the_auth_link_sent_to_the_user_is_https() -> None:
-    visao = LastFMView.__new__(LastFMView)
-    visao.auth_url, visao.last_timestamp, visao.check_session_loop = None, None, Mock()
     bot = SimpleNamespace(
-        loop=SimpleNamespace(create_task=Mock()),
+        loop=asyncio.get_running_loop(),
         last_fm=SimpleNamespace(api_key="AK", get_token=AsyncMock(return_value="TK")),
         pool=SimpleNamespace(i18n=get_i18n()),
     )
-    visao.ctx = SimpleNamespace(bot=bot)
-    interacao = SimpleNamespace(send=AsyncMock(), guild=None)
+    visao = LastFMView(SimpleNamespace(bot=bot), "")
+    interacao = SimpleNamespace(send=AsyncMock(), guild=None, response=SimpleNamespace(defer=AsyncMock()))
 
-    await visao.send_authurl_callback(interacao)
-
-    assert visao.auth_url.startswith("https://www.last.fm/api/auth/")
+    try:
+        await visao.send_authurl_callback(interacao)
+        assert visao.auth_url.startswith("https://www.last.fm/api/auth/")
+        interacao.response.defer.assert_awaited_once_with(ephemeral=True)
+    finally:
+        visao.stop()
+        if visao.check_loop is not None:
+            await asyncio.gather(visao.check_loop, return_exceptions=True)
 
 
 # ============================================================================ (3) logs sem a URL com as credenciais

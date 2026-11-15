@@ -77,27 +77,28 @@ class UserRadioFavorites:
             updated, filters, result = await change(stations, nodes)
             if updated == stations and filters == nodes:
                 return result
-            if tombstones.stale(
-                user, read_at
-            ):  # dados apagados depois da leitura (inclusive durante o diretório): nada é gravado
-                raise RadioUnavailable
-            rev = doc["rev"] if isinstance(doc, dict) and type(doc.get("rev")) is int else 0
-            updated_doc = {
-                "_id": key,
-                "stations": [{"uuid": f.uuid, "name": f.name} for f in updated],
-                "filters": [{"node": n} for n in filters],
-                "rev": rev + 1,
-            }
-            try:
-                saved = await self.pool.database.save_doc_cas(
-                    key,
-                    updated_doc,
-                    expected_rev=rev if doc is not None else None,
-                    db_name=USER_FAVORITES_DB,
-                    collection=GLOBAL_DB,
-                )
-            except Exception as error:  # noqa: BLE001
-                raise RadioUnavailable from error
+            async with self.pool.user_locks.lock(user):
+                if tombstones.stale(
+                    user, read_at
+                ):  # dados apagados depois da leitura (inclusive durante o diretório): nada é gravado
+                    raise RadioUnavailable
+                rev = doc["rev"] if isinstance(doc, dict) and type(doc.get("rev")) is int else 0
+                updated_doc = {
+                    "_id": key,
+                    "stations": [{"uuid": f.uuid, "name": f.name} for f in updated],
+                    "filters": [{"node": n} for n in filters],
+                    "rev": rev + 1,
+                }
+                try:
+                    saved = await self.pool.database.save_doc_cas(
+                        key,
+                        updated_doc,
+                        expected_rev=rev if doc is not None else None,
+                        db_name=USER_FAVORITES_DB,
+                        collection=GLOBAL_DB,
+                    )
+                except Exception as error:  # noqa: BLE001
+                    raise RadioUnavailable from error
             if saved:
                 return result
         raise RadioUnavailable

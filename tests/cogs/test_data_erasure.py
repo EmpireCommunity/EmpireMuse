@@ -20,7 +20,6 @@ from empiremuse.rules.erasure import (
     OWNER_GRANT_TTL_S,
     ErasureReport,
     ErasureStatus,
-    grant_log_ref,
     owner_target_id,
     parse_owner_request,
 )
@@ -174,13 +173,13 @@ def test_grant_is_single_use_tied_to_the_holder_and_expires():
     grants = OwnerGrants(clock=clock)
     grant = grants.issue(OWNER, HOLDER)
 
-    assert grants.redeem(grant.grant_id, OTHER) is None  # outro usuário não gasta a concessão
-    assert grants.redeem(grant.grant_id, HOLDER) == grant
-    assert grants.redeem(grant.grant_id, HOLDER) is None  # já usada
+    assert grants.redeem(grant.code, OTHER) is None  # outro usuário não gasta a concessão
+    assert grants.redeem(grant.code, HOLDER) == grant
+    assert grants.redeem(grant.code, HOLDER) is None  # já usada
 
     second = grants.issue(OWNER, HOLDER)
     clock.t += OWNER_GRANT_TTL_S
-    assert grants.redeem(second.grant_id, HOLDER) is None  # expirada
+    assert grants.redeem(second.code, HOLDER) is None  # expirada
 
 
 @pytest.mark.parametrize("code", ["", " ", "   ", "\n", None, 7, b"x" * 20, "a b" * 8, " " + "a" * 22])
@@ -204,7 +203,7 @@ def test_grant_limits_ten_per_hour_per_owner_and_one_pending_per_holder():
     with pytest.raises(GrantLimited) as pending:
         grants.issue(OWNER, HOLDER)
     assert pending.value.reason == "target_pending"
-    grants.revoke(first.grant_id)
+    grants.revoke(first.code)
     for offset in range(9):
         grants.issue(OWNER, 400000000000000000 + offset)
     with pytest.raises(GrantLimited) as limit:
@@ -482,7 +481,7 @@ async def test_holder_dm_buttons_are_bilingual_and_the_replies_use_the_clicker_l
     w = world()
     fallback = w.pool.i18n.for_locale(None)  # a DM sai no idioma de reserva: o titular ainda não clicou
     grant = w.pool.erasure_grants.issue(OWNER, HOLDER)
-    view = views.ErasureConfirmView(w.bot, fallback, HOLDER, grant=grant)
+    view = views.ErasureGrantView(w.bot, fallback, HOLDER, grant=grant)
     labels = [item.label for item in view.children]
     assert all(" · " in label for label in labels)  # os dois idiomas no próprio rótulo
 
@@ -522,7 +521,7 @@ async def test_view_timeouts_match_the_flow():
     grant = w.pool.erasure_grants.issue(OWNER, HOLDER)
 
     assert views.ErasureConfirmView(w.bot, w.tr, HOLDER).timeout == views.CONFIRM_TIMEOUT_S
-    assert views.ErasureConfirmView(w.bot, w.tr, HOLDER, grant=grant).timeout == OWNER_GRANT_TTL_S
+    assert views.ErasureGrantView(w.bot, w.tr, HOLDER, grant=grant).timeout == OWNER_GRANT_TTL_S
 
 
 @pytest.mark.asyncio
@@ -579,7 +578,12 @@ async def test_ack_comes_before_erase_user(owner_path):
     w.pool.erasure.erase_user.side_effect = erase
     grant = w.pool.erasure_grants.issue(OWNER, HOLDER) if owner_path else None
 
-    await views.ErasureConfirmView(w.bot, w.tr, HOLDER, grant=grant).confirmed(holder)
+    view = (
+        views.ErasureGrantView(w.bot, w.tr, HOLDER, grant=grant)
+        if owner_path
+        else views.ErasureConfirmView(w.bot, w.tr, HOLDER)
+    )
+    await view.confirmed(holder)
 
     assert seen == {"erase": 1}
 
@@ -636,15 +640,15 @@ async def test_issue_writes_an_unaggregated_audit_line(caplog):
     record = next(r for r in caplog.records if "pedido do dono emitido" in r.getMessage())
     grant = target.send.await_args.kwargs["view"].grant
     assert record.empiremuse_emit is True
-    assert f"owner={OWNER} target={HOLDER} grant={grant_log_ref(grant.grant_id)}" in record.getMessage()
-    assert grant.grant_id not in caplog.text
+    assert f"owner={OWNER} target={HOLDER} grant={grant.grant_id}" in record.getMessage()
+    assert grant.code not in caplog.text
 
 
 @pytest.mark.asyncio
 async def test_holder_replies_use_the_clicker_language_en_us():
     w = world()
     grant = w.pool.erasure_grants.issue(OWNER, HOLDER)
-    view = views.ErasureConfirmView(w.bot, w.pool.i18n.for_locale(None), HOLDER, grant=grant)
+    view = views.ErasureGrantView(w.bot, w.pool.i18n.for_locale(None), HOLDER, grant=grant)
     inter = click(HOLDER, locale=disnake.Locale.en_US)
 
     await view.confirmed(inter)
@@ -760,7 +764,7 @@ async def test_owner_view_cancel_and_pending_request_send_nothing():
 async def test_failed_progress_ack_still_runs_the_service_and_delivers_the_outcome():
     w = world()
     grant = w.pool.erasure_grants.issue(OWNER, HOLDER)
-    view = views.ErasureConfirmView(w.bot, w.tr, HOLDER, grant=grant)
+    view = views.ErasureGrantView(w.bot, w.tr, HOLDER, grant=grant)
     inter = click(HOLDER)
     inter.response.edit_message.side_effect = RuntimeError("ack")
 
@@ -770,7 +774,76 @@ async def test_failed_progress_ack_still_runs_the_service_and_delivers_the_outco
     assert final_text(inter) == w.tr("erasure.done")
 
 
-def test_grant_log_ref_is_a_short_stable_hash_not_the_code():
-    ref = grant_log_ref("codigo-secreto-123456")
+def test_public_grant_id_cannot_redeem_and_code_is_not_in_repr():
+    w = world()
+    grant = w.pool.erasure_grants.issue(OWNER, HOLDER)
+    assert len(grant.grant_id) == 12
+    assert grant.grant_id != grant.code and grant.code not in repr(grant)
+    assert w.pool.erasure_grants.redeem(grant.grant_id, HOLDER) is None
+    assert w.pool.erasure_grants.redeem(grant.code, HOLDER) == grant
 
-    assert ref == grant_log_ref("codigo-secreto-123456") and len(ref) == 12 and "secreto" not in ref
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prefix", ["erasure_grant", "erasure_grant_cancel"])
+@pytest.mark.parametrize("user", [HOLDER, OTHER])
+async def test_previous_process_grant_button_expires_without_running_erasure(prefix, user):
+    old = world().pool.erasure_grants.issue(OWNER, HOLDER)
+    restarted = world()
+    inter = click(user)
+    inter.data = SimpleNamespace(custom_id=f"{prefix}:{old.code}")
+    await data_erasure.DataErasure(restarted.bot).expired_grant(inter)
+    inter.response.edit_message.assert_awaited_once_with(content=restarted.tr("erasure.grant_expired"), view=None)
+    restarted.pool.erasure.erase_user.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state", ["pending", "redeemed", "revoked"])
+async def test_listener_never_competes_with_current_process_grant_view(state):
+    w = world()
+    grant = w.pool.erasure_grants.issue(OWNER, HOLDER)
+    if state == "redeemed":
+        assert w.pool.erasure_grants.redeem(grant.code, HOLDER) == grant
+    elif state == "revoked":
+        w.pool.erasure_grants.revoke(grant.code)
+    inter = click(HOLDER)
+    inter.data = SimpleNamespace(custom_id=f"erasure_grant:{grant.code}")
+    await data_erasure.DataErasure(w.bot).expired_grant(inter)
+    inter.response.edit_message.assert_not_awaited()
+    w.pool.erasure.erase_user.assert_not_awaited()
+    w.clock.t += OWNER_GRANT_TTL_S
+    assert w.pool.erasure_grants.issued_here(grant.code) is True
+    w.clock.t += 300
+    assert w.pool.erasure_grants.issued_here(grant.code) is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+@pytest.mark.parametrize("action,prefix", [("confirmed", "erasure_grant"), ("cancelled", "erasure_grant_cancel")])
+@pytest.mark.parametrize("listener_first", [True, False])
+async def test_expiry_boundary_live_view_owns_the_single_response(action, prefix, listener_first):
+    w = world()
+    grant = w.pool.erasure_grants.issue(OWNER, HOLDER)
+    view = views.ErasureGrantView(w.bot, w.tr, HOLDER, grant=grant)
+    w.clock.t = grant.expires_at
+    inter = click(HOLDER)
+    inter.data = SimpleNamespace(custom_id=f"{prefix}:{grant.code}")
+    listener = data_erasure.DataErasure(w.bot)
+    if listener_first:
+        await listener.expired_grant(inter)
+    assert not view.is_finished()
+    await getattr(view, action)(inter)
+    if not listener_first:
+        await listener.expired_grant(inter)
+    inter.response.edit_message.assert_awaited_once()
+    w.pool.erasure.erase_user.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_expired_listener_failed_edit_is_guarded(caplog):
+    w = world()
+    old = world().pool.erasure_grants.issue(OWNER, HOLDER)
+    inter = click(HOLDER)
+    inter.data = SimpleNamespace(custom_id=f"erasure_grant:{old.code}")
+    inter.response.edit_message.side_effect = RuntimeError("private detail")
+    await data_erasure.DataErasure(w.bot).expired_grant(inter)
+    assert "RuntimeError" in caplog.text and "private detail" not in caplog.text

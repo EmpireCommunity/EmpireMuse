@@ -42,7 +42,7 @@ def parse_retention_days(raw: object) -> tuple[int, str | None]:
     """``LOG_RETENTION_DAYS`` em dias e o aviso, se houver.
 
     Ausente ou vazio usa 183. Texto que não é número inteiro usa 183 com aviso. Número fora de 30 a 730 vai para o limite mais
-    próximo, com aviso: o lado errado do erro é apagar log que o operador queria guardar (suspensão legal) ou antes do mínimo.
+    próximo, com aviso. Valores aceitos abaixo de 183 também avisam, preservando a escolha do operador: o lado errado do erro é apagar log que o operador queria guardar (suspensão legal) ou antes do mínimo.
     """
     if raw is None or (isinstance(raw, str) and not raw.strip()):
         return DEFAULT_RETENTION_DAYS, None
@@ -57,5 +57,10 @@ def parse_retention_days(raw: object) -> tuple[int, str | None]:
         return (
             bounded,
             f"LOG_RETENTION_DAYS fora de {MIN_RETENTION_DAYS} a {MAX_RETENTION_DAYS}; usando {bounded} dias.",
+        )
+    if days < DEFAULT_RETENTION_DAYS:
+        return (
+            days,
+            f"LOG_RETENTION_DAYS abaixo de {DEFAULT_RETENTION_DAYS} dias; confira a política de retenção do operador.",
         )
     return days, None

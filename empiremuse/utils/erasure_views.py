@@ -33,9 +33,8 @@ from empiremuse.rules.erasure import (  # noqa: F401 - CONFIRM_ID, CANCEL_ID e G
     GRANT_PREFIX,
     OWNER_GRANT_TTL_S,
     ErasureStatus,
-    grant_log_ref,
 )
-from empiremuse.rules.i18n import fit
+from empiremuse.rules.i18n import Translator, fit
 from empiremuse.utils.erasure import ErasureBusy, ErasureRateLimited
 from empiremuse.utils.erasure_grants import Grant, GrantLimited
 
@@ -102,45 +101,13 @@ async def clear_buttons(message: Optional[disnake.Message], label: str) -> None:
         await guarded(label, message.edit(view=None))
 
 
-class ErasureConfirmView(disnake.ui.View):
-    """Confirmação do TITULAR: slash (``grant is None``, ``source="slash"``) ou DM de concessão do dono (``grant`` dado, ``source="owner"``).
+class HolderView(disnake.ui.View):
+    """Guarda de titular e idioma comum às duas confirmações."""
 
-    Só ``holder_id`` clica. No slash o alvo é ``interaction.author.id`` (igual a ``holder_id``). No pedido do dono o alvo é o titular da
-    concessão resgatada pelo clique: sem esse clique, nada é apagado. Na DM do titular a view vale ``OWNER_GRANT_TTL_S`` e, ao expirar,
-    revoga a concessão e tira os botões (``dm_message``).
-    """
+    bot: BotCore
+    holder_id: int
 
-    def __init__(
-        self,
-        bot: BotCore,
-        tr,
-        holder_id: int,
-        *,
-        grant: Optional[Grant] = None,
-        origin: Optional[disnake.Interaction] = None,
-    ) -> None:
-        super().__init__(timeout=CONFIRM_TIMEOUT_S if grant is None else OWNER_GRANT_TTL_S)
-        self.bot, self.tr, self.holder_id, self.grant, self.origin = bot, tr, holder_id, grant, origin
-        self.dm_message: Optional[disnake.Message] = None
-        # Único por invocação: o código da concessão (DM) ou um ``nonce`` (slash). Dois membros nunca dividem ``custom_id``.
-        tag = grant.grant_id if grant else secrets.token_hex(NONCE_BYTES)
-        # Na DM do titular o idioma ainda é desconhecido: os rótulos são bilíngues (``erasure.owner.dm_*``); no slash, o idioma de quem pediu.
-        confirm = disnake.ui.Button(
-            label=fit(tr("erasure.owner.dm_confirm" if grant else "erasure.confirm"), BUTTON_LABEL_LIMIT),
-            style=disnake.ButtonStyle.danger,
-            custom_id=f"{GRANT_PREFIX if grant else CONFIRM_ID}:{tag}",
-        )
-        cancel = disnake.ui.Button(
-            label=fit(tr("erasure.owner.dm_cancel" if grant else "erasure.cancel"), BUTTON_LABEL_LIMIT),
-            style=disnake.ButtonStyle.secondary,
-            custom_id=f"{GRANT_PREFIX + '_cancel' if grant else CANCEL_ID}:{tag}",
-        )
-        confirm.callback, cancel.callback = self.confirmed, self.cancelled
-        self.add_item(confirm)
-        self.add_item(cancel)
-
-    def reply_translator(self, interaction: disnake.MessageInteraction):
-        """Idioma do Discord de quem clicou: na DM do titular é o primeiro momento em que ele é conhecido."""
+    def reply_translator(self, interaction: disnake.MessageInteraction) -> Translator:
         return translator_for(self.bot.pool, interaction.locale)
 
     async def interaction_check(self, interaction: disnake.MessageInteraction) -> bool:
@@ -151,10 +118,74 @@ class ErasureConfirmView(disnake.ui.View):
             return False
         return True
 
+
+class ErasureConfirmView(HolderView):
+    """Confirmação curta do slash, exclusiva do titular que invocou o comando."""
+
+    def __init__(self, bot: BotCore, tr, holder_id: int, *, origin: Optional[disnake.Interaction] = None) -> None:
+        super().__init__(timeout=CONFIRM_TIMEOUT_S)
+        self.bot, self.tr, self.holder_id, self.origin = bot, tr, holder_id, origin
+        nonce = secrets.token_hex(NONCE_BYTES)
+        confirm = disnake.ui.Button(
+            label=fit(tr("erasure.confirm"), BUTTON_LABEL_LIMIT),
+            style=disnake.ButtonStyle.danger,
+            custom_id=f"{CONFIRM_ID}:{nonce}",
+        )
+        cancel = disnake.ui.Button(
+            label=fit(tr("erasure.cancel"), BUTTON_LABEL_LIMIT),
+            style=disnake.ButtonStyle.secondary,
+            custom_id=f"{CANCEL_ID}:{nonce}",
+        )
+        confirm.callback, cancel.callback = self.confirmed, self.cancelled
+        self.add_item(confirm)
+        self.add_item(cancel)
+
     async def cancelled(self, interaction: disnake.MessageInteraction) -> None:
         self.stop()
-        if self.grant is not None:
-            self.bot.pool.erasure_grants.revoke(self.grant.grant_id)
+        await interaction.response.edit_message(
+            content=self.reply_translator(interaction)("erasure.cancelled"), view=None
+        )
+
+    async def confirmed(self, interaction: disnake.MessageInteraction) -> None:
+        self.stop()
+        tr = self.reply_translator(interaction)
+        await guarded("aviso de andamento", interaction.response.edit_message(content=tr("erasure.running"), view=None))
+        text = await run_erasure(self.bot.pool, tr, interaction.author.id)
+        await guarded("resposta final", interaction.edit_original_message(content=text))
+
+    async def on_timeout(self) -> None:
+        self.stop()
+        if self.origin is not None:
+            await guarded(
+                "limpar a mensagem expirada",
+                self.origin.edit_original_message(content=self.tr("erasure.cancelled"), view=None),
+            )
+
+
+class ErasureGrantView(HolderView):
+    """DM do titular: uso único, com prazo da concessão, código privado e ID público distintos."""
+
+    def __init__(self, bot: BotCore, tr, holder_id: int, *, grant: Grant) -> None:
+        super().__init__(timeout=OWNER_GRANT_TTL_S)
+        self.bot, self.tr, self.holder_id, self.grant = bot, tr, holder_id, grant
+        self.dm_message: Optional[disnake.Message] = None
+        confirm = disnake.ui.Button(
+            label=fit(tr("erasure.owner.dm_confirm"), BUTTON_LABEL_LIMIT),
+            style=disnake.ButtonStyle.danger,
+            custom_id=f"{GRANT_PREFIX}:{grant.code}",
+        )
+        cancel = disnake.ui.Button(
+            label=fit(tr("erasure.owner.dm_cancel"), BUTTON_LABEL_LIMIT),
+            style=disnake.ButtonStyle.secondary,
+            custom_id=f"{GRANT_PREFIX}_cancel:{grant.code}",
+        )
+        confirm.callback, cancel.callback = self.confirmed, self.cancelled
+        self.add_item(confirm)
+        self.add_item(cancel)
+
+    async def cancelled(self, interaction: disnake.MessageInteraction) -> None:
+        self.stop()
+        self.bot.pool.erasure_grants.revoke(self.grant.code)
         await interaction.response.edit_message(
             content=self.reply_translator(interaction)("erasure.cancelled"), view=None
         )
@@ -163,29 +194,18 @@ class ErasureConfirmView(disnake.ui.View):
         self.stop()
         pool = self.bot.pool
         tr = self.reply_translator(interaction)
-        grant = None
-        if self.grant is not None:
-            # Uso único, titular exato, 24 h. SÍNCRONO e ANTES do reconhecimento de propósito: é a guarda contra repetição.
-            grant = pool.erasure_grants.redeem(self.grant.grant_id, interaction.author.id)
-            if grant is None:
-                await interaction.response.edit_message(content=tr("erasure.grant_expired"), view=None)
-                return
-        # ``edit_message`` reconhece a interação (3 s) e tira os botões; a varredura do serviço vem depois, sem prazo de resposta.
-        # Se o ack falhar, o clique é genuíno e a concessão já é do titular: segue para o serviço e entrega o desfecho pela edição protegida.
+        grant = pool.erasure_grants.redeem(self.grant.code, interaction.author.id)
+        if grant is None:
+            await interaction.response.edit_message(content=tr("erasure.grant_expired"), view=None)
+            return
         await guarded("aviso de andamento", interaction.response.edit_message(content=tr("erasure.running"), view=None))
         text = await run_erasure(pool, tr, interaction.author.id, grant=grant)
         await guarded("resposta final", interaction.edit_original_message(content=text))
 
     async def on_timeout(self) -> None:
         self.stop()
-        if self.grant is not None:
-            self.bot.pool.erasure_grants.revoke(self.grant.grant_id)
-            await clear_buttons(self.dm_message, "limpar a DM expirada")
-        elif self.origin is not None:
-            await guarded(
-                "limpar a mensagem expirada",
-                self.origin.edit_original_message(content=self.tr("erasure.cancelled"), view=None),
-            )
+        self.bot.pool.erasure_grants.revoke(self.grant.code)
+        await clear_buttons(self.dm_message, "limpar a DM expirada")
 
 
 class OwnerRequestView(disnake.ui.View):
@@ -238,16 +258,16 @@ class OwnerRequestView(disnake.ui.View):
             "apagamento: pedido do dono emitido owner=%s target=%s grant=%s",
             self.owner_id,
             self.target.id,
-            grant_log_ref(grant.grant_id),
+            grant.grant_id,
             extra={"empiremuse_emit": True},
         )
-        view: Optional[ErasureConfirmView] = None
+        view: Optional[ErasureGrantView] = None
         try:
             await interaction.response.edit_message(content=self.tr("erasure.owner.sending"), embed=None, view=None)
             holder_tr = pool.i18n.for_locale(
                 None
             )  # sem interação do titular não há idioma do Discord: usa o de reserva
-            view = ErasureConfirmView(self.bot, holder_tr, self.target.id, grant=grant)
+            view = ErasureGrantView(self.bot, holder_tr, self.target.id, grant=grant)
             view.dm_message = await self.target.send(
                 holder_tr("erasure.owner.dm"), view=view, allowed_mentions=disnake.AllowedMentions.none()
             )
@@ -259,7 +279,7 @@ class OwnerRequestView(disnake.ui.View):
         else:
             key = "erasure.owner.sent"
         if key != "erasure.owner.sent":
-            pool.erasure_grants.revoke(grant.grant_id)
+            pool.erasure_grants.revoke(grant.code)
             if view is not None:
                 view.stop()
         await guarded("aviso ao dono", interaction.edit_original_message(content=self.tr(key)))

@@ -957,6 +957,8 @@
   "legacy.error.reported": "**Erro reportado com sucesso!**",
   "legacy.error.title": "Ocorreu um erro no comando:",
   "legacy.error.unexpected": "Ocorreu um erro inesperado ao executar o comando. Tente novamente em instantes.",
+  "legacy.lastfm.auth_expired": "Esta vinculação expirou. Use o comando Last.fm novamente.",
+  "legacy.lastfm.auth_retry": "Não foi possível iniciar a vinculação agora. Tente novamente.",
   "legacy.lastfm.auth_prompt": "### {link} para vincular sua conta do last.fm (na página clique em \"allow\")\n\n`O link expira em` <t:{ts}:R> `(Caso esteja expirado, clique no botão novamente).`\n\n`Atenção: Não mostre o link do \"clique aqui\" pra ninguem e nem envie em locais públicos, pois esse link pode conceder acesso a sua conta do last.fm`\n\n`Caso já tenha autorizado a aplicação você deve aguardar até 20 segundos para a mensagem acima atualizar confirmando o processo.`",
   "legacy.lastfm.click_here": "Clique aqui",
   "legacy.lastfm.cooldown_many": "**Você terá que aguardar {count} segundos para ativar/desativar o scrobble/registro.**",
