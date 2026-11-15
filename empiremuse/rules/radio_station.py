@@ -194,12 +194,27 @@ def from_document(raw: object) -> CustomStation | RuleError:
         guild_id=guild_id,
         name=name,
         kind=kind,
-        source=dict(source),
+        source=_legacy_source(kind, source),
         rev=rev,
         updated_by=str(raw.get("updated_by", ""))[:40],
         updated_at=float(raw["updated_at"]) if isinstance(raw.get("updated_at"), int | float) else 0.0,
         unknown=tuple(u for u in unknown if isinstance(u, str))[:MAX_ARTISTS] if isinstance(unknown, list) else (),
     )
+
+
+def _legacy_source(kind: str, source: Mapping[str, Any]) -> dict[str, Any]:
+    """A fonte gravada com os nomes (artistas, playlists) limpos como o nome da estação (``clean_legacy_text``): a estação de antes da
+    regra atual segue achando a playlist, que a leitura também limpa. Nome que a limpeza esvazia ou repete sai; o resto passa como está."""
+    names = source.get(kind)
+    if kind not in (KIND_ARTISTS, KIND_PLAYLISTS) or not isinstance(names, list):
+        return dict(source)
+    cleaned: list[Any] = []
+    for name in names:
+        value = clean_legacy_text(name)
+        if isinstance(value, str) and (not value or value.casefold() in {str(n).casefold() for n in cleaned}):
+            continue
+        cleaned.append(value)
+    return {kind: cleaned}
 
 
 def to_document(station: CustomStation) -> dict[str, Any]:

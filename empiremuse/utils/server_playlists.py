@@ -30,6 +30,7 @@ from empiremuse.rules.playlists import (
     find_item,
     find_selected,
     from_doc,
+    normalize_url,
     move_leading_icons,
     plan_import,
     remove_item,
@@ -49,13 +50,45 @@ logger = logging.getLogger(__name__)
 SECTIONS = (SECTION_PLAYLISTS,)
 
 
+_unreadable_reported: dict[
+    str, int
+] = {}  # servidor -> quantos itens ilegíveis o log já contou (avisa só quando o número muda)
+
+
+def _stored(doc: dict) -> tuple[tuple[Playlist, ...], list[Any]]:
+    """``(playlists legíveis, documentos crus ilegíveis)`` do que está gravado. Legível = passa nas regras depois da limpeza de texto antigo
+    (``from_doc``) e não repete, no mesmo escopo, o nome (``casefold``) de outra: entre as que a limpeza deixou com o mesmo nome fica a de
+    menor ``(order, url)``, critério que não depende da posição na lista. As outras vão cruas para os ilegíveis, que nunca são apagados."""
+    raws = doc.get("playlists") or []
+    parsed = [(raw, from_doc(raw)) for raw in raws] if isinstance(raws, list) else []
+    unreadable = [raw for raw, item in parsed if item is None]
+    kept: dict[tuple[str, str], Playlist] = {}
+    readable = [(raw, item) for raw, item in parsed if item is not None]
+    for raw, item in sorted(readable, key=lambda pair: (pair[1].order, normalize_url(pair[1].url))):
+        key = (item.scope, item.name.casefold())
+        if key in kept:
+            unreadable.append(raw)
+        else:
+            kept[key] = item
+    _report_unreadable(str(doc.get("_id", "")), len(unreadable))
+    return sorted_by_order(kept.values()), unreadable
+
+
+def _report_unreadable(gid: str, count: int) -> None:
+    """Só a CONTAGEM, nunca nome nem conteúdo; uma vez por mudança do número, não a cada leitura."""
+    if _unreadable_reported.get(gid, 0) == count:
+        return
+    _unreadable_reported[gid] = count
+    if count:
+        logger.warning("Servidor [%s]: %d playlists gravadas ilegíveis mantidas como estão", gid, count)
+
+
 def _items(doc: dict, scope: str | None = None) -> tuple[Playlist, ...]:
-    """As playlists gravadas, relidas com as mesmas regras e por ``order`` (dado gravado ruim é ignorado, nunca levanta).
+    """As playlists gravadas legíveis (``_stored``), por ``order``; dado gravado ruim nunca levanta.
 
     ``scope`` filtra por escopo (``None`` = os dois). Cada escopo tem sua própria lista, nome, cota e ordem.
     """
-    items = (item for raw in doc.get("playlists", []) if (item := from_doc(raw)) is not None)
-    return sorted_by_order(item for item in items if scope is None or item.scope == scope)
+    return tuple(item for item in _stored(doc)[0] if scope is None or item.scope == scope)
 
 
 def _check_scope(scope: str) -> str:
@@ -153,9 +186,10 @@ class ServerPlaylists:
             if isinstance(result, RuleError) or tuple(result) == current:
                 return False
             outcome["changed"] = True
-            others = [p for p in _items(doc) if p.scope != scope]
-            # um item gravado que nem a leitura tolerante entende fica como está: uma gravação nunca apaga o que não conseguiu ler
-            unreadable = [raw for raw in doc.get("playlists", []) if from_doc(raw) is None]
+            readable, unreadable = _stored(doc)
+            others = [p for p in readable if p.scope != scope]
+            # um item gravado que nem a leitura tolerante entende fica como está: uma gravação nunca apaga o que não conseguiu ler.
+            # A posição dele na lista não importa: a leitura ordena por ``order`` e o desempate de nomes iguais é por ``(order, url)``.
             doc["playlists"] = [
                 *unreadable,
                 *(to_doc(p) for p in (*others, *(p._replace(scope=scope) for p in result))),

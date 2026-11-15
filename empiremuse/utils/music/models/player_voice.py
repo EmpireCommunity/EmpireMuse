@@ -22,6 +22,7 @@ from empiremuse.rules.voice_status import (
 )
 from empiremuse.utils.music.checks import VOICE_STATUS_PERMISSION, can_connect, voice_status_blocked_channel
 from empiremuse.utils.music.converters import time_format
+from empiremuse.utils.music.models.event_steps import network_resume_start
 from empiremuse.utils.music.errors import (
     GenericError,
     PoolException,
@@ -761,7 +762,7 @@ class PlayerVoiceMixin:
                     self.current = None
                     self.current_encoded = None
                 else:  # a retomada da pausa por rede que esperava um nó guarda o seek feito na pausa (zerado em ``_pn_start``)
-                    start_position = getattr(self, "network_resume_position", 0)
+                    start_position = network_resume_start(self)
 
                 await self.process_next(start_position=start_position)
 

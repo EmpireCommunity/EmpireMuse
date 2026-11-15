@@ -190,3 +190,13 @@ def test_a_station_name_stored_before_the_stricter_text_rule_is_read_cleaned_and
 
     assert not isinstance(station, RuleError) and station.name == clean
     assert to_document(station)["name"] == clean  # a próxima gravação da estação já sai limpa
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize("kind", ["artists", "playlists"])
+def test_the_names_of_a_stored_station_source_are_cleaned_too_so_it_still_finds_its_playlist(kind):
+    """Sentinela (PR 255): só o nome da estação era limpo; a playlist gravada "Rock\\u2028Pop" virou "Rock Pop" na leitura e a estação,
+    que guardava o nome antigo, não a achava mais. A limpeza vale para os nomes da fonte; o que esvazia ou repete sai."""
+    station = from_document(doc(kind, {kind: ["Rock Pop", "Jazz\ud800", " ", "rock pop"]}))
+
+    assert not isinstance(station, RuleError) and station.source == {kind: ["Rock Pop", "Jazz"]}

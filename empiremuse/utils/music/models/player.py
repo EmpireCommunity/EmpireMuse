@@ -6,7 +6,7 @@ import datetime
 from collections import deque
 from itertools import cycle
 from time import time
-from typing import Optional, Union, TYPE_CHECKING
+from typing import Any, Optional, Union, TYPE_CHECKING
 
 import disnake
 
@@ -113,7 +113,9 @@ class LavalinkPlayer(
         self.auto_pause = False
         self.network_paused = False  # pausado por faixas seguidas abandonadas por falha de rede (V-142-2)
         self.network_abandon_streak = 0
-        self.network_resume_position = 0  # onde a retomada da pausa por rede recomeça (seek feito durante a pausa)
+        self.network_resume: Optional[tuple[Any, int]] = (
+            None  # (faixa que espera, posição do seek feito na pausa por rede)
+        )
         self._session_resuming = kwargs.pop("session_resuming", False)
         self._last_channel: Optional[disnake.VoiceChannel] = None
         self._last_channel_id: Optional[int] = None

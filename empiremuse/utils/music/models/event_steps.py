@@ -615,7 +615,7 @@ async def _he_pause_after_network_abandons(self, track) -> None:
     Nada mais é tentado nem relatado até alguém retomar (``resume_after_network_pause``, pelo ``set_pause`` do player).
     """
     self.network_abandon_streak = 0
-    self.network_resume_position = 0
+    self.network_resume = None
     if track in self.failed_tracks:
         self.failed_tracks.remove(track)
     self.current = track
@@ -650,8 +650,17 @@ async def resume_after_network_pause(self) -> bool:
         self.queue.appendleft(track)
     # a posição do seek feito na pausa só é gasta quando a faixa começa (``_pn_start``): sem nó agora, ``process_next`` só agenda
     # ``_wait_for_new_node``, que a reaproveita quando o nó volta
-    await self.process_next(start_position=getattr(self, "network_resume_position", 0))
+    await self.process_next(start_position=network_resume_start(self))
     return True
+
+
+def network_resume_start(self) -> int:
+    """De onde a próxima faixa começa depois da pausa por rede: a posição do seek feito na pausa, só se a faixa à frente da fila AINDA é a
+    que esperava (um pular, remover, embaralhar ou limpar enquanto o nó não volta põe outra lá, que começa do zero)."""
+    pending = getattr(self, "network_resume", None)
+    if pending is None or not self.queue or self.queue[0] is not pending[0]:
+        return 0
+    return pending[1]
 
 
 def store_network_resume_position(self, milliseconds: int | float) -> bool:
@@ -659,7 +668,7 @@ def store_network_resume_position(self, milliseconds: int | float) -> bool:
     recomeça (``resume_after_network_pause``). ``False`` fora dessa pausa (o seek vai ao nó como sempre)."""
     if not getattr(self, "network_paused", False):
         return False
-    self.network_resume_position = max(0, int(milliseconds))
+    self.network_resume = (self.current, max(0, int(milliseconds)))  # a faixa que espera, presa à posição
     return True
 
 

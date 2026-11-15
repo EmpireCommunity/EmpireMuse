@@ -26,7 +26,10 @@ _LEGACY_DROPPED = ("Cs",)
 def clean_legacy_text(value: Any) -> Any:
     """Texto GRAVADO antes da regra atual (que passou a recusar ``Cs``, ``Zl`` e ``Zp``), limpo para a leitura como nos filtros de texto
     externo: U+2028/U+2029 viram espaço, surrogate isolado sai, e o resultado é aparado. Dado gravado nunca se perde porque a regra
-    ficou mais rígida; a regra rígida vale só para texto NOVO. O que não é texto volta como está."""
+    ficou mais rígida; a regra rígida vale só para texto NOVO. O que não é texto volta como está.
+
+    Um surrogate isolado não chega ao MongoDB (o BSON é UTF-8 e recusa a gravação); o ramo do ``Cs`` cobre o banco local em JSON, as
+    importações e o cache em memória. U+2028/U+2029 chegam a qualquer banco."""
     if not isinstance(value, str):
         return value
     kept = (

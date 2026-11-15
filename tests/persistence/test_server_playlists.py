@@ -502,3 +502,64 @@ def test_a_playlist_stored_before_the_stricter_text_rule_survives_a_read_and_a_w
     saved = world.banco.servers_doc()["playlists"]
     assert unreadable in saved
     assert sorted(p["name"] for p in saved if p is not unreadable and p != unreadable) == ["Jazz", "Pop", "Rock Live"]
+
+
+@pytest.mark.regression
+def test_the_old_fav_links_with_legacy_characters_are_migrated_cleaned_and_the_source_stays(world):
+    """Sentinela (PR 255): a migração do ``fav_links`` antigo validava com a regra nova; o item com U+2028 ou surrogate não era copiado e o
+    ``migrated`` impedia nova tentativa. Ele é copiado limpo, e o documento antigo do principal fica como estava."""
+    main_links = {
+        "Rock Live": link(f"{BASE}rock"),
+        "Jazz": link(f"{BASE}jazz", description="clássicos\ud800 do jazz"),
+    }
+    world.banco.put(DBModel.guilds, str(MAIN_ID), GID, legacy_doc(main_links))
+    before = deepcopy(world.banco.docs[(DBModel.guilds, str(MAIN_ID), str(GID))])
+
+    listed = run(world.playlists.list(GID))
+
+    assert [(p.name, p.description) for p in listed] == [("Rock Live", "clássicos"), ("Jazz", "clássicos do jazz")]
+    assert world.banco.docs[(DBModel.guilds, str(MAIN_ID), str(GID))] == before
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize("legacy_first", [True, False], ids=["legacy_has_lower_order", "clean_has_lower_order"])
+def test_names_that_collide_after_cleaning_keep_the_lowest_order_and_the_other_stays_raw(world, legacy_first):
+    """Crivo e Sentinela (PR 255): "Rock\\u2028Pop" e "Rock Pop" ficam iguais depois da limpeza. Fica a de menor ``order`` (critério que
+    não depende da posição na lista); a outra não aparece, mas segue gravada crua; e a migração de ícones conta o nome limpo."""
+    stored = {**new_doc(), "_id": str(GID)}
+    stored["migrated"] = {section: True for section in stored["migrated"]}
+    legacy = {**item("Rock Pop", 1 if legacy_first else 2, url=f"{BASE}a")._asdict(), "genres": []}
+    clean = {**item("Rock Pop", 2 if legacy_first else 1, url=f"{BASE}b")._asdict(), "genres": []}
+    icon = {**item("🔴 Rock Pop", 3, url=f"{BASE}c")._asdict(), "genres": []}  # tirar o 🔴 colidiria com o nome limpo
+    stored["playlists"] = [legacy, clean, icon]
+    world.banco.put(*SERVERS, GID, stored)
+
+    assert run(world.playlists.migrate_icons()) == (0, 0, ())
+    listed = run(world.playlists.list(GID))
+    assert [p.url for p in listed] == [f"{BASE}a" if legacy_first else f"{BASE}b", f"{BASE}c"]
+
+    run(world.playlists.add(GID, item("Pop", 4)))
+    saved = world.banco.servers_doc()["playlists"]
+    assert (clean if legacy_first else legacy) in saved and len(saved) == 4
+
+
+@pytest.mark.regression
+def test_a_genre_the_cleaning_breaks_is_dropped_instead_of_hiding_the_playlist(world, caplog, monkeypatch):
+    """Sentinela (PR 255): um gênero que a limpeza deixa curto ("R\\u2028" vira "R") ou repetido tornava a playlist inteira ilegível. O
+    gênero sai; o que ainda é ilegível é contado no log (só o número, uma vez)."""
+    stored = {**new_doc(), "_id": str(GID)}
+    stored["migrated"] = {section: True for section in stored["migrated"]}
+    stored["playlists"] = [
+        {**item("Rock", 1, url=f"{BASE}rock")._asdict(), "genres": ["Rock", "R ", "Ro ck", "ro ck"]},
+        {"order": 2, "name": "x", "url": "nao-e-url"},
+    ]
+    world.banco.put(*SERVERS, GID, stored)
+    monkeypatch.setattr("empiremuse.utils.server_playlists._unreadable_reported", {})  # o memo do log é do processo
+
+    with caplog.at_level(logging.WARNING):
+        listed = run(world.playlists.list(GID))
+        run(world.playlists.list(GID))
+
+    assert [(p.name, p.genres) for p in listed] == [("Rock", ("Rock", "Ro ck"))]
+    counted = [r.getMessage() for r in caplog.records if "ilegíveis" in r.getMessage()]
+    assert len(counted) == 1 and "1 playlists" in counted[0] and "nao-e-url" not in caplog.text

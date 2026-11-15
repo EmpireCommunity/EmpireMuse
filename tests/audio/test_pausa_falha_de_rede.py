@@ -171,3 +171,28 @@ async def test_a_seek_during_the_pause_survives_a_resume_that_waits_for_a_node()
     await PlayerVoiceMixin._wait_for_new_node(player)
 
     player.process_next.assert_awaited_once_with(start_position=42_000)
+
+
+async def test_a_skip_while_the_resume_waits_for_a_node_starts_the_next_track_from_zero():
+    """Crivo (PR 255): a posição do seek era do player, não da faixa; pular (ou remover, embaralhar, limpar) enquanto o nó não volta
+    aplicava o seek antigo a outra faixa."""
+    from empiremuse.utils.music.models.player_voice import PlayerVoiceMixin
+
+    player, tracks = mundo(NETWORK_ABANDON_PAUSE_LIMIT)
+    proxima = make_track(source="soundcloud", uri="https://example.invalid/proxima")
+    for track in tracks:
+        await abandonar(player, track)
+    player.queue.append(proxima)
+    store_network_resume_position(player, 42_000)
+    await resume_after_network_pause(player)
+    player.queue.popleft()  # o pular durante a espera do nó: a faixa que esperava sai da frente
+    player.process_next.reset_mock()
+
+    novo = SimpleNamespace(identifier="N2", is_available=True)
+    player.guild_id = player.guild.id
+    player.node = SimpleNamespace(identifier="N1", is_available=False, players={player.guild_id: player})
+    player.bot.music.get_best_node = lambda ignore_node=None: novo
+    player.guild.me.voice, player._voice_state, player.auto_pause = object(), None, False
+    await PlayerVoiceMixin._wait_for_new_node(player)
+
+    player.process_next.assert_awaited_once_with(start_position=0)
