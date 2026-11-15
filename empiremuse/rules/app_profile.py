@@ -132,8 +132,9 @@ def parse_tags(raw: object) -> tuple[tuple[str, ...], tuple[str, ...]]:
         tag = item.strip()
         if not tag:
             continue
-        # o aviso diz o motivo e a posição, nunca o texto da tag (vai para o log)
-        if utf16_length(tag) > TAG_MAX_LENGTH or has_control_or_format(tag):
+        # o aviso diz o motivo e a posição, nunca o texto da tag (vai para o log); a checagem de caractere vem antes do
+        # UTF-16, que levanta erro num surrogate isolado
+        if has_control_or_format(tag) or utf16_length(tag) > TAG_MAX_LENGTH:
             warnings.append(
                 f"tag {position} descartada (mais de {TAG_MAX_LENGTH} caracteres ou com caractere inválido)"
             )
