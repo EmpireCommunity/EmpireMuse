@@ -422,13 +422,10 @@ class LastFmCog(commands.Cog):
                     lastfm = clear_lastfm_link(fresh)
                 else:
                     lastfm = fresh["lastfm"]
-                    lastfm.update(
-                        {
-                            "scrobble": view.scrobble_enabled,
-                            "sessionkey": view.session_key,
-                            "username": view.username or lastfm["username"],
-                        }
-                    )
+                    lastfm["scrobble"] = view.scrobble_enabled
+                    if view.account_linked:
+                        lastfm.update(sessionkey=view.session_key, username=view.username or lastfm["username"])
+                    # Preferências de uma view antiga preservam a identidade relida sob a trava.
                 aborted = tombstones.stale(user_id, fresh_read_at)
                 if not aborted:
                     await self.bot.update_global_data(user_id, data=fresh, db_name=DBModel.users)

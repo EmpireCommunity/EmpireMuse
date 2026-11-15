@@ -442,7 +442,7 @@ Linhas medidas com `wc -l` (total do projeto: ~34,5 mil linhas Python; testes em
 | `empiremuse/cogs/player_resume.py` | Salvar e retomar sessões de players | 854 |
 | `empiremuse/cogs/misc.py` | Comandos gerais (ping, convite, sobre, …) | 1.042 |
 | `empiremuse/cogs/legacy_cmds.py` | Comandos legados/administrativos (prefixo) | 1.177 |
-| `empiremuse/cogs/lastfm.py` | Integração Last.fm | 733 |
+| `empiremuse/cogs/lastfm.py` | Integração Last.fm | 730 |
 | `empiremuse/cogs/error_handler.py` | Tratamento global de erros e relatório | 511 |
 | `empiremuse/cogs/help_cog.py` | Comando de ajuda | 406 |
 | `empiremuse/cogs/ll_yt_oauth.py` | OAuth do YouTube para o Lavalink | 290 |

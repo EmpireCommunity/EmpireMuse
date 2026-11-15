@@ -431,9 +431,11 @@ async def test_lastfm_toggle_refreshes_session_before_save_link(mundo):
     read_at = mundo.pool.erasure_tombstones.now()
     await view.scrobble_enable(inter)
     assert view.session_key == "current"
+    await gravar_usuario(mundo, ALVO, lastfm_sessionkey="latest", lastfm_username="latest-user", lastfm_scrobble=True)
     assert await cog._save_link(inter, view, None, read_at)
     doc = await mundo.database.find_doc(ALVO, db_name="users", collection="global")
-    assert doc["lastfm"]["sessionkey"] == "current"
+    assert doc["lastfm"]["sessionkey"] == "latest"
+    assert doc["lastfm"]["username"] == "latest-user"
 
 
 async def test_lastfm_auth_ack_single_poll_and_stop(mundo, monkeypatch):

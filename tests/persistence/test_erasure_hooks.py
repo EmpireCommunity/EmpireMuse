@@ -418,7 +418,12 @@ def _fluxo(mundo, *, desvincular=False, chave="", usuario=""):
 
     cog = _cog(mundo, update_global_data=grava, get_global_data=dados_globais)
     visao = SimpleNamespace(
-        clear_session=desvincular, session_key=chave, scrobble_enabled=True, username=usuario, interaction=None
+        clear_session=desvincular,
+        session_key=chave,
+        scrobble_enabled=True,
+        username=usuario,
+        interaction=None,
+        account_linked=bool(chave),
     )
     interacao = SimpleNamespace(author=SimpleNamespace(id=ALVO), guild=None, edit_original_message=AsyncMock())
     return cog, visao, interacao
