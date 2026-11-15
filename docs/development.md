@@ -198,10 +198,14 @@ uv pip install --require-hashes -r requirements-dev-lock.txt # pytest, pytest-as
 `tests/persistence/test_mongo_integracao.py` roda o `MongoDatabase` contra um `mongod` real e descartável (round trip, apagar dados, lista de banidos e registro de uso). Sem `MONGO_TEST_URI` o módulo é pulado; o CI sobe um serviço `mongo:8.0.38` e falha se algum desses testes não passar. Para rodar localmente:
 
 ```bash
-docker run --rm -d --name empiremuse-mongo-teste -p 127.0.0.1:27017:27017 mongo:8.0.38@sha256:d97fea17ccb8d004cd137be8dab54d70d0df11be69c9f422aefe4484c8414ab7
-MONGO_TEST_URI=mongodb://127.0.0.1:27017 .venv/bin/python -m pytest -m integration -rA
-docker stop empiremuse-mongo-teste
+cid=$(docker run --rm -d -p 127.0.0.1:27018:27017 mongo:8.0.38@sha256:d97fea17ccb8d004cd137be8dab54d70d0df11be69c9f422aefe4484c8414ab7) && {
+  timeout 60 sh -c "until docker exec $cid mongosh --quiet --eval 'db.adminCommand({ping: 1})' >/dev/null 2>&1; do sleep 1; done" \
+    && MONGO_TEST_URI=mongodb://127.0.0.1:27018 .venv/bin/python -m pytest -m integration -rA
+  docker stop "$cid"
+}
 ```
+
+O contêiner não tem nome fixo e usa a porta 27018: se o `docker run` falhar (porta ocupada, por exemplo), nada mais roda e nenhum Mongo existente é usado nem parado. O `timeout 60` espera o `mongod` responder ao `ping` antes do pytest, como o health check do CI.
 
 `MONGO_TEST_URI` só vale com `mongodb://` e todos os hosts locais (`localhost`, `127.0.0.1`, `::1`); qualquer outro host faz o teste falhar. Nunca aponte para o `MONGO` do `.env`: o banco `global` de produção guarda refresh tokens. Cada teste usa um banco de nome único e o apaga no fim.
 
