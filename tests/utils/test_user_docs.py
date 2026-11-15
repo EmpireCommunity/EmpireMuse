@@ -38,6 +38,7 @@ class Bot:
             erasure_tombstones=ErasureTombstones(clock=lambda: self.relogio[0]),
             user_locks=UserLocks(),
             user_prefix_cache={},
+            lastfm_sessions={},
             i18n=get_i18n(),
             get_all_bots=lambda: [],  # o RPC fecha a presença do token antigo antes de gravar: aqui não há player
             add_fav_embed_cooldown=SimpleNamespace(
@@ -191,6 +192,23 @@ async def _favorito_do_player(bot, modulo, salvar):
     return aviso.args[0] if aviso.args else aviso.kwargs["embed"].description
 
 
+async def _scrobble_do_player(bot):
+    from empiremuse.music_cog.controller_buttons import _pc_lastfm
+
+    inter = _interacao()
+    assert await _pc_lastfm(SimpleNamespace(bot=bot), SimpleNamespace(cmd=None, interaction=inter)) is True
+    return inter.edit_original_message.await_args.kwargs["content"]
+
+
+async def _scrobble_da_tela_do_lastfm(bot):
+    from empiremuse.utils.music.lastfm_view import LastFMView
+
+    view = LastFMView(SimpleNamespace(bot=bot, author=SimpleNamespace(id=MEMBRO)), "chave", scrobble=False)
+    inter = _interacao()
+    await view.scrobble_enable(inter)
+    return inter.send.await_args.args[0]
+
+
 ESCRITORES = {
     "prefixo": _prefixo,
     "token-do-rpc": _token_do_rpc,
@@ -198,16 +216,25 @@ ESCRITORES = {
     "limpar-favoritos": lambda bot: _menu(bot, "clear_callback"),
     "favoritar-a-faixa-atual": lambda bot: _favorito_do_player(bot, "controller_buttons", "_pc_favorite_save"),
     "favoritar-o-link-do-embed": lambda bot: _favorito_do_player(bot, "controller_embed", "_pc_fav_embed_save"),
+    "scrobble-pelo-player": _scrobble_do_player,
+    "scrobble-pela-tela-do-lastfm": _scrobble_da_tela_do_lastfm,
 }
 
 
 @pytest.mark.regression
 @pytest.mark.parametrize("escritor", ESCRITORES)
 async def test_a_legacy_writer_queued_behind_the_erasure_does_not_recreate_the_document(escritor):
-    bot = Bot(custom_prefix="!", token="T" * 50, fav_links={"Rock": "https://example.com/rock"})
+    bot = Bot(
+        custom_prefix="!",
+        token="T" * 50,
+        fav_links={"Rock": "https://example.com/rock"},
+        lastfm={"username": "fulano", "sessionkey": "chave", "scrobble": False},
+    )
     bot.apagamento_roda_enquanto_a_escrita_espera()
 
     aviso = await ESCRITORES[escritor](bot)
 
     assert bot.gravados == [] and ERASED_TEXT in aviso
-    assert bot.pool.user_prefix_cache == {}  # nem o cache guarda o que não foi gravado
+    assert (
+        bot.pool.user_prefix_cache == {} and bot.pool.lastfm_sessions == {}
+    )  # nem o cache guarda o que não foi gravado

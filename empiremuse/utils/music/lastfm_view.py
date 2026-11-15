@@ -115,6 +115,10 @@ class LastFMView(disnake.ui.View):
         self.clear_items()
         self.build_components()
         await interaction.edit_original_message(view=self)
+        if change.erased:  # a ação do membro foi descartada: ele é avisado, além de ver a tela sem vínculo
+            await interaction.send(
+                await guild_text(bot, interaction.guild, "erasure.erased_while_saving"), ephemeral=True
+            )
 
     async def disconnect_account(self, interaction: disnake.MessageInteraction):
         await interaction.response.defer()

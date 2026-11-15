@@ -165,7 +165,12 @@ async def _pc_lastfm(self, req):
         return True
 
     change = await change_user_doc(self.bot, interaction.author.id, toggle_lastfm_scrobble, read_at=read_at)
-    if not change.saved:  # dados apagados desde o clique, ou sem vínculo
+    if change.erased:  # a ação do membro foi descartada: ele é avisado
+        await interaction.edit_original_message(
+            content=await guild_text(self.bot, interaction.guild, "erasure.erased_while_saving")
+        )
+        return True
+    if not change.saved:  # sem vínculo
         return await no_account()
     user_data, lastfm = change.doc, change.result
     # logo depois do lock, sem nenhuma espera no meio: um apagamento não entra entre a gravação e o cache

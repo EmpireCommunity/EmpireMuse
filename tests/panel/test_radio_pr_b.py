@@ -92,7 +92,12 @@ async def test_two_confirmations_at_once_with_the_same_token_reach_the_bot_only_
 
     w.hub.setup.reset = AsyncMock(side_effect=slow_reset)
     first = asyncio.ensure_future(service.reset(ctx, radio, args, "/reset", ("bot", "call"), tr))
-    await entered.wait()  # o primeiro chegou à chamada do bot e está esperando
+    waiter = asyncio.ensure_future(entered.wait())  # o primeiro chegou à chamada do bot e está esperando
+    done, _ = await asyncio.wait({first, waiter}, return_when=asyncio.FIRST_COMPLETED)
+    if first in done:  # sem isto, um ``reset`` que não chama o bot deixaria o teste esperando para sempre
+        waiter.cancel()
+        first.result()  # propaga a exceção do ``reset``, se houve
+        pytest.fail("service.reset terminou antes de chamar o bot")
 
     status, _ = await service.reset(ctx, radio, args, "/reset", ("bot", "call"), tr)
     release.set()
