@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from empiremuse.utils.user_locks import UserLocks
 from empiremuse.utils.erasure import ErasureTombstones
 
 from empiremuse.rules.radio import (
@@ -42,7 +43,7 @@ pytestmark = pytest.mark.critical
 @pytest.fixture
 def world():
     db = FakeDb()
-    hub = RadioHub(SimpleNamespace(database=db, erasure_tombstones=ErasureTombstones()))
+    hub = RadioHub(SimpleNamespace(database=db, erasure_tombstones=ErasureTombstones(), user_locks=UserLocks()))
     return SimpleNamespace(db=db, hub=hub)
 
 
