@@ -349,8 +349,16 @@ class JukeboxPanel:
         return message
 
     async def on_roster_change(self, guild_id: int) -> None:
-        """Um bot entrou ou saiu do servidor: reelege o bot do painel. Se a eleição mudou, ``elect`` já agenda a passagem do painel."""
-        await self.pool.servers.jukebox.elect(guild_id)
+        """Um bot entrou ou saiu do servidor: reelege o bot do painel. Se a eleição mudou, ``elect`` já agenda a passagem do painel.
+        Sem nenhum bot do pool no servidor a passagem para: o pedido pendente e as falhas dele saem (o registro não cresce sem fim)."""
+        election = await self.pool.servers.jukebox.elect(guild_id)
+        if election.bot is None:
+            self.drop_handoff(guild_id)
+
+    def drop_handoff(self, guild_id: int) -> None:
+        """Esquece a passagem pendente do servidor e a contagem de falhas dela."""
+        self._handoff_pending.discard(guild_id)
+        self._handoff_failures.pop(guild_id, None)
 
     async def handoff(self, guild_id: int) -> None:
         """A passagem do painel: garante que a mensagem é do bot do painel atual (senão ele manda uma nova e a antiga sai), religa os

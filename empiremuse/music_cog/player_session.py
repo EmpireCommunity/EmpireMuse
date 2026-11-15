@@ -239,7 +239,7 @@ class PlayerSessionMixin:
 
         await self.interaction_message(inter, txt=text, emoji="🎧")
 
-    @has_player()
+    @has_player(allow_radio=True)
     @check_voice()
     @pool_command(
         name="commandlog",
@@ -249,7 +249,7 @@ class PlayerSessionMixin:
     async def command_log_legacy(self, ctx: CustomContext):
         await self.command_log.callback(self=self, inter=ctx)
 
-    @has_player(check_node=False)
+    @has_player(check_node=False, allow_radio=True)
     @check_voice()
     @commands.slash_command(description=localized("cmd.command_log.description"), extras={"only_voiced": True})
     @commands.contexts(guild=True)

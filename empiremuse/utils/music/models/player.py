@@ -113,6 +113,7 @@ class LavalinkPlayer(
         self.auto_pause = False
         self.network_paused = False  # pausado por faixas seguidas abandonadas por falha de rede (V-142-2)
         self.network_abandon_streak = 0
+        self.network_resume_position = 0  # onde a retomada da pausa por rede recomeça (seek feito durante a pausa)
         self._session_resuming = kwargs.pop("session_resuming", False)
         self._last_channel: Optional[disnake.VoiceChannel] = None
         self._last_channel_id: Optional[int] = None

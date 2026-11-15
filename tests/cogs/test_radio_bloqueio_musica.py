@@ -144,3 +144,31 @@ async def test_music_commands_without_the_dj_check_also_refuse_a_radio_player(ch
         await check().predicate(inter)
 
     assert "player" in str(refusal.value) and "locked" in str(refusal.value)
+
+
+def player_check(command):
+    """O ``has_player``/``has_source`` de um comando real (os outros checks pedem voz e o banco)."""
+    return next(c for c in command.checks if c.__qualname__.split(".")[0] in ("has_player", "has_source"))
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize("allowed", [True, False], ids=["controller_allowed", "savequeue_refused"])
+async def test_read_only_views_allow_a_radio_player_and_queue_commands_still_refuse(allowed):
+    """Revisão do PR 255: o controller (vista de leitura) segue aberto num player de rádio; salvar a fila (o buffer interno da rádio, não
+    uma fila de música do membro) segue recusado com a mensagem da rádio."""
+    from empiremuse.music_cog.now_playing import NowPlayingMixin
+    from empiremuse.music_cog.player_session import PlayerSessionMixin
+
+    command = NowPlayingMixin.controller if allowed else PlayerSessionMixin.save_queue
+    bot = make_bot(2, "TOKEN_RESERVE_2", call=100, radio=True)
+    player = bot.music.players[GID]
+    player.current, player.node = object(), SimpleNamespace(is_available=True)
+    inter = SimpleNamespace(music_bot=bot, guild_id=GID)
+
+    if allowed:
+        assert await player_check(command)(inter) is True
+    else:
+        with pytest.raises(GenericError) as refusal:
+            await player_check(command)(inter)
+        assert "player" in str(refusal.value) and "locked" in str(refusal.value)

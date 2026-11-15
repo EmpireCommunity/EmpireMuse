@@ -11,12 +11,12 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - Menu de integrações: limpar a lista quando ela já está vazia volta a mostrar o aviso (o Discord recusava a resposta).
 - Favoritar a faixa atual pelo player: a confirmação mostra o prefixo do servidor (a configuração era lida pelo ID do membro).
 - Last.fm: a vinculação responde quando expira, a rede falha ou o serviço retorna dados inválidos; encerrar uma tela preserva o scrobble alterado pelo controlador, inclusive após alterná-lo na tela.
-- Reprodução: quando três músicas seguidas falham por problema de conexão, o player pausa, guarda a fila e avisa uma vez no canal; aperte tocar para continuar. Antes ele tentava e relatava cada faixa da fila. A última música que falhou é tentada de novo ao retomar.
+- Reprodução: quando três músicas seguidas falham por problema de conexão, o player pausa, guarda a fila e avisa uma vez no canal; aperte tocar para continuar. Antes ele tentava e relatava cada faixa da fila. A última música que falhou é tentada de novo ao retomar; um `/seek` feito durante essa pausa vale como o ponto de onde ela recomeça.
 - Música sem áudio disponível: a troca para o próximo resultado espera 2 s entre as tentativas, e o resultado recusado deixa de ser reaproveitado por outras faixas e servidores.
 - Status do canal de voz: depois de um reinício, a retomada não sobrepõe mais o status permanente salvo naquele instante, mesmo que a sessão seja desligada logo em seguida.
-- Rádio: `/autoplay`, o voto para pular e os demais comandos de música não mexem mais no player de uma rádio; eles respondem que a rádio é controlada pelo painel e pelo `/radio`.
+- Rádio: `/autoplay`, o voto para pular e os demais comandos de música não mexem mais no player de uma rádio; eles respondem que a rádio é controlada pelo painel e pelo `/radio`. O controller e o log de comandos continuam disponíveis na call da rádio; ver e salvar a fila, não (a fila de uma rádio é a programação dela, não uma fila de música).
 - Avisos de permissão (enviar mensagens, conectar, canal cheio) e da fila salva saem no idioma escolhido pelo servidor, e não no idioma do Discord do servidor.
-- Jukebox: um pedido digitado que falha volta a mostrar o erro; a passagem do painel para outro bot que falha espera cada vez mais entre as novas tentativas (de 5 s a 5 min).
+- Jukebox: um pedido digitado que falha volta a mostrar o erro; a passagem do painel para outro bot que falha espera cada vez mais entre as novas tentativas (de 5 s a 5 min) e é esquecida quando nenhum bot fica no servidor.
 - Playlists do servidor: nomes com emojis encadeados ("🔴 🔵 Rock" ao lado de "🔵 Rock") são migrados na mesma subida.
 - Texto digitado (playlists, favoritos, rádios, descrição de link do servidor e status do canal de voz) com separador de linha Unicode ou caractere corrompido é recusado com o mesmo aviso dos demais caracteres inválidos; nos textos de terceiros que entram no status, no perfil do app e nos títulos de faixa salvos em favoritos e integrações, esses caracteres são removidos.
 - `Ver uso` (dono): nome de canal ou servidor que começa com `-` ou `1.` não vira mais lista.

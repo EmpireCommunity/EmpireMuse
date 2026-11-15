@@ -450,6 +450,21 @@ async def test_a_failed_handoff_stays_pending_and_the_next_panel_bot_call_retrie
 
 
 @pytest.mark.asyncio
+async def test_the_failed_handoff_is_forgotten_when_no_pool_bot_is_left_in_the_guild():
+    """Revisão do PR 255: a contagem de falhas por servidor não cresce sem fim depois que o pool sai do servidor."""
+    panel, pool = panel_world()
+    panel.handoff = AsyncMock(side_effect=RuntimeError("falha"))
+    panel.schedule_handoff(GID)
+    await settle(panel)
+    assert GID in panel._handoff_pending and GID in panel._handoff_failures
+
+    pool.servers.jukebox.elect.return_value = SimpleNamespace(bot=None, changed=True)
+    await panel.on_roster_change(GID)
+
+    assert GID not in panel._handoff_pending and GID not in panel._handoff_failures
+
+
+@pytest.mark.asyncio
 async def test_a_handoff_requested_during_another_one_runs_again_after_it():
     panel, _ = panel_world()
     started, release, calls = asyncio.Event(), asyncio.Event(), []

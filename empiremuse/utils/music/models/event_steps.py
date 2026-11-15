@@ -615,6 +615,7 @@ async def _he_pause_after_network_abandons(self, track) -> None:
     Nada mais é tentado nem relatado até alguém retomar (``resume_after_network_pause``, pelo ``set_pause`` do player).
     """
     self.network_abandon_streak = 0
+    self.network_resume_position = 0
     if track in self.failed_tracks:
         self.failed_tracks.remove(track)
     self.current = track
@@ -644,10 +645,20 @@ async def resume_after_network_pause(self) -> bool:
         return False
     self.network_paused = False
     self.paused = False
+    position, self.network_resume_position = getattr(self, "network_resume_position", 0), 0
     track, self.current = self.current, None
     if track is not None:
         self.queue.appendleft(track)
-    await self.process_next()
+    await self.process_next(start_position=position)
+    return True
+
+
+def store_network_resume_position(self, milliseconds: int | float) -> bool:
+    """Seek na pausa por falha de rede: não há faixa no nó para buscar, então a posição vira o ponto de onde a retomada
+    recomeça (``resume_after_network_pause``). ``False`` fora dessa pausa (o seek vai ao nó como sempre)."""
+    if not getattr(self, "network_paused", False):
+        return False
+    self.network_resume_position = max(0, int(milliseconds))
     return True
 
 

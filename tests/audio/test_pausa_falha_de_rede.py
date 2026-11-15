@@ -10,11 +10,12 @@ from unittest.mock import AsyncMock
 import pytest
 
 import empiremuse.wavelink as wavelink
-from empiremuse.utils.music.models import event_steps
+from empiremuse.utils.music.models import LavalinkPlayer, event_steps
 from empiremuse.utils.music.models.event_steps import (
     NETWORK_ABANDON_PAUSE_LIMIT,
     _he_dispatch,
     resume_after_network_pause,
+    store_network_resume_position,
 )
 from tests.audio.test_playback_retry_youtube import fail, make_player, make_track
 
@@ -106,3 +107,45 @@ async def test_resuming_puts_the_waiting_track_back_and_plays():
     assert list(player.queue) == [tracks[-1]]
     player.process_next.assert_awaited_once()
     assert await resume_after_network_pause(player) is False  # pausa comum: quem retoma é o nó
+
+
+async def test_seek_while_network_paused_is_the_restart_point_of_the_resume():
+    """Revisão do PR 255: o seek na pausa por rede não vai ao nó (não há faixa lá); a posição é onde a retomada recomeça."""
+    player, tracks = mundo(NETWORK_ABANDON_PAUSE_LIMIT)
+    for track in tracks:
+        await abandonar(player, track)
+    player.process_next.reset_mock()
+
+    assert store_network_resume_position(player, 42_000) is True
+    assert await resume_after_network_pause(player) is True
+
+    player.process_next.assert_awaited_once_with(start_position=42_000)
+    assert store_network_resume_position(player, 1_000) is False  # fora da pausa por rede o seek vai ao nó
+
+
+async def test_node_change_during_the_pause_sends_nothing_and_set_pause_resumes_from_the_queue():
+    """Pela entrada real (``LavalinkPlayer.set_pause(False)``): trocar de nó na pausa por rede não reenvia a faixa (não há faixa nossa
+    no nó), e retomar não despausa o nó: a faixa que esperava volta à frente da fila e toca de novo."""
+    player, tracks = mundo(NETWORK_ABANDON_PAUSE_LIMIT)
+    for track in tracks:
+        await abandonar(player, track)
+    player.process_next.reset_mock()
+    novo = SimpleNamespace(identifier="N2", is_available=True, players={}, version=4, update_player=AsyncMock())
+    player.guild_id, player.auto_pause, player._voice_state, player.volume = player.guild.id, False, {}, 100
+    player.node = SimpleNamespace(
+        identifier="N1",
+        version=4,
+        session_id=None,
+        players={player.guild_id: player},
+        _client=SimpleNamespace(get_node=lambda _: novo),
+    )
+
+    await wavelink.Player.change_node(player, "N2")
+    await LavalinkPlayer.set_pause(player, False)
+
+    assert player.node is novo and novo.players == {player.guild_id: player}
+    novo.update_player.assert_not_awaited()
+    assert player.paused is False and player.network_paused is False
+    assert list(player.queue) == [tracks[-1]]
+    player.process_next.assert_awaited_once_with(start_position=0)
+    player.bot.dispatch.assert_called_with("player_resume", player=player)

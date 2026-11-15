@@ -435,7 +435,10 @@ async def check_pool_bots(
     raise PoolException()
 
 
-def has_player(check_node=True):
+def has_player(check_node=True, allow_radio=False):
+    """``allow_radio``: só as vistas de leitura que fazem sentido num player de rádio (controller, log de comandos); o resto
+    (autoplay, voto para pular, fila e salvar fila) recusa com a mensagem da rádio."""
+
     async def predicate(inter):
         try:
             bot = inter.music_bot
@@ -447,9 +450,8 @@ def has_player(check_node=True):
         except KeyError:
             raise NoPlayer()
 
-        await refuse_radio_player(
-            bot, player
-        )  # comandos sem a checagem de DJ (ex.: autoplay) também não mexem na rádio
+        if not allow_radio:  # comandos sem a checagem de DJ (ex.: autoplay) também não mexem na rádio
+            await refuse_radio_player(bot, player)
 
         if check_node and not player.node.is_available:
             raise wavelink.ZeroConnectedNodes()
@@ -567,7 +569,9 @@ def check_voice():
     return commands.check(predicate)
 
 
-def has_source():
+def has_source(allow_radio=False):
+    """``allow_radio`` como em ``has_player``: só para vistas de leitura (o controller)."""
+
     async def predicate(inter):
         try:
             bot = inter.music_bot
@@ -579,7 +583,8 @@ def has_source():
         except KeyError:
             raise NoPlayer()
 
-        await refuse_radio_player(bot, player)
+        if not allow_radio:
+            await refuse_radio_player(bot, player)
 
         if not player.current:
             raise NoSource()
