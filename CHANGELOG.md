@@ -11,6 +11,17 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - Menu de integrações: limpar a lista quando ela já está vazia volta a mostrar o aviso (o Discord recusava a resposta).
 - Favoritar a faixa atual pelo player: a confirmação mostra o prefixo do servidor (a configuração era lida pelo ID do membro).
 - Last.fm: a vinculação responde quando expira, a rede falha ou o serviço retorna dados inválidos; encerrar uma tela preserva o scrobble alterado pelo controlador, inclusive após alterná-lo na tela.
+- Reprodução: quando três músicas seguidas falham por problema de conexão, o player pausa, guarda a fila e avisa uma vez no canal; aperte tocar para continuar. Antes ele tentava e relatava cada faixa da fila. A última música que falhou é tentada de novo ao retomar.
+- Música sem áudio disponível: a troca para o próximo resultado espera 2 s entre as tentativas, e o resultado recusado deixa de ser reaproveitado por outras faixas e servidores.
+- Status do canal de voz: depois de um reinício, a retomada não sobrepõe mais o status permanente salvo naquele instante, mesmo que a sessão seja desligada logo em seguida.
+- Rádio: `/autoplay`, o voto para pular e os demais comandos de música não mexem mais no player de uma rádio; eles respondem que a rádio é controlada pelo painel e pelo `/radio`.
+- Avisos de permissão (enviar mensagens, conectar, canal cheio) e da fila salva saem no idioma escolhido pelo servidor, e não no idioma do Discord do servidor.
+- Jukebox: um pedido digitado que falha volta a mostrar o erro; a passagem do painel para outro bot que falha espera cada vez mais entre as novas tentativas (de 5 s a 5 min).
+- Playlists do servidor: nomes com emojis encadeados ("🔴 🔵 Rock" ao lado de "🔵 Rock") são migrados na mesma subida.
+- `Ver uso` (dono): nome de canal ou servidor que começa com `-` ou `1.` não vira mais lista.
+- Status padrão do bot: `CUSTOM_STATUS_PRESENCES` aceita `{prefix}` e o texto padrão mostra o prefixo configurado, em vez de `!` fixo; com `INTERACTION_COMMAND_ONLY` essa presença não aparece. Quem copiou o texto padrão antigo não precisa mudar nada.
+- `ytoauth`: a resposta do nó local é liberada depois de aplicar o token.
+- Relato de erro de reprodução: o anexo passa a se chamar `error_playback.txt`; uma falha ao ler a limpeza automática da Jukebox agora aparece no log.
 
 ### Adicionado
 - API para painéis externos: `GET /api/v1/status` (aditivo na v1, chave de serviço, sem sessão, só leitura) devolve o que a página de status já mostra, sem dado novo e sem dado pessoal: o estado geral (`ok`, `degraded` ou `restarting`), o nome e o número de servidores de cada bot pronto, a contagem de bots pendentes e com falha, a versão e o commit curto. Nunca traz avatar, convite, identificador ou erro de bot com falha, mensagem do operador nem flags de RPC. `/meta` passa a listar o recurso `status`.
