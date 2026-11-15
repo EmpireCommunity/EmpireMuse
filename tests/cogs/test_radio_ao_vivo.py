@@ -384,6 +384,24 @@ class TestStationHealth:
         assert not health.unavailable(MAIN)
 
     @pytest.mark.asyncio
+    @pytest.mark.regression
+    async def test_a_legacy_health_doc_without_rev_is_updated_not_reinserted(self, tmp_path):
+        """Sentinela (PR 257): o documento de saúde gravado antes do compare-and-set não tem ``rev``; ``expected_rev=None`` tentava
+        inserir de novo (chave duplicada) e a marca nunca andava. Com o ``LocalDatabase`` real."""
+        from empiremuse.utils.db import LocalDatabase
+        from empiremuse.utils.radio.health import HEALTH_DB
+        from empiremuse.utils.radio.premium import GLOBAL_DB
+
+        clock = Clock()
+        db = LocalDatabase(str(tmp_path / "db"))
+        db._connect[GLOBAL_DB][HEALTH_DB].insert_one({"_id": MAIN, "fails": [clock.now, clock.now], "until": 0})
+        health = StationHealth(SimpleNamespace(database=db), clock=clock)
+
+        assert await health.record_exhausted(MAIN) is True  # a terceira falha na hora marca
+        stored = db._connect[GLOBAL_DB][HEALTH_DB].find_one({"_id": MAIN})
+        assert stored["rev"] == 1 and stored["until"] == clock.now + UNAVAILABLE_TTL_S and health.unavailable(MAIN)
+
+    @pytest.mark.asyncio
     async def test_marks_from_another_process_are_seen_after_a_refresh(self):
         clock = Clock()
         health, db = make_health(clock)

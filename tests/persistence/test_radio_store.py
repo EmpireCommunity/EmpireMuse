@@ -49,7 +49,7 @@ class FakeDb:
                 return False
             table[key] = {**deepcopy(doc), "_id": key}
             return True
-        if not stored or stored.get("rev") != expected_rev:
+        if not stored or stored.get("rev", 0) != expected_rev:
             return False
         stored.update({k: deepcopy(v) for k, v in doc.items() if k != "_id"})
         return True
@@ -61,7 +61,7 @@ class FakeDb:
     async def delete_doc_cas(self, id_, *, expected_rev, db_name, collection):
         await self._tick()
         table, key = self._table(db_name), str(id_)
-        if key not in table or table[key].get("rev") != expected_rev:
+        if key not in table or table[key].get("rev", 0) != expected_rev:
             return False
         del table[key]
         return True

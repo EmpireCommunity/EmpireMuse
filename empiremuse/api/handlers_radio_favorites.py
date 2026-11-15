@@ -16,7 +16,7 @@ from typing import Any
 from empiremuse.api.errors import FORBIDDEN, ApiError, not_found, validation_failed
 from empiremuse.api.idempotency import Reply
 from empiremuse.api.radio_base import GUILD_ID, RadioRoute, radio_endpoint
-from empiremuse.api.radio_data import safe_text
+from empiremuse.api.radio_data import safe_stored_text, safe_text
 from empiremuse.api.writes import MINE_KINDS, SERVER_KINDS, RadioFavorite, parse_radio_favorite
 from empiremuse.panel.services.base import FormContext
 from empiremuse.panel.services.radio import can_write
@@ -57,7 +57,9 @@ def envelope(items: list[dict[str, Any]], maximum: int) -> dict[str, Any]:
 async def server_listing(hub: Any, ctx: FormContext) -> dict[str, Any]:
     """A lista do servidor: as ao vivo (nome guardado, já tratado) e depois as ``custom``/``genre``, cada grupo na ordem de inserção."""
     stations, refs = await hub.favorites.list_all(ctx.guild_id)
-    items: list[dict[str, Any]] = [{"kind": "station", "id": f.uuid, "name": safe_text(f.name)} for f in stations]
+    items: list[dict[str, Any]] = [
+        {"kind": "station", "id": f.uuid, "name": safe_stored_text(f.name)} for f in stations
+    ]  # nome do diretório: guardado escapado
     items.extend(await ref_items(hub, ctx, refs))
     return envelope(items, SERVER_FAVORITES_MAX)
 
