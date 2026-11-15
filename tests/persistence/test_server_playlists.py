@@ -387,6 +387,37 @@ def test_exporting_a_hidden_item_with_values_json_cannot_write_never_fails(world
     assert exported["hidden"] == [{"name x": "a", "7": repr(b"\x00"), "at": repr(when)}]
 
 
+@pytest.mark.regression
+def test_hidden_keys_that_collide_after_cleaning_keep_both_values_and_any_json_item_is_exported(world):
+    """CodeRabbit (PR 255): ``"name\u2028x"`` e ``"name x"`` viram a mesma chave na limpeza e a segunda apagava a primeira do arquivo de
+    recuperação. A que vem depois ganha `` (2)``; um item escondido que não é objeto (``42``, texto, lista, ``null``) sai como está."""
+    world.banco.put(
+        *SERVERS,
+        GID,
+        {
+            **new_doc(),
+            "_id": str(GID),
+            "playlists_hidden": [
+                {"name\u2028x": "primeiro", "name x": "segundo", "name x (2)": "terceiro"},
+                42,
+                "solta",
+                [1],
+                None,
+            ],
+        },
+    )
+
+    exported = json.loads(run(world.playlists.export_bytes(GID)))
+
+    assert exported["hidden"] == [
+        {"name x": "primeiro", "name x (2)": "segundo", "name x (2) (2)": "terceiro"},
+        42,
+        "solta",
+        [1],
+        None,
+    ]
+
+
 @pytest.mark.parametrize("gid", [999, 0, -1, "abc", None, True])
 def test_a_guild_outside_the_pool_is_refused_and_nothing_is_created(world, gid):
     with pytest.raises(UnknownGuild):

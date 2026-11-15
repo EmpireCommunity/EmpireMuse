@@ -112,10 +112,23 @@ def _exportable(value: Any) -> Any:
     """O item escondido (cru) para o arquivo de exportação, que nunca falha: chaves e textos limpos (``clean_legacy_text``; um surrogate
     isolado nem vira UTF-8) e o que o JSON não escreve (data do MongoDB, bytes, ``ObjectId``) como ``repr`` limpo."""
     if isinstance(value, dict):
-        return {clean_legacy_text(str(key)): _exportable(item) for key, item in value.items()}
+        return _exportable_object(value)
     if isinstance(value, (list, tuple)):
         return [_exportable(item) for item in value]
     return clean_legacy_text(value if isinstance(value, _JSON_SCALARS) else repr(value))
+
+
+def _exportable_object(value: dict) -> dict[str, Any]:
+    """Um objeto escondido com as chaves limpas. Duas chaves que a limpeza deixa iguais (``"a\\u2028b"`` e ``"a b"``) não se sobrescrevem: a
+    que vem depois ganha `` (2)``, `` (3)``... e nenhum valor some do arquivo de recuperação."""
+    out: dict[str, Any] = {}
+    for key, item in value.items():
+        name = clean_legacy_text(str(key))
+        unique, suffix = name, 2
+        while unique in out:
+            unique, suffix = f"{name} ({suffix})", suffix + 1
+        out[unique] = _exportable(item)
+    return out
 
 
 def _items(doc: dict, scope: str | None = None) -> tuple[Playlist, ...]:
