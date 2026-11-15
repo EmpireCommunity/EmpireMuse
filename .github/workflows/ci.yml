@@ -21,12 +21,12 @@ jobs:
     name: CI (Lint, Compile e Testes)
     runs-on: ubuntu-latest
 
-    # mongod descartável só para os testes de integração (tests/persistence/test_mongo_integracao.py). Mesma imagem pinada do
-    # deploy/docker-compose.deps.yml, sem autenticação e sem dado de produção: a porta só existe neste runner e o teste recusa
+    # mongod descartável só para os testes de integração (tests/persistence/test_mongo_integracao.py). Imagem pinada por digest (8.0.38: a 8.0.34 do
+    # deploy/docker-compose.deps.yml não sobe em runner com kernel >= 6.19, SERVER-121912), sem autenticação e sem dado de produção: a porta só existe neste runner e o teste recusa
     # qualquer host que não seja local. O health check é o gate: o job só começa os passos depois de o mongod responder ao ping.
     services:
       mongo:
-        image: mongo:8.0.34@sha256:4a4ab5d4834207389e0d7270fac988e21ffedccecba77991a552f755df229907
+        image: mongo:8.0.38@sha256:d97fea17ccb8d004cd137be8dab54d70d0df11be69c9f422aefe4484c8414ab7
         ports:
           - 127.0.0.1:27017:27017
         options: >-
