@@ -422,7 +422,8 @@ class LastFmCog(commands.Cog):
                     lastfm = clear_lastfm_link(fresh)
                 else:
                     lastfm = fresh["lastfm"]
-                    lastfm["scrobble"] = view.scrobble_enabled
+                    if getattr(view, "scrobble_toggled", False) or view.account_linked:
+                        lastfm["scrobble"] = view.scrobble_enabled
                     if view.account_linked:
                         lastfm.update(sessionkey=view.session_key, username=view.username or lastfm["username"])
                     # Preferências de uma view antiga preservam a identidade relida sob a trava.

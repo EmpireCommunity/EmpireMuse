@@ -13,6 +13,9 @@ from disnake.ext import commands
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.converters import md_link
 from empiremuse.utils.music.guild_text import guild_text
+from empiremuse.utils.music.lastfm_tools import LastFmException
+
+AUTH_TOKEN_TIMEOUT_S = 15
 
 
 class LastFMView(disnake.ui.View):
@@ -22,6 +25,7 @@ class LastFMView(disnake.ui.View):
         self.interaction: Optional[disnake.MessageInteraction] = None
         self.session_key = ""
         self.scrobble_enabled = scrobble
+        self.scrobble_toggled = False
         self.username = ""
         self.token = ""
         self.last_timestamp = None
@@ -105,6 +109,7 @@ class LastFMView(disnake.ui.View):
                 self.username = user_data["lastfm"]["username"]
                 self.scrobble_enabled = not user_data["lastfm"]["scrobble"]
                 user_data["lastfm"]["scrobble"] = self.scrobble_enabled
+                self.scrobble_toggled = True
                 await bot.update_global_data(interaction.author.id, user_data, db_name=DBModel.users)
                 bot.pool.lastfm_sessions[interaction.author.id] = dict(user_data["lastfm"])
         self.clear_items()
@@ -130,11 +135,17 @@ class LastFMView(disnake.ui.View):
         await interaction.response.defer(ephemeral=True)
         async with self.auth_lock:
             if self.is_finished():
+                await self._auth_reply(interaction, "legacy.lastfm.auth_expired")
                 return
             if not self.auth_url:
-                async with asyncio.timeout(15):
-                    self.token = await self.ctx.bot.last_fm.get_token()
+                try:
+                    async with asyncio.timeout(AUTH_TOKEN_TIMEOUT_S):
+                        self.token = await self.ctx.bot.last_fm.get_token()
+                except TimeoutError, LastFmException:
+                    await self._auth_reply(interaction, "legacy.lastfm.auth_retry")
+                    return
                 if self.is_finished():
+                    await self._auth_reply(interaction, "legacy.lastfm.auth_expired")
                     return
                 self.auth_url = (
                     f"https://www.last.fm/api/auth/?api_key={self.ctx.bot.last_fm.api_key}&token={self.token}"
@@ -158,3 +169,6 @@ class LastFMView(disnake.ui.View):
             ephemeral=True,
             delete_after=300,
         )
+
+    async def _auth_reply(self, interaction: disnake.MessageInteraction, key: str):
+        await interaction.send(await guild_text(self.ctx.bot, interaction.guild, key), ephemeral=True)

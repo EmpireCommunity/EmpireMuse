@@ -334,11 +334,15 @@ def test_user_marker_phrase_does_not_disable_logs_after_restart(tmp_path, messag
 @pytest.mark.regression
 def test_marker_uses_truncation_time_instead_of_first_emit(tmp_path, monkeypatch):
     clock = Relogio()
-    monkeypatch.setattr(logging.time, "time", lambda: clock().timestamp())
+    monkeypatch.setattr(logging.time, "time_ns", lambda: int(clock().timestamp() * 1e9))
     handler = DailyRetentionFileHandler(tmp_path, max_day_bytes=512, now=clock)
     handler.handle(registro("primeiro"))
     clock.avancar(seconds=10)
     expected = handler._truncation_line().strip()
     handler.handle(registro("x" * 600))
     handler.close()
-    assert (tmp_path / nome(0)).read_text().splitlines()[-1] == expected
+    lines = (tmp_path / nome(0)).read_text().splitlines()
+    assert lines[-1] == expected
+    assert lines[-1].startswith("2026-11-09 23:59:10,000")
+    assert lines[0].startswith("2026-11-09 23:59:00,000")
+    assert lines[-1][:23] != lines[0][:23]
