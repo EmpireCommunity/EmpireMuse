@@ -13,6 +13,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
 
+from empiremuse.rules.bot_tokens import Role, role_of
 from empiremuse.rules.limits import CUSTOM_SKIN_PREFIX, MAX_DJ_ROLES, VOLUMES
 
 DOC_VERSION = 1.0
@@ -46,7 +47,6 @@ FLAG_FIELDS = (
     "jukebox_text_requests",
 )
 SKIN_MAX_LENGTH = 100
-MAIN_IDENTIFIERS = ("TOKEN",)  # o principal é o token principal, nunca o primeiro por ordem (contrato §3)
 
 _ROLE_ID = re.compile(r"[0-9]{1,20}")
 _LEGACY_CONTROLLER_KEYS = {"skin": "skin", "static_skin": "static_skin"}
@@ -106,7 +106,8 @@ def new_doc() -> dict[str, Any]:
 
 
 def is_main_identifier(identifier: object) -> bool:
-    return identifier in MAIN_IDENTIFIERS
+    """O principal é o token principal, nunca o primeiro por ordem (contrato §3); o papel vem de ``bot_tokens.role_of``, a fonte única."""
+    return role_of(identifier) is Role.MAIN
 
 
 # ---------------------------------------------------------------------- validação

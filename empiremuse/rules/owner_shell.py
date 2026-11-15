@@ -74,6 +74,6 @@ def mask_secrets(text: str, secrets: Iterable[str]) -> str:
 DISCORD_TOKEN_SHAPE = re.compile(r"[\w-]{23,28}\.[\w-]{6,7}\.[\w-]{27,}")
 
 
-def mask_shell_output(text: str, secrets: Iterable[str]) -> str:
-    """Mascara valores exatos e depois tokens Discord, preservando texto comum."""
+def mask_secrets_and_tokens(text: str, secrets: Iterable[str]) -> str:
+    """Mascara valores exatos e depois tokens Discord, preservando texto comum (saída do shell, do git/pip e o log do auxiliar de update)."""
     return DISCORD_TOKEN_SHAPE.sub(MASK, mask_secrets(text, secrets))

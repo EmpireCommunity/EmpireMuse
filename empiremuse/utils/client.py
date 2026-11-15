@@ -500,13 +500,6 @@ class BotPool:
             pass
 
     @property
-    def main_configured(self) -> bool:
-        """Há um token principal configurado (logado, logando ou que falhou)? Sem ele ninguém é reserva: todos agem como sempre."""
-        return any(is_main_identifier(bot.identifier) for bot in self.bots) or any(
-            is_main_identifier(identifier) for identifier in getattr(self, "failed_bots", {})
-        )
-
-    @property
     def main_bot(self) -> Optional[BotCore]:
         """O bot principal (token principal, logado) ou ``None``."""
         return self.servers.main_bot() if self.servers is not None else None
@@ -1590,8 +1583,8 @@ class BotCore(commands.AutoShardedBot):
 
     @property
     def is_reserve(self) -> bool:
-        """Bot adicional do pool, com um principal configurado."""
-        return not is_main_identifier(self.identifier) and self.pool.main_configured
+        """Bot adicional do pool (o ``TOKEN`` é obrigatório: sem ele a subida para, então sempre há principal configurado)."""
+        return not is_main_identifier(self.identifier)
 
     def main_invite_url(self) -> Optional[str]:
         """Convite do principal montado aqui (nunca de texto de fora); ``None`` se ele não existe ou não é público."""
