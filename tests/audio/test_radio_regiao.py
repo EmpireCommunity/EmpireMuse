@@ -252,13 +252,18 @@ class TestHostile:
 
         assert (await d.region(CITY, key=1)).hits == ()
 
+    @pytest.mark.regression
     @pytest.mark.asyncio
-    async def test_a_response_that_is_not_a_list_gives_nothing(self):
-        d, _ = make(Scripted(geo={"x": 1}, state="lixo", name=5), bucket=plenty())
+    async def test_a_response_that_is_not_a_list_gives_nothing_and_is_unavailable_never_cached(self):
+        """CodeRabbit (PR 256): a resposta que não é lista contava como "nenhuma estação" e ia para o cache."""
+        fetcher = Scripted(geo={"x": 1}, state="lixo", name=5)
+        d, _ = make(fetcher, bucket=plenty())
 
         result = await d.region(CITY, key=1)
+        calls = len(fetcher.calls)
 
-        assert result.hits == () and result.partial is False
+        assert (result.hits, result.partial, result.reason) == ((), True, "unavailable")
+        assert await d.region(CITY, key=1) == result and len(fetcher.calls) == 2 * calls  # perguntou de novo
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("error", [DirectoryError("size"), DirectoryError("json"), RuntimeError("x")])

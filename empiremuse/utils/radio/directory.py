@@ -380,6 +380,10 @@ class Directory:
             )
         except DirectoryError as error:
             return SearchResult([], reason_of(error))
+        if not isinstance(
+            payload, list
+        ):  # resposta fora do formato: falha do diretório, nunca "nenhuma estação" (fora do cache)
+            return SearchResult([], REASON_UNAVAILABLE)
         stations = self._stations(payload)
         self._cache[cache_key] = tuple(stations)
         return SearchResult(stations)
@@ -501,6 +505,9 @@ class Directory:
                 )
             except DirectoryError as error:
                 reasons.add(reason_of(error))
+                continue
+            if not isinstance(payload, list):  # fora do formato: conta como falha (resultado parcial, fora do cache)
+                reasons.add(REASON_UNAVAILABLE)
                 continue
             results.append((source, self._region_items(payload, source, node)))
         hits = self._merge_region(results)
