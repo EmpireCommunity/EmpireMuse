@@ -107,16 +107,20 @@ async def _erase_waits_for_writer(mundo, operation, entered, release):
     waiter = asyncio.create_task(entered.wait())
     await asyncio.wait((writer, waiter), return_when=asyncio.FIRST_COMPLETED)
     if writer.done():
+        waiter.cancel()
+        await asyncio.gather(waiter, return_exceptions=True)
         await writer
+        pytest.fail("writer terminou antes do checkpoint")
     await waiter
     erasure = asyncio.create_task(apagar(mundo))
     turn = asyncio.Event()
     asyncio.get_running_loop().call_soon(turn.set)
     await turn.wait()
     waiting = not erasure.done()
+    locked = mundo.pool.user_locks.lock(ALVO).locked()
     release.set()
     result, _ = await asyncio.gather(writer, erasure)
-    assert waiting
+    assert waiting and locked
     return result
 
 
@@ -939,3 +943,13 @@ async def test_save_link_sem_apagamento_nao_trava_no_proprio_lock(mundo):
         await asyncio.wait_for(cog._save_link(interacao, visao, None, mundo.pool.erasure_tombstones.now()), 2) is True
     )
     assert mundo.pool.user_locks.lock(ALVO) is lock and not lock.locked()  # era o mesmo lock e soltou ao sair
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_writer_helper_fails_when_checkpoint_is_never_reached(mundo):
+    async def finished():
+        return
+
+    with pytest.raises(pytest.fail.Exception, match="antes do checkpoint"):
+        await _erase_waits_for_writer(mundo, finished(), asyncio.Event(), asyncio.Event())

@@ -238,6 +238,7 @@ async def test_revoked_session_at_lock_never_marks_counts_or_erases(mundo, guard
         turn = asyncio.Event()
         asyncio.get_running_loop().call_soon(turn.set)
         await turn.wait()
+        assert locks.lock(ALVO).locked()
         assert not entered.is_set() and not task.done()
     with pytest.raises(ErasureSessionRevoked):
         await task
@@ -406,3 +407,77 @@ async def test_controller_favorite_limit_and_error_reply_release_the_user_lock(m
     assert await handler(SimpleNamespace(bot=bot), req) is True
     inter.edit_original_message.assert_awaited_once()
     bot.update_global_data.assert_not_awaited()
+
+
+async def test_lastfm_toggle_refreshes_session_before_save_link(mundo):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from empiremuse.cogs.lastfm import LastFMView, LastFmCog
+    from tests.persistence.test_erasure_hooks import _fluxo
+    from tests.support.erasure_world import gravar_usuario
+
+    await gravar_usuario(
+        mundo, ALVO, lastfm_sessionkey="current", lastfm_username="current-user", lastfm_scrobble=False
+    )
+    cog, _, inter = _fluxo(mundo)
+    save = cog.bot.update_global_data
+
+    async def update(user, data, *, db_name):
+        return await save(user, data=data, db_name=db_name)
+
+    cog.bot.update_global_data = update
+    view = LastFMView(SimpleNamespace(bot=cog.bot), "stale", scrobble=False)
+    inter.response = SimpleNamespace(defer=AsyncMock())
+    read_at = mundo.pool.erasure_tombstones.now()
+    await view.scrobble_enable(inter)
+    assert view.session_key == "current"
+    assert await cog._save_link(inter, view, None, read_at)
+    doc = await mundo.database.find_doc(ALVO, db_name="users", collection="global")
+    assert doc["lastfm"]["sessionkey"] == "current"
+
+
+async def test_lastfm_auth_ack_single_poll_and_stop(mundo, monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from empiremuse.utils.music import lastfm_view
+
+    response = SimpleNamespace(defer=AsyncMock())
+
+    async def get_token():
+        response.defer.assert_awaited()
+        assert asyncio.current_task().cancelling() == 0
+        return "token"
+
+    bot = SimpleNamespace(last_fm=SimpleNamespace(get_token=get_token, api_key="key"), loop=asyncio.get_running_loop())
+    view = lastfm_view.LastFMView(SimpleNamespace(bot=bot), "")
+    monkeypatch.setattr(lastfm_view, "guild_text", AsyncMock(return_value="texto"))
+    inter = SimpleNamespace(response=response, guild=None, send=AsyncMock())
+    await asyncio.gather(view.send_authurl_callback(inter), view.send_authurl_callback(inter))
+    task = view.check_loop
+    assert sum(t.get_coro().__qualname__.endswith("check_session_loop") for t in asyncio.all_tasks()) == 1
+    view.stop()
+    await asyncio.gather(task, return_exceptions=True)
+    assert task.cancelled()
+
+
+async def test_lastfm_auth_token_has_timeout(mundo, monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from empiremuse.utils.music import lastfm_view
+
+    seen = []
+    real_timeout = asyncio.timeout
+
+    def timeout(seconds):
+        seen.append(seconds)
+        return real_timeout(0)
+
+    monkeypatch.setattr(lastfm_view.asyncio, "timeout", timeout)
+    bot = SimpleNamespace(last_fm=SimpleNamespace(get_token=asyncio.Event().wait), loop=asyncio.get_running_loop())
+    view = lastfm_view.LastFMView(SimpleNamespace(bot=bot), "")
+    inter = SimpleNamespace(response=SimpleNamespace(defer=AsyncMock()))
+    with pytest.raises(TimeoutError):
+        await view.send_authurl_callback(inter)
+    assert seen and 0 < seen[0] <= 30
+    assert view.check_loop is None
+    view.stop()

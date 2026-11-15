@@ -30,6 +30,7 @@ class LastFMView(disnake.ui.View):
         self.network = None
         self.clear_session = False
         self.check_loop = None
+        self.auth_lock = asyncio.Lock()
         self.error = None
         self.account_linked = False
         self.session_key = session_key
@@ -100,6 +101,8 @@ class LastFMView(disnake.ui.View):
                 self.session_key = ""
                 self.scrobble_enabled = False
             else:
+                self.session_key = user_data["lastfm"]["sessionkey"]
+                self.username = user_data["lastfm"]["username"]
                 self.scrobble_enabled = not user_data["lastfm"]["scrobble"]
                 user_data["lastfm"]["scrobble"] = self.scrobble_enabled
                 await bot.update_global_data(interaction.author.id, user_data, db_name=DBModel.users)
@@ -115,13 +118,30 @@ class LastFMView(disnake.ui.View):
         self.interaction = interaction
         self.stop()
 
-    async def send_authurl_callback(self, interaction: disnake.MessageInteraction):
-        self.check_loop = self.ctx.bot.loop.create_task(self.check_session_loop())
+    def stop(self):
+        if self.check_loop is not None and self.check_loop is not asyncio.current_task():
+            self.check_loop.cancel()
+        super().stop()
 
-        if not self.auth_url:
-            self.token = await self.ctx.bot.last_fm.get_token()
-            self.auth_url = f"https://www.last.fm/api/auth/?api_key={self.ctx.bot.last_fm.api_key}&token={self.token}"
-            self.last_timestamp = int((disnake.utils.utcnow() + datetime.timedelta(minutes=5)).timestamp())
+    async def on_timeout(self):
+        self.stop()
+
+    async def send_authurl_callback(self, interaction: disnake.MessageInteraction):
+        await interaction.response.defer(ephemeral=True)
+        async with self.auth_lock:
+            if self.is_finished():
+                return
+            if not self.auth_url:
+                async with asyncio.timeout(15):
+                    self.token = await self.ctx.bot.last_fm.get_token()
+                if self.is_finished():
+                    return
+                self.auth_url = (
+                    f"https://www.last.fm/api/auth/?api_key={self.ctx.bot.last_fm.api_key}&token={self.token}"
+                )
+                self.last_timestamp = int((disnake.utils.utcnow() + datetime.timedelta(minutes=5)).timestamp())
+            if self.check_loop is None or self.check_loop.done():
+                self.check_loop = self.ctx.bot.loop.create_task(self.check_session_loop())
 
         await interaction.send(
             await guild_text(

@@ -307,7 +307,6 @@ def test_daily_cap_reserves_the_truncation_marker_inside_the_budget(tmp_path):
 def test_restarted_handler_discards_even_small_lines_after_the_daily_marker(tmp_path):
     for restart in range(2):
         handler = DailyRetentionFileHandler(tmp_path, max_day_bytes=512, now=Relogio())
-        handler.setFormatter(logging.Formatter("%(message)s"))
         if not restart:
             handler.emit(logging.LogRecord("test", logging.INFO, __file__, 0, "x" * 600, (), None))
         handler.emit(logging.LogRecord("test", logging.INFO, __file__, 0, "small", (), None))
@@ -315,3 +314,31 @@ def test_restarted_handler_discards_even_small_lines_after_the_daily_marker(tmp_
     contents = (tmp_path / nome(0)).read_text()
     assert contents.count(file_log.TRUNCATED_MARKER) == 1
     assert "small" not in contents
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    "message",
+    [file_log.TRUNCATED_MARKER, "usuário: " + file_log.TRUNCATED_MARKER, "antes\n" + file_log.TRUNCATED_MARKER],
+)
+def test_user_marker_phrase_does_not_disable_logs_after_restart(tmp_path, message):
+    handler = DailyRetentionFileHandler(tmp_path, now=Relogio())
+    handler.handle(registro(message))
+    handler.close()
+    handler = DailyRetentionFileHandler(tmp_path, now=Relogio())
+    handler.handle(registro("depois do reinício"))
+    handler.close()
+    assert "depois do reinício" in (tmp_path / nome(0)).read_text()
+
+
+@pytest.mark.regression
+def test_marker_uses_truncation_time_instead_of_first_emit(tmp_path, monkeypatch):
+    clock = Relogio()
+    monkeypatch.setattr(logging.time, "time", lambda: clock().timestamp())
+    handler = DailyRetentionFileHandler(tmp_path, max_day_bytes=512, now=clock)
+    handler.handle(registro("primeiro"))
+    clock.avancar(seconds=10)
+    expected = handler._truncation_line().strip()
+    handler.handle(registro("x" * 600))
+    handler.close()
+    assert (tmp_path / nome(0)).read_text().splitlines()[-1] == expected
