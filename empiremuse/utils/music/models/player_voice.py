@@ -760,8 +760,8 @@ class PlayerVoiceMixin:
                     start_position = self.position
                     self.current = None
                     self.current_encoded = None
-                else:
-                    start_position = 0
+                else:  # a retomada da pausa por rede que esperava um nó guarda o seek feito na pausa (zerado em ``_pn_start``)
+                    start_position = getattr(self, "network_resume_position", 0)
 
                 await self.process_next(start_position=start_position)
 

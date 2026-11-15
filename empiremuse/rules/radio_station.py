@@ -15,7 +15,7 @@ from typing import Any
 
 from empiremuse.rules.errors import RuleError
 from empiremuse.rules.radio_genres import Genre, find_genre, shipped_catalog
-from empiremuse.rules.text import clean_title
+from empiremuse.rules.text import clean_legacy_text, clean_title
 
 KIND_GENRE = "genre"
 KIND_ARTISTS = "artists"
@@ -182,7 +182,7 @@ def from_document(raw: object) -> CustomStation | RuleError:
     station_id, guild_id = raw.get("_id"), _guild(raw.get("guild_id"))
     if not isinstance(station_id, str) or not _STATION_ID.fullmatch(station_id) or guild_id is None:
         return RuleError(STATION_ID_INVALID, "id")
-    name = clean_title(raw.get("name"), 1, NAME_MAX)
+    name = clean_title(clean_legacy_text(raw.get("name")), 1, NAME_MAX)  # nome gravado antes da regra atual: lido limpo
     kind, source, rev = raw.get("kind"), raw.get("source"), raw.get("rev", 0)
     if name is None or kind not in STATION_KINDS or not isinstance(source, Mapping) or set(source) != {kind}:
         return RuleError(STATION_SOURCE_INVALID, "source")

@@ -180,3 +180,13 @@ class TestShuffle:
         assert len(build_pool(tracks, rng)) == 30
         many = [Track(f"A{a}", f"t{t}") for a in range(40) for t in range(30)]
         assert len(build_pool(many, rng)) == 300
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(("legacy", "clean"), [("Minha Rádio", "Minha Rádio"), ("Minha\ud800", "Minha")])
+def test_a_station_name_stored_before_the_stricter_text_rule_is_read_cleaned_and_written_cleaned(legacy, clean):
+    """Revisão do PR 255: a leitura validava o nome gravado com a regra nova e a estação sumia das listas (e das rádios que a tocam)."""
+    station = from_document(doc("artists", {"artists": ["Queen"]}, name=legacy))
+
+    assert not isinstance(station, RuleError) and station.name == clean
+    assert to_document(station)["name"] == clean  # a próxima gravação da estação já sai limpa

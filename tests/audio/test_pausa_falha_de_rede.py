@@ -149,3 +149,25 @@ async def test_node_change_during_the_pause_sends_nothing_and_set_pause_resumes_
     assert list(player.queue) == [tracks[-1]]
     player.process_next.assert_awaited_once_with(start_position=0)
     player.bot.dispatch.assert_called_with("player_resume", player=player)
+
+
+async def test_a_seek_during_the_pause_survives_a_resume_that_waits_for_a_node():
+    """CodeRabbit no PR 255: sem nó na retomada, ``process_next`` só agenda ``_wait_for_new_node``; a posição do seek não pode ter sido
+    gasta antes, senão a faixa recomeça do zero quando o nó volta."""
+    from empiremuse.utils.music.models.player_voice import PlayerVoiceMixin
+
+    player, tracks = mundo(NETWORK_ABANDON_PAUSE_LIMIT)
+    for track in tracks:
+        await abandonar(player, track)
+    store_network_resume_position(player, 42_000)
+    await resume_after_network_pause(player)  # o process_next de mentira faz o papel de "sem nó: só agenda a espera"
+    player.process_next.reset_mock()
+
+    novo = SimpleNamespace(identifier="N2", is_available=True)
+    player.guild_id = player.guild.id
+    player.node = SimpleNamespace(identifier="N1", is_available=False, players={player.guild_id: player})
+    player.bot.music.get_best_node = lambda ignore_node=None: novo
+    player.guild.me.voice, player._voice_state, player.auto_pause = object(), None, False
+    await PlayerVoiceMixin._wait_for_new_node(player)
+
+    player.process_next.assert_awaited_once_with(start_position=42_000)

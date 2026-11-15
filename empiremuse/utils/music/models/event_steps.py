@@ -645,11 +645,12 @@ async def resume_after_network_pause(self) -> bool:
         return False
     self.network_paused = False
     self.paused = False
-    position, self.network_resume_position = getattr(self, "network_resume_position", 0), 0
     track, self.current = self.current, None
     if track is not None:
         self.queue.appendleft(track)
-    await self.process_next(start_position=position)
+    # a posição do seek feito na pausa só é gasta quando a faixa começa (``_pn_start``): sem nó agora, ``process_next`` só agenda
+    # ``_wait_for_new_node``, que a reaproveita quando o nó volta
+    await self.process_next(start_position=getattr(self, "network_resume_position", 0))
     return True
 
 

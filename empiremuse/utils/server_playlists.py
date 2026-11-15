@@ -154,7 +154,12 @@ class ServerPlaylists:
                 return False
             outcome["changed"] = True
             others = [p for p in _items(doc) if p.scope != scope]
-            doc["playlists"] = [to_doc(p) for p in (*others, *(p._replace(scope=scope) for p in result))]
+            # um item gravado que nem a leitura tolerante entende fica como está: uma gravação nunca apaga o que não conseguiu ler
+            unreadable = [raw for raw in doc.get("playlists", []) if from_doc(raw) is None]
+            doc["playlists"] = [
+                *unreadable,
+                *(to_doc(p) for p in (*others, *(p._replace(scope=scope) for p in result))),
+            ]
             return True
 
         written = await self.store.mutate_doc(gid, SECTIONS, apply, expected_rev=expected_rev)

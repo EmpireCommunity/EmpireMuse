@@ -52,7 +52,7 @@ from empiremuse.rules.limits import (
     PLAYLIST_URL_MIN,
 )
 from empiremuse.rules.emoji import check_emoji, split_leading_icon
-from empiremuse.rules.text import has_control_or_format
+from empiremuse.rules.text import clean_legacy_text, has_control_or_format
 from empiremuse.rules.urls import check_url
 from empiremuse.rules.usage import escape_markdown, render_text
 
@@ -603,8 +603,22 @@ def from_doc(doc: Any) -> Playlist | None:
     )  # sem o campo = antes do escopo
     if scope not in SCOPES:
         return None
-    checked = check_playlist(doc)
+    checked = check_playlist(_legacy_cleaned(doc))
     return None if isinstance(checked, RuleError) else checked._replace(scope=scope)
+
+
+def _legacy_cleaned(doc: Any) -> Any:
+    """O item gravado com os textos limpos de caracteres que a regra atual recusa e a antiga aceitava (``clean_legacy_text``): a
+    playlist gravada antes segue legível e, na próxima gravação, sai limpa. Uma cópia: o documento lido não muda."""
+    if not isinstance(doc, Mapping):
+        return doc
+    cleaned = {**doc}
+    for field in ("name", "description"):
+        if field in doc:
+            cleaned[field] = clean_legacy_text(doc[field])
+    if isinstance(doc.get("genres"), (list, tuple)):
+        cleaned["genres"] = [clean_legacy_text(genre) for genre in doc["genres"]]
+    return cleaned
 
 
 def move_leading_icons(stored: Sequence[Any]) -> tuple[list[Any], int]:

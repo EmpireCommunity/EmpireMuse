@@ -474,3 +474,31 @@ def test_displaying_the_list_never_breaks_when_the_store_cannot_answer(raised):
 
     bot = SimpleNamespace(pool=SimpleNamespace(servers=SimpleNamespace(playlists=SimpleNamespace(list=failing))))
     assert run(safe_list(bot, GID)) == ()
+
+
+@pytest.mark.regression
+def test_a_playlist_stored_before_the_stricter_text_rule_survives_a_read_and_a_write_cleaned(world):
+    """CodeRabbit no PR 255: a regra nova recusa U+2028 e surrogate isolado; uma playlist gravada antes sumia da leitura e a gravação
+    seguinte a apagava. A leitura a limpa (U+2028 vira espaço, o surrogate sai), a gravação a guarda limpa, e um item que nem assim se
+    lê fica como estava."""
+    stored = {**new_doc(), "_id": str(GID)}
+    stored["migrated"] = {section: True for section in stored["migrated"]}
+    unreadable = {"order": 9, "name": "x", "url": "nao-e-url"}  # dado ruim de outra origem: a gravação não o apaga
+    stored["playlists"] = [
+        {**item("Rock Live", 1, url=f"{BASE}rock")._asdict(), "genres": ["Ro ck"]},
+        {**item("Jazz\ud800", 2, url=f"{BASE}jazz")._asdict(), "description": "clássicos\ud800 do jazz", "genres": []},
+        unreadable,
+    ]
+    world.banco.put(*SERVERS, GID, stored)
+
+    listed = run(world.playlists.list(GID))
+    assert [(p.name, p.description, p.genres) for p in listed] == [
+        ("Rock Live", "uma descrição", ("Ro ck",)),
+        ("Jazz", "clássicos do jazz", ()),
+    ]
+
+    assert not isinstance(run(world.playlists.add(GID, item("Pop", 3))), RuleError)  # uma gravação qualquer
+
+    saved = world.banco.servers_doc()["playlists"]
+    assert unreadable in saved
+    assert sorted(p["name"] for p in saved if p is not unreadable and p != unreadable) == ["Jazz", "Pop", "Rock Live"]

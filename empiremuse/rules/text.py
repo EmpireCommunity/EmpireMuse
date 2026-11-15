@@ -19,6 +19,27 @@ def has_control_or_format(text: str) -> bool:
     return any(unicodedata.category(char) in _REFUSED_CATEGORIES for char in text)
 
 
+_LEGACY_TO_SPACE = ("Zl", "Zp")
+_LEGACY_DROPPED = ("Cs",)
+
+
+def clean_legacy_text(value: Any) -> Any:
+    """Texto GRAVADO antes da regra atual (que passou a recusar ``Cs``, ``Zl`` e ``Zp``), limpo para a leitura como nos filtros de texto
+    externo: U+2028/U+2029 viram espaço, surrogate isolado sai, e o resultado é aparado. Dado gravado nunca se perde porque a regra
+    ficou mais rígida; a regra rígida vale só para texto NOVO. O que não é texto volta como está."""
+    if not isinstance(value, str):
+        return value
+    kept = (
+        " "
+        if (category := unicodedata.category(char)) in _LEGACY_TO_SPACE
+        else ""
+        if category in _LEGACY_DROPPED
+        else char
+        for char in value
+    )
+    return "".join(kept).strip()
+
+
 def clean_title(raw: Any, low: int, high: int) -> Optional[str]:
     """Nome normalizado (strip, ``low``–``high`` caracteres, sem controle/formatação) ou ``None``."""
     if not isinstance(raw, str):
