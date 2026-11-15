@@ -122,11 +122,11 @@ def test_parse_create_target_raises_bad_request_for_hostile_bodies(corpo):
 
 
 def test_the_template_carries_the_configuration_and_nothing_else():
-    config = Config("/d.sock", "/l.sock", "e2e", "/srv/e2e", "bot", "or4cu1o/empiremuse")
+    config = Config("/d.sock", "/l.sock", "e2e", "/srv/e2e", "bot", "empirecommunity/empiremuse")
 
     modelo = create_template(config, ALVO)
 
-    assert modelo["Cmd"] == [ALVO, "e2e", "/srv/e2e", "bot", "or4cu1o/empiremuse"]
+    assert modelo["Cmd"] == [ALVO, "e2e", "/srv/e2e", "bot", "empirecommunity/empiremuse"]
     assert modelo["HostConfig"]["Binds"][1] == "/srv/e2e:/srv/e2e" and modelo["HostConfig"]["Privileged"] is False
     assert config.container_name == NOME
 
@@ -219,7 +219,7 @@ def test_load_config_applies_defaults_and_reads_the_peer_uid():
         "/var/run/docker.sock",
         "empiremuse",
         "bot",
-        "or4cu1o/empiremuse",
+        "empirecommunity/empiremuse",
     )
     assert config.listen_socket == "/run/empiremuse-updater/updater.sock" and config.peer_uid == 10001
 
@@ -310,7 +310,7 @@ def servidor_com(daemon, tmp_path, *, peer_uid=None):
         "e2e",
         "/srv/e2e",
         "bot",
-        "or4cu1o/empiremuse",
+        "empirecommunity/empiremuse",
         peer_uid,
     )
     servidor = UnixHTTPServer(config, DockerDaemon(daemon.caminho_do_socket))
@@ -547,7 +547,7 @@ def config_em(tmp_path, **extras) -> Config:
         "project_name": "e2e",
         "project_dir": "/srv/e2e",
         "service": "bot",
-        "image_repo": "or4cu1o/empiremuse",
+        "image_repo": "empirecommunity/empiremuse",
     }
     return Config(**{**base, **extras})
 

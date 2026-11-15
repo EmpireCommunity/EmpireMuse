@@ -26,7 +26,7 @@ Funcionalidades exclusivas, não vistas em outros bots (confirmado pelo dono). A
 
 - Discord: comandos de barra só no bot principal; reservas atendem por prefixo onde o principal não está; interface por embeds, botões, selects e modais, com limites de 25 opções por select, 5 botões por linha e 25 campos por embed. Texto sempre em pt-BR.
 - Painel web: Tornado + htmx + Pico CSS, templates Tornado com autoescape, tema escuro, sessões em cookie `__Host-`, sem build de JavaScript. Páginas de configuração por servidor com formulários versionados (hash do conteúdo; conflito = recarregar).
-- Hospedagem: Docker (imagem `or4cu1o/empiremuse`), Pterodactyl ou checkout git; produção na Hostinger do dono. Lavalink v4 como processamento de áudio.
+- Hospedagem: Docker (imagem `empirecommunity/empiremuse`), Pterodactyl ou checkout git; produção na Hostinger do dono. Lavalink v4 como processamento de áudio.
 - Processo de trabalho: contratos por item em `.local/specs/`, threat model do Vigil, gates por tier de risco; repositório público, por isso o mecanismo de defesa fica fora do guia.
 
 ## Capabilities and Constraints
