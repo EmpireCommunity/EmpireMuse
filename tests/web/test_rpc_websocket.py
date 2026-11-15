@@ -104,6 +104,21 @@ class _Servidor:
         return f"ws://127.0.0.1:{self.porta}/ws"
 
 
+@pytest.fixture
+def posse_provada(monkeypatch):
+    """Para os casos da guarda de ENTREGA com a auth ligada: o relé de teste não tem banco e, sem a prova, recusaria todo registro
+    de usuário (falha fechada). Aqui a prova do registro aprova todo ID; ela mesma é coberta em ``test_rpc_proof.py``."""
+
+    class PosseProvada:
+        def __init__(self, get_database):
+            pass
+
+        async def verify(self, ids, token):
+            return frozenset(ids)
+
+    monkeypatch.setattr(web_app, "TokenProof", PosseProvada)
+
+
 @pytest_asyncio.fixture
 async def iniciar_servidor(tmp_path, monkeypatch):
     """Devolve ``iniciar(env)``, que sobe o servidor real com as opções vindas do ambiente (como o operador as define)."""
@@ -560,6 +575,7 @@ AUTH_LIGADA = {"ENABLE_RPC_AUTH": "true"}
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("posse_provada")
 async def test_guarda_auth_ligada_token_igual_entrega_o_update(iniciar_servidor, sessao, segredo):
     servidor = iniciar_servidor({"RPC_SERVER_SECRET": segredo, **AUTH_LIGADA})
     token = _token_do_app()
@@ -572,6 +588,7 @@ async def test_guarda_auth_ligada_token_igual_entrega_o_update(iniciar_servidor,
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("posse_provada")
 async def test_guarda_auth_ligada_usuario_bloqueado_nao_recebe_ate_o_token_voltar_a_bater(
     iniciar_servidor, sessao, segredo
 ):
@@ -612,6 +629,7 @@ def _bloqueou_com_o_aviso_de_token(entregue: dict) -> bool:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("token_do_bot", list(TOKEN_DO_BOT_VAZIO)[:2], ids=list(TOKEN_DO_BOT_VAZIO_IDS)[:2])
+@pytest.mark.usefixtures("posse_provada")
 async def test_guarda_auth_ligada_usuario_com_token_e_bot_sem_token_nao_entrega(
     iniciar_servidor, sessao, segredo, token_do_bot
 ):
@@ -640,6 +658,7 @@ async def test_guarda_auth_desligada_usuario_sem_token_continua_recebendo(
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("posse_provada")
 async def test_servidor_com_auth_ligada_ignora_auth_enabled_falso_enviado_pelo_bot(iniciar_servidor, sessao, segredo):
     """Hoje o servidor confia no ``auth_enabled`` do payload: com ``false`` a checagem do token é pulada."""
     servidor = iniciar_servidor({"RPC_SERVER_SECRET": segredo, **AUTH_LIGADA})
@@ -927,6 +946,7 @@ async def test_bot_autenticado_so_entrega_as_ops_update_idle_e_close(iniciar_ser
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("posse_provada")
 async def test_guarda_usuario_bloqueado_por_token_nao_recebe_o_close_do_bot(iniciar_servidor, sessao, segredo):
     servidor = iniciar_servidor({"RPC_SERVER_SECRET": segredo, **AUTH_LIGADA})
     _, bot_ws, usuario_ws, _ = await _entrega(

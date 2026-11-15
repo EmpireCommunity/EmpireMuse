@@ -2,7 +2,6 @@
 """Botões do controlador do player: pedir música, last.fm, favoritar a faixa atual e letras."""
 
 import asyncio
-import copy
 from typing import Union, Optional
 
 import disnake
@@ -25,6 +24,7 @@ from empiremuse.utils.music.converters import fix_characters, URL_REG, md_link
 from empiremuse.utils.music.errors import (
     GenericError,
 )
+from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.utils.music.user_limits import quota_for, track_fav_error_text
 from empiremuse.utils.music.interactions import (
     SelectInteraction,
@@ -37,6 +37,7 @@ from empiremuse.utils.others import (
     PlayerControls,
     music_source_emoji_url,
 )
+from empiremuse.utils.user_docs import Skip, change_user_doc, toggle_lastfm_scrobble
 
 
 def _pc_modal_fav_options(self, req):
@@ -68,9 +69,9 @@ def _pc_modal_fav_options(self, req):
         )
 
 
-async def _pc_modal_integration_options(self, req):
-    """Monta o seletor de integrações do modal de pedido."""
-    interaction = req.interaction
+def _pc_modal_integration_options(self, req) -> bool:
+    """Monta o seletor de integrações do modal de pedido. ``True`` se há integração no formato antigo: quem chama a normaliza no
+    banco DEPOIS de enviar o modal (a primeira resposta não espera o lock do usuário)."""
     modal_components = req.modal_components
     user_data = req.user_data
 
@@ -80,9 +81,9 @@ async def _pc_modal_integration_options(self, req):
         update = False
 
         for k, v in list(user_data["integration_links"].items())[:25]:
+            # formato antigo: aqui só a cópia local; o documento é regravado por quem chama, sob o lock
             if not isinstance(v, dict):
                 v = {"url": v, "avatar": None}
-                user_data["integration_links"][k] = v
                 update = True
 
             emoji, platform = music_source_emoji_url(v["url"], self.bot)
@@ -105,8 +106,9 @@ async def _pc_modal_integration_options(self, req):
             )
         )
 
-        if update:
-            await self.bot.update_global_data(interaction.author.id, user_data, db_name=DBModel.users)
+        return update
+
+    return False
 
 
 async def _pc_modal_send(self, req):
@@ -140,9 +142,8 @@ async def _pc_lastfm(self, req):
     cmd = req.cmd
     interaction = req.interaction
 
+    read_at = self.bot.pool.erasure_tombstones.now()  # antes de qualquer espera (gancho d)
     await interaction.response.defer(ephemeral=True, with_message=True)
-    tombstones = self.bot.pool.erasure_tombstones
-    read_at = tombstones.now()  # antes de ler (gancho d)
 
     async def no_account() -> bool:
         try:
@@ -163,16 +164,17 @@ async def _pc_lastfm(self, req):
         )
         return True
 
-    async with self.bot.pool.user_locks.lock(interaction.author.id):
-        user_data = copy.deepcopy(await self.bot.get_global_data(interaction.author.id, db_name=DBModel.users))
-        missing = tombstones.stale(interaction.author.id, read_at) or not user_data["lastfm"]["sessionkey"]
-        if not missing:
-            lastfm = user_data["lastfm"]
-            lastfm["scrobble"] = not lastfm["scrobble"]
-            await self.bot.update_global_data(interaction.author.id, user_data, db_name=DBModel.users)
-            self.bot.pool.lastfm_sessions[interaction.author.id] = dict(lastfm)
-    if missing:
+    change = await change_user_doc(self.bot, interaction.author.id, toggle_lastfm_scrobble, read_at=read_at)
+    if change.erased:  # a ação do membro foi descartada: ele é avisado
+        await interaction.edit_original_message(
+            content=await guild_text(self.bot, interaction.guild, "erasure.erased_while_saving")
+        )
+        return True
+    if not change.saved:  # sem vínculo
         return await no_account()
+    user_data, lastfm = change.doc, change.result
+    # logo depois do lock, sem nenhuma espera no meio: um apagamento não entra entre a gravação e o cache
+    self.bot.pool.lastfm_sessions[interaction.author.id] = dict(lastfm)
 
     account = md_link(lastfm["username"], f"https://www.last.fm/user/{lastfm['username']}", code=False)
     tr = await self.bot.pool.i18n.for_guild(interaction.guild)
@@ -401,31 +403,37 @@ async def _pc_favorite_save(self, req):
     interaction = req.interaction
     select_type = req.select_type
 
+    # antes de qualquer espera (defer e cota): um apagamento depois disto descarta a gravação
+    read_at = self.bot.pool.erasure_tombstones.now()
     await interaction.response.defer()
 
     limit = await quota_for(self.bot, interaction.author, "MAX_USER_FAVS")
-    async with self.bot.pool.user_locks.lock(interaction.author.id):
-        user_data = await self.bot.get_global_data(interaction.author.id, db_name=DBModel.users)
 
-        saved = save_track(user_data["fav_links"], info["name"], info["url"], limit=limit)
+    def save(doc: dict) -> Optional[Skip]:
+        saved = save_track(doc["fav_links"], info["name"], info["url"], limit=limit)
+        if isinstance(saved, RuleError):
+            return Skip(saved)
+        doc["fav_links"] = saved.entries
+        return None
 
-        if not isinstance(saved, RuleError):
-            user_data["fav_links"] = saved.entries
-
-            await self.bot.update_global_data(interaction.author.id, user_data, db_name=DBModel.users)
-
-    if isinstance(saved, RuleError):
+    # relido e alterado sob o lock do usuário: nada do documento lido antes volta ao banco
+    change = await change_user_doc(self.bot, interaction.author.id, save, read_at=read_at)
+    if not change.saved:
+        description = (
+            await guild_text(self.bot, interaction.guild, "erasure.erased_while_saving")
+            if change.erased
+            else track_fav_error_text(change.result)
+        )
         await interaction.edit_original_message(
-            embed=disnake.Embed(
-                color=self.bot.get_color(interaction.guild.me), description=track_fav_error_text(saved)
-            ),
+            embed=disnake.Embed(color=self.bot.get_color(interaction.guild.me), description=description),
             view=None,
         )
         return True
+    user_data = change.doc
 
     self.bot.dispatch("fav_add", interaction.user, user_data, md_link(info["name"], info["url"]))
 
-    global_data = await self.bot.get_global_data(interaction.author.id, db_name=DBModel.guilds)
+    global_data = await self.bot.get_global_data(interaction.guild_id, db_name=DBModel.guilds)
 
     try:
         slashcmd = (

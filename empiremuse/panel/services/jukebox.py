@@ -22,7 +22,15 @@ from typing import Any, Callable, NamedTuple, Optional
 
 import disnake
 
-from empiremuse.panel.services.base import DIGITS, Args, FormContext, first, panel_translator, version_of
+from empiremuse.panel.services.base import (
+    DIGITS,
+    Args,
+    FormContext,
+    channel_in_guild,
+    first,
+    panel_translator,
+    version_of,
+)
 from empiremuse.panel.services.jukebox_tokens import JukeboxTokens
 from empiremuse.panel.services.service import SettingsService
 from empiremuse.panel.services.tasks import Job, Task, TaskFailure, TaskRunner
@@ -223,9 +231,7 @@ class JukeboxService:
         """Canal do cache do bot neste servidor, de um dos tipos aceitos; ``None`` se id inválido/alheio/de outro tipo."""
         if raw is None or not DIGITS.fullmatch(raw):
             return None
-        channel = ctx.bot.get_channel(int(raw))
-        if channel is None or getattr(getattr(channel, "guild", None), "id", None) != ctx.guild.id:
-            return None
+        channel = channel_in_guild(ctx.bot, raw, ctx.guild.id)
         return channel if isinstance(channel, kinds) else None
 
     @staticmethod
@@ -237,9 +243,7 @@ class JukeboxService:
         bot_name = str(getattr(ctx.bot.user, "name", "") or "") or None
         if not config.channel:
             return CurrentJukebox(False, None, False, bot_name)
-        channel = ctx.bot.get_channel(config.channel)  # o cache do bot é de todos os servidores: só vale o deste
-        if channel is not None and getattr(getattr(channel, "guild", None), "id", None) != ctx.guild_id:
-            channel = None
+        channel = channel_in_guild(ctx.bot, config.channel, ctx.guild_id)  # o cache do bot é de todos os servidores
         name = str(channel.name) if channel is not None else None
         return CurrentJukebox(True, name, name is None, bot_name)
 

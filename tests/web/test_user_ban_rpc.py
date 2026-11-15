@@ -25,6 +25,7 @@ from tests.web.test_rpc_websocket import (  # noqa: F401 - fixtures e utilitári
     _snowflake,
     _token_do_app,
     iniciar_servidor,
+    posse_provada,
     segredo,
     sessao,
 )
@@ -244,6 +245,7 @@ async def test_send_rpc_data_skips_the_banned_user_without_even_reading_the_data
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("posse_provada")
 async def test_a_banned_id_gets_no_token_error_either_when_the_server_checks_tokens(iniciar_servidor, sessao, segredo):
     """O descarte vem antes da auth: num ban parcial (conexão ainda aberta) o token errado não gera ``_token_error`` para o banido."""
     servidor = iniciar_servidor({"RPC_SERVER_SECRET": segredo, "ENABLE_RPC_AUTH": "true"})

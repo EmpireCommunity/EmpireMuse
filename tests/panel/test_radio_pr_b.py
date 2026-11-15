@@ -68,3 +68,45 @@ class StaleResetHttpTest(SetupBase):
         from tests.panel.test_radio_page import ALFA
 
         self.radio.setup.options.assert_awaited_once_with(ALFA, int(self.fake.user["id"]))
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_two_confirmations_at_once_with_the_same_token_reach_the_bot_only_once():
+    """BK-2: o token é gasto antes da chamada ao bot; o segundo envio é recusado enquanto o primeiro ainda espera."""
+    import asyncio
+
+    w = await world()
+    radio = await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2)
+    ctx = SimpleNamespace(pool=w.pool, guild_id=GUILD, user_id=str(ACTOR))
+    service = RadioSetupService("test-fixture-key-0123456789-abcdefgh", clock=lambda: 100.0)
+    tr = get_i18n().for_locale("pt-BR")
+    token = service.tokens.issue(str(ACTOR), GUILD, TOKEN_SCOPE, f"{radio.id}:{radio.rev}")
+    args = {"versao": [str(radio.rev)], "acao": ["confirmar_reiniciar"], "token": [token]}
+    entered, release, original = asyncio.Event(), asyncio.Event(), w.hub.setup.reset
+
+    async def slow_reset(*call):
+        if (
+            not entered.is_set()
+        ):  # só o primeiro envio espera: um segundo que chegue ao bot segue, e o teste falha no fim
+            entered.set()
+            await release.wait()
+        return await original(*call)
+
+    w.hub.setup.reset = AsyncMock(side_effect=slow_reset)
+    first = asyncio.ensure_future(service.reset(ctx, radio, args, "/reset", ("bot", "call"), tr))
+    waiter = asyncio.ensure_future(entered.wait())  # o primeiro chegou à chamada do bot e está esperando
+    done, _ = await asyncio.wait({first, waiter}, return_when=asyncio.FIRST_COMPLETED)
+    if first in done:  # sem isto, um ``reset`` que não chama o bot deixaria o teste esperando para sempre
+        waiter.cancel()
+        first.result()  # propaga a exceção do ``reset``, se houve
+        pytest.fail("service.reset terminou antes de chamar o bot")
+
+    try:
+        status, _ = await service.reset(ctx, radio, args, "/reset", ("bot", "call"), tr)
+    finally:
+        release.set()  # o primeiro envio sempre é liberado, mesmo se o segundo levantar
+        first_status = (await first)[0]
+
+    assert status == 422 and first_status == 200
+    w.hub.setup.reset.assert_awaited_once()

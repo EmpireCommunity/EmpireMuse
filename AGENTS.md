@@ -62,6 +62,7 @@ Estrutura essencial do código (consulte [`docs/architecture.md`](docs/architect
 - `empiremuse/rules/bot_roles.py`: regras puras dos papéis principal/reserva (ordem dos convites, quem avisa num servidor sem o principal, textos fixos); o papel de cada bot (`is_main`, `is_reserve`, `pool.main_bot`) fica em `empiremuse/utils/client.py`.
 - `empiremuse/utils/servers.py` e `empiremuse/rules/servers.py`: configuração única por servidor (documento `servers` do banco global, trava por servidor, migração do bot principal, fachada `get_data` no formato antigo) e as regras puras dela.
 - `empiremuse/cogs/usage_tracker.py`, `empiremuse/utils/usage.py`, `empiremuse/utils/guild_ban.py` e `empiremuse/rules/usage.py`: registro de uso (buffer e gravação em lote), lista global de servidores banidos e as regras puras de ambos.
+- `empiremuse/utils/user_locks.py` e `empiremuse/utils/user_docs.py`: um lock por usuário, único no processo (`pool.user_locks`, o mesmo do apagamento de dados), e `change_user_doc`, por onde passa toda gravação do documento inteiro do membro (`global.users`): cópia relida sob o lock, mudança síncrona (sem rede com o lock tomado) e descarte se os dados foram apagados depois do começo da ação.
 - `empiremuse/utils/branding.py`: Fonte única de identidade e URLs (nome, repositório, espelhos, upstream, `asset_url`).
 - `assets/`: Imagens em subpastas por função (`brand/`, `providers/`, `player/`, `skins/`, `ui/`, `docs/`, `emojis/`) e `SHA256SUMS` com caminhos relativos. O nome do arquivo é único entre as subpastas, e `asset_url(nome)` resolve o subcaminho. Os arquivos soltos na raiz são cópias de compatibilidade da 2.1.0 e saem numa versão futura.
 - `assets/brand/`: Arte e identidade visual de marca (logo vetorial, avatar, banner, avatares alternativos e favicon).
@@ -124,7 +125,7 @@ O arquivo de maior risco tocado define o nível da mudança (Baixo, Médio ou Al
 | **Alto** | Relé RPC (`/ws`) e prova do token | `empiremuse/web_app.py` (`WebSocketHandler`, `run_app`), `empiremuse/rpc_protocol.py`, `empiremuse/rules/rpc_proof.py`, `empiremuse/utils/rpc_proof.py` |
 | **Alto** | Atualizador e cadeia de suprimentos | `empiremuse/updater/`, `Dockerfile`, `deploy/`, `.github/workflows/`, `requirements*.txt` e locks com hashes, `assets/SHA256SUMS` |
 | **Alto** | Dados pessoais | `empiremuse/cogs/usage_tracker.py`, `empiremuse/utils/usage.py`, `empiremuse/cogs/lastfm.py`, `empiremuse/cogs/ll_yt_oauth.py` (tokens) |
-| **Alto** | Exclusão de dados | `purge_events` e `delete_data` em `empiremuse/utils/db.py` |
+| **Alto** | Exclusão de dados | `purge_events` e `delete_data` em `empiremuse/utils/db.py`, `empiremuse/utils/user_locks.py`, `empiremuse/utils/user_docs.py`, `empiremuse/utils/erasure.py`, `empiremuse/utils/erasure_views.py`, `empiremuse/panel/services/tokens.py` (token assinado das confirmações) |
 | **Médio** | Player e áudio | `empiremuse/utils/music/`, `empiremuse/music_cog/`, `empiremuse/wavelink/` |
 | **Médio** | Comportamento do bot e do painel | `empiremuse/cogs/`, `empiremuse/rules/`, `empiremuse/panel/` (rotas e serviços fora de auth) |
 | **Baixo** | Conteúdo e valores | `assets/` (exceto `SHA256SUMS`), textos e traduções, `docs/`, estilos, valores padrão de config, bumps de versão |

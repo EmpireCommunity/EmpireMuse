@@ -115,3 +115,40 @@ class AccountProtocolTest(AccountCase):
         text = self.audit_text()
         assert str(UID) in text and "prefixo" in text and "custom_prefix" in text, text
         assert "Zq9!" not in self.all_log_text()
+
+
+# ============================================================================ sessão encerrada durante a escrita (BK-2)
+
+
+class _ErasedWhileWaiting:
+    """O lock do usuário visto por uma escrita que ficou na fila enquanto o apagamento rodava: quando ela enfim entra, as sessões
+    do membro já foram destruídas."""
+
+    def __init__(self, lock, erase):
+        self._lock, self._erase = lock, erase
+
+    async def __aenter__(self):
+        self._erase()
+        await self._lock.acquire()
+
+    async def __aexit__(self, *exc):
+        self._lock.release()
+
+
+class ErasureWindowTest(AccountCase):
+    def test_a_write_queued_behind_the_erasure_does_not_save_and_ends_the_session(self):
+        from unittest.mock import patch
+
+        browser = self.logged_in()
+        form = self.form(browser, "prefixo")
+        before = self.world.doc(UID)
+        service = self.panel_app.settings["settings_service"]
+        store = self.panel_app.settings["session_store"]
+        queued = _ErasedWhileWaiting(service.lock("users", UID), lambda: store.destroy_user(str(UID)))
+
+        with patch.object(service, "lock", lambda scope, user_id: queued):
+            response = self.submit(browser, URL, form, custom_prefix="?")
+
+        assert response.code == 401 and "Sessão encerrada" in response.body.decode()
+        self.assert_untouched(before=before)
+        assert browser.get(URL).code != 200  # o cookie da sessão morta não abre mais a conta

@@ -11,6 +11,7 @@ from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.music_cog.play_guild_menu import GuildPlaylistSelect
 from empiremuse.rules.jukebox_select import SELECT_CAPACITY
 from empiremuse.utils.db import DBModel
+from empiremuse.utils.user_docs import change_user_doc, normalize_integration_links
 from empiremuse.utils.music.converters import fix_characters, md_link
 from empiremuse.utils.music.errors import (
     GenericError,
@@ -227,16 +228,13 @@ class PlayMenusMixin:
         if query.startswith(">> [💠 Integrações 💠] <<"):
             query = ""
             menu = "integrations"
-            for k, v in user_data["integration_links"].items():
-                update = False
+            if any(not isinstance(v, dict) for v in user_data["integration_links"].values()):
+                # formato antigo: o documento é relido e regravado sob o lock do usuário; abaixo, só cópias locais
+                await change_user_doc(self.bot, inter.author.id, normalize_integration_links, read_at=req.user_read_at)
 
+            for k, v in user_data["integration_links"].items():
                 if not isinstance(v, dict):
                     v = {"url": v, "avatar": None}
-                    user_data["integration_links"][k] = v
-                    update = True
-
-                if update and not self.bot.pool.erasure_tombstones.stale(inter.author.id, req.user_read_at):
-                    await self.bot.update_global_data(inter.author.id, user_data, db_name=DBModel.users)
 
                 emoji, platform = music_source_emoji_url(v["url"], self.bot)
 

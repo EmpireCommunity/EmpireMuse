@@ -1206,3 +1206,36 @@ def test_a_crlf_file_written_under_the_targets_own_gitattributes_is_still_the_ta
     assert not os.path.lexists(attr_do_alvo.repo / "script.bat")
     assert (attr_do_alvo.repo / ".gitattributes").read_text() == "# sem regras\n"  # o do prev voltou
     assert git(attr_do_alvo.repo, "status", "--porcelain", "--untracked-files=no") == ""
+
+
+# ============================================================================ máscara da saída: segredos fora do ambiente (BK-2)
+
+
+@pytest.mark.regression
+def test_masking_runner_hides_file_config_secrets_that_are_not_in_the_environment():
+    """Um segredo que só existe na configuração de arquivo (ou um token de bot) não está em ``os.environ``: sai mascarado."""
+    from empiremuse.updater.git_flow import masking_runner
+
+    segredo = "valor-so-do-arquivo-0123456789"
+    codigo = f"print('antes {segredo} depois')"
+
+    async def rodar(runner):
+        return await runner(sys.executable, "-c", codigo, cwd=None, env={}, timeout=60)
+
+    cru = asyncio.run(rodar(run_exec))
+    mascarado = asyncio.run(rodar(masking_runner(lambda: frozenset({segredo}))))
+
+    assert segredo in cru.output  # o runner padrão só conhece o ambiente
+    assert segredo not in mascarado.output and mascarado.output.startswith("antes ") and mascarado.returncode == 0
+
+
+@pytest.mark.regression
+def test_run_exec_masks_a_discord_shaped_token_from_no_list_and_ignores_a_secret_too_short_to_mask():
+    """A forma de token do Discord é mascarada mesmo fora das listas; um valor curto demais não vira máscara da saída inteira."""
+    from tests.rules.test_bot_tokens import token
+
+    codigo = f"print('token {token('z')} fim 0 true')"
+
+    resultado = asyncio.run(run_exec(sys.executable, "-c", codigo, cwd=None, env={}, timeout=60, secrets=("0", "true")))
+
+    assert resultado.output.strip() == "token *** fim 0 true" and resultado.returncode == 0

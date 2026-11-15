@@ -3,8 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from copy import deepcopy
-from typing import Optional
+from typing import Any, Callable, Optional, Union
 
 import disnake
 
@@ -15,7 +14,7 @@ from empiremuse.rules.errors import (
     RuleError,
 )
 from empiremuse.rules.favorites import check_import_name, name_limit
-from empiremuse.rules.integrations import import_entry as integration_entry, save_external
+from empiremuse.rules.integrations import ExternalSave, import_entry as integration_entry, save_external
 from empiremuse.rules.limits import (
     FAV_NAME_MAX,
     FAV_NAME_MIN,
@@ -34,6 +33,7 @@ from empiremuse.utils.music.audio_sources.spotify import spotify_regex_w_user
 from empiremuse.utils.music.converters import fix_characters, md_link
 from empiremuse.utils.music.errors import GenericError, error_code_text, log_unexpected_error
 from empiremuse.utils.music.user_limits import quota_for
+from empiremuse.utils.user_docs import Skip, UserDocChange, change_user_doc
 from empiremuse.utils.others import (
     CustomContext,
 )
@@ -72,12 +72,26 @@ def playlists_error_text(error: RuleError) -> str:
     return error_message(error)
 
 
-async def _erased_meanwhile(view, inter: disnake.ModalInteraction, read_at: float) -> bool:
-    """Os dados do membro foram apagados depois da leitura de ``read_at`` (ou a leitura é velha demais)? Então nada é gravado e ele é avisado."""
-    if not view.bot.pool.erasure_tombstones.stale(inter.author.id, read_at):
+async def _erased_meanwhile(view, inter: disnake.ModalInteraction, change: UserDocChange) -> bool:
+    """Os dados do membro foram apagados depois do começo do envio (ou ele é velho demais)? Então ``change_user_doc`` não gravou nada e
+    ele é avisado. O documento é relido e alterado sob o lock do usuário; cota e consultas externas vêm antes do lock."""
+    if not change.erased:
         return False
-    await inter.edit_original_message(content=view.tr("fav.erased_while_saving"))
+    await inter.edit_original_message(content=view.tr("erasure.erased_while_saving"))
     return True
+
+
+def _merge_into(field: str, clean_data: dict, limit: int) -> Callable[[dict], Optional[Skip]]:
+    """``change`` de ``change_user_doc``: junta ``clean_data`` à lista ``field`` do documento relido; estouro de cota não grava."""
+
+    def merge(doc: dict) -> Optional[Skip]:
+        merged = merge_import(doc[field], clean_data, limit)
+        if isinstance(merged, RuleError):
+            return Skip(merged)
+        doc[field] = merged
+        return None
+
+    return merge
 
 
 class FavModalImport(disnake.ui.Modal):
@@ -220,6 +234,7 @@ class FavModalImport(disnake.ui.Modal):
         return parsed
 
     async def _import_favorites_file(self, inter: disnake.ModalInteraction) -> bool:
+        read_at = self.view.bot.pool.erasure_tombstones.now()  # antes de qualquer espera: ver ``_erased_meanwhile``
         parsed = await self._read_favorites_file(inter)
         if parsed is None:
             return False
@@ -237,26 +252,17 @@ class FavModalImport(disnake.ui.Modal):
                 return False
             clean_data[clean_name] = url
 
-        read_at = (
-            self.view.bot.pool.erasure_tombstones.now()
-        )  # antes de ler (e de qualquer espera): ver ``_erased_meanwhile``
-
-        work = deepcopy(await self.view.bot.get_global_data(inter.author.id, db_name=DBModel.users))
-
         limit = await quota_for(self.view.bot, inter.author, "MAX_USER_FAVS")
 
-        merged = merge_import(work["fav_links"], clean_data, limit)
-
-        if isinstance(merged, RuleError):
-            await inter.edit_original_message(_import_quota_text(tr, merged, "fav"))
+        change = await change_user_doc(
+            self.view.bot, inter.author.id, _merge_into("fav_links", clean_data, limit), read_at=read_at
+        )
+        if await _erased_meanwhile(self.view, inter, change):
             return False
-
-        work["fav_links"] = merged
-        if await _erased_meanwhile(self.view, inter, read_at):
+        if not change.saved:
+            await inter.edit_original_message(_import_quota_text(tr, change.result, "fav"))
             return False
-        self.view.data = work  # só depois de todas as checagens: uma recusa não altera a tela
-
-        await self.view.bot.update_global_data(inter.author.id, self.view.data, db_name=DBModel.users)
+        self.view.data = change.doc  # só depois de todas as checagens: uma recusa não altera a tela
 
         skipped = tr("fav.import.skipped", count=len(parsed.invalid)) if parsed.invalid else ""
         await inter.edit_original_message(content=tr("fav.import.done") + skipped)
@@ -289,28 +295,20 @@ class FavModalImport(disnake.ui.Modal):
 
             clean_data[clean_name] = entry
 
+        read_at = self.view.bot.pool.erasure_tombstones.now()  # antes de qualquer espera: ver ``_erased_meanwhile``
         await inter.response.defer(ephemeral=True)
-
-        read_at = (
-            self.view.bot.pool.erasure_tombstones.now()
-        )  # antes de ler (e de qualquer espera): ver ``_erased_meanwhile``
-
-        work = deepcopy(await self.view.bot.get_global_data(inter.author.id, db_name=DBModel.users))
 
         limit = await quota_for(self.view.bot, inter.author, "MAX_USER_INTEGRATIONS")
 
-        merged = merge_import(work["integration_links"], clean_data, limit)
-
-        if isinstance(merged, RuleError):
-            await inter.edit_original_message(_import_quota_text(tr, merged, "itg"))
+        change = await change_user_doc(
+            self.view.bot, inter.author.id, _merge_into("integration_links", clean_data, limit), read_at=read_at
+        )
+        if await _erased_meanwhile(self.view, inter, change):
             return False
-
-        work["integration_links"] = merged
-        if await _erased_meanwhile(self.view, inter, read_at):
+        if not change.saved:
+            await inter.edit_original_message(_import_quota_text(tr, change.result, "itg"))
             return False
-        self.view.data = work  # só depois de todas as checagens: uma recusa não altera a tela
-
-        await self.view.bot.update_global_data(inter.author.id, self.view.data, db_name=DBModel.users)
+        self.view.data = change.doc  # só depois de todas as checagens: uma recusa não altera a tela
 
         await inter.edit_original_message(content=tr("fav.itg.import.done"))
 
@@ -386,39 +384,37 @@ class FavModalAdd(disnake.ui.Modal):
                 )
                 return
 
+            read_at = self.view.bot.pool.erasure_tombstones.now()  # antes de qualquer espera: ver ``_erased_meanwhile``
             await inter.response.defer(ephemeral=True)
-
-            read_at = (
-                self.view.bot.pool.erasure_tombstones.now()
-            )  # antes de ler (e de qualquer espera): ver ``_erased_meanwhile``
-
-            work = deepcopy(await self.view.bot.get_global_data(inter.author.id, db_name=DBModel.users))
 
             name_max = name_limit(self.view.bot.config["USER_FAV_MAX_NAME_LENGTH"])
             limit = await quota_for(self.view.bot, inter.author, "MAX_USER_FAVS")
+            new_name = inter.text_values["user_fav_name"]
 
-            saved = save_entry(
-                work["fav_links"],
-                self.name,
-                inter.text_values["user_fav_name"],
-                valid_url,
-                name_min=FAV_NAME_MIN,
-                name_max=name_max,
-                limit=limit,
-            )
+            def save(doc: dict) -> Optional[Skip]:
+                saved = save_entry(
+                    doc["fav_links"],
+                    self.name,
+                    new_name,
+                    valid_url,
+                    name_min=FAV_NAME_MIN,
+                    name_max=name_max,
+                    limit=limit,
+                )
+                if isinstance(saved, RuleError):
+                    return Skip(saved)
+                doc["fav_links"] = saved
+                return None
 
-            if isinstance(saved, RuleError):
+            change = await change_user_doc(self.view.bot, inter.author.id, save, read_at=read_at)
+            if await _erased_meanwhile(self.view, inter, change):
+                return
+            if not change.saved:
                 await inter.edit_original_message(
-                    _save_error_text(tr, saved, FAV_NAME_MIN, name_max, tr("fav.add.name_taken"))
+                    _save_error_text(tr, change.result, FAV_NAME_MIN, name_max, tr("fav.add.name_taken"))
                 )
                 return
-
-            work["fav_links"] = saved
-            if await _erased_meanwhile(self.view, inter, read_at):
-                return
-            self.view.data = work  # só depois de todas as checagens: uma recusa não altera a tela
-
-            await self.view.bot.update_global_data(inter.author.id, self.view.data, db_name=DBModel.users)
+            self.view.data = change.doc  # só depois de todas as checagens: uma recusa não altera a tela
 
             try:
                 me = (inter.guild or self.view.bot.get_guild(inter.guild_id)).me
@@ -444,16 +440,11 @@ class FavModalAdd(disnake.ui.Modal):
     async def _add_integration(self, inter: disnake.ModalInteraction) -> bool:
         """Adiciona/edita uma integração a partir do link de um perfil; ``False`` se nada foi gravado."""
         tr = self.view.tr
+        read_at = self.view.bot.pool.erasure_tombstones.now()  # antes de qualquer espera: ver ``_erased_meanwhile``
         try:
             await inter.response.defer(ephemeral=True, with_message=True)
         except disnake.HTTPException, disnake.InteractionResponded:
             pass
-
-        read_at = (
-            self.view.bot.pool.erasure_tombstones.now()
-        )  # antes de ler (e de qualquer espera): ver ``_erased_meanwhile``
-
-        work = deepcopy(await self.view.bot.get_global_data(inter.author.id, db_name=DBModel.users))
 
         typed_url = inter.text_values["user_integration_url"].strip()
 
@@ -480,33 +471,38 @@ class FavModalAdd(disnake.ui.Modal):
 
         limit = await quota_for(self.view.bot, inter.author, "MAX_USER_INTEGRATIONS")
 
-        if limit and len(work["integration_links"]) >= limit and not _profile_saved(work["integration_links"], url):
+        # só leitura, para recusar cedo (antes da consulta externa); a decisão que vale é refeita sob o lock, no documento relido
+        current = (await self.view.bot.get_global_data(inter.author.id, db_name=DBModel.users))["integration_links"]
+        if limit and len(current) >= limit and not _profile_saved(current, url):
             await inter.edit_original_message(tr(_NO_ROOM_INTEGRATION_TEXT))
             return False
 
         if (data := await self._lookup_profile(inter, url, source)) is None:
             return False
 
-        saved = save_external(
-            work["integration_links"],
-            fix_characters(data["title"], 80),
-            data.get("url"),
-            data.get("avatar"),
-            limit=limit,
-        )
+        def save(doc: dict) -> Union[Skip, ExternalSave]:  # ``Skip`` leva o erro da regra
+            saved = save_external(
+                doc["integration_links"],
+                fix_characters(data["title"], 80),
+                data.get("url"),
+                data.get("avatar"),
+                limit=limit,
+            )
+            if isinstance(saved, RuleError):
+                return Skip(saved)
+            doc["integration_links"] = saved.entries
+            return saved
 
-        if isinstance(saved, RuleError):
+        change = await change_user_doc(self.view.bot, inter.author.id, save, read_at=read_at)
+        if await _erased_meanwhile(self.view, inter, change):
+            return False
+        if not change.saved:
             await inter.edit_original_message(
-                tr(_NO_ROOM_INTEGRATION_TEXT) if saved.code == QUOTA_FULL else tr("fav.itg.add.service_data")
+                tr(_NO_ROOM_INTEGRATION_TEXT) if change.result.code == QUOTA_FULL else tr("fav.itg.add.service_data")
             )
             return False
-
-        work["integration_links"] = saved.entries
-        if await _erased_meanwhile(self.view, inter, read_at):
-            return False
-        self.view.data = work  # só depois de todas as checagens: uma recusa não altera a tela
-
-        await self.view.bot.update_global_data(inter.author.id, self.view.data, db_name=DBModel.users)
+        self.view.data = change.doc  # só depois de todas as checagens: uma recusa não altera a tela
+        saved = change.result
 
         try:
             me = (inter.guild or self.view.bot.get_guild(inter.guild_id)).me

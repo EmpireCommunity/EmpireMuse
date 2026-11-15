@@ -65,6 +65,19 @@ class TestLocalDatabase:
         assert data["prefix_antigo"] == "x"  # chaves removidas do modelo são preservadas
         assert data["default_player_volume"] == 100  # chaves novas ganham o padrão
 
+    @pytest.mark.regression
+    def test_old_version_of_a_member_document_is_migrated_in_memory_and_not_rewritten_on_read(self, tmp_path):
+        """BK-2: a regravação feita na leitura não passa pelo lock do usuário nem pela conferência do apagamento de dados."""
+        banco = self.make(tmp_path)
+        tabela = banco._connect["global"][DBModel.users]
+        tabela.insert_one({"_id": "7", "ver": 0.1, "custom_prefix": "?"})
+
+        data = run(banco.get_data(7, db_name=DBModel.users, collection="global", default_model=db.global_db_models))
+
+        assert data["ver"] == db.global_db_models[DBModel.users]["ver"] and data["custom_prefix"] == "?"
+        assert tabela.find_one({"_id": "7"})["ver"] == 0.1  # o banco fica como estava até a próxima gravação do membro
+        assert "global:users:7" not in banco.cache
+
     def test_delete_removes_from_disk_and_cache(self, tmp_path):
         banco = self.make(tmp_path)
         data = run(banco.get_data(10, db_name=DBModel.guilds, collection="g"))
@@ -163,6 +176,20 @@ class TestMongoDatabaseData:
         data = run(mongo.get_data(1, db_name=DBModel.guilds, collection="g"))
         assert data["ver"] == db.db_models[DBModel.guilds]["ver"] and data["djroles"] == ["4"]
         assert colecao(mongo).docs["1"]["ver"] == data["ver"]
+
+    @pytest.mark.regression
+    def test_old_version_of_a_member_document_is_migrated_in_memory_and_not_rewritten_on_read(self, mongo):
+        """BK-2: a regravação feita na leitura não passa pelo lock do usuário nem pela conferência do apagamento de dados."""
+        membros = colecao(mongo, "global", DBModel.users)
+        membros.docs["1"] = {"_id": "1", "ver": 0.5, "custom_prefix": "?"}
+
+        data = run(mongo.get_data(1, db_name=DBModel.users, collection="global", default_model=db.global_db_models))
+
+        assert data["ver"] == db.global_db_models[DBModel.users]["ver"] and data["custom_prefix"] == "?"
+        assert (
+            membros.calls == [] and membros.docs["1"]["ver"] == 0.5
+        )  # nada foi gravado: só a próxima gravação do membro migra
+        assert "global:users:1" not in mongo.cache
 
     def test_push_data_inserts(self, mongo):
         run(mongo.push_data({"_id": "5", "x": 1}, db_name=DBModel.guilds, collection="g"))

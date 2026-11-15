@@ -121,6 +121,8 @@ class PlayCommandMixin(PlayMenusMixin, PlayResolveMixin, PlayEnqueueMixin):
             server=server,
             manual_bot_choice=manual_bot_choice,
         )
+        # antes da primeira espera do comando: um apagamento depois disto descarta o que o /play gravaria do membro
+        req.user_read_at = self.bot.pool.erasure_tombstones.now()
         await self._play_prepare(req)
 
         if await self._play_select_bot(req):
@@ -529,7 +531,7 @@ class PlayCommandMixin(PlayMenusMixin, PlayResolveMixin, PlayEnqueueMixin):
                 except IndexError:
                     pass
 
-        req.user_read_at = self.bot.pool.erasure_tombstones.now()  # antes de ler (gancho a)
+        # ``req.user_read_at`` já foi capturado em ``play``, antes da primeira espera (gancho a)
         user_data = await self.bot.get_global_data(inter.author.id, db_name=DBModel.users)
 
         try:

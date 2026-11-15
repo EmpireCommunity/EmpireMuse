@@ -122,11 +122,11 @@ async def test_controller_favorite_cannot_land_after_erasure(mundo, monkeypatch)
         return await original_run(user)
 
     mundo.service._run = observed_run
-    bot = SimpleNamespace(pool=mundo.pool, get_color=lambda *args: 0, dispatch=Mock(), default_prefix="!!")
+    bot = SimpleNamespace(pool=mundo.pool, get_color=lambda *args: 0, dispatch=Mock(), default_prefix="padrao!")
 
     async def read(user, *, db_name):
-        if db_name == "guilds":
-            return {"prefix": "!!"}
+        if db_name == "guilds":  # o prefixo é o do SERVIDOR: lido por outro id (o do membro), a confirmação sai errada
+            return {"prefix": "srv!" if user == SERVIDOR else "outro!"}
         return await mundo.database.get_data(user, db_name=db_name, collection="global", default_model=global_db_models)
 
     async def write(user, data, *, db_name):
@@ -142,6 +142,7 @@ async def test_controller_favorite_cannot_land_after_erasure(mundo, monkeypatch)
         author=SimpleNamespace(id=ALVO),
         user=SimpleNamespace(id=ALVO),
         guild=None,
+        guild_id=SERVIDOR,
         response=SimpleNamespace(defer=AsyncMock()),
         edit_original_message=AsyncMock(),
         edit_original_response=AsyncMock(),
@@ -168,6 +169,7 @@ async def test_controller_favorite_cannot_land_after_erasure(mundo, monkeypatch)
     await asyncio.gather(writer, erasure)
     assert not was_erasing
     assert not await existe(mundo, "global", "users", ALVO)
+    assert "srv!" in inter.edit_original_response.await_args.kwargs["embed"].description
 
 
 async def test_embed_reply_after_erasure_never_saves_the_prepared_document(mundo, monkeypatch):

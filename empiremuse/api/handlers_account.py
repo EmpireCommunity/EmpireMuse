@@ -3,9 +3,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+from typing import Any
 
-from empiremuse.api.data import STATUS_SESSION_GONE, DataHandler, form_reply
+from empiremuse.api.data import DataHandler, form_reply
 from empiremuse.api.errors import BOT_UNAVAILABLE, ApiError, not_found, validation_failed
 from empiremuse.api.idempotency import Reply
 from empiremuse.api.writes import (
@@ -17,7 +17,6 @@ from empiremuse.api.writes import (
     parse_radio_removal,
 )
 from empiremuse.panel.services.account import AccountOutcome
-from empiremuse.panel.services.account_base import Refusal
 from empiremuse.rules.panel_serialize import ACCOUNT, new_rpc_token, serialize_favorites_export, serialize_form
 from empiremuse.utils.radio.favorites import AddResult, FavoriteNotFound
 from empiremuse.utils.radio.premium import RadioUnavailable
@@ -33,23 +32,6 @@ class AccountHandler(DataHandler):
     async def get(self) -> None:
         forms = await self.ctx.account_service.read_all(self.account_context())
         self.write({"forms": {key: serialize_form(form, ACCOUNT) for key, form in forms.items()}})
-
-
-class SessionGuardedSection:
-    """Uma seção da conta que, no ``guard`` (o serviço o roda **sob o lock do usuário**, o mesmo do apagamento de dados),
-    recusa a escrita se a sessão já acabou. Uma escrita que esperava o lock enquanto o apagamento rodava não grava de novo."""
-
-    def __init__(self, section: Any, alive: Callable[[], bool]) -> None:
-        self._section = section
-        self._alive = alive
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._section, name)
-
-    async def guard(self, ctx: Any, doc: dict, action: str) -> Optional[Refusal]:
-        if not self._alive():
-            return Refusal(STATUS_SESSION_GONE, "")
-        return await self._section.guard(ctx, doc, action)
 
 
 class AccountSectionHandler(DataHandler):
@@ -75,10 +57,10 @@ class AccountSectionHandler(DataHandler):
         """``request_input`` (o corpo ou a query) é o que a ``Idempotency-Key`` compara."""
         ctx = self.account_context()
         service = self.ctx.account_service
-        section = SessionGuardedSection(service.section(self.section_key), self.session_alive)
+        section = service.section(self.section_key)
 
         async def work() -> Reply:
-            return self.account_reply(await service.submit(section, ctx, write.action, write.service_args()))
+            return self.account_reply(await self.submit_alive(section, ctx, write.action, write.service_args()))
 
         await self.run_write(request_input, work, replayable=self.replayable)
 
@@ -203,7 +185,7 @@ class RadioFavoritesHandler(AccountSectionHandler):
             raise ApiError(503, BOT_UNAVAILABLE)  # a rádio não está ligada neste bot (o mesmo sinal da seção)
 
         async def work() -> Reply:
-            outcome = await service.submit(section, ctx, removal.action, {removal.field: [removal.target]})
+            outcome = await self.submit_alive(section, ctx, removal.action, {removal.field: [removal.target]})
             return self.account_reply(outcome)
 
         await self.run_write(query, work)

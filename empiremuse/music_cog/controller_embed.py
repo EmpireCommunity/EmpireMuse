@@ -21,6 +21,7 @@ from empiremuse.utils.music.converters import URL_REG, md_link
 from empiremuse.utils.music.errors import (
     GenericError,
 )
+from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.utils.music.user_limits import quota_for, track_fav_error_text
 from empiremuse.utils.music.interactions import (
     SelectInteraction,
@@ -33,6 +34,7 @@ from empiremuse.utils.others import (
     PlayerControls,
     music_source_emoji_url,
 )
+from empiremuse.utils.user_docs import Skip, change_user_doc
 
 
 async def _pc_embed_resolve(self, req):
@@ -332,27 +334,33 @@ async def _pc_fav_embed_save(self, req):
         )
         return True
 
+    # antes de qualquer espera (defer e cota): um apagamento depois disto descarta a gravação
+    read_at = self.bot.pool.erasure_tombstones.now()
     await interaction.response.defer()
 
     limit = await quota_for(self.bot, interaction.author, "MAX_USER_FAVS")
-    async with self.bot.pool.user_locks.lock(interaction.author.id):
-        user_data = await self.bot.get_global_data(interaction.author.id, db_name=DBModel.users)
 
-        saved = save_track(user_data["fav_links"], embed.author.name[1:], embed.author.url, limit=limit)
+    def save(doc: dict) -> Union[Skip, str]:
+        saved = save_track(doc["fav_links"], embed.author.name[1:], embed.author.url, limit=limit)
+        if isinstance(saved, RuleError):
+            return Skip(saved)
+        doc["fav_links"] = saved.entries
+        return saved.name
 
-        if not isinstance(saved, RuleError):
-            fav_name = saved.name
-            user_data["fav_links"] = saved.entries
-
-            await self.bot.update_global_data(interaction.author.id, user_data, db_name=DBModel.users)
-
-    if isinstance(saved, RuleError):
-        await interaction.edit_original_message(track_fav_error_text(saved))
+    # relido e alterado sob o lock do usuário: nada do documento lido antes volta ao banco
+    change = await change_user_doc(self.bot, interaction.author.id, save, read_at=read_at)
+    if change.erased:
+        await interaction.edit_original_message(
+            await guild_text(self.bot, interaction.guild, "erasure.erased_while_saving")
+        )
+        return True
+    if not change.saved:
+        await interaction.edit_original_message(track_fav_error_text(change.result))
         return True
 
     req.embed = embed
-    req.fav_name = fav_name
-    req.user_data = user_data
+    req.fav_name = change.result
+    req.user_data = change.doc
     return False
 
 

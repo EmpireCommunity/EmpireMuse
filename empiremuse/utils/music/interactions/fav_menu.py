@@ -12,6 +12,7 @@ import disnake
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.checks import check_pool_bots
 from empiremuse.utils.music.converters import time_format, md_link
+from empiremuse.utils.user_docs import SKIP, Skip, change_user_doc
 from empiremuse.utils.others import (
     CustomContext,
     PlayerControls,
@@ -38,6 +39,9 @@ from empiremuse.utils.music.interactions.fav_menu_text import (
 )
 
 logger = logging.getLogger(__name__)
+
+# o campo do documento do membro (``global.users``) que cada modo do menu edita; as rádios favoritas têm armazenamento próprio
+_USER_LIST_FIELDS = {ViewMode.fav_manager: "fav_links", ViewMode.integrations_manager: "integration_links"}
 
 NO_MENTIONS = disnake.AllowedMentions.none()
 
@@ -158,83 +162,83 @@ class FavMenuView(FavMenuComponentsMixin, FavMenuTextMixin, FavMenuRadioMixin, d
             await inter.send(self.tr("fav.select_item"), ephemeral=True)
             return
 
+        # antes de qualquer espera (o defer incluído): apagamento depois disto descarta a gravação
+        read_at = self.bot.pool.erasure_tombstones.now()
         await inter.response.defer(ephemeral=True)
 
-        self.data = await self.bot.get_global_data(inter.author.id, db_name=DBModel.users)
+        field = _USER_LIST_FIELDS.get(self.mode)
+        name = self.current
 
-        if self.mode == ViewMode.fav_manager:
-            try:
-                url = md_link(self.current, self.data["fav_links"][self.current])
-                del self.data["fav_links"][self.current]
-            except Exception:
-                await inter.edit_original_message(self.tr("fav.not_in_list", name=str(self.current)))
+        if field is None:
+            self.data = await self.bot.get_global_data(inter.author.id, db_name=DBModel.users)
+        else:
+            # relido e alterado sob o lock do usuário: só o item sai, o resto do documento é o que está no banco agora
+            change = await change_user_doc(
+                self.bot,
+                inter.author.id,
+                lambda doc: doc[field].pop(name) if name in doc[field] else SKIP,
+                read_at=read_at,
+            )
+            if change.erased:
+                await inter.edit_original_message(self.tr("erasure.erased_while_saving"))
                 return
+            self.data = change.doc
 
-            await self.bot.update_global_data(inter.author.id, self.data, db_name=DBModel.users)
-
-            self.log = self.tr("fav.log.removed", link=url)
-
-        elif self.mode == ViewMode.integrations_manager:
-            item = self.data["integration_links"][self.current]
-
-            if isinstance(item, dict):
-                item = item["url"]
-
-            try:
-                url = md_link(self.current, item)
-                del self.data["integration_links"][self.current]
-            except Exception:
-                await inter.send(self.tr("fav.itg.not_in_list", name=str(self.current)), ephemeral=True)
-                return
-
-            await self.bot.update_global_data(inter.author.id, self.data, db_name=DBModel.users)
-
-            self.log = self.tr("fav.itg.log.removed", link=url)
+            if self.mode == ViewMode.fav_manager:
+                if not change.saved:
+                    await inter.edit_original_message(self.tr("fav.not_in_list", name=str(name)))
+                    return
+                self.log = self.tr("fav.log.removed", link=md_link(name, change.result))
+            else:
+                if not change.saved:
+                    await inter.send(self.tr("fav.itg.not_in_list", name=str(name)), ephemeral=True)
+                    return
+                item = change.result
+                self.log = self.tr(
+                    "fav.itg.log.removed", link=md_link(name, item["url"] if isinstance(item, dict) else item)
+                )
 
         await inter.edit_original_message(content=self.build_txt(), view=self)
 
     async def clear_callback(self, inter: disnake.MessageInteraction):
+        # antes de qualquer espera (o defer incluído): apagamento depois disto descarta a gravação
+        read_at = self.bot.pool.erasure_tombstones.now()
         await inter.response.defer(ephemeral=True)
 
-        self.data = await self.bot.get_global_data(inter.author.id, db_name=DBModel.users)
+        field = _USER_LIST_FIELDS.get(self.mode)
 
-        if self.mode == ViewMode.fav_manager:
-            if not self.data["fav_links"]:
-                await inter.send(self.tr("fav.no_favorites"), ephemeral=True)
+        if field is None:
+            self.data = await self.bot.get_global_data(inter.author.id, db_name=DBModel.users)
+        else:
+
+            def clear(doc: dict) -> Union[Skip, dict]:
+                if not doc[field]:
+                    return SKIP
+                removed = dict(doc[field])  # a cópia entregue ao membro é exatamente o que saiu do banco
+                doc[field].clear()
+                return removed
+
+            change = await change_user_doc(self.bot, inter.author.id, clear, read_at=read_at)
+            if change.erased:
+                await inter.send(self.tr("erasure.erased_while_saving"), ephemeral=True)
                 return
+            self.data = change.doc
 
-            fp = BytesIO(bytes(json.dumps(self.data["fav_links"], indent=4), "utf-8"))
+            if self.mode == ViewMode.fav_manager:
+                if not change.saved:
+                    await inter.send(self.tr("fav.no_favorites"), ephemeral=True)
+                    return
+                self.log = self.tr("fav.log.cleared")
+                text, filename = self.tr("fav.cleared"), "favs.json"
+            else:
+                if not change.saved:
+                    await inter.edit_original_message(content=self.tr("fav.itg.none_saved"), view=None)
+                    return
+                self.log = self.tr("fav.itg.log.cleared")
+                text, filename = self.tr("fav.itg.cleared"), "integrations.json"
 
-            self.data["fav_links"].clear()
-
-            await self.bot.update_global_data(inter.author.id, self.data, db_name=DBModel.users)
-
-            self.log = self.tr("fav.log.cleared")
-
-            await inter.send(
-                self.tr("fav.cleared"),
-                ephemeral=True,
-                file=disnake.File(fp, filename="favs.json"),
-            )
-
-        elif self.mode == ViewMode.integrations_manager:
-            if not self.data["integration_links"]:
-                await inter.response.edit_message(content=self.tr("fav.itg.none_saved"), view=None)
-                return
-
-            fp = BytesIO(bytes(json.dumps(self.data["integration_links"], indent=4), "utf-8"))
-
-            self.data["integration_links"].clear()
-
-            await self.bot.update_global_data(inter.author.id, self.data, db_name=DBModel.users)
-
-            self.log = self.tr("fav.itg.log.cleared")
-
-            await inter.send(
-                self.tr("fav.itg.cleared"),
-                ephemeral=True,
-                file=disnake.File(fp, filename="integrations.json"),
-            )
+            fp = BytesIO(bytes(json.dumps(change.result, indent=4), "utf-8"))
+            await inter.send(text, ephemeral=True, file=disnake.File(fp, filename=filename))
 
         self.current = None
 

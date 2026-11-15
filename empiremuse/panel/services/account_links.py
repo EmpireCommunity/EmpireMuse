@@ -9,7 +9,7 @@ cada requisição (0 = ilimitado; o dono do bot é isento). Nada aqui faz requis
 
 from __future__ import annotations
 
-from typing import Any, NamedTuple, Optional
+from typing import Any, Callable, NamedTuple, Optional
 
 from empiremuse.panel.services.account_base import AccountContext, AccountSection, Parsed, effective_limit, is_web_link
 from empiremuse.panel.services.base import (
@@ -257,13 +257,17 @@ class RadioFavoritesSection(AccountSection):
             "filtros": tuple(RadioFilterView(node, self._filter_label(tree, node)) for node in nodes),
         }
 
-    async def submit_own(self, service: Any, ctx: AccountContext, action: str, args: Args) -> Any:
+    async def submit_own(
+        self, service: Any, ctx: AccountContext, action: str, args: Args, alive: Callable[[], bool]
+    ) -> Any:
         tr = panel_translator(ctx.pool)
         favorites = self._favorites(ctx)
         station = action == "radio_estacao_remover"
         target = (first(args, "estacao" if station else "filtro") or "").strip()
         if favorites is None or not target:
-            return await service.finish_own(self, ctx, STATUS_INVALID, tr("panel.account.radio.invalid"), KIND_ERROR)
+            return await service.finish_own(
+                self, ctx, STATUS_INVALID, tr("panel.account.radio.invalid"), KIND_ERROR, alive=alive
+            )
         try:
             if station:
                 changed = await favorites.remove_station(ctx.user_id, target)
@@ -271,10 +275,10 @@ class RadioFavoritesSection(AccountSection):
                 changed = await favorites.remove_filter(ctx.user_id, target)
         except RadioUnavailable:
             return await service.finish_own(
-                self, ctx, STATUS_UNAVAILABLE, tr("panel.account.radio.unavailable"), KIND_ERROR
+                self, ctx, STATUS_UNAVAILABLE, tr("panel.account.radio.unavailable"), KIND_ERROR, alive=alive
             )
         text = tr("panel.account.radio.removed" if changed else "panel.account.radio.already_removed")
-        return await service.finish_own(self, ctx, STATUS_OK, text, KIND_OK)
+        return await service.finish_own(self, ctx, STATUS_OK, text, KIND_OK, alive=alive)
 
 
 class IntegrationsSection(AccountSection):

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from empiremuse.panel.services.base import channel_in_guild
 from empiremuse.panel.services.radio import RadioPage, state_of
 from empiremuse.panel.services.radio_live import StationView
 from empiremuse.panel.services.radio_local import LocalView, Paging
@@ -59,7 +60,7 @@ async def radio_entry(
     """Uma rádio do servidor. ``can_edit`` = premium e ``manage_messages`` no canal; ``stations`` pede ao diretório os
     nomes da principal e da reserva (só as ao vivo, e só com premium, como a página do painel)."""
     bot = page.bot_of(ctx, radio)
-    channel = bot.get_channel(int(radio.channel_id)) if bot is not None else None
+    channel = channel_in_guild(bot, radio.channel_id, ctx.guild_id)
     state = ctx.pool.radio.service.state(radio.id)
     entry: dict[str, Any] = {
         "id": str(radio.id),

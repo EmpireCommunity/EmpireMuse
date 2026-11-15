@@ -1,4 +1,8 @@
-"""BK-1: cada porta de modal descarta o documento apagado durante a leitura."""
+"""BK-1 e BK-2: cada porta de modal descarta a gravação se os dados do membro foram apagados depois do envio.
+
+O documento é relido e gravado sob o lock do usuário (``change_user_doc``), o mesmo do apagamento; o que ainda pode acontecer é o
+apagamento rodar ANTES de o modal chegar ao lock (aqui, durante a consulta da cota).
+"""
 
 import json
 
@@ -11,16 +15,14 @@ pytestmark = [pytest.mark.critical, pytest.mark.asyncio]
 
 
 @pytest.mark.parametrize("path", ["import_favorites", "import_integrations", "add_favorite"])
-async def test_modal_guard_rejects_data_erased_after_read(path):
+async def test_modal_guard_rejects_data_erased_before_the_write_reaches_the_lock(path):
     bot = ModalBot()
-    read = bot.get_global_data
 
-    async def erased_after_read(user, **kwargs):
-        doc = await read(user, **kwargs)
-        bot.pool.erasure_tombstones.mark(user)
-        return doc
+    async def erased_during_the_quota_lookup(user):
+        bot.pool.erasure_tombstones.mark(user.id)
+        return False
 
-    bot.get_global_data = erased_after_read
+    bot.is_owner = erased_during_the_quota_lookup
     mode = ViewMode.integrations_manager if path == "import_integrations" else ViewMode.fav_manager
     view = modal_view(bot, mode)
     if path == "add_favorite":

@@ -1,4 +1,12 @@
-"""Token assinado das confirmações da Jukebox (configurar e desligar): HMAC, 60 s como no Discord, uso único."""
+"""Token assinado das confirmações da Jukebox (configurar e desligar): HMAC, 60 s como no Discord, uso único.
+
+O token vale só no processo que o emitiu: a chave de assinatura leva um sal aleatório por instância, porque o registro de usos
+fica em memória e a validade usa o relógio monotônico. Depois de um reinício (do processo ou da máquina) um token antigo, gasto
+ou não, é só "inválido" e o usuário pede outro.
+
+O sal nunca sai da memória do processo. Por isso o segredo configurado (``signing_secret``) sozinho não basta para assinar:
+quem o obtiver por um vazamento da configuração não consegue forjar um token aceito por uma instância em execução.
+"""
 
 from __future__ import annotations
 
@@ -19,7 +27,9 @@ class SignedTokens:
     def __init__(self, secret: str, clock: Callable[[], float] = time.monotonic) -> None:
         if len(secret) < SIGNING_KEY_MIN_LENGTH:
             raise ValueError(f"A chave de assinatura deve ter no mínimo {SIGNING_KEY_MIN_LENGTH} caracteres.")
-        self._secret, self._clock = secret.encode("utf-8"), clock
+        # a chave efetiva morre com a instância: nenhum token sobrevive ao reinício que esvazia ``_used`` e zera o relógio
+        self._secret = hmac.new(secret.encode("utf-8"), secrets.token_bytes(32), hashlib.sha256).digest()
+        self._clock = clock
         self._used: dict[str, float] = {}
 
     def _sign(self, payload: str) -> str:

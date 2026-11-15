@@ -43,3 +43,19 @@ def test_registro_de_usos_cheio_recusa_novo_token_e_nunca_expulsa_um_uso_ja_gast
     now[0] += 61.0  # os usos vencem (e o token novo, emitido antes, também): só então há espaço de novo
     fresh = tokens.issue("1", 2, "escopo", "alvo9")
     assert tokens.check(fresh, "1", 2, "escopo", "alvo9") is None
+
+
+@pytest.mark.regression
+def test_token_de_antes_do_reinicio_nao_vale_no_processo_novo_mesmo_gasto_ou_com_o_relogio_zerado():
+    """BK-2: o registro de usos e o relógio monotônico morrem com o processo; o token também (mesma chave, outra instância)."""
+    chave = "k" * SIGNING_KEY_MIN_LENGTH
+    antes = SignedTokens(chave, clock=lambda: 5000.0)
+    gasto = antes.issue("1", 2, "escopo", "alvo")
+    antes.consume(gasto)
+    pendente = antes.issue("1", 2, "escopo", "alvo")
+
+    depois = SignedTokens(chave, clock=lambda: 3.0)  # reinício: usos vazios e relógio bem antes da validade antiga
+
+    assert depois.check(gasto, "1", 2, "escopo", "alvo") == "invalido"
+    assert depois.check(pendente, "1", 2, "escopo", "alvo") == "invalido"
+    assert antes.check(pendente, "1", 2, "escopo", "alvo") is None  # no processo que emitiu segue valendo

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import asyncio
+import logging
 from typing import Union, Optional
 
 import disnake
@@ -24,6 +25,7 @@ from empiremuse.utils.music.errors import (
     GenericError,
 )
 from empiremuse.utils.music.user_limits import quota_for, track_fav_error_text
+from empiremuse.utils.user_docs import change_user_doc, normalize_integration_links
 from empiremuse.utils.music.interactions import (
     SelectInteraction,
 )
@@ -57,6 +59,8 @@ from empiremuse.music_cog.controller_buttons import (
     _pc_command_args,
 )
 from empiremuse.music_cog.controller_state import ControllerState
+
+logger = logging.getLogger(__name__)
 
 
 class PlayerControllerMixin:
@@ -139,6 +143,8 @@ class PlayerControllerMixin:
                         await guild_text(self.bot, req.interaction.guild, "legacy.controller.join_voice_button")
                     )
 
+                # antes de ler: vale para a normalização das integrações, feita depois do modal
+                read_at = self.bot.pool.erasure_tombstones.now()
                 req.user_data = await self.bot.get_global_data(id_=req.interaction.user.id, db_name=DBModel.users)
 
                 req.modal_components = []
@@ -147,9 +153,20 @@ class PlayerControllerMixin:
 
                 _pc_modal_fav_options(self, req)
 
-                await _pc_modal_integration_options(self, req)
+                legacy_integrations = _pc_modal_integration_options(self, req)
 
                 await _pc_modal_send(self, req)
+
+                if legacy_integrations:
+                    # depois do modal: relido e normalizado sob o lock do usuário, nada do documento lido antes volta ao banco
+                    try:
+                        await change_user_doc(
+                            self.bot, req.interaction.user.id, normalize_integration_links, read_at=read_at
+                        )
+                    except Exception as exc:
+                        # o modal já é a resposta desta interação: não há como avisar o membro, e o formato antigo segue
+                        # válido para leitura. Só o tipo vai ao log.
+                        logger.warning("Integrações não normalizadas depois do modal (%s)", type(exc).__name__)
 
                 return
 

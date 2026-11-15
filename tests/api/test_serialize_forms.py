@@ -59,7 +59,9 @@ class TestSecrets:
         world = AccountWorld()
         service, ctx, forms = read_account(world)
         section = service.section("rpc")
-        outcome = asyncio.run(service.submit(section, ctx, "rpc_token_gerar", {"versao": [forms["rpc"].versao]}))
+        outcome = asyncio.run(
+            service.submit(section, ctx, "rpc_token_gerar", {"versao": [forms["rpc"].versao]}, alive=lambda: True)
+        )
         assert outcome.status == 200
         once = ps.new_rpc_token(outcome.form)
         assert once is not None and once[1] == {"Cache-Control": "no-store"}

@@ -275,6 +275,9 @@ class RadioSetupService:
             return STATUS_CONFLICT, view(message=CONFLICT_TEXT, kind=KIND_ERROR)
         if status is not None:
             return STATUS_INVALID, view(message=tr(MSG_TOKEN_KEY), kind=KIND_ERROR)
+        # gasto ANTES da chamada ao bot (sem ``await`` desde o ``check``): dois envios ao mesmo tempo não passam os dois, e o
+        # registro de usos cheio é recusado pelo ``check``, nunca um erro depois de a rádio já ter sido redefinida
+        self.tokens.consume(token)
         try:
             await self.api(ctx).reset(ctx.guild_id, int(ctx.user_id), str(radio.id), int(sent))
         except RadioNotFound:
@@ -285,7 +288,6 @@ class RadioSetupService:
             return STATUS_CONFLICT, view(message=CONFLICT_TEXT, kind=KIND_ERROR)
         except RadioInvalid as exc:
             return STATUS_INVALID, view(message=_refusal(exc, tr)[1], kind=KIND_ERROR)
-        self.tokens.consume(token)
         self._audit(ctx, radio, "redefinida")
         return STATUS_OK, view(message=tr("panel.radio.setup.reset_done"), kind=KIND_OK, removed=True)
 
