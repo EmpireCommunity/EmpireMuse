@@ -300,23 +300,28 @@ class YtOauthLL(commands.Cog):
                 if node is not None and not local_node_allowed:
                     logger.warning("Refresh token do YouTube não aplicado ao nó [%s].", node.identifier)
                 if local_node_allowed and "youtube-plugin" in node.info["plugins"]:
-                    resp = await self.bot.session.post(
+                    # ``async with``: a resposta é liberada (e a conexão volta ao pool) em qualquer saída do bloco.
+                    async with self.bot.session.post(
                         f"{node.rest_uri}/youtube",
                         headers=node._websocket.headers,
                         json={"refreshToken": refresh_token},
                         allow_redirects=False,
-                    )
+                    ) as resp:
+                        status = resp.status
+                        body = (
+                            ""
+                            if status == 204
+                            else plain_snippet((await resp.text()).replace(refresh_token, "***"), RESPONSE_LOG_LIMIT)
+                        )
 
-                    if resp.status != 204:
-                        body = plain_snippet((await resp.text()).replace(refresh_token, "***"), RESPONSE_LOG_LIMIT)
+                    if status != 204:
                         logger.warning(
                             "Falha ao aplicar o refreshToken no lavalink LOCAL: HTTP %s, resposta: %s",
-                            resp.status,
+                            status,
                             body,
                         )
                         txts.append(
-                            f"Erro ao aplicar o refreshToken no lavalink LOCAL (HTTP {resp.status}). "
-                            "Veja o log do servidor."
+                            f"Erro ao aplicar o refreshToken no lavalink LOCAL (HTTP {status}). Veja o log do servidor."
                         )
                     else:
                         txts.append("O refreshToken foi configurado automaticamente no servidor lavalink LOCAL")
