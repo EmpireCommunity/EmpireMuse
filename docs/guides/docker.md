@@ -75,7 +75,7 @@ Para executar o bot com o servidor Lavalink local integrado e persistência em b
 
 ### 3.2 Executando com MongoDB Dedicado (`deploy/docker-compose.deps.yml`)
 
-O MongoDB opcional (`mongo:8.0.34`, fixado por digest imutável) tem o próprio arquivo, [`deploy/docker-compose.deps.yml`](../../deploy/docker-compose.deps.yml). Ele sobe sempre com autenticação e publica a porta só em `127.0.0.1`.
+O MongoDB opcional (`mongo:8.0.38`, fixado por digest imutável) tem o próprio arquivo, [`deploy/docker-compose.deps.yml`](../../deploy/docker-compose.deps.yml). Ele sobe sempre com autenticação e publica a porta só em `127.0.0.1`.
 
 1. Crie o arquivo `.env.mongo` na raiz do projeto (**nunca versione este arquivo**; ele já está incluído no `.gitignore`). Ele guarda só o usuário root, usado na criação do banco:
    ```env

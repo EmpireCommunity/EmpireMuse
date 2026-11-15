@@ -22,7 +22,7 @@ name: empiremuse
 services:
   mongo:
     container_name: empiremuse-mongo
-    image: mongo:8.0.34@sha256:4a4ab5d4834207389e0d7270fac988e21ffedccecba77991a552f755df229907
+    image: mongo:8.0.38@sha256:d97fea17ccb8d004cd137be8dab54d70d0df11be69c9f422aefe4484c8414ab7
     # Autenticação explícita (não depender só do comportamento da imagem na criação do banco).
     command: ["--auth"]
     restart: unless-stopped
