@@ -21,6 +21,9 @@ LEGACY_PANEL_PRESENCES = (
     "⚙️ Painel: muse.empirecommunity.org/panel",
     "⚙️ Painel: muse.empirecommunity.org/painel",
 )
+DEFAULT_COMMANDS_PRESENCE = "🎵 /play ou {prefix}play | ajuda: {prefix}help"
+# O padrão antigo fixava "!" (o prefixo padrão é "!!"): quem o copiou no deploy passa a ver o próprio prefixo.
+LEGACY_COMMANDS_PRESENCES = ("🎵 /play ou !play | ajuda: !help",)
 
 DEFAULT_DESCRIPTION = "\n".join(
     (

@@ -17,7 +17,12 @@ from disnake.ext import commands
 
 from empiremuse import paths
 from empiremuse.i18n import localized
-from empiremuse.rules.app_profile import DEFAULT_PANEL_PRESENCE, LEGACY_PANEL_PRESENCES
+from empiremuse.rules.app_profile import (
+    DEFAULT_COMMANDS_PRESENCE,
+    DEFAULT_PANEL_PRESENCE,
+    LEGACY_COMMANDS_PRESENCES,
+    LEGACY_PANEL_PRESENCES,
+)
 from empiremuse.rules.text import format_int, format_mib
 from empiremuse.rules.bot_tokens import is_radio_only_identifier
 from empiremuse.rules.bot_roles import Peer, invite_order, main_missing_notice, notifier
@@ -61,11 +66,18 @@ class Misc(commands.Cog):
         # Compatibilidade somente com o texto padrão copiado nos deploys; URLs personalizadas são literais.
         if text in LEGACY_PANEL_PRESENCES:
             text = DEFAULT_PANEL_PRESENCE
+        if text in LEGACY_COMMANDS_PRESENCES:
+            text = DEFAULT_COMMANDS_PRESENCE
         if "{panel_url}" in text:
             panel_url = public_panel_url(self.bot.pool)
             if not panel_url:
                 return ""
             text = text.replace("{panel_url}", panel_url)
+        if "{prefix}" in text:
+            prefix = self.bot.default_prefix
+            if not prefix or self.bot.config["INTERACTION_COMMAND_ONLY"]:
+                return ""  # sem comandos de prefixo, a presença que os ensina não aparece
+            text = text.replace("{prefix}", prefix)
 
         try:
             text = text.replace("{owner}", str(self.bot.owner))
