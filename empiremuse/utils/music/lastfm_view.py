@@ -7,6 +7,7 @@ import copy
 import datetime
 from typing import Optional
 
+import aiohttp
 import disnake
 from disnake.ext import commands
 
@@ -25,7 +26,6 @@ class LastFMView(disnake.ui.View):
         self.interaction: Optional[disnake.MessageInteraction] = None
         self.session_key = ""
         self.scrobble_enabled = scrobble
-        self.scrobble_toggled = False
         self.username = ""
         self.token = ""
         self.last_timestamp = None
@@ -109,7 +109,6 @@ class LastFMView(disnake.ui.View):
                 self.username = user_data["lastfm"]["username"]
                 self.scrobble_enabled = not user_data["lastfm"]["scrobble"]
                 user_data["lastfm"]["scrobble"] = self.scrobble_enabled
-                self.scrobble_toggled = True
                 await bot.update_global_data(interaction.author.id, user_data, db_name=DBModel.users)
                 bot.pool.lastfm_sessions[interaction.author.id] = dict(user_data["lastfm"])
         self.clear_items()
@@ -141,7 +140,7 @@ class LastFMView(disnake.ui.View):
                 try:
                     async with asyncio.timeout(AUTH_TOKEN_TIMEOUT_S):
                         self.token = await self.ctx.bot.last_fm.get_token()
-                except TimeoutError, LastFmException:
+                except TimeoutError, LastFmException, aiohttp.ClientError, aiohttp.ContentTypeError, KeyError:
                     await self._auth_reply(interaction, "legacy.lastfm.auth_retry")
                     return
                 if self.is_finished():

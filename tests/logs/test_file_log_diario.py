@@ -4,6 +4,7 @@ import logging
 import os
 import stat
 import sys
+import time
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -343,6 +344,5 @@ def test_marker_uses_truncation_time_instead_of_first_emit(tmp_path, monkeypatch
     handler.close()
     lines = (tmp_path / nome(0)).read_text().splitlines()
     assert lines[-1] == expected
-    assert lines[-1].startswith("2026-11-09 23:59:10,000")
-    assert lines[0].startswith("2026-11-09 23:59:00,000")
-    assert lines[-1][:23] != lines[0][:23]
+    assert lines[-1].startswith(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(clock().timestamp())) + ",000")
+    assert lines[0].startswith(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(AGORA.timestamp())) + ",000")

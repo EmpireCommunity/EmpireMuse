@@ -8,7 +8,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 ## [Unreleased]
 
 ### Corrigido
-- Last.fm: a vinculação responde quando expira ou o serviço não responde; encerrar uma tela preserva o scrobble alterado pelo controlador.
+- Last.fm: a vinculação responde quando expira, a rede falha ou o serviço retorna dados inválidos; encerrar uma tela preserva o scrobble alterado pelo controlador, inclusive após alterná-lo na tela.
 
 ### Adicionado
 - API para painéis externos: `GET /api/v1/status` (aditivo na v1, chave de serviço, sem sessão, só leitura) devolve o que a página de status já mostra, sem dado novo e sem dado pessoal: o estado geral (`ok`, `degraded` ou `restarting`), o nome e o número de servidores de cada bot pronto, a contagem de bots pendentes e com falha, a versão e o commit curto. Nunca traz avatar, convite, identificador ou erro de bot com falha, mensagem do operador nem flags de RPC. `/meta` passa a listar o recurso `status`.

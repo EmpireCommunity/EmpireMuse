@@ -479,12 +479,17 @@ async def test_lastfm_auth_ack_single_poll_and_stop(mundo, monkeypatch):
     assert task.cancelled()
 
 
-@pytest.mark.parametrize("outcome", ["timeout", "error", "finished_before", "finished_during"])
+@pytest.mark.parametrize(
+    "outcome",
+    ["timeout", "error", "client_error", "content_type", "missing_token", "finished_before", "finished_during"],
+)
 async def test_lastfm_auth_early_exit_answers_deferred_interaction(mundo, monkeypatch, outcome):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
     from empiremuse.utils.music import lastfm_view
     from empiremuse.utils.music.lastfm_tools import LastFmException
+
+    import aiohttp
 
     assert 0 < lastfm_view.AUTH_TOKEN_TIMEOUT_S <= 30
     monkeypatch.setattr(lastfm_view, "AUTH_TOKEN_TIMEOUT_S", 0)
@@ -495,6 +500,12 @@ async def test_lastfm_auth_early_exit_answers_deferred_interaction(mundo, monkey
             await asyncio.Event().wait()
         if outcome == "error":
             raise LastFmException({"error": 11, "message": "unavailable"})
+        if outcome == "client_error":
+            raise aiohttp.ClientError()
+        if outcome == "content_type":
+            raise aiohttp.ContentTypeError(None, ())
+        if outcome == "missing_token":
+            raise KeyError("token")
         view.stop()
         return "token"
 
@@ -514,7 +525,8 @@ async def test_lastfm_auth_early_exit_answers_deferred_interaction(mundo, monkey
     view.stop()
 
 
-async def test_lastfm_view_timeout_keeps_controller_scrobble_change(mundo):
+@pytest.mark.parametrize("view_toggle", [False, True])
+async def test_lastfm_view_timeout_keeps_controller_scrobble_change(mundo, view_toggle):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
     from empiremuse.cogs.lastfm import LastFMView
@@ -536,9 +548,12 @@ async def test_lastfm_view_timeout_keeps_controller_scrobble_change(mundo):
     inter.response = SimpleNamespace(defer=AsyncMock())
     view = LastFMView(SimpleNamespace(bot=cog.bot), "current", scrobble=True)
     read_at = mundo.pool.erasure_tombstones.now()
+    if view_toggle:
+        await view.scrobble_enable(inter)
+        assert view.scrobble_enabled is False
     await _pc_lastfm(cog, SimpleNamespace(cmd=None, interaction=inter))
     await view.on_timeout()
     assert await cog._save_link(inter, view, None, read_at)
     doc = await mundo.database.find_doc(ALVO, db_name="users", collection="global")
-    assert doc["lastfm"]["scrobble"] is False
-    assert mundo.pool.lastfm_sessions[ALVO]["scrobble"] is False
+    assert doc["lastfm"]["scrobble"] is view_toggle
+    assert mundo.pool.lastfm_sessions[ALVO]["scrobble"] is view_toggle
