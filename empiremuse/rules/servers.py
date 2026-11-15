@@ -3,6 +3,9 @@
 O documento fica na coleção ``servers`` do banco global (``_id = str(gid)``). Aqui só há dados e decisões; o banco e a trava são do
 ``utils/servers``. A migração de ``settings`` copia só o documento antigo do bot principal (os das reservas são ignorados) e todo
 valor inválido cai no padrão (contrato §2).
+
+``new_doc`` não cria ``playlists_hidden``: o campo nasce na primeira gravação de playlists que esconde itens (ilegíveis ou perdedores de
+colisão de nome) e guarda esses itens crus. Nada o lê para exibir; só a exportação o traz à parte, e só o ``clear`` do escopo o apaga.
 """
 
 from __future__ import annotations

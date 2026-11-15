@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 from copy import deepcopy
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -356,12 +357,34 @@ def test_a_stale_version_is_refused_and_writes_nothing(world):  # P-V7: painel �
 def test_export_then_import_into_an_empty_server_gives_the_same_list(world):
     run(world.playlists.add(GID, item("Rock", genres=["Rock", "Anos 80"])))
     run(world.playlists.add(GID, item("Jazz café", url=f"{BASE}j?list=PL1", description="")))
+    # válida, mas escondida: o arquivo a traz à parte
+    hidden = {"order": 3, "name": "Escondida", "url": f"{BASE}h", "genres": []}
+    world.banco.servers_doc()["playlists_hidden"] = [hidden]
+    world.store._docs.clear()
     exported = run(world.playlists.export_bytes(GID))
     assert b"icon" not in exported and "café".encode() in exported  # texto legível, não \\u00e9
+    assert json.loads(exported)["hidden"] == [hidden]
 
     report = run(world.playlists.import_file(OTHER, parse_file(exported, max_bytes=PLAYLIST_FILE_MAX_BYTES)))
 
     assert report.skipped == () and run(world.playlists.list(OTHER)) == run(world.playlists.list(GID))
+    assert "Escondida" not in names(run(world.playlists.list(OTHER)))  # a importação lê só ``playlists``
+
+
+@pytest.mark.regression
+def test_exporting_a_hidden_item_with_values_json_cannot_write_never_fails(world):
+    """Crivo e Alicerce (PR 255): o item escondido é cru e pode trazer o que o JSON não escreve (data do MongoDB, bytes, chave numérica);
+    a exportação levantava ``TypeError``. O valor sai como ``repr`` e as chaves saem como texto limpo."""
+    when = datetime(2024, 1, 2, tzinfo=timezone.utc)
+    world.banco.put(
+        *SERVERS,
+        GID,
+        {**new_doc(), "_id": str(GID), "playlists_hidden": [{"name\u2028x": "a", 7: b"\x00", "at": when}]},
+    )
+
+    exported = json.loads(run(world.playlists.export_bytes(GID)))
+
+    assert exported["hidden"] == [{"name x": "a", "7": repr(b"\x00"), "at": repr(when)}]
 
 
 @pytest.mark.parametrize("gid", [999, 0, -1, "abc", None, True])

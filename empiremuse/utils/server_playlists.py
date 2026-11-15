@@ -87,7 +87,11 @@ def _report_unreadable(gid: str, count: int) -> None:
         return
     _unreadable_reported[gid] = count
     if count:
-        logger.warning("Servidor [%s]: %d playlists gravadas ilegíveis mantidas como estão", gid, count)
+        logger.warning(
+            "Servidor [%s]: %d playlists ilegíveis ou repetidas; vão para a lista escondida na próxima gravação",
+            gid,
+            count,
+        )
 
 
 def _hidden(doc: dict) -> list[Any]:
@@ -101,13 +105,17 @@ def _raw_scope(raw: Any) -> str:
     return scope if scope in SCOPES else SCOPE_JUKEBOX
 
 
+_JSON_SCALARS = (str, int, float, bool, type(None))
+
+
 def _exportable(value: Any) -> Any:
-    """O item escondido para o arquivo de exportação: os textos limpos (``clean_legacy_text``; um surrogate isolado nem vira UTF-8)."""
+    """O item escondido (cru) para o arquivo de exportação, que nunca falha: chaves e textos limpos (``clean_legacy_text``; um surrogate
+    isolado nem vira UTF-8) e o que o JSON não escreve (data do MongoDB, bytes, ``ObjectId``) como ``repr`` limpo."""
     if isinstance(value, dict):
-        return {str(key): _exportable(item) for key, item in value.items()}
-    if isinstance(value, list):
+        return {clean_legacy_text(str(key)): _exportable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
         return [_exportable(item) for item in value]
-    return clean_legacy_text(value)
+    return clean_legacy_text(value if isinstance(value, _JSON_SCALARS) else repr(value))
 
 
 def _items(doc: dict, scope: str | None = None) -> tuple[Playlist, ...]:
