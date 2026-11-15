@@ -336,7 +336,7 @@ class RadioStationSearchHandler(RadiosHandler):
             self._reject_plain(STATUS_FORBIDDEN, UNAVAILABLE_TITLE, tr(FORBIDDEN_KEY))
             return
         term = self.get_query_argument(SEARCH_FIELD, "", strip=False)[:SEARCH_RAW_LIMIT]
-        results, hint = await self.page.live.search(ctx, radio, term, tr)
+        results, hint, _reason = await self.page.live.search(ctx, radio, term, tr)
         record_panel_action(ctx, f"{RADIOS_CATEGORY}/estacoes", 200)
         view = await self.page.live.view(
             ctx, radio, f"{action}/{radio.id}", True, results=results, hint=hint, term=term
@@ -495,7 +495,7 @@ class RadioLocalHandler(RadiosHandler):
                 self._reject_plain(429, _RATE_TITLE, _MSG_RATE)
                 return
             page = parse_page(self.get_query_argument(PAGE_FIELD, "", strip=False))
-            results, hint, paging = await self.page.live.stations(ctx, radio, node, page, tr)
+            results, hint, paging, _reason = await self.page.live.stations(ctx, radio, node, page, tr)
         record_panel_action(ctx, f"{RADIOS_CATEGORY}/local", status)
         view = await self.page.live.view(
             ctx,

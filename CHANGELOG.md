@@ -8,11 +8,13 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 ## [Unreleased]
 
 ### Corrigido
+- API para painéis externos: criar e apagar estação do servidor deixam a recusa de limite e de estação em uso para o armazenamento, sem a conferência duplicada fora da trava (os mesmos `400` `limit` e `in_use`); escritas de favoritas de rádio registram no uso o status real do erro (por exemplo `503`) em vez de `200` ou `500`; as listas de favoritas leem as estações do servidor numa consulta só; o aviso de lista de favoritas acima do teto sai só quando uma escrita a grava cortada, não a cada leitura; e uma lista de valores simples onde a API espera objetos é recusada em vez de virar um objeto.
 - Menu de integrações: limpar a lista quando ela já está vazia volta a mostrar o aviso (o Discord recusava a resposta).
 - Favoritar a faixa atual pelo player: a confirmação mostra o prefixo do servidor (a configuração era lida pelo ID do membro).
 - Last.fm: a vinculação responde quando expira, a rede falha ou o serviço retorna dados inválidos; encerrar uma tela preserva o scrobble alterado pelo controlador, inclusive após alterná-lo na tela.
 
 ### Adicionado
+- API para painéis externos (aditivo na v1): a tarefa da Jukebox que termina em `erro` traz `reason` (`timeout`, `interrupted`, `missing_permissions`, `channel_unavailable`, `category_unavailable`, `refused` ou `unexpected`), sem texto de usuário final; o passo 1 da confirmação da Jukebox traz `expires_in` (60 s); a busca de estações e a cascata de locais trazem `reason` (`limited` ou `unavailable`) quando a lista vem vazia porque o diretório não foi consultado de fato. O contrato documenta que um `confirm_token` enviado num plano que não limpa canal é ignorado, que um `404` ao acompanhar uma tarefa depois de um reinício é resultado desconhecido e que o `409` das favoritas de rádio é só a `Idempotency-Key` reusada.
 - API para painéis externos: `GET /api/v1/status` (aditivo na v1, chave de serviço, sem sessão, só leitura) devolve o que a página de status já mostra, sem dado novo e sem dado pessoal: o estado geral (`ok`, `degraded` ou `restarting`), o nome e o número de servidores de cada bot pronto, a contagem de bots pendentes e com falha, a versão e o commit curto. Nunca traz avatar, convite, identificador ou erro de bot com falha, mensagem do operador nem flags de RPC. `/meta` passa a listar o recurso `status`.
 
 ### Breaking

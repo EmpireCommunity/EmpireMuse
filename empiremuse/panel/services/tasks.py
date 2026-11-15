@@ -34,12 +34,20 @@ MSG_SHUTDOWN = "A operação foi interrompida porque o bot está sendo reiniciad
 Job = Callable[[], Awaitable[str]]
 
 
-class TaskFailure(Exception):
-    """Falha esperada de uma tarefa; ``message`` é texto pt-BR seguro para mostrar ao usuário."""
+REASON_REFUSED = "refused"  # recusa do módulo compartilhado sem código mais preciso
+REASON_TIMEOUT = "timeout"
+REASON_INTERRUPTED = "interrupted"  # o bot reiniciou (``shutdown``) com a tarefa em andamento
+REASON_UNEXPECTED = "unexpected"
 
-    def __init__(self, message: str) -> None:
+
+class TaskFailure(Exception):
+    """Falha esperada de uma tarefa; ``message`` é texto pt-BR seguro para mostrar ao usuário e ``reason`` um código estável
+    (sem texto de usuário final) que a API devolve."""
+
+    def __init__(self, message: str, reason: str = REASON_REFUSED) -> None:
         super().__init__(message)
         self.message = message
+        self.reason = reason
 
 
 class TaskBusy(Exception):
@@ -61,6 +69,7 @@ class Task:
     message: str
     created_at: float
     finished_at: Optional[float] = None
+    reason: Optional[str] = None  # só no estado ``erro``: o código estável da falha
 
     @property
     def final(self) -> bool:
@@ -131,21 +140,22 @@ class TaskRunner:
             self._finish(task, STATE_OK)
         except TaskFailure as failure:
             task.message = failure.message
-            self._finish(task, STATE_ERROR)
+            self._finish(task, STATE_ERROR, failure.reason)
         except TimeoutError:
             task.message = MSG_TIMEOUT
-            self._finish(task, STATE_ERROR)
+            self._finish(task, STATE_ERROR, REASON_TIMEOUT)
         except asyncio.CancelledError:
             task.message = MSG_SHUTDOWN
-            self._finish(task, STATE_ERROR)
+            self._finish(task, STATE_ERROR, REASON_INTERRUPTED)
             raise
         except Exception as exc:  # só o tipo no log: a mensagem pode trazer dados do Discord ou do usuário
             logger.warning("Falha inesperada na tarefa %s (%s)", task.kind, type(exc).__name__)
             task.message = MSG_GENERIC
-            self._finish(task, STATE_ERROR)
+            self._finish(task, STATE_ERROR, REASON_UNEXPECTED)
 
-    def _finish(self, task: Task, state: str) -> None:
+    def _finish(self, task: Task, state: str, reason: Optional[str] = None) -> None:
         task.state = state
+        task.reason = reason
         task.finished_at = self._clock()
 
     async def shutdown(self) -> None:

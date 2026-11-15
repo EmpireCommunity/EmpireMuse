@@ -33,7 +33,7 @@ from empiremuse.panel.services.base import (
 )
 from empiremuse.panel.services.jukebox_tokens import JukeboxTokens
 from empiremuse.panel.services.service import SettingsService
-from empiremuse.panel.services.tasks import Job, Task, TaskFailure, TaskRunner
+from empiremuse.panel.services.tasks import REASON_REFUSED, Job, Task, TaskFailure, TaskRunner
 from empiremuse.rules import limits
 from empiremuse.utils import branding
 from empiremuse.utils.music.converters import perms_translations
@@ -68,6 +68,9 @@ _TYPE_NAMES = (
     (disnake.TextChannel, "texto"),
 )
 
+REASON_MANAGE_PERMISSIONS = "missing_permissions"
+REASON_CHANNEL = "channel_unavailable"
+REASON_CATEGORY = "category_unavailable"
 MSG_MODE = "Escolha como configurar a Jukebox."
 MSG_CHANNEL = "Escolha um canal da lista."
 MSG_TITLE = f"O título do post deve ter de {limits.FORUM_TITLE_MIN} a {limits.FORUM_TITLE_MAX} caracteres."
@@ -109,6 +112,11 @@ MSG_MANAGE_PERMISSIONS = (
     f"O {branding.BOT_NAME} precisa da permissão Gerenciar permissões neste canal (ou de "
     "Administrador). Conceda a permissão ao cargo do bot ou escolha Criar um canal novo."
 )
+
+
+def refusal_reason(exc: GenericError) -> str:
+    """O código estável da recusa (a API o devolve na tarefa; o texto fica no painel genérico)."""
+    return REASON_MANAGE_PERMISSIONS if isinstance(exc, MissingManagePermissions) else REASON_REFUSED
 
 
 def refusal_message(exc: GenericError) -> str:
@@ -413,7 +421,7 @@ class JukeboxService:
                 config=config,
             )
         except GenericError as exc:
-            raise TaskFailure(refusal_message(exc))
+            raise TaskFailure(refusal_message(exc), refusal_reason(exc))
         self._audit(ctx, TASK_SETUP)
         return result
 
@@ -422,11 +430,11 @@ class JukeboxService:
             ensure_can_create_channel(ctx.bot, ctx.guild)
             parent = ctx.bot.get_channel(plan.category_id) if plan.category_id else ctx.guild
             if parent is None:
-                raise TaskFailure(MSG_CATEGORY)
+                raise TaskFailure(MSG_CATEGORY, REASON_CATEGORY)
             return await create_jukebox_channel(ctx.bot, parent, plan.kind, channel_kwargs)
         target = ctx.bot.get_channel(plan.channel_id)
         if target is None:
-            raise TaskFailure(MSG_CHANNEL)
+            raise TaskFailure(MSG_CHANNEL, REASON_CHANNEL)
         return target
 
     def _reset_job(self, ctx: FormContext) -> Job:
@@ -457,7 +465,7 @@ class JukeboxService:
                 notify=notify,
             )
         except GenericError as exc:
-            raise TaskFailure(refusal_message(exc))
+            raise TaskFailure(refusal_message(exc), refusal_reason(exc))
         self._audit(ctx, TASK_RESET)
 
     @staticmethod

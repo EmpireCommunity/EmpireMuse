@@ -494,6 +494,29 @@ class TestReviewFindings:
         assert await d.search("rock") == []
 
 
+class TestSearchReason:
+    """BK-3 (contrato rev. 9.4, ``DirectoryReason``): a lista vazia diz se a busca rodou (sem motivo), se o limite acabou (``limited``) ou
+    se o diretório falhou (``unavailable``)."""
+
+    @pytest.mark.asyncio
+    async def test_an_empty_search_says_why_only_when_it_did_not_run(self):
+        clock = Clock()
+        d, _, _ = directory(
+            {"/json/stations/search": []}, clock=clock, bucket=TokenBucket(rate=1000, capacity=1000, clock=clock)
+        )
+        assert await d.search_result("nada", key=1) == ([], None)  # rodou: vazio é o resultado
+        for n in range(3):
+            await d.search_result(f"termo{n}", key=1)
+        assert (await d.search_result("outro", key=1)).reason == "limited"  # balde do servidor vazio
+
+        starved, _, _ = directory({"/json/stations/search": [station()]}, bucket=TokenBucket(0.0, 1.0, clock=Clock()))
+        assert (await starved.search_result("rock")).reason == "limited"  # só a ficha reservada ao play no balde global
+
+        down, _, _ = directory({"/json/stations/search": DirectoryError("status")})
+        assert await down.search_result("rock") == ([], "unavailable")
+        assert await down.search("rock") == []  # a busca do Discord segue devolvendo só a lista
+
+
 class TestReserveAndPerServer:
     @pytest.mark.asyncio
     async def test_typing_in_the_autocomplete_cannot_starve_the_play_lookup(self):

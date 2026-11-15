@@ -2,11 +2,13 @@
 par rota+status documentado dessas rotas é observado (o arquivo não promete resposta que o bot não dá)."""
 
 from contextlib import contextmanager
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from empiremuse.api.data import DataHandler
+from empiremuse.panel.services.jukebox import REASON_MANAGE_PERMISSIONS, JukeboxService
+from empiremuse.panel.services.tasks import TaskFailure
 from empiremuse.utils.radio.premium import RadioUnavailable
 from empiremuse.utils.radio.setup import RadioForbidden
 from empiremuse.utils.servers import ServerConfigUnavailable
@@ -194,8 +196,30 @@ class OpenApiRadioContractTest(CommonCoverage, RadioApiCase):
         self.premium()
         self.cover_common("GET", t, url + ok_query, unavailable=self.radios_down)
 
+    def check_empty_reason(self, suffix, query, field):
+        """Lista vazia porque o pedido ao diretório não saiu: ``200`` com o ``reason`` (``DirectoryReason``) validado pelo schema;
+        com resultado, o campo não sai."""
+        t = G + "/radios/{radio_id}" + suffix
+        radio = self.radio_world()
+        url = self.radio_url(radio, suffix) + query
+        for reason in ("limited", "unavailable"):
+            setattr(self.radio.directory, field, reason)
+            response = self.call("GET", url)
+            self.expect("GET", t, response, 200)
+            assert (body_of(response)["stations"], body_of(response)["reason"]) == ([], reason)
+            self.advance(61)  # a busca gasta o limite de escrita do usuário
+        setattr(self.radio.directory, field, None)
+        self.radio.directory.results = self.radio.directory.region_hits = [station(OTHER_UUID)]
+        assert "reason" not in body_of(self.call("GET", url))
+
     def test_radio_busca(self):
         self.check_directory_read("/stations", "/stations", "?q=jazz", "?q=a")
+
+    def test_radio_busca_vazia_diz_o_motivo(self):
+        self.check_empty_reason("/stations", "?q=jazz", "search_reason")
+
+    def test_radio_cascata_vazia_diz_o_motivo(self):
+        self.check_empty_reason("/local", "?node=c:NI", "region_reason")  # nó final: só ele vai ao diretório
 
     def test_radio_cascata(self):
         self.check_directory_read("/local", "/local", "?node=c:BR", "?node=forjado")
@@ -386,9 +410,25 @@ class OpenApiJukeboxContractTest(CommonCoverage, JukeboxApiCase):
         self.drain_tasks()
         url = f"{JUKEBOX}/tasks/{task}"
         self.expect("GET", t, self.call("GET", url), 200)
+        assert "reason" not in body_of(self.call("GET", url))  # fora do estado ``erro`` o campo não sai
         self.expect("GET", t, self.call("GET", f"{JUKEBOX}/tasks/{'A' * 32}"), 404, "not_found")
         self.cover_not_found("GET", t, url)
         self.cover_common("GET", t, url)
+
+    def test_jukebox_tarefa_com_erro_traz_o_motivo(self):
+        t = G + "/jukebox/tasks/{task_id}"
+        self.world.configured_text()
+        reset = {"expected_version": self.state()["version"], "action": "reset"}
+        token = body_of(self.call("POST", JUKEBOX + "/tasks", reset))["confirm_token"]
+        failure = TaskFailure("o bot não pode", REASON_MANAGE_PERMISSIONS)
+        with patch.object(JukeboxService, "_reset", AsyncMock(side_effect=failure)):
+            task = body_of(self.call("POST", JUKEBOX + "/tasks", {**reset, "confirm_token": token}))["task_id"]
+            self.drain_tasks()
+        response = self.call("GET", f"{JUKEBOX}/tasks/{task}")
+
+        self.expect("GET", t, response, 200)
+        assert (body_of(response)["state"], body_of(response)["reason"]) == ("erro", "missing_permissions")
+        assert "bot não pode" not in response.body.decode()  # o texto de usuário final nunca sai
 
     def test_zz_todo_status_documentado_das_rotas_da_jukebox_foi_exercitado(self):
         casos = {name for name in dir(self) if name.startswith("test_") and not name.startswith("test_zz")}

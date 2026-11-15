@@ -139,3 +139,31 @@ class TestLimitsAndExpiry:
         assert tasks.valid_task_id(task_id) and len(task_id) == 32
         for bad in ("", "x" * 31, "x" * 33, "x" * 31 + "/", "x" * 31 + "é", "x" * 31 + " "):
             assert not tasks.valid_task_id(bad), bad
+
+
+@pytest.mark.parametrize(
+    ("failure", "reason"),
+    [
+        (TaskFailure("Texto seguro"), "refused"),
+        (TaskFailure("Texto seguro", "channel_unavailable"), "channel_unavailable"),
+        (RuntimeError("segredo"), "unexpected"),
+        (TimeoutError(), "timeout"),
+    ],
+)
+def test_an_errored_task_keeps_a_stable_reason_code_and_an_ok_one_has_none(failure, reason):
+    """BK-3 (contrato rev. 9.4, ``JukeboxTaskReason``): a API devolve o código, nunca o texto; a tarefa que deu certo não tem código."""
+
+    async def scenario():
+        runner = TaskRunner()
+
+        async def failing():
+            raise failure
+
+        errored = runner.submit("1", 100, "7", "setup", failing)
+        done = runner.submit("1", 200, "7", "setup", instant)
+        await settle()
+        return errored, done
+
+    errored, done = run(scenario())
+    assert (errored.state, errored.reason) == ("erro", reason)
+    assert (done.state, done.reason) == ("ok", None)

@@ -109,7 +109,8 @@ class LocalPage:
 
     @staticmethod
     async def stations(ctx: Any, radio: Any, node: Any, page: int, tr: Translator, view_of: Any) -> tuple:
-        """``(estações da página, dica, Paging)``; a principal fica de fora e ``partial`` vira aviso, não erro."""
+        """``(estações da página, dica, Paging, motivo)``; a principal fica de fora e ``partial`` vira aviso, não erro. O motivo
+        (``directory.REASON_*``) só vem com a lista vazia de um pedido que não saiu inteiro."""
         result = await ctx.pool.radio.directory.region(node, key=ctx.guild_id)  # balde por servidor (R4 §4)
         main = radio.source.get("station")
         health = ctx.pool.radio.health
@@ -122,4 +123,5 @@ class LocalPage:
             hint = tr("panel.radio.local.no_results")
         elif getattr(result, "partial", False):
             hint = tr("panel.radio.local.partial")
-        return chunk, hint, Paging(str(node.id), page, pages)
+        reason = getattr(result, "reason", None) if not views else None
+        return chunk, hint, Paging(str(node.id), page, pages), reason

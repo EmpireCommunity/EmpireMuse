@@ -101,10 +101,29 @@ class Hit(NamedTuple):
 
 
 class RegionResult(NamedTuple):
-    """As estações do local escolhido (até 150); ``partial`` = algum pedido não saiu (fichas esgotadas, balde do servidor ou espelhos fora)."""
+    """As estações do local escolhido (até 150); ``partial`` = algum pedido não saiu (fichas esgotadas, balde do servidor ou espelhos fora).
+    ``reason`` diz por quê (``limited`` ou ``unavailable``; ``unavailable`` vence quando houve os dois); ``None`` = todos os pedidos saíram."""
 
     hits: tuple[Hit, ...]
     partial: bool
+    reason: str | None = None
+
+
+class SearchResult(NamedTuple):
+    """As estações de uma busca e, se a busca não rodou de fato, por quê: ``limited`` (balde do servidor ou o global sem ficha) ou
+    ``unavailable`` (o diretório falhou). ``None`` = a lista é o resultado (inclusive vazia)."""
+
+    stations: list[Station]
+    reason: str | None = None
+
+
+REASON_LIMITED = "limited"
+REASON_UNAVAILABLE = "unavailable"
+
+
+def reason_of(error: "DirectoryError") -> str:
+    """O motivo estável de uma falha para quem chama: sem ficha no balde global é limite, o resto é indisponível."""
+    return REASON_LIMITED if error.reason == "throttled" else REASON_UNAVAILABLE
 
 
 class DirectoryError(Exception):
@@ -327,12 +346,16 @@ class Directory:
 
     async def search(self, term: object, *, key: object = None) -> list[Station]:
         """Até 25 estações para o termo (2 a 64 caracteres). Termo ruim, bucket vazio ou falha do diretório: lista vazia."""
+        return (await self.search_result(term, key=key)).stations
+
+    async def search_result(self, term: object, *, key: object = None) -> SearchResult:
+        """Como ``search``, com o motivo quando a busca não rodou (``SearchResult.reason``); termo ruim é lista vazia sem motivo."""
         checked = check_search_term(term)
         if isinstance(checked, RuleError):
-            return []
+            return SearchResult([])
         cache_key = checked.casefold()
         if cache_key in self._cache:
-            return list(self._cache[cache_key])
+            return SearchResult(list(self._cache[cache_key]))
         if (
             key is not None
         ):  # quem digita no autocomplete é limitado por servidor; o balde global não se esvazia por um admin só
@@ -342,23 +365,24 @@ class Directory:
                     SEARCH_PER_KEY_RATE, SEARCH_PER_KEY_BURST, clock=self._clock
                 )
             if not bucket.try_acquire():
-                return []
-        payload = await self._get(
-            "/json/stations/search",
-            {
-                "name": checked,
-                "hidebroken": "true",
-                "limit": str(SEARCH_LIMIT),
-                "order": "clickcount",
-                "reverse": "true",
-            },
-            reserve=SEARCH_RESERVE,
-        )
-        if payload is None:
-            return []
+                return SearchResult([], REASON_LIMITED)
+        try:
+            payload = await self._get_strict(
+                "/json/stations/search",
+                {
+                    "name": checked,
+                    "hidebroken": "true",
+                    "limit": str(SEARCH_LIMIT),
+                    "order": "clickcount",
+                    "reverse": "true",
+                },
+                reserve=SEARCH_RESERVE,
+            )
+        except DirectoryError as error:
+            return SearchResult([], reason_of(error))
         stations = self._stations(payload)
         self._cache[cache_key] = tuple(stations)
-        return stations
+        return SearchResult(stations)
 
     # ------------------------------------------------------------------ local (R4)
 
@@ -466,23 +490,24 @@ class Directory:
         if cache_key in self._cache:
             return RegionResult(self._cache[cache_key], False)
         if not self._key_allows(key):
-            return RegionResult((), True)
+            return RegionResult((), True, REASON_LIMITED)
         deadline = self._clock() + REGION_WAIT_S
         results: list[tuple[str, list[Hit]]] = []
-        partial = False
+        reasons: set[str] = set()
         for source, query in self._region_queries(node):
             try:
                 payload = await self._get_strict(
                     "/json/stations/search", query, reserve=SEARCH_RESERVE, wait_until=deadline
                 )
-            except DirectoryError:
-                partial = True
+            except DirectoryError as error:
+                reasons.add(reason_of(error))
                 continue
             results.append((source, self._region_items(payload, source, node)))
         hits = self._merge_region(results)
-        if not partial:
+        if not reasons:
             self._cache[cache_key] = hits
-        return RegionResult(hits, partial)
+            return RegionResult(hits, False)
+        return RegionResult(hits, True, REASON_UNAVAILABLE if REASON_UNAVAILABLE in reasons else REASON_LIMITED)
 
     async def by_uuid(self, uuid: object, *, reserve: float = SEARCH_RESERVE) -> Station | None:
         """A estação pelo ``uuid``, SEM registrar clique (mostrar a reserva atual, health check). Por padrão deixa uma ficha do balde global para o play e

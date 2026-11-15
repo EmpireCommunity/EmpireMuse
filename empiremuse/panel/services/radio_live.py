@@ -212,10 +212,10 @@ class LivePage:
         node = resolve_node(tree, state.node) if tree is not None and state.node else None
         if node is not None:
             if getattr(node, "final", False):
-                results, hint, paging = await self.stations(ctx, radio, node, state.page, tr)
+                results, hint, paging, _reason = await self.stations(ctx, radio, node, state.page, tr)
             local = self.local_view(ctx, node)
         elif state.term:
-            results, hint = await self.search(ctx, radio, state.term, tr)
+            results, hint, _reason = await self.search(ctx, radio, state.term, tr)
         return await self.view(
             ctx,
             radio,
@@ -232,8 +232,8 @@ class LivePage:
 
     async def stations(
         self, ctx: FormContext, radio: Any, node: Any, page: int, tr: Translator
-    ) -> tuple[tuple[StationView, ...], Optional[str], Paging]:
-        """As estações de um nó final da cascata, 24 por página (R4 §5)."""
+    ) -> tuple[tuple[StationView, ...], Optional[str], Paging, Optional[str]]:
+        """As estações de um nó final da cascata, 24 por página (R4 §5), e o motivo da lista vazia (``directory.REASON_*``)."""
         return await self.local.stations(ctx, radio, node, page, tr, _view)
 
     # ------------------------------------------------------------------ busca (R-7)
@@ -241,16 +241,17 @@ class LivePage:
     @staticmethod
     async def search(
         ctx: FormContext, radio: Any, raw: str, tr: Translator
-    ) -> tuple[tuple[StationView, ...], Optional[str]]:
-        """Resultados e a dica a mostrar; termo fora da regra nunca chega ao diretório, e a principal fica de fora."""
+    ) -> tuple[tuple[StationView, ...], Optional[str], Optional[str]]:
+        """Resultados, a dica a mostrar e o motivo da lista vazia quando a busca não rodou (``directory.REASON_*``: limite ou diretório
+        fora; ``None`` = a lista é o resultado). Termo fora da regra nunca chega ao diretório, e a principal fica de fora."""
         term = check_search_term(raw[:SEARCH_RAW_LIMIT])
         if isinstance(term, RuleError):
-            return (), tr("panel.radio.live.search_term")
-        stations = await ctx.pool.radio.directory.search(term, key=ctx.guild_id)  # limite por servidor (R-3)
+            return (), tr("panel.radio.live.search_term"), None
+        found = await ctx.pool.radio.directory.search_result(term, key=ctx.guild_id)  # limite por servidor (R-3)
         main = radio.source.get("station")
         health = ctx.pool.radio.health
-        views = tuple(_view(s, s.uuid, health) for s in stations if s.uuid != main)
-        return views, (None if views else tr("panel.radio.live.search_empty"))
+        views = tuple(_view(s, s.uuid, health) for s in found.stations if s.uuid != main)
+        return views, (None if views else tr("panel.radio.live.search_empty")), (None if views else found.reason)
 
     # ------------------------------------------------------------------ reserva e principal (R-6)
 

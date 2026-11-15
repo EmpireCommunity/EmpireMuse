@@ -267,7 +267,7 @@ class TestHostile:
 
         result = await d.region(CITY, key=1)
 
-        assert result.hits == () and result.partial is True
+        assert result.hits == () and result.partial is True and result.reason == "unavailable"
 
     @pytest.mark.asyncio
     async def test_the_station_name_still_passes_through_the_single_external_text_function(self):
@@ -290,7 +290,7 @@ class TestLimits:
         result = await d.region(CITY, key=1)
 
         assert (
-            len(fetcher.calls) == 1 and result.partial is True
+            len(fetcher.calls) == 1 and result.partial is True and result.reason == "limited"
         )  # o 1º saiu; os outros 3 esperaram o prazo e desistiram
         assert [h.station.uuid for h in result.hits] == [uuid(1)]
         assert REGION_WAIT_S <= clock.now - 1000.0 < REGION_WAIT_S + 1
@@ -304,7 +304,7 @@ class TestLimits:
 
         result = await d.region(CITY, key=1)
 
-        assert fetcher.calls == [] and result.partial is True
+        assert fetcher.calls == [] and result.partial is True and result.reason == "limited"
         assert bucket.try_acquire() is True  # a ficha do play continua lá
 
     @pytest.mark.asyncio

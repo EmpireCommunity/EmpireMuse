@@ -341,7 +341,7 @@ class JukeboxSecretsTest(JukeboxApiCase):
         for response in responses:
             text = dump(response)
             assert "sessionkey" not in text and "secret" not in text.lower()
-        assert set(body_of(responses[1])) == {"requires_confirmation", "confirm_token"}
+        assert set(body_of(responses[1])) == {"requires_confirmation", "confirm_token", "expires_in"}
 
 
 def strip(body: dict) -> dict:

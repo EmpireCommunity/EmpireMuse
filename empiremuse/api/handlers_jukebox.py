@@ -22,7 +22,8 @@ from empiremuse.api.writes_jukebox import TASK_CONFIGURE, TaskRequest, parse_opt
 from empiremuse.panel.services.base import Formulario, FormContext
 from empiremuse.panel.services.jukebox import Check, JukeboxService
 from empiremuse.panel.services.jukebox_options import OPTIONS_ACTION, JukeboxOptionsForm
-from empiremuse.panel.services.tasks import Task, TaskBusy, TaskLimit
+from empiremuse.panel.services.tokens import TOKEN_TTL_SECONDS
+from empiremuse.panel.services.tasks import REASON_UNEXPECTED, STATE_ERROR, Task, TaskBusy, TaskLimit
 from empiremuse.rules.panel_serialize import GUILD, serialize_form
 from empiremuse.utils.server_jukebox import JukeboxConfig
 from empiremuse.utils.servers import ServerConfigConflict, ServerConfigUnavailable
@@ -45,8 +46,17 @@ TASK_KINDS = {"configurar": "configure", "reiniciar": "reset"}
 
 
 def task_payload(task: Task) -> dict[str, Any]:
-    """O estado de uma tarefa: o id, o tipo, o estado e se acabou. A mensagem (texto de usuário final) não sai."""
-    return {"task_id": task.id, "kind": TASK_KINDS.get(task.kind, task.kind), "state": task.state, "final": task.final}
+    """O estado de uma tarefa: o id, o tipo, o estado e se acabou. A mensagem (texto de usuário final) não sai; no estado ``erro``
+    sai SEMPRE o ``reason`` (código estável, ``unexpected`` quando a falha não tem um) e fora dele nunca."""
+    payload = {
+        "task_id": task.id,
+        "kind": TASK_KINDS.get(task.kind, task.kind),
+        "state": task.state,
+        "final": task.final,
+    }
+    if task.state == STATE_ERROR:
+        payload["reason"] = task.reason or REASON_UNEXPECTED
+    return payload
 
 
 class JukeboxRoute(DataHandler):
@@ -132,6 +142,11 @@ class JukeboxHandler(JukeboxRoute):
         return form_reply(outcome.status, outcome.form, GUILD)
 
 
+def confirmation_reply(token: str) -> Reply:
+    """Passo 1: o token e quanto tempo ele vale (``expires_in``, em segundos, como no ``prepare`` das rádios e do apagamento)."""
+    return Reply(STATUS_OK, {"requires_confirmation": True, "confirm_token": token, "expires_in": TOKEN_TTL_SECONDS})
+
+
 def creates_task(reply: Reply) -> bool:
     """Só a resposta que criou a tarefa (``202`` com ``task_id``) fica guardada para a ``Idempotency-Key``: a repetição devolve
     o mesmo ``task_id``. O passo 1 (``200`` com ``confirm_token``) nunca é guardado, e isso é decidido pelo resultado obtido
@@ -202,7 +217,7 @@ class JukeboxTasksHandler(JukeboxRoute):
         token = request.confirm_token
         if plan.purges and token is None:  # canal existente: as mensagens dele vão embora, o usuário confirma antes
             confirmation = service.setup_confirmation(ctx, plan, check.echo)
-            return Reply(STATUS_OK, {"requires_confirmation": True, "confirm_token": confirmation.token})
+            return confirmation_reply(confirmation.token)
         if plan.purges and service.check_setup_confirmation(ctx, plan, {"token": [token or ""]}) is not None:
             raise validation_failed("confirm_token")
         return self.submit(lambda: service.start_setup(ctx, plan), token if plan.purges else None)
@@ -213,9 +228,7 @@ class JukeboxTasksHandler(JukeboxRoute):
             raise validation_failed("action")
         token = request.confirm_token
         if token is None:
-            return Reply(
-                STATUS_OK, {"requires_confirmation": True, "confirm_token": service.confirmation(ctx, config).token}
-            )
+            return confirmation_reply(service.confirmation(ctx, config).token)
         if service.check_confirmation(ctx, config, {"token": [token]}) is not None:
             raise validation_failed("confirm_token")
         return self.submit(lambda: service.start_reset(ctx), token)
