@@ -9,6 +9,7 @@ from dotenv import dotenv_values
 
 from empiremuse import paths
 from empiremuse.rules.app_profile import (
+    DEFAULT_COMMANDS_PRESENCE,
     DEFAULT_DESCRIPTION,
     DEFAULT_PANEL_PRESENCE,
     DEFAULT_RESERVE_DESCRIPTION,
@@ -187,7 +188,8 @@ DEFAULT_CONFIG = {
     "WATCHING_PRESENCES": "",
     "PLAYING_PRESENCES": "",
     "STREAMING_PRESENCES": "",
-    "CUSTOM_STATUS_PRESENCES": "🎵 /play ou !play | ajuda: !help||"
+    "CUSTOM_STATUS_PRESENCES": DEFAULT_COMMANDS_PRESENCE
+    + "||"
     + DEFAULT_PANEL_PRESENCE
     + "||🎧 Tocando em {players_count} calls",
     ###############

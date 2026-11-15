@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from empiremuse.rules.limits import VOICE_PLACEHOLDERS
 from empiremuse.rules.settings import validate_voice_status
-from empiremuse.rules.text import has_control_or_format
+from empiremuse.rules.text import clean_legacy_text, has_control_or_format
 
 DEFAULT_VOICE_TEMPLATE = "{track.emoji} Tocando: {track.title} - {track.author}"
 
@@ -48,7 +48,8 @@ def resolve_voice_status(doc: Mapping[str, object]) -> VoiceStatusConfig:
     template = DEFAULT_VOICE_TEMPLATE
     saved_template = doc.get("voice_channel_status")
     if isinstance(saved_template, str):
-        checked = validate_voice_status(saved_template)
+        # gravado antes da regra atual: lido limpo (``clean_legacy_text``), nunca trocado pelo padrão (o formulário o regravaria vazio)
+        checked = validate_voice_status(clean_legacy_text(saved_template))
         if isinstance(checked, str) and checked:
             template = checked
     return VoiceStatusConfig(permanent, template)

@@ -262,7 +262,10 @@ class ErrorHandler(commands.Cog):
         if isinstance(error, PoolException):
             return
 
-        ctx.command_failed = True
+        if isinstance(
+            ctx, CustomContext
+        ):  # o ``custom_error`` também traz ``disnake.Message``, que não aceita atributo novo
+            ctx.command_failed = True
 
         if isinstance(error, commands.CommandNotFound):
             if ctx.prefix.startswith(self.bot.user.mention):

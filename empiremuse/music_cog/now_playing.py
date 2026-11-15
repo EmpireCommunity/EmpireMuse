@@ -271,7 +271,7 @@ class NowPlayingMixin:
 
     controller_mc = commands.MaxConcurrency(1, per=commands.BucketType.member, wait=False)
 
-    @has_source()
+    @has_source(allow_radio=True)
     @check_voice()
     @pool_command(
         name="controller",
@@ -283,7 +283,7 @@ class NowPlayingMixin:
     async def controller_legacy(self, ctx: CustomContext):
         await self.controller.callback(self=self, inter=ctx)
 
-    @has_source()
+    @has_source(allow_radio=True)
     @check_voice()
     @commands.slash_command(
         description=localized("cmd.controller.description"),

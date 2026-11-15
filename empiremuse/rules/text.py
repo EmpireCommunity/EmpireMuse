@@ -9,9 +9,38 @@ from typing import Any, Mapping, Optional
 from empiremuse.rules.usage import escape_markdown
 
 
+_REFUSED_CATEGORIES = ("Cc", "Cf", "Cs", "Zl", "Zp")
+
+
 def has_control_or_format(text: str) -> bool:
-    """O texto tem caractere de controle (``Cc``) ou de formatação (``Cf``, como U+202E e U+200B)?"""
-    return any(unicodedata.category(char) in ("Cc", "Cf") for char in text)
+    """O texto tem caractere de controle (``Cc``, inclusive ``\\n`` e ``\\r``), de formatação (``Cf``, como U+202E e U+200B),
+    surrogate isolado (``Cs``, que o JSON aceita por escape) ou separador de linha/parágrafo (``Zl``/``Zp``, U+2028/U+2029)?
+    """
+    return any(unicodedata.category(char) in _REFUSED_CATEGORIES for char in text)
+
+
+_LEGACY_TO_SPACE = ("Zl", "Zp")
+_LEGACY_DROPPED = ("Cs",)
+
+
+def clean_legacy_text(value: Any) -> Any:
+    """Texto GRAVADO antes da regra atual (que passou a recusar ``Cs``, ``Zl`` e ``Zp``), limpo para a leitura como nos filtros de texto
+    externo: U+2028/U+2029 viram espaço, surrogate isolado sai, e o resultado é aparado. Dado gravado nunca se perde porque a regra
+    ficou mais rígida; a regra rígida vale só para texto NOVO. O que não é texto volta como está.
+
+    Um surrogate isolado não chega ao MongoDB (o BSON é UTF-8 e recusa a gravação); o ramo do ``Cs`` cobre o banco local em JSON, as
+    importações e o cache em memória. U+2028/U+2029 chegam a qualquer banco."""
+    if not isinstance(value, str):
+        return value
+    kept = (
+        " "
+        if (category := unicodedata.category(char)) in _LEGACY_TO_SPACE
+        else ""
+        if category in _LEGACY_DROPPED
+        else char
+        for char in value
+    )
+    return "".join(kept).strip()
 
 
 def clean_title(raw: Any, low: int, high: int) -> Optional[str]:
@@ -54,13 +83,13 @@ def find_same_name(entries: Mapping[str, Any], name: str) -> Optional[str]:
 
 
 def clean_track_name(raw: Any, low: int, high: int) -> Optional[str]:
-    """Nome vindo do título de uma faixa: sem controle/formatação, aparado, cortado em ``high`` e aparado de novo.
+    """Nome vindo do título de uma faixa: sem os caracteres de ``has_control_or_format``, aparado, cortado em ``high`` e aparado de novo.
 
     ``None`` se não for texto ou se sobrar menos de ``low`` caracteres.
     """
     if not isinstance(raw, str):
         return None
-    visible = "".join(char for char in raw if unicodedata.category(char) not in ("Cc", "Cf"))
+    visible = "".join(char for char in raw if unicodedata.category(char) not in _REFUSED_CATEGORIES)
     name = visible.strip()[:high].strip()
     return name if len(name) >= low else None
 
@@ -68,12 +97,14 @@ def clean_track_name(raw: Any, low: int, high: int) -> Optional[str]:
 def plain_snippet(value: Any, limit: int) -> str:
     """Texto externo (por exemplo, a mensagem de erro do Lavalink) seguro para mostrar numa linha de mensagem.
 
-    Uma linha só, sem caracteres de controle/formatação e sem crase (não quebra o markdown nem abre bloco de código);
+    Uma linha só (separadores viram espaço), sem os demais caracteres de ``has_control_or_format`` e sem crase (não quebra o markdown nem abre bloco de código);
     mais longo que ``limit`` é cortado com reticências.
     """
     text = "" if value is None else str(value)
     text = "".join(" " if char.isspace() else char for char in text)
-    text = "".join(char for char in text if unicodedata.category(char) not in ("Cc", "Cf"))
+    text = "".join(
+        char for char in text if unicodedata.category(char) not in _REFUSED_CATEGORIES
+    )  # Zl/Zp já viraram espaço
     text = " ".join(text.replace("`", "'").split())
     return text if len(text) <= limit else text[:limit] + "…"
 

@@ -125,6 +125,13 @@ def test_invalid_repeated_and_extra_tags_are_dropped_with_a_warning():
     assert any("máximo 5" in w for w in warnings)
 
 
+@pytest.mark.regression
+def test_a_tag_with_a_lone_surrogate_is_dropped_with_a_warning_not_a_crash():
+    """Byte inválido vindo do ambiente (``surrogateescape``) vira surrogate isolado; o UTF-16 dele levantava UnicodeEncodeError."""
+    tags, warnings = parse_tags("rock,ja\udcffzz")
+    assert tags == ("rock",) and len(warnings) == 1 and "tag 2 descartada" in warnings[0]
+
+
 def test_a_tag_of_exactly_the_limit_is_valid():
     tags, warnings = parse_tags("x" * app_profile.TAG_MAX_LENGTH)
     assert len(tags) == 1 and warnings == ()

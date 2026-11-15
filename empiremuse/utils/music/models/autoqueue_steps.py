@@ -617,9 +617,15 @@ def _rt_pick_candidate(track, result, req):
 
 
 def _rt_cache_selected_result(self, track, req):
-    """Guarda para os outros servidores só o resultado que levou à faixa escolhida (nunca o que foi rejeitado)."""
+    """Guarda para os outros servidores só o resultado que levou à faixa escolhida (nunca o que foi rejeitado).
+
+    Os candidatos que o nó recusou por falta de stream saem da cópia guardada: outra faixa igual não começa pelo mesmo candidato morto.
+    """
 
     source = req.selected_result if req.selected_result is not None else req.first_result
+    rejected = _rt_rejected(track)
+    if rejected and source:
+        source = [t for t in source if t.id not in rejected]
     self.bot.pool.partial_track_cache[_rt_cache_key(track)] = source
 
 

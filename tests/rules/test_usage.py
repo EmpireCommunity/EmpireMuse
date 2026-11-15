@@ -256,3 +256,20 @@ def test_end_reason(raw, label):
 )
 def test_error_label_is_a_fixed_label_from_the_class_names(names, label):
     assert error_label(names) == label
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    ("raw", "shown"),
+    [
+        ("- sala", "\\- sala"),
+        ("1. sala", "1\\. sala"),
+        ("12. sala", "12\\. sala"),
+        ("-sala", "-sala"),  # sem espaço depois não é lista
+        ("sala - dois", "sala - dois"),  # só o começo da linha vira lista
+        ("3.5 sala", "3.5 sala"),
+    ],
+)
+def test_render_text_keeps_a_leading_list_marker_as_text(raw, shown):
+    """V-153-1: nome de canal ou servidor que começa com marcador de lista abria uma lista no embed quando vinha no começo da linha."""
+    assert render_text(raw, 100) == shown

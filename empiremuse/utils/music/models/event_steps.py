@@ -51,6 +51,13 @@ SAME_TRACK_RETRY_MARKERS = (
 SAME_TRACK_RETRY_DELAY = 2
 YOUTUBE_PLUGIN_CAUSE_MARKER = "dev.lavalink.youtube."
 
+# Faixas SEGUIDAS abandonadas pela causa genérica de rede até o player pausar e avisar uma vez (V-142-2). O orçamento por faixa
+# continua igual; esta sequência é à parte e zera quando uma faixa toca (``PLAYED_END_REASONS``).
+NETWORK_ABANDON_PAUSE_LIMIT = 3
+# Fins de faixa que provam que ela tocou: o TrackStart sai antes de o Lavalink abrir o stream, e a faixa que falha na carga acaba
+# em LOAD_FAILED. STOPPED e REPLACED são de quem pulou ou trocou uma faixa que estava no nó.
+PLAYED_END_REASONS = frozenset({"FINISHED", "STOPPED", "REPLACED"})
+
 # Causas do plugin de espelhamento (lavasrc) quando nenhuma outra plataforma tem a música.
 MIRROR_NOT_FOUND_CAUSES = (
     "com.github.topi314.lavasrc.mirror.TrackNotFoundException: No tracks found in playlist or search result for track",
@@ -229,6 +236,12 @@ async def _he_track_end(self, event) -> None:
         return
 
     self.bot.dispatch("wavelink_track_end", player=self, track=self.last_track, reason=event.reason)
+
+    if getattr(self, "network_paused", False):
+        return  # pausado por falha de rede: não há faixa nossa no nó, este fim é o eco da que foi abandonada
+
+    if event.reason in PLAYED_END_REASONS:
+        self.network_abandon_streak = 0
 
     if event.reason == "FINISHED":
         # Só o progresso real devolve a nova tentativa: o TrackStart sai antes de o Lavalink abrir o stream.
@@ -482,6 +495,8 @@ async def _he_track_exception(self, event) -> None:
         await self.resolve_track(track, force=True)
         if track.id:
             self.queue.appendleft(track)
+            # Intervalo entre trocas: uma fila longa de faixas sem stream não vira rajada de resoluções no nó.
+            await asyncio.sleep(SAME_TRACK_RETRY_DELAY)
             self.locked = False
             await self.process_next()
             return
@@ -508,6 +523,10 @@ async def _he_track_exception(self, event) -> None:
 
         if outcome == "retry":
             start_position = get_start_pos(self, track)
+        elif getattr(self, "network_abandon_streak", 0) >= NETWORK_ABANDON_PAUSE_LIMIT:
+            await send_report()
+            await _he_pause_after_network_abandons(self, track)
+            return
         else:
             # Faixa abandonada: o usuário recebe o aviso da falha (como na via comum).
             ignore_error_log = False
@@ -570,6 +589,7 @@ def _he_retry_after_general_error(self, track) -> str:
             self.failed_tracks.append(track)
             # O orçamento geral é do episódio: ao abandonar a faixa ele recomeça para a próxima.
             del self.retries_general_errors
+            self.network_abandon_streak = getattr(self, "network_abandon_streak", 0) + 1
             return "skip"
         _he_spawn_new_node_task(self, ignore_node=self.node)
         return "wait"
@@ -586,6 +606,70 @@ def _he_retry_after_general_error(self, track) -> str:
         }
 
     return "retry"
+
+
+async def _he_pause_after_network_abandons(self, track) -> None:
+    """A sequência de faixas abandonadas por rede chegou ao limite: o player pausa, a fila fica e o canal recebe UM aviso (V-142-2).
+
+    A última faixa abandonada não vai para as falhas: fica como a atual, pausada e fora do nó, para a retomada tentá-la de novo.
+    Nada mais é tentado nem relatado até alguém retomar (``resume_after_network_pause``, pelo ``set_pause`` do player).
+    """
+    self.network_abandon_streak = 0
+    self.network_resume = None
+    if track in self.failed_tracks:
+        self.failed_tracks.remove(track)
+    self.current = track
+    self.current_encoded = None
+    self.last_position = 0
+    self.paused = True
+    self.network_paused = True
+    self.locked = False
+
+    if self.text_channel and _he_can_send_in_text_channel(self):
+        try:
+            await self.text_channel.send(
+                self.tr("player.network_pause"), allowed_mentions=disnake.AllowedMentions.none()
+            )
+        except Exception as error:  # noqa: BLE001 - o aviso é cortesia: a pausa já vale
+            logger.warning("Aviso da pausa por falha de rede não enviado (%s)", type(error).__name__)
+    try:
+        await self.update_message(force=True, rpc_update=True)
+        await self.update_stage_topic()
+    except Exception as error:  # noqa: BLE001 - o controller e o status do canal são enfeite sobre a pausa já feita
+        logger.warning("Controller não atualizado na pausa por falha de rede (%s)", type(error).__name__)
+
+
+async def resume_after_network_pause(self) -> bool:
+    """Retoma o player pausado por falha de rede: a faixa que esperava volta à frente da fila e toca. ``False`` se a pausa é comum."""
+    if not getattr(self, "network_paused", False):
+        return False
+    self.network_paused = False
+    self.paused = False
+    track, self.current = self.current, None
+    if track is not None:
+        self.queue.appendleft(track)
+    # a posição do seek feito na pausa só é gasta quando a faixa começa (``_pn_start``): sem nó agora, ``process_next`` só agenda
+    # ``_wait_for_new_node``, que a reaproveita quando o nó volta
+    await self.process_next(start_position=network_resume_start(self))
+    return True
+
+
+def network_resume_start(self) -> int:
+    """De onde a próxima faixa começa depois da pausa por rede: a posição do seek feito na pausa, só se a faixa à frente da fila AINDA é a
+    que esperava (um pular, remover, embaralhar ou limpar enquanto o nó não volta põe outra lá, que começa do zero)."""
+    pending = getattr(self, "network_resume", None)
+    if pending is None or not self.queue or self.queue[0] is not pending[0]:
+        return 0
+    return pending[1]
+
+
+def store_network_resume_position(self, milliseconds: int | float) -> bool:
+    """Seek na pausa por falha de rede: não há faixa no nó para buscar, então a posição vira o ponto de onde a retomada
+    recomeça (``resume_after_network_pause``). ``False`` fora dessa pausa (o seek vai ao nó como sempre)."""
+    if not getattr(self, "network_paused", False):
+        return False
+    self.network_resume = (self.current, max(0, int(milliseconds)))  # a faixa que espera, presa à posição
+    return True
 
 
 async def _he_recover_from_youtube(self, track, send_report, start_position: int | float = 0) -> None:

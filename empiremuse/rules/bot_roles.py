@@ -25,10 +25,9 @@ class Peer(NamedTuple):
     is_main: bool
 
 
-def invite_order(peers: Iterable[Peer], in_guild: Collection[int]) -> list[Peer]:
-    """Os bots que faltam no servidor, na ordem de convite: o principal primeiro (se falta), depois as reservas por ``identifier``."""
-    missing = [peer for peer in peers if peer.bot_id not in in_guild]
-    return sorted(missing, key=lambda peer: (not peer.is_main, identifier_sort_key(peer.identifier)))
+def invite_order(peers: Iterable[Peer]) -> list[Peer]:
+    """Os bots na ordem de convite: o principal primeiro, depois as reservas por ``identifier``."""
+    return sorted(peers, key=lambda peer: (not peer.is_main, identifier_sort_key(peer.identifier)))
 
 
 def notifier(reserve_identifiers: Iterable[str]) -> str | None:

@@ -120,6 +120,7 @@
   "player.last_interaction_6": "-# {command_log_emoji} ⠂**Last interaction:** {command_log}",
   "player.more_options.placeholder": "More options:",
   "player.name_or_link_from_youtube": "Name or link from youtube/spotify/soundcloud...",
+  "player.network_pause": "Connection problem: several songs in a row failed to load. The queue was paused and nothing was lost. Press play to continue.",
   "player.next_recommended_songs": "Next recommended songs:",
   "player.next_recommended_songs_2": "**Next recommended songs:**\n",
   "player.next_recommended_songs_ansi": "**Next recommended songs:**\n```ansi\n",

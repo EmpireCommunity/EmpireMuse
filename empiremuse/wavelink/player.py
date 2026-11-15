@@ -661,7 +661,8 @@ class Player:
         self.node = node
         self.node.players[int(self.guild_id)] = self
 
-        if self.current and not self.auto_pause:
+        # economia de recursos e pausa por falha de rede guardam a faixa atual FORA do nó: não há o que reenviar
+        if self.current and not self.auto_pause and not getattr(self, "network_paused", False):
             if self.node.version == 3:
                 await self.node._send(
                     op="play", guildId=str(self.guild_id), track=self.current_encoded, startTime=int(self.position)

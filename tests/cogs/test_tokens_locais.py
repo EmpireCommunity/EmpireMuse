@@ -4,7 +4,7 @@ import asyncio
 import logging
 import string
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -12,7 +12,7 @@ from empiremuse.cogs.music_settings import RPCCog
 from empiremuse.utils import client
 from empiremuse.utils.erasure import ErasureTombstones
 from empiremuse.utils.user_locks import UserLocks
-from tests.cogs.test_ytoauth_dm import Cenario, REFRESH
+from tests.cogs.test_ytoauth_dm import Cenario, REFRESH, RespostaDoNo
 
 pytestmark = [pytest.mark.critical, pytest.mark.regression]
 
@@ -118,18 +118,18 @@ def test_oauth_command_delivery(monkeypatch, tmp_path, caplog, nodes, status):
         scenario.cog.bot.music.nodes = {"REMOTE": scenario.no_local}
     elif nodes == "empty":
         scenario.cog.bot.music.nodes = {}
-    scenario.sessao.post.return_value = SimpleNamespace(status=status, text=AsyncMock(return_value=REFRESH))
+    scenario.sessao.post = MagicMock(return_value=RespostaDoNo(status, scenario.eventos))
 
     with caplog.at_level(logging.WARNING):
         scenario.rodar()
 
     assert scenario.erro is None
     if nodes == "allowed":
-        scenario.sessao.post.assert_awaited_once_with(
+        scenario.sessao.post.assert_called_once_with(
             "http://[::1]:8090/youtube", headers=HEADERS, json={"refreshToken": REFRESH}, allow_redirects=False
         )
     else:
-        scenario.sessao.post.assert_not_awaited()
+        scenario.sessao.post.assert_not_called()
         assert "não foi aplicado" in scenario.dm_texto()
         assert "configurado automaticamente" not in scenario.dm_texto()
     if status == 302:

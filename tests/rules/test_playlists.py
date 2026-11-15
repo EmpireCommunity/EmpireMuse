@@ -281,3 +281,34 @@ def test_select_descriptions_are_cut_at_100_characters_with_an_ellipsis():
 def test_pasted_text_with_a_lone_surrogate_is_a_format_error_not_a_crash():
     result = parse_file('{"playlists": [{"name": "Rock \ud800", "url": "https://exemplo.com/rock"}]}', max_bytes=65536)
     assert isinstance(result, RuleError) and result.code == FILE_FORMAT
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    "escaped, ok", [("\\ud800", False), ("\\u2028", False), ("\\u2029", False), ("\\ud83c\\udfb5", True)]
+)
+def test_an_escaped_lone_surrogate_or_line_separator_is_refused_like_other_bad_characters(escaped, ok):
+    """V-158-1: o escape JSON de um surrogate isolado ou de U+2028/U+2029 passava; o par de surrogates (🎵) continua válido."""
+    parsed = parse(f'{{"playlists": [{{"name": "Ro{escaped}ck", "url": "{BASE}rock"}}]}}')
+    assert [p.name for p in parsed.items] == (["Ro🎵ck"] if ok else [])
+    assert [s.reason for s in parsed.invalid] == ([] if ok else [INVALID])
+    checked = check_playlist({"name": json.loads(f'"Ro{escaped}ck"'), "url": f"{BASE}rock"})
+    refused = check_playlist({"name": "Ro\x00ck", "url": f"{BASE}rock"})
+    assert isinstance(checked, Playlist) if ok else (isinstance(checked, RuleError) and checked.code == refused.code)
+
+
+@pytest.mark.regression
+def test_chained_icon_names_settle_in_the_same_migration_pass():
+    """CodeRabbit #168: "🔴 🔵 Rock" só podia perder o emoji depois de "🔵 Rock" virar "Rock"; ficava para a subida seguinte."""
+    from empiremuse.rules.playlists import move_leading_icons
+
+    stored = [
+        {"name": "🔴 🔵 Rock", "url": "https://exemplo.com/a"},
+        {"name": "🔵 Rock", "url": "https://exemplo.com/b"},
+    ]
+
+    moved, count = move_leading_icons(stored)
+
+    assert [(entry["name"], entry.get("icon")) for entry in moved] == [("🔵 Rock", "🔴"), ("Rock", "🔵")]
+    assert count == 2
+    assert move_leading_icons(moved) == (moved, 0)  # idempotente: nada fica para a próxima subida

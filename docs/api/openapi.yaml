@@ -3942,6 +3942,11 @@ components:
           type: array
           items:
             type: object
+        hidden:
+          type: array
+          description: "Opcional: itens gravados que a leitura não mostra (gravados antes da regra de texto atual e ilegíveis, ou com o mesmo nome de outro depois da limpeza), com os textos limpos, para o admin recuperar à mão. A importação os ignora."
+          items:
+            description: "O valor CRU recuperado, como foi gravado (qualquer valor JSON: objeto, lista, texto, número, booleano ou null), com os textos limpos; num objeto, uma chave que ficou igual a outra depois da limpeza ganha um sufixo (` (2)`, ` (3)`) e nenhum valor se perde."
     ErrorNotFound:
       description: "`not_found`."
       $ref: "#/components/schemas/Error"

@@ -126,6 +126,7 @@
   "player.last_interaction_6": "-# {command_log_emoji} ⠂**Última Interação:** {command_log}",
   "player.more_options.placeholder": "Mais opções:",
   "player.name_or_link_from_youtube": "Nome ou link do youtube/spotify/soundcloud...",
+  "player.network_pause": "Problema de conexão: várias músicas seguidas não carregaram. A fila foi pausada e nada foi perdido. Aperte o botão de tocar para continuar.",
   "player.next_recommended_songs": "Próximas músicas recomendadas:",
   "player.next_recommended_songs_2": "**Próximas músicas recomendadas:**\n",
   "player.next_recommended_songs_ansi": "**Próximas músicas recomendadas:**\n```ansi\n",

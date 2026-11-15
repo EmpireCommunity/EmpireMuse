@@ -52,7 +52,7 @@ from empiremuse.rules.limits import (
     PLAYLIST_URL_MIN,
 )
 from empiremuse.rules.emoji import check_emoji, split_leading_icon
-from empiremuse.rules.text import has_control_or_format
+from empiremuse.rules.text import clean_legacy_text, has_control_or_format
 from empiremuse.rules.urls import check_url
 from empiremuse.rules.usage import escape_markdown, render_text
 
@@ -161,7 +161,8 @@ _JOINER_BETWEEN_VISIBLE = re.compile("(?<=[^\\s\u200d])\u200d(?=[^\\s\u200d])")
 
 
 def _bad_text(text: str) -> bool:
-    return has_control_or_format(_JOINER_BETWEEN_VISIBLE.sub("", text)) or "\n" in text or "\r" in text
+    """A regra compartilhada (``\\n``/``\\r`` s\u00e3o ``Cc``; surrogate isolado e U+2028/U+2029 tamb\u00e9m caem nela), com o ZWJ do emoji liberado."""
+    return has_control_or_format(_JOINER_BETWEEN_VISIBLE.sub("", text))
 
 
 def check_name(raw: Any) -> str | RuleError:
@@ -563,7 +564,8 @@ def plan_migration(legacy: Mapping[str, Any] | None) -> MigrationPlan:
     urls: set[str] = set()
     skipped = invalid = 0
     for name, value in legacy.items():
-        entry = {**value, "name": name} if isinstance(value, Mapping) else None
+        # o ``fav_links`` de origem é de antes da regra atual: lido limpo, como as playlists gravadas (o dicionário de origem não muda)
+        entry = _legacy_cleaned({**value, "name": name}) if isinstance(value, Mapping) else None
         checked = check_playlist(entry, default_order=len(items) + 1)
         if isinstance(checked, RuleError):
             invalid += 1
@@ -602,8 +604,38 @@ def from_doc(doc: Any) -> Playlist | None:
     )  # sem o campo = antes do escopo
     if scope not in SCOPES:
         return None
-    checked = check_playlist(doc)
+    checked = check_playlist(_legacy_cleaned(doc))
     return None if isinstance(checked, RuleError) else checked._replace(scope=scope)
+
+
+def _legacy_cleaned(doc: Any) -> Any:
+    """O item gravado com os textos limpos de caracteres que a regra atual recusa e a antiga aceitava (``clean_legacy_text``): a
+    playlist gravada antes segue legível e, na próxima gravação, sai limpa. Uma cópia: o documento lido não muda."""
+    if not isinstance(doc, Mapping):
+        return doc
+    cleaned = {**doc}
+    for field in ("name", "description"):
+        if field in doc:
+            cleaned[field] = clean_legacy_text(doc[field])
+    if isinstance(doc.get("genres"), (list, tuple)):
+        cleaned["genres"] = _legacy_genres(doc["genres"])
+    return cleaned
+
+
+def _legacy_genres(raw: Sequence[Any]) -> list[Any]:
+    """Os gêneros gravados, limpos; o que a limpeza deixou vazio, curto demais ou repetido (``casefold``) sai, em vez de tornar a playlist
+    inteira ilegível por causa de um gênero. O que não é texto passa como está (a regra o recusa, como antes)."""
+    genres: list[Any] = []
+    seen: set[str] = set()
+    for item in raw:
+        if not isinstance(item, str):
+            genres.append(item)
+            continue
+        genre = clean_legacy_text(item)
+        if len(genre) >= PLAYLIST_GENRE_MIN and genre.casefold() not in seen:
+            genres.append(genre)
+            seen.add(genre.casefold())
+    return genres
 
 
 def move_leading_icons(stored: Sequence[Any]) -> tuple[list[Any], int]:
@@ -611,12 +643,27 @@ def move_leading_icons(stored: Sequence[Any]) -> tuple[list[Any], int]:
 
     Só mexe no item que ainda não tem um ``icon`` válido, cujo nome começa com UM emoji seguido de espaço e que continua com um nome
     válido, sem repetir o de outro item, depois de aparado. O emoji do meio ou do fim do nome fica. O resto da lista passa intacto.
+    Repete a passada até nada mudar: um nome encadeado ("🔴 🔵 Rock" ao lado de "🔵 Rock") só fica livre depois de o outro mudar.
     """
+    result: list[Any] = list(stored)
+    moved = 0
+    for _ in range(
+        len(result)
+    ):  # cada passada que muda algo libera no máximo um nome por item: nunca passa do tamanho da lista
+        result, changed = _move_leading_icons_once(result)
+        if not changed:
+            break
+        moved += changed
+    return result, moved
+
+
+def _move_leading_icons_once(stored: Sequence[Any]) -> tuple[list[Any], int]:
+    """Uma passada de ``move_leading_icons`` sobre a lista."""
     taken = {
-        entry["name"].strip().casefold()
+        clean_legacy_text(entry["name"]).casefold()
         for entry in stored
         if isinstance(entry, Mapping) and isinstance(entry.get("name"), str)
-    }  # como o ``from_doc`` lê: aparados
+    }  # como o ``from_doc`` lê: aparados e limpos (``clean_legacy_text``)
     result: list[Any] = []
     moved = 0
     for entry in stored:
@@ -624,7 +671,7 @@ def move_leading_icons(stored: Sequence[Any]) -> tuple[list[Any], int]:
             icon, rest = split_leading_icon(entry["name"])
             name = check_name(rest) if icon else None
             if icon and isinstance(name, str) and name.casefold() not in taken:
-                taken.discard(entry["name"].strip().casefold())
+                taken.discard(clean_legacy_text(entry["name"]).casefold())
                 taken.add(name.casefold())
                 result.append({**entry, "name": name, "icon": icon})
                 moved += 1

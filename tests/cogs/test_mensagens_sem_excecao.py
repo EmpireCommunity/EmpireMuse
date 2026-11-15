@@ -16,7 +16,7 @@ Sem rede, sem Discord e sem ``.env``; o aleatório do código é fixado trocando
 import logging
 import secrets
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from empiremuse.i18n.service import get_i18n
@@ -281,13 +281,13 @@ class TestLacunasDaMutacao:
             _websocket=SimpleNamespace(headers={}),
         )
         corpo = "linha1\nlinha2 eco do token refresh-falso " + "x" * 600
-        post = AsyncMock(return_value=Resposta(500, texto=corpo))
+        post = MagicMock(return_value=Resposta(500, texto=corpo))  # o ``post`` é usado com ``async with``
         cog, ctx, mensagem = montar_oauth(monkeypatch, tmp_path, node=node, post=post)
 
         with caplog.at_level(logging.WARNING, logger="empiremuse.cogs.ll_yt_oauth"):
             await cog.oauth_command(ctx)
 
-        post.assert_awaited_once_with(
+        post.assert_called_once_with(
             "http://127.0.0.1:2333/youtube",
             headers={},
             json={"refreshToken": "refresh-falso"},

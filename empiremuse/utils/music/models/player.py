@@ -6,7 +6,7 @@ import datetime
 from collections import deque
 from itertools import cycle
 from time import time
-from typing import Optional, Union, TYPE_CHECKING
+from typing import Any, Optional, Union, TYPE_CHECKING
 
 import disnake
 
@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 from empiremuse.utils.music.models.tracks import (
     LavalinkTrack,
 )
+from empiremuse.utils.music.models.event_steps import resume_after_network_pause
 from empiremuse.utils.music.models.player_filters import PlayerFiltersMixin
 from empiremuse.utils.music.models.player_state import PlayerStateMixin
 from empiremuse.utils.music.models.player_message import PlayerMessageMixin
@@ -110,6 +111,11 @@ class LavalinkPlayer(
         self.is_resuming = False
         self.is_purging = False
         self.auto_pause = False
+        self.network_paused = False  # pausado por faixas seguidas abandonadas por falha de rede (V-142-2)
+        self.network_abandon_streak = 0
+        self.network_resume: Optional[tuple[Any, int]] = (
+            None  # (faixa que espera, posição do seek feito na pausa por rede)
+        )
         self._session_resuming = kwargs.pop("session_resuming", False)
         self._last_channel: Optional[disnake.VoiceChannel] = None
         self._last_channel_id: Optional[int] = None
@@ -255,15 +261,16 @@ class LavalinkPlayer(
         self.position_timestamp = state.get("time", 0)
         self.ping = state.get("ping", None)
 
-    async def report_error(self, error: BaseException | None, code: str = ""):
-        """Envia ao webhook de erro só o tipo da exceção e o código; faixa, link, servidor e canal não saem do host."""
+    async def report_error(self, error: BaseException | wavelink.TrackException | None, code: str = ""):
+        """Envia ao webhook de erro só o tipo da exceção (ou do evento de falha do nó) e o código; faixa, link, servidor e canal
+        não saem do host."""
         cog = self.bot.get_cog("Music")
 
         if cog and cog.error_report_queue:
             error_kwargs = {"embed": minimal_embed("Falha de reprodução", code)}
 
             if error is not None:
-                error_kwargs["file"] = string_to_file(minimal_report_text(error, code), "error_partialtrack.txt")
+                error_kwargs["file"] = string_to_file(minimal_report_text(error, code), "error_playback.txt")
 
             await cog.error_report_queue.put(error_kwargs)
 
@@ -312,6 +319,10 @@ class LavalinkPlayer(
             )
 
     async def set_pause(self, pause: bool) -> None:
+        if not pause and await resume_after_network_pause(self):
+            # pausa por falha de rede (V-142-2): não há faixa no nó para despausar, a que esperava volta a tocar pela fila
+            self.bot.dispatch("player_resume", player=self)
+            return
         await super().set_pause(pause)
         if usage := usage_of(self.bot):
             usage.playback_paused(self.bot, self.guild.id, pause)
