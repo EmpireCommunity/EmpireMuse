@@ -193,6 +193,18 @@ uv pip install --require-hashes -r requirements-dev-lock.txt # pytest, pytest-as
 .venv/bin/mypy                           # verificação estática de tipos
 ```
 
+#### Testes de integração do Mongo (`-m integration`)
+
+`tests/persistence/test_mongo_integracao.py` roda o `MongoDatabase` contra um `mongod` real e descartável (round trip, apagar dados, lista de banidos e registro de uso). Sem `MONGO_TEST_URI` o módulo é pulado; o CI sobe um serviço `mongo:8.0.38` e falha se algum desses testes não passar. Para rodar localmente:
+
+```bash
+docker run --rm -d --name empiremuse-mongo-teste -p 127.0.0.1:27017:27017 mongo:8.0.38@sha256:d97fea17ccb8d004cd137be8dab54d70d0df11be69c9f422aefe4484c8414ab7
+MONGO_TEST_URI=mongodb://127.0.0.1:27017 .venv/bin/python -m pytest -m integration -rA
+docker stop empiremuse-mongo-teste
+```
+
+`MONGO_TEST_URI` só vale com `mongodb://` e todos os hosts locais (`localhost`, `127.0.0.1`, `::1`); qualquer outro host faz o teste falhar. Nunca aponte para o `MONGO` do `.env`: o banco `global` de produção guarda refresh tokens. Cada teste usa um banco de nome único e o apaga no fim.
+
 ### Status das ferramentas no projeto:
 
 | Ferramenta | Status | Uso |
@@ -237,6 +249,8 @@ A regra padrão de corte temporal (`--exclude-newer 2026-10-20T00:00:00Z`, o mes
 - **`tornado` (6.6.1, corte `2026-11-09T21:10:00Z`)**: correção do alerta #6 do Dependabot (versões `<= 6.6.0`, severidade baixa); o release saiu em 2026-11-09, depois do corte geral, e o corte fica logo após o último arquivo dele. Substitui a isenção anterior da 6.6 (alertas #2, #3 e #4);
 - **`dnspython` (2.9.2, corte `2026-11-03T23:57:00Z`)**: correção do alerta #5 do Dependabot (versões `< 2.9.2`, severidade alta, dependência de runtime); o release saiu em 2026-11-03, depois do corte geral, e o corte fica logo após o último arquivo dele;
 - **Timestamps fixos no passado**: cada isenção é fixada em um instante passado, logo após o último arquivo do release travado, evitando o risco de que datas futuras quebrem a sincronia da CI caso novos releases saiam antes da virada do corte;
+- **Isenção dispensa a maturação de 7 dias**: uma isenção pontual libera uma versão mais nova que o corte geral sem esperar os 7 dias de maturação, como no `tornado` 6.6.1; por isso só entra com justificativa (alerta de segurança ou requisito estrito de outro pacote) e registrada aqui;
+- **Validade da isenção**: quando o `--exclude-newer` geral passar da data de uma isenção, a isenção não faz mais efeito; remova-a do `uv pip compile`, desta lista e do passo de CI que regera os locks, e regere o lock;
 - **Diretriz para alertas e releases**: alerta do Dependabot → regerar o lock com isenção pontual (`--exclude-newer-package`) do pacote corrigido; a cada novo release do bot → mover o `--exclude-newer` geral para ~7 dias antes da data de release;
 - **Versão do `uv`**: os lockfiles são regerados compulsoriamente com `uv==0.13.5` (versão fixada na esteira de CI), garantindo estabilidade e determinação dos hashes em qualquer plataforma.
 

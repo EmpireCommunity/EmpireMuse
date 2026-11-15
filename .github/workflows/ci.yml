@@ -191,11 +191,17 @@ jobs:
 
       - name: Testes de integração do Mongo rodam de verdade (sem skip)
         if: steps.detect-changes.outputs.code == 'true'
+        shell: bash
         run: |
-          # Sem MONGO_TEST_URI o módulo é pulado em silêncio; este passo falha se os dois testes não PASSAREM contra o mongod do serviço.
+          # Sem MONGO_TEST_URI o módulo é pulado em silêncio; este passo falha se os testes não PASSAREM contra o mongod do serviço.
+          # pipefail (default do shell bash do Actions, explícito aqui) impede que o tee esconda o código de saída do pytest.
+          set -o pipefail
+          MINIMO=4
           pytest -q -m integration -rA -p no:cacheprovider | tee "$RUNNER_TEMP/mongo-integracao.txt"
-          test "$(grep -c '^PASSED tests/persistence/test_mongo_integracao.py::' "$RUNNER_TEMP/mongo-integracao.txt")" -eq 2
-          if grep -q '^SKIPPED' "$RUNNER_TEMP/mongo-integracao.txt"; then echo "teste de integração pulado"; exit 1; fi
+          PASSARAM="$(grep -c '^PASSED tests/persistence/test_mongo_integracao.py::' "$RUNNER_TEMP/mongo-integracao.txt" || true)"
+          echo "Testes Mongo PASSED: $PASSARAM (mínimo $MINIMO)"
+          if [ "$PASSARAM" -lt "$MINIMO" ]; then echo "::error::Esperava ao menos $MINIMO testes Mongo PASSED, vieram $PASSARAM"; exit 1; fi
+          if grep -q '^SKIPPED' "$RUNNER_TEMP/mongo-integracao.txt"; then echo "::error::teste de integração pulado"; exit 1; fi
 
       - name: Execução dos testes automatizados (pytest)
         if: steps.detect-changes.outputs.code == 'true'
