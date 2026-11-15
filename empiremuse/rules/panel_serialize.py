@@ -216,8 +216,14 @@ def _object(item: Any, shape: Shape, depth: int) -> dict[str, Any]:
 
 
 def _is_positional_object(value: Sequence[Any], shape: Shape) -> bool:
-    """``True`` quando a própria sequência é UM objeto posicional (ex.: ``("pt-BR", "Português")``), não uma lista deles."""
-    return bool(value) and len(value) <= len(shape) and all(isinstance(v, (str, int, float, bool)) for v in value)
+    """``True`` quando a própria sequência é UM objeto posicional (ex.: ``("pt-BR", "Português")``), não uma lista deles.
+    Só a TUPLA é par posicional: uma lista é sempre lista de objetos, e uma lista de escalares falha fechada no item."""
+    return (
+        isinstance(value, tuple)
+        and bool(value)
+        and len(value) <= len(shape)
+        and all(isinstance(v, (str, int, float, bool)) for v in value)
+    )
 
 
 def _shaped(value: Any, sub: Shape | None, depth: int) -> Any:

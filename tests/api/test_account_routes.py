@@ -419,6 +419,16 @@ class RadioFavoritesTest(DataApiCase):
         assert (full.code, error_code(full)) == (400, "validation_failed")
         assert body_of(full)["error"]["fields"] == ["limit"]
 
+    @pytest.mark.regression
+    def test_post_de_filtro_ja_salvo_antes_de_cheio_e_cheio_com_10_locais(self):
+        """B9 (Crivo T-645-code): o dublê conferia "não existe" antes de "já está" e não tinha o teto de 10; agora segue o armazém real."""
+        self.world.favorites.filter_ids[int(USER)] = [NODE, *[f"br-{n}" for n in range(9)]]
+        already = self.call("POST", RADIOS, {"kind": "filter", "id": NODE})
+        full = self.call("POST", RADIOS, {"kind": "filter", "id": "desconhecido"})
+
+        assert already.code == 200
+        assert (full.code, body_of(full)["error"]["fields"]) == (400, ["limit"])  # cheio antes de consultar a árvore
+
     def test_a_checagem_de_disponibilidade_nao_le_a_lista_do_usuario(self):
         reads = []
         original = self.world.favorites.stations

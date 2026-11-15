@@ -116,6 +116,26 @@ class TestServerList:
         )  # o botão do Discord limpa a lista inteira, inclusive custom e genre
         assert await world.favorites.list_all(GUILD) == ([], [])
 
+    @pytest.mark.regression
+    async def test_the_over_cap_warning_is_logged_on_a_write_not_on_every_read(self, world, caplog):
+        """B9 small items: um documento acima do teto (dado gravado ruim) avisava a cada leitura da lista; só a escrita, que o grava cortado, avisa."""
+        world.db.tables[FAVORITES_DB] = {
+            str(GUILD): {
+                "_id": str(GUILD),
+                "rev": 1,
+                "stations": [{"uuid": uuid(n), "name": f"S{n}"} for n in range(MAX_FAVORITES)],
+                "refs": [CUSTOM, GENRE],
+            }
+        }
+        caplog.set_level("WARNING", logger="empiremuse")
+
+        await world.favorites.list_all(GUILD)
+        await world.favorites.list_all(GUILD)
+        assert not [r for r in caplog.records if "teto" in r.getMessage()]
+
+        assert await world.favorites.remove(GUILD, ADMIN, uuid(0)) is True
+        assert len([r for r in caplog.records if "teto" in r.getMessage()]) == 1
+
     async def test_nothing_with_a_user_id_is_ever_stored(self, world):
         await world.favorites.add_live(GUILD, ADMIN, uuid(1), world.hub.directory.by_uuid_strict)
         await world.favorites.add_ref(GUILD, ADMIN, CUSTOM, yes)

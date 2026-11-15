@@ -143,6 +143,16 @@ def test_an_item_that_is_not_an_object_fails_instead_of_becoming_an_empty_dict(b
         ps.serialize_form(form, ps.GUILD)
 
 
+@pytest.mark.regression
+@pytest.mark.parametrize("bad", [["DJ"], ["1", "DJ"], [1]])
+def test_a_list_of_scalars_is_never_read_as_one_positional_object(bad):
+    """T-540: uma LISTA de escalares onde a forma espera uma lista de objetos virava UM objeto posicional (``["DJ"]`` saía
+    ``{"id": "DJ"}``, e três itens já falhavam). Só a tupla é par posicional; a lista de escalares falha fechada como as demais."""
+    form = make_form(key="dj", extras={"cargos": bad})
+    with pytest.raises(ps.SerializationError):
+        ps.serialize_form(form, ps.GUILD)
+
+
 def test_unregistered_fields_inside_a_valid_object_are_still_dropped_silently():
     form = make_form(key="dj", extras={"cargos": [{"id": 1, "name": "DJ", "extra": SECRET}]})
     assert ps.serialize_form(form, ps.GUILD)["extras"]["cargos"] == [{"id": 1, "name": "DJ"}]
