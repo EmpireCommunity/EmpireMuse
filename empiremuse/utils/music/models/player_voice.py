@@ -80,6 +80,8 @@ def schedule_permanent_voice_status(player: Any, cfg: VoiceStatusConfig, *, jitt
     previous = getattr(player, "voice_status_apply", None)
     if previous is not None and not previous.done():
         previous.cancel()
+    # A geração só anda (o cancelamento não a zera): quem leu o banco antes compara e sabe que o valor lido ficou velho (V-145-6).
+    player.voice_status_generation = getattr(player, "voice_status_generation", 0) + 1
 
     async def run() -> None:
         try:
@@ -370,6 +372,7 @@ class PlayerVoiceMixin:
     _voice_status_pending_text: Any = _UNSET
     _voice_status_last_put: float | None = None
     voice_status_apply: asyncio.Task | None = None  # a aplicação agendada por quem chama (retomada, modal, painel)
+    voice_status_generation = 0  # quantos agendamentos já houve; ``_cancel_voice_status_tasks`` não mexe nela
     voice_status_saved_default = False  # o permanente salvo nunca foi escolhido (``None``): vale o padrão ligado
     _voice_status_default_noticed = False
     _voice_status_permission_noticed = False

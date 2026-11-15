@@ -16,8 +16,8 @@ DETAILS_LIMIT = 4000  # descrição do embed: 4096 no Discord
 __all__ = ["minimal_embed", "minimal_report_text", "user_report_embed"]
 
 
-def minimal_report_text(error: BaseException | None, code: str) -> str:
-    """Texto do anexo: tipo da exceção (o original, se vier embrulhado) e o código (``-`` se não houve)."""
+def minimal_report_text(error: object, code: str) -> str:
+    """Texto do anexo: tipo da exceção ou do evento de falha (o original, se vier embrulhado) e o código (``-`` se não houve)."""
     kind = scrub(type(getattr(error, "original", error)).__name__, NAME_LIMIT)
     return f"Tipo da exceção: {kind}\nCódigo do erro: {code or '-'}\n"
 
