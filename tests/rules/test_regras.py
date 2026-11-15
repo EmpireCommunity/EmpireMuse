@@ -43,6 +43,12 @@ class TestTexto:
         """V-158-1 na regra compartilhada: ``Cs``, ``Zl`` e ``Zp`` chegam por escape JSON; o par de surrogates (🎵) é um caractere só."""
         assert text.has_control_or_format(json.loads(f'"Ro{escapado}ck"')) is recusado
 
+    @pytest.mark.regression
+    def test_titulo_de_faixa_perde_surrogate_isolado_e_separadores_de_linha_e_mantem_o_emoji(self):
+        """V-158-1 no título externo das integrações: ``Cs``, ``Zl`` e ``Zp`` saem como ``Cc``/``Cf``; o par do 🎵 fica."""
+        bruto = json.loads('"Ro\\ud800c\\u2028k \\u2029\\ud83c\\udfb5"')
+        assert text.clean_track_name(bruto, 1, 90) == "Rock 🎵"
+
     def test_clean_import_name_recusa_repetido_sem_diferenciar_a_caixa(self):
         assert text.clean_import_name("Rock", 2, 25, {}) == "Rock"
         assert text.clean_import_name("Rock", 2, 25, {"rock": 1}) is None

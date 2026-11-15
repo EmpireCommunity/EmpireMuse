@@ -59,13 +59,13 @@ def find_same_name(entries: Mapping[str, Any], name: str) -> Optional[str]:
 
 
 def clean_track_name(raw: Any, low: int, high: int) -> Optional[str]:
-    """Nome vindo do título de uma faixa: sem controle/formatação, aparado, cortado em ``high`` e aparado de novo.
+    """Nome vindo do título de uma faixa: sem os caracteres de ``has_control_or_format``, aparado, cortado em ``high`` e aparado de novo.
 
     ``None`` se não for texto ou se sobrar menos de ``low`` caracteres.
     """
     if not isinstance(raw, str):
         return None
-    visible = "".join(char for char in raw if unicodedata.category(char) not in ("Cc", "Cf"))
+    visible = "".join(char for char in raw if unicodedata.category(char) not in _REFUSED_CATEGORIES)
     name = visible.strip()[:high].strip()
     return name if len(name) >= low else None
 
@@ -73,12 +73,14 @@ def clean_track_name(raw: Any, low: int, high: int) -> Optional[str]:
 def plain_snippet(value: Any, limit: int) -> str:
     """Texto externo (por exemplo, a mensagem de erro do Lavalink) seguro para mostrar numa linha de mensagem.
 
-    Uma linha só, sem caracteres de controle/formatação e sem crase (não quebra o markdown nem abre bloco de código);
+    Uma linha só (separadores viram espaço), sem os demais caracteres de ``has_control_or_format`` e sem crase (não quebra o markdown nem abre bloco de código);
     mais longo que ``limit`` é cortado com reticências.
     """
     text = "" if value is None else str(value)
     text = "".join(" " if char.isspace() else char for char in text)
-    text = "".join(char for char in text if unicodedata.category(char) not in ("Cc", "Cf"))
+    text = "".join(
+        char for char in text if unicodedata.category(char) not in _REFUSED_CATEGORIES
+    )  # Zl/Zp já viraram espaço
     text = " ".join(text.replace("`", "'").split())
     return text if len(text) <= limit else text[:limit] + "…"
 
