@@ -499,9 +499,9 @@ def test_a_playlist_stored_before_the_stricter_text_rule_survives_a_read_and_a_w
 
     assert not isinstance(run(world.playlists.add(GID, item("Pop", 3))), RuleError)  # uma gravação qualquer
 
-    saved = world.banco.servers_doc()["playlists"]
-    assert unreadable in saved
-    assert sorted(p["name"] for p in saved if p is not unreadable and p != unreadable) == ["Jazz", "Pop", "Rock Live"]
+    saved = world.banco.servers_doc()
+    assert saved["playlists_hidden"] == [unreadable]  # guardado cru, fora da lista lida
+    assert sorted(p["name"] for p in saved["playlists"]) == ["Jazz", "Pop", "Rock Live"]
 
 
 @pytest.mark.regression
@@ -539,8 +539,8 @@ def test_names_that_collide_after_cleaning_keep_the_lowest_order_and_the_other_s
     assert [p.url for p in listed] == [f"{BASE}a" if legacy_first else f"{BASE}b", f"{BASE}c"]
 
     run(world.playlists.add(GID, item("Pop", 4)))
-    saved = world.banco.servers_doc()["playlists"]
-    assert (clean if legacy_first else legacy) in saved and len(saved) == 4
+    saved = world.banco.servers_doc()
+    assert saved["playlists_hidden"] == [clean if legacy_first else legacy] and len(saved["playlists"]) == 3
 
 
 @pytest.mark.regression
@@ -563,3 +563,27 @@ def test_a_genre_the_cleaning_breaks_is_dropped_instead_of_hiding_the_playlist(w
     assert [(p.name, p.genres) for p in listed] == [("Rock", ("Rock", "Ro ck"))]
     counted = [r.getMessage() for r in caplog.records if "ilegíveis" in r.getMessage()]
     assert len(counted) == 1 and "1 playlists" in counted[0] and "nao-e-url" not in caplog.text
+
+
+@pytest.mark.regression
+def test_the_collision_decision_is_persisted_so_renumbering_or_removing_never_resurrects_the_hidden_one(world):
+    """Crivo (PR 255): o desempate usava a ``order`` crua da perdedora, que nunca é renumerada; dois ``add`` na posição 1 levavam a visível
+    para depois dela e a escondida voltava, e remover a visível também a trazia de volta. A decisão agora é gravada uma vez: a perdedora vai
+    crua para ``playlists_hidden``, que a leitura nunca mostra, a exportação traz à parte e só o ``clear`` do escopo apaga."""
+    stored = {**new_doc(), "_id": str(GID)}
+    stored["migrated"] = {section: True for section in stored["migrated"]}
+    hidden = {**item("Rock Pop", 2, url=f"{BASE}b")._asdict(), "genres": []}
+    stored["playlists"] = [{**item("Rock Pop", 1, url=f"{BASE}a")._asdict(), "genres": []}, hidden]
+    world.banco.put(*SERVERS, GID, stored)
+
+    run(world.playlists.add(GID, item("Primeira", 1)))
+    run(world.playlists.add(GID, item("Segunda", 1)))
+    assert [p.url for p in run(world.playlists.list(GID)) if p.name == "Rock Pop"] == [f"{BASE}a"]
+
+    run(world.playlists.remove(GID, "Rock Pop"))
+    assert "Rock Pop" not in names(run(world.playlists.list(GID)))  # a escondida não volta
+    assert world.banco.servers_doc()["playlists_hidden"] == [hidden]
+    assert json.loads(run(world.playlists.export_bytes(GID)))["hidden"] == [hidden]  # o admin a recupera pelo arquivo
+
+    run(world.playlists.clear(GID))  # só o apagar explícito do escopo leva os escondidos
+    assert "playlists_hidden" not in world.banco.servers_doc()

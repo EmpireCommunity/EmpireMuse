@@ -218,7 +218,9 @@ class LinksImportExportTest(LinksBase):
             assert denied.code == 404 and NOT_FOUND_TEXT in denied.body.decode(), path
 
     def test_export_then_import_into_an_empty_server_gives_the_same_list(self):
-        self.world.set_playlists(100, [doc("Rock", 1, genres=["Rock", "80s"]), doc("Café", 2, description="")])
+        self.world.set_playlists(
+            100, [doc("Rock", 1, genres=["Rock", "80s"]), doc("Café", 2, url=f"{BASE_URL}cafe", description="")]
+        )
         browser = self.logged_in()
         exported = browser.get("/painel/servidores/100/links/exportar").body.decode()
         self.world.set_playlists(100, [])
