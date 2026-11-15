@@ -21,6 +21,23 @@ jobs:
     name: CI (Lint, Compile e Testes)
     runs-on: ubuntu-latest
 
+    # mongod descartável só para os testes de integração (tests/persistence/test_mongo_integracao.py). Mesma imagem pinada do
+    # deploy/docker-compose.deps.yml, sem autenticação e sem dado de produção: a porta só existe neste runner e o teste recusa
+    # qualquer host que não seja local. O health check é o gate: o job só começa os passos depois de o mongod responder ao ping.
+    services:
+      mongo:
+        image: mongo:8.0.34@sha256:4a4ab5d4834207389e0d7270fac988e21ffedccecba77991a552f755df229907
+        ports:
+          - 127.0.0.1:27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping: 1}).ok' | grep -q 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      MONGO_TEST_URI: mongodb://127.0.0.1:27017
+
     steps:
       - name: Checkout do repositório
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -70,7 +87,7 @@ jobs:
 
       - name: Verificar integridade e sincronia dos lockfiles
         run: |
-          uv pip compile --generate-hashes --universal --exclude-newer 2026-10-20T00:00:00Z --exclude-newer-package yt-dlp=2026-10-26T22:30:00Z --exclude-newer-package certifi=2026-10-23T12:00:00Z --exclude-newer-package brotli=2026-10-22T15:00:00Z --exclude-newer-package brotlicffi=2026-10-22T17:00:00Z --exclude-newer-package tornado=2026-10-21T15:32:00Z requirements.txt -o requirements-lock.txt
+          uv pip compile --generate-hashes --universal --exclude-newer 2026-10-20T00:00:00Z --exclude-newer-package yt-dlp=2026-10-26T22:30:00Z --exclude-newer-package certifi=2026-10-23T12:00:00Z --exclude-newer-package brotli=2026-10-22T15:00:00Z --exclude-newer-package brotlicffi=2026-10-22T17:00:00Z --exclude-newer-package tornado=2026-11-09T21:10:00Z --exclude-newer-package dnspython=2026-11-03T23:57:00Z requirements.txt -o requirements-lock.txt
           uv pip compile --generate-hashes --universal --exclude-newer 2026-10-20T00:00:00Z --exclude-newer-package pytest-asyncio=2026-11-01T18:27:00Z requirements-dev.txt -o requirements-dev-lock.txt
           uv pip compile --generate-hashes --universal --exclude-newer 2026-10-20T00:00:00Z build-constraints.in -o build-constraints.txt
           git diff --exit-code requirements-lock.txt requirements-dev-lock.txt build-constraints.txt
@@ -171,6 +188,14 @@ jobs:
       - name: Execução dos testes smoke (pytest)
         if: steps.detect-changes.outputs.code == 'true'
         run: pytest -q -m smoke -p no:cacheprovider
+
+      - name: Testes de integração do Mongo rodam de verdade (sem skip)
+        if: steps.detect-changes.outputs.code == 'true'
+        run: |
+          # Sem MONGO_TEST_URI o módulo é pulado em silêncio; este passo falha se os dois testes não PASSAREM contra o mongod do serviço.
+          pytest -q -m integration -rA -p no:cacheprovider | tee "$RUNNER_TEMP/mongo-integracao.txt"
+          test "$(grep -c '^PASSED tests/persistence/test_mongo_integracao.py::' "$RUNNER_TEMP/mongo-integracao.txt")" -eq 2
+          if grep -q '^SKIPPED' "$RUNNER_TEMP/mongo-integracao.txt"; then echo "teste de integração pulado"; exit 1; fi
 
       - name: Execução dos testes automatizados (pytest)
         if: steps.detect-changes.outputs.code == 'true'
