@@ -488,23 +488,25 @@ async def test_r2_fluxo_de_vinculo_iniciado_antes_e_concluido_depois_do_apagamen
 
 
 @pytest.mark.asyncio
-async def test_play_command_captura_read_at_antes_de_ler_o_documento_do_usuario(mundo):
+async def test_play_command_captura_read_at_antes_da_primeira_espera_do_comando(mundo):
     from empiremuse.cogs.music import Music
-    from empiremuse.music_cog.play_state import PlayState
 
     inicio = mundo.relogio()
+    vistos = []
 
-    async def le_devagar(*args, **kwargs):
-        mundo.relogio.avancar(5)  # a leitura leva tempo: o read_at é o de ANTES
-        return deepcopy(global_db_models["users"])
+    async def prepara_devagar(req):
+        mundo.relogio.avancar(5)  # a primeira etapa espera a rede: o read_at é o de ANTES dela
+        vistos.append(req.user_read_at)
 
     cog = Music.__new__(Music)
-    cog.bot = SimpleNamespace(
-        pool=mundo.pool, get_global_data=le_devagar, get_global_command_named=lambda *a, **k: None
-    )
-    req = PlayState(
-        inter=SimpleNamespace(author=SimpleNamespace(id=ALVO)),
-        query="q",
+    cog.bot = SimpleNamespace(pool=mundo.pool)
+    cog._play_prepare = prepara_devagar
+    cog._play_select_bot = AsyncMock(return_value=True)  # o comando para aqui: só o começo interessa
+
+    await Music.play.callback(
+        cog,
+        SimpleNamespace(author=SimpleNamespace(id=ALVO)),
+        "q",
         position=0,
         force_play="no",
         mix=False,
@@ -513,11 +515,8 @@ async def test_play_command_captura_read_at_antes_de_ler_o_documento_do_usuario(
         server=None,
         manual_bot_choice="no",
     )
-    req.bot, req.ephemeral, req.guild_data = cog.bot, False, {}
 
-    await cog._play_user_context(req)
-
-    assert req.user_read_at == inicio and mundo.relogio() == inicio + 5
+    assert vistos == [inicio] and mundo.relogio() == inicio + 5
 
 
 @pytest.mark.asyncio

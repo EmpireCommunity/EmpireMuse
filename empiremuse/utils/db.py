@@ -129,6 +129,9 @@ async def get_prefix(bot: BotCore, message: disnake.Message):
 def migration_saved_on_read(db_name: str) -> bool:
     """A migração de ``ver`` feita por ``get_data`` é regravada na própria leitura? Nunca no documento de um membro (``users``).
 
+    O teste é só pelo nome da coleção: vale para toda coleção ``users``, em qualquer banco (hoje ``global.users`` e
+    ``scrobbles.users``, as duas removidas pelo apagamento de dados), e não só para ``global.users``.
+
     Essa regravação não passa pelo lock do usuário nem pela conferência do apagamento de dados: se o apagamento rodasse entre
     a leitura e a escrita, o documento apagado voltaria ao banco. O documento do membro é devolvido já migrado, só em memória,
     e vai para o banco na próxima gravação dele (``change_user_doc`` e a conta do painel, que usam o lock do usuário).
