@@ -41,6 +41,7 @@ KIND_GENRE, KIND_ARTISTS, KIND_PLAYLISTS = "genre", "artists", "playlists"
 KINDS = (KIND_ARTISTS, KIND_PLAYLISTS)
 FIELDS = ("name", "kind", "genre", "artists", "playlists")
 LIMIT_FIELD = "limit"
+IN_USE_FIELD = "in_use"
 ERROR_KEYS = {"name": "name_rule"}  # chaves ``*.name`` têm o tamanho dos nomes de comando no validador do catálogo
 NAME_MAX = 32
 ARTISTS_MAX = 10
@@ -88,6 +89,9 @@ class StationsOutcome(NamedTuple):
     status: int
     view: StationsView
     station: Any = None  # só em ``create`` com sucesso: a estação que a store devolveu (nome já normalizado)
+    refused: tuple[
+        str, ...
+    ] = ()  # recusa da store sem campo no formulário: ``limit`` (11ª estação) ou ``in_use`` (apagar)
 
 
 def station_id_of(raw: str) -> Optional[str]:
@@ -125,6 +129,11 @@ async def _radios_of(ctx: FormContext, ids: Any) -> list:
         if radio is not None and int(getattr(radio, "guild_id", ctx.guild_id)) == ctx.guild_id:
             found.append(radio)
     return found
+
+
+def error_of(exc: Exception) -> Any:
+    """O ``RuleError`` de uma recusa da store (atributo ``error`` ou o primeiro argumento)."""
+    return getattr(exc, "error", None) or (exc.args[0] if exc.args else None)
 
 
 def field_of(error: Any) -> str:
@@ -251,7 +260,8 @@ class StationsPage:
             saved = await ctx.pool.radio.stations.create(ctx.guild_id, raw, playlists=playlists, updated_by=ctx.user_id)
         except RadioInvalid as exc:
             form = self._refused(action, tr, exc, echo, genres, playlists)
-            return StationsOutcome(STATUS_INVALID, await self.view(ctx, action, tr, form=form))
+            refused = (LIMIT_FIELD,) if field_of(error_of(exc)) == LIMIT_FIELD else ()
+            return StationsOutcome(STATUS_INVALID, await self.view(ctx, action, tr, form=form), refused=refused)
         _audit(ctx, saved, "criada")
         form = self.form(action, tr, genres=genres, playlists=playlists, message=SAVED_TEXT, kind=KIND_OK)
         return StationsOutcome(STATUS_OK, await self.view(ctx, action, tr, form=form), saved)
@@ -305,11 +315,11 @@ class StationsPage:
         item_action = f"{action}/{station.id}"
         genres, playlists = self.genre_groups(ctx), await self.playlist_names(ctx)
 
-        async def refuse(status: int, message: str) -> StationsOutcome:
+        async def refuse(status: int, message: str, refused: tuple[str, ...] = ()) -> StationsOutcome:
             form = self.form(
                 item_action, tr, genres=genres, playlists=playlists, station=station, message=message, kind=KIND_ERROR
             )
-            return StationsOutcome(status, await self.view(ctx, action, tr, edit=form))
+            return StationsOutcome(status, await self.view(ctx, action, tr, edit=form), refused=refused)
 
         refused = self._version(station, args)
         if refused is not None:
@@ -322,8 +332,11 @@ class StationsPage:
             radios = await _radios_of(ctx, getattr(exc, "radios", None) or ())
             if radios:  # em uso: a mensagem diz qual call a usa (R5 §2)
                 channels = ", ".join(channel_label(ctx, r) for r in radios)
-                return await refuse(STATUS_INVALID, tr("panel.radio.station.in_use", channels=channels))
-            return await refuse(STATUS_INVALID, INVALID_TEXT)
+                return await refuse(
+                    STATUS_INVALID, tr("panel.radio.station.in_use", channels=channels), (IN_USE_FIELD,)
+                )
+            # em uso por rádios que já não se resolvem: segue recusado como em uso (o texto genérico, sem o canal)
+            return await refuse(STATUS_INVALID, INVALID_TEXT, (IN_USE_FIELD,) if getattr(exc, "radios", None) else ())
         _audit(ctx, station, "apagada")
         form = self.form(
             action, tr, genres=genres, playlists=playlists, message=tr("panel.radio.station.deleted"), kind=KIND_OK
@@ -350,8 +363,7 @@ class StationsPage:
         *,
         station: Any = None,
     ) -> Formulario:
-        error = getattr(exc, "error", None) or (exc.args[0] if exc.args else None)
-        field = field_of(error)
+        field = field_of(error_of(exc))
         if field == LIMIT_FIELD:
             message = tr("panel.radio.station.limit", max=STATIONS_MAX)
             errors: dict[str, str] = {}

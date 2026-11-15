@@ -387,6 +387,31 @@ class RadioFavoritesRisk(FavoritesApiCase):
         assert str(USER) not in str(self.db.tables[FAVORITES_DB])
 
 
+class RadioFavoritesUsageStatus(FavoritesApiCase):
+    """O registro de uso de uma escrita de favoritas leva o status que a API respondeu (Crivo S2 T-636-code, B9 small items)."""
+
+    def test_banco_fora_e_503_erro_inesperado_e_500_e_erro_da_api_leva_o_proprio_status(self):
+        from unittest.mock import AsyncMock
+
+        from empiremuse.api.errors import BOT_UNAVAILABLE, ApiError
+        from empiremuse.api.handlers_radio_favorites import ServerFavoritesHandler
+
+        self.premium()
+        self.radio.directory.stations[LIVE_UUID] = station(LIVE_UUID)
+        failures = ((RadioUnavailable(), 503), (FAILURE, 500), (ApiError(503, BOT_UNAVAILABLE), 503))
+        for method, name in (("POST", "add"), ("DELETE", "remove")):
+            for failure, status in failures:
+                with (
+                    self.subTest(method=method, failure=type(failure).__name__),
+                    patch.object(ServerFavoritesHandler, name, AsyncMock(side_effect=failure)),
+                    patch("empiremuse.api.handlers_radio_favorites.record_panel_action") as record,
+                ):
+                    call = self.add if method == "POST" else self.remove
+                    response = call(SERVER, "station", LIVE_UUID)
+                    assert response.code == status
+                    assert [c.args[1:] for c in record.call_args_list] == [("radios/favoritas", status)]
+
+
 class RadioFavoritesContract(FavoritesApiCase):
     """Todo par rota+status documentado das rotas novas é observado, e cada resposta valida contra o arquivo."""
 
