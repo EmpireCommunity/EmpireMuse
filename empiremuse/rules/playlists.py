@@ -611,7 +611,22 @@ def move_leading_icons(stored: Sequence[Any]) -> tuple[list[Any], int]:
 
     Só mexe no item que ainda não tem um ``icon`` válido, cujo nome começa com UM emoji seguido de espaço e que continua com um nome
     válido, sem repetir o de outro item, depois de aparado. O emoji do meio ou do fim do nome fica. O resto da lista passa intacto.
+    Repete a passada até nada mudar: um nome encadeado ("🔴 🔵 Rock" ao lado de "🔵 Rock") só fica livre depois de o outro mudar.
     """
+    result: list[Any] = list(stored)
+    moved = 0
+    for _ in range(
+        len(result)
+    ):  # cada passada que muda algo libera no máximo um nome por item: nunca passa do tamanho da lista
+        result, changed = _move_leading_icons_once(result)
+        if not changed:
+            break
+        moved += changed
+    return result, moved
+
+
+def _move_leading_icons_once(stored: Sequence[Any]) -> tuple[list[Any], int]:
+    """Uma passada de ``move_leading_icons`` sobre a lista."""
     taken = {
         entry["name"].strip().casefold()
         for entry in stored

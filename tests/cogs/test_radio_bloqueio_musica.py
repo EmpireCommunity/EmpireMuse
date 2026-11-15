@@ -130,3 +130,17 @@ async def test_a_radio_token_never_enters_music_selection(path):
             await checks.check_pool_bots(inter)
     if path != "request":
         radio_bot.get_guild.assert_not_called()
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize("check", [checks.has_player, checks.has_source], ids=["has_player", "has_source"])
+async def test_music_commands_without_the_dj_check_also_refuse_a_radio_player(check):
+    """``/autoplay`` e o voto para pular não passam pelo ``check_player_perm``: quem está na call da rádio os alcançava pelo bot dela."""
+    bot = make_bot(2, "TOKEN_RESERVE_2", call=100, radio=True)
+    inter = SimpleNamespace(music_bot=bot, guild_id=GID)
+
+    with pytest.raises(GenericError) as refusal:
+        await check().predicate(inter)
+
+    assert "player" in str(refusal.value) and "locked" in str(refusal.value)

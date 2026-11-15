@@ -66,6 +66,8 @@ _ERROR_BY_CLASS = {
 _ANSI = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)?|[@-Z\\-_])")
 # Markdown do Discord (inclui spoiler, cabeçalho, citação, link mascarado e menção); ``:`` desarma o ``://`` do link automático.
 _MARKDOWN = re.compile(r"([\\*_~`|>#\[\]()<@:])")
+# Marcador de lista no começo do texto ("- item", "1. item"): no início de uma linha do embed ele abriria uma lista (V-153-1).
+_LEADING_LIST_MARKER = re.compile(r"^(\s*)(-|\d+\.)(?=\s)")
 _ZERO_WIDTH_SPACE = "​"
 _ELLIPSIS = "…"
 
@@ -91,8 +93,9 @@ def clean_text(value: object, limit: int) -> str:
 
 
 def escape_markdown(text: str) -> str:
-    """Escapa o markdown do Discord e separa o ``@`` do que vem depois (``@everyone`` não vira menção)."""
-    return _MARKDOWN.sub(r"\\\1", text).replace("@", "@" + _ZERO_WIDTH_SPACE)
+    """Escapa o markdown do Discord (inclusive o marcador de lista do começo) e separa o ``@`` do que vem depois (``@everyone`` não vira menção)."""
+    escaped = _MARKDOWN.sub(r"\\\1", text).replace("@", "@" + _ZERO_WIDTH_SPACE)
+    return _LEADING_LIST_MARKER.sub(lambda found: f"{found[1]}{found[2][:-1]}\\{found[2][-1]}", escaped)
 
 
 def render_text(value: object, limit: int) -> str:

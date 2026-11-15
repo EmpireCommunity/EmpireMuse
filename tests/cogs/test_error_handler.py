@@ -135,3 +135,19 @@ class TestComandoDePrefixo:
         handler.send_webhook.assert_awaited_once()
         relatorio = "\n".join(arquivos_do_webhook)
         assert "OSError" in relatorio and CAMINHO not in relatorio and TOKEN_FALSO not in relatorio
+
+    @pytest.mark.regression
+    @pytest.mark.asyncio
+    async def test_um_pedido_digitado_chega_ao_tratamento_do_erro(self, handler, monkeypatch):
+        """O ``custom_error`` traz ``disnake.Message`` (pedido digitado na Jukebox), que não aceita atributo novo: marcar
+        ``command_failed`` nela levantava ``AttributeError`` antes de o erro ser tratado."""
+
+        class Chegou(Exception):
+            pass
+
+        monkeypatch.setattr(error_handler, "parse_error", MagicMock(side_effect=Chegou))
+        mensagem = object.__new__(disnake.Message)
+        mensagem.guild = None
+
+        with pytest.raises(Chegou):
+            await handler.on_legacy_command_error(mensagem, ValueError("x"), resp_msg=False)

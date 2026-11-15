@@ -20,6 +20,13 @@ from empiremuse.rules.usage import clean_text
 PANEL_REFRESH_MS = 3000  # no máximo uma edição do painel por servidor a cada 3 s
 PANEL_TICK_MS = 15000  # com música tocando, o painel em lista se redesenha sozinho (progresso) a cada 15 s
 HEAL_MIN_INTERVAL_MS = 5000  # painel apagado: no máximo um painel novo a cada 5 s por servidor (quem apaga em laço não vira laço de envios)
+HANDOFF_RETRY_BASE_MS = (
+    5000  # passagem do painel que falhou: a nova tentativa espera 5 s, e cada falha seguida dobra a espera
+)
+HANDOFF_RETRY_MAX_MS = (
+    300_000  # até o teto de 5 min (uma falha que não passa, como falta de permissão, não vira rajada no Discord)
+)
+_HANDOFF_RETRY_MAX_DOUBLINGS = 16  # só limita o expoente: bem antes disso a espera já está no teto
 PROGRESS_WIDTH = 10
 QUEUE_PAGE_SIZE = 25  # o teto de opções de um select
 MAX_GENRE_OPTIONS = 25
@@ -138,6 +145,14 @@ def heal_wait_ms(last_ms: int | None, now_ms: int) -> int:
     if last_ms is None or now_ms < last_ms:
         return 0
     return max(0, HEAL_MIN_INTERVAL_MS - (now_ms - last_ms))
+
+
+def handoff_retry_wait_ms(failures: int, last_failure_ms: int | None, now_ms: int) -> int:
+    """Quanto falta (em ms) para tentar de novo a passagem do painel que falhou ``failures`` vezes seguidas; 0 = já pode."""
+    if failures < 1 or last_failure_ms is None or now_ms < last_failure_ms:
+        return 0
+    delay = min(HANDOFF_RETRY_BASE_MS * 2 ** min(failures - 1, _HANDOFF_RETRY_MAX_DOUBLINGS), HANDOFF_RETRY_MAX_MS)
+    return max(0, delay - (now_ms - last_failure_ms))
 
 
 class JukeboxAction(StrEnum):

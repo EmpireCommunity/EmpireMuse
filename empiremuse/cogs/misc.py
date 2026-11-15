@@ -777,9 +777,9 @@ class Misc(commands.Cog):
                     break
 
         pool_bots = [b for b in self.bot.pool.bots if b.user is not None and not is_radio_only_identifier(b.identifier)]
-        if guild:  # no servidor: só quem falta, na ordem de convite (o principal primeiro, depois as reservas)
+        if guild:  # no servidor: na ordem de convite (o principal primeiro, depois as reservas); quem já está sai em outra lista
             by_id = {b.user.id: b for b in pool_bots}
-            order = invite_order([Peer(b.identifier, b.user.id, b.is_main) for b in pool_bots], ())
+            order = invite_order([Peer(b.identifier, b.user.id, b.is_main) for b in pool_bots])
             pool_bots = [by_id[peer.bot_id] for peer in order]
         else:
             pool_bots = sorted(pool_bots, key=lambda b: len(b.guilds))
@@ -1036,6 +1036,8 @@ class GuildLog(commands.Cog):
 
     @commands.Cog.listener("on_ready")
     async def leave_banned_guilds(self):
+        # Só as reconexões com sessão nova chegam aqui: os cogs são carregados depois do primeiro ``ready`` (``initial_setup``, que faz
+        # esta mesma conferência uma vez), então as duas chamadas nunca rodam juntas na mesma subida.
         if bans := bans_of(self.bot):
             await bans.enforce_ready(self.bot)
 

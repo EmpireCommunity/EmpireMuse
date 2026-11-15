@@ -7,12 +7,15 @@ from empiremuse.rules.jukebox_panel import (
     HEAL_MIN_INTERVAL_MS,
     PANEL_REFRESH_MS,
     PAUSED,
+    HANDOFF_RETRY_BASE_MS,
+    HANDOFF_RETRY_MAX_MS,
     PLAYING,
     PanelPeer,
     JukeboxAction,
     choose_player,
     clock,
     elect_panel_bot,
+    handoff_retry_wait_ms,
     heal_wait_ms,
     last_action_of,
     make_entry,
@@ -191,6 +194,25 @@ class TestEntradaComVolumeEProgresso:
 
     def test_a_zero_or_missing_duration_is_a_live_stream(self):
         assert entrada(duration_ms=0).duration_ms is None and entry().duration_ms is None
+
+
+class TestPassagemQueFalhou:
+    @pytest.mark.parametrize(
+        ("failures", "elapsed_ms", "wait_ms"),
+        [
+            (0, 0, 0),  # nunca falhou: pode na hora
+            (1, 0, HANDOFF_RETRY_BASE_MS),
+            (1, HANDOFF_RETRY_BASE_MS, 0),
+            (2, 0, 2 * HANDOFF_RETRY_BASE_MS),  # cada falha seguida dobra a espera
+            (3, HANDOFF_RETRY_BASE_MS, 3 * HANDOFF_RETRY_BASE_MS),
+            (40, 0, HANDOFF_RETRY_MAX_MS),  # até o teto
+        ],
+    )
+    def test_each_failure_in_a_row_doubles_the_wait_up_to_the_cap(self, failures, elapsed_ms, wait_ms):
+        assert handoff_retry_wait_ms(failures, 1_000, 1_000 + elapsed_ms) == wait_ms
+
+    def test_a_clock_that_went_back_does_not_block(self):
+        assert handoff_retry_wait_ms(3, 5_000, 1_000) == 0
 
 
 class TestPainelApagado:
