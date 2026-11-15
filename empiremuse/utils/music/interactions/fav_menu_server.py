@@ -18,9 +18,9 @@ from typing import TYPE_CHECKING
 import disnake
 
 from empiremuse.rules.i18n import Translator, fit
-from empiremuse.rules.text import external_text
+from empiremuse.rules.text import external_text, stored_text
 from empiremuse.utils.others import paginator
-from empiremuse.utils.radio.favorite_refs import is_genre, ref_labels
+from empiremuse.utils.radio.favorite_refs import RefLabel, is_genre, ref_labels
 from empiremuse.utils.radio.favorites import MAX_FAVORITES, FavoriteForbidden, FavoriteStation
 from empiremuse.utils.radio.perms import can_manage_guild
 from empiremuse.utils.radio.premium import RadioUnavailable
@@ -54,7 +54,7 @@ async def open_server_favorites(inter: disnake.ApplicationCommandInteraction, tr
 
 async def load_server_list(
     pool: BotPool, tr: Translator, guild_id: int
-) -> tuple[list[FavoriteStation], list[tuple[str, str]] | None]:
+) -> tuple[list[FavoriteStation], list[RefLabel] | None]:
     """Ao vivo e rótulos das refs; ``None`` indica rótulos indisponíveis, sem descartar as ao vivo."""
     stations, refs = await pool.radio.favorites.list_all(guild_id)
     try:
@@ -73,7 +73,7 @@ class ServerRadioFavoritesView(disnake.ui.View):
         tr,
         guild_id: int,
         stations: Sequence[FavoriteStation],
-        refs: Sequence[tuple[str, str]] | None = (),
+        refs: Sequence[RefLabel] | None = (),
     ) -> None:
         super().__init__(timeout=VIEW_TIMEOUT_S)
         self._custom_id_suffix = secrets.token_hex(8)  # único por view efêmera, inclusive sem message_id
@@ -81,7 +81,7 @@ class ServerRadioFavoritesView(disnake.ui.View):
         self.author_id = inter.author.id
         self.stations = list(stations)
         self.refs_unavailable = refs is None
-        self.refs: list[tuple[str, str]] = list(refs or ())
+        self.refs: list[RefLabel] = list(refs or ())
         self.current: str | None = None
         self.confirming = False
         self.log = ""
@@ -94,13 +94,10 @@ class ServerRadioFavoritesView(disnake.ui.View):
             "radio.favorites.server.heading", total="—" if self.refs_unavailable else self.total, max=MAX_FAVORITES
         )
         if self.total:
-            lines = [
-                f"> ` {n:02} ` ⭐ {external_text(s.name, TEXT_NAME_LIMIT, markdown=False)}"
-                for n, s in enumerate(self.stations, 1)
-            ]
+            lines = [f"> ` {n:02} ` ⭐ {stored_text(s.name, TEXT_NAME_LIMIT)}" for n, s in enumerate(self.stations, 1)]
             lines = lines + [
-                f"> ` {n:02} ` {GENRE_EMOJI if is_genre(ref) else CUSTOM_EMOJI} {external_text(label, TEXT_NAME_LIMIT)}"
-                for n, (ref, label) in enumerate(self.refs, len(self.stations) + 1)
+                f"> ` {n:02} ` {GENRE_EMOJI if is_genre(entry.ref) else CUSTOM_EMOJI} {external_text(entry.label, TEXT_NAME_LIMIT)}"
+                for n, entry in enumerate(self.refs, len(self.stations) + 1)
             ]
             txt += paginator("\n".join(lines), max_size=TEXT_LIST_MAX_SIZE)[0] + "\n"
         elif not self.refs_unavailable:
@@ -152,8 +149,8 @@ class ServerRadioFavoritesView(disnake.ui.View):
 
     def _entries(self) -> list[tuple[str, str, str]]:
         """``(valor, rótulo, emoji)`` de cada entrada: ao vivo (uuid) e depois ``custom``/``genre`` (id)."""
-        live = [(s.uuid, external_text(s.name, LABEL_LIMIT, markdown=False) or "—", "⭐") for s in self.stations]
-        return live + [(ref, label, GENRE_EMOJI if is_genre(ref) else CUSTOM_EMOJI) for ref, label in self.refs]
+        live = [(s.uuid, stored_text(s.name, LABEL_LIMIT, markdown=False) or "—", "⭐") for s in self.stations]
+        return live + [(e.ref, e.label, GENRE_EMOJI if is_genre(e.ref) else CUSTOM_EMOJI) for e in self.refs]
 
     def _add_select(self) -> None:
         entries = self._entries()[:MAX_FAVORITES]
@@ -190,12 +187,13 @@ class ServerRadioFavoritesView(disnake.ui.View):
         if uuid is None:
             await inter.send(self.tr("fav.select_item"), ephemeral=True)
             return
-        ref_names = dict(self.refs)
-        is_ref = uuid in ref_names
-        name = ref_names[uuid] if is_ref else next((s.name for s in self.stations if s.uuid == uuid), "")
-        gone = is_ref and name == self.tr(
-            "radio.favorites.ref.missing"
-        )  # a estação já tinha sido apagada: sem nome para citar
+        entry = next((e for e in self.refs if e.ref == uuid), None)
+        is_ref = entry is not None
+        if entry is not None:  # ``custom``/``genre``: rótulo já sem markdown
+            name = external_text(entry.label, TEXT_NAME_LIMIT)
+        else:  # ao vivo: nome guardado já escapado
+            name = stored_text(next((s.name for s in self.stations if s.uuid == uuid), ""), TEXT_NAME_LIMIT)
+        gone = entry is not None and entry.missing  # a estação já tinha sido apagada: sem nome para citar
         remove = (  # as ``custom``/``genre`` têm o próprio remover; os dois conferem o gate da gerência
             (lambda favorites: favorites.remove_ref(self.guild_id, inter.author.id, uuid))
             if is_ref
@@ -205,7 +203,7 @@ class ServerRadioFavoritesView(disnake.ui.View):
             inter,
             remove,
             "radio.favorites.log.ref_gone" if gone else "radio.favorites.server.removed",
-            {} if gone else {"station": external_text(name, TEXT_NAME_LIMIT)},
+            {} if gone else {"station": name},
         )
 
     async def ask_clear_callback(self, inter: disnake.MessageInteraction) -> None:

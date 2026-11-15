@@ -37,7 +37,7 @@ from empiremuse.panel.services.radio_local import (
 from empiremuse.panel.services.service import STATUS_INVALID, STATUS_OK
 from empiremuse.rules.i18n import Translator
 from empiremuse.rules.radio_stations import valid_uuid
-from empiremuse.rules.text import external_text
+from empiremuse.rules.text import external_text, stored_text
 from empiremuse.utils.radio.directory import DirectoryError
 from empiremuse.utils.radio.favorites import MAX_FAVORITES, AddResult, FavoriteForbidden
 from empiremuse.utils.radio.perms import can_manage_guild
@@ -127,7 +127,7 @@ class ServerFavoritesPage:
         if store is None or not await can_manage(ctx):
             return None
         favorites = await store.list(ctx.guild_id)
-        items = tuple(FavoriteRow(f.uuid, external_text(f.name, NAME_LIMIT, markdown=False)) for f in favorites)
+        items = tuple(FavoriteRow(f.uuid, stored_text(f.name, NAME_LIMIT, markdown=False)) for f in favorites)
         results: tuple[ResultRow, ...] = ()
         hint: Optional[str] = None
         paging: Optional[Paging] = None
@@ -165,8 +165,8 @@ class ServerFavoritesPage:
         rows = tuple(
             ResultRow(
                 str(hit.station.uuid),
-                external_text(hit.station.name, NAME_LIMIT, markdown=False),
-                external_text(hit.station.country, NAME_LIMIT, markdown=False),
+                stored_text(hit.station.name, NAME_LIMIT, markdown=False),
+                stored_text(hit.station.country, NAME_LIMIT, markdown=False),
                 external_text(hit.station.codec, 20, markdown=False),
                 int(hit.station.bitrate),
                 hit.station.uuid in saved,
@@ -208,7 +208,7 @@ class ServerFavoritesPage:
             return FavoritesOutcome(STATUS_FULL, tr("panel.radio.favorites.full", max=MAX_FAVORITES), KIND_ERROR)
         if result is AddResult.ADDED:
             _audit(ctx, ACTION_ADD)
-        name = external_text(station.name, NAME_LIMIT, markdown=False)
+        name = stored_text(station.name, NAME_LIMIT, markdown=False)
         key = "added" if result is AddResult.ADDED else "already"
         return FavoritesOutcome(STATUS_OK, tr(f"panel.radio.favorites.{key}", station=name), KIND_OK)
 

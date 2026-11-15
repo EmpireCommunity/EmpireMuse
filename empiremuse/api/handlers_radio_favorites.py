@@ -23,7 +23,7 @@ from empiremuse.panel.services.radio import can_write
 from empiremuse.utils.radio.premium import RadioUnavailable
 from empiremuse.utils.radio.favorites import SERVER_FAVORITES_MAX, AddResult, FavoriteForbidden, FavoriteNotFound
 from empiremuse.utils.radio.custom_favorites import MAX_CUSTOM_FAVORITES
-from empiremuse.utils.radio.stations import StationStore
+from empiremuse.utils.radio.favorite_refs import is_genre, resolve_refs
 from empiremuse.utils.usage import record_panel_action
 
 ACTION_LABEL = "radios/favoritas"  # rótulo FIXO do registro de uso do painel (nunca o id nem o nome)
@@ -33,7 +33,7 @@ PREMIUM_KINDS = ("custom", "genre")  # estação do servidor e gênero pronto s�
 def ref_item(ref: str, station: Any) -> dict[str, Any]:
     """Uma entrada ``custom``/``genre`` (só o id é guardado), com a estação relida agora. ``name`` é texto tratado (``null`` no gênero: o painel traduz o
     ``id``); ``missing`` quando já não resolve (estação apagada, gênero fora do catálogo): segue listada e removível."""
-    kind = "genre" if ref.startswith("g:") else "custom"
+    kind = "genre" if is_genre(ref) else "custom"
     entry: dict[str, Any] = {
         "kind": kind,
         "id": ref,
@@ -47,13 +47,7 @@ def ref_item(ref: str, station: Any) -> dict[str, Any]:
 async def ref_items(hub: Any, ctx: FormContext, refs: list[str]) -> list[dict[str, Any]]:
     """As entradas de uma lista: as ``custom`` numa leitura só das estações do servidor (nunca uma por favorita); o gênero vem do catálogo, sem banco.
     A de outro servidor não está nessa leitura e sai como ``missing``, igual a uma apagada."""
-    custom = {}
-    if any(not ref.startswith("g:") for ref in refs):
-        custom = {str(item.id): item for item in await hub.stations.list_for_guild(ctx.guild_id)}
-    return [
-        ref_item(ref, StationStore.builtin(ctx.guild_id, ref) if ref.startswith("g:") else custom.get(ref))
-        for ref in refs
-    ]
+    return [ref_item(ref, station) for ref, station in await resolve_refs(hub, ctx.guild_id, refs)]
 
 
 def envelope(items: list[dict[str, Any]], maximum: int) -> dict[str, Any]:

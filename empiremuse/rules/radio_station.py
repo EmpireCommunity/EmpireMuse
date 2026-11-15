@@ -94,6 +94,18 @@ def valid_station_id(value: object) -> bool:
     return isinstance(value, str) and re.fullmatch(r"(?:[0-9a-f]{24}|g:[a-z][a-z0-9_]{1,23})", value) is not None
 
 
+GENRE_PREFIX = "g:"  # o id de um gênero pronto (estação virtual, sem documento): ``g:`` + o id do catálogo
+
+
+def is_genre(ref: object) -> bool:
+    """O id é de um gênero pronto (``g:…``), não de uma estação gravada do servidor."""
+    return isinstance(ref, str) and ref.startswith(GENRE_PREFIX)
+
+
+def genre_ref(genre_id: str) -> str:
+    return GENRE_PREFIX + genre_id
+
+
 def _names(raw: object, high: int, key: str, name_max: int = ARTIST_NAME_MAX) -> list[str] | RuleError:
     """Uma lista de 1 a ``high`` nomes de 1 a 64 caracteres; repetido (sem diferenciar a caixa) some em silêncio."""
     if not isinstance(raw, list) or not 1 <= len(raw) <= high:

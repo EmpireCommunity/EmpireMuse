@@ -29,7 +29,7 @@ from empiremuse.rules.radio import (
     to_document,
 )
 from empiremuse.rules.radio_station import from_document as from_station_document
-from empiremuse.rules.radio_station import valid_station_id
+from empiremuse.rules.radio_station import is_genre, valid_station_id
 from empiremuse.rules.radio_stations import valid_uuid
 from empiremuse.utils.radio.premium import CAS_ATTEMPTS, GLOBAL_DB, PremiumStore, RadioUnavailable
 
@@ -240,10 +240,10 @@ class RadioStore:
         from empiremuse.utils.radio.stations import StationStore
 
         found = StationStore.builtin(current.guild_id, station_id)
-        if found is None and valid_station_id(station_id) and not str(station_id).startswith("g:"):
+        if found is None and valid_station_id(station_id) and not is_genre(station_id):
             stored = await self._database.find_doc(station_id, db_name=STATIONS_COLLECTION, collection=GLOBAL_DB)
             found = from_station_document(stored) if stored else None
-        if isinstance(station_id, str) and station_id.startswith("g:"):
+        if is_genre(station_id):
             if await self.premium.fresh(current.guild_id) is None:
                 raise NoPremium
         if (

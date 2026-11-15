@@ -4,7 +4,7 @@ import re
 
 import pytest
 
-from empiremuse.rules.text import external_text
+from empiremuse.rules.text import external_text, stored_text
 
 pytestmark = pytest.mark.critical
 
@@ -107,3 +107,18 @@ def test_nothing_hostile_slips_through_even_when_the_pieces_are_combined():
     for destination in DESTINATIONS:
         out = clean(hostile, destination)
         assert "://" not in out and "discord.gg" not in out and not re.search(r"@(everyone|here)", out)
+
+
+class TestStoredText:
+    """Texto guardado já escapado (nome de estação do diretório, ``check_station``) chega a cada destino com um escape só ou nenhum (T-473 J3)."""
+
+    @pytest.mark.regression
+    @pytest.mark.parametrize(
+        ("markdown", "expected"), [(False, "Rock_FM **x** @.everyone"), (True, "Rock\\_FM \\*\\*x\\*\\* \\@​.everyone")]
+    )
+    def test_the_stored_escape_never_shows_twice(self, markdown, expected):
+        stored = external_text("Rock_FM **x** @everyone", 100)
+
+        assert (
+            stored_text(stored, 100, markdown=markdown) == expected
+        )  # o NFKC da 2ª passada faz do ponto de líder um ponto: segue sem menção

@@ -211,9 +211,9 @@ class DiscordRadioPorts:
         if missing:
             await self._stage_notice(channel, player, missing)
             return
-        from empiremuse.rules.text import external_text  # tarde: só o palco usa
+        from empiremuse.rules.text import stored_text  # tarde: só o palco usa
 
-        topic = external_text(await self._stage_name(), STAGE_TOPIC_LIMIT, markdown=False) or player.tr(
+        topic = stored_text(await self._stage_name(), STAGE_TOPIC_LIMIT, markdown=False) or player.tr(
             "radio.stage.topic"
         )
         try:

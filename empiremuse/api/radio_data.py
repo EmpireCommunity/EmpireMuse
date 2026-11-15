@@ -15,7 +15,7 @@ from empiremuse.panel.services.radio_live import StationView
 from empiremuse.panel.services.radio_local import LocalView, Paging
 from empiremuse.panel.services.radio_stations import KIND_ARTISTS, KIND_GENRE, KIND_PLAYLISTS, channel_label
 from empiremuse.rules.radio import CHAT_FIELDS, KIND_LIVE
-from empiremuse.rules.text import external_text
+from empiremuse.rules.text import stored_text
 
 NAME_LIMIT = 100
 TITLE_LIMIT = 200
@@ -23,8 +23,8 @@ SOURCE_ID_LIMIT = 64
 
 
 def safe_text(value: Any, limit: int = NAME_LIMIT) -> Optional[str]:
-    """Texto de fora como pode ser publicado (sem menção nem link vivos, sem o escape de markdown); ``None`` se vazio."""
-    return external_text(value, limit, markdown=False) or None
+    """Texto de fora como pode ser publicado (sem menção nem link vivos, sem o escape de markdown, nem o que já veio gravado); ``None`` se vazio."""
+    return stored_text(value, limit, markdown=False) or None
 
 
 def station_view_entry(view: StationView) -> dict[str, Any]:
