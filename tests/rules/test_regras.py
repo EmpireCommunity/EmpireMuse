@@ -178,3 +178,26 @@ class TestPontosDeUsoDasRegras:
         assert chamadas == [] and player.skin == "classic"
         await reload_skin(player, "modern", "simple", "texto")
         assert player.skin == "modern" and "destruir" in chamadas and "invocar" in chamadas
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(("escapado", "aceito"), [("\\ud800", False), ("\\u2028", False), ("\\ud83c\\udfb5", True)])
+def test_prefixo_com_surrogate_isolado_e_recusado_e_o_emoji_passa(escapado, aceito):
+    """V-158-1 no prefixo (Sentinela, PR 255): o painel recebe o prefixo por JSON, então o escape de um surrogate isolado chegava."""
+    from empiremuse.rules.errors import RuleError
+    from empiremuse.rules.settings import validate_prefix
+
+    prefixo = json.loads(f'"!{escapado}a"')
+    assert (validate_prefix(prefixo) == prefixo) if aceito else isinstance(validate_prefix(prefixo), RuleError)
+
+
+@pytest.mark.regression
+def test_descricao_gravada_antes_da_regra_reenviada_sem_mudanca_perde_o_caractere_recusado():
+    """V-158-1 na descrição do link do servidor (Sentinela, PR 255): reenviar a gravada não é troca, mas ela também passa pela regra.
+    O caractere recusado sai (como nos filtros) em vez de recusar o formulário inteiro; sem sobrar o mínimo, a descrição fica vazia."""
+    from empiremuse.rules.guild_links import check_description
+
+    gravada = json.loads('"Rock \\ud800 classico"')
+    assert check_description(gravada, gravada) == "Rock  classico"
+    assert check_description("ok ", "ok ") == ""  # sobra menos que o mínimo (3)
+    assert check_description("Rock", "Rock") == "Rock"

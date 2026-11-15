@@ -44,7 +44,7 @@ def validate_prefix(raw: Any) -> str | RuleError:
     prefix = raw.strip()
     if len(prefix) > PREFIX_MAX_LENGTH:
         return RuleError(PREFIX_LENGTH, limit=PREFIX_MAX_LENGTH)
-    if any(char.isspace() or unicodedata.category(char) in ("Cc", "Cf") for char in prefix):
+    if any(char.isspace() for char in prefix) or has_control_or_format(prefix):
         return RuleError(PREFIX_CHARS)
     return prefix
 
