@@ -102,26 +102,48 @@ async def _fila(mundo):
     return doc["tracks"] if doc else []
 
 
+async def _erase_waits_for_writer(mundo, operation, entered, release):
+    writer = asyncio.create_task(operation)
+    waiter = asyncio.create_task(entered.wait())
+    await asyncio.wait((writer, waiter), return_when=asyncio.FIRST_COMPLETED)
+    if writer.done():
+        await writer
+    await waiter
+    erasure = asyncio.create_task(apagar(mundo))
+    turn = asyncio.Event()
+    asyncio.get_running_loop().call_soon(turn.set)
+    await turn.wait()
+    waiting = not erasure.done()
+    release.set()
+    result, _ = await asyncio.gather(writer, erasure)
+    assert waiting
+    return result
+
+
 @pytest.mark.asyncio
-async def test_r2_save_scrobble_com_leitura_anterior_ao_apagamento_descarta_sem_gravar(mundo, monkeypatch):
+@pytest.mark.regression
+async def test_r2_save_scrobble_e_apagamento_serializam_sem_recriar_a_fila(mundo, monkeypatch):
     await gravar_usuario(mundo, ALVO, lastfm_sessionkey=CHAVE, lastfm_scrobble=True)
     cog = _cog(mundo)
     ler = mundo.local.get_data
+    entered, release = asyncio.Event(), asyncio.Event()
 
-    async def le_e_o_apagamento_acontece(*args, **kwargs):
+    async def paused_read(*args, **kwargs):
         doc = await ler(*args, **kwargs)
-        mundo.pool.erasure_tombstones.mark(ALVO)
+        entered.set()
+        await release.wait()
         return doc
 
-    monkeypatch.setattr(mundo.local, "get_data", le_e_o_apagamento_acontece)
-
-    await cog.save_scrobble("faixa", _faixa(), [SimpleNamespace(id=ALVO)])
-
-    assert await _fila(mundo) == []  # nada foi regravado
+    monkeypatch.setattr(mundo.local, "get_data", paused_read)
+    await _erase_waits_for_writer(
+        mundo, cog.save_scrobble("faixa", _faixa(), [SimpleNamespace(id=ALVO)]), entered, release
+    )
+    assert await _fila(mundo) == []
 
     monkeypatch.setattr(mundo.local, "get_data", ler)
     mundo.relogio.avancar(1)
-    await cog.save_scrobble("faixa nova", _faixa(), [SimpleNamespace(id=ALVO)])  # uso novo, lido depois: grava
+    await gravar_usuario(mundo, ALVO, lastfm_sessionkey=CHAVE, lastfm_scrobble=True)
+    await cog.save_scrobble("faixa nova", _faixa(), [SimpleNamespace(id=ALVO)])
     assert [t["query"] for t in await _fila(mundo)] == ["faixa nova"]
 
 
@@ -263,21 +285,22 @@ def _contexto_do_botao(mundo):
 
 
 @pytest.mark.asyncio
-async def test_r2_botao_do_scrobble_com_leitura_anterior_ao_apagamento_nao_grava_nem_enche_o_cache(mundo):
+@pytest.mark.regression
+async def test_r2_botao_do_scrobble_e_apagamento_serializam_sem_recriar_o_vinculo(mundo):
     await gravar_usuario(mundo, ALVO, lastfm_username="fulano", lastfm_sessionkey=CHAVE, lastfm_scrobble=False)
     contexto, ler = _contexto_do_botao(mundo)
+    entered, release = asyncio.Event(), asyncio.Event()
 
-    async def le_e_o_apagamento_acontece(user_id, *, db_name):
+    async def paused_read(user_id, *, db_name):
         doc = await ler(user_id, db_name=db_name)
-        await apagar(mundo)
+        entered.set()
+        await release.wait()
         return doc
 
-    contexto.bot.get_global_data = le_e_o_apagamento_acontece
+    contexto.bot.get_global_data = paused_read
     requisicao, interacao = _requisicao()
-
-    sem_conta = await _pc_lastfm(contexto, requisicao)
-
-    assert sem_conta is True  # responde como quem não tem conta vinculada
+    sem_conta = await _erase_waits_for_writer(mundo, _pc_lastfm(contexto, requisicao), entered, release)
+    assert sem_conta is False  # o clique termina antes do apagamento que aguardava a trava
     assert mundo.pool.lastfm_sessions == {}
     assert await mundo.database.find_doc(ALVO, db_name="users", collection="global") is None
     interacao.edit_original_message.assert_awaited_once()
