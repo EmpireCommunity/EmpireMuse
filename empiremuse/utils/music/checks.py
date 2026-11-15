@@ -68,6 +68,14 @@ def has_radio_player(bot: BotCore, guild_id: int) -> bool:
     return getattr(bot.music.players.get(guild_id), "radio_id", None) is not None
 
 
+async def refuse_radio_player(bot: BotCore, player: object) -> None:
+    """Recusa o comando de música se ``player`` é de uma rádio: nem ``manage_channels`` toca, pula ou para por aqui (V181-2)."""
+    if getattr(player, "radio_id", None) is None:
+        return
+    tr = await bot.pool.i18n.for_guild(player.guild)
+    raise GenericError(tr("radio.player_locked"))
+
+
 def pick_request_bot(pool: BotPool, guild_id: int, member: disnake.Member) -> Optional[BotCore]:
     """Quem atende um PEDIDO feito no canal único: o bot que já está na call de quem pediu; senão o 1º livre (ordem do ``identifier``).
 
@@ -427,7 +435,10 @@ async def check_pool_bots(
     raise PoolException()
 
 
-def has_player(check_node=True):
+def has_player(check_node=True, allow_radio=False):
+    """``allow_radio``: só as vistas de leitura que fazem sentido num player de rádio (controller, log de comandos); o resto
+    (autoplay, voto para pular, fila e salvar fila) recusa com a mensagem da rádio."""
+
     async def predicate(inter):
         try:
             bot = inter.music_bot
@@ -438,6 +449,9 @@ def has_player(check_node=True):
             player = bot.music.players[inter.guild_id]
         except KeyError:
             raise NoPlayer()
+
+        if not allow_radio:  # comandos sem a checagem de DJ (ex.: autoplay) também não mexem na rádio
+            await refuse_radio_player(bot, player)
 
         if check_node and not player.node.is_available:
             raise wavelink.ZeroConnectedNodes()
@@ -505,6 +519,8 @@ def is_requester():
         except KeyError:
             raise NoPlayer()
 
+        await refuse_radio_player(bot, player)
+
         if not player.current:
             raise NoSource()
 
@@ -553,7 +569,9 @@ def check_voice():
     return commands.check(predicate)
 
 
-def has_source():
+def has_source(allow_radio=False):
+    """``allow_radio`` como em ``has_player``: só para vistas de leitura (o controller)."""
+
     async def predicate(inter):
         try:
             bot = inter.music_bot
@@ -564,6 +582,9 @@ def has_source():
             player = bot.music.players[inter.guild_id]
         except KeyError:
             raise NoPlayer()
+
+        if not allow_radio:
+            await refuse_radio_player(bot, player)
 
         if not player.current:
             raise NoSource()
@@ -750,11 +771,7 @@ async def check_player_perm(inter, bot: BotCore, channel, guild_data: dict = Non
     except KeyError:
         return True
 
-    if (
-        getattr(player, "radio_id", None) is not None
-    ):  # a call é de uma rádio: nem manage_channels toca, pula ou para por aqui (V181-2)
-        tr = await bot.pool.i18n.for_guild(player.guild)
-        raise GenericError(tr("radio.player_locked"))
+    await refuse_radio_player(bot, player)
 
     try:
         vc = player.guild.me.voice.channel

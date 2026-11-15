@@ -308,21 +308,6 @@ class LocalDatabase(BaseDB):
         table.update_one({"_id": id_}, {"$set": {k: v for k, v in doc.items() if k != "_id"}})
         return True
 
-    async def unset_fields_cas(
-        self, id_, fields: list[str], *, expected_rev: int, db_name: str, collection: str
-    ) -> bool:
-        """Apaga ``fields`` (caminhos com ponto) só se o ``rev`` guardado ainda é ``expected_rev``; o ``rev`` anda um. Um ``$set`` não apaga campo."""
-        id_ = str(id_)
-        table = self._connect[collection][db_name]
-        stored = table.find_one({"_id": id_})
-        if not stored or stored_rev(stored) != expected_rev:
-            return False
-        update: dict = {"$set": {"rev": expected_rev + 1}}
-        if fields:  # um ``$unset`` vazio é erro no Mongo
-            update["$unset"] = {field: "" for field in fields}
-        table.update_one({"_id": id_}, update)
-        return True
-
     async def wipe(self, databases: Iterable[str], keep: frozenset[tuple[str, str]]) -> dict[str, int]:
         """Apaga toda tabela dos bancos ``databases`` (e dos ``<banco>_events`` dos eventos), menos as de ``keep`` = ``(banco, tabela)``.
 
@@ -512,18 +497,6 @@ class MongoDatabase(BaseDB):
                 return False
             return True
         result = await table.update_one({"_id": id_, **rev_filter(expected_rev)}, {"$set": body})
-        return result.matched_count == 1
-
-    async def unset_fields_cas(
-        self, id_, fields: list[str], *, expected_rev: int, db_name: str, collection: str
-    ) -> bool:
-        """Apaga ``fields`` (caminhos com ponto) só se o ``rev`` guardado ainda é ``expected_rev``; o ``rev`` anda um. Um ``$set`` não apaga campo."""
-        update: dict = {"$set": {"rev": expected_rev + 1}}
-        if fields:  # um ``$unset`` vazio é erro no Mongo
-            update["$unset"] = {field: "" for field in fields}
-        result = await self._connect[collection][db_name].update_one(
-            {"_id": str(id_), **rev_filter(expected_rev)}, update
-        )
         return result.matched_count == 1
 
     async def wipe(self, databases: Iterable[str], keep: frozenset[tuple[str, str]]) -> dict[str, int]:

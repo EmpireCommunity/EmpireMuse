@@ -24,6 +24,7 @@ from empiremuse.utils.music.interactions import (
 from empiremuse.utils.music.models import (
     LavalinkPlayer,
 )
+from empiremuse.utils.music.models.event_steps import store_network_resume_position
 from empiremuse.utils.others import (
     CustomContext,
     pool_command,
@@ -290,7 +291,8 @@ class PlaybackControlsMixin:
                 ),
             ]
 
-        await player.seek(milliseconds)
+        if not store_network_resume_position(player, milliseconds):  # na pausa por rede não há faixa no nó
+            await player.seek(milliseconds)
 
         if player.paused:
             await player.set_pause(False)

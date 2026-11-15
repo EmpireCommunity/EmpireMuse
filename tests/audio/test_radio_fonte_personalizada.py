@@ -217,3 +217,22 @@ class TestResolvedTracks:
 
         db.fail = True
         assert await ResolvedTracks(db).failed(Track("Outro", "x")) is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["artists", "playlists"])
+async def test_a_stored_station_whose_names_the_cleaning_removes_is_empty_and_takes_the_broken_source_path(kind):
+    """Sentinela (PR 255): todos os nomes da fonte somem na limpeza (``{kind: []}``); a estação é ``EmptyStation``, o que o
+    ``_retry_broken_source`` (``custom_ports.py``) trata como fonte quebrada: a rádio segue ligada e o painel avisa."""
+    from empiremuse.rules.radio_station import from_document
+
+    stored = {"_id": STATION_ID, "guild_id": "5", "name": "Minha", "kind": kind, "source": {kind: [" ", "\ud800"]}}
+    station = from_document(stored)
+
+    async def empty(names):
+        assert names == []
+        return []
+
+    assert station.source == {kind: []}
+    with pytest.raises(EmptyStation):
+        await load_pool(hub(FakeFeed()), station, empty)

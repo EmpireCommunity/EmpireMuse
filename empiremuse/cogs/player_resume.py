@@ -673,15 +673,16 @@ class PlayerSession(commands.Cog):
                     # Agendado como tarefa do player, com jitter, para a retomada de muitas sessões não estourar o limite do bot.
                     # Falha de leitura fecha: o padrão ligado (D1) vale para quem nunca salvou, não para quem não deu para ler; um erro
                     # de banco passageiro não pode sobrepor o desligado do dono. Fica sem status até o próximo entrar/mover.
-                    # O modal/painel pode salvar e agendar a aplicação deste player enquanto a leitura espera: se o agendamento
-                    # mudou, o valor lido é velho e a retomada não sobrepõe o do modal.
-                    apply_before_read = getattr(player, "voice_status_apply", None)
+                    # O modal/painel pode salvar e agendar a aplicação deste player enquanto a leitura espera: se houve um
+                    # agendamento, o valor lido é velho e a retomada não sobrepõe o do modal. Compara a geração, não a tarefa:
+                    # o cancelamento (desligar a sessão, mover o bot) devolve a tarefa a ``None`` e esconderia o save (V-145-6).
+                    generation_before_read = getattr(player, "voice_status_generation", 0)
                     try:
                         global_data = await self.bot.get_global_data(guild.id, db_name=DBModel.guilds)
                     except Exception:
                         logger.exception("Falha ao ler o status permanente do canal", extra=guild_extra(guild.id))
                     else:
-                        if getattr(player, "voice_status_apply", None) is apply_before_read:
+                        if getattr(player, "voice_status_generation", 0) == generation_before_read:
                             player.voice_status_saved_default = global_data.get("voice_status_permanent") is None
                             schedule_permanent_voice_status(player, resolve_voice_status(global_data), jitter=True)
                 player.listen_along_invite = data.pop("listen_along_invite", "")

@@ -21,6 +21,9 @@ LEGACY_PANEL_PRESENCES = (
     "⚙️ Painel: muse.empirecommunity.org/panel",
     "⚙️ Painel: muse.empirecommunity.org/painel",
 )
+DEFAULT_COMMANDS_PRESENCE = "🎵 /play ou {prefix}play | ajuda: {prefix}help"
+# O padrão antigo fixava "!" (o prefixo padrão é "!!"): quem o copiou no deploy passa a ver o próprio prefixo.
+LEGACY_COMMANDS_PRESENCES = ("🎵 /play ou !play | ajuda: !help",)
 
 DEFAULT_DESCRIPTION = "\n".join(
     (
@@ -129,8 +132,9 @@ def parse_tags(raw: object) -> tuple[tuple[str, ...], tuple[str, ...]]:
         tag = item.strip()
         if not tag:
             continue
-        # o aviso diz o motivo e a posição, nunca o texto da tag (vai para o log)
-        if utf16_length(tag) > TAG_MAX_LENGTH or has_control_or_format(tag):
+        # o aviso diz o motivo e a posição, nunca o texto da tag (vai para o log); a checagem de caractere vem antes do
+        # UTF-16, que levanta erro num surrogate isolado
+        if has_control_or_format(tag) or utf16_length(tag) > TAG_MAX_LENGTH:
             warnings.append(
                 f"tag {position} descartada (mais de {TAG_MAX_LENGTH} caracteres ou com caractere inválido)"
             )

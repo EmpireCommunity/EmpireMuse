@@ -1987,7 +1987,8 @@ class BotCore(commands.AutoShardedBot):
                     from empiremuse.rules.servers import jukebox_auto_delete
 
                     auto_delete = jukebox_auto_delete(settings)
-            except Exception:
+            except Exception as error:  # noqa: BLE001 - sem a configuração o comando segue, só sem a limpeza automática
+                logger.warning("Limpeza automática da Jukebox não lida (%s)", type(error).__name__)
                 auto_delete = False
 
         try:

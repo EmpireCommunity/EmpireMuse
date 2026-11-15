@@ -30,6 +30,7 @@ from empiremuse.rules.playlists import (
     find_item,
     find_selected,
     from_doc,
+    normalize_url,
     move_leading_icons,
     plan_import,
     remove_item,
@@ -39,6 +40,7 @@ from empiremuse.rules.playlists import (
     to_export,
 )
 from empiremuse.rules.servers import SECTION_PLAYLISTS
+from empiremuse.rules.text import clean_legacy_text
 from empiremuse.utils.db import DBModel
 
 if TYPE_CHECKING:
@@ -49,13 +51,92 @@ logger = logging.getLogger(__name__)
 SECTIONS = (SECTION_PLAYLISTS,)
 
 
+_unreadable_reported: dict[
+    str, int
+] = {}  # servidor -> quantos itens ilegíveis o log já contou (avisa só quando o número muda)
+
+
+HIDDEN_FIELD = (
+    "playlists_hidden"  # itens gravados que a leitura não mostra: ilegíveis ou perdedores de colisão de nome, crus
+)
+
+
+def _stored(doc: dict) -> tuple[tuple[Playlist, ...], list[Any]]:
+    """``(playlists legíveis, documentos crus a esconder)`` da lista ``playlists`` gravada. Legível = passa nas regras depois da limpeza de
+    texto antigo (``from_doc``) e não repete, no mesmo escopo, o nome (``casefold``) de outra: entre as que a limpeza deixou com o mesmo nome
+    fica a de menor ``(order, url)``. As outras e as ilegíveis vão para ``HIDDEN_FIELD`` na próxima gravação (a decisão fica gravada uma vez,
+    e a renumeração da que ficou nunca faz a escondida voltar). ``HIDDEN_FIELD`` nunca é lido aqui."""
+    raws = doc.get("playlists") or []
+    parsed = [(raw, from_doc(raw)) for raw in raws] if isinstance(raws, list) else []
+    unreadable = [raw for raw, item in parsed if item is None]
+    kept: dict[tuple[str, str], Playlist] = {}
+    readable = [(raw, item) for raw, item in parsed if item is not None]
+    for raw, item in sorted(readable, key=lambda pair: (pair[1].order, normalize_url(pair[1].url))):
+        key = (item.scope, item.name.casefold())
+        if key in kept:
+            unreadable.append(raw)
+        else:
+            kept[key] = item
+    _report_unreadable(str(doc.get("_id", "")), len(unreadable))
+    return sorted_by_order(kept.values()), unreadable
+
+
+def _report_unreadable(gid: str, count: int) -> None:
+    """Só a CONTAGEM, nunca nome nem conteúdo; uma vez por mudança do número, não a cada leitura."""
+    if _unreadable_reported.get(gid, 0) == count:
+        return
+    _unreadable_reported[gid] = count
+    if count:
+        logger.warning(
+            "Servidor [%s]: %d playlists ilegíveis ou repetidas; vão para a lista escondida na próxima gravação",
+            gid,
+            count,
+        )
+
+
+def _hidden(doc: dict) -> list[Any]:
+    raw = doc.get(HIDDEN_FIELD)
+    return list(raw) if isinstance(raw, list) else []
+
+
+def _raw_scope(raw: Any) -> str:
+    """O escopo de um item escondido (cru): o gravado se for válido; senão o da Jukebox, como a leitura trata o item sem o campo."""
+    scope = raw.get("scope") if isinstance(raw, dict) else None
+    return scope if scope in SCOPES else SCOPE_JUKEBOX
+
+
+_JSON_SCALARS = (str, int, float, bool, type(None))
+
+
+def _exportable(value: Any) -> Any:
+    """O item escondido (cru) para o arquivo de exportação, que nunca falha: chaves e textos limpos (``clean_legacy_text``; um surrogate
+    isolado nem vira UTF-8) e o que o JSON não escreve (data do MongoDB, bytes, ``ObjectId``) como ``repr`` limpo."""
+    if isinstance(value, dict):
+        return _exportable_object(value)
+    if isinstance(value, (list, tuple)):
+        return [_exportable(item) for item in value]
+    return clean_legacy_text(value if isinstance(value, _JSON_SCALARS) else repr(value))
+
+
+def _exportable_object(value: dict) -> dict[str, Any]:
+    """Um objeto escondido com as chaves limpas. Duas chaves que a limpeza deixa iguais (``"a\\u2028b"`` e ``"a b"``) não se sobrescrevem: a
+    que vem depois ganha `` (2)``, `` (3)``... e nenhum valor some do arquivo de recuperação."""
+    out: dict[str, Any] = {}
+    for key, item in value.items():
+        name = clean_legacy_text(str(key))
+        unique, suffix = name, 2
+        while unique in out:
+            unique, suffix = f"{name} ({suffix})", suffix + 1
+        out[unique] = _exportable(item)
+    return out
+
+
 def _items(doc: dict, scope: str | None = None) -> tuple[Playlist, ...]:
-    """As playlists gravadas, relidas com as mesmas regras e por ``order`` (dado gravado ruim é ignorado, nunca levanta).
+    """As playlists gravadas legíveis (``_stored``), por ``order``; dado gravado ruim nunca levanta.
 
     ``scope`` filtra por escopo (``None`` = os dois). Cada escopo tem sua própria lista, nome, cota e ordem.
     """
-    items = (item for raw in doc.get("playlists", []) if (item := from_doc(raw)) is not None)
-    return sorted_by_order(item for item in items if scope is None or item.scope == scope)
+    return tuple(item for item in _stored(doc)[0] if scope is None or item.scope == scope)
 
 
 def _check_scope(scope: str) -> str:
@@ -125,10 +206,19 @@ class ServerPlaylists:
         return find_selected(await self.list(gid, scope), name)
 
     async def export_bytes(self, gid: int, scope: str | None = None) -> bytes:
-        """O formato novo (com ``icon`` e ``scope``): ``ensure_ascii=False``, indentação 2. ``scope=None`` exporta os dois."""
+        """O formato novo (com ``icon`` e ``scope``): ``ensure_ascii=False``, indentação 2. ``scope=None`` exporta os dois.
+
+        Os itens escondidos (gravados antes da regra de texto atual, ilegíveis ou repetidos depois da limpeza) saem à parte em ``hidden``, para o
+        admin recuperar à mão: a importação lê só ``playlists`` e os ignora."""
         doc = await self.store.get_sections(gid, *SECTIONS)
-        items = _items(doc, None if scope is None else _check_scope(scope))
-        return json.dumps(to_export(items), ensure_ascii=False, indent=2).encode("utf-8")
+        wanted = None if scope is None else _check_scope(scope)
+        exported = to_export(_items(doc, wanted))
+        hidden = [*_hidden(doc), *_stored(doc)[1]]  # os ainda não movidos (nenhuma gravação desde a leitura) também
+        if wanted is not None:
+            hidden = [raw for raw in hidden if _raw_scope(raw) == wanted]
+        if hidden:
+            exported["hidden"] = [_exportable(raw) for raw in hidden]
+        return json.dumps(exported, ensure_ascii=False, indent=2).encode("utf-8")
 
     # ------------------------------------------------------------------ escrita
 
@@ -138,10 +228,13 @@ class ServerPlaylists:
         scope: str,
         change: Callable[[tuple[Playlist, ...]], tuple[Playlist, ...] | RuleError],
         expected_rev: Optional[int],
+        *,
+        drop_hidden: bool = False,
     ) -> tuple[Any, tuple[Playlist, ...]]:
         """Roda ``change(lista do escopo) -> nova lista | RuleError`` sob a trava; a lista do outro escopo passa intacta.
 
-        Grava só se a lista do escopo mudou e então atualiza o embed ocioso (só o escopo ``jukebox`` aparece nele).
+        Grava só se a lista do escopo mudou e então atualiza o embed ocioso (só o escopo ``jukebox`` aparece nele). Toda gravação move os itens a
+        esconder para ``HIDDEN_FIELD``; só ``drop_hidden`` (o ``clear`` explícito do escopo) apaga os escondidos do escopo.
         """
         _check_scope(scope)
         outcome: dict[str, Any] = {"result": None, "changed": False}
@@ -150,11 +243,23 @@ class ServerPlaylists:
             current = _items(doc, scope)
             result = change(current)
             outcome["result"] = result
-            if isinstance(result, RuleError) or tuple(result) == current:
+            if isinstance(result, RuleError):
+                return False
+            readable, to_hide = _stored(doc)
+            hidden = [*_hidden(doc), *to_hide]
+            if drop_hidden:
+                hidden = [raw for raw in hidden if _raw_scope(raw) != scope]
+            if tuple(result) == current and hidden == _hidden(doc) and not to_hide:
                 return False
             outcome["changed"] = True
-            others = [p for p in _items(doc) if p.scope != scope]
+            others = [p for p in readable if p.scope != scope]
+            # o que a leitura não mostra (ilegível ou repetido depois da limpeza) sai de ``playlists`` e fica cru em ``HIDDEN_FIELD``: uma
+            # gravação nunca o apaga e a leitura nunca o promove de volta
             doc["playlists"] = [to_doc(p) for p in (*others, *(p._replace(scope=scope) for p in result))]
+            if hidden:
+                doc[HIDDEN_FIELD] = hidden
+            else:
+                doc.pop(HIDDEN_FIELD, None)
             return True
 
         written = await self.store.mutate_doc(gid, SECTIONS, apply, expected_rev=expected_rev)
@@ -202,7 +307,9 @@ class ServerPlaylists:
             count["n"] = len(current)
             return ()
 
-        await self._write(gid, scope, change, expected_rev)
+        await self._write(
+            gid, scope, change, expected_rev, drop_hidden=True
+        )  # o apagar explícito leva os escondidos do escopo
         return count["n"]
 
     async def import_file(

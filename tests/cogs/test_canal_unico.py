@@ -11,6 +11,7 @@ import pytest
 from empiremuse.i18n import get_i18n
 from empiremuse.music_cog import controller_buttons, jukebox_steps
 from empiremuse.music_cog.controller_dispatch import ControllerDispatchMixin
+from empiremuse.rules.jukebox_panel import HANDOFF_RETRY_BASE_MS
 from empiremuse.utils import jukebox_panel as panel_module
 from empiremuse.utils.music.checks import pick_request_bot, resolve_player
 from empiremuse.utils.music.errors import GenericError
@@ -413,7 +414,11 @@ async def settle(panel):
 
 
 @pytest.mark.asyncio
-async def test_a_failed_handoff_stays_pending_and_the_next_panel_bot_call_retries_it_until_it_succeeds():  # CodeRabbit #159
+async def test_a_failed_handoff_stays_pending_and_the_next_panel_bot_call_retries_it_until_it_succeeds(
+    monkeypatch,
+):  # CodeRabbit #159
+    now = [100.0]
+    monkeypatch.setattr(panel_module.time, "monotonic", lambda: now[0])
     panel, _ = panel_world()
     outcomes = [RuntimeError("falha transitória"), None]
 
@@ -428,6 +433,13 @@ async def test_a_failed_handoff_stays_pending_and_the_next_panel_bot_call_retrie
     await settle(panel)
     assert panel.handoff.await_count == 1 and GID in panel._handoff_pending  # falhou: fica pendente
 
+    panel.retry_pending_handoff(
+        GID
+    )  # cedo demais: quem passa pelo bot do painel a cada mensagem não vira rajada no Discord
+    await settle(panel)
+    assert panel.handoff.await_count == 1 and GID in panel._handoff_pending
+
+    now[0] += HANDOFF_RETRY_BASE_MS / 1000
     panel.retry_pending_handoff(GID)  # o que panel_bot/is_panel_bot fazem quando a eleição já está gravada
     await settle(panel)
     assert panel.handoff.await_count == 2 and GID not in panel._handoff_pending
@@ -435,6 +447,21 @@ async def test_a_failed_handoff_stays_pending_and_the_next_panel_bot_call_retrie
     panel.retry_pending_handoff(GID)  # nada pendente: nada a refazer
     await settle(panel)
     assert panel.handoff.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_the_failed_handoff_is_forgotten_when_no_pool_bot_is_left_in_the_guild():
+    """Revisão do PR 255: a contagem de falhas por servidor não cresce sem fim depois que o pool sai do servidor."""
+    panel, pool = panel_world()
+    panel.handoff = AsyncMock(side_effect=RuntimeError("falha"))
+    panel.schedule_handoff(GID)
+    await settle(panel)
+    assert GID in panel._handoff_pending and GID in panel._handoff_failures
+
+    pool.servers.jukebox.elect.return_value = SimpleNamespace(bot=None, changed=True)
+    await panel.on_roster_change(GID)
+
+    assert GID not in panel._handoff_pending and GID not in panel._handoff_failures
 
 
 @pytest.mark.asyncio

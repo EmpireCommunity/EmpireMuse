@@ -5,6 +5,7 @@ lados mudam juntos, então cada função e cada limite têm o valor atual pinado
 junto com a constante). Quando uma etapa seguinte alterar uma regra de propósito, o teste que a pina é invertido nela.
 """
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -33,6 +34,20 @@ class TestTexto:
     )
     def test_clean_title(self, entrada, baixo, alto, esperado):
         assert text.clean_title(entrada, baixo, alto) == esperado
+
+    @pytest.mark.regression
+    @pytest.mark.parametrize(
+        ("escapado", "recusado"), [("\\ud800", True), ("\\u2028", True), ("\\u2029", True), ("\\ud83c\\udfb5", False)]
+    )
+    def test_surrogate_isolado_e_separadores_de_linha_sao_recusados_e_o_par_do_emoji_passa(self, escapado, recusado):
+        """V-158-1 na regra compartilhada: ``Cs``, ``Zl`` e ``Zp`` chegam por escape JSON; o par de surrogates (🎵) é um caractere só."""
+        assert text.has_control_or_format(json.loads(f'"Ro{escapado}ck"')) is recusado
+
+    @pytest.mark.regression
+    def test_titulo_de_faixa_perde_surrogate_isolado_e_separadores_de_linha_e_mantem_o_emoji(self):
+        """V-158-1 no título externo das integrações: ``Cs``, ``Zl`` e ``Zp`` saem como ``Cc``/``Cf``; o par do 🎵 fica."""
+        bruto = json.loads('"Ro\\ud800c\\u2028k \\u2029\\ud83c\\udfb5"')
+        assert text.clean_track_name(bruto, 1, 90) == "Rock 🎵"
 
     def test_clean_import_name_recusa_repetido_sem_diferenciar_a_caixa(self):
         assert text.clean_import_name("Rock", 2, 25, {}) == "Rock"
@@ -163,3 +178,26 @@ class TestPontosDeUsoDasRegras:
         assert chamadas == [] and player.skin == "classic"
         await reload_skin(player, "modern", "simple", "texto")
         assert player.skin == "modern" and "destruir" in chamadas and "invocar" in chamadas
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(("escapado", "aceito"), [("\\ud800", False), ("\\u2028", False), ("\\ud83c\\udfb5", True)])
+def test_prefixo_com_surrogate_isolado_e_recusado_e_o_emoji_passa(escapado, aceito):
+    """V-158-1 no prefixo (Sentinela, PR 255): o painel recebe o prefixo por JSON, então o escape de um surrogate isolado chegava."""
+    from empiremuse.rules.errors import RuleError
+    from empiremuse.rules.settings import validate_prefix
+
+    prefixo = json.loads(f'"!{escapado}a"')
+    assert (validate_prefix(prefixo) == prefixo) if aceito else isinstance(validate_prefix(prefixo), RuleError)
+
+
+@pytest.mark.regression
+def test_descricao_gravada_antes_da_regra_reenviada_sem_mudanca_perde_o_caractere_recusado():
+    """V-158-1 na descrição do link do servidor (Sentinela, PR 255): reenviar a gravada não é troca, mas ela também passa pela regra.
+    O caractere recusado sai (como nos filtros) em vez de recusar o formulário inteiro; sem sobrar o mínimo, a descrição fica vazia."""
+    from empiremuse.rules.guild_links import check_description
+
+    gravada = json.loads('"Rock \\ud800 classico"')
+    assert check_description(gravada, gravada) == "Rock  classico"
+    assert check_description("ok ", "ok ") == ""  # sobra menos que o mínimo (3)
+    assert check_description("Rock", "Rock") == "Rock"

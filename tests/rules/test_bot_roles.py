@@ -31,22 +31,13 @@ def test_identifiers_sort_naturally_not_lexically():
     ]
 
 
-@pytest.mark.parametrize(
-    ("in_guild", "expected"),
-    [
-        ((), [MAIN, R2, R3, R10]),  # o principal primeiro, depois as reservas por identifier
-        ((1,), [R2, R3, R10]),
-        ((2, 10), [MAIN, R3]),  # só quem falta no servidor
-        ((1, 2, 3, 10), []),
-    ],
-)
-def test_invites_offer_only_the_missing_bots_main_first(in_guild, expected):
-    assert invite_order([R10, R3, MAIN, R2], in_guild) == expected
+def test_invites_list_the_main_first_then_the_reserves_by_identifier():
+    assert invite_order([R10, R3, MAIN, R2]) == [MAIN, R2, R3, R10]
 
 
 def test_main_comes_first_by_role_not_by_name():
     late_main = Peer("ZZ_MAIN", 9, True)
-    assert invite_order([R2, late_main, R3], ()) == [late_main, R2, R3]
+    assert invite_order([R2, late_main, R3]) == [late_main, R2, R3]
 
 
 @pytest.mark.parametrize(

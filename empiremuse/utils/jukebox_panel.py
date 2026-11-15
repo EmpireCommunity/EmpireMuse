@@ -23,6 +23,7 @@ from empiremuse.rules.jukebox_panel import (
     PANEL_TICK_MS,
     PLAYING,
     PanelEntry,
+    handoff_retry_wait_ms,
     heal_wait_ms,
     last_action_of,
     make_entry,
@@ -107,6 +108,9 @@ class JukeboxPanel:
         self._handoff_pending: set[int] = (
             set()
         )  # passagem pedida e ainda não concluída (falhou, ou foi pedida de novo durante a anterior)
+        self._handoff_failures: dict[
+            int, tuple[int, int]
+        ] = {}  # falhas seguidas e o instante (ms) da última, por servidor
         self._locks: weakref.WeakValueDictionary[int, asyncio.Lock] = weakref.WeakValueDictionary()
         self._resend_locks: weakref.WeakValueDictionary[int, asyncio.Lock] = weakref.WeakValueDictionary()
 
@@ -345,8 +349,16 @@ class JukeboxPanel:
         return message
 
     async def on_roster_change(self, guild_id: int) -> None:
-        """Um bot entrou ou saiu do servidor: reelege o bot do painel. Se a eleição mudou, ``elect`` já agenda a passagem do painel."""
-        await self.pool.servers.jukebox.elect(guild_id)
+        """Um bot entrou ou saiu do servidor: reelege o bot do painel. Se a eleição mudou, ``elect`` já agenda a passagem do painel.
+        Sem nenhum bot do pool no servidor a passagem para: o pedido pendente e as falhas dele saem (o registro não cresce sem fim)."""
+        election = await self.pool.servers.jukebox.elect(guild_id)
+        if election.bot is None:
+            self.drop_handoff(guild_id)
+
+    def drop_handoff(self, guild_id: int) -> None:
+        """Esquece a passagem pendente do servidor e a contagem de falhas dela."""
+        self._handoff_pending.discard(guild_id)
+        self._handoff_failures.pop(guild_id, None)
 
     async def handoff(self, guild_id: int) -> None:
         """A passagem do painel: garante que a mensagem é do bot do painel atual (senão ele manda uma nova e a antiga sai), religa os
@@ -373,9 +385,17 @@ class JukeboxPanel:
             self._handoff_running.discard(guild_id)
 
     def retry_pending_handoff(self, guild_id: int) -> None:
-        """Uma passagem que falhou fica pendente; quem passa pelo bot do painel (``panel_bot``/``is_panel_bot``) a retoma."""
-        if guild_id in self._handoff_pending and guild_id not in self._handoff_running:
-            self.schedule_handoff(guild_id)
+        """Uma passagem que falhou fica pendente; quem passa pelo bot do painel (``panel_bot``/``is_panel_bot``) a retoma.
+
+        Com recuo: cada falha seguida dobra a espera (``handoff_retry_wait_ms``), porque esse caminho roda a cada mensagem do canal.
+        Uma eleição nova (``schedule_handoff``) não espera.
+        """
+        if guild_id not in self._handoff_pending or guild_id in self._handoff_running:
+            return
+        failures, last_ms = self._handoff_failures.get(guild_id, (0, 0))
+        if handoff_retry_wait_ms(failures, last_ms, int(time.monotonic() * 1000)):
+            return
+        self.schedule_handoff(guild_id)
 
     async def _handoff_quietly(self, guild_id: int) -> None:
         try:
@@ -386,9 +406,12 @@ class JukeboxPanel:
                 except Exception as exc:  # noqa: BLE001 - o painel é enfeite sobre uma configuração já gravada
                     self._handoff_pending.add(
                         guild_id
-                    )  # fica pendente: a próxima chamada de panel_bot/is_panel_bot tenta de novo
+                    )  # fica pendente: a próxima chamada de panel_bot/is_panel_bot tenta de novo (depois do recuo)
+                    failures = self._handoff_failures.get(guild_id, (0, 0))[0] + 1
+                    self._handoff_failures[guild_id] = (failures, int(time.monotonic() * 1000))
                     logger.warning("Painel da Jukebox não passado ao novo bot [%s] (%s)", guild_id, type(exc).__name__)
                     return
+                self._handoff_failures.pop(guild_id, None)
         finally:
             self._handoff_running.discard(guild_id)
 

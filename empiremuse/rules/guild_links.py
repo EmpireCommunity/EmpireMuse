@@ -6,17 +6,18 @@ from typing import Any, Mapping
 
 from empiremuse.rules.errors import DESCRIPTION_INVALID, DESCRIPTION_TOO_LONG, ITEM_FORMAT, RuleError
 from empiremuse.rules.limits import GUILD_LINK_DESCRIPTION_MAX, GUILD_LINK_DESCRIPTION_MIN, GUILD_LINK_URL_MAX
-from empiremuse.rules.text import has_control_or_format
+from empiremuse.rules.text import clean_track_name, has_control_or_format
 from empiremuse.rules.urls import check_url
 
 
 def check_description(raw: Any, stored: str = "") -> str | RuleError:
-    """Descrição aparada: vazia ou de 3 a 100 caracteres, sem controle/formatação (``Cc``/``Cf``). Reenviar a que já
-    estava gravada (``stored``) não é troca."""
+    """Descrição aparada: vazia ou de 3 a 100 caracteres, sem os caracteres de ``has_control_or_format``. Reenviar a que já
+    estava gravada (``stored``) não é troca e não recusa o formulário: se ela foi gravada antes da regra atual, sai limpa
+    como nos filtros de texto externo (``clean_track_name``: os caracteres recusados saem), ou vazia se não sobrar o mínimo."""
     if not isinstance(raw, str):
         return RuleError(DESCRIPTION_INVALID, value=raw)
     if raw == stored:
-        return raw
+        return clean_track_name(raw, GUILD_LINK_DESCRIPTION_MIN, GUILD_LINK_DESCRIPTION_MAX) or ""
     text = raw.strip()
     if len(text) > GUILD_LINK_DESCRIPTION_MAX:
         return RuleError(DESCRIPTION_TOO_LONG, value=text, limit=GUILD_LINK_DESCRIPTION_MAX)

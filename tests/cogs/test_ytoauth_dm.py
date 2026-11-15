@@ -9,7 +9,7 @@ aparece em registro de log. Tudo com fakes; os valores de token são montados em
 import asyncio
 import logging
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import disnake
 import pytest
@@ -218,3 +218,37 @@ class TestTokenForaDosLogs:
             cenario.rodar()
 
         assert all(REFRESH not in r.getMessage() + (r.exc_text or "") for r in caplog.records)
+
+
+class RespostaDoNo:
+    """A resposta do nó LOCAL ao ``POST /youtube``: registra a entrada e a saída do ``async with``."""
+
+    def __init__(self, status: int, eventos: list[str]):
+        self.status, self.eventos = status, eventos
+
+    async def text(self) -> str:
+        return f"recusado {REFRESH}"
+
+    async def __aenter__(self):
+        self.eventos.append("no:resposta-aberta")
+        return self
+
+    async def __aexit__(self, *args):
+        self.eventos.append("no:resposta-liberada")
+        return False
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    ("status", "esperado"),
+    [(204, "configurado automaticamente no servidor lavalink LOCAL"), (500, "Erro ao aplicar o refreshToken")],
+)
+def test_the_local_node_response_is_released_after_applying_the_token(monkeypatch, tmp_path, status, esperado):
+    """Sem o ``async with`` a resposta do nó não era liberada (a conexão ficava presa até o coletor de lixo)."""
+    c = Cenario(monkeypatch, tmp_path, com_efeitos=True)
+    c.sessao.post = MagicMock(return_value=RespostaDoNo(status, c.eventos))
+
+    c.rodar()
+
+    assert c.eventos.count("no:resposta-liberada") == 1
+    assert esperado in c.dm_texto()

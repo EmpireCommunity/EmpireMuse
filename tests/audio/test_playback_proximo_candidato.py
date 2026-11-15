@@ -55,7 +55,9 @@ async def test_resolution_never_falls_back_to_a_rejected_candidate(rejected):
 def no_wait(monkeypatch):
     from empiremuse.utils.music.models import event_steps
 
-    monkeypatch.setattr(event_steps.asyncio, "sleep", AsyncMock())
+    sleep = AsyncMock()
+    monkeypatch.setattr(event_steps.asyncio, "sleep", sleep)
+    return sleep
 
 
 def playback_world(results):
@@ -72,6 +74,25 @@ def playback_world(results):
 
     player.resolve_track = AsyncMock(side_effect=resolve)
     return player, track
+
+
+async def test_the_shared_cache_forgets_the_candidate_without_stream(no_wait):
+    """Outra faixa igual (outro servidor) resolvida pelo cache não recebe o candidato que o nó já recusou; a troca espera o intervalo."""
+    from empiremuse.utils.music.models.event_steps import SAME_TRACK_RETRY_DELAY, _he_dispatch
+    from tests.audio.test_playback_retry_youtube import fail
+
+    player, track = playback_world([candidate("a"), candidate("b")])
+    player.node.info["sourceManagers"] = ["soundcloud"]
+    player.node.only_use_native_search_providers = False
+    await player.resolve_track(track)
+
+    await _he_dispatch(player, fail(player, "soundy-plugin", "No playable stream found"))
+    other = partial()
+    await PlayerAutoqueueMixin.resolve_track(player, other)
+
+    assert other.id == "b"
+    player.node.get_tracks.assert_awaited_once()  # a segunda faixa veio do cache
+    no_wait.assert_any_await(SAME_TRACK_RETRY_DELAY)
 
 
 @pytest.mark.parametrize("source", ["spotify", "last.fm"])

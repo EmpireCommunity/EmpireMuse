@@ -351,6 +351,8 @@ async def _pn_start(self, req):
     self.last_position = start_position
     self.position_timestamp = 0
     self.paused = False
+    self.network_paused = False  # qualquer faixa que começa (retomar, pular) encerra a pausa por falha de rede
+    self.network_resume = None
 
     self.process_hint()
 

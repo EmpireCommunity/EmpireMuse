@@ -75,3 +75,34 @@ def test_presenca_personalizada_preserva_url_literal(text, url):
         uptime=datetime(2026, 1, 1, tzinfo=timezone.utc),
     )
     assert Misc.placeholders(SimpleNamespace(bot=bot), text) == text
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    ("prefix", "prefix_commands", "shown"),
+    [
+        ("!!", True, "🎵 /play ou !!play | ajuda: !!help"),  # o prefixo de quem hospeda, não o "!" fixo
+        ("?", True, "🎵 /play ou ?play | ajuda: ?help"),
+        ("!!", False, ""),  # só comandos de barra: a presença que ensina o prefixo não aparece
+        ("", True, ""),
+    ],
+)
+@pytest.mark.parametrize("text", ["default", "legacy"])
+def test_presenca_padrao_segue_o_prefixo_configurado(text, prefix, prefix_commands, shown):
+    from empiremuse.cogs.misc import Misc
+    from empiremuse.rules.app_profile import DEFAULT_COMMANDS_PRESENCE, LEGACY_COMMANDS_PRESENCES
+
+    from datetime import datetime, timezone
+
+    bot = SimpleNamespace(
+        default_prefix=prefix,
+        config={"INTERACTION_COMMAND_ONLY": not prefix_commands},
+        pool=SimpleNamespace(public_panel_url=""),
+        users=[],
+        music=SimpleNamespace(players={}),
+        guilds=[],
+        uptime=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+    presence = DEFAULT_COMMANDS_PRESENCE if text == "default" else LEGACY_COMMANDS_PRESENCES[0]
+
+    assert Misc.placeholders(SimpleNamespace(bot=bot), presence) == shown

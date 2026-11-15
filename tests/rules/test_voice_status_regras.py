@@ -321,3 +321,22 @@ class TestUrlColadaPeloModelo:
         saida = r.render_voice_status("{track.title}{track.author}", valores)
 
         assert "//" not in saida, saida
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    ("legacy", "clean"),
+    [("Tocando: {track.title}", "Tocando: {track.title}"), ("{track.title}\ud800", "{track.title}")],
+)
+def test_a_template_stored_before_the_stricter_text_rule_is_read_cleaned_and_the_form_saves_it_cleaned(legacy, clean):
+    """Revisão do PR 255: o modelo gravado com U+2028 ou surrogate isolado virava o padrão na leitura, e o formulário, reenviado para mudar
+    só o "permanente", o regravava vazio. Agora a leitura o limpa e o formulário grava o limpo."""
+    from empiremuse.panel.services.general import VoiceStatusForm
+
+    stored = {"voice_status_permanent": True, "voice_channel_status": legacy}
+    assert regras().resolve_voice_status(stored).template == clean
+
+    form = VoiceStatusForm()
+    shown = form.extract(stored)
+    parsed = form.parse(None, shown, {"voice_channel_status": [shown["voice_channel_status"]]})
+    assert shown["voice_channel_status"] == clean and parsed.new["voice_channel_status"] == clean
