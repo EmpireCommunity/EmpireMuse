@@ -139,6 +139,23 @@ def migration_saved_on_read(db_name: str) -> bool:
     return db_name != DBModel.users
 
 
+LEGACY_REV = (
+    0  # documento gravado antes do compare-and-set não tem ``rev``: as regras o leem como 0 (``rules/radio.py``)
+)
+
+
+def stored_rev(stored: collections.abc.Mapping) -> object:
+    """O ``rev`` de um documento guardado; sem o campo vale ``LEGACY_REV``, como na leitura das regras."""
+    return stored.get("rev", LEGACY_REV)
+
+
+def rev_filter(expected_rev: int) -> dict:
+    """O filtro do Mongo para "o ``rev`` guardado é ``expected_rev``": ``rev`` 0 também casa o documento antigo sem o campo."""
+    if expected_rev == LEGACY_REV:
+        return {"$or": [{"rev": LEGACY_REV}, {"rev": {"$exists": False}}]}
+    return {"rev": expected_rev}
+
+
 class BaseDB:
     def __init__(self, cache_maxsize: int = 1000, cache_ttl=300):
         self.cache = TTLCache(maxsize=cache_maxsize, ttl=cache_ttl)
@@ -286,7 +303,7 @@ class LocalDatabase(BaseDB):
                 return False
             table.insert_one({**doc, "_id": id_})
             return True
-        if not stored or stored.get("rev") != expected_rev:
+        if not stored or stored_rev(stored) != expected_rev:
             return False
         table.update_one({"_id": id_}, {"$set": {k: v for k, v in doc.items() if k != "_id"}})
         return True
@@ -307,6 +324,17 @@ class LocalDatabase(BaseDB):
                     database.drop_collection(table)
         self.cache.clear()
         return dropped
+
+    async def delete_doc_cas(self, id_, *, expected_rev: int, db_name: str, collection: str) -> bool:
+        """Apaga o documento só se o ``rev`` guardado ainda é ``expected_rev``."""
+        id_ = str(id_)
+        table = self._connect[collection][db_name]
+        stored = table.find_one({"_id": id_})
+        if not stored or stored_rev(stored) != expected_rev:
+            return False
+        table.delete_one({"_id": id_})
+        self.cache.pop(f"{collection}:{db_name}:{id_}", None)
+        return True
 
     async def delete_data(self, id_, db_name: str, collection: str):
         try:
@@ -468,7 +496,7 @@ class MongoDatabase(BaseDB):
             except DuplicateKeyError:
                 return False
             return True
-        result = await table.update_one({"_id": id_, "rev": expected_rev}, {"$set": body})
+        result = await table.update_one({"_id": id_, **rev_filter(expected_rev)}, {"$set": body})
         return result.matched_count == 1
 
     async def wipe(self, databases: Iterable[str], keep: frozenset[tuple[str, str]]) -> dict[str, int]:
@@ -487,12 +515,25 @@ class MongoDatabase(BaseDB):
         self.cache.clear()
         return dropped
 
+    async def delete_doc_cas(self, id_, *, expected_rev: int, db_name: str, collection: str) -> bool:
+        """Apaga o documento só se o ``rev`` guardado ainda é ``expected_rev`` (filtro atômico no servidor: ``_id`` + ``rev_filter``; com
+        ``expected_rev`` 0 é ``_id`` + (``rev`` 0 OU sem o campo), o documento legado).
+
+        O cache sai antes e DEPOIS do ``await``: uma leitura no meio da espera poria o documento de volta no cache."""
+        key = f"{collection}:{db_name}:{id_}"
+        self.cache.pop(key, None)
+        result = await self._connect[collection][db_name].delete_one({"_id": str(id_), **rev_filter(expected_rev)})
+        if result.deleted_count != 1:
+            return False
+        self.cache.pop(key, None)
+        return True
+
     async def delete_data(self, id_, db_name: str, collection: str):
-        try:
-            self.cache.pop(f"{collection}:{db_name}:{id_}")
-        except KeyError:
-            pass
-        return await self._connect[collection][db_name].delete_one({"_id": str(id_)})
+        key = f"{collection}:{db_name}:{id_}"
+        self.cache.pop(key, None)
+        result = await self._connect[collection][db_name].delete_one({"_id": str(id_)})
+        self.cache.pop(key, None)  # de novo depois do ``await``, como em ``delete_doc_cas``
+        return result
 
     async def delete_many(self, ids: Iterable[str], *, db_name: str, collection: str) -> int:
         """Apaga os documentos de ``ids`` (id ausente não é erro) e esvazia as chaves do cache; devolve quantos foram apagados."""
@@ -502,6 +543,8 @@ class MongoDatabase(BaseDB):
         if not unique:
             return 0
         result = await self._connect[collection][db_name].delete_many({"_id": {"$in": unique}})
+        for id_ in unique:  # de novo depois do ``await``, como em ``delete_doc_cas``
+            self.cache.pop(f"{collection}:{db_name}:{id_}", None)
         return int(result.deleted_count)
 
 

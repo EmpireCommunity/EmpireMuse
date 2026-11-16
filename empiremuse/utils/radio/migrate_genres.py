@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from empiremuse.rules.radio import KIND_CUSTOM
-from empiremuse.rules.radio_station import valid_station_id
+from empiremuse.rules.radio_station import genre_ref, valid_station_id
 from empiremuse.utils.radio.custom_favorites import CUSTOM_FAVORITES_DB, MAX_CUSTOM_FAVORITES
 from empiremuse.utils.radio.premium import GLOBAL_DB
 from empiremuse.utils.radio.stations import STATIONS_DB, StationStore
@@ -57,7 +57,7 @@ def _identity(doc: Any) -> tuple[int, str] | None:
 def _ref(doc: dict[str, Any]) -> str | None:
     source = doc.get("source")
     genre = source.get("genre") if isinstance(source, dict) else None
-    ref = "g:" + genre if isinstance(genre, str) else None
+    ref = genre_ref(genre) if isinstance(genre, str) else None
     return ref if StationStore.builtin(0, ref) is not None else None
 
 

@@ -32,7 +32,7 @@ from empiremuse.rules.radio import (
     station_neighbor,
 )
 from empiremuse.rules.radio_stations import Station
-from empiremuse.rules.text import external_text
+from empiremuse.rules.text import external_text, stored_text
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.music.interactions.fav_menu_server import open_server_favorites
 from empiremuse.utils import playlists_commands
@@ -50,6 +50,7 @@ from empiremuse.utils.radio import (
 )
 from empiremuse.utils.radio.actions import Actor, Refused
 from empiremuse.utils.radio.custom_ports import CustomRadioPorts
+from empiremuse.utils.radio.directory import DirectoryError
 from empiremuse.utils.radio.discord_ports import DiscordChatPorts, DiscordRadioPorts
 from empiremuse.utils.radio.live_ports import LiveRadioPorts
 from empiremuse.utils.radio.favorites import MAX_FAVORITES, FavoriteForbidden, FavoriteNotFound
@@ -403,7 +404,7 @@ class Radio(RadioPrefixCommands, commands.Cog):
         if station is None:
             return tr("radio.live.not_found")
         await actions.change_station(self.hub, radio_id=radio.id, station=station, actor=self._authorized(interaction))
-        return tr("radio.local.changed", station=external_text(station.name, NAME_LIMIT))
+        return tr("radio.local.changed", station=stored_text(station.name, NAME_LIMIT))
 
     async def _volume(self, interaction: Any, tr: Any, radio: Any, runner: Any, wanted: int) -> str:
         """Grava o volume (com ``rev``) e o aplica ao player. No máximo uma mudança por segundo e por rádio."""
@@ -424,7 +425,11 @@ class Radio(RadioPrefixCommands, commands.Cog):
         return tr("radio.panel.volume_set", volume=volume)
 
     async def _station_of(self, radio: Any) -> Station | None:
-        return await self.hub.directory.by_uuid(radio.source["station"])
+        """A estação no ar, pela leitura estrita: ``None`` só quando o diretório diz que ela não existe; falha vira ``RadioUnavailable``."""
+        try:
+            return await self.hub.directory.by_uuid_strict(radio.source["station"])
+        except DirectoryError as error:
+            raise RadioUnavailable from error
 
     async def _favorite(self, interaction: Any, tr: Any, radio: Any, runner: Any = None) -> str:
         if self._too_soon(radio.id, "lookup", LOOKUP_GAP_S):
@@ -446,7 +451,7 @@ class Radio(RadioPrefixCommands, commands.Cog):
         # As chaves existentes da personalizada já descrevem uma favorita pessoal.
         return tr(
             f"radio.panel.custom.favorite_{result.value}",
-            station=external_text(name, NAME_LIMIT, markdown=False),
+            station=stored_text(name, NAME_LIMIT),
             max=MAX_FAVORITES,
         )
 
@@ -456,31 +461,36 @@ class Radio(RadioPrefixCommands, commands.Cog):
             return tr("radio.refused.no_manage_guild")
         if self._too_soon(radio.id, "lookup", LOOKUP_GAP_S):
             return tr("radio.panel.wait")
-        station = await self._station_of(radio)
-        if station is None:
-            return tr("radio.live.not_found")
         try:
+            station = await self._station_of(radio)
+            if station is None:
+                return tr("radio.live.not_found")
             result = await self.hub.favorites.add(radio.guild_id, actor_id, station)
+        except RadioUnavailable:
+            return tr("radio.owner.unavailable")
         except FavoriteForbidden:
             return tr("radio.refused.no_manage_guild")
         return tr(
             f"radio.panel.favorite_{result.value}",
-            station=external_text(station.name, NAME_LIMIT, markdown=False),
+            station=stored_text(station.name, NAME_LIMIT),
             max=MAX_FAVORITES,
         )
 
     async def _info(self, tr: Any, radio: Any) -> str:
         if self._too_soon(radio.id, "lookup", LOOKUP_GAP_S):
             return tr("radio.panel.wait")
-        station = await self._station_of(radio)
+        try:
+            station = await self._station_of(radio)
+        except RadioUnavailable:
+            return tr("radio.owner.unavailable")
         if station is None:
             return tr("radio.live.not_found")
         return tr(
             "radio.panel.info",
-            station=external_text(station.name, NAME_LIMIT),
+            station=stored_text(station.name, NAME_LIMIT),
             codec=external_text(station.codec, 20),
             bitrate=station.bitrate or "?",
-            country=external_text(station.country, 40) or "?",
+            country=stored_text(station.country, 40) or "?",
         )
 
     async def _open_volume_picker(self, interaction: Any, tr: Any, radio: Any, runner: Any) -> None:
@@ -692,7 +702,7 @@ class Radio(RadioPrefixCommands, commands.Cog):
                 )
             except Refused as refusal:
                 raise GenericError(tr(f"radio.refused.{refusal.code}")) from None
-            return tr("radio.local.changed", station=external_text(station.name, NAME_LIMIT))
+            return tr("radio.local.changed", station=stored_text(station.name, NAME_LIMIT))
 
         picker = self._picker(
             interaction,

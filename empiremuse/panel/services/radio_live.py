@@ -43,7 +43,7 @@ from empiremuse.panel.services.radio_local import (
 from empiremuse.panel.services.service import STATUS_CONFLICT, STATUS_INVALID, STATUS_OK
 from empiremuse.rules.errors import RuleError
 from empiremuse.rules.i18n import Translator
-from empiremuse.rules.radio import KIND_LIVE
+from empiremuse.rules.radio import KIND_LIVE, LIST_MAX
 from empiremuse.rules.radio_stations import check_search_term, valid_uuid
 from empiremuse.utils.radio.store import RadioConflict, RadioInvalid, RadioNotFound
 
@@ -53,9 +53,7 @@ NAME_CACHE_TTL_S = 600
 NAME_CACHE_SIZE = 500
 RESERVE_FIELD = "reserva"
 STATION_FIELD = "estacao"
-STATION_LIST_MAX = (
-    150  # = rules.radio.LIST_MAX do bot: anterior e próxima andam pela lista de onde a estação foi escolhida
-)
+STATION_LIST_MAX = LIST_MAX  # anterior e próxima andam pela lista de onde a estação foi escolhida
 SEARCH_FIELD = "q"
 SEARCH_RAW_LIMIT = 200  # o que se lê da query antes da regra (ela corta em 64)
 REV_DIGITS = 12

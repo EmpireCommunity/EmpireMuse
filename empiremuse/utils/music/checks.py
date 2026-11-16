@@ -58,7 +58,7 @@ def resolve_player(pool: BotPool, guild_id: int, member: disnake.Member) -> Opti
     return found.get(chosen) if chosen is not None else None
 
 
-def is_radio_only(pool: BotPool, bot: BotCore) -> bool:
+def is_radio_only(bot: BotCore) -> bool:
     """O bot é dedicado a rádio (item 8)? Ele nunca atende pedido, ``/play`` nem sugestão de bot livre; o principal nunca é."""
     return is_radio_only_identifier(getattr(bot, "identifier", None))
 
@@ -84,7 +84,7 @@ def pick_request_bot(pool: BotPool, guild_id: int, member: disnake.Member) -> Op
     if (resolved := resolve_player(pool, guild_id, member)) is not None:
         return resolved[0]
     for bot in sorted(pool.get_all_bots(), key=lambda b: b.identifier):
-        if not bot.user or not bot.bot_ready or (guild := bot.get_guild(guild_id)) is None or is_radio_only(pool, bot):
+        if not bot.user or not bot.bot_ready or (guild := bot.get_guild(guild_id)) is None or is_radio_only(bot):
             continue
         if has_radio_player(bot, guild_id):
             continue
@@ -281,7 +281,7 @@ async def check_pool_bots(
     bot_in_guild = False
 
     for bot in sorted(all_bots, key=lambda b: b.identifier):
-        if not bot.bot_ready or is_radio_only(inter.bot.pool, bot) or has_radio_player(bot, inter.guild_id):
+        if not bot.bot_ready or is_radio_only(bot) or has_radio_player(bot, inter.guild_id):
             continue
 
         if not (guild := bot.get_guild(inter.guild_id)):
@@ -710,7 +710,7 @@ def get_available_bots_info(pool: BotPool, guild_id: int, member: disnake.Member
     voice_channels = set()
 
     for b in pool.get_all_bots():
-        if not b.bot_ready or is_radio_only(pool, b):
+        if not b.bot_ready or is_radio_only(b):
             continue
 
         try:

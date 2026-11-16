@@ -19,7 +19,7 @@ from empiremuse.rules.radio import LIST_MAX, VOLUME_DEFAULT
 from empiremuse.rules.radio_geo import MAX_OPTIONS
 from empiremuse.rules.radio_stations import Station, valid_uuid
 from empiremuse.rules.radio_quality import quality_dot, station_quality
-from empiremuse.rules.text import external_text
+from empiremuse.rules.text import external_text, stored_text
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.radio.directory import Hit
 from empiremuse.utils.radio.locations import LocationTree, LocNode, LocOption
@@ -47,10 +47,10 @@ def station_option(
 ) -> disnake.SelectOption:
     """Uma estação no select: o pontinho de qualidade (R5), o nome (R-11) e codec/taxa/país; indisponível pela nossa saúde diz isso na descrição."""
     technical = f"{station.codec} {station.bitrate}k" if station.bitrate else station.codec
-    detail = " · ".join(part for part in (technical, station.country) if part)
+    detail = " · ".join(part for part in (technical, stored_text(station.country, LABEL_LIMIT, markdown=False)) if part)
     unavailable = hub.health.unavailable(station.uuid)
     dot = quality_dot(station_quality(station.bitrate, check_ok=check_ok, unavailable=unavailable))
-    label = f"{dot} {external_text(station.name, NAME_LIMIT)}"
+    label = f"{dot} {stored_text(station.name, NAME_LIMIT, markdown=False)}"
     if unavailable:
         detail = f"{tr('radio.live.unavailable')} · {detail}"
     return disnake.SelectOption(label=fit(label, LABEL_LIMIT), value=station.uuid, description=fit(detail, LABEL_LIMIT))
@@ -114,7 +114,7 @@ class RadioPicker(disnake.ui.View):
         if self._favorites is None:
             self._favorites = await self._load_favorites()
         if self.chosen is not None:
-            lines.append(self.tr("radio.local.chosen", name=external_text(self.chosen.name, NAME_LIMIT)))
+            lines.append(self.tr("radio.local.chosen", name=stored_text(self.chosen.name, NAME_LIMIT)))
             self._add_confirm()
         elif self.favorites_mode:
             lines.extend(await self._add_station_select(None))

@@ -109,6 +109,22 @@ async def _ciclo_apagar_dados():
         assert await banco.save_doc_cas("r", {"rev": 2, "x": 2}, expected_rev=1, db_name=colecao, collection=nome)
         guardado = await banco.find_doc("r", db_name=colecao, collection=nome)
         assert (guardado["rev"], guardado["x"]) == (2, 2)
+
+        # delete_doc_cas: rev velho mantém o documento; o rev guardado apaga e tira do cache
+        assert not await banco.delete_doc_cas("r", expected_rev=1, db_name=colecao, collection=nome)
+        assert await banco.find_doc("r", db_name=colecao, collection=nome) is not None
+        assert await banco.delete_doc_cas("r", expected_rev=2, db_name=colecao, collection=nome)
+        assert await banco._connect[nome][colecao].find_one({"_id": "r"}) is None
+        assert f"{nome}:{colecao}:r" not in banco.cache
+
+        # documento legado sem ``rev`` (lido como 0): o rev 0 casa no save e no delete; outro rev não
+        await banco._connect[nome][colecao].insert_one({"_id": "legado", "x": 1})
+        await banco._connect[nome][colecao].insert_one({"_id": "legado2", "x": 1})
+        assert not await banco.delete_doc_cas("legado", expected_rev=1, db_name=colecao, collection=nome)
+        assert await banco.delete_doc_cas("legado", expected_rev=0, db_name=colecao, collection=nome)
+        assert await banco._connect[nome][colecao].find_one({"_id": "legado"}) is None
+        assert await banco.save_doc_cas("legado2", {"rev": 1, "x": 2}, expected_rev=0, db_name=colecao, collection=nome)
+        assert (await banco._connect[nome][colecao].find_one({"_id": "legado2"}))["rev"] == 1
     finally:
         await banco._connect.drop_database(nome)
         await banco._connect.close()

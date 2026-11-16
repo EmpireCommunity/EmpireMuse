@@ -136,7 +136,12 @@ class LastFmFeed:
             data = json.loads(bytes(body))
         except LastFmUnavailable:
             raise
-        except (aiohttp.ClientError, TimeoutError, ValueError) as error:
+        except (
+            aiohttp.ClientError,
+            TimeoutError,
+            ValueError,
+            RecursionError,
+        ) as error:  # "[" × 100 000 estoura a recursão
             logger.warning(
                 "Last.fm não respondeu (%s)", type(error).__name__
             )  # a mensagem traz a URL com a chave (R-12)

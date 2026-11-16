@@ -99,8 +99,10 @@ class StationHealth:
                 until = now + UNAVAILABLE_TTL_S if marked else float((doc or {}).get("until") or 0)
                 rev = (doc or {}).get("rev")
                 updated = {"_id": uuid, "fails": [] if marked else fails, "until": until, "rev": (rev or 0) + 1}
+                # documento existente sem ``rev`` (gravado antes do compare-and-set) é rev 0, nunca "não existe" (o insert daria chave duplicada)
+                expected = None if doc is None else (rev or 0)
                 saved = await self._database.save_doc_cas(
-                    uuid, updated, expected_rev=rev, db_name=HEALTH_DB, collection=GLOBAL_DB
+                    uuid, updated, expected_rev=expected, db_name=HEALTH_DB, collection=GLOBAL_DB
                 )
                 if saved:
                     if marked:

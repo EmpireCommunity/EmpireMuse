@@ -147,21 +147,24 @@ class RadioManager:
                 self._spawn(runner.restore_primary())
 
     async def close(self) -> None:
-        if self._ticker is not None:
-            self._ticker.cancel()
-        self.hub.health_checker.stop()
-        await self.hub.relay.close()
-        for task in list(self._tasks):
-            task.cancel()
-        await asyncio.gather(*self._tasks, return_exceptions=True)
-        for radio_id in list(self._sweepers):
-            self._stop_sweeper(radio_id)
-        for runner in list(self._runners.values()):
-            runner._stopped = True
-            runner.phase = Phase.OFF
-        self._runners.clear()
-        self._radios.clear()
-        self._starts.clear()
+        """Para as rádios ANTES de fechar o relay: a espera dele (até 10 s) nunca deixa tarefa de rádio viva nem runner marcado como ligado."""
+        try:
+            if self._ticker is not None:
+                self._ticker.cancel()
+            self.hub.health_checker.stop()
+            for runner in list(self._runners.values()):
+                runner._stopped = True
+                runner.phase = Phase.OFF
+            for task in list(self._tasks):
+                task.cancel()
+            await asyncio.gather(*self._tasks, return_exceptions=True)
+            for radio_id in list(self._sweepers):
+                self._stop_sweeper(radio_id)
+            self._runners.clear()
+            self._radios.clear()
+            self._starts.clear()
+        finally:
+            await self.hub.relay.close()  # mesmo que parar as rádios falhe, o relay fecha
 
     # ------------------------------------------------------------------ ativar / desativar
 
@@ -203,10 +206,12 @@ class RadioManager:
             logger.warning("Relógio virtual da rádio não gravado (%s)", type(error).__name__)
         # Leitura indisponível propaga. Após o último await, reconfere também ativações concorrentes.
         # Nenhum await separa essas checagens do registro do runner no processo único.
-        if await self.hub.store.get(radio.id) is None:
-            return  # apagada durante a ativação: nunca criar runner órfão
+        current = await self.hub.store.get(radio.id)
+        if current is None or not current.enabled:
+            return  # apagada ou desligada durante a ativação (o ``deactivate`` não achou runner): nunca criar runner órfão
         if self.is_running(radio.id):
             return
+        radio = current  # o runner parte do documento de agora, não do que chegou ao ``activate``
         runner = self._runner_for(radio)
         if runner is None:
             return

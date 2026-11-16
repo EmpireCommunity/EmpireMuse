@@ -23,7 +23,6 @@ from empiremuse.rules.limits import MAX_DJ_ROLES
 from empiremuse.rules.playlists import move_leading_icons, plan_migration, to_doc
 from empiremuse.rules.servers import (
     LEGACY_LANGUAGE,
-    MAIN_IDENTIFIERS,
     SECTION_JUKEBOX,
     SECTION_PLAYLISTS,
     SECTION_SETTINGS,
@@ -122,7 +121,7 @@ class ServerStore:
         candidates = [
             bot for bot in self.pool.get_all_bots() if bot.user is not None and is_main_identifier(bot.identifier)
         ]
-        return min(candidates, key=lambda bot: MAIN_IDENTIFIERS.index(bot.identifier), default=None)
+        return next(iter(candidates), None)  # um token principal só (``TOKEN``)
 
     def knows(self, gid: int) -> bool:
         return any(bot.get_guild(gid) is not None for bot in self.pool.get_all_bots())

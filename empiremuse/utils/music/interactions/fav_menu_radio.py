@@ -16,12 +16,12 @@ from typing import Any
 import disnake
 
 from empiremuse.rules.i18n import fit
-from empiremuse.rules.text import external_text
+from empiremuse.rules.text import external_text, stored_text
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.music.interactions.common import ViewMode
 from empiremuse.utils.others import CustomContext
 from empiremuse.utils.radio.custom_favorites import MAX_CUSTOM_FAVORITES
-from empiremuse.utils.radio.favorite_refs import is_genre, ref_labels
+from empiremuse.utils.radio.favorite_refs import RefLabel, is_genre, ref_labels
 from empiremuse.utils.radio.premium import RadioUnavailable
 from empiremuse.utils.radio.user_favorites import USER_FILTERS_MAX, USER_LIVE_FAVORITES_MAX
 
@@ -60,7 +60,7 @@ class FavMenuRadioMixin:
         self.radio_private = private
         self.radio_stations: list[Any] = []
         self.radio_filters: list[tuple[str, str]] = []
-        self.radio_refs: list[tuple[str, str]] = []  # ``custom``/``genre`` do membro NESTE servidor (J2a)
+        self.radio_refs: list[RefLabel] = []  # ``custom``/``genre`` do membro NESTE servidor (J2a)
         self.current_ref: str | None = None
         self.radio_refs_page = False  # o Discord só dá 5 linhas: as ``custom``/``genre`` têm a própria página
         self.radio_refs_unavailable = False
@@ -99,7 +99,7 @@ class FavMenuRadioMixin:
         else:
             self.radio_refs_unavailable = False
 
-    async def _load_refs(self, user: int) -> list[tuple[str, str]]:
+    async def _load_refs(self, user: int) -> list[RefLabel]:
         """As ``custom``/``genre`` do membro no servidor do comando (sem servidor, como na DM, não há o que listar)."""
         guild_id = self._radio_guild_id()
         if guild_id is None:
@@ -181,7 +181,7 @@ class FavMenuRadioMixin:
             self.current_station = self.radio_stations[0].uuid
         options = [
             disnake.SelectOption(
-                label=external_text(s.name, LABEL_LIMIT, markdown=False) or "—",
+                label=stored_text(s.name, LABEL_LIMIT, markdown=False) or "—",
                 value=s.uuid,
                 emoji="📻",
                 default=s.uuid == self.current_station,
@@ -222,16 +222,16 @@ class FavMenuRadioMixin:
         if not self.radio_refs:
             self.current_ref = None
             return
-        if self.current_ref not in {ref for ref, _ in self.radio_refs}:
-            self.current_ref = self.radio_refs[0][0]
+        if self.current_ref not in {entry.ref for entry in self.radio_refs}:
+            self.current_ref = self.radio_refs[0].ref
         options = [
             disnake.SelectOption(
-                label=label or "—",
-                value=ref,
-                emoji="🎼" if is_genre(ref) else "🎛️",
-                default=ref == self.current_ref,
+                label=entry.label or "—",
+                value=entry.ref,
+                emoji="🎼" if is_genre(entry.ref) else "🎛️",
+                default=entry.ref == self.current_ref,
             )
-            for ref, label in self.radio_refs[:MAX_CUSTOM_FAVORITES]
+            for entry in self.radio_refs[:MAX_CUSTOM_FAVORITES]
         ]
         select = disnake.ui.Select(
             options=options,
@@ -300,15 +300,17 @@ class FavMenuRadioMixin:
         txt += tr("radio.favorites.stations.heading", total=len(self.radio_stations), max=USER_LIVE_FAVORITES_MAX)
         if self.radio_stations:
             lines = [
-                f"> ` {n:02} ` 📻 {external_text(s.name, TEXT_NAME_LIMIT, markdown=False)}"
-                for n, s in enumerate(self.radio_stations, 1)
+                f"> ` {n:02} ` 📻 {stored_text(s.name, TEXT_NAME_LIMIT)}" for n, s in enumerate(self.radio_stations, 1)
             ]
             txt += fit_lines(lines, TEXT_LIST_MAX_SIZE)
         else:
             txt += tr("radio.favorites.stations.empty")
         txt += tr("radio.favorites.filters.heading", total=len(self.radio_filters), max=USER_FILTERS_MAX)
         if self.radio_filters:
-            lines = [f"> ` {n:02} ` 📌 {label}" for n, (_, label) in enumerate(self.radio_filters, 1)]
+            lines = [
+                f"> ` {n:02} ` 📌 {external_text(label, TEXT_NAME_LIMIT)}"
+                for n, (_, label) in enumerate(self.radio_filters, 1)
+            ]
             txt += fit_lines(lines, TEXT_LIST_MAX_SIZE)
         else:
             txt += tr("radio.favorites.filters.empty")
@@ -326,8 +328,8 @@ class FavMenuRadioMixin:
         if not self.radio_refs:
             return txt + tr("radio.favorites.refs.empty")
         lines = [
-            f"> ` {n:02} ` {'🎼' if is_genre(ref) else '🎛️'} {external_text(label, TEXT_NAME_LIMIT)}"
-            for n, (ref, label) in enumerate(self.radio_refs, 1)
+            f"> ` {n:02} ` {'🎼' if is_genre(entry.ref) else '🎛️'} {external_text(entry.label, TEXT_NAME_LIMIT)}"
+            for n, entry in enumerate(self.radio_refs, 1)
         ]
         return txt + fit_lines(lines, TEXT_LIST_MAX_SIZE)
 
@@ -362,7 +364,7 @@ class FavMenuRadioMixin:
             inter,
             lambda favorites, user: favorites.remove_station(user, uuid),
             "radio.favorites.log.station_removed",
-            {"name": external_text(name, TEXT_NAME_LIMIT, markdown=False)},
+            {"name": stored_text(name, TEXT_NAME_LIMIT)},
         )
 
     async def radio_clear_stations_callback(self, inter: disnake.MessageInteraction) -> None:
@@ -380,7 +382,7 @@ class FavMenuRadioMixin:
             inter,
             lambda favorites, user: favorites.remove_filter(user, node),
             "radio.favorites.log.filter_removed",
-            {"name": external_text(label, TEXT_NAME_LIMIT, markdown=False)},
+            {"name": external_text(label, TEXT_NAME_LIMIT)},
         )
 
     async def radio_clear_filters_callback(self, inter: disnake.MessageInteraction) -> None:
@@ -397,14 +399,12 @@ class FavMenuRadioMixin:
         if ref is None or guild_id is None:
             await inter.send(self.tr("fav.select_item"), ephemeral=True)
             return
-        label = next((text for r, text in self.radio_refs if r == ref), "")
+        entry = next((e for e in self.radio_refs if e.ref == ref), RefLabel(ref, "", missing=True))
         await self._radio_guarded(
             inter,
             lambda favorites, user: self.bot.pool.radio.custom_favorites.remove(guild_id, user, ref),
-            "radio.favorites.log.ref_gone"
-            if label == self.tr("radio.favorites.ref.missing")
-            else "radio.favorites.log.ref_removed",
-            {} if label == self.tr("radio.favorites.ref.missing") else {"name": external_text(label, TEXT_NAME_LIMIT)},
+            "radio.favorites.log.ref_gone" if entry.missing else "radio.favorites.log.ref_removed",
+            {} if entry.missing else {"name": external_text(entry.label, TEXT_NAME_LIMIT)},
         )
 
     async def radio_clear_refs_callback(self, inter: disnake.MessageInteraction) -> None:

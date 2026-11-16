@@ -52,7 +52,6 @@ _NOT_ALNUM = re.compile(
 )  # letras e números de QUALQUER escrita (Москва, 北京): só o ASCII apagaria o nome inteiro
 _SPLIT = re.compile(r"[,\-/()|;]")
 _COUNTRY = re.compile(r"[A-Z]{2}")
-_LOCALE = re.compile(r"[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8}){0,3}")
 _AREA_ID = re.compile(r"r:([a-z_]{1,40})")
 _COUNTRY_ID = re.compile(r"c:([A-Z]{2})")
 _STATE_ID = re.compile(r"s:([A-Z]{2}):(@?[A-Za-z0-9_.]{1,32})")
@@ -128,25 +127,9 @@ def resolve_state(index: StateIndex, cc: object, text: object) -> str | None:
 # ---------------------------------------------------------------------- país do servidor (o atalho ⭐)
 
 
-def guild_country(locale: object, available: Container[str]) -> str | None:
-    """O país do idioma do servidor se ele está na árvore, senão ``None``.
-
-    Usa o território do locale (``pt-BR`` → BR) e, sem ele, os ``likely_subtags`` do CLDR pelo Babel (``fr`` → FR, ``ja`` → JP, ``uk`` → UA).
-    ``es-419`` (419 não é país), idioma desconhecido (o Babel levanta ``UnknownLocaleError`` com ``no``) e país fora da árvore dão ``None``.
-    """
-    if not isinstance(locale, str) or _LOCALE.fullmatch(locale) is None:
-        return None
-    from babel import Locale, UnknownLocaleError
-    from babel.core import get_global
-
-    try:
-        parsed = Locale.parse(locale.replace("-", "_"))
-    except ValueError, UnknownLocaleError, TypeError:
-        return None
-    territory = parsed.territory
-    if territory is None:
-        likely = get_global("likely_subtags").get(parsed.language)
-        territory = likely.rsplit("_", 1)[-1] if isinstance(likely, str) else None
+def guild_country(territory: object, available: Container[str]) -> str | None:
+    """O país do servidor (``territory``, já resolvido do idioma por ``utils/radio/locations.locale_territory``) se ele está na árvore, senão
+    ``None``. Território que não é país (``419``) ou fora da árvore dá ``None``. Regra pura: o Babel fica fora de ``rules/``."""
     if not isinstance(territory, str) or _COUNTRY.fullmatch(territory) is None or territory not in available:
         return None
     return territory

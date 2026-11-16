@@ -3,7 +3,7 @@
 - **Pool:** gênero e artistas vêm do Last.fm (``hub.lastfm``); playlists vêm do ``playlist_tracks`` que as portas fornecem (a mesma leitura da R1). Tudo é unido,
   deduplicado e cortado em 300 faixas com até 30 por artista (``rules.radio_shuffle.build_pool``).
 - **Sorteio:** ``next_pick`` com o histórico só na memória. A faixa que NÃO resolve (nenhum stream tocável) entra no cache negativo de 24 h
-  (``global.radio_resolved``) e sai do sorteio; a que resolve é guardada ali por 7 dias; cinco falhas seguidas pausam a estação ("sem faixas tocáveis") e a nova tentativa fica por conta de quem chama.
+  (``global.radio_resolved``) e sai do sorteio; falha da BUSCA (nó fora, 429, ``TransientResolve``) só conta na sequência; a que resolve é guardada ali por 7 dias; cinco falhas seguidas pausam a estação ("sem faixas tocáveis") e a nova tentativa fica por conta de quem chama.
 - Nada aqui toca o Discord nem o Lavalink: a resolução da faixa chega como função (``resolve``).
 """
 
@@ -52,6 +52,10 @@ class EmptyStation(Exception):
 class NoPlayableTracks(Exception):
     """A FONTE está quebrada (pool vazio depois de reconstruído, ou Last.fm fora sem lista velha): a estação para de tocar, continua ligada e tenta de
     novo em ``RETRY_AFTER_S``. Falha de faixa nunca é isto (regra do dono: a rádio não para, pula para a próxima)."""
+
+
+class TransientResolve(Exception):
+    """A busca da faixa falhou (nó fora, limite 429, rede): o defeito não é DELA, então não entra no cache negativo global."""
 
 
 class StreakLimit(Exception):
@@ -206,21 +210,34 @@ class CustomSession:
 
     async def next_playable(self, resolve: Resolve) -> tuple[Track, Any]:
         """Sorteia e resolve até achar uma faixa tocável. ``StreakLimit`` quando a sequência de falhas chega a ``FAIL_STREAK_MAX`` ou não há o que sortear."""
+        skipped: set[tuple[str, str]] = set()  # sorteadas nesta chamada que estavam no cache negativo
         while True:
             if self.streak >= FAIL_STREAK_MAX:
                 raise StreakLimit
-            candidates = [t for t in self.pool if not await self.failed.failed(t)]
-            if not candidates and self.rebuilt:
-                candidates = list(self.pool)
-            pick = next_pick(candidates, self.history, self.rng)
+            pick = await self._draw(skipped)
             if pick is None:
                 raise StreakLimit
-            resolved = await resolve(pick)
+            try:
+                resolved = await resolve(pick)
+            except TransientResolve:
+                self.streak += 1  # conta na sequência (no limite o runner recua), sem marcar a faixa por 24 h para todos os servidores
+                continue
             if resolved is None:
                 await self.failure(pick)
                 continue
             self.history = remember(self.history, pick)
             return pick, resolved
+
+    async def _draw(self, skipped: set[tuple[str, str]]) -> Track | None:
+        """Uma faixa fora do cache negativo, conferindo SÓ a sorteada (nunca o pool inteiro a cada sorteio). Se todas estão nele e o pool já foi
+        reconstruído, a estação o ignora e tenta assim mesmo; sem isso, ``None``."""
+        while True:
+            pick = next_pick([t for t in self.pool if track_key(t) not in skipped], self.history, self.rng)
+            if pick is None:
+                return next_pick(self.pool, self.history, self.rng) if self.rebuilt and skipped else None
+            if not await self.failed.failed(pick):
+                return pick
+            skipped.add(track_key(pick))
 
     async def failure(self, track: Track) -> None:
         """A faixa falhou (não resolveu, não carregou, travou): cache negativo pela chave dela e mais uma na sequência."""

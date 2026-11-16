@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from empiremuse import paths
-from empiremuse.rules.owner_shell import MIN_SECRET_LENGTH, collect_secret_values, mask_shell_output
+from empiremuse.rules.owner_shell import MIN_SECRET_LENGTH, collect_secret_values, mask_secrets_and_tokens
 from empiremuse.rules.release import (
     Version,
     changelog_sections,
@@ -195,7 +195,7 @@ async def run_exec(
         await _reap(process)  # cancelado (ex.: desligamento): o git/pip não pode seguir vivo sem dono
         raise
     known = collect_secret_values(os.environ) | frozenset(value for value in secrets if len(value) >= MIN_SECRET_LENGTH)
-    text = mask_shell_output(stdout.decode("utf-8", errors="replace"), known)
+    text = mask_secrets_and_tokens(stdout.decode("utf-8", errors="replace"), known)
     return ExecResult(process.returncode or 0, text[-max_output:])
 
 

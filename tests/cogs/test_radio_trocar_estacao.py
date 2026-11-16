@@ -446,13 +446,13 @@ class TestNoBurstOnTheDirectory:
     async def test_info_and_favorite_in_a_burst_make_one_lookup(self):
         w = await TestWalking.live_world()
         calls = []
-        real = w.hub.directory.by_uuid
+        real = w.hub.directory.by_uuid_strict
 
         async def counting(uuid, **kwargs):
             calls.append(uuid)
             return await real(uuid)
 
-        w.hub.directory.by_uuid = counting
+        w.hub.directory.by_uuid_strict = counting  # info e estrela leem pela consulta estrita
 
         for value in ("info", "favorite", "info", "favorite", "info"):
             await w.cog.radio_panel_menu(menu(value))

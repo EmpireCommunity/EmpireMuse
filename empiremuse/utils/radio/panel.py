@@ -39,7 +39,7 @@ from empiremuse.rules.radio import (
     PANEL_VOLUME_DOWN_ID,
     PANEL_VOLUME_UP_ID,
 )
-from empiremuse.rules.text import external_text
+from empiremuse.rules.text import external_text, stored_text
 from empiremuse.utils.music.app_emojis import APP_EMOJIS
 from empiremuse.utils.radio.visor import QUALITY_COLORS, render_snapshot
 
@@ -146,14 +146,14 @@ def _button(tr: Any, emojis: Emojis, key: str, icon: str, custom_id: str, style:
 
 def _live_text(tr: Any, station: StationCard, view: LiveView) -> str:
     """O corpo do painel: ``{estação} – {país}``; ``Tocando agora: {música} – {artista}`` só quando o fluxo mandou um título (nunca "desconhecido")."""
-    name = external_text(station.name, NAME_LIMIT)
-    country = external_text(station.country, COUNTRY_LIMIT)
+    name = stored_text(station.name, NAME_LIMIT)
+    country = stored_text(station.country, COUNTRY_LIMIT)
     lines = [f"**{name} – {country}**" if country else f"**{name}**"]
     if (view.title or "").strip() and not view.offline and not view.muted:
         song, artist = split_stream_title(view.title)
-        song_text = external_text(song, TITLE_LIMIT)
+        song_text = stored_text(song, TITLE_LIMIT)  # o título ICY já vem escapado (``icy.clean_title``)
         if song_text and artist:
-            lines.append(tr("radio.panel.live.now", song=song_text, artist=external_text(artist, TITLE_LIMIT)))
+            lines.append(tr("radio.panel.live.now", song=song_text, artist=stored_text(artist, TITLE_LIMIT)))
         elif song_text:
             lines.append(tr("radio.panel.live.now_song", song=song_text))
     if view.muted:
@@ -270,7 +270,10 @@ def custom_payload(
         elif view.searching:
             lines.append(f"-# {tr('radio.panel.custom.searching')}")
         elif view.title.strip():
-            song, artist = external_text(view.title, TITLE_LIMIT), external_text(view.artist, TITLE_LIMIT)
+            song, artist = (
+                external_text(view.title, TITLE_LIMIT),
+                external_text(view.artist, TITLE_LIMIT),
+            )  # faixa do Last.fm: guardada crua
             lines.append(
                 tr("radio.panel.live.now", song=song, artist=artist)
                 if artist
@@ -327,14 +330,19 @@ def _emoji_button(emojis: Emojis, icon: str, custom_id: str, danger: bool = Fals
     return disnake.ui.Button(emoji=emojis(icon), custom_id=custom_id, style=style)
 
 
-def _station_select(tr: Any, snapshot: Any) -> disnake.ui.Select:
-    """Select 1: as estações da lista ativa (a janela do snapshot, até 25), com o ponto de qualidade; a atual marcada."""
+def _station_select(tr: Any, snapshot: Any, *, custom: bool = False) -> disnake.ui.Select:
+    """Select 1: as estações da lista ativa (a janela do snapshot, até 25), com o ponto de qualidade; a atual marcada.
+
+    Ao vivo, o nome veio do diretório GUARDADO escapado (``stored_text``); na personalizada a opção já chega CRUA de ``station_label(markdown=False)``,
+    então a barra é do próprio nome e fica (``external_text``).
+    """
+    clean = external_text if custom else stored_text
     stations = tuple(getattr(snapshot, "stations", ()) or ())[:SELECT_LIMIT]
     index = getattr(snapshot, "current_index", None)
     current = stations[index].id if index is not None and 0 <= int(index) < len(stations) else None
     options: list[disnake.SelectOption] = []
     for station in stations:
-        name = external_text(station.name, NAME_LIMIT)
+        name = clean(station.name, NAME_LIMIT, markdown=False)  # select: sem markdown
         label = f"{int(station.position)}. {name}" if int(station.position or 0) >= 1 else name
         codec = external_text(station.codec, 8).upper()
         description = ""
@@ -503,7 +511,7 @@ def visor_payload(
         "components": [
             disnake.ui.ActionRow(*row1),
             disnake.ui.ActionRow(*row2),
-            disnake.ui.ActionRow(_station_select(tr, snapshot)),
+            disnake.ui.ActionRow(_station_select(tr, snapshot, custom=custom)),
             disnake.ui.ActionRow(filter_select),
         ],
         "file": disnake.File(io.BytesIO(picture), filename=VISOR_NAME),

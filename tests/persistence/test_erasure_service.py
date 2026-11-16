@@ -328,13 +328,20 @@ async def test_t13_updated_by_so_o_id_exato_vira_deleted_e_o_premium_fica(mundo)
     assert (relatorio.counts["radios"], relatorio.counts["radio_stations"]) == (1, 1)
 
 
+@pytest.mark.regression
 @pytest.mark.asyncio
-async def test_updated_by_de_documento_sem_rev_nao_da_para_anonimizar_com_cas_e_vira_partial(mundo):
-    await gravar(mundo, "global", "radios", f"{BOT}:{SERVIDOR}", {"updated_by": str(ALVO)})
+async def test_radio_e_estacao_antigas_sem_rev_sao_anonimizadas_como_rev_0_e_o_apagamento_conclui(mundo):
+    """Alicerce BK-4: documento gravado antes do compare-and-set não tem ``rev``; vale ``LEGACY_REV`` (0), como em toda leitura."""
+    await gravar(mundo, "global", "radios", f"{BOT}:{SERVIDOR}", {"updated_by": str(ALVO), "name": "Rádio"})
+    await gravar(mundo, "global", "radio_stations", "a" * 24, {"updated_by": str(ALVO), "name": "Estação"})
 
     relatorio = await apagar(mundo)
 
-    assert relatorio.status is ErasureStatus.PARTIAL and relatorio.failed == ("radios",)
+    assert relatorio.status is ErasureStatus.OK and relatorio.failed == ()
+    for colecao, chave, nome in (("radios", f"{BOT}:{SERVIDOR}", "Rádio"), ("radio_stations", "a" * 24, "Estação")):
+        doc = await mundo.database.find_doc(chave, db_name=colecao, collection="global")
+        assert doc["updated_by"] == "deleted" and doc["rev"] == 1 and doc["name"] == nome
+    assert (relatorio.counts["radios"], relatorio.counts["radio_stations"]) == (1, 1)
 
 
 # ------------------------------------------------------------------------------------------------ T15
@@ -651,8 +658,11 @@ async def test_cache_do_banco_cheio_no_meio_da_execucao_e_esvaziado_no_passo_5(m
 
 
 @pytest.mark.asyncio
-async def test_anonimizar_tenta_todos_um_documento_ruim_nao_deixa_o_bom_com_o_id(mundo):
-    await gravar(mundo, "global", "radios", f"{BOT}:{SERVIDOR}", {"updated_by": str(ALVO)})  # sem rev
+@pytest.mark.parametrize(
+    "rev_ruim", ["x", -1]
+)  # fora do formato e negativo (Sentinela BK-4-sec3): o ruim fica com o ID e conta como falha
+async def test_anonimizar_tenta_todos_um_documento_ruim_nao_deixa_o_bom_com_o_id(mundo, rev_ruim):
+    await gravar(mundo, "global", "radios", f"{BOT}:{SERVIDOR}", {"updated_by": str(ALVO), "rev": rev_ruim})
     await gravar(mundo, "global", "radios", f"{BOT}:{SERVIDOR_2}", {"updated_by": str(ALVO), "rev": 1})
 
     relatorio = await apagar(mundo)
@@ -660,6 +670,8 @@ async def test_anonimizar_tenta_todos_um_documento_ruim_nao_deixa_o_bom_com_o_id
     bom = await mundo.database.find_doc(f"{BOT}:{SERVIDOR_2}", db_name="radios", collection="global")
     assert bom["updated_by"] == "deleted"
     assert relatorio.status is ErasureStatus.PARTIAL and relatorio.failed == ("radios",)
+    ruim = await mundo.database.find_doc(f"{BOT}:{SERVIDOR}", db_name="radios", collection="global")
+    assert ruim["rev"] == rev_ruim  # nada gravado no documento recusado
 
 
 @pytest.mark.asyncio
