@@ -48,9 +48,9 @@ FETCH_TIMEOUT_SECONDS = 5.0
 BUDGET_BURST = 10
 BUDGET_PER_SECOND = 2.0
 BUDGET_CONCURRENCY = 4
-# O balde de cada usuário em cada bot, conferido ANTES do global (SF1): rajada de 3, uma consulta a cada 2 s.
-USER_BURST = 3
-USER_PER_SECOND = 0.5
+# O balde de cada usuário em cada bot, conferido ANTES do global (SF1, contrato r11): rajada de 5, uma consulta a cada 5 s.
+USER_BURST = 5
+USER_PER_SECOND = 0.2
 MAX_USER_BUCKETS = 10_000
 _GUILD_ID = re.compile(r"[0-9]{1,20}", re.ASCII)
 
