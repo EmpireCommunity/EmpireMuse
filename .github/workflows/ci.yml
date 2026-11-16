@@ -196,7 +196,7 @@ jobs:
           # Sem MONGO_TEST_URI o módulo é pulado em silêncio; este passo falha se os testes não PASSAREM contra o mongod do serviço.
           # pipefail (default do shell bash do Actions, explícito aqui) impede que o tee esconda o código de saída do pytest.
           set -o pipefail
-          MINIMO=4
+          MINIMO=5
           pytest -q -m integration -rA -p no:cacheprovider | tee "$RUNNER_TEMP/mongo-integracao.txt"
           PASSARAM="$(grep -c '^PASSED tests/persistence/test_mongo_integracao.py::' "$RUNNER_TEMP/mongo-integracao.txt" || true)"
           echo "Testes Mongo PASSED: $PASSARAM (mínimo $MINIMO)"
