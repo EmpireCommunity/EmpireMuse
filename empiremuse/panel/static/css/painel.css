@@ -146,12 +146,17 @@ main:focus {
   color: var(--painel-texto);
   display: inline-flex;
   gap: 0.75rem;
+  max-width: 100%;
+  min-width: 0; /* sem isso o item flex não encolhe abaixo do nome e um nome longo estoura o cabeçalho */
   text-decoration: none;
 }
 
+/* O nome do bot vem do Discord (até 32 caracteres, sem espaços): quebra em qualquer ponto em vez de estourar a tela de 360 px */
 .marca-nome {
   font-size: 1.25rem;
   font-weight: 700;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .marca-selo {
