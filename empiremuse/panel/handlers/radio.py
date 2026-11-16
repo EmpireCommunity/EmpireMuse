@@ -273,7 +273,7 @@ class RadioChatHandler(RadiosHandler):
     """``POST /painel/servidores/<gid>/radios/<bot:guild>``: regras do chat de uma rádio (R1 §3, R-6)."""
 
     async def get(self, guild_id: str, radio_id: str) -> None:  # type: ignore[override]
-        self.redirect(f"{SERVERS_PATH}/{guild_id}/{RADIOS_CATEGORY}")
+        self.redirect(f"{SERVERS_PATH}/{int(guild_id)}/{RADIOS_CATEGORY}")
 
     async def post(self, guild_id: str, radio_id: str) -> None:  # type: ignore[override]
         try:
@@ -355,7 +355,7 @@ class RadioSourceHandler(RadiosHandler):
     action_name = ""
 
     async def get(self, guild_id: str, radio_id: str) -> None:  # type: ignore[override]
-        self.redirect(f"{SERVERS_PATH}/{guild_id}/{RADIOS_CATEGORY}")
+        self.redirect(f"{SERVERS_PATH}/{int(guild_id)}/{RADIOS_CATEGORY}")
 
     async def post(self, guild_id: str, radio_id: str) -> None:  # type: ignore[override]
         try:
@@ -519,7 +519,7 @@ class RadioStationsHandler(RadiosHandler):
     """``POST /painel/servidores/<gid>/radios/estacoes``: cria uma estação personalizada do servidor (R5 §5)."""
 
     async def get(self, guild_id: str, *rest: str) -> None:  # type: ignore[override]
-        self.redirect(f"{SERVERS_PATH}/{guild_id}/{RADIOS_CATEGORY}")
+        self.redirect(f"{SERVERS_PATH}/{int(guild_id)}/{RADIOS_CATEGORY}")
 
     async def post(self, guild_id: str, *rest: str) -> None:  # type: ignore[override]
         try:
@@ -599,7 +599,7 @@ class RadioSetupHandler(RadiosHandler):
     ``GuildAccess`` e de novo pelo bot."""
 
     async def get(self, guild_id: str, *rest: str) -> None:  # type: ignore[override]
-        self.redirect(f"{SERVERS_PATH}/{guild_id}/{RADIOS_CATEGORY}")
+        self.redirect(f"{SERVERS_PATH}/{int(guild_id)}/{RADIOS_CATEGORY}")
 
     async def post(self, guild_id: str, *rest: str) -> None:  # type: ignore[override]
         try:
