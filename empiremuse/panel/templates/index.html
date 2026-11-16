@@ -5,7 +5,6 @@
 {% block conteudo %}
 {% if usuario %}
 <section class="boas-vindas" aria-labelledby="titulo-boas-vindas">
-  <img class="boas-vindas-logo" src="/painel/marca/logo-256.png" alt="" width="120" height="120">
   <h1 id="titulo-boas-vindas">Olá, {{ usuario.global_name or usuario.username }}</h1>
   <p class="lead">
     Você entrou com a sua conta do Discord. Escolha um servidor para configurar o bot.
@@ -16,8 +15,7 @@
 </section>
 {% else %}
 <section class="boas-vindas" aria-labelledby="titulo-boas-vindas">
-  <img class="boas-vindas-logo" src="/painel/marca/logo-256.png" alt="" width="120" height="120">
-  <h1 id="titulo-boas-vindas">Painel do EmpireMuse</h1>
+  <h1 id="titulo-boas-vindas">Painel de {{ bot_name }}</h1>
   <p class="lead">
     Configure o bot de música nos seus servidores pelo navegador: player, DJ, aparência e muito mais.
   </p>

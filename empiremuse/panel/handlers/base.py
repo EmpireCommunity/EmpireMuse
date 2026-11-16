@@ -36,6 +36,7 @@ HOST_PREFIX = "__Host-"
 CDN_AVATARS = "https://cdn.discordapp.com"
 DEFAULT_AVATAR_COUNT = 6
 DISCORD_ID_SHIFT = 22
+FALLBACK_BOT_NAME = "Music Bot"
 
 _ERROR_TEXTS = {
     400: ("Requisição inválida", "Não foi possível entender a solicitação."),
@@ -57,6 +58,19 @@ def avatar_url_for(user: Optional[PanelUser]) -> str:
         return f"{CDN_AVATARS}/avatars/{user.id}/{user.avatar}.png?size=64"
     index = (int(user.id) >> DISCORD_ID_SHIFT) % DEFAULT_AVATAR_COUNT if user.id.isdigit() else 0
     return f"{CDN_AVATARS}/embed/avatars/{index}.png"
+
+
+def bot_display_name(pool: Any) -> str:
+    """Nome do bot no Discord para o título e o cabeçalho do painel: o do principal, senão o do primeiro bot logado.
+
+    Sem pool, sem bot logado ou com nome vazio, devolve ``FALLBACK_BOT_NAME``.
+    """
+    candidates = [getattr(pool, "main_bot", None), *getattr(pool, "bots", ())]
+    for bot in candidates:
+        name = getattr(getattr(bot, "user", None), "name", None)
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+    return FALLBACK_BOT_NAME
 
 
 class PanelResponseMixin:
@@ -117,7 +131,12 @@ class PanelResponseMixin:
         user = self.current_session.user if self.current_session else None
         # ``_`` (I-13): devolve ``str`` já traduzido; nos templates só em texto ou atributo entre aspas.
         translator = panel_translator(self.application.settings.get("pool"))
-        namespace.update(usuario=user, avatar_url=avatar_url_for(user), _=translator)
+        namespace.update(
+            usuario=user,
+            avatar_url=avatar_url_for(user),
+            _=translator,
+            bot_name=bot_display_name(self.application.settings.get("pool")),
+        )
         return namespace
 
     def _request_summary(self) -> str:
