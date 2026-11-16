@@ -128,7 +128,20 @@ class TestTheMongoDuplicateKey:
         [
             ({"keyPattern": {"_id": 1}}, True),  # o documento já existe: o CAS devolve False
             ({"keyPattern": {"guild_id": 1, "name_norm": 1}}, False),  # o índice de nome: UniqueIndexViolation
-            (None, True),  # sem detalhe: o comportamento de antes
+            (None, True),  # sem detalhe nenhum: o comportamento de antes
+            # Sentinela BK-4b: sem ``keyPattern`` (servidor antigo), o ``keyValue`` e o nome do índice na mensagem ainda dizem qual foi
+            ({"keyValue": {"guild_id": "1", "name_norm": "rock"}}, False),
+            ({"keyValue": {"_id": "a"}}, True),
+            (
+                {
+                    "errmsg": "E11000 duplicate key error collection: g.radio_stations index: guild_name_norm_unique dup key"
+                },
+                False,
+            ),
+            (
+                {"errmsg": 'E11000 duplicate key error collection: g.radio_stations index: _id_ dup key: { _id: "a" }'},
+                True,
+            ),
         ],
     )
     def test_only_the_id_key_means_the_document_already_exists(self, details, is_id):

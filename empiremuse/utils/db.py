@@ -163,10 +163,25 @@ def rev_filter(expected_rev: int) -> dict:
     return {"rev": expected_rev}
 
 
+_ID_INDEX_MARK = "index: _id_ "  # como o MongoDB nomeia o índice do ``_id`` na mensagem do E11000
+_INDEX_MARK = "index: "
+
+
 def _is_id_key(error: DuplicateKeyError) -> bool:
-    """A chave repetida é o ``_id`` (o documento já existe), e não um índice único secundário? Sem o detalhe, conta como ``_id`` (o de antes)."""
-    pattern = (error.details or {}).get("keyPattern")
-    return not isinstance(pattern, dict) or set(pattern) == {"_id"}
+    """A chave repetida é o ``_id`` (o documento já existe), e não um índice único secundário?
+
+    Confere, na ordem, ``keyPattern``, ``keyValue`` e o nome do índice na mensagem (servidor antigo pode não mandar os dois primeiros).
+    Sem nenhum desses sinais, conta como ``_id`` (o comportamento de antes).
+    """
+    details = error.details or {}
+    for field in ("keyPattern", "keyValue"):
+        keys = details.get(field)
+        if isinstance(keys, dict) and keys:
+            return set(keys) == {"_id"}
+    message = str(details.get("errmsg") or error)
+    if _ID_INDEX_MARK in message:
+        return True
+    return _INDEX_MARK not in message
 
 
 class BaseDB:
