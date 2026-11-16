@@ -13,7 +13,7 @@ from pymongo.errors import DuplicateKeyError
 
 from empiremuse.rules.radio_shuffle import Track
 from empiremuse.rules.radio_station import STATION_NAME_TAKEN
-from empiremuse.utils.db import LocalDatabase, UniqueIndexViolation, _is_id_key
+from empiremuse.utils.db import IndexDefinitionConflict, LocalDatabase, UniqueIndexViolation, _is_id_key
 from empiremuse.utils.radio import INDEX_RETRY_DELAYS_S, RadioHub
 from empiremuse.utils.radio.custom_source import (
     EXPIRE_FIELD,
@@ -23,7 +23,7 @@ from empiremuse.utils.radio.custom_source import (
     ResolvedTracks,
     failure_id,
 )
-from empiremuse.utils.radio.stations import NAME_INDEX_KEYS, NAME_INDEX_PARTIAL, StationInvalid
+from empiremuse.utils.radio.stations import StationInvalid
 from tests.persistence.test_radio_estacoes import ROCK
 from tests.persistence.test_radio_store import GUILD, FakeDb
 
@@ -77,9 +77,14 @@ class TestTheIndexAtBoot:
 
         await hub_with(db).stations.ensure_indexes()
 
-        assert db.indexes == [("radio_stations", NAME_INDEX_KEYS, NAME_INDEX_PARTIAL, "guild_name_norm_unique")]
-        assert NAME_INDEX_KEYS == [("guild_id", 1), ("name_norm", 1)]
-        assert NAME_INDEX_PARTIAL == {"name_norm": {"$type": "string"}}
+        assert db.indexes == [
+            (
+                "radio_stations",
+                [("guild_id", 1), ("name_norm", 1)],
+                {"name_norm": {"$type": "string"}},
+                "guild_name_norm_unique",
+            )
+        ]
 
     @pytest.mark.regression
     @pytest.mark.asyncio
@@ -156,6 +161,18 @@ class TestTheIndexesRunInTheBackgroundWithBoundedRetries:
         db = IndexedDb(index_error=UniqueIndexViolation(), groups=2)
 
         assert await self.run(db) == []
+
+    @pytest.mark.regression
+    @pytest.mark.asyncio
+    async def test_an_index_defined_otherwise_by_hand_is_final_with_the_type_in_the_warning(self, caplog):
+        """Crivo BK-4b CS2: índice com o mesmo nome e outras opções (códigos 85/86 do MongoDB) não se resolve tentando de novo."""
+        db = IndexedDb(index_error=IndexDefinitionConflict())
+        db.ttl_errors = [IndexDefinitionConflict()]
+
+        with caplog.at_level(logging.WARNING):
+            assert await self.run(db) == []
+
+        assert caplog.text.count("IndexDefinitionConflict") == 2
 
 
 class TestAWriteThatHitsTheIndex:

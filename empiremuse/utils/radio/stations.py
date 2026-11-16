@@ -30,7 +30,7 @@ from empiremuse.rules.radio_station import (
     to_document,
     valid_station_id,
 )
-from empiremuse.utils.db import UniqueIndexViolation
+from empiremuse.utils.db import IndexDefinitionConflict, UniqueIndexViolation
 from empiremuse.utils.radio.premium import CAS_ATTEMPTS, GLOBAL_DB, RadioUnavailable
 from empiremuse.utils.radio.store import RadioConflict, RadioInvalid, RadioNotFound, RadioStore
 
@@ -107,6 +107,10 @@ class StationStore:
         except UniqueIndexViolation:
             groups = await self._duplicate_groups()
             logger.warning("Índice único de nome de estação não criado: %s grupos de nomes repetidos", groups)
+        except (
+            IndexDefinitionConflict
+        ) as error:  # índice mexido à mão com outra definição: final, tentar de novo não resolve
+            logger.warning("Índice único de nome de estação não criado (%s)", type(error).__name__)
         except Exception as error:  # noqa: BLE001 - sem o índice o bot segue com a trava; só o tipo vai ao log
             logger.warning("Índice único de nome de estação não criado (%s)", type(error).__name__)
             return False

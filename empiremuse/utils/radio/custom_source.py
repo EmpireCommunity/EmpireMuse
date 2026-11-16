@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 from empiremuse.rules.radio_genres import find_genre, recipe, shipped_catalog
 from empiremuse.rules.radio_shuffle import Track, build_pool, next_pick, remember, track_key
 from empiremuse.rules.radio_station import KIND_ARTISTS, KIND_GENRE, KIND_PLAYLISTS, CustomStation
+from empiremuse.utils.db import IndexDefinitionConflict
 from empiremuse.utils.radio.premium import GLOBAL_DB
 
 if TYPE_CHECKING:
@@ -159,6 +160,9 @@ class ResolvedTracks:
             removed = await self._database.delete_matching(
                 {EXPIRE_FIELD: {"$exists": False}}, db_name=RESOLVED_DB, collection=GLOBAL_DB
             )
+        except IndexDefinitionConflict as error:  # TTL mexido à mão com outro prazo: final, tentar de novo não resolve
+            logger.warning("Índice TTL do cache de faixas resolvidas não criado (%s)", type(error).__name__)
+            return True
         except Exception as error:  # noqa: BLE001 - sem o TTL o cache segue; só o tipo vai ao log
             logger.warning("Índice TTL do cache de faixas resolvidas não criado (%s)", type(error).__name__)
             return False

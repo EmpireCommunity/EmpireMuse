@@ -156,6 +156,15 @@ class UniqueIndexViolation(Exception):
     """A escrita (ou a criação de um índice único) bateu num índice único que NÃO é o ``_id``: quem chama traduz para o erro da regra."""
 
 
+INDEX_DEFINITION_CODES = frozenset(
+    {85, 86}
+)  # IndexOptionsConflict, IndexKeySpecsConflict: o índice existe com outra definição
+
+
+class IndexDefinitionConflict(Exception):
+    """Já existe um índice com o mesmo nome (ou as mesmas chaves) e outra definição: só alguém mexendo no banco resolve, tentar de novo não."""
+
+
 def rev_filter(expected_rev: int) -> dict:
     """O filtro do Mongo para "o ``rev`` guardado é ``expected_rev``": ``rev`` 0 também casa o documento antigo sem o campo."""
     if expected_rev == LEGACY_REV:
@@ -537,6 +546,8 @@ class MongoDatabase(BaseDB):
         except OperationFailure as error:
             if error.code == DUPLICATE_KEY:
                 raise UniqueIndexViolation from error
+            if error.code in INDEX_DEFINITION_CODES:
+                raise IndexDefinitionConflict from error
             raise
 
     async def count_duplicate_groups(self, keys: list[str], *, match: dict, db_name: str, collection: str) -> int:
@@ -553,7 +564,12 @@ class MongoDatabase(BaseDB):
 
     async def ensure_ttl_index(self, field: str, *, db_name: str, collection: str) -> None:
         """O MongoDB apaga o documento quando a data em ``field`` passa (``expireAfterSeconds=0``); documento sem o campo não expira por aqui."""
-        await self._connect[collection][db_name].create_index(field, expireAfterSeconds=0)
+        try:
+            await self._connect[collection][db_name].create_index(field, expireAfterSeconds=0)
+        except OperationFailure as error:
+            if error.code in INDEX_DEFINITION_CODES:
+                raise IndexDefinitionConflict from error
+            raise
 
     async def delete_matching(self, filter: dict, *, db_name: str, collection: str) -> int:
         """Apaga os documentos que casam ``filter`` e devolve quantos. Só para coleção sem cache de documento (o cache por id não é tocado)."""

@@ -191,7 +191,7 @@ def test_mongo_usage_events_round_trip_against_a_real_mongod():
 async def _ciclo_indice_de_estacoes():
     """BK-4b: o índice único parcial (servidor, nome) recusa o nome repetido na inserção e na troca, deixa o legado sem ``name_norm`` de fora,
     não nasce sobre dados repetidos (só a contagem dos grupos) e o TTL é criado."""
-    from empiremuse.utils.db import UniqueIndexViolation
+    from empiremuse.utils.db import IndexDefinitionConflict, UniqueIndexViolation
     from empiremuse.utils.radio.stations import NAME_INDEX, NAME_INDEX_KEYS, NAME_INDEX_PARTIAL
 
     banco = MongoDatabase(URI, timeout=5)
@@ -201,6 +201,14 @@ async def _ciclo_indice_de_estacoes():
     try:
         await banco.ensure_unique_index(NAME_INDEX_KEYS, db_name=colecao, **indice)
         await banco.ensure_unique_index(NAME_INDEX_KEYS, db_name=colecao, **indice)  # idempotente
+        with pytest.raises(IndexDefinitionConflict):  # o mesmo nome com outra definição (mexido à mão): 85/86, final
+            await banco.ensure_unique_index(
+                NAME_INDEX_KEYS,
+                partial={"name_norm": {"$exists": True}},
+                name=NAME_INDEX,
+                db_name=colecao,
+                collection=nome,
+            )
         rock = {"guild_id": "1", "name_norm": "rock", "rev": 0}
         assert await banco.save_doc_cas("a", rock, expected_rev=None, db_name=colecao, collection=nome)
         assert not await banco.save_doc_cas(
@@ -229,6 +237,9 @@ async def _ciclo_indice_de_estacoes():
         )
         assert grupos == 1
 
+        await banco._connect[nome]["radio_ttl_mexido"].create_index("expire_at", expireAfterSeconds=60)
+        with pytest.raises(IndexDefinitionConflict):  # TTL com outro prazo já existe
+            await banco.ensure_ttl_index("expire_at", db_name="radio_ttl_mexido", collection=nome)
         await banco.ensure_ttl_index("expire_at", db_name="radio_resolved", collection=nome)
         info = await banco._connect[nome]["radio_resolved"].index_information()
         assert any(spec.get("expireAfterSeconds") == 0 and spec["key"] == [("expire_at", 1)] for spec in info.values())
@@ -238,7 +249,7 @@ async def _ciclo_indice_de_estacoes():
             [
                 {"_id": "velha1", "at": 1.0},
                 {"_id": "velha2", "at": 2.0},
-                {"_id": "nova", "at": 3.0, "expire_at": datetime.now(timezone.utc)},
+                {"_id": "nova", "at": 3.0, "expire_at": datetime.now(timezone.utc) + timedelta(hours=1)},
             ]
         )
         apagadas = await banco.delete_matching(
