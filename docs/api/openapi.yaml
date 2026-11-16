@@ -2447,6 +2447,182 @@ paths:
         "503":
           $ref: "#/components/responses/NotReady"
 
+  /api/v1/member/guilds:
+    get:
+      tags:
+        - Rádios
+      operationId: listMemberGuilds
+      summary: Os servidores em que o usuário participa sem gerenciar (visão de membro)
+      description: |
+        Os servidores em que o usuário estava no login como MEMBRO (sem dono, ADMINISTRATOR nem Gerenciar Servidor) e que têm um bot do pool pronto AGORA. Nome e ícone do cache do bot, sem nenhuma consulta ao Discord. Só existe com `member-favorites` em `/meta.features`. Bot convidado depois do login: entrar de novo.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+      responses:
+        "200":
+          description: A lista (vazia quando não há nenhum).
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberGuildList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+  /api/v1/member/guilds/{guild_id}/radio-favorites:
+    get:
+      tags:
+        - Rádios
+      operationId: getMemberRadioFavorites
+      summary: As favoritas do servidor (só leitura) e as do próprio membro neste servidor
+      description: |
+        Para quem é membro agora (a leitura aceita uma decisão de até 30 s). Não membro, servidor inexistente, sem bot pronto e id fora das listas da sessão dão o mesmo `404` (sem consultar o Discord quando o id não está nas listas). `server` é a lista do servidor, só leitura; `mine` as `custom`/`genre` do próprio usuário neste servidor; `catalog` o que ele pode favoritar (estações do servidor e gêneros), vazio com `supporter: false`. A estrela de estação ao vivo é a da conta (`/account/radio-favorites`). Campos fechados: nunca artistas, playlists, `updated_by`, rádios, canais, bots nem convites. `503` quando o Discord não deu resposta definitiva (nunca vira `404`).
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+      responses:
+        "200":
+          description: O servidor, as listas e o catálogo.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberRadioFavorites"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+  /api/v1/member/guilds/{guild_id}/radio-favorites/mine:
+    post:
+      tags:
+        - Rádios
+      operationId: addMemberRadioFavorite
+      summary: Adiciona às favoritas do próprio membro neste servidor
+      description: |
+        Só `custom` (estação do servidor do caminho) e `genre`. Membro reconferido no Discord agora (o cache do gateway não vale). Ordem: `401` → `404` (membro) → `503` (Discord sem resposta definitiva) → `403` (servidor sem o acesso Limitado a Apoiadores, quando `kind` é `custom` ou `genre`; conferido antes do resto do corpo; outra espécie é `400`) → `400` de forma → `Idempotency-Key` → domínio (já está = `200`; cheia = `400` com `limit`; estação desconhecida ou de outro servidor = o mesmo `404`). Teto de 24. O usuário e o servidor vêm da sessão e do caminho; campos de corpo além de `kind` e `id` são ignorados.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RadioFavoriteMineWrite"
+      responses:
+        "200":
+          description: A lista atualizada.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RadioFavoriteList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenAction"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/IdempotencyConflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMedia"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
+    delete:
+      tags:
+        - Rádios
+      operationId: removeMemberRadioFavorite
+      summary: Remove das favoritas do próprio membro neste servidor
+      description: |
+        Membro reconferido no Discord agora (o cache do gateway não vale), como no `POST`; `503` quando o Discord não deu resposta definitiva (nunca vira `404`). Remover o que não está dá `200`. Nunca exige o acesso de Apoiador (quem o perdeu limpa a própria lista). O alvo vai na query.
+      security:
+        - ServiceKey: []
+          SessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/SessionToken"
+        - $ref: "#/components/parameters/GuildId"
+        - $ref: "#/components/parameters/MyRadioFavoriteKind"
+        - $ref: "#/components/parameters/RadioFavoriteId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: A lista atualizada.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+            X-Content-Type-Options:
+              $ref: "#/components/headers/ContentTypeOptions"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestIdOut"
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RadioFavoriteList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/IdempotencyConflict"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Unexpected"
+        "503":
+          $ref: "#/components/responses/NotReady"
 components:
   securitySchemes:
     ServiceKey:
@@ -5142,6 +5318,81 @@ components:
           type: integer
         total:
           type: integer
+    MemberGuild:
+      type: object
+      additionalProperties: false
+      required: [id, name, icon]
+      properties:
+        id:
+          type: string
+          pattern: "^[0-9]{1,20}$"
+        name:
+          type: [string, "null"]
+          description: Texto tratado (sem menção nem link vivos).
+        icon:
+          type: [string, "null"]
+          description: Só a URL do ícone na CDN do Discord (`https://cdn.discordapp.com/icons/{g}/{hash}.png?size=64`), ou `null`.
+    MemberGuildList:
+      type: object
+      additionalProperties: false
+      required: [guilds]
+      properties:
+        guilds:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemberGuild"
+    MemberCatalogStation:
+      type: object
+      additionalProperties: false
+      required: [kind, id, name]
+      properties:
+        kind:
+          const: custom
+        id:
+          type: string
+          pattern: "^[0-9a-f]{24}$"
+        name:
+          type: [string, "null"]
+    MemberCatalog:
+      type: object
+      additionalProperties: false
+      required: [stations, genres]
+      description: O que o membro pode favoritar; vazio quando o servidor não tem o acesso Limitado a Apoiadores.
+      properties:
+        stations:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemberCatalogStation"
+        genres:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [group, genres]
+            properties:
+              group:
+                type: string
+              genres:
+                type: array
+                items:
+                  type: string
+                  pattern: "^g:[a-z][a-z0-9_]{1,23}$"
+    MemberRadioFavorites:
+      type: object
+      additionalProperties: false
+      required: [guild, supporter, server, mine, catalog]
+      properties:
+        guild:
+          $ref: "#/components/schemas/MemberGuild"
+        supporter:
+          type: boolean
+          description: O servidor tem o acesso Limitado a Apoiadores agora (só então dá para adicionar `custom`/`genre`; listar e remover nunca dependem disso).
+        server:
+          $ref: "#/components/schemas/RadioFavoriteList"
+        mine:
+          $ref: "#/components/schemas/RadioFavoriteList"
+        catalog:
+          $ref: "#/components/schemas/MemberCatalog"
     GuildRadioFavorites:
       type: object
       additionalProperties: false

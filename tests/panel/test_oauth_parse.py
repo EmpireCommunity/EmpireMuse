@@ -32,3 +32,32 @@ class TestParseManagedGuilds:
         parse = require("empiremuse.panel.oauth").parse_managed_guilds
         raw = [item("100"), None, "texto", 5, [], item("300")]
         assert [g.id for g in parse(raw)] == ["100", "300"]
+
+
+# --------------------------------------------------------------------------- T-660: servidores em que a pessoa é só membro
+
+
+@pytest.mark.critical
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ([{"id": "10"}, {"id": "20"}], {"10", "20"}),
+        ([{"id": "10"}, {"id": "10"}], {"10"}),  # duplicado
+        ([{"id": "1" * 21}, {"id": "1a"}, {"id": 30}, {"id": ""}, {"name": "x"}, "texto", None], set()),  # formato
+        ([{"id": "99"}], set()),  # gerenciável: fica em ``guilds``, nunca aqui
+        ([{"id": "77"}], set()),  # sem bot pronto do pool
+    ],
+)
+def test_member_guild_ids_keep_only_well_formed_unmanaged_ids_with_a_ready_bot(raw, expected):
+    from empiremuse.panel.oauth import parse_member_guild_ids
+
+    found = parse_member_guild_ids(raw, managed_ids={"99"}, has_ready_bot=lambda gid: gid != "77")
+
+    assert found == frozenset(expected) and isinstance(found, frozenset)
+
+
+@pytest.mark.critical
+def test_member_guild_ids_of_a_non_list_is_empty():
+    from empiremuse.panel.oauth import parse_member_guild_ids
+
+    assert parse_member_guild_ids({"id": "10"}, managed_ids=set(), has_ready_bot=lambda gid: True) == frozenset()

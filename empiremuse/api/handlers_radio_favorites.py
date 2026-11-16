@@ -11,7 +11,8 @@ do estado). O usuário e o servidor vêm só da sessão e do caminho; o nome nun
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Awaitable, Callable
+from typing import Any, Protocol
 
 from empiremuse.api.errors import FORBIDDEN, ApiError, not_found, validation_failed
 from empiremuse.api.idempotency import Reply
@@ -25,6 +26,17 @@ from empiremuse.utils.radio.favorites import SERVER_FAVORITES_MAX, AddResult, Fa
 from empiremuse.utils.radio.custom_favorites import MAX_CUSTOM_FAVORITES
 from empiremuse.utils.radio.favorite_refs import is_genre, resolve_refs
 from empiremuse.utils.usage import record_panel_action
+
+
+class GuildUser(Protocol):
+    """O que as listas precisam: o servidor do CAMINHO e o usuário da SESSÃO (``FormContext`` de gerente ou ``MemberContext`` de membro)."""
+
+    @property
+    def guild_id(self) -> int: ...
+
+    @property
+    def user_id(self) -> Any: ...
+
 
 ACTION_LABEL = "radios/favoritas"  # rótulo FIXO do registro de uso do painel (nunca o id nem o nome)
 PREMIUM_KINDS = ("custom", "genre")  # estação do servidor e gênero pronto são recurso premium; a ao vivo não
@@ -44,7 +56,7 @@ def ref_item(ref: str, station: Any) -> dict[str, Any]:
     return entry
 
 
-async def ref_items(hub: Any, ctx: FormContext, refs: list[str]) -> list[dict[str, Any]]:
+async def ref_items(hub: Any, ctx: GuildUser, refs: list[str]) -> list[dict[str, Any]]:
     """As entradas de uma lista: as ``custom`` numa leitura só das estações do servidor (nunca uma por favorita); o gênero vem do catálogo, sem banco.
     A de outro servidor não está nessa leitura e sai como ``missing``, igual a uma apagada."""
     return [ref_item(ref, station) for ref, station in await resolve_refs(hub, ctx.guild_id, refs)]
@@ -54,7 +66,7 @@ def envelope(items: list[dict[str, Any]], maximum: int) -> dict[str, Any]:
     return {"items": items, "max": maximum, "total": len(items)}
 
 
-async def server_listing(hub: Any, ctx: FormContext) -> dict[str, Any]:
+async def server_listing(hub: Any, ctx: GuildUser) -> dict[str, Any]:
     """A lista do servidor: as ao vivo (nome guardado, já tratado) e depois as ``custom``/``genre``, cada grupo na ordem de inserção."""
     stations, refs = await hub.favorites.list_all(ctx.guild_id)
     items: list[dict[str, Any]] = [
@@ -64,10 +76,53 @@ async def server_listing(hub: Any, ctx: FormContext) -> dict[str, Any]:
     return envelope(items, SERVER_FAVORITES_MAX)
 
 
-async def mine_listing(hub: Any, ctx: FormContext) -> dict[str, Any]:
+async def mine_listing(hub: Any, ctx: GuildUser) -> dict[str, Any]:
     """As ``custom``/``genre`` do PRÓPRIO usuário neste servidor (a chave do documento é montada aqui, da sessão e do caminho)."""
     ids = await hub.custom_favorites.list(ctx.guild_id, int(ctx.user_id))
     return envelope(await ref_items(hub, ctx, ids), MAX_CUSTOM_FAVORITES)
+
+
+async def favorite_change_reply(
+    change: Callable[[], Awaitable[Any]], listing: Callable[[], Awaitable[dict[str, Any]]], usage: Any
+) -> Reply:
+    """O miolo de TODA escrita de favorita (gerente e membro, revisão do PR 264): ``change`` adiciona (``AddResult``) ou remove; a resposta é a lista
+    atualizada. Cheia = ``400 limit``; recusa do store = ``403``; estação desconhecida ou de outro servidor = ``404``; armazém fora = ``503``. O status sai
+    sempre no registro de uso (``usage``: o ``FormContext`` ou o objeto só de uso do membro), com o rótulo fixo."""
+    status = 200
+    try:
+        if await change() is AddResult.FULL:
+            raise validation_failed("limit")
+        return Reply(200, await listing())
+    except ApiError as error:  # o 400 de "cheia" e os demais erros da API passam como estão, com o próprio status
+        status = error.status_code
+        raise
+    except FavoriteForbidden:
+        status = 403
+        raise ApiError(403, FORBIDDEN) from None
+    except FavoriteNotFound:
+        status = 404
+        raise not_found() from None
+    except RadioUnavailable:
+        status = 503
+        raise
+    except Exception:
+        status = 500
+        raise
+    finally:
+        record_panel_action(usage, ACTION_LABEL, status)
+
+
+async def mine_add(hub: Any, ctx: GuildUser, favorite: RadioFavorite) -> AddResult:
+    """Adiciona às ``custom``/``genre`` do usuário da SESSÃO no servidor do CAMINHO; a de outro servidor é igual a uma que não existe."""
+
+    async def exists(ref: str) -> bool:
+        return await hub.stations.get(ctx.guild_id, ref) is not None
+
+    return await hub.custom_favorites.add(ctx.guild_id, int(ctx.user_id), favorite.id, exists)
+
+
+async def mine_remove(hub: Any, ctx: GuildUser, favorite: RadioFavorite) -> bool:
+    return await hub.custom_favorites.remove(ctx.guild_id, int(ctx.user_id), favorite.id)
 
 
 class FavoriteListRoute(RadioRoute):
@@ -102,30 +157,7 @@ class FavoriteListRoute(RadioRoute):
         favorite = parse_radio_favorite(body, self.kinds)
 
         async def work() -> Reply:
-            status = 200
-            try:
-                if await self.add(ctx, favorite) is AddResult.FULL:
-                    raise validation_failed("limit")
-                return Reply(200, await self.listing(ctx))
-            except (
-                ApiError
-            ) as error:  # o 400 de "cheia" e os demais erros da API passam como estão, com o próprio status
-                status = error.status_code
-                raise
-            except FavoriteForbidden:
-                status = 403
-                raise ApiError(403, FORBIDDEN) from None
-            except FavoriteNotFound:
-                status = 404
-                raise not_found() from None
-            except RadioUnavailable:
-                status = 503
-                raise
-            except Exception:
-                status = 500
-                raise
-            finally:
-                record_panel_action(ctx, ACTION_LABEL, status)
+            return await favorite_change_reply(lambda: self.add(ctx, favorite), lambda: self.listing(ctx), ctx)
 
         await self.run_write(body, work)
 
@@ -135,25 +167,8 @@ class FavoriteListRoute(RadioRoute):
         query = self.query_arguments("kind", "id")
         favorite = parse_radio_favorite(query, self.kinds)
 
-        async def work() -> Reply:
-            status = 200
-            try:
-                await self.remove(ctx, favorite)  # remover o que não está = 200, como na conta
-                return Reply(200, await self.listing(ctx))
-            except ApiError as error:  # ex.: a rádio desligada neste bot (503), nunca registrada como 500
-                status = error.status_code
-                raise
-            except FavoriteForbidden:
-                status = 403
-                raise ApiError(403, FORBIDDEN) from None
-            except RadioUnavailable:
-                status = 503
-                raise
-            except Exception:
-                status = 500
-                raise
-            finally:
-                record_panel_action(ctx, ACTION_LABEL, status)
+        async def work() -> Reply:  # remover o que não está = 200, como na conta
+            return await favorite_change_reply(lambda: self.remove(ctx, favorite), lambda: self.listing(ctx), ctx)
 
         await self.run_write(query, work)
 
@@ -188,12 +203,10 @@ class MyFavoritesHandler(FavoriteListRoute):
         return await mine_listing(self.hub(ctx), ctx)
 
     async def add(self, ctx: FormContext, favorite: RadioFavorite) -> AddResult:
-        return await self.hub(ctx).custom_favorites.add(
-            ctx.guild_id, int(ctx.user_id), favorite.id, lambda ref: self.exists(ctx, ref)
-        )
+        return await mine_add(self.hub(ctx), ctx, favorite)
 
     async def remove(self, ctx: FormContext, favorite: RadioFavorite) -> bool:
-        return await self.hub(ctx).custom_favorites.remove(ctx.guild_id, int(ctx.user_id), favorite.id)
+        return await mine_remove(self.hub(ctx), ctx, favorite)
 
 
 class GuildRadioFavoritesHandler(RadioRoute):

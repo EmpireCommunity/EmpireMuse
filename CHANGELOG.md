@@ -8,9 +8,11 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 ## [Unreleased]
 
 ### Adicionado
+- API para painéis externos: visão de membro das rádios favoritas. Quem participa de um servidor sem gerenciá-lo vê a lista do servidor (só leitura) e mantém as próprias favoritas naquele servidor (estações do servidor e gêneros, Limitadas a Apoiadores para adicionar). Rotas novas em `/api/v1/member` e o recurso `member-favorites` em `/meta`.
 - `site-data.json`: o campo opcional `supporter_limited` marca os comandos que o bot recusa num servidor sem o acesso Limitado a Apoiadores (hoje `/radio on`, `/radio setup`, `/radio station` e o prefixo `radio on`), para o site mostrar o selo em /commands. Aditivo na versão 1 do formato.
 
 ### Corrigido
+- Painel: o apagamento de dados e o banimento passam a descartar na hora as decisões de servidor guardadas em memória para a pessoa.
 - Rádios: dois processos do bot usando o mesmo MongoDB não conseguem mais gravar duas estações com o mesmo nome no mesmo servidor (índice único; a segunda gravação recebe o aviso de nome já usado, como dentro de um processo). Uma instalação própria que já tenha nomes repetidos só ganha um aviso no log, com a contagem, e segue funcionando. O cache de faixas resolvidas passa a ser limpo pelo próprio MongoDB quando vence, e as entradas antigas, sem data de validade, são apagadas uma vez na subida (voltam a ser buscadas quando a faixa for sorteada). Os índices são criados em segundo plano, com novas tentativas, sem atrasar a volta das rádios.
 - Apagar meus dados: o resumo que o painel mostra passa a citar os avisos de entrada e saída de servidor, que guardam o nome e o ID de quem é dono do servidor por 6 meses (código novo `guild_join_leave_notices` em `keeps`, aditivo na API); as cópias de segurança do provedor guardam dados apagados por até 2 semanas, não 4, no resumo, no `/apagar`, na DM do pedido do dono e na página do painel genérico. Essas três telas também passam a citar os avisos de entrada e saída dos servidores de que a pessoa é dono e deixam de dizer que os registros ficam para cumprir a lei: ficam para proteger o serviço.
 - Rádios: os avisos de servidor sem acesso e a descrição do `/radio` dizem "Limitadas a Apoiadores" (acesso concedido à mão por quem cuida do bot, quando há capacidade) em vez de "premium", e o aviso de servidor sem acesso diz como pedir: um ticket no servidor de suporte configurado (`SUPPORT_SERVER`), ou, sem ele, falar com quem cuida do bot.
@@ -119,8 +121,6 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ### Removido
 - Código sem uso do `/radio setup`: `choose_station`, `StationSelect`, `apply_live` e os textos `radio.setup.no_stations`, `pick_station`, `select_placeholder`, `expired`, `confirm_station` e `station_saved`. Desde o R1 o setup liga a rádio em espera e a estação se escolhe no painel; nada muda para o usuário.
-
-### Corrigido
 - Menus efêmeros de favoritas de rádio e o botão Tocar do gerenciador de favoritas recebem IDs únicos por view; abrir dois menus simultâneos, do mesmo membro ou de membros diferentes, mantém cada interação no menu correto.
 - Menus de favoritas do Discord: falhas ao resolver rótulos de estações personalizadas e gêneros agora mantêm a gerência de rádios ao vivo (e os filtros pessoais) disponível, com aviso e botão para tentar de novo na seção afetada. Limpar a lista inteira do servidor fica desabilitado enquanto as referências são desconhecidas. Componentes usam IDs estáveis com prefixo da funcionalidade, e os botões pt-BR/en-US explicitam estações personalizadas e gêneros.
 - Apagamento e banimento de usuário: a falha de um ouvinte de limpeza das sessões do painel (`UserCleanupError`) não zera mais a contagem de sessões destruídas no apagamento nem é tratada como corte de acesso falho no banimento (as sessões já caíram); o erro passou a viver em `empiremuse/rules/user_cleanup.py`.

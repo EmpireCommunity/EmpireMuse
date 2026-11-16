@@ -7,6 +7,7 @@ import base64
 import hashlib
 import re
 import secrets
+from collections.abc import Collection
 from typing import Any, Callable, Optional, Protocol
 from urllib.parse import urlencode
 
@@ -211,3 +212,20 @@ def parse_managed_guilds(raw: list[dict]) -> tuple[ManagedGuild, ...]:
         if guild.owner or permissions & MANAGEMENT_PERMISSIONS:
             guilds.append(guild)
     return tuple(guilds)
+
+
+def parse_member_guild_ids(
+    raw: object, *, managed_ids: Collection[str], has_ready_bot: Callable[[str], bool]
+) -> frozenset[str]:
+    """Os servidores em que a pessoa é só MEMBRO (T-660): ids no formato, fora dos gerenciáveis (``managed_ids``) e com um bot pronto
+    do pool agora (``has_ready_bot``). Só os ids ficam (a lista bruta do Discord nunca sai de quem chama); é pré-filtro, nunca decisão."""
+    if not isinstance(raw, list):
+        return frozenset()
+    found: set[str] = set()
+    for item in raw:
+        guild_id = item.get("id") if isinstance(item, dict) else None
+        if not isinstance(guild_id, str) or not _GUILD_ID.fullmatch(guild_id) or guild_id in managed_ids:
+            continue
+        if guild_id not in found and has_ready_bot(guild_id):
+            found.add(guild_id)
+    return frozenset(found)

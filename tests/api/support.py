@@ -10,10 +10,12 @@ from empiremuse.api.context import ApiContext
 from empiremuse.api.idempotency import IdempotencyStore
 from empiremuse.api.keys import ServiceKeys
 from empiremuse.api.limits import ApiLimits
+from empiremuse.api.runtime import register_user_listeners
 from empiremuse.api.server import API_PREFIX, ApiHTTPServer, build_api_app
 from empiremuse.api.settings import load_external_panel_settings
 from empiremuse.api.signing import PURPOSE_ERASURE, PURPOSE_JUKEBOX, PURPOSE_RADIO_RESET, derive_key
 from empiremuse.panel.authz import GuildAuthorizer
+from empiremuse.panel.member_authz import MemberAuthorizer
 from empiremuse.panel.oauth import DiscordOAuthClient, DiscordOAuthError
 from empiremuse.panel.services.jukebox import JukeboxService
 from empiremuse.panel.services.radio import RadioPage
@@ -142,12 +144,14 @@ class ApiTestCase(AsyncHTTPTestCase):
             radio_setup_service=RadioSetupService(
                 derive_key(self.settings.signing_secret, PURPOSE_RADIO_RESET), self.clock
             ),
+            member_authorizer=MemberAuthorizer(self.pool, clock=self.clock),
         )
-        self.store.add_user_listener(self.ctx.idempotency.purge_user)
+        register_user_listeners(self.store, self.ctx)  # a mesma ligação do runtime
         return build_api_app(self.ctx)
 
     def make_pool(self):
-        return SimpleNamespace(bots=[SimpleNamespace(application_id=CLIENT_ID)], database=None)
+        bot = SimpleNamespace(application_id=CLIENT_ID, is_ready=lambda: False, get_guild=lambda guild_id: None)
+        return SimpleNamespace(bots=[bot], database=None)
 
     def advance(self, seconds: float) -> None:
         """Avança o relógio monótono do store e o de parede (as datas da resposta seguem os dois)."""

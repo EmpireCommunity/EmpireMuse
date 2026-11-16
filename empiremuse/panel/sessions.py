@@ -7,7 +7,7 @@ import logging
 import secrets
 import time
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 from empiremuse.panel.settings import PanelSettings
@@ -52,6 +52,9 @@ class Session:
     last_seen: float
     consented_at: Optional[float] = None  # só quando o login saiu com ``prompt=consent`` (apagar dados exige isso)
     key_fingerprint: Optional[str] = None  # só nas sessões da API externa: a impressão da chave de serviço que a criou
+    # T-660: só os ids dos servidores em que a pessoa é MEMBRO (não gerencia) e que têm bot pronto, lidos no login da API externa.
+    # Pré-filtro da visão de membro, nunca decisão; fora de ``repr`` e de todo payload; o painel legado deixa vazio.
+    member_guild_ids: frozenset[str] = field(default=frozenset(), repr=False)
 
 
 class SessionStore:
@@ -74,10 +77,17 @@ class SessionStore:
         self._insert(session_id, user, guilds, consented=consented)
         return session_id
 
-    def create_api(self, user: PanelUser, guilds: tuple[ManagedGuild, ...], key_fingerprint: str) -> str:
+    def create_api(
+        self,
+        user: PanelUser,
+        guilds: tuple[ManagedGuild, ...],
+        key_fingerprint: str,
+        *,
+        member_guild_ids: frozenset[str] = frozenset(),
+    ) -> str:
         """Sessão da API externa: devolve o token (mostrado uma única vez); no store fica só o SHA-256 dele, preso à chave."""
         token = secrets.token_urlsafe(API_TOKEN_BYTES)
-        self._insert(_api_id(token), user, guilds, key_fingerprint=key_fingerprint)
+        self._insert(_api_id(token), user, guilds, key_fingerprint=key_fingerprint, member_guild_ids=member_guild_ids)
         return token
 
     def _insert(
@@ -88,6 +98,7 @@ class SessionStore:
         *,
         consented: bool = False,
         key_fingerprint: Optional[str] = None,
+        member_guild_ids: frozenset[str] = frozenset(),
     ) -> None:
         now = self._clock()
         self._sweep(now)
@@ -103,6 +114,7 @@ class SessionStore:
             last_seen=now,
             consented_at=now if consented else None,
             key_fingerprint=key_fingerprint,
+            member_guild_ids=frozenset(member_guild_ids),
         )
 
     def get(self, session_id: Optional[str]) -> Optional[Session]:

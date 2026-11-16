@@ -370,10 +370,13 @@ class OpenApiDataContractTest(DataApiCase):
         erasure = (
             BASE + "/account/erasure"
         )  # as rotas de apagar dados (B5) têm o contrato delas (``test_openapi_erasure``)
+        member = BASE + "/member/"  # a visão de membro (T-660) tem o contrato dela (``test_member_favorites``)
         faltando = {
             item
             for item in documented(self.spec)
-            if item[1] not in FOUNDATION_PATHS and not any(p in item[1] for p in b4) and not item[1].startswith(erasure)
+            if item[1] not in FOUNDATION_PATHS
+            and not any(p in item[1] for p in b4)
+            and not item[1].startswith((erasure, member))
         } - self.seen
 
         assert not faltando, f"documentados e nunca observados: {sorted(faltando)}"

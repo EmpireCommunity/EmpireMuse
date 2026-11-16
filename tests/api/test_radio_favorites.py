@@ -518,7 +518,10 @@ class RadioFavoritesContract(FavoritesApiCase):
         if not casos <= self.ran:
             pytest.skip("só vale com todos os casos da classe rodando (o ``-k`` deixa casos de fora)")
         faltando = {
-            item for item in documented(self.spec) if "/guilds/{guild_id}/radio-favorites" in item[1]
+            item
+            for item in documented(self.spec)
+            if "/guilds/{guild_id}/radio-favorites" in item[1]
+            and "/member/" not in item[1]  # membro: ``test_member_favorites``
         } - self.seen
 
         assert not faltando, f"documentados e nunca observados: {sorted(faltando)}"
