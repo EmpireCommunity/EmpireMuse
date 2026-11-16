@@ -211,7 +211,7 @@ jobs:
           # um dos testes de namespace não PASSAR. Sem filtro por mudança de arquivo: um PR só em deploy/host/ também precisa disto.
           set -o pipefail
           sudo "$(command -v python)" -m pytest tests/deploy/test_cf_firewall.py -rA -p no:cacheprovider --no-header | tee "$RUNNER_TEMP/cf-firewall.txt"
-          for teste in test_on_off_em_namespace_isolado test_ipv6_publicado_pelo_docker_proxy_e_filtrado_pela_input test_falha_no_ipv6_depois_do_ipv4_desfaz_tudo; do
+          for teste in test_on_off_em_namespace_isolado test_ipv6_publicado_pelo_docker_proxy_e_filtrado_pela_input test_falha_no_ipv6_depois_do_ipv4_desfaz_tudo test_sem_input_v6_filtravel_o_on_falha_fechado_e_nao_liga_o_ipv4; do
             grep -q "^PASSED tests/deploy/test_cf_firewall.py::$teste\$" "$RUNNER_TEMP/cf-firewall.txt" || { echo "::error::$teste não passou (pulado ou ausente)"; exit 1; }
           done
           if grep -q '^SKIPPED' "$RUNNER_TEMP/cf-firewall.txt"; then echo "::error::teste de firewall pulado"; exit 1; fi
