@@ -330,14 +330,19 @@ def _emoji_button(emojis: Emojis, icon: str, custom_id: str, danger: bool = Fals
     return disnake.ui.Button(emoji=emojis(icon), custom_id=custom_id, style=style)
 
 
-def _station_select(tr: Any, snapshot: Any) -> disnake.ui.Select:
-    """Select 1: as estações da lista ativa (a janela do snapshot, até 25), com o ponto de qualidade; a atual marcada."""
+def _station_select(tr: Any, snapshot: Any, *, custom: bool = False) -> disnake.ui.Select:
+    """Select 1: as estações da lista ativa (a janela do snapshot, até 25), com o ponto de qualidade; a atual marcada.
+
+    Ao vivo, o nome veio do diretório GUARDADO escapado (``stored_text``); na personalizada a opção já chega CRUA de ``station_label(markdown=False)``,
+    então a barra é do próprio nome e fica (``external_text``).
+    """
+    clean = external_text if custom else stored_text
     stations = tuple(getattr(snapshot, "stations", ()) or ())[:SELECT_LIMIT]
     index = getattr(snapshot, "current_index", None)
     current = stations[index].id if index is not None and 0 <= int(index) < len(stations) else None
     options: list[disnake.SelectOption] = []
     for station in stations:
-        name = stored_text(station.name, NAME_LIMIT, markdown=False)  # select: sem markdown
+        name = clean(station.name, NAME_LIMIT, markdown=False)  # select: sem markdown
         label = f"{int(station.position)}. {name}" if int(station.position or 0) >= 1 else name
         codec = external_text(station.codec, 8).upper()
         description = ""
@@ -506,7 +511,7 @@ def visor_payload(
         "components": [
             disnake.ui.ActionRow(*row1),
             disnake.ui.ActionRow(*row2),
-            disnake.ui.ActionRow(_station_select(tr, snapshot)),
+            disnake.ui.ActionRow(_station_select(tr, snapshot, custom=custom)),
             disnake.ui.ActionRow(filter_select),
         ],
         "file": disnake.File(io.BytesIO(picture), filename=VISOR_NAME),

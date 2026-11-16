@@ -391,3 +391,26 @@ def test_the_custom_visor_only_has_buttons_the_cog_answers_and_walks_the_station
     actions = {panel_action(i) for i in ids}
     assert not (actions & LIVE_ACTIONS) and "next" not in actions
     assert CUSTOM_ACTIONS <= actions and {"favorite", "random", "stop"} <= actions
+
+
+@pytest.mark.regression
+def test_the_custom_station_select_keeps_a_literal_backslash_and_the_live_one_shows_one_escape_less():
+    """CodeRabbit PR 257: a opção da personalizada já vem crua (``station_label(markdown=False)``); a barra é do nome e fica."""
+    from empiremuse.rules.text import external_text
+    from empiremuse.utils.radio.panel import visor_payload
+    from empiremuse.utils.radio.snapshot import StationOption
+
+    raw = "AC\\DC"
+    custom = custom_snapshot(stations=(StationOption(1, f"{1:024x}", raw, 0, "", "good"),))
+    live = snapshot(stations=(StationOption(1, "id1", external_text(raw, 100), 64, "mp3", "good"),), current_index=0)
+
+    def label(snap, **kwargs):
+        return (
+            visor_payload(PT, snap, filter_options=[], color=0, picture=b"x", **kwargs)["components"][2]
+            .children[0]
+            .options[0]
+            .label
+        )
+
+    assert label(custom, custom=True) == f"1. {raw}"
+    assert label(live) == f"1. {raw}"  # o ao vivo foi guardado escapado: o select tira o escape antigo
