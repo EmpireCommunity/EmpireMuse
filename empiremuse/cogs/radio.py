@@ -165,6 +165,8 @@ class Radio(RadioPrefixCommands, commands.Cog):
             await migrate_genres.run(self.hub)
         except Exception as error:  # noqa: BLE001 - sem marcador, a próxima subida retoma
             logger.warning("Migração dos gêneros falhou (%s)", type(error).__name__)
+        # depois das migrações (que apagam e criam estações), numa tarefa de fundo com novas tentativas: nunca segura a retomada nem derruba a subida
+        manager._spawn(self.hub.ensure_indexes())
         await self.hub.health.refresh()
         self.hub.health_checker.start()
         # com nova tentativa (30 s, 60 s... 5 min): uma falha passageira do banco na subida não deixa as rádios caídas até o restart

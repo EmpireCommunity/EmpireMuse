@@ -16,7 +16,7 @@ import disnake
 from cachetools import TTLCache
 from disnake.ext import commands
 from pymongo import AsyncMongoClient
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError, OperationFailure
 from tinydb_serialization import Serializer, SerializationMiddleware
 from tinymongo import TinyMongoClient
 from tinymongo.serializers import DateTimeSerializer
@@ -149,11 +149,48 @@ def stored_rev(stored: collections.abc.Mapping) -> object:
     return stored.get("rev", LEGACY_REV)
 
 
+DUPLICATE_KEY = 11000  # o código do MongoDB para chave repetida num índice único (na escrita e na criação do índice)
+
+
+class UniqueIndexViolation(Exception):
+    """A escrita (ou a criação de um índice único) bateu num índice único que NÃO é o ``_id``: quem chama traduz para o erro da regra."""
+
+
+INDEX_DEFINITION_CODES = frozenset(
+    {85, 86}
+)  # IndexOptionsConflict, IndexKeySpecsConflict: o índice existe com outra definição
+
+
+class IndexDefinitionConflict(Exception):
+    """Já existe um índice com o mesmo nome (ou as mesmas chaves) e outra definição: só alguém mexendo no banco resolve, tentar de novo não."""
+
+
 def rev_filter(expected_rev: int) -> dict:
     """O filtro do Mongo para "o ``rev`` guardado é ``expected_rev``": ``rev`` 0 também casa o documento antigo sem o campo."""
     if expected_rev == LEGACY_REV:
         return {"$or": [{"rev": LEGACY_REV}, {"rev": {"$exists": False}}]}
     return {"rev": expected_rev}
+
+
+_ID_INDEX_MARK = "index: _id_ "  # como o MongoDB nomeia o índice do ``_id`` na mensagem do E11000
+_INDEX_MARK = "index: "
+
+
+def _is_id_key(error: DuplicateKeyError) -> bool:
+    """A chave repetida é o ``_id`` (o documento já existe), e não um índice único secundário?
+
+    Confere, na ordem, ``keyPattern``, ``keyValue`` e o nome do índice na mensagem (servidor antigo pode não mandar os dois primeiros).
+    Sem nenhum desses sinais, conta como ``_id`` (o comportamento de antes).
+    """
+    details = error.details or {}
+    for field in ("keyPattern", "keyValue"):
+        keys = details.get(field)
+        if isinstance(keys, dict) and keys:
+            return set(keys) == {"_id"}
+    message = str(details.get("errmsg") or error)
+    if _ID_INDEX_MARK in message:
+        return True
+    return _INDEX_MARK not in message
 
 
 class BaseDB:
@@ -287,6 +324,23 @@ class LocalDatabase(BaseDB):
 
     async def ensure_event_indexes(self, *, db_name: str, collection: str) -> None:
         return None
+
+    async def ensure_unique_index(
+        self, keys: list[tuple[str, int]], *, partial: dict, name: str, db_name: str, collection: str
+    ) -> None:
+        """Sem índice no TinyDB: a unicidade fica só com a trava em memória de quem grava (um processo)."""
+        return None
+
+    async def count_duplicate_groups(self, keys: list[str], *, match: dict, db_name: str, collection: str) -> int:
+        return 0
+
+    async def ensure_ttl_index(self, field: str, *, db_name: str, collection: str) -> None:
+        """Sem TTL no TinyDB: a validade fica com a conferência no código de quem lê."""
+        return None
+
+    async def delete_matching(self, filter: dict, *, db_name: str, collection: str) -> int:
+        """Sem TTL no TinyDB não há o que limpar por filtro (a validade é conferida por quem lê): nada é apagado."""
+        return 0
 
     async def find_doc(self, id_, *, db_name: str, collection: str) -> Optional[dict]:
         """O documento como está no banco: sem cache e sem criar o padrão (``None`` se não existe)."""
@@ -481,22 +535,70 @@ class MongoDatabase(BaseDB):
         await events.create_index("expire_at", expireAfterSeconds=0)
         await events.create_index([("guild", 1), ("ts", -1)])
 
+    async def ensure_unique_index(
+        self, keys: list[tuple[str, int]], *, partial: dict, name: str, db_name: str, collection: str
+    ) -> None:
+        """Cria (idempotente) o índice único PARCIAL ``keys``. Dados já repetidos impedem a criação: ``UniqueIndexViolation``."""
+        try:
+            await self._connect[collection][db_name].create_index(
+                keys, unique=True, partialFilterExpression=partial, name=name
+            )
+        except OperationFailure as error:
+            if error.code == DUPLICATE_KEY:
+                raise UniqueIndexViolation from error
+            if error.code in INDEX_DEFINITION_CODES:
+                raise IndexDefinitionConflict from error
+            raise
+
+    async def count_duplicate_groups(self, keys: list[str], *, match: dict, db_name: str, collection: str) -> int:
+        """Quantos grupos de ``keys`` têm mais de um documento entre os que casam ``match`` (só a contagem: nunca os valores)."""
+        pipeline = [
+            {"$match": match},
+            {"$group": {"_id": {key: f"${key}" for key in keys}, "n": {"$sum": 1}}},
+            {"$match": {"n": {"$gt": 1}}},
+            {"$count": "groups"},
+        ]
+        cursor = await self._connect[collection][db_name].aggregate(pipeline)
+        rows = [row async for row in cursor]
+        return int(rows[0]["groups"]) if rows else 0
+
+    async def ensure_ttl_index(self, field: str, *, db_name: str, collection: str) -> None:
+        """O MongoDB apaga o documento quando a data em ``field`` passa (``expireAfterSeconds=0``); documento sem o campo não expira por aqui."""
+        try:
+            await self._connect[collection][db_name].create_index(field, expireAfterSeconds=0)
+        except OperationFailure as error:
+            if error.code in INDEX_DEFINITION_CODES:
+                raise IndexDefinitionConflict from error
+            raise
+
+    async def delete_matching(self, filter: dict, *, db_name: str, collection: str) -> int:
+        """Apaga os documentos que casam ``filter`` e devolve quantos. Só para coleção sem cache de documento (o cache por id não é tocado)."""
+        result = await self._connect[collection][db_name].delete_many(filter)
+        return int(result.deleted_count)
+
     async def find_doc(self, id_, *, db_name: str, collection: str) -> Optional[dict]:
         """O documento como está no banco: sem cache e sem criar o padrão (``None`` se não existe)."""
         return await self._connect[collection][db_name].find_one({"_id": str(id_)})
 
     async def save_doc_cas(self, id_, doc: dict, *, expected_rev: Optional[int], db_name: str, collection: str) -> bool:
-        """Grava ``doc`` só se o ``rev`` guardado ainda é ``expected_rev`` (``None`` = o documento ainda não existe)."""
+        """Grava ``doc`` só se o ``rev`` guardado ainda é ``expected_rev`` (``None`` = o documento ainda não existe).
+
+        Bater num índice único que não é o ``_id`` (nome de estação repetido no servidor) levanta ``UniqueIndexViolation``, nunca ``False``."""
         id_ = str(id_)
         table = self._connect[collection][db_name]
         body = {k: v for k, v in doc.items() if k != "_id"}
         if expected_rev is None:
             try:
                 await table.insert_one({**body, "_id": id_})
-            except DuplicateKeyError:
-                return False
+            except DuplicateKeyError as error:
+                if _is_id_key(error):
+                    return False  # o documento já existe: é a resposta do CAS
+                raise UniqueIndexViolation from error
             return True
-        result = await table.update_one({"_id": id_, **rev_filter(expected_rev)}, {"$set": body})
+        try:
+            result = await table.update_one({"_id": id_, **rev_filter(expected_rev)}, {"$set": body})
+        except DuplicateKeyError as error:
+            raise UniqueIndexViolation from error
         return result.matched_count == 1
 
     async def wipe(self, databases: Iterable[str], keep: frozenset[tuple[str, str]]) -> dict[str, int]:
