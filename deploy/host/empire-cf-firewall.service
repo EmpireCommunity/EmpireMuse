@@ -1,0 +1,49 @@
+# Liga o firewall da porta 443 (cf-firewall.sh) quando o Docker sobe e o refaz quando ele reinicia. Ver deploy/README.md.
+# Instalar em /etc/systemd/system/, com o script em /usr/local/sbin/ (root, 0755) e as listas em /etc/empire/.
+# Sem este serviço habilitado, um reinício do host apaga as regras (volta ao estado sem firewall).
+#
+# Ciclo de vida: WantedBy=docker.service faz QUALQUER início do Docker (inclusive stop e depois start, ou ativação pelo
+# docker.socket) puxar esta unit; WantedBy=multi-user.target cobre o boot. PartOf=docker.service propaga parada e reinício:
+# o Docker parado desliga o firewall (off) e o Docker iniciado o liga de novo (on). Isso é proposital: com o Docker parado
+# nada escuta a 443 (o Traefik é um container), e o off+on garante um único gancho mesmo que o Docker recrie as cadeias.
+# PRÉ-CONDIÇÃO: `docker info -f '{{.LiveRestoreEnabled}}'` tem de ser `false`. Com `"live-restore": true` no daemon.json, parar
+# o Docker NÃO para os containers: o Traefik, o docker-proxy e o DNAT continuam de pé enquanto o PartOf roda o `off`, e a 443
+# fica aberta a todos, sem alarme, até o Docker voltar. Com live-restore ligado, não instale esta unit sem decisão do Dono
+# (por exemplo, tirar o ExecStop e deixar só o `on` idempotente).
+# O que fica aberto é só o intervalo entre o dockerd subir e o `on` rodar (After=docker.service, segundos), e os containers
+# com restart policy podem subir nesse intervalo: o mTLS de origem é a barreira principal.
+#
+# O script não baixa nada: usa as listas estáticas de /etc/empire. Se as listas forem inválidas ou a cadeia DOCKER-USER não
+# existir, o `on` falha SEM tocar nas regras (ou desfaz o que aplicou) e a unit fica `failed`. Confira depois de todo reboot e
+# de toda parada ou reinício do Docker: `systemctl is-active empire-cf-firewall.service` = active E `cf-firewall.sh status`
+# com exit 0 (ganchos presentes). is-failed sozinho não pega uma unit inativa.
+[Unit]
+Description=Firewall da porta 443: só as faixas da Cloudflare
+After=docker.service
+Wants=docker.service
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/cf-firewall.sh on
+ExecStop=/usr/local/sbin/cf-firewall.sh off
+# O iptables precisa de CAP_NET_ADMIN e CAP_NET_RAW e de um lock gravável; por isso ProtectSystem=full (deixa /usr, /boot e /etc
+# só de leitura) e não strict. Não usar ProtectKernelModules: o iptables-legacy pode chamar o modprobe.
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+RestrictNamespaces=true
+LockPersonality=true
+SystemCallArchitectures=native
+ProtectHostname=true
+ProtectClock=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ProtectKernelTunables=true
+
+[Install]
+WantedBy=multi-user.target docker.service

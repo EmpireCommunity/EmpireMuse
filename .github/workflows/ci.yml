@@ -203,6 +203,19 @@ jobs:
           if [ "$PASSARAM" -lt "$MINIMO" ]; then echo "::error::Esperava ao menos $MINIMO testes Mongo PASSED, vieram $PASSARAM"; exit 1; fi
           if grep -q '^SKIPPED' "$RUNNER_TEMP/mongo-integracao.txt"; then echo "::error::teste de integração pulado"; exit 1; fi
 
+      - name: Firewall da 443 (on/off, IPv6 e rollback) roda de verdade em namespace descartável (sem skip)
+        shell: bash
+        run: |
+          # Sem root o teste de rede é pulado em silêncio no pytest normal; este passo roda como root no runner descartável (cada
+          # teste faz `unshare -n`, um network namespace vazio, e se recusa a começar se ele não estiver vazio) e falha se qualquer
+          # um dos testes de namespace não PASSAR. Sem filtro por mudança de arquivo: um PR só em deploy/host/ também precisa disto.
+          set -o pipefail
+          sudo "$(command -v python)" -m pytest tests/deploy/test_cf_firewall.py -rA -p no:cacheprovider --no-header | tee "$RUNNER_TEMP/cf-firewall.txt"
+          for teste in test_on_off_em_namespace_isolado test_ipv6_publicado_pelo_docker_proxy_e_filtrado_pela_input test_falha_no_ipv6_depois_do_ipv4_desfaz_tudo test_sem_input_v6_filtravel_o_on_falha_fechado_e_nao_liga_o_ipv4 test_off_que_falha_na_remocao_nao_diz_desligado_e_sai_com_erro test_comandos_que_mudam_regras_esperam_o_lock_exclusivo; do
+            grep -q "^PASSED tests/deploy/test_cf_firewall.py::$teste\$" "$RUNNER_TEMP/cf-firewall.txt" || { echo "::error::$teste não passou (pulado ou ausente)"; exit 1; }
+          done
+          if grep -q '^SKIPPED' "$RUNNER_TEMP/cf-firewall.txt"; then echo "::error::teste de firewall pulado"; exit 1; fi
+
       - name: Execução dos testes automatizados (pytest)
         if: steps.detect-changes.outputs.code == 'true'
         run: pytest -q --durations=30 --cov --cov-report=term-missing:skip-covered

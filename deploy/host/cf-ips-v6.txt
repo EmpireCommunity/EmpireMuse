@@ -1,0 +1,9 @@
+# Faixas IPv6 da Cloudflare (https://www.cloudflare.com/ips-v6), copiadas em 2026-11-16. Lista estática e revisada: o firewall NÃO baixa nada.
+# Atualizar à mão e por PR. Uma faixa nova da Cloudflare que não esteja aqui é cortada pelo firewall (ver deploy/README.md).
+2400:cb00::/32
+2606:4700::/32
+2803:f800::/32
+2405:b500::/32
+2405:8100::/32
+2a06:98c0::/29
+2c0f:f248::/32
