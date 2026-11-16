@@ -3972,7 +3972,7 @@ components:
           properties:
             erases:
               type: array
-              description: Códigos estáveis do que o apagamento remove (o texto é do painel).
+              description: Códigos estáveis do que o apagamento remove (o texto é do painel). A lista pode ganhar códigos novos (aditivo); quem consome mostra um texto genérico para um código que não conhece.
               items:
                 type: string
                 enum: [preferences, lastfm_and_scrobbles, saved_queue, radio_favorites, radio_editor_ids, sessions]
