@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from empiremuse.panel.services.base import FALLBACK_BOT_NAME, bot_display_name
+from empiremuse.rules.bot_name import FALLBACK_BOT_NAME, bot_display_name
 
 
 def bot(name):
