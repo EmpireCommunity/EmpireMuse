@@ -16,6 +16,7 @@ from empiremuse.api.signing import PURPOSE_ERASURE, PURPOSE_JUKEBOX, PURPOSE_RAD
 from empiremuse.api.settings import ExternalPanelConfigError, external_panel_requested, load_external_panel_settings
 from empiremuse.config_loader import resolve_port
 from empiremuse.panel.authz import GuildAuthorizer
+from empiremuse.panel.member_authz import MemberAuthorizer
 from empiremuse.panel.oauth import make_client_provider
 from empiremuse.panel.services.tokens import SignedTokens
 from empiremuse.panel.services.jukebox import JukeboxService
@@ -94,6 +95,7 @@ def start_external_api(
             clock,
         ),
         radio_setup_service=RadioSetupService(derive_key(settings.signing_secret, PURPOSE_RADIO_RESET), clock),
+        member_authorizer=MemberAuthorizer(pool, clock=clock),
     )
     try:
         server = listen(ctx, settings)
@@ -113,6 +115,7 @@ def start_external_api(
 
 def register_user_listeners(store: Any, ctx: ApiContext) -> None:
     """O que o apagamento de dados e o banimento (``destroy_user``) limpam em memória além das sessões: as respostas guardadas da
-    ``Idempotency-Key`` e as decisões de servidor em cache do ``GuildAuthorizer``."""
+    ``Idempotency-Key`` e as decisões de servidor em cache do ``GuildAuthorizer`` e do ``MemberAuthorizer``."""
     store.add_user_listener(ctx.idempotency.purge_user)
     store.add_user_listener(ctx.authorizer.purge_user)
+    store.add_user_listener(ctx.member_authorizer.purge_user)

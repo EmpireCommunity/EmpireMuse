@@ -338,24 +338,30 @@ def test_destroy_user_drops_the_guild_authorizer_cache_through_the_runtime_wirin
     from empiremuse.api.idempotency import IdempotencyStore
     from empiremuse.api.runtime import register_user_listeners
     from empiremuse.panel.authz import GuildAccess, GuildAuthorizer
+    from empiremuse.panel.member_authz import MemberAccess, MemberAuthorizer
     from empiremuse.panel.sessions import SessionStore
     from tests.panel.helpers import https_config, load_settings
     from tests.panel.helpers_login import FakeClock
 
     clock = FakeClock()
     store = SessionStore(load_settings(https_config()), clock=clock)
+    pool = SimpleNamespace(bots=[])
     ctx = SimpleNamespace(
-        idempotency=IdempotencyStore(clock), authorizer=GuildAuthorizer(SimpleNamespace(bots=[]), clock=clock)
+        idempotency=IdempotencyStore(clock),
+        authorizer=GuildAuthorizer(pool, clock=clock),
+        member_authorizer=MemberAuthorizer(pool, clock=clock),
     )
     register_user_listeners(store, ctx)
     access = GuildAccess(guild_id="42", name="S", icon_url=None, bots=())
     ctx.authorizer._remember(("1001", "42"), access)
     ctx.authorizer._remember(("2002", "42"), access)
+    ctx.member_authorizer._remember(("1001", "42"), MemberAccess("42", "S", None), 0)
 
     store.destroy_user("1001")
 
     assert ctx.authorizer._cached(("1001", "42")) is None
     assert ctx.authorizer._cached(("2002", "42")) == access
+    assert ctx.member_authorizer._cached(("1001", "42")) == (False, None)  # T-660 T10: o de membro também
 
 
 class MemberGuildsAtLoginTest(ApiTestCase):

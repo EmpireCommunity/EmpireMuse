@@ -11,7 +11,7 @@ do estado). O usuário e o servidor vêm só da sessão e do caminho; o nome nun
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Protocol
 
 from empiremuse.api.errors import FORBIDDEN, ApiError, not_found, validation_failed
 from empiremuse.api.idempotency import Reply
@@ -25,6 +25,17 @@ from empiremuse.utils.radio.favorites import SERVER_FAVORITES_MAX, AddResult, Fa
 from empiremuse.utils.radio.custom_favorites import MAX_CUSTOM_FAVORITES
 from empiremuse.utils.radio.favorite_refs import is_genre, resolve_refs
 from empiremuse.utils.usage import record_panel_action
+
+
+class GuildUser(Protocol):
+    """O que as listas precisam: o servidor do CAMINHO e o usuário da SESSÃO (``FormContext`` de gerente ou ``MemberContext`` de membro)."""
+
+    @property
+    def guild_id(self) -> int: ...
+
+    @property
+    def user_id(self) -> Any: ...
+
 
 ACTION_LABEL = "radios/favoritas"  # rótulo FIXO do registro de uso do painel (nunca o id nem o nome)
 PREMIUM_KINDS = ("custom", "genre")  # estação do servidor e gênero pronto são recurso premium; a ao vivo não
@@ -44,7 +55,7 @@ def ref_item(ref: str, station: Any) -> dict[str, Any]:
     return entry
 
 
-async def ref_items(hub: Any, ctx: FormContext, refs: list[str]) -> list[dict[str, Any]]:
+async def ref_items(hub: Any, ctx: GuildUser, refs: list[str]) -> list[dict[str, Any]]:
     """As entradas de uma lista: as ``custom`` numa leitura só das estações do servidor (nunca uma por favorita); o gênero vem do catálogo, sem banco.
     A de outro servidor não está nessa leitura e sai como ``missing``, igual a uma apagada."""
     return [ref_item(ref, station) for ref, station in await resolve_refs(hub, ctx.guild_id, refs)]
@@ -54,7 +65,7 @@ def envelope(items: list[dict[str, Any]], maximum: int) -> dict[str, Any]:
     return {"items": items, "max": maximum, "total": len(items)}
 
 
-async def server_listing(hub: Any, ctx: FormContext) -> dict[str, Any]:
+async def server_listing(hub: Any, ctx: GuildUser) -> dict[str, Any]:
     """A lista do servidor: as ao vivo (nome guardado, já tratado) e depois as ``custom``/``genre``, cada grupo na ordem de inserção."""
     stations, refs = await hub.favorites.list_all(ctx.guild_id)
     items: list[dict[str, Any]] = [
@@ -64,7 +75,7 @@ async def server_listing(hub: Any, ctx: FormContext) -> dict[str, Any]:
     return envelope(items, SERVER_FAVORITES_MAX)
 
 
-async def mine_listing(hub: Any, ctx: FormContext) -> dict[str, Any]:
+async def mine_listing(hub: Any, ctx: GuildUser) -> dict[str, Any]:
     """As ``custom``/``genre`` do PRÓPRIO usuário neste servidor (a chave do documento é montada aqui, da sessão e do caminho)."""
     ids = await hub.custom_favorites.list(ctx.guild_id, int(ctx.user_id))
     return envelope(await ref_items(hub, ctx, ids), MAX_CUSTOM_FAVORITES)

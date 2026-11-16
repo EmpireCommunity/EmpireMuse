@@ -31,7 +31,16 @@ from empiremuse.utils.user_ban import user_bans_of
 logger = logging.getLogger(__name__)
 
 API_VERSIONS = ["v1"]
-FEATURES = ["sessions", "reauth", "account", "guilds", "guild-settings", "idempotency-key", "status"]
+FEATURES = [
+    "sessions",
+    "reauth",
+    "account",
+    "guilds",
+    "guild-settings",
+    "idempotency-key",
+    "status",
+    "member-favorites",
+]
 STATUS_NAME_MAX = 80  # ``str(bot.user)`` aparado: o nome é texto externo para quem consome
 STATUS_COMMIT_LENGTH = 12
 _COMMIT = re.compile(r"[0-9a-f]{7,40}", re.ASCII)

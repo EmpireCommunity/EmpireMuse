@@ -15,6 +15,7 @@ from empiremuse.api.server import API_PREFIX, ApiHTTPServer, build_api_app
 from empiremuse.api.settings import load_external_panel_settings
 from empiremuse.api.signing import PURPOSE_ERASURE, PURPOSE_JUKEBOX, PURPOSE_RADIO_RESET, derive_key
 from empiremuse.panel.authz import GuildAuthorizer
+from empiremuse.panel.member_authz import MemberAuthorizer
 from empiremuse.panel.oauth import DiscordOAuthClient, DiscordOAuthError
 from empiremuse.panel.services.jukebox import JukeboxService
 from empiremuse.panel.services.radio import RadioPage
@@ -143,6 +144,7 @@ class ApiTestCase(AsyncHTTPTestCase):
             radio_setup_service=RadioSetupService(
                 derive_key(self.settings.signing_secret, PURPOSE_RADIO_RESET), self.clock
             ),
+            member_authorizer=MemberAuthorizer(self.pool, clock=self.clock),
         )
         register_user_listeners(self.store, self.ctx)  # a mesma ligação do runtime
         return build_api_app(self.ctx)

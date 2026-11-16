@@ -11,6 +11,7 @@ from empiremuse.api.keys import ServiceKeys
 from empiremuse.api.limits import ApiLimits
 from empiremuse.api.settings import ExternalPanelSettings
 from empiremuse.panel.authz import GuildAuthorizer
+from empiremuse.panel.member_authz import MemberAuthorizer
 from empiremuse.panel.oauth import DiscordOAuthClient
 from empiremuse.panel.services.account import AccountService
 from empiremuse.panel.services.jukebox import JukeboxService
@@ -42,6 +43,7 @@ class ApiContext:
     stations_page: StationsPage
     jukebox_service: JukeboxService  # preso à subchave ``jukebox`` (``api/signing.py``), nunca à ``cookie_secret``
     radio_setup_service: RadioSetupService  # preso à subchave ``radio_reset``
+    member_authorizer: MemberAuthorizer  # T-660: a decisão de MEMBRO (cache e orçamento próprios; nunca a de gerente)
 
     def iso_at(self, monotonic_instant: float) -> str:
         """Um instante do relógio do store como data ISO 8601 em UTC (``2026-11-11T12:00:00Z``)."""
