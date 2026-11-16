@@ -6,6 +6,7 @@ Documento gravado antes do compare-and-set não tem ``rev``: as regras o leem co
 
 import asyncio
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from cachetools import TTLCache
@@ -63,13 +64,50 @@ async def test_local_save_doc_cas_troca_o_documento_legado_com_rev_0(tmp_path):
     assert banco._connect[BANCO][COLECAO].find_one({"_id": "r"})["rev"] == 1
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("guardado", "esperado", "grava"),
+    [
+        ({"rev": 3, "enabled": True}, 3, True),
+        ({"rev": 3, "enabled": True}, 2, False),  # outro processo já avançou o rev
+        ({"rev": 3, "enabled": True}, None, False),  # "ainda não existe", mas existe
+        ({"enabled": True}, 0, True),  # sem o campo rev = rev 0
+        ({"enabled": True}, 1, False),
+    ],
+    ids=["rev-bate", "rev-velho", "esperava-novo-mas-existe", "legado-rev-0", "legado-outro-rev"],
+)
+async def test_local_save_doc_cas_so_grava_com_o_rev_guardado(tmp_path, guardado, esperado, grava):
+    banco = _local_com(tmp_path, guardado)
+
+    resultado = await banco.save_doc_cas(
+        "r", {"rev": 9, "enabled": False}, expected_rev=esperado, db_name=COLECAO, collection=BANCO
+    )
+
+    assert resultado is grava
+    restante = banco._connect[BANCO][COLECAO].find_one({"_id": "r"})
+    assert (restante.get("rev"), restante["enabled"]) == ((9, False) if grava else (guardado.get("rev"), True))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("esperado", "grava"), [(None, True), (0, False), (3, False)], ids=["novo", "rev-0", "rev-3"])
+async def test_local_save_doc_cas_sem_documento_so_cria_quando_se_espera_novo(tmp_path, esperado, grava):
+    banco = LocalDatabase(str(tmp_path / "db"))
+
+    resultado = await banco.save_doc_cas(
+        "r", {"rev": 1, "enabled": True}, expected_rev=esperado, db_name=COLECAO, collection=BANCO
+    )
+
+    assert resultado is grava
+    assert (banco._connect[BANCO][COLECAO].find_one({"_id": "r"}) is not None) is grava
+
+
 def test_filtro_do_mongo_casa_rev_ausente_so_no_rev_0():
     assert rev_filter(0) == {"$or": [{"rev": 0}, {"rev": {"$exists": False}}]}
     assert rev_filter(4) == {"rev": 4}
 
 
 def _mongo_falso(tabela) -> MongoDatabase:
-    banco = MongoDatabase.__new__(MongoDatabase)
+    banco: Any = MongoDatabase.__new__(MongoDatabase)
     banco.cache = TTLCache(maxsize=10, ttl=300)
     banco._connect = {BANCO: {COLECAO: tabela}}
     return banco

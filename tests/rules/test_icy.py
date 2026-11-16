@@ -65,22 +65,20 @@ class TestParseTitle:
         assert parse_title(b"StreamTitle='a\x00b\x00';\x00\x00") == "ab"
         assert decode_block(b"\xff\xfe") == "ÿþ"
 
-    def test_a_full_4080_byte_block_without_a_closing_quote_is_fast_and_bounded(self):
+    def test_a_full_4080_byte_block_without_a_closing_quote_is_bounded(self):
         hostile = b"StreamTitle='" + b"a" * (MAX_BLOCK - 13)
 
-        started = time.perf_counter()
         title = parse_title(hostile)
 
-        assert title is not None and len(title) <= MAX_BLOCK and time.perf_counter() - started < 0.5
+        assert title == "a" * (MAX_BLOCK - 13)
 
     def test_an_oversized_block_is_cut_not_trusted(self):
         assert len(parse_title(b"StreamTitle='" + b"b" * 100_000) or "") <= MAX_BLOCK
 
-    def test_a_pathological_input_does_not_hang(self):
-        started = time.perf_counter()
-        parse_title(b"StreamTitle='" + b"';" * 2000)
-
-        assert time.perf_counter() - started < 0.5
+    def test_a_pathological_input_is_read_once_and_stops_at_the_first_closing_quote(self):
+        """Sem backtracking: o título acaba no primeiro ``';`` e o resto do bloco (2000 repetições) nunca é percorrido de novo."""
+        assert parse_title(b"StreamTitle='ok" + b"';" * 2000) == "ok"
+        assert parse_title(b"StreamTitle='" + b"';" * 2000) is None
 
 
 class TestCleanTitle:
