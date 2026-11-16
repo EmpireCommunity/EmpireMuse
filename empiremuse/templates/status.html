@@ -49,9 +49,10 @@
     h2 { font-size: 1.3rem; margin: 0 0 0.75rem; }
     .aviso { background: var(--superficie); border: 1px solid var(--borda); border-radius: 0.5rem; padding: 0.9rem 1.1rem; margin: 0; }
     .aviso-reinicio { font-size: clamp(1.3rem, 4vw, 2rem); font-weight: 600; }
-    .grade { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+    /* Os cartões ficam centralizados em cada linha (a linha da principal e a das outras), sem sobrar um cartão encostado à esquerda. */
+    .grade { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 1rem; }
     .grade + .grade { margin-top: 1rem; }
-    .grade-principal .cartao { grid-column: 2; }
+    .grade > .cartao { flex: 0 1 calc((100% - 2rem) / 3); min-width: 0; }
     .cartao { background: var(--superficie); border: 1px solid var(--borda); border-radius: 0.75rem; padding: 1.1rem; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; text-align: center; }
     .cartao img { width: 96px; height: 96px; border-radius: 50%; }
     .cartao-nome { font-weight: 700; font-size: 1.1rem; overflow-wrap: anywhere; }
@@ -73,11 +74,11 @@
     .rodape-github:hover { background: var(--elevada); color: var(--texto); }
     .rodape-github::before { content: ""; width: 1.25rem; height: 1.25rem; background-color: currentcolor; -webkit-mask: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%3E%3Cpath%20d='M8%200c4.42%200%208%203.58%208%208a8.013%208.013%200%200%201-5.45%207.59c-.4.08-.55-.17-.55-.38%200-.27.01-1.13.01-2.2%200-.75-.25-1.23-.54-1.48%201.78-.2%203.65-.88%203.65-3.95%200-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12%200%200-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68%200-1.36.09-2%20.27-1.53-1.03-2.2-.82-2.2-.82-.44%201.1-.16%201.92-.08%202.12-.51.56-.82%201.28-.82%202.15%200%203.06%201.86%203.75%203.64%203.95-.23.2-.44.55-.51%201.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82%201.13.16.45.68%201.31%202.69.94%200%20.67.01%201.3.01%201.49%200%20.21-.15.45-.55.38A7.995%207.995%200%200%201%200%208c0-4.42%203.58-8%208-8Z'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%3E%3Cpath%20d='M8%200c4.42%200%208%203.58%208%208a8.013%208.013%200%200%201-5.45%207.59c-.4.08-.55-.17-.55-.38%200-.27.01-1.13.01-2.2%200-.75-.25-1.23-.54-1.48%201.78-.2%203.65-.88%203.65-3.95%200-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12%200%200-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68%200-1.36.09-2%20.27-1.53-1.03-2.2-.82-2.2-.82-.44%201.1-.16%201.92-.08%202.12-.51.56-.82%201.28-.82%202.15%200%203.06%201.86%203.75%203.64%203.95-.23.2-.44.55-.51%201.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82%201.13.16.45.68%201.31%202.69.94%200%20.67.01%201.3.01%201.49%200%20.21-.15.45-.55.38A7.995%207.995%200%200%201%200%208c0-4.42%203.58-8%208-8Z'/%3E%3C/svg%3E") center / contain no-repeat; }
     @media (max-width: 52rem) {
-      .grade { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .grade-principal .cartao { grid-column: 1 / -1; justify-self: center; width: min(100%, 20rem); }
+      .grade > .cartao { flex-basis: calc((100% - 1rem) / 2); }
+      .grade-principal > .cartao { flex-basis: min(100%, 20rem); }
     }
     @media (max-width: 36rem) {
-      .grade { grid-template-columns: 1fr; }
+      .grade > .cartao, .grade-principal > .cartao { flex-basis: 100%; }
       .topo { padding-block: 1.5rem 1rem; }
       .acoes .botao { flex: 1 1 100%; text-align: center; }
     }
@@ -137,7 +138,7 @@
     <section aria-labelledby="titulo-pendentes">
       <h2 id="titulo-pendentes">Bots em inicialização</h2>
       <ul class="lista">
-        {% for identificador in pendentes %}<li>{{ identificador }}</li>{% end %}
+        {% for identificador in pendentes %}<li>{% raw xhtml_escape(identificador).replace("_", "_<wbr>") %}</li>{% end %}
       </ul>
       <p class="nota">Nota: Recarregue a página para conferir se o bot está disponível.</p>
     </section>
@@ -152,7 +153,7 @@
           <caption class="visually-hidden">Tokens que falharam na inicialização</caption>
           <thead><tr><th scope="col">Identificador</th><th scope="col">Erro</th></tr></thead>
           <tbody>
-            {% for identificador, erro in falhas %}<tr><td>{{ identificador }}</td><td>{{ erro }}</td></tr>{% end %}
+            {% for identificador, erro in falhas %}<tr><td>{% raw xhtml_escape(identificador).replace("_", "_<wbr>") %}</td><td>{{ erro }}</td></tr>{% end %}
           </tbody>
         </table>
       </div>

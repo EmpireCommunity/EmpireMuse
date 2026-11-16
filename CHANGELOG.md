@@ -14,6 +14,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ### Corrigido
 - Registro de acesso do Traefik (`deploy/traefik/accesslog-flags.txt` e `docs/runbook/log-retention.md`): o `ClientHost` sai e o `ClientAddr` entra (continuam 9 flags). O Traefik troca o `ClientHost` pelo `X-Forwarded-For` inteiro, que o visitante consegue preencher; o IP do visitante é o `request_Cf-Connecting-Ip`, e o `ClientAddr` (a borda da Cloudflare) prova que ele veio dela.
+- Painel legado e página de status (QA visual 1): na página de status do bot os cartões de bot ficam centralizados em cada linha (o cartão sozinho na segunda linha não fica mais encostado à esquerda) e o identificador de token quebra de linha só depois de um `_` (antes partia no meio da palavra); na tela de DJ do painel legado a lista de cargos que rola ganha sombra nas pontas e a dica "A lista rola" quando há mais de 8 cargos; o seletor de skin mostra "Padrão do bot" no lugar do valor cru `default`. Só marcação e CSS.
 - Painel genérico: um endereço de servidor cujo ID não é um número responde com a página de não encontrado.
 - Rádio ao vivo: anterior, próxima, aleatória e a primeira estação de um filtro leem o diretório pela consulta estrita; com o diretório fora, o painel diz para tentar de novo em vez de "estação não encontrada".
 - Escolha do bot de música: um bot só-rádio, ou com o player de uma rádio no servidor, nunca é escolhido pelos atalhos da seleção (o comando segue para outro bot livre).

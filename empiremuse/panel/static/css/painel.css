@@ -573,6 +573,18 @@ main:focus {
 .opcoes-rolagem {
   max-height: 20rem;
   overflow-y: auto;
+  /* Sombra nas pontas que ainda têm conteúdo para rolar (as capas de `local` somem quando a ponta chega), para a lista cortada não parecer terminada. */
+  background:
+    linear-gradient(var(--painel-superficie) 30%, transparent) center top / 100% 2rem no-repeat local,
+    linear-gradient(transparent, var(--painel-superficie) 70%) center bottom / 100% 2rem no-repeat local,
+    radial-gradient(farthest-side at 50% 0, color-mix(in srgb, var(--painel-texto-suave) 55%, transparent), transparent) center top / 100% 1rem no-repeat scroll,
+    radial-gradient(farthest-side at 50% 100%, color-mix(in srgb, var(--painel-texto-suave) 55%, transparent), transparent) center bottom / 100% 1rem no-repeat scroll;
+  scrollbar-width: thin;
+}
+
+.dica-rolagem {
+  display: block;
+  margin: -0.5rem 0 1rem;
 }
 
 .mensagem-form {
