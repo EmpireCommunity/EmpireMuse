@@ -105,8 +105,14 @@ def start_external_api(
             type(error).__name__,
         )
         return ExternalApiStatus(blocked=True)
-    # o apagamento de dados limpa também as respostas guardadas; só com o listener aberto
-    state.session_store.add_user_listener(ctx.idempotency.purge_user)
+    register_user_listeners(state.session_store, ctx)  # só com o listener aberto
     pool.panel_api_server = server
     logger.info("API do painel externo ativa em %s:%d (/api/v1).", settings.bind, settings.port)
     return ExternalApiStatus(server=server, panel_url=settings.base_url)
+
+
+def register_user_listeners(store: Any, ctx: ApiContext) -> None:
+    """O que o apagamento de dados e o banimento (``destroy_user``) limpam em memória além das sessões: as respostas guardadas da
+    ``Idempotency-Key`` e as decisões de servidor em cache do ``GuildAuthorizer``."""
+    store.add_user_listener(ctx.idempotency.purge_user)
+    store.add_user_listener(ctx.authorizer.purge_user)

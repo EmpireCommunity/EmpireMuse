@@ -326,3 +326,32 @@ class ListenerFailureTest(ApiTestCase):
 
         assert (response.code, error_code(response)) == (401, "session_expired")
         assert self.store.get_api(token, self.ctx.keys.match(SERVICE_KEY, self.wall())) is None
+
+
+@pytest.mark.regression
+def test_destroy_user_drops_the_guild_authorizer_cache_through_the_runtime_wiring():
+    """Sentinela T-660 (achado anterior): com a ligação do runtime (``register_user_listeners``), o apagamento e o banimento
+    (``destroy_user``) descartam as decisões de servidor em cache do usuário."""
+    from types import SimpleNamespace
+
+    from empiremuse.api.idempotency import IdempotencyStore
+    from empiremuse.api.runtime import register_user_listeners
+    from empiremuse.panel.authz import GuildAccess, GuildAuthorizer
+    from empiremuse.panel.sessions import SessionStore
+    from tests.panel.helpers import https_config, load_settings
+    from tests.panel.helpers_login import FakeClock
+
+    clock = FakeClock()
+    store = SessionStore(load_settings(https_config()), clock=clock)
+    ctx = SimpleNamespace(
+        idempotency=IdempotencyStore(clock), authorizer=GuildAuthorizer(SimpleNamespace(bots=[]), clock=clock)
+    )
+    register_user_listeners(store, ctx)
+    access = GuildAccess(guild_id="42", name="S", icon_url=None, bots=())
+    ctx.authorizer._remember(("1001", "42"), access)
+    ctx.authorizer._remember(("2002", "42"), access)
+
+    store.destroy_user("1001")
+
+    assert ctx.authorizer._cached(("1001", "42")) is None
+    assert ctx.authorizer._cached(("2002", "42")) == access

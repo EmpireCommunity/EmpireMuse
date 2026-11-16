@@ -208,3 +208,22 @@ def test_cache_is_bounded(monkeypatch):
     before = guild.calls["get_member"]
     authorize(authorizer, first_user)
     assert guild.calls["get_member"] == before + 1, "a decisão mais antiga deveria ter sido descartada pelo limite"
+
+
+@pytest.mark.regression
+def test_erasure_or_ban_drops_the_cached_decisions_of_that_user_only():
+    """Sentinela T-660 (achado anterior): o apagamento e o banimento (``destroy_user``) descartam as decisões em cache do usuário."""
+    guild, _, clock, authorizer = setup(admin=True)
+    authorize(authorizer)
+    other = make_session(guild_ids=(GID,))
+    other.user = type(other.user)(id="2002", username="b", global_name=None, avatar=None)
+    guild.add_member(2002, administrator=True)
+    authorize(authorizer, session=other)
+    guild.members[UID].guild_permissions.administrator = False  # dentro da janela, o cache ainda aceitaria
+
+    authorizer.purge_user(USER_ID)
+
+    with pytest.raises(authz().GuildAccessDenied):
+        authorize(authorizer)
+    guild.members[2002].guild_permissions.administrator = False
+    assert authorize(authorizer, session=other).guild_id == GID  # a decisão do OUTRO usuário segue em cache

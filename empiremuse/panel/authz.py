@@ -176,6 +176,11 @@ class GuildAuthorizer:
             logger.warning("Falha de rede ao verificar membro no painel (%s)", type(exc).__name__)
             return None
 
+    def purge_user(self, user_id: str) -> None:
+        """Descarta as decisões em cache do usuário (ouvinte de ``SessionStore.destroy_user``: apagamento de dados e banimento)."""
+        for key in [key for key in self._cache if key[0] == str(user_id)]:
+            del self._cache[key]
+
     def _cached(self, key: tuple[str, str]) -> Optional[GuildAccess]:
         entry = self._cache.get(key)
         if entry is None:
