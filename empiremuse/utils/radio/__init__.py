@@ -83,17 +83,17 @@ class RadioHub:
         )
         self._notices: TTLCache = TTLCache(maxsize=512, ttl=NOTICE_SECONDS)
 
+    def support_url(self) -> str:
+        """O servidor de suporte configurado (``SUPPORT_SERVER``), lido a cada uso; vazio se não há ou não é um ``https://`` limpo."""
+        config = getattr(self._pool, "config", None)
+        return support_link(config.get("SUPPORT_SERVER") if isinstance(config, dict) else None)
+
     def forget_all(self) -> None:
         """Esquece o que as rádios guardam do banco em memória (depois do ``hardreset``). O premium fica: o documento também."""
         self.resolved._memory.clear()
         self.health._until.clear()
         self._notices.clear()
         self.control.forget()
-
-    def support_url(self) -> str:
-        """O servidor de suporte configurado (``SUPPORT_SERVER``), lido a cada uso; vazio se não há ou não é um ``https://`` limpo."""
-        config = getattr(self._pool, "config", None)
-        return support_link(config.get("SUPPORT_SERVER") if isinstance(config, dict) else None)
 
     async def reload_station(self, station: Any) -> None:
         """Uma estação do servidor foi editada: cada rádio LIGADA que a toca recarrega o pool (a troca passa pelo recuo, sem prender quem editou)."""
