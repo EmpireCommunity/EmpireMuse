@@ -148,7 +148,8 @@ class ApiTestCase(AsyncHTTPTestCase):
         return build_api_app(self.ctx)
 
     def make_pool(self):
-        return SimpleNamespace(bots=[SimpleNamespace(application_id=CLIENT_ID)], database=None)
+        bot = SimpleNamespace(application_id=CLIENT_ID, is_ready=lambda: False, get_guild=lambda guild_id: None)
+        return SimpleNamespace(bots=[bot], database=None)
 
     def advance(self, seconds: float) -> None:
         """Avança o relógio monótono do store e o de parede (as datas da resposta seguem os dois)."""

@@ -12,6 +12,7 @@ SECRET_ERROR = "TOKEN-SECRETO-NO-ERRO"
 def bot(name="Muse#0001", guilds=3, ready=True, *, identifier="main"):
     return SimpleNamespace(
         is_ready=lambda: ready,
+        get_guild=lambda guild_id: None,  # o login (T-660) procura os servidores de membro nos bots prontos
         user=name if ready else None,
         guilds=list(range(guilds)),
         identifier=identifier,

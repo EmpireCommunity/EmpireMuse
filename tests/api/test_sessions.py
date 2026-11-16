@@ -1,14 +1,15 @@
 """Sessões de usuário (contrato T-456 §3 e §14): login, revogação do token do Discord, limites, reautenticação [M1]."""
 
 import json
+import logging
 from types import SimpleNamespace
 
 import pytest
 
-from empiremuse.panel.sessions import MAX_SESSIONS_PER_USER
+from empiremuse.panel.sessions import MAX_SESSIONS_PER_USER, PanelUser, _api_id
 from empiremuse.utils.user_ban import UserBanRecord, UserBans
 from tests.api.helpers import SERVICE_KEY
-from tests.api.support import ACCESS_TOKEN, CODE, USER, VERIFIER, ApiTestCase, body_of, error_code
+from tests.api.support import ACCESS_TOKEN, CLIENT_ID, CODE, USER, VERIFIER, ApiTestCase, body_of, error_code
 
 pytestmark = pytest.mark.critical
 
@@ -355,3 +356,59 @@ def test_destroy_user_drops_the_guild_authorizer_cache_through_the_runtime_wirin
 
     assert ctx.authorizer._cached(("1001", "42")) is None
     assert ctx.authorizer._cached(("2002", "42")) == access
+
+
+class MemberGuildsAtLoginTest(ApiTestCase):
+    """T-660 T8: os servidores em que a pessoa é só membro ficam na sessão (só os ids, com bot pronto) e nunca saem num payload nem no log."""
+
+    def make_pool(self):
+        self.member_guild_present = True
+        guild = SimpleNamespace(id=3)
+
+        def get_guild(guild_id):
+            return guild if guild_id == 3 and self.member_guild_present else None
+
+        bot = SimpleNamespace(application_id=CLIENT_ID, is_ready=lambda: True, get_guild=get_guild)
+        return SimpleNamespace(bots=[bot], database=None)
+
+    def session_of(self, token):
+        return self.store._sessions[_api_id(token)]
+
+    @pytest.mark.critical
+    def test_the_member_ids_stay_in_the_session_and_out_of_every_payload_and_log(self):
+        with self.assertLogs(level="DEBUG") as logs:
+            logging.getLogger("empiremuse.api.probe").debug("probe")  # ``assertLogs`` precisa de ao menos uma linha
+            response = self.login()
+        body = body_of(response)
+        session = self.session_of(body["session_token"])
+
+        assert session.member_guild_ids == frozenset({"3"})
+        assert set(body) == {"session_token", "user", "guilds", "expires_at", "authenticated_at"}
+        assert [g["id"] for g in body["guilds"]] == ["1", "2"]
+        assert set(body_of(self.api("GET", "/session", session=body["session_token"]))) == {
+            "user",
+            "guilds",
+            "expires_at",
+            "authenticated_at",
+        }
+        assert "member_guild_ids" not in repr(session)
+        assert not any('"3"' in line or "'3'" in line for line in logs.output)
+
+    @pytest.mark.critical
+    def test_reauth_recalculates_and_the_legacy_panel_session_is_empty(self):
+        token = body_of(self.login())["session_token"]
+        self.member_guild_present = False  # o bot saiu do servidor depois do login
+        self.oauth.identities["reauth-code"] = USER
+
+        renewed = body_of(
+            self.api(
+                "POST",
+                "/sessions",
+                session=token,
+                body={"code": "reauth-code", "code_verifier": VERIFIER, "reauth": True},
+            )
+        )
+        legacy = self.store.get(self.store.create(PanelUser("1001", "u", None, None), ()))
+
+        assert self.session_of(renewed["session_token"]).member_guild_ids == frozenset()
+        assert legacy.member_guild_ids == frozenset()

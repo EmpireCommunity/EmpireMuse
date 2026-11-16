@@ -20,9 +20,11 @@ from empiremuse.panel.oauth import (
     DiscordOAuthClient,
     DiscordOAuthError,
     parse_managed_guilds,
+    parse_member_guild_ids,
     parse_user,
     resolve_client_id,
 )
+from empiremuse.panel.authz import ready_bots_with_guild
 from empiremuse.panel.sessions import ManagedGuild, PanelUser, Session
 from empiremuse.utils.user_ban import user_bans_of
 
@@ -180,7 +182,7 @@ class SessionsHandler(ApiHandler):
         oauth = self.ctx.oauth_provider()
         if oauth is None:
             raise ApiError(503, BOT_UNAVAILABLE)
-        user, guilds = await self._read_identity(oauth, code, verifier)
+        user, guilds, raw_guilds = await self._read_identity(oauth, code, verifier)
         store = self.ctx.store
         # Daqui até criar a sessão não há ``await``: o que se confere agora vale na hora de gravar.
         anchor = store.get_api(self.session_token, self.key_fingerprint) if reauth else None
@@ -193,15 +195,22 @@ class SessionsHandler(ApiHandler):
             if user.id != anchor.user.id:
                 raise ApiError(403, REAUTH_USER_MISMATCH)  # nada muda
             store.destroy_api(self.session_token)  # nunca renova no lugar: token novo, o antigo morre
-        token = store.create_api(user, guilds, self.key_fingerprint)
+        # T-660: os servidores em que a pessoa é só membro (ids, com bot pronto AGORA); a lista bruta não sai deste escopo
+        members = parse_member_guild_ids(
+            raw_guilds,
+            managed_ids={guild.id for guild in guilds},
+            has_ready_bot=lambda guild_id: bool(ready_bots_with_guild(self.ctx.pool, int(guild_id))),
+        )
+        token = store.create_api(user, guilds, self.key_fingerprint, member_guild_ids=members)
         session = store.get_api(token, self.key_fingerprint)
         self.set_status(201)
         self.write(session_payload(self.ctx, session, token))
 
     async def _read_identity(
         self, oauth: DiscordOAuthClient, code: str, verifier: str
-    ) -> tuple[PanelUser, tuple[ManagedGuild, ...]]:
-        """Troca o código e lê usuário e servidores; o token do Discord é sempre revogado e nunca guardado nem logado."""
+    ) -> tuple[PanelUser, tuple[ManagedGuild, ...], list[Any]]:
+        """Troca o código e lê usuário e servidores (os gerenciáveis e a lista bruta, que só serve para os de membro e nunca é guardada
+        nem logada); o token do Discord é sempre revogado e nunca guardado nem logado."""
         access_token = None
         try:
             try:
@@ -214,11 +223,12 @@ class SessionsHandler(ApiHandler):
                 raise ApiError(502, DISCORD_UNAVAILABLE) from None
             try:
                 user = parse_user(await oauth.fetch_user(access_token))
-                guilds = parse_managed_guilds(await oauth.fetch_guilds(access_token))
+                raw = await oauth.fetch_guilds(access_token)
+                guilds = parse_managed_guilds(raw)
             except DiscordOAuthError as error:
                 logger.warning("API do painel externo: falha ao ler a identidade no Discord: %s", error)
                 raise ApiError(502, DISCORD_UNAVAILABLE) from None
-            return user, guilds
+            return user, guilds, raw if isinstance(raw, list) else []
         finally:
             if access_token:
                 await self._revoke(oauth, access_token)
