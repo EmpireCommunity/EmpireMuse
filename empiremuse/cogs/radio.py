@@ -7,6 +7,8 @@ carrega este cog, os comandos de dono só rodam no principal (senão cada bot re
 
 from __future__ import annotations
 
+from empiremuse.rules.apoiador import refused_text, with_ask
+
 import logging
 import time
 from typing import TYPE_CHECKING, Any, Optional, Union
@@ -226,7 +228,7 @@ class Radio(RadioPrefixCommands, commands.Cog):
         except GenericError as error:
             await interaction.edit_original_message(content=error.text)
         except Refused as refusal:
-            await interaction.edit_original_message(content=tr(f"radio.refused.{refusal.code}"))
+            await interaction.edit_original_message(content=refused_text(tr, refusal.code, self.hub.support_url()))
         except RadioUnavailable:
             await interaction.edit_original_message(content=tr("radio.owner.unavailable"))
         except Exception as error:  # noqa: BLE001 - o clique não pode ficar sem resposta (3 s); só o tipo vai ao log
@@ -250,7 +252,7 @@ class Radio(RadioPrefixCommands, commands.Cog):
         except GenericError as error:
             await interaction.edit_original_message(content=error.text)
         except Refused as refusal:
-            await interaction.edit_original_message(content=tr(f"radio.refused.{refusal.code}"))
+            await interaction.edit_original_message(content=refused_text(tr, refusal.code, self.hub.support_url()))
         except RadioUnavailable:
             await interaction.edit_original_message(content=tr("radio.owner.unavailable"))
         except Exception as error:  # noqa: BLE001
@@ -282,7 +284,7 @@ class Radio(RadioPrefixCommands, commands.Cog):
         except GenericError as error:
             await interaction.edit_original_message(content=error.text)
         except Refused as refusal:
-            await interaction.edit_original_message(content=tr(f"radio.refused.{refusal.code}"))
+            await interaction.edit_original_message(content=refused_text(tr, refusal.code, self.hub.support_url()))
         except RadioUnavailable:
             await interaction.edit_original_message(content=tr("radio.owner.unavailable"))
         except RadioConflict:
@@ -639,7 +641,7 @@ class Radio(RadioPrefixCommands, commands.Cog):
                 radio, wait=False
             )  # a partida segue em segundo plano: sem prender a resposta ao token
         except Refused as refusal:
-            raise GenericError(tr(f"radio.refused.{refusal.code}")) from None
+            raise GenericError(refused_text(tr, refusal.code, self.hub.support_url())) from None
         except RadioUnavailable:
             raise GenericError(tr("radio.owner.unavailable")) from None
         logger.info("radio.toggle: ligada (%d neste processo)", self.hub.manager.counts().on)
@@ -684,7 +686,7 @@ class Radio(RadioPrefixCommands, commands.Cog):
         call da rádio; o premium é conferido aqui e de novo por quem grava."""
         try:
             if await self.hub.premium.get(interaction.guild_id) is None:
-                raise GenericError(tr(f"radio.refused.{actions.NO_PREMIUM}"))
+                raise GenericError(refused_text(tr, actions.NO_PREMIUM, self.hub.support_url()))
         except RadioUnavailable:
             raise GenericError(tr("radio.owner.unavailable")) from None
 
@@ -703,7 +705,7 @@ class Radio(RadioPrefixCommands, commands.Cog):
                     station_list=station_list or None,
                 )
             except Refused as refusal:
-                raise GenericError(tr(f"radio.refused.{refusal.code}")) from None
+                raise GenericError(refused_text(tr, refusal.code, self.hub.support_url())) from None
             return tr("radio.local.changed", station=stored_text(station.name, NAME_LIMIT))
 
         picker = self._picker(
@@ -846,7 +848,7 @@ class Radio(RadioPrefixCommands, commands.Cog):
         try:
             off = await actions.turn_off(self.hub, guild_id=guild_id, channel_id=channel.id, actor=actor)
         except Refused as refusal:
-            raise GenericError(tr(f"radio.refused.{refusal.code}")) from None
+            raise GenericError(refused_text(tr, refusal.code, self.hub.support_url())) from None
         except RadioUnavailable:
             raise GenericError(tr("radio.owner.unavailable")) from None
         finally:
@@ -869,7 +871,7 @@ class Radio(RadioPrefixCommands, commands.Cog):
         except RadioUnavailable:
             raise GenericError(tr("radio.owner.unavailable")) from None
         if result.premium is None:
-            return tr("radio.status.no_premium")
+            return with_ask(tr, tr("radio.status.no_premium"), self.hub.support_url())
         lines = [tr("radio.status.header", active=result.premium.active, cap=3)]
         for line in result.lines:
             state = line.state

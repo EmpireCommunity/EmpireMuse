@@ -6,6 +6,8 @@ de configurar, ``arrive`` liga a rádio em espera e a estação se escolhe no pa
 
 from __future__ import annotations
 
+from empiremuse.rules.apoiador import refused_text
+
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -42,11 +44,12 @@ KNOWN_CODES = frozenset(
 )
 
 
-def refusal(tr: Any, error: Exception) -> GenericError:
-    """A recusa de ``configure``/``reset`` como erro para o usuário: sempre um texto traduzido, nunca a exceção."""
+def refusal(tr: Any, error: Exception, support_url: str = "") -> GenericError:
+    """A recusa de ``configure``/``reset`` como erro para o usuário: sempre um texto traduzido, nunca a exceção. ``support_url`` = como
+    pedir o acesso de Apoiador (``RadioHub.support_url``)."""
     if isinstance(error, RadioForbidden):
         key = "no_premium" if error.reason == REASON_PREMIUM else "no_manage_guild"
-        return GenericError(tr(f"radio.refused.{key}"))
+        return GenericError(refused_text(tr, key, support_url))
     if isinstance(error, (RadioNotFound, RadioConflict)):
         return GenericError(tr("radio.refused.changed"))
     if isinstance(error, RadioInvalid):
@@ -63,7 +66,7 @@ async def _no_bot_reason(cog: RadioCog, inter: Any, tr: Any) -> GenericError:
         options = await hub.setup.options(inter.guild_id, inter.author.id)
         busy = await hub.setup.busy_reserves(inter.guild_id)
     except (RadioForbidden, RadioUnavailable) as error:
-        return refusal(tr, error)
+        return refusal(tr, error, cog.hub.support_url())
     if options.bots:
         return GenericError(tr("radio.setup.error.bot_id"))
     if not busy:
@@ -95,7 +98,7 @@ async def setup(cog: RadioCog, inter: disnake.ApplicationCommandInteraction, cha
             rev=current.rev if current else None,
         )
     except (RadioForbidden, RadioNotFound, RadioConflict, RadioInvalid, RadioUnavailable) as error:
-        raise refusal(tr, error) from None
+        raise refusal(tr, error, cog.hub.support_url()) from None
     await arrive(cog, inter, tr, radio, channel)
 
 
@@ -109,7 +112,7 @@ async def arrive(cog: RadioCog, inter: Any, tr: Any, radio: Radio, channel: Any)
     try:
         await _start_waiting(cog, inter, radio, channel)
     except Refused as refused:
-        lines.append(tr(f"radio.refused.{refused.code}"))
+        lines.append(refused_text(tr, refused.code, cog.hub.support_url()))
     except RadioUnavailable:
         lines.append(tr("radio.owner.unavailable"))
     else:

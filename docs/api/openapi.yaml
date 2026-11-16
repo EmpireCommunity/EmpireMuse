@@ -3972,16 +3972,16 @@ components:
           properties:
             erases:
               type: array
-              description: Códigos estáveis do que o apagamento remove (o texto é do painel).
+              description: "Códigos estáveis do que o apagamento remove (o texto é do painel). O `enum` lista os valores desta versão do bot; dentro da v1 podem entrar valores novos (mudança aditiva, ver Versão no topo), e quem consome não pode recusar um valor que não conhece: mostra o texto genérico."
               items:
                 type: string
                 enum: [preferences, lastfm_and_scrobbles, saved_queue, radio_favorites, radio_editor_ids, sessions]
             keeps:
               type: array
-              description: Códigos estáveis do que fica.
+              description: "Códigos estáveis do que fica. O `enum` lista os valores desta versão do bot; dentro da v1 podem entrar valores novos (mudança aditiva, ver Versão no topo), e quem consome não pode recusar um valor que não conhece: mostra o texto genérico. `guild_join_leave_notices`: os avisos de que o bot entrou num servidor ou saiu dele, com o nome e o ID de quem é dono do servidor, ficam por 6 meses (183 dias)."
               items:
                 type: string
-                enum: [access_and_security_logs, live_player_records, server_settings_and_statistics, lastfm_remote_data]
+                enum: [access_and_security_logs, live_player_records, server_settings_and_statistics, lastfm_remote_data, guild_join_leave_notices]
             backups_up_to_weeks:
               type: integer
               description: Cópias de segurança do provedor podem guardar dados já apagados por até tantas semanas.

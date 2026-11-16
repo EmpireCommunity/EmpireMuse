@@ -667,6 +667,10 @@ class FakeRadioApi:
         self.stations = FakeStations(self.store)
         self.store.stations = self.stations
         self.setup = FakeSetup(self)
+        self.support = ""  # o ``SUPPORT_SERVER`` já validado (``RadioHub.support_url``)
+
+    def support_url(self) -> str:
+        return self.support
 
 
 def radio_state(*, playing=True, paused_by_owner=False, on_reserve=False, offline=False, title=None):

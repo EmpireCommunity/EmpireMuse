@@ -6,6 +6,8 @@ O premium não é exigido para GERIR estações (só para ligar uma rádio); sem
 
 from __future__ import annotations
 
+from empiremuse.rules.apoiador import NO_PREMIUM, refused_text
+
 from typing import TYPE_CHECKING, Any, Optional
 
 import disnake
@@ -42,7 +44,7 @@ async def gate(cog: Radio, inter: disnake.ApplicationCommandInteraction):
     if not can_manage(inter):
         raise GenericError(tr("radio.refused.no_manage_guild"))
     if not await premium_ok(cog.hub, inter.guild_id):  # a mesma regra da página web: estação do servidor é do premium
-        raise GenericError(tr("radio.refused.no_premium"))
+        raise GenericError(refused_text(tr, NO_PREMIUM, cog.hub.support_url()))
     bucket = STATION_COOLDOWN.get_bucket(inter)
     if bucket is not None and (retry := bucket.update_rate_limit()):
         raise GenericError(tr("radio.cooldown", seconds=int(retry) + 1))

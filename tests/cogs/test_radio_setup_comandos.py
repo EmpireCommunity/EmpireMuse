@@ -98,7 +98,7 @@ class TestSetupCommand:
     @pytest.mark.parametrize(
         ("setup_world", "snippet"),
         [
-            ({"premium": False}, "premium"),
+            ({"premium": False}, "Apoiadores"),
             ({"manage_guild": False}, "Gerenciar Servidor"),
         ],
     )
@@ -266,7 +266,7 @@ class TestBotAutocomplete:
 
         offered = await radio_cog.bot_autocomplete(inter, "")
 
-        assert offered == {"Este servidor não tem premium: as rádios exigem.": radio_cog.NO_CHOICE}
+        assert offered == {"Rádios Limitadas a Apoiadores: este servidor não tem esse acesso.": radio_cog.NO_CHOICE}
 
     @pytest.mark.asyncio
     async def test_with_every_reserve_taken_the_entry_and_the_command_name_each_channel_and_point_to_reset(self):

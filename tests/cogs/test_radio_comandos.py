@@ -275,7 +275,7 @@ class TestLigar:
         with pytest.raises(GenericError) as refusal:
             await run_on(w, channel=w.channel, playlist="x")
 
-        assert "premium" in str(refusal.value)
+        assert "Apoiadores" in str(refusal.value)
 
     @pytest.mark.asyncio
     async def test_the_fixed_bot_already_in_a_call_is_not_swapped_for_another(self):
@@ -346,7 +346,7 @@ class TestDesligarEStatus:
 
         await radio_cog.Radio.radio_status.callback(w.cog, w.inter)
 
-        assert "premium" in reply(w)
+        assert "Apoiadores" in reply(w)
 
     @pytest.mark.asyncio
     async def test_status_lists_the_radios_with_the_state_and_the_owner_pause(self):
