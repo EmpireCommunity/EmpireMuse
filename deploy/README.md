@@ -31,6 +31,37 @@ Arquivos para aplicar **à mão, numa janela e com o OK do dono**; o passo a pas
 
 O `docker-compose.traefik.yml` é só um complemento do `docker-compose.yml`: nunca o suba sozinho.
 
+## Firewall da porta 443 (só a Cloudflare)
+
+Para quem hospeda atrás da Cloudflare com o Docker publicando a 443: o host só deve aceitar conexões **novas** de fora vindas das faixas da Cloudflare. Sem isso, quem descobre o IP do host fala direto com a origem, sem passar pela Cloudflare. O Docker publica a porta por DNAT, então o filtro vai na cadeia `DOCKER-USER` (a `INPUT` não veria esse tráfego). O SSH não é tocado.
+
+| Arquivo | Para quê |
+| :--- | :--- |
+| [`host/cf-firewall.sh`](host/cf-firewall.sh) | `on`, `off`, `status`, `check`, `print`, `arm-undo` e `cancel-undo` (o cabeçalho do script explica cada um) |
+| [`host/empire-cf-firewall.service`](host/empire-cf-firewall.service) | Liga o firewall na partida e o refaz quando o Docker reinicia |
+| [`host/cf-ips-v4.txt`](host/cf-ips-v4.txt), [`host/cf-ips-v6.txt`](host/cf-ips-v6.txt) | Faixas da Cloudflare, **estáticas e revisadas** (copiadas de `https://www.cloudflare.com/ips-v4` e `ips-v6`) |
+
+Como funciona, em resumo:
+
+- O gancho casa só `-m conntrack --ctstate NEW --ctdir ORIGINAL --ctorigdstport 443` pela interface pública. O `--ctdir ORIGINAL` é essencial: sem ele, as **respostas** das conexões HTTPS que os próprios containers abrem para fora (que também têm a 443 como destino original) cairiam no `DROP`.
+- O script **não baixa nada**: lê as listas de `/etc/empire/`. Cada lista é validada antes de qualquer regra (CIDR válido, só endereços globais, prefixo no mínimo `/12` em IPv4 e `/29` em IPv6, que recusa `0.0.0.0/0` e `::/0`, e uma quantidade mínima de faixas). Qualquer falha sai com erro e **não toca em nada**.
+- A troca é atômica: o `iptables-restore --noflush` carrega a cadeia inteira numa transação só (a cadeia nunca fica vazia nem só com o `DROP`) e o gancho entra depois, uma vez só. Rodar `on` de novo é seguro.
+- IPv4 e IPv6; se a `DOCKER-USER` do IPv6 não existir, o IPv6 é pulado com um aviso.
+
+Instalar (à mão, com o OK de quem opera o host, e com um **segundo acesso** ao host aberto, por exemplo o console do provedor):
+
+1. Copiar as listas para `/etc/empire/` (0644), o script para `/usr/local/sbin/cf-firewall.sh` (root, 0755) e a unit para `/etc/systemd/system/`. Do mesmo commit/tag da release, não da `main`.
+2. `cf-firewall.sh check` (só valida) e `cf-firewall.sh print` (mostra o que seria aplicado, sem aplicar).
+3. Rede de segurança: `cf-firewall.sh arm-undo 10` agenda o `off` para daqui a 10 minutos. Depois `cf-firewall.sh on`.
+4. Dentro dos 10 minutos, confira: o site abre pela Cloudflare; **um container ainda alcança a internet** (por exemplo `docker exec <container> ... https://example.com`, esperando 200); de fora da Cloudflare, `curl --max-time 8 --resolve <host>:443:<ip-do-host> https://<host>/` estoura o tempo; o SSH segue vivo. O contador do `DROP` (`cf-firewall.sh status`) pode ser maior que zero: são conexões novas de fora, que é o efeito desejado.
+5. Se estiver tudo certo: `cf-firewall.sh cancel-undo` e `systemctl enable --now empire-cf-firewall.service`. Sem o `enable`, um reinício apaga as regras. Depois de todo reboot, confira `systemctl is-failed empire-cf-firewall.service`.
+
+Voltar: `cf-firewall.sh off` (ou `systemctl disable --now empire-cf-firewall.service`).
+
+Manutenção: as faixas da Cloudflare mudam raramente. Quando mudarem, atualize **juntos**, por revisão: estas duas listas e o `forwardedHeaders.trustedIPs` do Traefik, senão tráfego legítimo é cortado. Atenção: se o Docker reiniciar, a unit refaz as regras (`PartOf`); o comportamento da `DOCKER-USER` num reinício do Docker deve ser conferido no seu ambiente.
+
+**Verificado** (em rede isolada, sem tocar nenhuma regra do host): o `on` cria a cadeia e o gancho em IPv4 e IPv6; repetir o `on` não duplica o gancho e **substitui** o conteúdo da cadeia (não acumula); durante 120 trocas seguidas, leituras repetidas da cadeia só viram o conteúdo antigo ou o novo inteiro; o `off` remove tudo e é idempotente. **Não verificado:** a unit rodando no systemd de um host real, o comportamento com o Docker reiniciando e o tráfego real (conntrack com DNAT) de ponta a ponta.
+
 ## Antes de usar
 
 - **Segredos só no `.env`.** Nenhum arquivo deste diretório leva token, senha ou chave: eles chegam por variáveis de ambiente. Copie `.example.env` (ou `env.example.hostinger`) para `.env`, preencha e nunca versione o resultado.

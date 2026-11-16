@@ -1,0 +1,28 @@
+# Liga o firewall da porta 443 (cf-firewall.sh) na partida e o refaz quando o Docker reinicia. Ver deploy/README.md.
+# Instalar em /etc/systemd/system/, com o script em /usr/local/sbin/ (root, 0755) e as listas em /etc/empire/.
+# Sem este serviço habilitado, um reinício do host apaga as regras (volta ao estado sem firewall).
+#
+# O script não baixa nada: usa as listas estáticas de /etc/empire. Se as listas forem inválidas ou a cadeia DOCKER-USER não
+# existir, o `on` falha SEM tocar nas regras e a unit fica `failed`: confira `systemctl is-failed empire-cf-firewall.service`
+# depois de todo reboot. PartOf: quando o Docker reinicia, o systemd para (off) e inicia (on) esta unit de novo.
+[Unit]
+Description=Firewall da porta 443: só as faixas da Cloudflare
+After=docker.service
+Requires=docker.service
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/cf-firewall.sh on
+ExecStop=/usr/local/sbin/cf-firewall.sh off
+# O iptables precisa de CAP_NET_ADMIN e CAP_NET_RAW; o lock dele fica em /run.
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/run
+
+[Install]
+WantedBy=multi-user.target

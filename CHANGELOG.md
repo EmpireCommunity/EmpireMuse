@@ -8,10 +8,12 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 ## [Unreleased]
 
 ### Adicionado
+- Deploy: firewall opcional da porta 443 para quem hospeda atrás da Cloudflare (`deploy/host/cf-firewall.sh`, `empire-cf-firewall.service` e as listas estáticas `cf-ips-v4.txt` e `cf-ips-v6.txt`). Só conexões novas de fora vindas das faixas da Cloudflare chegam à 443 (`--ctstate NEW --ctdir ORIGINAL --ctorigdstport 443` na `DOCKER-USER`, então a saída dos containers não é afetada). O script não baixa nada: valida as listas antes de tocar em regra (CIDR, só endereços globais, recusa `0.0.0.0/0`, `::/0` e prefixos curtos) e falha fechado; troca a cadeia de uma vez (`iptables-restore --noflush`); cobre IPv4 e IPv6; tem `arm-undo` (desfazer agendado), `check` e `print`. Passo a passo em `deploy/README.md`.
 - API para painéis externos: visão de membro das rádios favoritas. Quem participa de um servidor sem gerenciá-lo vê a lista do servidor (só leitura) e mantém as próprias favoritas naquele servidor (estações do servidor e gêneros, Limitadas a Apoiadores para adicionar). Rotas novas em `/api/v1/member` e o recurso `member-favorites` em `/meta`.
 - `site-data.json`: o campo opcional `supporter_limited` marca os comandos que o bot recusa num servidor sem o acesso Limitado a Apoiadores (hoje `/radio on`, `/radio setup`, `/radio station` e o prefixo `radio on`), para o site mostrar o selo em /commands. Aditivo na versão 1 do formato.
 
 ### Corrigido
+- Registro de acesso do Traefik (`deploy/traefik/accesslog-flags.txt` e `docs/runbook/log-retention.md`): o `ClientHost` sai e o `ClientAddr` entra (continuam 9 flags). O Traefik troca o `ClientHost` pelo `X-Forwarded-For` inteiro, que o visitante consegue preencher; o IP do visitante é o `request_Cf-Connecting-Ip`, e o `ClientAddr` (a borda da Cloudflare) prova que ele veio dela.
 - Painel genérico: um endereço de servidor cujo ID não é um número responde com a página de não encontrado.
 - Rádio ao vivo: anterior, próxima, aleatória e a primeira estação de um filtro leem o diretório pela consulta estrita; com o diretório fora, o painel diz para tentar de novo em vez de "estação não encontrada".
 - Escolha do bot de música: um bot só-rádio, ou com o player de uma rádio no servidor, nunca é escolhido pelos atalhos da seleção (o comando segue para outro bot livre).
