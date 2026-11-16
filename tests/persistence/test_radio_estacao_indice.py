@@ -184,3 +184,19 @@ class TestTheExpiryDateIsWrittenWithTheEntry:
         assert isinstance(stored[EXPIRE_FIELD], datetime)
         fresh = ResolvedTracks(database, clock=lambda: NOW)
         assert await fresh.failed(track) and await fresh.failed(old)
+
+
+class TestTheUnknownArtistsWriteNeverBreaksTheRadio:
+    @pytest.mark.regression
+    @pytest.mark.asyncio
+    async def test_a_legacy_station_that_repeats_a_name_gives_up_silently(self):
+        """Alicerce BK-4b: a estação legada sem ``name_norm`` que repete o nome de outra bate no índice ao gravar os ⚠️; o carregamento da rádio
+        não pode receber ``StationInvalid`` (desiste em silêncio, como ao perder a corrida)."""
+        db = IndexedDb()
+        hub = hub_with(db)
+        station = await hub.stations.create(GUILD, ROCK)
+        db.write_error = UniqueIndexViolation()
+
+        await hub.stations.set_unknown(GUILD, station.id, ["Xyzzy"])  # não levanta
+
+        assert (await hub.stations.get(GUILD, station.id)).unknown == ()

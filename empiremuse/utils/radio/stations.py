@@ -309,5 +309,11 @@ class StationStore:
             if current is None or tuple(sorted(current.unknown)) == wanted:
                 return
             updated = dataclasses.replace(current, unknown=wanted, rev=current.rev + 1)
-            if await self._save(station_id, to_document(updated), current.rev):
+            try:
+                saved = await self._save(station_id, to_document(updated), current.rev)
+            except (
+                StationInvalid
+            ):  # estação legada que repete o nome de outra bate no índice: os ⚠️ ficam para depois, a rádio segue
+                return
+            if saved:
                 return
