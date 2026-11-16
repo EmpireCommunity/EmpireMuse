@@ -176,14 +176,16 @@ class MemberAuthorizer:
             await self._find_member(bot, guild, user_id, fresh=fresh)
             icon = guild_icon_url(guild_id, guild.icon.key if guild.icon else None)
             access = MemberAccess(guild_id=guild_id, name=guild.name, icon_url=icon)
-            if not fresh:
+            if fresh:
+                self._invalidate(
+                    key
+                )  # a decisão fresca manda: nenhuma negação velha (ex.: ``pending``) segue valendo por 30 s
+            else:
                 self._remember(key, access, generation)
             return MemberGrant(access, bot, guild)
         except MemberAccessDenied:
             if fresh:
-                # quem saiu deixa de ler pela decisão guardada (CS1), e uma leitura que estava em andamento não a grava de volta (SG1)
-                self._generation[user_id] = self._generation.get(user_id, 0) + 1
-                self._cache.pop(key, None)
+                self._invalidate(key)  # quem saiu deixa de ler pela decisão guardada (CS1)
             else:
                 self._remember(key, None, generation)
             raise
@@ -237,6 +239,12 @@ class MemberAuthorizer:
             return
         self._inflight.pop(user_id, None)
         self._generation.pop(user_id, None)  # ninguém mais compara com ela: nada fica por usuário (CS2)
+
+    def _invalidate(self, key: tuple[str, str]) -> None:
+        """Uma decisão FRESCA e definitiva (concedida ou negada) tira a entrada guardada e muda a geração do usuário, para uma leitura que
+        estava em andamento não gravar o resultado velho depois (CS1, SG1, revisão do CodeRabbit). Falha transitória não passa por aqui."""
+        self._generation[key[0]] = self._generation.get(key[0], 0) + 1
+        self._cache.pop(key, None)
 
     def _cached(self, key: tuple[str, str]) -> tuple[bool, Optional[MemberAccess]]:
         entry = self._cache.get(key)

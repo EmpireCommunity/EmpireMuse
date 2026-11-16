@@ -388,3 +388,31 @@ def test_cs4_two_overlapping_lookups_and_a_purge_the_second_does_not_store():
     run(scenario())
 
     assert authorizer._cache == {} and authorizer._generation == {} and authorizer._inflight == {}
+
+
+def test_coderabbit_a_granted_fresh_write_replaces_a_stale_cached_denial():
+    """CodeRabbit (PR 264): a leitura guardou a negação enquanto a pessoa estava na triagem (``pending``); a escrita fresca concedida depois tira
+    essa negação, e a leitura seguinte não fica 30 s negada por ela."""
+    guild, _, _, authorizer = setup(pending=True)
+    with pytest.raises(MemberAccessDenied):
+        authorize(authorizer)  # negação guardada (pending)
+    person = FakeMember()
+    guild.members[UID] = guild.fetchable[UID] = person  # passou da triagem
+
+    authorize(authorizer, fresh=True)
+
+    assert authorize(authorizer).guild_id == GID
+
+
+def test_coderabbit_the_cached_decision_holds_exactly_30_seconds_after_the_gateway_changes():
+    """CodeRabbit (PR 264): o relógio da decisão e a atualização do gateway são controlados à parte; a leitura velha vale até 30 s, não mais."""
+    guild, _, clock, authorizer = setup()
+    authorize(authorizer)  # decisão positiva guardada no instante 0
+    del guild.members[UID]  # o gateway registra a saída logo depois
+    guild.fetchable[UID] = not_found()
+
+    clock.advance(29.9)
+    assert authorize(authorizer).guild_id == GID  # ainda dentro dos 30 s: vale a decisão guardada
+    clock.advance(0.2)
+    with pytest.raises(MemberAccessDenied):
+        authorize(authorizer)  # passou dos 30 s: o gateway (e a API) mandam

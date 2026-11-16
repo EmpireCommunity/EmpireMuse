@@ -2527,7 +2527,7 @@ paths:
       operationId: addMemberRadioFavorite
       summary: Adiciona às favoritas do próprio membro neste servidor
       description: |
-        Só `custom` (estação do servidor do caminho) e `genre`. Membro reconferido no Discord agora (o cache do gateway não vale). Ordem: `401` → `404` (membro) → `503` (Discord sem resposta definitiva) → `403` (servidor sem o acesso Limitado a Apoiadores, antes do corpo) → `400` de forma → `Idempotency-Key` → domínio (já está = `200`; cheia = `400` com `limit`; estação desconhecida ou de outro servidor = o mesmo `404`). Teto de 24. O usuário e o servidor vêm da sessão e do caminho; campos de corpo além de `kind` e `id` são ignorados.
+        Só `custom` (estação do servidor do caminho) e `genre`. Membro reconferido no Discord agora (o cache do gateway não vale). Ordem: `401` → `404` (membro) → `503` (Discord sem resposta definitiva) → `403` (servidor sem o acesso Limitado a Apoiadores, quando `kind` é `custom` ou `genre`; conferido antes do resto do corpo; outra espécie é `400`) → `400` de forma → `Idempotency-Key` → domínio (já está = `200`; cheia = `400` com `limit`; estação desconhecida ou de outro servidor = o mesmo `404`). Teto de 24. O usuário e o servidor vêm da sessão e do caminho; campos de corpo além de `kind` e `id` são ignorados.
       security:
         - ServiceKey: []
           SessionToken: []
