@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from empiremuse.panel.handlers.base import FALLBACK_BOT_NAME, bot_display_name
+from empiremuse.panel.services.base import FALLBACK_BOT_NAME, bot_display_name
 
 
 def bot(name):
@@ -24,3 +24,12 @@ def bot(name):
 )
 def test_nome_do_bot_com_reserva(pool, esperado):
     assert bot_display_name(pool) == esperado
+
+
+def test_a_recusa_da_jukebox_nomeia_o_bot_que_atende_o_servidor():
+    from empiremuse.panel.services.jukebox import refusal_message
+    from empiremuse.utils.music.jukebox_channel import MissingManagePermissions
+
+    texto = refusal_message(MissingManagePermissions("<@1>", ["manage_channels"]), bot("Tocador"))
+
+    assert texto.startswith("O Tocador precisa da permissão Gerenciar permissões")

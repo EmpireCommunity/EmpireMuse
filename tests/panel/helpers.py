@@ -15,7 +15,6 @@ ROOT = Path(__file__).resolve().parents[2]
 PANEL_DIR = ROOT / "empiremuse" / "panel"
 VENDOR_DIR = PANEL_DIR / "static" / "vendor"
 TEMPLATES_DIR = PANEL_DIR / "templates"
-BRAND_DIR = ROOT / "assets" / "brand"
 
 OAUTH_SECRET = "oauth-SEGREDO-0123456789"
 COOKIE_SECRET = "cookie-SEGREDO-0123456789abcdefghij"  # 35 caracteres

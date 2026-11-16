@@ -15,6 +15,7 @@ from empiremuse.utils.db import DBModel
 Args = Mapping[str, Sequence[str]]
 
 PANEL_LOCALE = "pt-BR"  # o painel fala um idioma só até a F3 (contrato i18n §5)
+FALLBACK_BOT_NAME = "Music Bot"
 
 HEX16 = re.compile(r"[0-9a-f]{16}", re.ASCII)
 DIGITS = re.compile(r"[0-9]{1,20}", re.ASCII)
@@ -51,6 +52,25 @@ def panel_i18n(pool: Any) -> I18n:
 def panel_translator(pool: Any) -> Translator:
     """O ``_`` dos templates e das mensagens do painel: o ``Translator`` de ``PANEL_LOCALE``."""
     return panel_i18n(pool).for_locale(PANEL_LOCALE)
+
+
+def _bot_name(bot: Any) -> Optional[str]:
+    name = getattr(getattr(bot, "user", None), "name", None)
+    return name.strip() if isinstance(name, str) and name.strip() else None
+
+
+def bot_name_of(bot: Any) -> str:
+    """Nome do bot no Discord, sem espaços nas pontas; ``FALLBACK_BOT_NAME`` se ele ainda não logou ou o nome é vazio."""
+    return _bot_name(bot) or FALLBACK_BOT_NAME
+
+
+def bot_display_name(pool: Any) -> str:
+    """Nome do bot no Discord para o título e o cabeçalho do painel: o do principal, senão o do primeiro bot logado.
+
+    Sem pool, sem bot logado ou com nome vazio, devolve ``FALLBACK_BOT_NAME``.
+    """
+    names = (_bot_name(bot) for bot in [getattr(pool, "main_bot", None), *getattr(pool, "bots", ())])
+    return next((name for name in names if name), FALLBACK_BOT_NAME)
 
 
 def channel_in_guild(bot: Any, channel_id: Any, guild_id: int) -> Optional[Any]:

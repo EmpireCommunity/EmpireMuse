@@ -22,7 +22,7 @@ A identidade visual do EmpireMuse adota o conceito cósmico **Nebulosa**, combin
 
 Todas as peças foram concebidas como arte original do EmpireMuse, sem dependência de ativos de terceiros ou logotipos do upstream.
 
-- **`assets/brand/logo-256.png`**: Logo em PNG de **256×256** pixels (cerca de 31 KB, sem metadados), derivado do `avatar.png`. É o logo usado na interface: cabeçalho do `README.md`, páginas do painel (servido em `/painel/marca/logo-256.png`) e página pública de status (via `branding.asset_url`). Leve de propósito, para não pesar a cada visita.
+- **`assets/brand/logo-256.png`**: Logo em PNG de **256×256** pixels (cerca de 31 KB, sem metadados), derivado do `avatar.png`. É o logo usado na interface: cabeçalho do `README.md` e página pública de status (via `branding.asset_url`). Leve de propósito, para não pesar a cada visita.
 - **`assets/brand/logo.svg`**: Emblema vetorial, **arquivo-fonte** da marca (não é mais usado na interface). Não contém scripts, estilos externos ou elementos dinâmicos. É um traçado vetorizado detalhado e pesado (cerca de 6 MB), por isso não serve de favicon nem de logo de página.
 - **`assets/brand/avatar.png`**: Ícone em formato PNG com resolução de **1326×1326** pixels (cerca de 2,5 MB), usado como avatar do bot e fonte do `logo-256.png`. O emblema ocupa o centro do quadro, o que mantém a legibilidade em tamanhos reduzidos (32–40 px).
 - **`assets/brand/banner.png`**: Banner panorâmico em formato PNG com resolução de **2738×959** pixels (cerca de 2,4 MB), para a personalização do perfil no Discord. O Discord exibe o banner reduzido e recortado: mantenha o conteúdo importante no centro.

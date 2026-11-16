@@ -9,7 +9,6 @@ import zlib
 import pytest
 
 from empiremuse import paths
-from empiremuse.panel.handlers import brand
 from empiremuse.utils import branding
 from empiremuse.utils.db import LocalDatabase
 from empiremuse.utils.music import lavalink_server_list, local_lavalink as ll
@@ -30,4 +29,3 @@ class TestRoteamentoDeCaminhosDeDados:
     def test_data_e_assets_roteados_por_project_dir(self):
         assert lavalink_server_list.BUNDLED_SERVER_LIST_PATH == paths.PROJECT_DIR / "data" / "lavalink_servers.ini"
         assert branding._ASSETS_DIR == paths.PROJECT_DIR / "assets"
-        assert brand.BRAND_DIR == paths.PROJECT_DIR / "assets" / "brand"

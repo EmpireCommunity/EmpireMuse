@@ -26,6 +26,7 @@ from empiremuse.panel.services.base import (
     DIGITS,
     Args,
     FormContext,
+    bot_name_of,
     channel_in_guild,
     first,
     panel_translator,
@@ -35,7 +36,6 @@ from empiremuse.panel.services.jukebox_tokens import JukeboxTokens
 from empiremuse.panel.services.service import SettingsService
 from empiremuse.panel.services.tasks import REASON_REFUSED, Job, Task, TaskFailure, TaskRunner
 from empiremuse.rules import limits
-from empiremuse.utils import branding
 from empiremuse.utils.music.converters import perms_translations
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.music.jukebox_channel import (
@@ -108,10 +108,11 @@ def plain_message(text: str) -> str:
     return re.sub(r"[ \t]+", " ", text).strip()
 
 
-MSG_MANAGE_PERMISSIONS = (
-    f"O {branding.BOT_NAME} precisa da permissão Gerenciar permissões neste canal (ou de "
-    "Administrador). Conceda a permissão ao cargo do bot ou escolha Criar um canal novo."
-)
+def manage_permissions_message(bot_name: str) -> str:
+    return (
+        f"O {bot_name} precisa da permissão Gerenciar permissões neste canal (ou de "
+        "Administrador). Conceda a permissão ao cargo do bot ou escolha Criar um canal novo."
+    )
 
 
 def refusal_reason(exc: GenericError) -> str:
@@ -119,10 +120,10 @@ def refusal_reason(exc: GenericError) -> str:
     return REASON_MANAGE_PERMISSIONS if isinstance(exc, MissingManagePermissions) else REASON_REFUSED
 
 
-def refusal_message(exc: GenericError) -> str:
+def refusal_message(exc: GenericError, bot: Any) -> str:
     """Mensagem da recusa em termos do painel (a do módulo compartilhado fala do comando do Discord)."""
     if isinstance(exc, MissingManagePermissions):
-        return MSG_MANAGE_PERMISSIONS
+        return manage_permissions_message(bot_name_of(bot))
     return plain_message(exc.text)
 
 
@@ -310,7 +311,7 @@ class JukeboxService:
             validate_jukebox_target(ctx.bot, ctx.guild, target, existing_channel=True)
         except GenericError as exc:
             missing = tuple(perms_translations.get(p, p) for p in missing_channel_permissions(target))
-            return Check({"canal": refusal_message(exc)}, echo, missing)
+            return Check({"canal": refusal_message(exc, ctx.bot)}, echo, missing)
         errors: dict[str, str] = {}
         is_forum = isinstance(target, disnake.ForumChannel)
         if is_forum and not limits.FORUM_TITLE_MIN <= len(echo["titulo_forum"]) <= limits.FORUM_TITLE_MAX:
@@ -338,7 +339,7 @@ class JukeboxService:
             try:
                 ensure_can_create_channel(ctx.bot, ctx.guild)
             except GenericError as exc:
-                errors["tipo"] = refusal_message(exc)
+                errors["tipo"] = refusal_message(exc, ctx.bot)
         category_id = 0
         if echo["categoria"] != "":
             category = self.resolve(ctx, echo["categoria"], (disnake.CategoryChannel,))
@@ -372,7 +373,7 @@ class JukeboxService:
         try:
             ensure_can_reset(ctx.guild)
         except GenericError as exc:
-            return refusal_message(exc)
+            return refusal_message(exc, ctx.bot)
         if self.current(ctx, config).removido:
             return MSG_NO_CHANNEL
         return None
@@ -421,7 +422,7 @@ class JukeboxService:
                 config=config,
             )
         except GenericError as exc:
-            raise TaskFailure(refusal_message(exc), refusal_reason(exc))
+            raise TaskFailure(refusal_message(exc, ctx.bot), refusal_reason(exc))
         self._audit(ctx, TASK_SETUP)
         return result
 
@@ -465,7 +466,7 @@ class JukeboxService:
                 notify=notify,
             )
         except GenericError as exc:
-            raise TaskFailure(refusal_message(exc), refusal_reason(exc))
+            raise TaskFailure(refusal_message(exc, ctx.bot), refusal_reason(exc))
         self._audit(ctx, TASK_RESET)
 
     @staticmethod

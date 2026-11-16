@@ -174,7 +174,6 @@ class IndexHandler(tornado.web.RequestHandler):
                 commit=commit,
                 commit_url=f"{self.pool.remote_git_url}/commit/{commit}" if commit else "",
                 painel_url=self.pool.public_panel_url,
-                generic_panel_enabled=self.panel_enabled,
                 suporte_url=branding.SUPPORT_SERVER_URL,
                 nome_bot=branding.BOT_NAME,
                 repo_url=branding.REPO_URL,
