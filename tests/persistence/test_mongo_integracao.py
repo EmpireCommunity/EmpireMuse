@@ -186,3 +186,56 @@ async def _ciclo_registro_de_uso():
 
 def test_mongo_usage_events_round_trip_against_a_real_mongod():
     asyncio.run(_ciclo_registro_de_uso())
+
+
+async def _ciclo_indice_de_estacoes():
+    """BK-4b: o índice único parcial (servidor, nome) recusa o nome repetido na inserção e na troca, deixa o legado sem ``name_norm`` de fora,
+    não nasce sobre dados repetidos (só a contagem dos grupos) e o TTL é criado."""
+    from empiremuse.utils.db import UniqueIndexViolation
+    from empiremuse.utils.radio.stations import NAME_INDEX, NAME_INDEX_KEYS, NAME_INDEX_PARTIAL
+
+    banco = MongoDatabase(URI, timeout=5)
+    nome = f"litmus_{uuid.uuid4().hex}"
+    colecao, repetida = "radio_stations", "radio_stations_dup"
+    indice = {"partial": NAME_INDEX_PARTIAL, "name": NAME_INDEX, "collection": nome}
+    try:
+        await banco.ensure_unique_index(NAME_INDEX_KEYS, db_name=colecao, **indice)
+        await banco.ensure_unique_index(NAME_INDEX_KEYS, db_name=colecao, **indice)  # idempotente
+        rock = {"guild_id": "1", "name_norm": "rock", "rev": 0}
+        assert await banco.save_doc_cas("a", rock, expected_rev=None, db_name=colecao, collection=nome)
+        assert not await banco.save_doc_cas(
+            "a", rock, expected_rev=None, db_name=colecao, collection=nome
+        )  # o _id: CAS
+        with pytest.raises(UniqueIndexViolation):
+            await banco.save_doc_cas("b", rock, expected_rev=None, db_name=colecao, collection=nome)
+        assert await banco.save_doc_cas(
+            "c", {**rock, "guild_id": "2"}, expected_rev=None, db_name=colecao, collection=nome
+        )
+        assert await banco.save_doc_cas(
+            "d", {**rock, "name_norm": "jazz"}, expected_rev=None, db_name=colecao, collection=nome
+        )
+        with pytest.raises(UniqueIndexViolation):
+            await banco.save_doc_cas("d", {**rock, "rev": 1}, expected_rev=0, db_name=colecao, collection=nome)
+        await banco._connect[nome][colecao].insert_many([{"_id": "e", "guild_id": "1"}, {"_id": "f", "guild_id": "1"}])
+
+        await banco._connect[nome][repetida].insert_many(
+            [{"_id": str(i), "guild_id": "1", "name_norm": "rock"} for i in range(3)]
+            + [{"_id": "x", "guild_id": "1", "name_norm": "pop"}]
+        )
+        with pytest.raises(UniqueIndexViolation):
+            await banco.ensure_unique_index(NAME_INDEX_KEYS, db_name=repetida, **indice)
+        grupos = await banco.count_duplicate_groups(
+            [key for key, _ in NAME_INDEX_KEYS], match=NAME_INDEX_PARTIAL, db_name=repetida, collection=nome
+        )
+        assert grupos == 1
+
+        await banco.ensure_ttl_index("expire_at", db_name="radio_resolved", collection=nome)
+        info = await banco._connect[nome]["radio_resolved"].index_information()
+        assert any(spec.get("expireAfterSeconds") == 0 and spec["key"] == [("expire_at", 1)] for spec in info.values())
+    finally:
+        await banco._connect.drop_database(nome)
+        await banco._connect.close()
+
+
+def test_mongo_station_name_index_and_resolved_ttl_against_a_real_mongod():
+    asyncio.run(_ciclo_indice_de_estacoes())

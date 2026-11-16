@@ -19,7 +19,9 @@ from empiremuse.rules.errors import RuleError
 from empiremuse.rules.radio import KIND_CUSTOM, Radio
 from empiremuse.rules.radio_genres import GROUPS, Genre, find_genre, shipped_catalog
 from empiremuse.rules.radio_station import (
+    FIELD_NAME,
     GENRE_PREFIX,
+    STATION_NAME_TAKEN,
     CustomStation,
     check_station_doc,
     from_document,
@@ -28,6 +30,7 @@ from empiremuse.rules.radio_station import (
     to_document,
     valid_station_id,
 )
+from empiremuse.utils.db import UniqueIndexViolation
 from empiremuse.utils.radio.premium import CAS_ATTEMPTS, GLOBAL_DB, RadioUnavailable
 from empiremuse.utils.radio.store import RadioConflict, RadioInvalid, RadioNotFound, RadioStore
 
@@ -37,6 +40,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 STATIONS_DB = "radio_stations"  # nome da coleção
+NAME_INDEX = "guild_name_norm_unique"
+NAME_INDEX_KEYS = [("guild_id", 1), ("name_norm", 1)]
+NAME_INDEX_PARTIAL = {"name_norm": {"$type": "string"}}  # estação sem ``name_norm`` (legado) fica fora do índice
 STATION_IN_USE = "station_in_use"
 
 
@@ -86,6 +92,36 @@ class StationStore:
             logger.warning("Estação não lida (%s)", type(error).__name__)
             raise RadioUnavailable from error
 
+    async def ensure_indexes(self) -> None:
+        """No boot (principal, depois das migrações e antes da retomada): o índice único (servidor, nome) no MongoDB.
+
+        Instalação própria com nomes já repetidos não cria o índice: só a CONTAGEM dos grupos vai ao log e o bot segue (a trava em memória ainda
+        serializa as gravações deste processo). Nunca derruba a subida. No TinyDB não há índice: vale só a trava.
+        """
+        database = self._database
+        try:
+            await database.ensure_unique_index(
+                NAME_INDEX_KEYS, partial=NAME_INDEX_PARTIAL, name=NAME_INDEX, db_name=STATIONS_DB, collection=GLOBAL_DB
+            )
+        except UniqueIndexViolation:
+            groups = await self._duplicate_groups()
+            logger.warning("Índice único de nome de estação não criado: %s grupos de nomes repetidos", groups)
+        except Exception as error:  # noqa: BLE001 - sem o índice o bot segue com a trava; só o tipo vai ao log
+            logger.warning("Índice único de nome de estação não criado (%s)", type(error).__name__)
+
+    async def _duplicate_groups(self) -> str:
+        try:
+            return str(
+                await self._database.count_duplicate_groups(
+                    [key for key, _ in NAME_INDEX_KEYS],
+                    match=NAME_INDEX_PARTIAL,
+                    db_name=STATIONS_DB,
+                    collection=GLOBAL_DB,
+                )
+            )
+        except Exception as error:  # noqa: BLE001
+            return f"? ({type(error).__name__})"
+
     async def _save(self, station_id: str, doc: dict[str, Any], expected_rev: int | None) -> bool:
         try:
             return bool(
@@ -93,6 +129,8 @@ class StationStore:
                     station_id, doc, expected_rev=expected_rev, db_name=STATIONS_DB, collection=GLOBAL_DB
                 )
             )
+        except UniqueIndexViolation as error:  # o índice (servidor, nome) do Mongo: a mesma recusa da regra, nunca 503
+            raise StationInvalid(RuleError(STATION_NAME_TAKEN, FIELD_NAME, doc.get("name"))) from error
         except Exception as error:  # noqa: BLE001
             logger.warning("Estação não gravada (%s)", type(error).__name__)
             raise RadioUnavailable from error
