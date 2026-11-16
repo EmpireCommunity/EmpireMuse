@@ -125,22 +125,31 @@ O `AUTO_ERROR_REPORT_WEBHOOK` copia erros para um canal do Discord sem prazo. De
 2. Cria um webhook novo no canal novo, atualiza `AUTO_ERROR_REPORT_WEBHOOK` no `.env` (é segredo: nunca no repositório nem no chat) e recria o contêiner do bot.
 3. Registre aqui a data, quem executou e a próxima data.
 
-| Data do expurgo | Executor | Próximo prazo |
-| :--- | :--- | :--- |
-| _(nenhum ainda)_ | | |
+| Data do expurgo | Executor | Próximo prazo | Notas (canais limpos pelo nome, suspensões; nunca o valor de um webhook) |
+| :--- | :--- | :--- | :--- |
+| _(nenhum ainda)_ | | | |
 
 ## 9.1 Expurgo do canal de avisos de entrada e saída (D5)
 
 Os avisos só existem com `BOT_ADD_REMOVE_LOG` preenchido com uma URL de webhook válida: sem ela, o bot não manda aviso nenhum. Com ela, cada servidor em que o bot entra ou de que sai vira um aviso **com o nome e o ID de quem é dono do servidor** (decisão do dono D5, 2026-11-15). `BOT_ADD_REMOVE_LOG_CHANNEL_ID` só escolhe um canal preferido: quando ele existe e o bot pode escrever lá, o aviso vai para esse canal; senão, vai pelo webhook. Pode haver avisos nos dois lugares. A Política e a tela de apagar dados dizem que esses avisos ficam por até 6 meses (183 dias); apagar os dados de uma pessoa não os remove antes disso.
 
-**A cada 183 dias**, no mesmo dia do expurgo da seção 9 (um registro só):
+**Primeiro expurgo:** os avisos já existentes podem ter mais de 183 dias. Na primeira janela (seção 9), o dono confere a data do aviso mais antigo e, se ele passar de 183 dias, faz o expurgo abaixo já nessa janela; o ciclo de 183 dias conta a partir daí. Se nenhum aviso passa de 183 dias, o ciclo conta da data do aviso mais antigo.
+
+**Depois, a cada 183 dias**, no mesmo dia do expurgo da seção 9 (um registro só):
 
 1. O dono (precisa do OK dele) apaga o canal do webhook e, se estiver configurado, o canal preferido, e cria outros de mesmo nome. Como na seção 9, a exclusão em massa por API não alcança mensagens com mais de 14 dias.
 2. O webhook morre com o canal em que foi criado: cria um webhook novo no canal novo e atualiza `BOT_ADD_REMOVE_LOG` no `.env` (é segredo: nunca no repositório nem no chat). Se há canal preferido, atualiza também `BOT_ADD_REMOVE_LOG_CHANNEL_ID` com o ID do canal novo. Recria o contêiner do bot.
-3. Registra a data na tabela da seção 9, com a nota "e avisos de entrada e saída".
+3. Registra a data na tabela da seção 9, com a nota "e avisos de entrada e saída" e os nomes dos canais limpos.
 
-Sem `BOT_ADD_REMOVE_LOG`, não há aviso nem canal a limpar.
+**Canais e webhooks usados:** na tabela da seção 9, anote o nome de cada canal que recebeu avisos (o do webhook e o preferido); nunca o valor do webhook. Se `BOT_ADD_REMOVE_LOG` for retirado, o bot para de mandar avisos, mas os antigos continuam nesses canais: o expurgo segue até o último aviso passar de 183 dias (no máximo um ciclo depois da retirada) e só então sai da rotina.
+
+Sem `BOT_ADD_REMOVE_LOG` e sem avisos antigos nos canais anotados, não há o que limpar.
 
 ## 10. Suspensão legal (ordem de guarda)
 
-Se houver ordem legal para guardar registros além de 183 dias, o dono decide e documenta: copie o `access.log*` e os arquivos pedidos para um local protegido (modo 0600, fora das pastas podadas) **antes** da poda, e suspenda a poda: **mova** a configuração do `logrotate` para fora de `/etc/logrotate.d/` (por exemplo para uma pasta de custódia; renomear no lugar não basta, o `logrotate` pode continuar lendo o arquivo) e desabilite o timer do Lavalink. Se a ordem alcança os avisos de entrada e saída, suspenda também o expurgo da seção 9.1 (e o da seção 9, se ela alcançar o canal de erros) e anote a suspensão na tabela da seção 9. Retome e apague a cópia quando a ordem acabar.
+Se houver ordem legal para guardar registros além de 183 dias, o dono decide e documenta: copie o `access.log*` e os arquivos pedidos para um local protegido (modo 0600, fora das pastas podadas) **antes** da poda, e suspenda a poda: **mova** a configuração do `logrotate` para fora de `/etc/logrotate.d/` (por exemplo para uma pasta de custódia; renomear no lugar não basta, o `logrotate` pode continuar lendo o arquivo) e desabilite o timer do Lavalink. Os dois expurgos do Discord seguem a ordem cada um por si:
+
+- se a ordem alcança o canal de erros (o webhook de erro), suspenda o expurgo da seção 9;
+- se a ordem alcança os avisos de entrada e saída de servidor, suspenda o expurgo da seção 9.1.
+
+Uma ordem pode alcançar um, os dois ou nenhum; anote na tabela da seção 9 qual foi suspenso e por quê. Retome e apague a cópia quando a ordem acabar.
