@@ -16,13 +16,13 @@ Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/local/sbin/cf-firewall.sh on
 ExecStop=/usr/local/sbin/cf-firewall.sh off
-# O iptables precisa de CAP_NET_ADMIN e CAP_NET_RAW; o lock dele fica em /run.
+# O iptables precisa de CAP_NET_ADMIN e CAP_NET_RAW e de um lock gravável; por isso ProtectSystem=full (deixa /usr, /boot e /etc
+# só de leitura) e não strict.
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
-ProtectSystem=strict
-ReadWritePaths=/run
+ProtectSystem=full
 
 [Install]
 WantedBy=multi-user.target
