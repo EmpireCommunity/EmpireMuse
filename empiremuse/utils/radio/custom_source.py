@@ -151,12 +151,20 @@ class ResolvedTracks:
         encoded = entry.get("encoded")
         return entry if isinstance(encoded, str) and encoded else None
 
-    async def ensure_indexes(self) -> None:
-        """No boot: o índice TTL em ``expire_at``. Entrada antiga sem o campo segue valendo só pela conferência de ``at`` no código."""
+    async def ensure_indexes(self) -> bool:
+        """O índice TTL em ``expire_at`` e, uma vez, a limpeza das entradas antigas sem o campo (é só cache: a faixa volta a ser resolvida quando
+        sortear). ``False`` = falha passageira, vale tentar de novo; nunca levanta. O log leva só o tipo do erro e a contagem."""
         try:
             await self._database.ensure_ttl_index(EXPIRE_FIELD, db_name=RESOLVED_DB, collection=GLOBAL_DB)
+            removed = await self._database.delete_matching(
+                {EXPIRE_FIELD: {"$exists": False}}, db_name=RESOLVED_DB, collection=GLOBAL_DB
+            )
         except Exception as error:  # noqa: BLE001 - sem o TTL o cache segue; só o tipo vai ao log
             logger.warning("Índice TTL do cache de faixas resolvidas não criado (%s)", type(error).__name__)
+            return False
+        if removed:
+            logger.info("Cache de faixas resolvidas: %d entradas antigas sem validade apagadas", removed)
+        return True
 
     async def _write(self, track: Track, body: dict[str, Any]) -> None:
         key, now = failure_id(track), self._clock()

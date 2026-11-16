@@ -14,7 +14,7 @@ from pymongo.errors import DuplicateKeyError
 from empiremuse.rules.radio_shuffle import Track
 from empiremuse.rules.radio_station import STATION_NAME_TAKEN
 from empiremuse.utils.db import LocalDatabase, UniqueIndexViolation, _is_id_key
-from empiremuse.utils.radio import RadioHub
+from empiremuse.utils.radio import INDEX_RETRY_DELAYS_S, RadioHub
 from empiremuse.utils.radio.custom_source import (
     EXPIRE_FIELD,
     FAIL_TTL_S,
@@ -38,7 +38,8 @@ class IndexedDb(FakeDb):
     def __init__(self, *, index_error=None, groups=0, write_error=None):
         super().__init__()
         self.index_error, self.groups, self.write_error = index_error, groups, write_error
-        self.indexes, self.ttl = [], []
+        self.indexes, self.ttl, self.purged = [], [], []
+        self.ttl_errors, self.legacy = [], 0
 
     async def ensure_unique_index(self, keys, *, partial, name, db_name, collection):
         if self.index_error is not None:
@@ -51,7 +52,13 @@ class IndexedDb(FakeDb):
         return self.groups
 
     async def ensure_ttl_index(self, field, *, db_name, collection):
+        if self.ttl_errors:
+            raise self.ttl_errors.pop(0)
         self.ttl.append((db_name, field))
+
+    async def delete_matching(self, filter, *, db_name, collection):
+        self.purged.append((db_name, filter))
+        return self.legacy
 
     async def save_doc_cas(self, id_, doc, *, expected_rev, db_name, collection):
         if self.write_error is not None and db_name == "radio_stations":
@@ -93,15 +100,62 @@ class TestTheIndexAtBoot:
         assert any(expected in record.getMessage() for record in caplog.records), caplog.text
 
     @pytest.mark.asyncio
-    async def test_the_resolved_cache_asks_for_the_ttl_index_and_a_failure_only_warns(self, caplog):
+    async def test_the_resolved_cache_asks_for_the_ttl_index_purges_old_entries_once_and_a_failure_only_warns(
+        self, caplog
+    ):
         db = IndexedDb()
-        await ResolvedTracks(db).ensure_indexes()
+        db.legacy = 7  # entradas gravadas antes do BK-4b, sem ``expire_at``
+        with caplog.at_level(logging.INFO):
+            assert await ResolvedTracks(db).ensure_indexes() is True
         assert db.ttl == [(RESOLVED_DB, EXPIRE_FIELD)]
+        assert db.purged == [(RESOLVED_DB, {EXPIRE_FIELD: {"$exists": False}})]
+        assert "7 entradas antigas" in caplog.text  # só a contagem
 
         broken = SimpleNamespace(ensure_ttl_index=None)  # chamar ``None`` levanta TypeError
         with caplog.at_level(logging.WARNING):
-            await ResolvedTracks(broken).ensure_indexes()
+            assert await ResolvedTracks(broken).ensure_indexes() is False
         assert "TypeError" in caplog.text
+
+
+class TestTheIndexesRunInTheBackgroundWithBoundedRetries:
+    """Alicerce BK-4b: os índices não seguram a retomada e uma falha passageira tenta de novo, poucas vezes (sem relógio real)."""
+
+    @staticmethod
+    async def run(db):
+        waits = []
+
+        async def sleep(seconds):
+            waits.append(seconds)
+
+        await hub_with(db).ensure_indexes(sleep=sleep)
+        return waits
+
+    @pytest.mark.asyncio
+    async def test_a_passing_failure_is_retried_and_the_part_already_done_is_not_redone(self):
+        db = IndexedDb()
+        db.ttl_errors = [ConnectionError("mongo fora")]
+
+        waits = await self.run(db)
+
+        assert waits == [INDEX_RETRY_DELAYS_S[0]]
+        assert len(db.indexes) == 1 and db.ttl == [(RESOLVED_DB, EXPIRE_FIELD)]  # o de nome não é refeito
+
+    @pytest.mark.asyncio
+    async def test_it_gives_up_after_the_last_attempt_with_a_warning(self, caplog):
+        db = IndexedDb()
+        db.ttl_errors = [ConnectionError("mongo fora")] * (len(INDEX_RETRY_DELAYS_S) + 1)
+
+        with caplog.at_level(logging.WARNING):
+            waits = await self.run(db)
+
+        assert waits == list(INDEX_RETRY_DELAYS_S)
+        assert "1 parte(s) não criada(s)" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_repeated_names_are_final_and_never_retried(self):
+        db = IndexedDb(index_error=UniqueIndexViolation(), groups=2)
+
+        assert await self.run(db) == []
 
 
 class TestAWriteThatHitsTheIndex:

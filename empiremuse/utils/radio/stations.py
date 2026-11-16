@@ -92,11 +92,12 @@ class StationStore:
             logger.warning("Estação não lida (%s)", type(error).__name__)
             raise RadioUnavailable from error
 
-    async def ensure_indexes(self) -> None:
-        """No boot (principal, depois das migrações e antes da retomada): o índice único (servidor, nome) no MongoDB.
+    async def ensure_indexes(self) -> bool:
+        """O índice único (servidor, nome) no MongoDB; ``RadioHub.ensure_indexes`` chama numa tarefa de fundo do boot, depois das migrações.
 
-        Instalação própria com nomes já repetidos não cria o índice: só a CONTAGEM dos grupos vai ao log e o bot segue (a trava em memória ainda
-        serializa as gravações deste processo). Nunca derruba a subida. No TinyDB não há índice: vale só a trava.
+        ``True`` = resolvido: criado, ou impossível por nomes já repetidos (instalação própria: só a CONTAGEM dos grupos vai ao log e o bot segue com
+        a trava, que serializa as gravações deste processo). ``False`` = falha passageira, vale tentar de novo. Nunca levanta. No TinyDB não há
+        índice: vale só a trava.
         """
         database = self._database
         try:
@@ -108,6 +109,8 @@ class StationStore:
             logger.warning("Índice único de nome de estação não criado: %s grupos de nomes repetidos", groups)
         except Exception as error:  # noqa: BLE001 - sem o índice o bot segue com a trava; só o tipo vai ao log
             logger.warning("Índice único de nome de estação não criado (%s)", type(error).__name__)
+            return False
+        return True
 
     async def _duplicate_groups(self) -> str:
         try:

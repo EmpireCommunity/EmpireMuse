@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 
 
 NOTICE_SECONDS = 60
+INDEX_RETRY_DELAYS_S = (30, 120)  # os índices do rádio: 3 tentativas no total, depois desiste até a próxima subida
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +88,22 @@ class RadioHub:
         self.health._until.clear()
         self._notices.clear()
         self.control.forget()
+
+    async def ensure_indexes(self, *, sleep: Any = asyncio.sleep) -> None:
+        """Os índices do rádio no MongoDB, numa tarefa de fundo do boot (nunca segura a retomada): o de nome das estações e o TTL do cache de
+        faixas. Falha passageira tenta de novo depois de ``INDEX_RETRY_DELAYS_S``; cada parte pronta não é refeita. O log leva só tipo e contagem."""
+        pending = [self.stations.ensure_indexes, self.resolved.ensure_indexes]
+        for delay in (*INDEX_RETRY_DELAYS_S, None):
+            pending = [step for step in pending if not await step()]
+            if not pending or delay is None:
+                break
+            await sleep(delay)
+        if pending:
+            logger.warning(
+                "Índices do rádio: %d parte(s) não criada(s) depois de %d tentativas",
+                len(pending),
+                len(INDEX_RETRY_DELAYS_S) + 1,
+            )
 
     async def reload_station(self, station: Any) -> None:
         """Uma estação do servidor foi editada: cada rádio LIGADA que a toca recarrega o pool (a troca passa pelo recuo, sem prender quem editou)."""

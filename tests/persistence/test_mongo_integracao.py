@@ -8,7 +8,7 @@ Tudo roda num banco com nome único, apagado no fim.
 import asyncio
 import os
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -232,6 +232,20 @@ async def _ciclo_indice_de_estacoes():
         await banco.ensure_ttl_index("expire_at", db_name="radio_resolved", collection=nome)
         info = await banco._connect[nome]["radio_resolved"].index_information()
         assert any(spec.get("expireAfterSeconds") == 0 and spec["key"] == [("expire_at", 1)] for spec in info.values())
+
+        # a limpeza única das entradas antigas sem ``expire_at``: só elas saem
+        await banco._connect[nome]["radio_resolved"].insert_many(
+            [
+                {"_id": "velha1", "at": 1.0},
+                {"_id": "velha2", "at": 2.0},
+                {"_id": "nova", "at": 3.0, "expire_at": datetime.now(timezone.utc)},
+            ]
+        )
+        apagadas = await banco.delete_matching(
+            {"expire_at": {"$exists": False}}, db_name="radio_resolved", collection=nome
+        )
+        assert apagadas == 2
+        assert [d["_id"] async for d in banco.iter_data("radio_resolved", nome)] == ["nova"]
     finally:
         await banco._connect.drop_database(nome)
         await banco._connect.close()

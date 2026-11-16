@@ -329,6 +329,10 @@ class LocalDatabase(BaseDB):
         """Sem TTL no TinyDB: a validade fica com a conferência no código de quem lê."""
         return None
 
+    async def delete_matching(self, filter: dict, *, db_name: str, collection: str) -> int:
+        """Sem TTL no TinyDB não há o que limpar por filtro (a validade é conferida por quem lê): nada é apagado."""
+        return 0
+
     async def find_doc(self, id_, *, db_name: str, collection: str) -> Optional[dict]:
         """O documento como está no banco: sem cache e sem criar o padrão (``None`` se não existe)."""
         doc = self._connect[collection][db_name].find_one({"_id": str(id_)})
@@ -550,6 +554,11 @@ class MongoDatabase(BaseDB):
     async def ensure_ttl_index(self, field: str, *, db_name: str, collection: str) -> None:
         """O MongoDB apaga o documento quando a data em ``field`` passa (``expireAfterSeconds=0``); documento sem o campo não expira por aqui."""
         await self._connect[collection][db_name].create_index(field, expireAfterSeconds=0)
+
+    async def delete_matching(self, filter: dict, *, db_name: str, collection: str) -> int:
+        """Apaga os documentos que casam ``filter`` e devolve quantos. Só para coleção sem cache de documento (o cache por id não é tocado)."""
+        result = await self._connect[collection][db_name].delete_many(filter)
+        return int(result.deleted_count)
 
     async def find_doc(self, id_, *, db_name: str, collection: str) -> Optional[dict]:
         """O documento como está no banco: sem cache e sem criar o padrão (``None`` se não existe)."""
