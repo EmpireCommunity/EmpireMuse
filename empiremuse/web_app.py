@@ -109,8 +109,7 @@ class IndexHandler(tornado.web.RequestHandler):
         self.set_header("X-Frame-Options", "DENY")
         self.set_header("Referrer-Policy", "same-origin")
 
-    def initialize(self, pool: Optional[BotPool] = None, config: dict = None, panel_enabled: bool = False):
-        self.panel_enabled = panel_enabled
+    def initialize(self, pool: Optional[BotPool] = None, config: dict = None):
         self.pool = pool
         self.config = config
 
@@ -811,7 +810,6 @@ def run_app(pool: BotPool, config: dict = None):
                 {
                     "pool": pool,
                     "config": config,
-                    "panel_enabled": panel_app is not None,
                 },
             ),
             (
