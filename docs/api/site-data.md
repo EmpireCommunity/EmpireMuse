@@ -13,9 +13,14 @@ EmpireMuse-Panel fixa a versão (tag e hash), baixa, confere o hash e gera `/com
   permissões de servidor que o **usuário** precisa ter e `bot_version`. Ordem estável por `id` e nenhum campo de data: o mesmo código gera os mesmos bytes.
 - **O que nunca entra:** comando de dono, comando oculto (`hidden`), segredo e id interno (como o nome da classe do cog). Um teste do bot
   falha se algum aparecer.
-- **Fora do arquivo:** menus de contexto (usuário e mensagem), a regra de execução (DJ, estar no canal de voz) e qualquer sinal de
-  *premium*: o catálogo não tem esse dado como campo (só aparece no texto da descrição, como na `/radio`), então o arquivo não o inventa.
-  Se o site precisar dele, entra como campo aditivo quando o catálogo o tiver.
+- **Limitado a Apoiadores:** `supporter_limited: true` (só presente quando verdadeiro, em comando de barra, subcomando de barra e
+  comando de prefixo) marca o comando que o bot RECUSA num servidor sem o acesso de Apoiador, concedido à mão pela equipe quando há
+  capacidade: é uma limitação de capacidade, nunca um benefício comprado. Num grupo, o campo diz que ao menos um subcomando é assim (hoje:
+  `/radio`, `/radio on`, `/radio setup`, `/radio station` e os quatro dele, e o prefixo `radio` e `radio on`). A fonte é a marca
+  `limited_to_supporters` (`empiremuse/rules/apoiador.py`) posta no callback do comando, ao lado da definição; um teste confere que todo
+  comando marcado recusa sem o acesso e que nenhum outro recusa por isso. Campo aditivo da versão 1: o painel que valida o arquivo tem de
+  aceitá-lo no mesmo re-pin.
+- **Fora do arquivo:** menus de contexto (usuário e mensagem) e a regra de execução (DJ, estar no canal de voz).
 
 ## Como gerar
 
