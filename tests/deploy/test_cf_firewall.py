@@ -110,7 +110,6 @@ def _namespace_isolado_disponivel() -> bool:
     return probe.returncode == 0 and probe.stdout.strip() == "3"  # só as 3 políticas padrão: namespace vazio
 
 
-@pytest.mark.integration
 @pytest.mark.skipif(not _namespace_isolado_disponivel(), reason="precisa de root e de um network namespace isolado")
 def test_on_off_em_namespace_isolado(tmp_path: Path) -> None:
     write_lists(tmp_path, V4_OK)
