@@ -3,7 +3,7 @@
 #
 # Uso: cf-firewall.sh COMANDO
 #   on            valida as listas, monta a cadeia CF-ONLY de uma vez e só então liga os ganchos (DOCKER-USER; no IPv6
-#                 também a INPUT se houver listener em [::]:443)
+#                 também a INPUT, sempre)
 #   off           tira os ganchos e apaga a cadeia (volta ao estado sem firewall; sem erro se nada estiver ligado)
 #   status        mostra ganchos e contadores (precisa de root); sai com erro se o firewall estiver incompleto
 #   check         só valida as duas listas e imprime as contagens (não precisa de root nem de iptables)
@@ -20,10 +20,12 @@
 # libera (RETURN) as faixas da Cloudflare e descarta (DROP) o resto.
 #
 # IPv6 e docker-proxy: se a rede do Traefik não tem IPv6 (ou o ip6tables do Docker está desligado), o Docker publica
-# [::]:443 pelo docker-proxy, que é atendido pela INPUT e NUNCA passa pela DOCKER-USER. Por isso, no `on`, se `ss` achar um
-# listener TCP em [::]:443 (ou se `ss` não existir: por precaução), o mesmo gancho entra também na INPUT do ip6tables,
-# só para a 443 (NEW, interface pública). O SSH e qualquer outra porta nunca são tocados. Se o listener existe e o
-# ip6tables não consegue filtrá-lo, o `on` falha antes de aplicar qualquer coisa.
+# [::]:443 pelo docker-proxy, que é atendido pela INPUT e NUNCA passa pela DOCKER-USER. Por isso o `on` SEMPRE põe o mesmo
+# gancho também na INPUT do ip6tables, só para a 443 (NEW, ORIGINAL, interface pública), haja ou não listener na hora:
+# o Traefik pode subir depois do `on` (boot, recriação) e uma decisão tomada na hora do `on` deixaria a origem aberta por
+# IPv6. O SSH e qualquer outra porta nunca são tocados. Se a INPUT do ip6tables não é filtrável (por exemplo
+# ipv6.disable=1), o `on` falha fechado antes de aplicar qualquer coisa, e portanto o IPv4 também NÃO é ligado.
+# O `status` falha se há listener em [::]:443 (ou se `ss` não existe: por precaução) e o gancho da INPUT não é exatamente 1.
 #
 # As faixas vêm de listas ESTÁTICAS e revisadas (padrão /etc/empire/cf-ips-v4.txt e cf-ips-v6.txt, as de deploy/host/):
 # o script nunca baixa nada, então sem rede no boot ele continua funcionando. Cada lista é validada ANTES de tocar em
@@ -39,8 +41,7 @@
 # janela. O gancho entra uma vez só, depois de a cadeia estar cheia.
 #
 # Variáveis (para teste e casos especiais): CF_FW_LIST_DIR (pasta das listas), CF_FW_PUB_IF (interface pública; sem ela,
-# a da rota padrão, e para IPv6 a da rota padrão IPv6 se houver). Sem IPv6 na DOCKER-USER e sem listener em [::]:443, o
-# IPv6 é pulado com um aviso.
+# a da rota padrão, e para IPv6 a da rota padrão IPv6 se houver).
 set -eu
 set -f # as faixas e as linhas do iptables são palavras soltas: nunca expandir globs
 
@@ -151,7 +152,7 @@ fam_cmd() { # $1 = 4 ou 6; define ipt e restore
     fi
 }
 
-# Sucesso se há (ou, sem `ss`, pode haver) um listener TCP IPv6 em [::]:443: o docker-proxy, que passa pela INPUT.
+# Usado só pelo `status`. Sucesso se há (ou, sem `ss`, pode haver) um listener TCP IPv6 em [::]:443: o docker-proxy.
 v6_listener_443() {
     command -v ss >/dev/null 2>&1 || return 0
     [ -n "$(ss -H -ltn -6 "sport = :$PORT" 2>/dev/null)" ]
@@ -168,7 +169,7 @@ restore_text() {
     echo "COMMIT"
 }
 
-# Quais cadeias recebem o gancho nesta família. IPv4: DOCKER-USER. IPv6: DOCKER-USER se existir e INPUT se há listener.
+# Quais cadeias recebem o gancho nesta família. IPv4: DOCKER-USER. IPv6: DOCKER-USER se existir e sempre a INPUT.
 # Imprime os nomes, um por linha; sai com erro (e mensagem) se algo que precisa ser filtrado não pode ser.
 hook_parents() { # $1 = 4 ou 6
     fam_cmd "$1"
@@ -178,14 +179,11 @@ hook_parents() { # $1 = 4 ou 6
     elif [ "$1" = 4 ]; then
         die "a cadeia DOCKER-USER não existe (o Docker está no ar?)"
     fi
-    if [ "$1" = 6 ] && v6_listener_443; then
-        "$ipt" -n -L INPUT >/dev/null 2>&1 || die "IPv6: há listener em [::]:$PORT mas o ip6tables não filtra a INPUT: falha fechada, nada foi aplicado"
+    if [ "$1" = 6 ]; then
+        "$ipt" -n -L INPUT >/dev/null 2>&1 || die "IPv6: o ip6tables não filtra a INPUT (ipv6.disable=1?): falha fechada, nada foi aplicado (o IPv4 também não foi ligado)"
         parents="$parents INPUT"
     fi
-    if [ -z "$parents" ]; then
-        echo "cf-firewall: IPv6: sem DOCKER-USER e sem listener em [::]:$PORT, nada para filtrar (pulado)" >&2
-    fi
-    echo "$parents"
+    echo "${parents# }"
 }
 
 apply_family() { # $1 = 4 ou 6, $2 = faixas validadas, $3 = interface, $4 = cadeias de gancho
@@ -269,10 +267,21 @@ cmd_status() {
             "$ipt" -L "$CHAIN" -n -v
             [ $((du + inp)) -ge 1 ] || bad=1
             [ "$fam" = 4 ] && [ "$du" != 1 ] && bad=1
+            if [ "$fam" = 6 ]; then
+                [ "$du" -le 1 ] || bad=1
+                if v6_listener_443; then
+                    [ "$inp" = 1 ] || {
+                        echo "IPv6: ATENÇÃO: há (ou pode haver) listener em [::]:$PORT e o gancho da INPUT não é exatamente 1 ($inp)" >&2
+                        bad=1
+                    }
+                else
+                    [ "$inp" -le 1 ] || bad=1
+                fi
+            fi
         else
             echo "IPv$fam: cadeia $CHAIN ausente (firewall desligado)"
             [ "$fam" = 4 ] && bad=1
-            if [ "$fam" = 6 ] && [ -n "$(ss -H -ltn -6 "sport = :$PORT" 2>/dev/null || true)" ]; then
+            if [ "$fam" = 6 ] && v6_listener_443; then
                 echo "IPv$fam: ATENÇÃO: há listener em [::]:$PORT e nenhum filtro" >&2
                 bad=1
             fi
@@ -298,7 +307,7 @@ cmd_print() {
     echo "# --- ip6tables-restore --noflush (IPv6) ---"
     restore_text "$v6"
     echo "# gancho (IPv6), depois da cadeia: ip6tables -I DOCKER-USER 1 $(hook_spec "$if6")"
-    echo "# gancho (IPv6, só se houver listener em [::]:$PORT): ip6tables -I INPUT 1 $(hook_spec "$if6")"
+    echo "# gancho (IPv6, sempre: cobre o docker-proxy em [::]:$PORT): ip6tables -I INPUT 1 $(hook_spec "$if6")"
 }
 
 cmd_arm_undo() {

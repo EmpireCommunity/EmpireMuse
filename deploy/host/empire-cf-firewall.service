@@ -6,6 +6,10 @@
 # docker.socket) puxar esta unit; WantedBy=multi-user.target cobre o boot. PartOf=docker.service propaga parada e reinício:
 # o Docker parado desliga o firewall (off) e o Docker iniciado o liga de novo (on). Isso é proposital: com o Docker parado
 # nada escuta a 443 (o Traefik é um container), e o off+on garante um único gancho mesmo que o Docker recrie as cadeias.
+# PRÉ-CONDIÇÃO: `docker info -f '{{.LiveRestoreEnabled}}'` tem de ser `false`. Com `"live-restore": true` no daemon.json, parar
+# o Docker NÃO para os containers: o Traefik, o docker-proxy e o DNAT continuam de pé enquanto o PartOf roda o `off`, e a 443
+# fica aberta a todos, sem alarme, até o Docker voltar. Com live-restore ligado, não instale esta unit sem decisão do Dono
+# (por exemplo, tirar o ExecStop e deixar só o `on` idempotente).
 # O que fica aberto é só o intervalo entre o dockerd subir e o `on` rodar (After=docker.service, segundos), e os containers
 # com restart policy podem subir nesse intervalo: o mTLS de origem é a barreira principal.
 #

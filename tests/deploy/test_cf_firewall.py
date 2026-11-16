@@ -174,21 +174,23 @@ def test_on_off_em_namespace_isolado(tmp_path: Path) -> None:
 
 
 def test_ipv6_publicado_pelo_docker_proxy_e_filtrado_pela_input(tmp_path: Path) -> None:
-    """Sem DOCKER-USER no IPv6 e com um listener em [::]:443 (docker-proxy), o filtro tem de entrar na INPUT."""
+    """N-m1: o gancho da INPUT v6 entra sempre, mesmo sem listener; o listener que sobe depois já está coberto."""
     write_lists(tmp_path, V4_OK)
     roteiro = """
     iptables -N DOCKER-USER; iptables -A DOCKER-USER -j RETURN
+    ip6tables -A INPUT -p tcp --dport 22 -j ACCEPT
     sh "$SCRIPT" on >/dev/null 2>&1
-    echo "sem-listener=$(ip6tables -S | grep -c CF-ONLY || true)"
-    sh "$SCRIPT" off >/dev/null
+    echo "input-sem-listener=$(ip6tables -S INPUT | grep -c -- '-j CF-ONLY')"
     python3 -c 'import socket,time
 s=socket.socket(socket.AF_INET6); s.bind(("::",443)); s.listen(1); time.sleep(30)' &
     pid=$!
-    sleep 1
-    sh "$SCRIPT" on >/dev/null 2>&1
-    echo "input=$(ip6tables -S INPUT | grep -c -- '-j CF-ONLY')"
-    echo "ssh-intacto=$(ip6tables -S INPUT | grep -c -- '--dport 22' || true)"
-    sh "$SCRIPT" status >/dev/null
+    for _ in $(seq 50); do [ -n "$(ss -H -ltn -6 'sport = :443')" ] && break; sleep 0.1; done
+    echo "listener=$(ss -H -ltn -6 'sport = :443' | wc -l)"
+    if sh "$SCRIPT" status >/dev/null 2>&1; then echo "status-depois=ok"; fi
+    echo "ssh-intacto=$(ip6tables -S INPUT | grep -c -- '--dport 22')"
+    echo "gancho=$(ip6tables -S INPUT | grep -- '-i eth0 ' | grep -c -- '--ctorigdstport 443')"
+    ip6tables -D INPUT -i eth0 -p tcp -m conntrack --ctstate NEW --ctdir ORIGINAL --ctorigdstport 443 -j CF-ONLY
+    if sh "$SCRIPT" status >/dev/null 2>&1; then echo "status-sem-gancho=ok"; fi
     sh "$SCRIPT" off >/dev/null
     echo "depois=$(ip6tables -S | grep -c CF-ONLY || true)"
     kill $pid
@@ -199,7 +201,33 @@ s=socket.socket(socket.AF_INET6); s.bind(("::",443)); s.listen(1); time.sleep(30
     result = _run_in_namespace(roteiro, tmp_path)
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.split() == ["sem-listener=0", "input=1", "ssh-intacto=0", "depois=0"]
+    assert result.stdout.split() == [
+        "input-sem-listener=1",
+        "listener=1",
+        "status-depois=ok",
+        "ssh-intacto=1",
+        "gancho=1",
+        "depois=0",
+    ]
+
+
+def test_sem_input_v6_filtravel_o_on_falha_fechado_e_nao_liga_o_ipv4(tmp_path: Path) -> None:
+    """N-m1/N-s1: sem INPUT v6 filtrável o `on` recusa tudo (IPv4 inclusive), em vez de deixar o IPv6 aberto."""
+    write_lists(tmp_path, V4_OK)
+    roteiro = """
+    for f in iptables ip6tables; do $f -N DOCKER-USER; $f -A DOCKER-USER -j RETURN; done
+    mkdir -p "$SHIM"
+    real=$(command -v ip6tables)
+    printf '#!/bin/sh\\ncase "$*" in *"-L INPUT"*) exit 1;; esac\\nexec %s "$@"\\n' "$real" > "$SHIM/ip6tables"
+    chmod +x "$SHIM/ip6tables"
+    if PATH="$SHIM:$PATH" sh "$SCRIPT" on >/dev/null 2>&1; then echo "on=aceito"; fi
+    echo "restou=$(iptables -S | grep -c CF-ONLY || true) $(ip6tables -S | grep -c CF-ONLY || true)"
+    """
+
+    result = _run_in_namespace(roteiro.replace("$SHIM", f"{tmp_path}/shim2"), tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == ["restou=0", "0"]
 
 
 def test_falha_no_ipv6_depois_do_ipv4_desfaz_tudo(tmp_path: Path) -> None:
