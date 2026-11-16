@@ -159,6 +159,26 @@ class RadioChatWriteTest(RadioApiCase):
         assert response.code == 200 and body["chat"] == CHAT and body["version"] == str(radio.rev + 1)
         assert self.radio.store.updates == [(radio.id, "1001")]  # quem gravou é o usuário da sessão
 
+    @pytest.mark.regression
+    def test_repetir_o_put_com_a_versao_escrita_de_outro_jeito_ainda_e_repeticao(self):
+        """BK-11: a impressão da chave do PUT usa a versão canônica (``01`` é ``1``), como no DELETE (BK-2)."""
+        self.premium()
+        radio = self.seed_live()
+        url = self.radio_url(radio, "/chat")
+
+        first = self.call("PUT", url, rev_body(radio, CHAT), key="chave-put-1")
+        again = self.call("PUT", url, {"expected_version": f"0{radio.rev}", "values": CHAT}, key="chave-put-1")
+        other = self.call(
+            "PUT",
+            url,
+            {"expected_version": str(radio.rev), "values": {**CHAT, "stage_max_messages": 30}},
+            key="chave-put-1",
+        )
+
+        assert first.code == again.code == 200 and again.headers["Idempotent-Replayed"] == "true"
+        assert (other.code, error_code(other)) == (409, "conflict")  # outro corpo continua sendo outro pedido
+        assert len(self.radio.store.updates) == 1
+
     def test_versao_velha_da_409_com_o_rev_atual_e_nao_grava(self):
         self.premium()
         radio = self.seed_live()

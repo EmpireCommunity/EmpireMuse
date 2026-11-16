@@ -38,6 +38,7 @@ from empiremuse.api.writes_radio import (
     STATION_SPEC,
     parse_create,
     parse_reset_token,
+    fingerprint_body,
     parse_versioned,
 )
 from empiremuse.panel.services.radio import belongs_to
@@ -126,7 +127,7 @@ class RadioHandler(RadioRoute):
             await self.fail_unless_ok(outcome.status, ctx, radio, error_fields(outcome.form))
             return Reply(200, await radio_entry(ctx, self.ctx.radio_page, outcome.radio, premium=True, stations=True))
 
-        await self.run_write(body, work)
+        await self.run_write(fingerprint_body(body, write), work)  # a impressão usa a versão canônica, como no DELETE
 
 
 class RadioWriteHandler(RadioRoute):
@@ -152,7 +153,7 @@ class RadioWriteHandler(RadioRoute):
             entry = await radio_entry(found.ctx, self.ctx.radio_page, saved, premium=True, stations=True)
             return Reply(200, entry)
 
-        await self.run_write(body, work)
+        await self.run_write(fingerprint_body(body, write), work)  # a impressão usa a versão canônica, como no DELETE
 
 
 class RadioChatHandler(RadioWriteHandler):

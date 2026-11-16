@@ -16,12 +16,14 @@ from empiremuse.rules.radio import (
     PANEL_MUTE_ID,
     PANEL_NEXT_ID,
     PANEL_PREVIOUS_ID,
+    PANEL_RANDOM_ID,
     PANEL_VOLUME_UP_ID,
     radio_id,
 )
 from empiremuse.rules.radio_stations import Station
 from empiremuse.utils.radio import RadioHub, actions
 from empiremuse.utils.radio.actions import Actor, Refused
+from empiremuse.utils.radio.directory import DirectoryError
 from empiremuse.utils.radio.favorites import MAX_FAVORITES
 from empiremuse.utils.radio.runner import Phase
 from tests.cogs.test_radio_ao_vivo import (
@@ -224,6 +226,23 @@ class TestWalking:
         await w.cog.radio_panel_click(press)
 
         assert (await w.hub.store.get(w.radio.id)).source["station"] == THIRD
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("custom_id", [PANEL_NEXT_ID, PANEL_RANDOM_ID])
+    async def test_a_directory_outage_on_walk_or_random_says_try_again_not_station_not_found(self, custom_id):
+        w = await self.live_world()
+
+        async def down(uuid, **kwargs):
+            raise DirectoryError("fora")
+
+        w.hub.directory.by_uuid_strict = down
+        press = click(custom_id)
+
+        await w.cog.radio_panel_click(press)
+
+        assert "tente de novo" in said(press).casefold()  # o aviso de indisponível (o mesmo da estrela e da informação)
+        assert "não encontrad" not in said(press).casefold()
+        assert (await w.hub.store.get(w.radio.id)).source["station"] == MAIN
 
     @pytest.mark.asyncio
     async def test_someone_outside_the_call_cannot_walk_mute_or_change_the_volume(self):
@@ -429,13 +448,13 @@ class TestNoBurstOnTheDirectory:
     async def test_twenty_clicks_on_next_make_one_directory_request_and_one_station_change(self):
         w = await TestWalking.live_world()
         calls = []
-        real = w.hub.directory.by_uuid
+        real = w.hub.directory.by_uuid_strict
 
         async def counting(uuid, **kwargs):
             calls.append(uuid)
             return await real(uuid)
 
-        w.hub.directory.by_uuid = counting
+        w.hub.directory.by_uuid_strict = counting  # anterior e próxima leem pela consulta estrita
 
         presses = [click(PANEL_NEXT_ID) for _ in range(20)]
         for press in presses:
