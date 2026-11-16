@@ -25,7 +25,15 @@ from typing import Any, NamedTuple, NoReturn, Optional
 
 from empiremuse.api.data import DataHandler
 from empiremuse.api.errors import BOT_UNAVAILABLE, FORBIDDEN, ApiError, not_found, validation_failed
-from empiremuse.api.handlers_radio_favorites import ACTION_LABEL, PREMIUM_KINDS, mine_listing, server_listing
+from empiremuse.api.handlers_radio_favorites import (
+    ACTION_LABEL,
+    PREMIUM_KINDS,
+    favorite_change_reply,
+    mine_add,
+    mine_listing,
+    mine_remove,
+    server_listing,
+)
 from empiremuse.api.idempotency import Reply
 from empiremuse.api.radio_base import GUILD_ID, radio_endpoint
 from empiremuse.api.radio_data import safe_text
@@ -162,34 +170,10 @@ class MemberMineHandler(MemberRoute):
             raise ApiError(403, FORBIDDEN)  # o Apoiador vem antes do corpo e antes do ``claim`` (T12)
         favorite = parse_radio_favorite(body, MINE_KINDS)
 
-        async def exists(ref: str) -> bool:
-            return (
-                await hub.stations.get(ctx.guild_id, ref) is not None
-            )  # a de OUTRO servidor é igual a uma que não existe
-
         async def work() -> Reply:
-            status = 200
-            try:
-                if (
-                    await hub.custom_favorites.add(ctx.guild_id, int(ctx.user_id), favorite.id, exists)
-                    is AddResult.FULL
-                ):
-                    raise validation_failed("limit")
-                return Reply(200, await mine_listing(hub, ctx))
-            except ApiError as error:
-                status = error.status_code
-                raise
-            except FavoriteNotFound:
-                status = 404
-                raise not_found() from None
-            except RadioUnavailable:
-                status = 503
-                raise
-            except Exception:
-                status = 500
-                raise
-            finally:
-                record_panel_action(usage, ACTION_LABEL, status)
+            return await favorite_change_reply(
+                lambda: mine_add(hub, ctx, favorite), lambda: mine_listing(hub, ctx), usage
+            )
 
         await self.run_write(body, work)
 
@@ -200,22 +184,10 @@ class MemberMineHandler(MemberRoute):
         query = self.query_arguments("kind", "id")
         favorite = parse_radio_favorite(query, MINE_KINDS)
 
-        async def work() -> Reply:
-            status = 200
-            try:
-                await hub.custom_favorites.remove(ctx.guild_id, int(ctx.user_id), favorite.id)  # o que não está = 200
-                return Reply(200, await mine_listing(hub, ctx))
-            except ApiError as error:
-                status = error.status_code
-                raise
-            except RadioUnavailable:
-                status = 503
-                raise
-            except Exception:
-                status = 500
-                raise
-            finally:
-                record_panel_action(usage, ACTION_LABEL, status)
+        async def work() -> Reply:  # o que não está = 200
+            return await favorite_change_reply(
+                lambda: mine_remove(hub, ctx, favorite), lambda: mine_listing(hub, ctx), usage
+            )
 
         await self.run_write(query, work)
 

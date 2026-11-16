@@ -332,7 +332,9 @@ class MemberRisk(MemberApiCase):
     def test_t2_quem_saiu_escreve_negado_na_hora(self):
         self.premium()
         assert self.m("GET", LIST).code == 200
-        del self.world.g100.fetchable[int(MEMBER)]  # saiu; o evento ainda não chegou ao gateway (a escrita confia só na API)
+        del self.world.g100.fetchable[
+            int(MEMBER)
+        ]  # saiu; o evento ainda não chegou ao gateway (a escrita confia só na API)
         assert self.add_mine("genre", GENRE).code == 404
 
     def test_t2_pending_e_negado(self):
@@ -364,3 +366,47 @@ class MemberRisk(MemberApiCase):
         for line in logs.output:
             assert not (MEMBER in line and str(ALFA) in line), line
             assert not (STRANGER in line and str(ALFA) in line), line
+
+    # ------------------------------------------------------------------ revisão do PR 264
+
+    def test_cm2_falha_do_store_dentro_da_escrita_sai_com_o_status_e_o_rotulo_no_registro_de_uso(self):
+        """Crivo CM2: a falha vem do store (dentro do ``work``), não de um ``patch`` antes dele; o registro de uso leva o status e o rótulo fixo."""
+        from empiremuse.api import handlers_radio_favorites
+
+        self.premium()
+        custom = self.custom_station().id
+        recorded = []
+        store = self.radio.custom_favorites
+        for failure, status in ((RadioUnavailable(), 503), (RuntimeError("falha do store"), 500)):
+            for verb, attr in (("POST", "add"), ("DELETE", "remove")):
+                recorded.clear()
+
+                async def broken(*args, failure=failure, **kwargs):
+                    raise failure
+
+                with (
+                    patch.object(store, attr, broken),
+                    patch.object(
+                        handlers_radio_favorites,
+                        "record_panel_action",
+                        lambda usage, label, code: recorded.append((label, code, type(usage).__name__)),
+                    ),
+                ):
+                    response = self.add_mine("custom", custom) if verb == "POST" else self.remove_mine("custom", custom)
+                assert response.code == status, (verb, status, response.body)
+                assert recorded == [("radios/favoritas", status, "UsageScope")], (verb, recorded)
+                self.advance(4)
+
+    def test_as3_toda_rota_da_aplicacao_sob_member_e_memberroute(self):
+        """Alicerce AS3: o invariante do CC1 percorre a TABELA da aplicação (nada de rota de membro fora de ``member_routes``)."""
+        from empiremuse.api.server import API_PREFIX, build_api_app
+
+        app = build_api_app(self.ctx)
+        found = [
+            rule.target
+            for rule in app.wildcard_router.rules
+            if getattr(rule.matcher, "regex", None) is not None
+            and rule.matcher.regex.pattern.startswith(API_PREFIX + "/member")
+        ]
+        assert len(found) == len(member_routes())
+        assert all(issubclass(handler, MemberRoute) and not issubclass(handler, RadioRoute) for handler in found)
