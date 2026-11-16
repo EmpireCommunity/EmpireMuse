@@ -658,10 +658,11 @@ async def test_cache_do_banco_cheio_no_meio_da_execucao_e_esvaziado_no_passo_5(m
 
 
 @pytest.mark.asyncio
-async def test_anonimizar_tenta_todos_um_documento_ruim_nao_deixa_o_bom_com_o_id(mundo):
-    await gravar(
-        mundo, "global", "radios", f"{BOT}:{SERVIDOR}", {"updated_by": str(ALVO), "rev": "x"}
-    )  # rev fora do formato
+@pytest.mark.parametrize(
+    "rev_ruim", ["x", -1]
+)  # fora do formato e negativo (Sentinela BK-4-sec3): o ruim fica com o ID e conta como falha
+async def test_anonimizar_tenta_todos_um_documento_ruim_nao_deixa_o_bom_com_o_id(mundo, rev_ruim):
+    await gravar(mundo, "global", "radios", f"{BOT}:{SERVIDOR}", {"updated_by": str(ALVO), "rev": rev_ruim})
     await gravar(mundo, "global", "radios", f"{BOT}:{SERVIDOR_2}", {"updated_by": str(ALVO), "rev": 1})
 
     relatorio = await apagar(mundo)
@@ -669,6 +670,8 @@ async def test_anonimizar_tenta_todos_um_documento_ruim_nao_deixa_o_bom_com_o_id
     bom = await mundo.database.find_doc(f"{BOT}:{SERVIDOR_2}", db_name="radios", collection="global")
     assert bom["updated_by"] == "deleted"
     assert relatorio.status is ErasureStatus.PARTIAL and relatorio.failed == ("radios",)
+    ruim = await mundo.database.find_doc(f"{BOT}:{SERVIDOR}", db_name="radios", collection="global")
+    assert ruim["rev"] == rev_ruim  # nada gravado no documento recusado
 
 
 @pytest.mark.asyncio

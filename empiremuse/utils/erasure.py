@@ -345,7 +345,7 @@ class ErasureService:
                 return
             # sem ``rev`` (gravado antes do compare-and-set) vale LEGACY_REV, como em toda leitura; o CAS com 0 casa o documento sem o campo
             rev = stored_rev(doc)
-            if not isinstance(rev, int) or isinstance(rev, bool):
+            if not isinstance(rev, int) or isinstance(rev, bool) or rev < 0:
                 raise ValueError("rev fora do formato")
             saved = await database.save_doc_cas(
                 doc_id,
