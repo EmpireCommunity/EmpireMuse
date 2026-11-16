@@ -7,7 +7,11 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Adicionado
+- API para painéis externos: visão de membro das rádios favoritas. Quem participa de um servidor sem gerenciá-lo vê a lista do servidor (só leitura) e mantém as próprias favoritas naquele servidor (estações do servidor e gêneros, Limitadas a Apoiadores para adicionar). Rotas novas em `/api/v1/member` e o recurso `member-favorites` em `/meta`.
+
 ### Corrigido
+- Painel: o apagamento de dados e o banimento passam a descartar na hora as decisões de servidor guardadas em memória para a pessoa.
 - Apagar meus dados: o resumo que o painel mostra passa a citar os avisos de entrada e saída de servidor, que guardam o nome e o ID de quem é dono do servidor por 6 meses (código novo `guild_join_leave_notices` em `keeps`, aditivo na API); as cópias de segurança do provedor guardam dados apagados por até 2 semanas, não 4, no resumo, no `/apagar`, na DM do pedido do dono e na página do painel genérico. Essas três telas também passam a citar os avisos de entrada e saída dos servidores de que a pessoa é dono e deixam de dizer que os registros ficam para cumprir a lei: ficam para proteger o serviço.
 - Rádios: os avisos de servidor sem acesso e a descrição do `/radio` dizem "Limitadas a Apoiadores" (acesso concedido à mão por quem cuida do bot, quando há capacidade) em vez de "premium", e o aviso de servidor sem acesso diz como pedir: um ticket no servidor de suporte configurado (`SUPPORT_SERVER`), ou, sem ele, falar com quem cuida do bot.
 - Rádios e apagar meus dados (revisão do PR 257): rádio e estação gravadas antes do controle de versão agora são anonimizadas e o apagamento conclui, em vez de ficar parcial; um nó de áudio sem provedor de busca não tira mais a faixa do sorteio por 24 h; o menu de estações da rádio personalizada mantém a barra invertida que faz parte do nome (`AC\DC`); desligar o bot para as rádios antes de fechar o relé.
