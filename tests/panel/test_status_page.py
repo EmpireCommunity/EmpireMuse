@@ -112,7 +112,8 @@ class TestPoolStatus:
         pending = make_bot(222, "Bot Dois", ready=False)
         body = page(monkeypatch, bots=(pending,), failed={"TOKEN_RESERVE_9": "Token inválido"})
         assert "id-Bot Dois" in body and "Recarregue a página" in body
-        assert "TOKEN_RESERVE_9" in body and "Token inválido" in body
+        # o identificador pode quebrar de linha depois de cada "_" (`<wbr>`): o texto visível é o mesmo
+        assert "TOKEN_RESERVE_9" in body.replace("<wbr>", "") and "Token inválido" in body
 
 
 class TestLinks:
