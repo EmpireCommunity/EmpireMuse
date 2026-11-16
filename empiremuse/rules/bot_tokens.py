@@ -116,7 +116,7 @@ def load_bot_tokens(source: Mapping[str, object]) -> TokenLoad:
 
 def describe(issue: TokenIssue) -> str:
     if issue.code == "NAME":
-        return f"prefixo {issue.variable}: nome inválido (NAME)"
+        return f"variável com prefixo {issue.variable} ignorada: depois do prefixo use de 1 a 32 caracteres A-Z, 0-9 ou _ (NAME)"
     messages = {
         "MISSING": "não definido",
         "FORMAT": "deve ter 1 token válido",

@@ -108,7 +108,7 @@ class ServerRadioFavoritesView(disnake.ui.View):
         if self.refs_unavailable:
             txt += tr("radio.favorites.refs.unavailable")
         if self.confirming:
-            txt += tr("radio.favorites.server.clear_confirm", total=self.total)
+            txt += tr("radio.favorites.server.clear_confirm", count=self.total, total=self.total)
         if self.log:
             txt += tr("fav.last_interaction", log=self.log)
         self.update_components()
