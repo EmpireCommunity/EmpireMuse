@@ -153,6 +153,12 @@ class RadioChatTest(RadioBase):
         Each.run([other.id, "2:100", "1:1000", "1:100/x", "abc", "1:100%00", "../1:100"], check)
         assert self.radio.store.updates == [] and self.radio.store.docs[other.id].rev == 3
 
+        def check_guild(suffix):
+            response = browser.get(self.url("abc", suffix))
+            assert response.code == 404, f"status {response.code}"
+
+        Each.run(["1:100", "1:100/reserva", "1:100/estacao", "estacoes", "favoritas", "nova"], check_guild)
+
     def test_invalid_values_are_422_per_field_without_writing(self):
         radio = self.seed_alfa()
         browser = self.logged_in()

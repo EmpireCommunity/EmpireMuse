@@ -591,7 +591,7 @@ dz_url_regex = re.compile(
 sp_url_regex = re.compile(r"^(https?://)?(www\.)?(open\.spotify\.com|spotify\.com)/.+")
 tw_url_regex = re.compile(r"^(https?://)?(www\.)?(twitch\.tv)/([A-Za-z0-9_]{4,25})(/.+)?")
 am_url_regex = re.compile(
-    r"(https?://)?(www\.)?music\.apple\.com/((?P<countrycode>[a-zA-Z]{2})/)?(?P<type>album|playlist|artist|song)(/[a-zA-Z\w\d\-]+)?/(?P<identifier>[a-zA-Z\d\-.]+)(\?i=(?P<identifier2>\d+))?"
+    r"(https?://)?(www\.)?music\.apple\.com/((?P<countrycode>[a-zA-Z]{2})/)?(?P<type>album|playlist|artist|song)(/[\w-]+)?/(?P<identifier>[a-zA-Z\d\-.]+)(\?i=(?P<identifier2>\d+))?"
 )
 js_url_regex = re.compile(r"(https?://)(www\.)?jiosaavn\.com/(song|album|featured|artist)/([a-zA-Z0-9-_]+)")
 
