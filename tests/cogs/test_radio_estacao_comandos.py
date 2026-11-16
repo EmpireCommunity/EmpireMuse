@@ -66,7 +66,7 @@ class TestStationCommandGate:
 
         with pytest.raises(GenericError) as refused:
             await station_commands.gate(cog, make_inter())
-        assert "premium" in str(refused.value).casefold()  # o texto traduzido de radio.refused.no_premium
+        assert "apoiadores" in str(refused.value).casefold()  # o texto traduzido de radio.refused.no_premium
         cog.hub.premium.get.return_value = object()
         assert await station_commands.gate(cog, make_inter()) is not None  # a recusa não gastou o cooldown
 

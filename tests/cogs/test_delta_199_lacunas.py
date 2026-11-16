@@ -14,7 +14,7 @@ from tests.cogs.test_radio_setup_comandos import GUILD, build, fresh_cooldown, p
 @pytest.mark.parametrize(
     ("premium_on", "manage_guild", "snippet"),
     [
-        (False, True, "premium"),
+        (False, True, "Apoiadores"),
         (True, False, "Gerenciar Servidor"),
     ],
 )

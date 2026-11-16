@@ -299,7 +299,7 @@ class FavoritesLocalTest(FavoritesBase):
         response = self.local(browser, SP)
         body = response.body.decode()
         assert response.code == 200 and self.radio.directory.region_calls == []
-        assert "não tem rádios liberadas" in body and acao_forms(body, "adicionar") == []
+        assert "Limitadas a Apoiadores" in body and acao_forms(body, "adicionar") == []
         assert self.radio.directory.region_calls == []
         assert [f.value("estacao") for f in acao_forms(self.page(browser), "remover")] == [
             uuid(3)

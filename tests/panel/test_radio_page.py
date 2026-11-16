@@ -60,7 +60,7 @@ class RadioPageTest(RadioBase):
         radio = self.radio.store.seed(1, ALFA, CHANNEL)
         self.radio.service.states[radio.id] = radio_state()
         body = self.page(self.logged_in())
-        assert "Este servidor não tem rádios liberadas" in body
+        assert "As rádios são Limitadas a Apoiadores, e este servidor não tem esse acesso" in body
         assert self.chat_forms(body) == []
 
     def test_premium_without_any_radio_on_still_allows_editing(self):

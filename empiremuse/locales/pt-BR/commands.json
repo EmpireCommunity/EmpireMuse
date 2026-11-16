@@ -258,7 +258,7 @@
   "cmd.queue.shuffle.description": "Misturar as músicas da fila",
   "cmd.queue.shuffle.name": "misturar",
   "cmd.radio.aliases": "rd, 247",
-  "cmd.radio.description": "Rádios ao vivo e personalizadas num canal de voz ou palco (premium).",
+  "cmd.radio.description": "Rádios ao vivo e personalizadas num canal de voz ou palco (Limitado a Apoiadores).",
   "cmd.radio.desligar.description": "Desligar a rádio de um canal.",
   "cmd.radio.desligar.opt.channel.description": "Canal da rádio a desligar.",
   "cmd.radio.desligar.opt.channel.name": "canal",
