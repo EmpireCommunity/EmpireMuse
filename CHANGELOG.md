@@ -7,6 +7,9 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Adicionado
+- `site-data.json`: o campo opcional `supporter_limited` marca os comandos que o bot recusa num servidor sem o acesso Limitado a Apoiadores (hoje `/radio on`, `/radio setup`, `/radio station` e o prefixo `radio on`), para o site mostrar o selo em /commands. Aditivo na versão 1 do formato.
+
 ### Corrigido
 - Apagar meus dados: o resumo que o painel mostra passa a citar os avisos de entrada e saída de servidor, que guardam o nome e o ID de quem é dono do servidor por 6 meses (código novo `guild_join_leave_notices` em `keeps`, aditivo na API); as cópias de segurança do provedor guardam dados apagados por até 2 semanas, não 4, no resumo, no `/apagar`, na DM do pedido do dono e na página do painel genérico. Essas três telas também passam a citar os avisos de entrada e saída dos servidores de que a pessoa é dono e deixam de dizer que os registros ficam para cumprir a lei: ficam para proteger o serviço.
 - Rádios: os avisos de servidor sem acesso e a descrição do `/radio` dizem "Limitadas a Apoiadores" (acesso concedido à mão por quem cuida do bot, quando há capacidade) em vez de "premium", e o aviso de servidor sem acesso diz como pedir: um ticket no servidor de suporte configurado (`SUPPORT_SERVER`), ou, sem ele, falar com quem cuida do bot.

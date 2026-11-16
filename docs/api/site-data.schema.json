@@ -209,6 +209,10 @@
         },
         "category": {
           "$ref": "#/$defs/Category"
+        },
+        "supporter_limited": {
+          "const": true,
+          "description": "Presente (sempre true) quando o bot recusa o comando num servidor sem o acesso Limitado a Apoiadores, concedido à mão pela equipe quando há capacidade (nunca uma compra). Num grupo: ao menos um subcomando é assim. Ausente = sem essa limitação. Aditivo na versão 1."
         }
       }
     },
@@ -261,6 +265,10 @@
         },
         "category": {
           "$ref": "#/$defs/Category"
+        },
+        "supporter_limited": {
+          "const": true,
+          "description": "Presente (sempre true) quando o bot recusa o comando num servidor sem o acesso Limitado a Apoiadores, concedido à mão pela equipe quando há capacidade (nunca uma compra). Num grupo: ao menos um subcomando é assim. Ausente = sem essa limitação. Aditivo na versão 1."
         }
       }
     },
@@ -309,6 +317,10 @@
         },
         "permissions": {
           "$ref": "#/$defs/Permissions"
+        },
+        "supporter_limited": {
+          "const": true,
+          "description": "Presente (sempre true) quando o bot recusa o comando num servidor sem o acesso Limitado a Apoiadores, concedido à mão pela equipe quando há capacidade (nunca uma compra). Num grupo: ao menos um subcomando é assim. Ausente = sem essa limitação. Aditivo na versão 1."
         }
       }
     }

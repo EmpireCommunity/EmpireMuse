@@ -27,6 +27,7 @@ import disnake
 from disnake.ext import commands
 
 from empiremuse.i18n.service import install_i18n
+from empiremuse.rules.apoiador import is_limited_to_supporters
 from empiremuse.rules.i18n import REFERENCE_LOCALE
 from empiremuse.version import image_version
 
@@ -198,6 +199,15 @@ def _option(option: disnake.Option) -> dict[str, Any]:
     return entry
 
 
+def _mark_supporter_limited(node: dict[str, Any], command: Any) -> None:
+    """``supporter_limited: true`` (só quando verdadeiro) no comando cujo callback recusa sem o acesso de Apoiador
+    (``rules.apoiador.limited_to_supporters``) e no grupo que tem ao menos um subcomando assim. Ausente = sem essa limitação."""
+    if is_limited_to_supporters(getattr(command, "callback", None)) or any(
+        sub.get("supporter_limited") for sub in node.get("subcommands", ())
+    ):
+        node["supporter_limited"] = True
+
+
 def _slash_node(path: list[str], source: Any, command: Any, inherited: Sequence[str] = ()) -> dict[str, Any]:
     """Um comando, grupo ou subcomando de barra. ``source`` (o corpo ou a opção) dá nome, descrição e opções; ``command`` (o objeto
     registrado) dá as verificações e os filhos. Subcomando de dono ou sem objeto correspondente fica de fora (falha fechado).
@@ -231,6 +241,7 @@ def _slash_node(path: list[str], source: Any, command: Any, inherited: Sequence[
     )
     if subs:
         node["subcommands"] = subs
+    _mark_supporter_limited(node, command)
     return node
 
 
@@ -279,6 +290,7 @@ def _prefix_node(command: commands.Command, entries: dict[str, dict[str, str]], 
     subs = [s for s in (_prefix_node(sub, entries, cog) for sub in getattr(command, "commands", ())) if s is not None]
     if subs:
         node["subcommands"] = sorted(subs, key=lambda item: item["id"])
+    _mark_supporter_limited(node, command)
     return node
 
 

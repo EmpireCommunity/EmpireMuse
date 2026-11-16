@@ -157,6 +157,31 @@ class TestPermissionsAreTheUsers:
             assert command(data, kind, "jukebox.setup")["permissions"] == ["manage_guild"]
             assert command(data, kind, "jukebox.reset")["permissions"] == ["manage_guild"]  # manage_threads é do bot
 
+    def test_the_commands_limited_to_supporters_are_marked_and_the_group_carries_the_mark(
+        self, data: dict[str, Any]
+    ) -> None:
+        """BK-10: ``supporter_limited`` vem da marca ``limited_to_supporters`` no callback (o teste da marca contra o comportamento real
+        está em ``tests/cogs/test_radio_limitado_apoiadores.py``); só aparece quando verdadeiro e o grupo o tem se um filho o tem."""
+        marked = {
+            (kind, node["id"])
+            for kind in ("slash", "prefix")
+            for node in flatten(data[f"{kind}_commands"])
+            if "supporter_limited" in node
+        }
+        assert marked == {
+            ("slash", "radio"),
+            ("slash", "radio.on"),
+            ("slash", "radio.setup"),
+            ("slash", "radio.station"),
+            ("slash", "radio.station.create"),
+            ("slash", "radio.station.delete"),
+            ("slash", "radio.station.edit"),
+            ("slash", "radio.station.list"),
+            ("prefix", "radio"),
+            ("prefix", "radio.on"),
+        }
+        assert all(node.get("supporter_limited", True) is True for node in every_command(data))
+
     def test_the_radio_prefix_publishes_manage_guild_and_never_the_owner_alternative(
         self, data: dict[str, Any]
     ) -> None:

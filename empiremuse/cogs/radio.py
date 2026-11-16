@@ -7,7 +7,7 @@ carrega este cog, os comandos de dono só rodam no principal (senão cada bot re
 
 from __future__ import annotations
 
-from empiremuse.rules.apoiador import refused_text, with_ask
+from empiremuse.rules.apoiador import limited_to_supporters, refused_text, with_ask
 
 import logging
 import time
@@ -535,6 +535,7 @@ class Radio(RadioPrefixCommands, commands.Cog):
         await open_server_favorites(inter, tr, self.bot.pool)
 
     @radio.sub_command(name="setup", description=localized("cmd.radio.setup.description"))
+    @limited_to_supporters  # recusa ``no_premium`` sem o acesso de Apoiador (site-data: ``supporter_limited``)
     async def radio_setup(
         self,
         inter: disnake.ApplicationCommandInteraction,
@@ -556,6 +557,7 @@ class Radio(RadioPrefixCommands, commands.Cog):
         await setup_flow.setup(self, inter, channel, bot, kind)
 
     @radio.sub_command(name="on", description=localized("cmd.radio.on.description"))
+    @limited_to_supporters  # recusa ``no_premium`` sem o acesso de Apoiador (site-data: ``supporter_limited``)
     async def radio_on(
         self,
         inter: disnake.ApplicationCommandInteraction,
@@ -769,6 +771,7 @@ class Radio(RadioPrefixCommands, commands.Cog):
         return
 
     @radio_station.sub_command(name="create", description=localized("cmd.radio.station.create.description"))
+    @limited_to_supporters  # recusa ``no_premium`` sem o acesso de Apoiador (site-data: ``supporter_limited``)
     async def radio_station_create(
         self,
         inter: disnake.ApplicationCommandInteraction,
@@ -787,6 +790,7 @@ class Radio(RadioPrefixCommands, commands.Cog):
         await station_commands.create(self, inter, name, kind)
 
     @radio_station.sub_command(name="edit", description=localized("cmd.radio.station.edit.description"))
+    @limited_to_supporters  # recusa ``no_premium`` sem o acesso de Apoiador (site-data: ``supporter_limited``)
     async def radio_station_edit(
         self,
         inter: disnake.ApplicationCommandInteraction,
@@ -799,6 +803,7 @@ class Radio(RadioPrefixCommands, commands.Cog):
         await station_commands.edit(self, inter, name)
 
     @radio_station.sub_command(name="delete", description=localized("cmd.radio.station.delete.description"))
+    @limited_to_supporters  # recusa ``no_premium`` sem o acesso de Apoiador (site-data: ``supporter_limited``)
     async def radio_station_delete(
         self,
         inter: disnake.ApplicationCommandInteraction,
@@ -811,6 +816,7 @@ class Radio(RadioPrefixCommands, commands.Cog):
         await station_commands.delete(self, inter, name)
 
     @radio_station.sub_command(name="list", description=localized("cmd.radio.station.list.description"))
+    @limited_to_supporters  # recusa ``no_premium`` sem o acesso de Apoiador (site-data: ``supporter_limited``)
     async def radio_station_list(self, inter: disnake.ApplicationCommandInteraction) -> None:
         await station_commands.list_stations(self, inter)
 
