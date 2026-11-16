@@ -420,7 +420,7 @@ async def test_headings_and_confirmation_show_the_translated_text_never_the_raw_
     texts = [content["content"], server_view.build_txt()]
 
     assert "(2/24)" in texts[0] and "(1/10)" in texts[0] and "(1/24)" in texts[1]
-    assert "1 favoritas do servidor?" in texts[1]
+    assert "única favorita do servidor?" in texts[1]
     assert all("radio.favorites." not in text for text in texts)
 
 

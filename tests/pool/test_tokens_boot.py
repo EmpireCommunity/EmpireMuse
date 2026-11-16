@@ -60,6 +60,6 @@ def test_register_normalized_tokens_before_token_diagnostics(monkeypatch):
     assert token() in pool.secret_values()
     warnings = [event for event in events if event[:2] == ("Tokens", "warn")]
     assert len(warnings) == 1
-    assert "NAME" in warnings[0][2] and "prefixo TOKEN_RADIO_:" in warnings[0][2]
+    assert "NAME" in warnings[0][2] and "prefixo TOKEN_RADIO_ ignorada" in warnings[0][2]
     diagnostics = str([event for event in events if event[0] == "Tokens"])
     assert token("z")[:8] not in diagnostics and token("z")[-4:] not in diagnostics

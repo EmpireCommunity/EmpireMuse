@@ -53,6 +53,8 @@ Quem configura e liga precisa de **Gerenciar Servidor** e de **Gerenciar Mensage
 
 Na call a rádio mantém um **painel** com os botões pausar, próxima e desligar. Desligar exige Gerenciar Servidor. Os demais valem para quem está na call do bot. Se alguém apagar a mensagem do painel, o bot a recria.
 
+Bots só-rádio são definidos por `TOKEN_RADIO_<NOME>` no ambiente, sem configuração no banco. A escolha de bot na rádio 24 h lista os só-rádio antes das reservas; o principal nunca pode ser escolhido.
+
 ### Rádio ao vivo
 
 - **Escolha por local:** Região → País → Estado (ou grupo de estados) → Cidade, no Discord e na página **Rádios** do painel. O atalho **⭐ {país}**, sempre o primeiro item, leva direto ao país do idioma do servidor, quando ele está na lista. Escolher uma cidade devolve as rádios dela e do entorno (100 km). A lista de locais é fixa e vem junto do bot: cobre 91 países, e quem ficou de fora continua alcançável pela busca por nome.
@@ -153,5 +155,3 @@ Depois que a migração R5 rodar, voltar para uma versão **anterior à release 
 - Não há limite global de rádios: o controle é o premium e a pausa geral.
 - **Uso comercial do Last.fm:** hoje o premium é concedido sem cobrança. Se um dia ele for vendido, é preciso fechar acordo com o Last.fm (partners@last.fm) **antes**, porque os termos de uso da API não cobrem uso comercial.
 - Fora desta versão: URL informada pelo usuário, estações HLS, rádio no bot principal, Spotify e YouTube Music como fonte de gênero ou de artistas, e busca ou fila do usuário na rádio.
-
-Bots só-rádio são definidos por `TOKEN_RADIO_<NOME>` no ambiente, sem configuração no banco. A escolha de bot na rádio 24 h lista os só-rádio antes das reservas; o principal nunca pode ser escolhido.

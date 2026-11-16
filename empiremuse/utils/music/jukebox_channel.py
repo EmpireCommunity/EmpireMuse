@@ -406,9 +406,8 @@ async def _apply_jukebox_channel(
         if not thread:
             if not target.permissions_for(guild.me).manage_threads:
                 raise GenericError(
-                    f"**{bot.user.mention} não possui permissão de gerenciar tópicos no canal {target.mention}.**\n"
-                    f"`Nota: Você pode me conceder temporariamente essa permissão e após usar o comando novamente "
-                    f"você pode remover essa permissão.`"
+                    f"**{bot.user.mention} precisa da permissão Gerenciar Tópicos no canal {target.mention}.**\n"
+                    "Conceda a permissão, rode o comando de novo e depois pode removê-la."
                 )
 
             thread_wmessage = await target.create_thread(
