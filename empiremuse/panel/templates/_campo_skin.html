@@ -9,7 +9,7 @@
   <option value="{{ atual }}" selected>Personalizada (gerencie no Discord)</option>
   {% end %}
   {% for opcao in opcoes %}
-  <option value="{{ opcao }}"{% if not personalizada and opcao == atual %} selected{% end %}>{{ opcao }}</option>
+  <option value="{{ opcao }}"{% if not personalizada and opcao == atual %} selected{% end %}>{% if opcao == "default" %}Padrão do bot{% else %}{{ opcao }}{% end %}</option>
   {% end %}
 </select>
 {% if erros.get(nome_campo) %}<small id="erro-{{ prefixo_id }}" class="erro-campo">{{ erros[nome_campo] }}</small>{% end %}

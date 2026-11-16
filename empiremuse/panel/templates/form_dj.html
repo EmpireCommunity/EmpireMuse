@@ -21,6 +21,7 @@
     <p class="nota">Este servidor não tem cargos além de @everyone.</p>
     {% end %}
   </fieldset>
+  {% if cargos and len(cargos) > 8 %}<small class="nota dica-rolagem">A lista rola: role para ver os {{ len(cargos) }} cargos.</small>{% end %}
 
   <button type="submit">Salvar</button>
 </form>

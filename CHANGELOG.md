@@ -12,6 +12,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - `site-data.json`: o campo opcional `supporter_limited` marca os comandos que o bot recusa num servidor sem o acesso Limitado a Apoiadores (hoje `/radio on`, `/radio setup`, `/radio station` e o prefixo `radio on`), para o site mostrar o selo em /commands. Aditivo na versão 1 do formato.
 
 ### Corrigido
+- Painel legado e página de status (QA visual 1): na página de status do bot os cartões de bot ficam centralizados em cada linha (o cartão sozinho na segunda linha não fica mais encostado à esquerda) e o identificador de token quebra de linha só depois de um `_` (antes partia no meio da palavra); na tela de DJ do painel legado a lista de cargos que rola ganha sombra nas pontas e a dica "A lista rola" quando há mais de 8 cargos; o seletor de skin mostra "Padrão do bot" no lugar do valor cru `default`. Só marcação e CSS.
 - Painel genérico: um endereço de servidor cujo ID não é um número responde com a página de não encontrado.
 - Rádio ao vivo: anterior, próxima, aleatória e a primeira estação de um filtro leem o diretório pela consulta estrita; com o diretório fora, o painel diz para tentar de novo em vez de "estação não encontrada".
 - Escolha do bot de música: um bot só-rádio, ou com o player de uma rádio no servidor, nunca é escolhido pelos atalhos da seleção (o comando segue para outro bot livre).
