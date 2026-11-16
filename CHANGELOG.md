@@ -8,6 +8,8 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 ## [Unreleased]
 
 ### Corrigido
+- Apagar meus dados: o resumo que o painel mostra passa a citar os avisos de entrada e saída de servidor, que guardam o nome e o ID de quem é dono do servidor por 6 meses (código novo `guild_join_leave_notices` em `keeps`, aditivo na API); as cópias de segurança do provedor guardam dados apagados por até 2 semanas, não 4, no resumo, no `/apagar`, na DM do pedido do dono e na página do painel genérico.
+- Rádios: os avisos de servidor sem acesso e a descrição do `/radio` dizem "Limitadas a Apoiadores" (acesso concedido à mão por quem cuida do bot, quando há capacidade) em vez de "premium".
 - API para painéis externos: criar e apagar estação do servidor deixam a recusa de limite e de estação em uso para o armazenamento, sem a conferência duplicada fora da trava (os mesmos `400` `limit` e `in_use`); escritas de favoritas de rádio registram no uso o status real do erro (por exemplo `503`) em vez de `200` ou `500`; as listas de favoritas leem as estações do servidor numa consulta só; o aviso de lista de favoritas acima do teto sai só quando uma escrita a grava cortada, não a cada leitura; e uma lista de valores simples onde a API espera objetos é recusada em vez de virar um objeto.
 - Menu de integrações: limpar a lista quando ela já está vazia volta a mostrar o aviso (o Discord recusava a resposta).
 - Favoritar a faixa atual pelo player: a confirmação mostra o prefixo do servidor (a configuração era lida pelo ID do membro).
