@@ -112,7 +112,7 @@ class TestEveryClickIsAuthorizedNow:
 
         assert await view.interaction_check(press) is False
 
-        assert "premium" in press.response.send_message.await_args.args[0]
+        assert "Apoiadores" in press.response.send_message.await_args.args[0]
 
     @pytest.mark.asyncio
     async def test_the_right_author_with_the_right_permissions_passes(self):

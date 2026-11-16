@@ -258,7 +258,7 @@
   "cmd.queue.shuffle.description": "Shuffle the queue's songs",
   "cmd.queue.shuffle.name": "shuffle",
   "cmd.radio.aliases": "rd, 247",
-  "cmd.radio.description": "Live and custom radios in a voice or stage channel (premium).",
+  "cmd.radio.description": "Live and custom radios in a voice or stage channel (Limited to Supporters).",
   "cmd.radio.desligar.description": "Turn off the radio of a channel.",
   "cmd.radio.desligar.opt.channel.description": "Channel of the radio to turn off.",
   "cmd.radio.desligar.opt.channel.name": "channel",

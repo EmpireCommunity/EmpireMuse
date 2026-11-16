@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from cachetools import TTLCache
 
+from empiremuse.rules.apoiador import support_link
 from empiremuse.utils.radio.control import RadioControl
 from empiremuse.utils.radio.custom_source import STOCK_SLOTS, ResolvedTracks
 from empiremuse.utils.radio.directory import Directory
@@ -49,6 +50,7 @@ class RadioHub:
     """``pool.radio.store`` (rádios), ``.stations`` (estações do servidor), ``.premium`` (concessões e contador) e ``.service`` (o que roda agora)."""
 
     def __init__(self, pool: BotPool) -> None:
+        self._pool = pool
         self.premium = PremiumStore(pool)
         self.control = RadioControl(pool)  # "pausar todas" (dono)
         self.store = RadioStore(pool, self.premium)
@@ -80,6 +82,11 @@ class RadioHub:
             recovered=self.manager.station_recovered,
         )
         self._notices: TTLCache = TTLCache(maxsize=512, ttl=NOTICE_SECONDS)
+
+    def support_url(self) -> str:
+        """O servidor de suporte configurado (``SUPPORT_SERVER``), lido a cada uso; vazio se não há ou não é um ``https://`` limpo."""
+        config = getattr(self._pool, "config", None)
+        return support_link(config.get("SUPPORT_SERVER") if isinstance(config, dict) else None)
 
     def forget_all(self) -> None:
         """Esquece o que as rádios guardam do banco em memória (depois do ``hardreset``). O premium fica: o documento também."""

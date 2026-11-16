@@ -152,6 +152,7 @@ class RadiosHandler(SettingsHandler):
             **self._common(access),
             mostrar_seletor=False,
             premium=premium,
+            suporte=ctx.pool.radio.support_url(),  # como pedir o acesso de Apoiador (o servidor de suporte configurado)
             pode_escrever=editable,
             radios=rows,
             max_radios=MAX_PER_GUILD,

@@ -53,8 +53,9 @@ SUMMARY = {
         "live_player_records",
         "server_settings_and_statistics",
         "lastfm_remote_data",
+        "guild_join_leave_notices",  # D5: avisos de entrada e saída com nome e ID de quem é dono do servidor, 6 meses
     ],
-    "backups_up_to_weeks": 4,
+    "backups_up_to_weeks": 2,  # o provedor guarda no máximo 2 cópias semanais (dono, 2026-11-16)
 }
 
 

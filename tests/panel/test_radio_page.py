@@ -60,8 +60,18 @@ class RadioPageTest(RadioBase):
         radio = self.radio.store.seed(1, ALFA, CHANNEL)
         self.radio.service.states[radio.id] = radio_state()
         body = self.page(self.logged_in())
-        assert "Este servidor não tem rádios liberadas" in body
+        assert "As rádios são Limitadas a Apoiadores, e este servidor não tem esse acesso" in body
         assert self.chat_forms(body) == []
+
+    def test_without_premium_the_notice_says_how_to_ask_with_the_configured_support_server_or_the_generic_sentence(
+        self,
+    ):
+        """Crivo BK-9 CM1: o pedido é por ticket no servidor de suporte configurado; sem ele, a frase genérica."""
+        assert "Para pedir, fale com quem cuida do bot." in self.page(self.logged_in())
+        self.radio.support = "https://discord.gg/proprio"
+        body = self.page(self.logged_in())
+        assert "abra um ticket no servidor de suporte:" in body
+        assert '<a href="https://discord.gg/proprio" rel="noopener noreferrer">' in body
 
     def test_premium_without_any_radio_on_still_allows_editing(self):
         self.radio.premium.grant(ALFA, active=0)
