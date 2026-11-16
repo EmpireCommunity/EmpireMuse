@@ -99,7 +99,9 @@ class TestStationCommandGate:
         )
 
         assert await view.interaction_check(click) is False
-        click.response.send_message.assert_awaited_once_with("radio.refused.no_premium radio.premium.ask.generic", ephemeral=True)
+        click.response.send_message.assert_awaited_once_with(
+            "radio.refused.no_premium radio.premium.ask.generic", ephemeral=True
+        )
 
     @pytest.mark.asyncio
     async def test_a_cached_slash_cannot_create_a_genre_station(self):
