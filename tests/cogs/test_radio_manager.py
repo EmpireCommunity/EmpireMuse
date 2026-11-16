@@ -480,3 +480,56 @@ class TestBackgroundErrors:
             await asyncio.sleep(0)
 
         assert "ValueError" in caplog.text and "segredo" not in caplog.text
+
+
+class TestShutdownDeadline:
+    """O encerramento do pool espera as rádios com prazo (PR 257): um ``close`` travado é avisado e não segura os bots."""
+
+    @pytest.mark.asyncio
+    async def test_a_stuck_close_times_out_with_a_warning(self, caplog):
+        from empiremuse.utils.client import close_radios
+
+        never = asyncio.Event()
+
+        class Stuck:
+            async def close(self):
+                await never.wait()
+
+        with caplog.at_level(logging.WARNING, logger="empiremuse.utils.client"):
+            await close_radios(Stuck(), timeout=0)  # prazo zero: vence na hora, sem relógio de verdade
+
+        assert any("não encerraram" in record.getMessage() for record in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_a_failing_close_is_logged_and_swallowed(self, caplog):
+        from empiremuse.utils.client import close_radios
+
+        class Broken:
+            async def close(self):
+                raise RuntimeError("x")
+
+        with caplog.at_level(logging.WARNING, logger="empiremuse.utils.client"):
+            await close_radios(Broken())
+
+        assert any("Falha ao encerrar as rádios" in record.getMessage() for record in caplog.records)
+
+
+class TestCloseOrder:
+    @pytest.mark.regression
+    @pytest.mark.asyncio
+    async def test_the_radio_tasks_are_cancelled_and_the_runners_stopped_before_the_relay_closes(self, world):
+        """Alicerce BK-4: o relay fecha por último; a espera dele (até 10 s) não pode deixar tarefa de rádio viva."""
+        r = await enabled_radio(world)
+        await world.manager.activate(r)
+        runner = world.manager._runners[r.id]
+        tasks = [world.manager._spawn(asyncio.Event().wait())]  # trabalho de fundo da rádio que só termina cancelado
+        seen = {}
+
+        async def relay_close():
+            seen["tasks_done"] = all(task.done() for task in tasks)
+            seen["runner_stopped"] = runner._stopped and runner.phase is Phase.OFF
+
+        world.hub.relay.close = relay_close
+        await world.manager.close()
+
+        assert seen == {"tasks_done": True, "runner_stopped": True}

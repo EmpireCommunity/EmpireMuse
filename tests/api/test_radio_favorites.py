@@ -335,6 +335,18 @@ class RadioFavoritesRisk(FavoritesApiCase):
         removed = self.remove(SERVER, "custom", station_id)
         assert removed.code == 200 and body_of(removed)["total"] == 2
 
+    @pytest.mark.regression
+    def test_o_nome_da_ao_vivo_guardado_escapado_sai_sem_a_barra_na_lista_do_servidor(self):
+        """Crivo (PR 257): o nome do diretório chega escapado (``check_station``) e a favorita o guarda assim; a lista o devolvia com a barra."""
+        from empiremuse.rules.text import external_text
+
+        self.radio.directory.stations[LIVE_UUID] = station(LIVE_UUID, external_text("Rock*FM_1", 100))
+        self.add(SERVER, "station", LIVE_UUID)
+
+        listed = body_of(self.call("GET", FAV))["server"]
+
+        assert [item["name"] for item in listed["items"] if item["id"] == LIVE_UUID] == ["Rock*FM_1"]
+
     # ------------------------------------------------------------------ 7. idempotência
 
     def test_mesma_chave_mesmo_pedido_repete_outro_corpo_ou_rota_e_409_e_delete_repetido_e_200(self):

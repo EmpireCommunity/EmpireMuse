@@ -112,6 +112,17 @@ commands_logger = logging.getLogger("empiremuse.commands")
 
 UPDATE_WATCH_INTERVAL = 5  # segundos entre as checagens de saúde do pool enquanto há uma atualização pendente
 PLAYLIST_REFRESH_READY_WAIT = 300  # s que a migração dos ícones espera os bots ficarem prontos para redesenhar o painel
+RADIO_CLOSE_TIMEOUT = 10.0  # s que o encerramento espera as rádios pararem antes de fechar os bots mesmo assim
+
+
+async def close_radios(manager: Any, timeout: float = RADIO_CLOSE_TIMEOUT) -> None:
+    """Para ticker, health check, relay e tarefas das rádios com prazo: um fechamento travado nunca segura o encerramento do pool."""
+    try:
+        await asyncio.wait_for(manager.close(), timeout)
+    except asyncio.TimeoutError:
+        logger.warning("Rádios não encerraram em %.0f s; o pool fecha assim mesmo", timeout)
+    except Exception:
+        logger.warning("Falha ao encerrar as rádios", exc_info=True)
 
 
 def _playlist_cache_file():
@@ -500,13 +511,6 @@ class BotPool:
             pass
 
     @property
-    def main_configured(self) -> bool:
-        """Há um token principal configurado (logado, logando ou que falhou)? Sem ele ninguém é reserva: todos agem como sempre."""
-        return any(is_main_identifier(bot.identifier) for bot in self.bots) or any(
-            is_main_identifier(identifier) for identifier in getattr(self, "failed_bots", {})
-        )
-
-    @property
     def main_bot(self) -> Optional[BotCore]:
         """O bot principal (token principal, logado) ou ``None``."""
         return self.servers.main_bot() if self.servers is not None else None
@@ -721,6 +725,9 @@ class BotPool:
             task.cancel()
         if self.jukebox_panel:
             self.jukebox_panel.close()
+        radio = getattr(self, "radio", None)
+        if radio is not None:  # ticker, health check, relay e tarefas das rádios param antes de os bots fecharem
+            await close_radios(radio.manager)
         self.i18n.close()  # leituras de idioma que ficaram pendentes
         for bot in self.get_all_bots():
             try:
@@ -1584,8 +1591,8 @@ class BotCore(commands.AutoShardedBot):
 
     @property
     def is_reserve(self) -> bool:
-        """Bot adicional do pool, com um principal configurado."""
-        return not is_main_identifier(self.identifier) and self.pool.main_configured
+        """Bot adicional do pool (o ``TOKEN`` é obrigatório: sem ele a subida para, então sempre há principal configurado)."""
+        return not is_main_identifier(self.identifier)
 
     def main_invite_url(self) -> Optional[str]:
         """Convite do principal montado aqui (nunca de texto de fora); ``None`` se ele não existe ou não é público."""

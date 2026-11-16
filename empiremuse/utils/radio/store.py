@@ -9,9 +9,11 @@ contador. Na subida ``reconcile`` recalcula o contador a partir das rádios real
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import logging
 import time
+import weakref
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
@@ -29,7 +31,7 @@ from empiremuse.rules.radio import (
     to_document,
 )
 from empiremuse.rules.radio_station import from_document as from_station_document
-from empiremuse.rules.radio_station import valid_station_id
+from empiremuse.rules.radio_station import is_genre, valid_station_id
 from empiremuse.rules.radio_stations import valid_uuid
 from empiremuse.utils.radio.premium import CAS_ATTEMPTS, GLOBAL_DB, PremiumStore, RadioUnavailable
 
@@ -78,6 +80,17 @@ class RadioStore:
     def __init__(self, pool: BotPool, premium: PremiumStore) -> None:
         self.pool = pool
         self.premium = premium
+        self._station_locks: weakref.WeakValueDictionary[int, asyncio.Lock] = (
+            weakref.WeakValueDictionary()
+        )  # só as em uso
+
+    def station_lock(self, guild_id: int) -> asyncio.Lock:
+        """A trava das estações do servidor, a MESMA do ``StationStore``: apagar uma estação e pô-la numa rádio nunca se cruzam.
+
+        O invariante "rádio aponta para estação que existe" vale só DENTRO de um processo (a trava é em memória). A trava é FOLHA: quem a segura
+        não toma outra trava, e NÃO é reentrante (``asyncio.Lock``): quem a segura nunca chama outro caminho que a tome de novo.
+        """
+        return self._station_locks.setdefault(int(guild_id), asyncio.Lock())
 
     # ------------------------------------------------------------------ banco
 
@@ -237,13 +250,19 @@ class RadioStore:
             raise RadioNotFound
         if current.rev != expected_rev:
             raise RadioConflict
+        async with self.station_lock(current.guild_id):  # a estação lida aqui não é apagada antes de a rádio gravar
+            return await self._assign_custom_station(current, station_id, expected_rev, updated_by)
+
+    async def _assign_custom_station(
+        self, current: Radio, station_id: object, expected_rev: int, updated_by: str
+    ) -> Radio:
         from empiremuse.utils.radio.stations import StationStore
 
         found = StationStore.builtin(current.guild_id, station_id)
-        if found is None and valid_station_id(station_id) and not str(station_id).startswith("g:"):
+        if found is None and valid_station_id(station_id) and not is_genre(station_id):
             stored = await self._database.find_doc(station_id, db_name=STATIONS_COLLECTION, collection=GLOBAL_DB)
             found = from_station_document(stored) if stored else None
-        if isinstance(station_id, str) and station_id.startswith("g:"):
+        if is_genre(station_id):
             if await self.premium.fresh(current.guild_id) is None:
                 raise NoPremium
         if (
@@ -257,7 +276,7 @@ class RadioStore:
         checked = check_radio(to_document(updated))
         if isinstance(checked, RuleError):
             raise RadioInvalid(checked)
-        if not await self._save(radio_id, to_document(checked, updated_by=updated_by), expected_rev):
+        if not await self._save(current.id, to_document(checked, updated_by=updated_by), expected_rev):
             raise RadioConflict
         return checked
 
@@ -413,13 +432,22 @@ class RadioStore:
         raise RadioConflict
 
     async def delete(self, radio_id: str) -> None:
-        """Apaga a rádio; se estava ligada, devolve a vaga (uma transição como outra qualquer)."""
-        await self.set_enabled(radio_id, False, updated_by="delete")
-        try:
-            await self._database.delete_data(radio_id, db_name=RADIOS_DB, collection=GLOBAL_DB)
-        except Exception as error:  # noqa: BLE001
-            logger.warning("Rádio não apagada (%s)", type(error).__name__)
-            raise RadioUnavailable from error
+        """Apaga a rádio; se estava ligada, devolve a vaga (uma transição como outra qualquer).
+
+        Apaga com o ``rev`` do desligamento: um ``/radio on`` entre desligar e apagar faz o apagar perder e a volta desliga de novo (a vaga volta)
+        antes de tentar outra vez. ``RadioConflict`` só se perder ``CAS_ATTEMPTS`` vezes seguidas."""
+        for _ in range(CAS_ATTEMPTS):
+            disabled = await self.set_enabled(radio_id, False, updated_by="delete")
+            try:
+                deleted = await self._database.delete_doc_cas(
+                    radio_id, expected_rev=disabled.rev, db_name=RADIOS_DB, collection=GLOBAL_DB
+                )
+            except Exception as error:  # noqa: BLE001
+                logger.warning("Rádio não apagada (%s)", type(error).__name__)
+                raise RadioUnavailable from error
+            if deleted:
+                return
+        raise RadioConflict
 
     # ------------------------------------------------------------------ transições (R-2)
 

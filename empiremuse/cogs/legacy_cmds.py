@@ -21,7 +21,7 @@ from empiremuse.config_loader import load_config
 from empiremuse.rules.erasure import OWNER_COMMAND_NAME, owner_target_id, parse_owner_request
 from empiremuse.rules.errors import RuleError
 from empiremuse.rules.git_remote import sanitized_repo_url
-from empiremuse.rules.owner_shell import build_shell_env, mask_secrets, mask_shell_output
+from empiremuse.rules.owner_shell import build_shell_env, mask_secrets, mask_secrets_and_tokens
 from empiremuse.rules.release import Version, changelog_section, changelog_sections
 from empiremuse.rules.settings import validate_prefix
 from empiremuse.rules.usage import render_text
@@ -1067,7 +1067,7 @@ class Owner(commands.Cog):
             output, failed = str(e), True
 
         # A saída só vai por DM, com os segredos conhecidos mascarados; nunca para o canal.
-        output = mask_shell_output(output, self.secret_values())
+        output = mask_secrets_and_tokens(output, self.secret_values())
         content = f"```py\n{output}```"
         kwargs = {}
         if len(content) > 2000:

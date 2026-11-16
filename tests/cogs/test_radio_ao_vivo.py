@@ -384,6 +384,24 @@ class TestStationHealth:
         assert not health.unavailable(MAIN)
 
     @pytest.mark.asyncio
+    @pytest.mark.regression
+    async def test_a_legacy_health_doc_without_rev_is_updated_not_reinserted(self, tmp_path):
+        """Sentinela (PR 257): o documento de saúde gravado antes do compare-and-set não tem ``rev``; ``expected_rev=None`` tentava
+        inserir de novo (chave duplicada) e a marca nunca andava. Com o ``LocalDatabase`` real."""
+        from empiremuse.utils.db import LocalDatabase
+        from empiremuse.utils.radio.health import HEALTH_DB
+        from empiremuse.utils.radio.premium import GLOBAL_DB
+
+        clock = Clock()
+        db = LocalDatabase(str(tmp_path / "db"))
+        db._connect[GLOBAL_DB][HEALTH_DB].insert_one({"_id": MAIN, "fails": [clock.now, clock.now], "until": 0})
+        health = StationHealth(SimpleNamespace(database=db), clock=clock)
+
+        assert await health.record_exhausted(MAIN) is True  # a terceira falha na hora marca
+        stored = db._connect[GLOBAL_DB][HEALTH_DB].find_one({"_id": MAIN})
+        assert stored["rev"] == 1 and stored["until"] == clock.now + UNAVAILABLE_TTL_S and health.unavailable(MAIN)
+
+    @pytest.mark.asyncio
     async def test_marks_from_another_process_are_seen_after_a_refresh(self):
         clock = Clock()
         health, db = make_health(clock)
@@ -799,6 +817,33 @@ class TestLiveLoadsOnlyOnTheLocalNode:
             self.remote.get_tracks.assert_not_awaited()  # nenhum outro nó
             w.music.get_tracks.assert_not_awaited()  # nem o get_tracks genérico (provedores de busca, Deezer, Spotify)
             assert w.player.process_next.await_count == 1
+        finally:
+            await w.hub.relay.close()
+
+    @pytest.mark.asyncio
+    @pytest.mark.regression
+    async def test_the_voice_status_escapes_the_stored_station_name_and_icy_title_only_once(self):
+        """O nome guardado (``check_station``) e o título ICY já vêm escapados: a faixa leva o texto sem o escape e o status escapa uma vez (PR 257)."""
+        from empiremuse.rules.text import external_text
+        from empiremuse.rules.voice_status import voice_status_value
+
+        w, ports = await self.world_with_player()
+        w.hub.directory.fresh_for_play.return_value = STATION._replace(name=external_text("Rock*FM_1", 100))
+        try:
+            assert await ports.connect() is True
+            await ports.play_live()
+
+            live = w.player.queue[-1]
+            assert live.title == "Rock*FM_1" and live.info["title"] == "Rock*FM_1"
+            assert voice_status_value(live.title) == "Rock\\*FM\\_1"  # um escape só
+
+            w.player.current, w.player.radio_live = live, True
+            ports._announce(external_text("A*B_C", 120))  # o título ICY guardado pelo ``icy.clean_title``
+            assert voice_status_value(live.author) == "A\\*B\\_C"
+            ports._names[ports.active] = external_text("Rock*FM_1", 100)
+            assert (
+                await ports._stage_name() == "Rock*FM_1"
+            )  # tópico do palco: texto puro, sem a barra do escape guardado
         finally:
             await w.hub.relay.close()
 

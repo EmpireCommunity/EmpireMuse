@@ -40,6 +40,7 @@ from empiremuse.rules.erasure import (
     resurrected_paths,
 )
 from empiremuse.rules.user_cleanup import UserCleanupError
+from empiremuse.utils.db import stored_rev
 
 if TYPE_CHECKING:
     from empiremuse.utils.client import BotPool
@@ -342,9 +343,10 @@ class ErasureService:
             doc = await database.find_doc(doc_id, db_name=store.collection, collection=store.database)
             if doc is None or doc.get("updated_by") != str(user_id):
                 return
-            rev = doc.get("rev")
-            if not isinstance(rev, int) or isinstance(rev, bool):
-                raise ValueError("documento sem rev")
+            # sem ``rev`` (gravado antes do compare-and-set) vale LEGACY_REV, como em toda leitura; o CAS com 0 casa o documento sem o campo
+            rev = stored_rev(doc)
+            if not isinstance(rev, int) or isinstance(rev, bool) or rev < 0:
+                raise ValueError("rev fora do formato")
             saved = await database.save_doc_cas(
                 doc_id,
                 {**doc, "updated_by": ANONYMIZED, "rev": rev + 1},

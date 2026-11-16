@@ -50,6 +50,18 @@ from empiremuse.utils.music.models.autoqueue_steps import (
 from empiremuse.utils.music.models.step_state import AutoqueueState, ResolveTrackState
 
 
+RESOLVE_ERROR = "resolve_error"  # em ``info["extra"]``: a busca falhou (nó, limite, rede), não "nenhum resultado"
+
+
+def resolve_error(track) -> bool:
+    """A última ``resolve_track`` desta faixa terminou sem id por FALHA da busca, não por falta de resultado."""
+    return bool((getattr(track, "info", None) or {}).get("extra", {}).get(RESOLVE_ERROR))
+
+
+def _mark_resolve_error(track) -> None:
+    track.info.setdefault("extra", {})[RESOLVE_ERROR] = True
+
+
 class PlayerAutoqueueMixin:
     async def get_autoqueue_tracks(self):
         if getattr(self, "radio_id", None) is not None:
@@ -117,6 +129,7 @@ class PlayerAutoqueueMixin:
     async def resolve_track(self, track: PartialTrack, force=False):
         if track.id:
             return
+        track.info.get("extra", {}).pop(RESOLVE_ERROR, None)  # vale só a tentativa de agora
 
         req = ResolveTrackState(check_duration=bool(track.duration))
 
@@ -148,10 +161,15 @@ class PlayerAutoqueueMixin:
                 try:
                     req.selected_track = req.tracks[0]
                 except Exception:
-                    if req.exceptions:
-                        logger.warning(
-                            "Falha ao resolver PartialTrack (%s)", ", ".join(type(e).__name__ for e in req.exceptions)
+                    # sem consulta nenhuma (o nó não tem provedor de busca) também é falha da BUSCA: não prova que a faixa não existe
+                    if req.exceptions or not search_queries:
+                        _mark_resolve_error(track)
+                        reason = (
+                            ", ".join(type(e).__name__ for e in req.exceptions)
+                            if req.exceptions
+                            else "nenhum provedor de busca no nó"
                         )
+                        logger.warning("Falha ao resolver PartialTrack (%s)", reason)
                         logger.debug("Exceções ao resolver PartialTrack: %r", req.exceptions)
                     return
 
@@ -160,4 +178,5 @@ class PlayerAutoqueueMixin:
             _rt_apply_selected_track(track, req.selected_track)
 
         except Exception as e:
+            _mark_resolve_error(track)
             await _rt_report_failure(self, track, e)

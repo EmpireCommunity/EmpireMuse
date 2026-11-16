@@ -28,7 +28,7 @@ from empiremuse.rules.errors import NAME_TAKEN, RuleError
 from empiremuse.rules.favorites import check_import_name, name_limit
 from empiremuse.rules.integrations import import_entry as integration_entry
 from empiremuse.rules.quota import has_room
-from empiremuse.rules.text import clean_import_name, external_text
+from empiremuse.rules.text import clean_import_name, external_text, stored_text
 from empiremuse.rules.urls import clean_url
 from empiremuse.utils.radio.premium import RadioUnavailable
 
@@ -252,7 +252,7 @@ class RadioFavoritesSection(AccountSection):
         return {
             **shown,
             "estacoes": tuple(
-                RadioStationView(f.uuid, external_text(f.name, LABEL_LIMIT, markdown=False)) for f in stations
+                RadioStationView(f.uuid, stored_text(f.name, LABEL_LIMIT, markdown=False)) for f in stations
             ),
             "filtros": tuple(RadioFilterView(node, self._filter_label(tree, node)) for node in nodes),
         }

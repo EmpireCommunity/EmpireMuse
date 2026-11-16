@@ -27,6 +27,7 @@ from empiremuse.utils.radio.custom_source import (
     EmptyStation,
     NoPlayableTracks,
     StreakLimit,
+    TransientResolve,
     load_pool,
 )
 from empiremuse.utils.radio.lastfm_feed import LastFmMissing, LastFmUnavailable
@@ -123,6 +124,7 @@ class CustomRadioPorts(DiscordRadioPorts):
         """A faixa como ``PartialTrack`` pronta para tocar, ou ``None`` se nenhum stream tocável. Primeiro o cache de faixas resolvidas (7 dias, vale depois
         de um reinício); só sem ele o nó busca (mesmo caminho do autoplay) e o resultado é guardado."""
         from empiremuse.utils.music.models import PartialTrack  # tarde: os modelos importam o cliente
+        from empiremuse.utils.music.models.player_autoqueue import resolve_error
 
         player = self._player()
         if player is None:
@@ -137,8 +139,10 @@ class CustomRadioPorts(DiscordRadioPorts):
             await player.resolve_track(partial)
         except Exception as error:  # noqa: BLE001 - uma faixa que não resolve é só a próxima sorteada: só o tipo vai ao log (R-12)
             logger.warning("Faixa da rádio não resolvida (%s)", type(error).__name__)
-            return None
+            raise TransientResolve from error
         if not partial.id:
+            if resolve_error(partial):  # a busca falhou (nó, 429): a faixa não vai para o cache negativo
+                raise TransientResolve
             return None
         await self.pool.radio.resolved.store(track, partial)
         return _tag(partial, track)

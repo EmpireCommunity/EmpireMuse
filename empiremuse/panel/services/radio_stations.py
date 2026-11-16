@@ -31,7 +31,7 @@ from empiremuse.panel.services.base import (
 from empiremuse.panel.services.radio import FORBIDDEN_KEY, STATUS_FORBIDDEN, RadioPage
 from empiremuse.panel.services.service import STATUS_CONFLICT, STATUS_INVALID, STATUS_OK
 from empiremuse.rules.i18n import Translator
-from empiremuse.rules.radio_station import valid_station_id
+from empiremuse.rules.radio_station import genre_ref, valid_station_id
 from empiremuse.rules.playlists import SCOPE_RADIO
 from empiremuse.utils.radio.store import NoPremium, RadioConflict, RadioInvalid, RadioNotFound
 
@@ -400,7 +400,7 @@ class StationsPage:
         options = tuple((str(s.id), str(s.name)) for s in sorted(stations, key=lambda s: str(s.name).casefold()))
         from empiremuse.rules.radio_genres import shipped_catalog
 
-        options += tuple(("g:" + g.id, tr(f"panel.radio.genre.{g.id}")) for g in shipped_catalog())
+        options += tuple((genre_ref(g.id), tr(f"panel.radio.genre.{g.id}")) for g in shipped_catalog())
         slug = str(radio.id).replace(":", "-")
         form = Formulario(
             key="radio_estacao",

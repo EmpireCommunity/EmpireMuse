@@ -49,7 +49,7 @@ class FakeDb:
                 return False
             table[key] = {**deepcopy(doc), "_id": key}
             return True
-        if not stored or stored.get("rev") != expected_rev:
+        if not stored or stored.get("rev", 0) != expected_rev:
             return False
         stored.update({k: deepcopy(v) for k, v in doc.items() if k != "_id"})
         return True
@@ -57,6 +57,14 @@ class FakeDb:
     async def delete_data(self, id_, db_name, collection):
         await self._tick()
         self._table(db_name).pop(str(id_), None)
+
+    async def delete_doc_cas(self, id_, *, expected_rev, db_name, collection):
+        await self._tick()
+        table, key = self._table(db_name), str(id_)
+        if key not in table or table[key].get("rev", 0) != expected_rev:
+            return False
+        del table[key]
+        return True
 
     async def iter_data(self, db_name, collection, filter=None):
         await self._tick()
@@ -238,6 +246,27 @@ class TestTheCapOfThreeIsAtomic:
         await world.store.delete(radio_id(1, GUILD))
 
         assert await active(world) == 0 and await world.store.get(radio_id(1, GUILD)) is None
+
+    @pytest.mark.regression
+    @pytest.mark.asyncio
+    async def test_a_turn_on_between_disabling_and_deleting_never_leaks_the_slot(self, world):
+        """PI 75 L1: o delete desliga e depois apaga; um ``/radio on`` no meio religa (pega a vaga) e o apagar sem ``rev`` levava a vaga junto."""
+        await with_premium(world)
+        await world.store.create(make_radio())
+        rid = radio_id(1, GUILD)
+        real_set_enabled, turned_on = world.store.set_enabled, []
+
+        async def disable_then_someone_turns_on(radio_id_, enabled, **kwargs):
+            done = await real_set_enabled(radio_id_, enabled, **kwargs)
+            if not enabled and not turned_on:
+                turned_on.append(await real_set_enabled(radio_id_, True))  # o ``/radio on`` concorrente
+            return done
+
+        world.store.set_enabled = disable_then_someone_turns_on
+
+        await world.store.delete(rid)
+
+        assert await world.store.get(rid) is None and await active(world) == 0
 
 
 class TestRevocation:

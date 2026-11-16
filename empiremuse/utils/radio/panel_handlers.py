@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from empiremuse.rules.radio import LIST_MAX
 from empiremuse.utils.music.errors import GenericError
-from empiremuse.rules.text import external_text
+from empiremuse.rules.text import stored_text
 from empiremuse.utils.radio import actions
 from empiremuse.utils.radio.picker import FAVORITES_ID
 from empiremuse.utils.radio.premium import RadioUnavailable
@@ -35,7 +35,7 @@ async def _change(cog: RadioCog, interaction: Any, tr: Any, radio: Any, uuid: st
     if station is None:
         return tr("radio.live.not_found")
     await actions.change_station(cog.hub, radio_id=radio.id, station=station, actor=cog._authorized(interaction))
-    return tr("radio.local.changed", station=external_text(station.name, NAME_LIMIT))
+    return tr("radio.local.changed", station=stored_text(station.name, NAME_LIMIT))
 
 
 def cog_gap() -> float:

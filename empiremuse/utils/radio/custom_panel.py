@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from empiremuse.rules.radio_genres import shipped_catalog
 from empiremuse.rules.radio import VOLUME_DEFAULT, Radio, station_neighbor
-from empiremuse.rules.radio_station import KIND_ARTISTS, KIND_GENRE, KIND_PLAYLISTS, CustomStation
+from empiremuse.rules.radio_station import KIND_ARTISTS, KIND_GENRE, KIND_PLAYLISTS, CustomStation, is_genre
 from empiremuse.rules.text import external_text
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.radio import actions
@@ -47,7 +47,7 @@ FAVORITES_VALUE = (
 
 def station_label(station: CustomStation, tr: Any = None, *, markdown: bool = True) -> str:
     """Nome traduzido dos prontos; nomes externos sempre neutralizados no destino."""
-    name = tr(f"radio.genre.{station.source['genre']}") if tr and station.id.startswith("g:") else station.name
+    name = tr(f"radio.genre.{station.source['genre']}") if tr and is_genre(station.id) else station.name
     return external_text(name, NAME_LIMIT, markdown=markdown)
 
 
@@ -69,9 +69,9 @@ def filtered(
     group = GENRE_FILTERS.get(filter_id or "")
     if group:
         ids = {g.id for g in shipped_catalog() if g.group == group}
-        return [s for s in stations if s.id.startswith("g:") and s.source.get("genre") in ids]
+        return [s for s in stations if is_genre(s.id) and s.source.get("genre") in ids]
     kind = TYPE_FILTERS.get(filter_id or "")
-    return [s for s in stations if not s.id.startswith("g:") and (kind is None or s.kind == kind)]
+    return [s for s in stations if not is_genre(s.id) and (kind is None or s.kind == kind)]
 
 
 async def listed(hub: Any, radio: Radio) -> list[CustomStation]:
@@ -168,7 +168,7 @@ async def _listed(cog: RadioCog, radio: Radio) -> list[CustomStation]:
 
 async def walk(cog: RadioCog, interaction: Any, tr: Any, radio: Radio, step: int) -> str:
     """Anterior e próxima: a vizinha na lista do filtro (dá a volta)."""
-    listed = [s for s in await _listed(cog, radio) if not s.id.startswith("g:")]
+    listed = [s for s in await _listed(cog, radio) if not is_genre(s.id)]
     neighbor = station_neighbor([s.id for s in listed], radio.source.get("station"), step)
     if neighbor is None:
         return tr("radio.panel.no_other_station")
@@ -178,7 +178,7 @@ async def walk(cog: RadioCog, interaction: Any, tr: Any, radio: Radio, step: int
 async def random_station(cog: RadioCog, interaction: Any, tr: Any, radio: Radio) -> str:
     """Uma estação aleatória da lista do filtro, diferente da atual."""
     current = radio.source.get("station")
-    options = [s for s in await _listed(cog, radio) if s.id != current and not s.id.startswith("g:")]
+    options = [s for s in await _listed(cog, radio) if s.id != current and not is_genre(s.id)]
     if not options:
         return tr("radio.panel.no_other_station")
     return await _change(cog, interaction, tr, radio, random.choice(options))

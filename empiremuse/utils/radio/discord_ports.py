@@ -213,6 +213,7 @@ class DiscordRadioPorts:
             return
         from empiremuse.rules.text import external_text  # tarde: só o palco usa
 
+        # ``_stage_name`` devolve texto CRU (a ao vivo tira o escape do nome guardado; estação do servidor e playlist já são cruas)
         topic = external_text(await self._stage_name(), STAGE_TOPIC_LIMIT, markdown=False) or player.tr(
             "radio.stage.topic"
         )

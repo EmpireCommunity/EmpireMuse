@@ -143,3 +143,33 @@ async def test_configure_waits_until_reset_has_deleted_the_old_radio(monkeypatch
 
     assert not any(isinstance(result, BaseException) for result in results)
     assert [radio.bot_id for radio in await w.hub.store.list_for_guild(GUILD)] == [3]
+
+
+async def test_a_non_manager_is_refused_without_waiting_for_the_guild_lock(monkeypatch):
+    """PI 111: quem o cache já mostra sem ``manage_guild`` não entra na fila da trava do servidor (não atrasa o gerente)."""
+    from empiremuse.utils.radio.setup import RadioForbidden
+
+    w = build(manage_guild=False)
+    w.db._tick = AsyncMock()
+    lock = w.hub.setup._lock(GUILD)
+    await lock.acquire()  # outra operação do servidor em andamento
+    try:
+        attempt = asyncio.create_task(new_radio(w))
+        for _ in range(20):  # só cede a vez, sem relógio
+            if attempt.done():
+                break
+            await asyncio.sleep(0)
+        assert attempt.done(), "a recusa esperou a trava"
+        assert isinstance(attempt.exception(), RadioForbidden)
+    finally:
+        lock.release()
+        await asyncio.gather(attempt, return_exceptions=True)
+
+
+async def test_the_guild_locks_do_not_pile_up_after_the_calls_end(monkeypatch):
+    """PI 111: uma trava por servidor só enquanto alguém a usa; o dicionário não cresce para sempre."""
+    w = await world(monkeypatch)
+
+    await new_radio(w)
+
+    assert GUILD not in w.hub.setup._locks

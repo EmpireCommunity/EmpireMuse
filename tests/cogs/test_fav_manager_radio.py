@@ -395,19 +395,23 @@ def production_station(n, name):
     return built
 
 
+@pytest.mark.regression
 async def test_stored_names_are_shown_with_a_single_backslash_per_character(world):
-    """O nome já sai escapado do ``check_station`` e é guardado assim; as telas o mostram com ``markdown=False``."""
+    """O nome já sai escapado do ``check_station`` e é guardado assim: o texto mostra um escape só e o select (sem markdown), nenhum (T-473 J3)."""
     world.hub.directory.by_uuid_strict.side_effect = lambda v: production_station(int(v[-12:]), "Rock_FM **x**")
     await world.seed(stations=(1,), filters=())
     await world.hub.favorites.add(GUILD, ADMIN, production_station(1, "Rock_FM **x**"))
 
     _, inter = await open_radio(world)
     (content,) = inter.calls_named("edit_original_message")
-    server = (await open_server(world)).sent[0]["content"]
+    server = (await open_server(world)).sent[0]
 
-    for text in (content["content"], server):
+    for text in (content["content"], server["content"]):
         assert "Rock\\_FM \\*\\*x\\*\\*" in text  # uma barra por caractere
         assert "\\\\" not in text  # nunca duas
+    for view in (content["view"], server["view"]):
+        options = [o.label for c in view.children if isinstance(c, disnake.ui.Select) for o in c.options]
+        assert "Rock_FM **x**" in options  # o select não tem markdown: a barra guardada não aparece
 
 
 async def test_headings_and_confirmation_show_the_translated_text_never_the_raw_key(world):
@@ -692,8 +696,8 @@ async def test_server_ref_label_failure_preserves_live_management_and_retry(
     custom = await make_custom(world)
     await world.hub.favorites.add(GUILD, ADMIN, station(1))
     await world.hub.favorites.add_ref(GUILD, ADMIN, custom, exists=AsyncMock(return_value=True))
-    original = world.hub.stations.get
-    monkeypatch.setattr(world.hub.stations, "get", AsyncMock(side_effect=RadioUnavailable))
+    original = world.hub.stations.list_for_guild
+    monkeypatch.setattr(world.hub.stations, "list_for_guild", AsyncMock(side_effect=RadioUnavailable))
     opened = await open_server(world)
     view = opened.sent[0]["view"]
     assert view.refs_unavailable and [s.uuid for s in view.stations] == [uuid(1)]
@@ -707,7 +711,7 @@ async def test_server_ref_label_failure_preserves_live_management_and_retry(
     assert await world.hub.favorites.list_all(GUILD) == ([], [custom])
     await view.confirm_clear_callback(FakeInter(ADMIN))  # nem callback antigo apaga refs invisíveis
     assert (await world.hub.favorites.list_all(GUILD))[1] == [custom]
-    monkeypatch.setattr(world.hub.stations, "get", original)
+    monkeypatch.setattr(world.hub.stations, "list_for_guild", original)
     world.managers.discard(ADMIN)
     refused = FakeInter(ADMIN)
     await view.retry_callback(refused)
@@ -715,7 +719,7 @@ async def test_server_ref_label_failure_preserves_live_management_and_retry(
     assert view.refs_unavailable  # a releitura também exige a permissão atual
     world.managers.add(ADMIN)
     await view.retry_callback(FakeInter(ADMIN))
-    assert not view.refs_unavailable and view.refs == [(custom, "Queen Rock")]
+    assert not view.refs_unavailable and [e[:2] for e in view.refs] == [(custom, "Queen Rock")]
 
 
 async def test_member_ref_label_failure_preserves_live_filters_and_retry(
@@ -724,8 +728,8 @@ async def test_member_ref_label_failure_preserves_live_filters_and_retry(
     custom = await make_custom(world)
     await world.hub.custom_favorites.toggle(GUILD, MEMBER, custom)
     await world.seed()
-    original = world.hub.stations.get
-    monkeypatch.setattr(world.hub.stations, "get", AsyncMock(side_effect=RadioUnavailable))
+    original = world.hub.stations.list_for_guild
+    monkeypatch.setattr(world.hub.stations, "list_for_guild", AsyncMock(side_effect=RadioUnavailable))
     view, _ = await open_radio(world)
     assert not view.radio_unavailable and view.radio_refs_unavailable
     assert len(view.radio_stations) == 2 and len(view.radio_filters) == 1
@@ -737,9 +741,9 @@ async def test_member_ref_label_failure_preserves_live_filters_and_retry(
     assert world.tr("radio.favorites.retry.label") in labels(view)
     await view.radio_clear_refs_callback(FakeInter(MEMBER))
     assert await world.hub.custom_favorites.list(GUILD, MEMBER) == [custom]
-    monkeypatch.setattr(world.hub.stations, "get", original)
+    monkeypatch.setattr(world.hub.stations, "list_for_guild", original)
     await view.radio_retry_callback(FakeInter(MEMBER))
-    assert not view.radio_refs_unavailable and view.radio_refs == [(custom, "Queen Rock")]
+    assert not view.radio_refs_unavailable and [e[:2] for e in view.radio_refs] == [(custom, "Queen Rock")]
 
 
 @pytest.mark.regression

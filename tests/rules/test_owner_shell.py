@@ -53,13 +53,15 @@ def test_mascara_o_valor_mais_longo_primeiro():
 @pytest.mark.regression
 def test_shell_masks_normalized_and_rejected_tokens_without_changing_common_text():
     from empiremuse.rules.bot_tokens import load_bot_tokens
-    from empiremuse.rules.owner_shell import mask_shell_output
+    from empiremuse.rules.owner_shell import mask_secrets_and_tokens
     from tests.rules.test_bot_tokens import token
 
     loaded = load_bot_tokens({"TOKEN": '"' + token() + '"', "TOKEN_RESERVE_X": token("b") + " " + token("c")})
     assert loaded.issues[0].code == "FORMAT"
     secrets = frozenset(bot.reveal() for bot in loaded.bots)
-    assert mask_shell_output(token(), secrets) == "***"
+    assert mask_secrets_and_tokens(token(), secrets) == "***"
     # A reserva rejeitada e um token legado nunca admitido no pool são cobertos pela forma.
-    assert mask_shell_output(token("b") + " " + token("d"), secrets) == "*** ***"
-    assert mask_shell_output("texto comum key=valor token=exemplo", secrets) == "texto comum key=valor token=exemplo"
+    assert mask_secrets_and_tokens(token("b") + " " + token("d"), secrets) == "*** ***"
+    assert (
+        mask_secrets_and_tokens("texto comum key=valor token=exemplo", secrets) == "texto comum key=valor token=exemplo"
+    )

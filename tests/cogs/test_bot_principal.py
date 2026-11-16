@@ -28,25 +28,13 @@ URL = "https://discord.com/oauth2/authorize?client_id=1"
 
 
 @pytest.mark.parametrize(
-    ("identifier", "configured", "is_main", "is_reserve"),
-    [("TOKEN", True, True, False), ("TOKEN_RESERVE_2", True, False, True), ("TOKEN_RESERVE_2", False, False, False)],
+    ("identifier", "is_main", "is_reserve"),
+    [("TOKEN", True, False), ("TOKEN_RESERVE_2", False, True), ("TOKEN_RADIO_2", False, True)],
 )
-def test_roles_of_a_bot(identifier, configured, is_main, is_reserve):
-    bot = SimpleNamespace(identifier=identifier, pool=SimpleNamespace(main_configured=configured))
+def test_roles_of_a_bot(identifier, is_main, is_reserve):
+    """Sem ``TOKEN`` a subida para (``bot_tokens``: ``fatal``), então todo bot que não é o principal é reserva."""
+    bot = SimpleNamespace(identifier=identifier, pool=SimpleNamespace())
     assert (BotCore.is_main.fget(bot), BotCore.is_reserve.fget(bot)) == (is_main, is_reserve)
-
-
-@pytest.mark.parametrize(
-    ("bots", "failed", "configured"),
-    [
-        (["TOKEN", "TOKEN_RESERVE_2"], {}, True),
-        (["TOKEN_RESERVE_2"], {"TOKEN": "erro"}, True),
-        (["TOKEN_RESERVE_2"], {}, False),
-    ],
-)
-def test_a_main_that_failed_to_log_in_still_counts_as_configured(bots, failed, configured):
-    pool = SimpleNamespace(bots=[SimpleNamespace(identifier=i) for i in bots], failed_bots=failed)
-    assert BotPool.main_configured.fget(pool) is configured
 
 
 def guild_with(channel):

@@ -118,6 +118,23 @@ class TestTheDrawDoesNotHammerTheDatabase:
 
         assert db.reads <= len(pool)  # uma leitura por faixa do pool no total, nunca uma por faixa a cada sorteio
 
+    @pytest.mark.regression
+    @pytest.mark.asyncio
+    async def test_a_draw_after_the_absence_expired_reads_only_the_pick(self):
+        """CodeRabbit #200: com a ausência vencida (``ABSENT_TTL_S``), cada sorteio relia o pool inteiro (até 300 ``find_doc`` em série)."""
+        now = [1000.0]
+        db = CountingDb()
+        pool = [Track(f"Artista {i // 10}", f"Faixa {i}") for i in range(300)]
+        session = CustomSession(pool, ResolvedTracks(db, clock=lambda: now[0]))
+        now[0] += ABSENT_TTL_S + 1
+
+        async def resolve(track):
+            return object()
+
+        await session.next_playable(resolve)
+
+        assert db.reads == 1  # só a escolhida é conferida no cache negativo
+
     @pytest.mark.asyncio
     async def test_the_absence_is_forgotten_after_a_few_minutes(self):
         now = [1000.0]
@@ -227,3 +244,60 @@ class TestThePortsUseTheCache:
 
         assert await ports._resolve(TRACK) is None
         assert await ResolvedTracks(db).get(TRACK) is None
+
+
+class TestASearchFailureIsNotTheTracksFault:
+    """PI 72: nó fora ou 429 não põe a faixa no cache negativo global de 24 h; só "nenhum stream tocável" põe."""
+
+    @pytest.mark.regression
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(("outcome", "marked"), [("flagged", False), ("raises", False), ("no_result", True)])
+    async def test_only_a_real_miss_enters_the_negative_cache(self, outcome, marked):
+        from empiremuse.utils.music.models.player_autoqueue import RESOLVE_ERROR
+        from empiremuse.utils.radio.custom_source import StreakLimit
+
+        db = FakeDb()
+        ports, _ = TestThePortsUseTheCache.make_ports(db, resolves=False)
+
+        async def resolve_track(partial):
+            if outcome == "raises":
+                raise RuntimeError("node down")
+            if outcome == "flagged":  # o que ``resolve_track`` grava quando a busca do nó levantou (429, rede)
+                partial.info.setdefault("extra", {})[RESOLVE_ERROR] = True
+
+        ports._player().resolve_track = resolve_track
+        session = CustomSession([TRACK], ResolvedTracks(db))
+
+        with pytest.raises(StreakLimit):
+            await session.next_playable(ports._resolve)
+
+        assert await ResolvedTracks(db).failed(TRACK) is marked
+
+    @pytest.mark.regression
+    @pytest.mark.asyncio
+    async def test_no_search_provider_is_not_a_miss(self):
+        """CodeRabbit PR 257: sem provedor de busca no nó nenhuma consulta roda; isso não prova que a faixa não existe."""
+        from unittest.mock import AsyncMock
+
+        from empiremuse.utils.music.models.player_autoqueue import PlayerAutoqueueMixin, resolve_error
+        from empiremuse.utils.music.models.tracks import PartialTrack
+        from empiremuse.utils.radio.custom_source import StreakLimit
+
+        get_tracks = AsyncMock(return_value=[])
+        player = SimpleNamespace(
+            native_yt=False,
+            node=SimpleNamespace(get_tracks=get_tracks, info={"sourceManagers": []}, partial_providers=[]),
+            bot=SimpleNamespace(pool=SimpleNamespace(partial_track_cache={})),
+        )
+        track = PartialTrack(title="Song", author="Artist", duration=180_000, source_name="spotify")
+
+        await PlayerAutoqueueMixin.resolve_track(player, track)
+
+        assert track.id is None and resolve_error(track) and get_tracks.await_count == 0
+
+        db = FakeDb()
+        ports, _ = TestThePortsUseTheCache.make_ports(db, resolves=False)
+        ports._player().resolve_track = lambda partial: PlayerAutoqueueMixin.resolve_track(player, partial)
+        with pytest.raises(StreakLimit):
+            await CustomSession([TRACK], ResolvedTracks(db)).next_playable(ports._resolve)
+        assert await ResolvedTracks(db).failed(TRACK) is False

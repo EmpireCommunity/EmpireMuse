@@ -199,6 +199,48 @@ class TestAssignToARadio:
             await world.store.set_custom_station(radio.id, station.id, expected_rev=radio.rev)
 
 
+class TestDeleteRacesAnAssignment:
+    @pytest.mark.regression
+    @pytest.mark.asyncio
+    async def test_a_station_deleted_while_a_radio_takes_it_never_leaves_the_radio_pointing_at_nothing(self, world):
+        """PI 72: o apagar confere "nenhuma rádio usa" e, antes de apagar, ``set_custom_station`` grava a rádio com a estação."""
+        await with_premium(world)
+        radio = await world.store.create(make_radio())
+        station = await world.stations.create(GUILD, ROCK)
+        checked, proceed, station_read = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        real_using, real_find = world.stations.radios_using, world.db.find_doc
+
+        async def find_and_tell(id_, *, db_name, collection):
+            if checked.is_set() and id_ == station.id:
+                station_read.set()  # a atribuição leu a estação depois da conferência do apagar
+            return await real_find(id_, db_name=db_name, collection=collection)
+
+        world.db.find_doc = find_and_tell
+
+        async def using_then_wait(guild_id, station_id):
+            found = await real_using(guild_id, station_id)
+            checked.set()
+            await proceed.wait()  # o apagar para entre a conferência e a remoção
+            return found
+
+        world.stations.radios_using = using_then_wait
+        deleting = asyncio.create_task(world.stations.delete(GUILD, station.id, expected_rev=station.rev))
+        await checked.wait()
+        assigning = asyncio.create_task(world.store.set_custom_station(radio.id, station.id, expected_rev=radio.rev))
+        for _ in range(50):  # só cede a vez, sem relógio: até a atribuição ler a estação ou ficar presa na trava
+            if station_read.is_set() or assigning.done():
+                break
+            await asyncio.sleep(0)
+        proceed.set()
+        deleted, assigned = await asyncio.gather(deleting, assigning, return_exceptions=True)
+
+        # nesta ordem o apagar segura a trava: termina normalmente, a estação some e a atribuição, que lê depois, é recusada
+        assert deleted is None
+        assert isinstance(assigned, RadioInvalid), assigned
+        assert await world.stations.get(GUILD, station.id) is None
+        assert (await world.store.get(radio.id)).source.get("station") != station.id
+
+
 class TestEditingReloadsTheRadiosThatPlayTheStation:
     """Editar pelo chat e pelo painel web chama o mesmo ``StationStore.update``: o recarregamento mora no backend, não no cog (gate do #196, item 5)."""
 

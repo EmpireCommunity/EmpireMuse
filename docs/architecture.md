@@ -329,6 +329,7 @@ O pacote `empiremuse/rules/` centraliza as regras de negócio puras compartilhad
 
 - **`limits.py`**: limites numéricos e constantes de tamanho (nomes, URLs, descrições, prefixos, canais e volumes);
 - **`text.py`**: sanitização e formatação de texto (`clean_title`, `clean_import_name`, `drop_same_names`, `normalize_status`);
+  Campos GUARDADOS já escapados (passados por `external_text` antes de gravar): `Station.name`, `Station.country`, `FavoriteStation.name` e o título ICY; na exibição eles saem por `stored_text` (tira o escape antigo antes de neutralizar de novo). Todo outro texto é guardado CRU e sai por `external_text`; código novo guarda cru, e um campo novo guardado escapado entra nesta lista e passa a usar `stored_text`;
 - **`urls.py`**: validações e expressões regulares de endereços (`URL_REG`, `is_clean_url`, `clean_avatar` e variantes legadas de extração e prefixo);
 - **`quota.py`**: cálculo e checagem de cotas (`quota_limit`, `has_room`, `import_has_room`, `file_exceeds`);
 - **`settings.py`**: validação de prefixo, status de voz, volume do player, cargos de DJ e skins permitidas (`allowed_names`);
@@ -368,6 +369,8 @@ conferência do apagamento de dados e poderia recriar um documento recém-apagad
 | `global` / `default` | `global_db_models[default]` v1.0 | Tokens extras. |
 | `global` / `global` (id `youtube_data`) | sem modelo | `refresh_tokens` do OAuth do YouTube (`BotPool.check_node` em `empiremuse/utils/client.py`). |
 | `player_sessions_json` / `<id do bot>` | sem modelo | Sessões de players para retomada em formato JSON (a coleção `player_sessions` do formato antigo não é lida nem apagada). |
+
+**Compare-and-set e documentos sem `rev`** (`empiremuse/utils/db.py`): `find_doc` lê sem cache e sem criar o documento padrão; `save_doc_cas(expected_rev=None)` só insere e devolve `False` se o documento já existe; com um inteiro, grava só se o `rev` guardado é igual; `delete_doc_cas(expected_rev=N)` apaga só se o `rev` guardado é `N`. Um documento sem `rev` conta como 0 (`LEGACY_REV`): `rev_filter` e `stored_rev` são o único lugar dessa regra, e todo consumidor tem de usá-los. `False` não distingue documento ausente de `rev` diferente. As travas em memória protegem invariantes entre documentos só dentro do processo.
 
 ### Pacote de Serialização Segura em JSON (`empiremuse/serialization/`)
 
@@ -467,4 +470,4 @@ Quanto à infraestrutura e artefatos de deploy, os scripts legados (`source_*.sh
 
 `StationStore.get(guild_id, "g:<id>")` constrói uma estação virtual do catálogo, com o servidor do pedido e revisão zero. Os 33 gêneros não ocupam a coleção `radio_stations`; criação e edição aceitam apenas artistas e playlists (`CREATE_KINDS`). As referências virtuais são válidas nas rádios personalizadas e nas favoritas. O uso exige premium fresco, e Anterior/Próxima permanece nas estações do servidor. A página web mostra o catálogo somente para consulta.
 
-No boot principal, `migrate_genres.run` executa depois de `migrate_r5` e antes da retomada. Lê os documentos crus, valida a identidade canônica, reaponta rádios e favoritas do mesmo servidor com CAS e só então relê e apaga cada estação por id. Não há backup nem reversão dos documentos apagados (decisão do dono). Conflito ou alteração no meio preserva a estação e impede o marcador `radio_genres_builtin`; a próxima subida retoma. Gênero retirado do catálogo é apagado sem reapontar a rádio. Identidades inválidas ficam inertes; uma rodada com apenas inertes registra ERROR e não marca conclusão. Logs contêm apenas contagens.
+No boot principal, `migrate_genres.run` executa depois de `migrate_r5` e antes da retomada. Lê os documentos crus, valida a identidade canônica, reaponta rádios e favoritas do mesmo servidor com CAS e só então relê e apaga cada estação por id. Não há backup nem reversão dos documentos apagados (decisão do dono). Conflito ou alteração no meio preserva a estação e impede o marcador `radio_genres_builtin`; a próxima subida retoma. Gênero retirado do catálogo é apagado sem reapontar a rádio. Identidades inválidas ficam inertes; uma rodada com apenas inertes registra ERROR e não marca conclusão. Logs contêm apenas contagens. A migração apaga estações sem a `station_lock` (trava das estações do servidor): aceitável porque roda no boot, antes da retomada das rádios e de qualquer comando.
