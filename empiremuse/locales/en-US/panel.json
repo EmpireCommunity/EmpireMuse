@@ -23,6 +23,8 @@
   "panel.radio.title": "Radios",
   "panel.radio.premium.title": "Radios in this server",
   "panel.radio.premium.none": "Radios are Limited to Supporters, and this server does not have that access. Whoever runs the bot grants it by hand, when there is capacity.",
+  "panel.radio.premium.ask.support": "To ask, open a ticket on the support server:",
+  "panel.radio.premium.ask.generic": "To ask, contact whoever runs the bot.",
   "panel.radio.premium.active": "On right now: {active} of {max}.",
   "panel.radio.premium.help": "Each radio plays on a backup bot, 24 hours a day, in a voice or stage channel. To turn a radio on or off, use /radio in Discord.",
   "panel.radio.list.title": "Configured radios",

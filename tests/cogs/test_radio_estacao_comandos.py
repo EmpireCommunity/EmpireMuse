@@ -36,7 +36,9 @@ def make_inter(*, manage_guild=True, guild_id=500):
 
 
 def make_cog(*, premium=True):
-    hub = SimpleNamespace(premium=SimpleNamespace(get=AsyncMock(return_value=object() if premium else None)))
+    hub = SimpleNamespace(
+        premium=SimpleNamespace(get=AsyncMock(return_value=object() if premium else None)), support_url=lambda: ""
+    )
     return SimpleNamespace(bot=SimpleNamespace(pool=SimpleNamespace(i18n=get_i18n())), hub=hub)
 
 
@@ -88,7 +90,7 @@ class TestStationCommandGate:
     async def test_the_editor_and_the_delete_confirmation_re_check_premium_on_every_click(self):
         from empiremuse.utils.radio.station_ui import ConfirmDelete
 
-        hub = SimpleNamespace(premium=SimpleNamespace(get=AsyncMock(return_value=None)))
+        hub = SimpleNamespace(premium=SimpleNamespace(get=AsyncMock(return_value=None)), support_url=lambda: "")
         view = ConfirmDelete(
             hub, lambda key, **kw: key, author_id=7, station=SimpleNamespace(), can_manage=lambda i: True
         )
@@ -97,7 +99,7 @@ class TestStationCommandGate:
         )
 
         assert await view.interaction_check(click) is False
-        click.response.send_message.assert_awaited_once_with("radio.refused.no_premium", ephemeral=True)
+        click.response.send_message.assert_awaited_once_with("radio.refused.no_premium radio.premium.ask.generic", ephemeral=True)
 
     @pytest.mark.asyncio
     async def test_a_cached_slash_cannot_create_a_genre_station(self):

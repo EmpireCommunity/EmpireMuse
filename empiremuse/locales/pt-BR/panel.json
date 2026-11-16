@@ -23,6 +23,8 @@
   "panel.radio.title": "Rádios",
   "panel.radio.premium.title": "Rádios neste servidor",
   "panel.radio.premium.none": "As rádios são Limitadas a Apoiadores, e este servidor não tem esse acesso. Quem cuida do bot concede à mão, quando há capacidade.",
+  "panel.radio.premium.ask.support": "Para pedir, abra um ticket no servidor de suporte:",
+  "panel.radio.premium.ask.generic": "Para pedir, fale com quem cuida do bot.",
   "panel.radio.premium.active": "Ligadas agora: {active} de {max}.",
   "panel.radio.premium.help": "Cada rádio toca num bot reserva, 24 horas por dia, num canal de voz ou de palco. Para ligar ou desligar uma rádio, use /radio no Discord.",
   "panel.radio.list.title": "Rádios configuradas",

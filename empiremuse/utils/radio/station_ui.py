@@ -7,6 +7,8 @@ e o compare-and-set em ``rev`` não são daqui.
 
 from __future__ import annotations
 
+from empiremuse.rules.apoiador import NO_PREMIUM, refused_text
+
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Any, Optional
@@ -234,7 +236,9 @@ class StationEditor(disnake.ui.View):
         if not await premium_ok(
             self.hub, interaction.guild_id
         ):  # o premium pode ter sido revogado enquanto a tela estava aberta
-            await interaction.response.send_message(self.tr("radio.refused.no_premium"), ephemeral=True)
+            await interaction.response.send_message(
+                refused_text(self.tr, NO_PREMIUM, self.hub.support_url()), ephemeral=True
+            )
             return False
         return True
 
@@ -351,7 +355,9 @@ class ConfirmDelete(disnake.ui.View):
         if not await premium_ok(
             self.hub, interaction.guild_id
         ):  # o premium pode ter sido revogado enquanto a tela estava aberta
-            await interaction.response.send_message(self.tr("radio.refused.no_premium"), ephemeral=True)
+            await interaction.response.send_message(
+                refused_text(self.tr, NO_PREMIUM, self.hub.support_url()), ephemeral=True
+            )
             return False
         return True
 
