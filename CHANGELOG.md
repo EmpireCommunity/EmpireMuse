@@ -8,6 +8,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 ## [Unreleased]
 
 ### Corrigido
+- Rádios e apagar meus dados (revisão do PR 257): rádio e estação gravadas antes do controle de versão agora são anonimizadas e o apagamento conclui, em vez de ficar parcial; um nó de áudio sem provedor de busca não tira mais a faixa do sorteio por 24 h; o menu de estações da rádio personalizada mantém a barra invertida que faz parte do nome (`AC\DC`); desligar o bot para as rádios antes de fechar o relé.
 - API para painéis externos: criar e apagar estação do servidor deixam a recusa de limite e de estação em uso para o armazenamento, sem a conferência duplicada fora da trava (os mesmos `400` `limit` e `in_use`); escritas de favoritas de rádio registram no uso o status real do erro (por exemplo `503`) em vez de `200` ou `500`; as listas de favoritas leem as estações do servidor numa consulta só; o aviso de lista de favoritas acima do teto sai só quando uma escrita a grava cortada, não a cada leitura; e uma lista de valores simples onde a API espera objetos é recusada em vez de virar um objeto.
 - Menu de integrações: limpar a lista quando ela já está vazia volta a mostrar o aviso (o Discord recusava a resposta).
 - Favoritar a faixa atual pelo player: a confirmação mostra o prefixo do servidor (a configuração era lida pelo ID do membro).

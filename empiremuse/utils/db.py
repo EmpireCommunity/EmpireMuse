@@ -516,7 +516,8 @@ class MongoDatabase(BaseDB):
         return dropped
 
     async def delete_doc_cas(self, id_, *, expected_rev: int, db_name: str, collection: str) -> bool:
-        """Apaga o documento só se o ``rev`` guardado ainda é ``expected_rev`` (filtro ``{_id, rev}``, atômico no servidor).
+        """Apaga o documento só se o ``rev`` guardado ainda é ``expected_rev`` (filtro atômico no servidor: ``_id`` + ``rev_filter``; com
+        ``expected_rev`` 0 é ``_id`` + (``rev`` 0 OU sem o campo), o documento legado).
 
         O cache sai antes e DEPOIS do ``await``: uma leitura no meio da espera poria o documento de volta no cache."""
         key = f"{collection}:{db_name}:{id_}"

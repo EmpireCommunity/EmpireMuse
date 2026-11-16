@@ -85,7 +85,11 @@ class RadioStore:
         )  # só as em uso
 
     def station_lock(self, guild_id: int) -> asyncio.Lock:
-        """A trava das estações do servidor, a MESMA do ``StationStore``: apagar uma estação e pô-la numa rádio nunca se cruzam."""
+        """A trava das estações do servidor, a MESMA do ``StationStore``: apagar uma estação e pô-la numa rádio nunca se cruzam.
+
+        O invariante "rádio aponta para estação que existe" vale só DENTRO de um processo (a trava é em memória). A trava é FOLHA: quem a segura
+        não toma outra trava, e NÃO é reentrante (``asyncio.Lock``): quem a segura nunca chama outro caminho que a tome de novo.
+        """
         return self._station_locks.setdefault(int(guild_id), asyncio.Lock())
 
     # ------------------------------------------------------------------ banco
