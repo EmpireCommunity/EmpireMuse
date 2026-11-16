@@ -2582,7 +2582,7 @@ paths:
       operationId: removeMemberRadioFavorite
       summary: Remove das favoritas do próprio membro neste servidor
       description: |
-        Remover o que não está dá `200`. Nunca exige o acesso de Apoiador (quem o perdeu limpa a própria lista). O alvo vai na query.
+        Membro reconferido no Discord agora (o cache do gateway não vale), como no `POST`; `503` quando o Discord não deu resposta definitiva (nunca vira `404`). Remover o que não está dá `200`. Nunca exige o acesso de Apoiador (quem o perdeu limpa a própria lista). O alvo vai na query.
       security:
         - ServiceKey: []
           SessionToken: []

@@ -227,3 +227,33 @@ def test_erasure_or_ban_drops_the_cached_decisions_of_that_user_only():
         authorize(authorizer)
     guild.members[2002].guild_permissions.administrator = False
     assert authorize(authorizer, session=other).guild_id == GID  # a decisão do OUTRO usuário segue em cache
+
+
+@pytest.mark.regression
+def test_an_erasure_during_a_manager_lookup_in_progress_leaves_nothing_in_the_cache():
+    """Sentinela SS4 (anterior ao PR): a consulta em andamento termina depois do apagamento e não recria a decisão (CC3, como no de membro)."""
+    import asyncio
+
+    guild, _, _, authorizer = setup(admin=True)
+    del guild.members[UID]  # força a consulta à API (fora do cache do gateway)
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def slow_fetch(user_id):
+        started.set()
+        await release.wait()
+        member = type("M", (), {})()
+        member.guild_permissions = type("P", (), {"administrator": True, "manage_guild": False})()
+        return member
+
+    guild.fetch_member = slow_fetch
+
+    async def scenario():
+        lookup = asyncio.create_task(authorizer.authorize(make_session(guild_ids=(GID,)), GID))
+        await started.wait()
+        authorizer.purge_user(USER_ID)
+        release.set()
+        await lookup
+
+    run(scenario())
+
+    assert authorizer._cache == {}

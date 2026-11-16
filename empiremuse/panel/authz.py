@@ -119,6 +119,10 @@ class GuildAuthorizer:
         self._clock = clock
         self._cache_seconds = cache_seconds
         self._cache: OrderedDict[tuple[str, str], tuple[float, GuildAccess]] = OrderedDict()
+        self._generation: dict[
+            str, int
+        ] = {}  # só de quem tem consulta em andamento (CC3, como no ``MemberAuthorizer``)
+        self._inflight: dict[str, int] = {}
 
     async def authorize(self, session: Session, guild_id: str, *, fresh: bool = False) -> GuildAccess:
         """Devolve o acesso ao servidor ou levanta ``GuildAccessDenied``. ``fresh=True`` ignora o cache."""
@@ -131,13 +135,24 @@ class GuildAuthorizer:
             cached = self._cached(key)
             if cached is not None:
                 return cached
-        try:
+        user_id = session.user.id
+        self._inflight[user_id] = self._inflight.get(user_id, 0) + 1
+        generation = self._generation.get(user_id, 0)
+        try:  # gravado ANTES de sair da consulta: um apagamento no meio (geração mudou) não recria a decisão
             access = await self._decide(session, guild_id)
+            if self._generation.get(user_id, 0) == generation:
+                self._remember(key, access)
+            return access
         except GuildAccessDenied:
             self._cache.pop(key, None)
             raise
-        self._remember(key, access)
-        return access
+        finally:
+            left = self._inflight.get(user_id, 1) - 1
+            if left > 0:
+                self._inflight[user_id] = left
+            else:
+                self._inflight.pop(user_id, None)
+                self._generation.pop(user_id, None)
 
     async def _decide(self, session: Session, guild_id: str) -> GuildAccess:
         user_id = session.user.id
@@ -177,8 +192,12 @@ class GuildAuthorizer:
             return None
 
     def purge_user(self, user_id: str) -> None:
-        """Descarta as decisões em cache do usuário (ouvinte de ``SessionStore.destroy_user``: apagamento de dados e banimento)."""
-        for key in [key for key in self._cache if key[0] == str(user_id)]:
+        """Descarta as decisões em cache do usuário (ouvinte de ``SessionStore.destroy_user``: apagamento de dados e banimento) e, se há
+        consulta dele em andamento, muda a geração para ela não gravar depois (CC3)."""
+        user_id = str(user_id)
+        if self._inflight.get(user_id):
+            self._generation[user_id] = self._generation.get(user_id, 0) + 1
+        for key in [key for key in self._cache if key[0] == user_id]:
             del self._cache[key]
 
     def _cached(self, key: tuple[str, str]) -> Optional[GuildAccess]:
