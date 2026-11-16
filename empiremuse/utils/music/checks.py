@@ -197,15 +197,22 @@ async def check_pool_bots(
         if isinstance(inter, disnake.ModalInteraction):
             return update_attr(inter, inter.bot, inter.guild)
 
+    # Os atalhos abaixo escolhem o próprio ``inter.bot``. Um bot só-rádio, ou com o player de uma rádio neste servidor, nunca toca música (item
+    # 8): para ele nenhum atalho vale e a escolha segue para o laço, que já o pula (CodeRabbit #200). A coordenação do prefixo (o pool já
+    # escolheu este bot) fica como está.
+    serves_music = not (is_radio_only(inter.bot) or has_radio_player(inter.bot, inter.guild_id))
+
     if len((all_bots := inter.bot.pool.get_all_bots())) < 2 and inter.guild:
-        return update_attr(inter, inter.bot, inter.guild)
+        if serves_music:
+            return update_attr(inter, inter.bot, inter.guild)
 
     if not inter.guild_id:
         raise GenericError(await guild_text(inter.bot, None, "legacy.checks.no_dm"))
 
     try:
         if inter.bot.user.id in inter.author.voice.channel.voice_states:
-            return update_attr(inter, inter.bot, inter.guild)
+            if serves_music:
+                return update_attr(inter, inter.bot, inter.guild)
     except AttributeError:
         pass
 
@@ -217,7 +224,8 @@ async def check_pool_bots(
         is_forum = check_forum(inter, inter.bot)
 
         if is_forum:
-            return update_attr(inter, inter.bot, inter.guild)
+            if serves_music:
+                return update_attr(inter, inter.bot, inter.guild)
 
         if not (mention_prefixed := inter.message.content.startswith(tuple(inter.bot.pool.bot_mentions))):
             msg_id = f"{inter.guild_id}-{inter.channel.id}-{inter.message.id}"
@@ -251,24 +259,28 @@ async def check_pool_bots(
                 if inter.author.voice:
                     user_vc = True
                 else:
-                    return update_attr(inter, inter.bot, inter.guild)
+                    if serves_music:
+                        return update_attr(inter, inter.bot, inter.guild)
 
             elif not inter.author.voice:
-                if return_first:
+                if not return_first:
+                    raise NoVoice()
+                if serves_music:
                     return update_attr(inter, inter.bot, inter.guild)
-
-                raise NoVoice()
+                # o bot atual não toca música: o laço procura outro (com ``return_first`` ele aceita quem está fora de voz)
             else:
                 user_vc = True
 
-            if inter.bot.user.id in inter.author.voice.channel.voice_states:
-                return update_attr(inter, inter.bot, inter.guild)
+            if inter.author.voice and inter.bot.user.id in inter.author.voice.channel.voice_states:
+                if serves_music:
+                    return update_attr(inter, inter.bot, inter.guild)
 
             if only_voiced:
                 pass
 
             elif not inter.guild.me.voice:
-                return update_attr(inter, inter.bot, inter.guild)
+                if serves_music:
+                    return update_attr(inter, inter.bot, inter.guild)
 
     free_bot = []
 
@@ -358,7 +370,8 @@ async def check_pool_bots(
 
             inter.bot.dispatch("pool_dispatch", inter, None)
 
-            return update_attr(inter, inter.bot, inter.guild)
+            if serves_music:
+                return update_attr(inter, inter.bot, inter.guild)
     except AttributeError:
         pass
 
@@ -387,7 +400,7 @@ async def check_pool_bots(
     elif check_player:
         inter.bot.dispatch("pool_dispatch", inter, None)
 
-        if return_first:
+        if return_first and serves_music:
             return update_attr(inter, inter.bot, inter.guild)
 
         raise NoPlayer()

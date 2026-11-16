@@ -177,7 +177,7 @@ class TestPanelHandlers:
             hub=SimpleNamespace(
                 health=SimpleNamespace(unavailable=lambda u: u == ids[2]),
                 directory=SimpleNamespace(
-                    by_uuid=AsyncMock(side_effect=lambda u: Station(u, "N", "http://x", "MP3", 128, "BR"))
+                    by_uuid_strict=AsyncMock(side_effect=lambda u: Station(u, "N", "http://x", "MP3", 128, "BR"))
                 ),
             ),
             _too_soon=lambda *a: False,

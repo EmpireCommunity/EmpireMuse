@@ -1,7 +1,6 @@
 """Leitor ICY (item 8, R3, R-9): o áudio sai limpo, o título sai tratado e nada vindo da estação passa dos limites."""
 
 import re
-import time
 
 import pytest
 
@@ -143,13 +142,16 @@ class TestStripper:
 
         assert titles == ["icy-name: @everyone"]  # a limpeza R-11 é de quem publica; o parser só entrega texto cru
 
-    def test_a_flood_of_blocks_is_linear(self):
+    def test_a_flood_of_blocks_is_read_whole_and_the_same_in_pieces(self):
+        """Sem relógio (BK-11): 20 000 blocos saem todos, e o mesmo fluxo em pedaços de tamanho ímpar dá a mesma saída (nada fica preso no buffer)."""
         data = b"".join(b"a" + block("t") for _ in range(20_000))
-        started = time.perf_counter()
 
         out, titles = IcyStripper(1).feed(data)
+        stripper = IcyStripper(1)
+        pieces = [stripper.feed(data[i : i + 997]) for i in range(0, len(data), 997)]
 
-        assert len(out) == 20_000 and len(titles) == 20_000 and time.perf_counter() - started < 2
+        assert out == b"a" * 20_000 and titles == ["t"] * 20_000
+        assert b"".join(p[0] for p in pieces) == out and [t for p in pieces for t in p[1]] == titles
 
 
 class TestTitleThrottle:

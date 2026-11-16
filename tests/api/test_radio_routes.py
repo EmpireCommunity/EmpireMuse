@@ -159,6 +159,27 @@ class RadioChatWriteTest(RadioApiCase):
         assert response.code == 200 and body["chat"] == CHAT and body["version"] == str(radio.rev + 1)
         assert self.radio.store.updates == [(radio.id, "1001")]  # quem gravou é o usuário da sessão
 
+    @pytest.mark.regression
+    def test_repetir_o_put_com_a_versao_escrita_de_outro_jeito_ainda_e_repeticao(self):
+        """BK-11: a impressão da chave do PUT usa a versão canônica (``01`` é ``1``), como no DELETE (BK-2)."""
+        self.premium()
+        radio = self.seed_live()
+        url = self.radio_url(radio, "/chat")
+
+        first = self.call("PUT", url, rev_body(radio, CHAT), key="chave-put-1")
+        again = self.call("PUT", url, {"expected_version": f"0{radio.rev}", "values": CHAT}, key="chave-put-1")
+        other = self.call(
+            "PUT",
+            url,
+            {"expected_version": str(radio.rev), "values": {**CHAT, "stage_max_messages": 30}},
+            key="chave-put-1",
+        )
+
+        assert first.code == again.code == 200 and again.headers["Idempotent-Replayed"] == "true"
+        assert (other.code, error_code(other)) == (409, "conflict")  # outro corpo continua sendo outro pedido
+        assert "current_version" not in body_of(other)["error"]  # o 409 é da chave, não da versão (esse traria a atual)
+        assert len(self.radio.store.updates) == 1
+
     def test_versao_velha_da_409_com_o_rev_atual_e_nao_grava(self):
         self.premium()
         radio = self.seed_live()
@@ -443,6 +464,21 @@ class RadioSetupTest(RadioApiCase):
             (400, ["bot_id"]),
         ]
         assert body_of(bad_kind)["error"]["fields"] == ["kind"] and body_of(wrong_type)["error"]["fields"] == ["bot_id"]
+
+    @pytest.mark.regression
+    def test_repetir_a_configuracao_com_a_versao_escrita_de_outro_jeito_ainda_e_repeticao(self):
+        """BK-11: ``RadioHandler.put`` também usa a versão canônica na impressão da chave."""
+        self.premium()
+        self.prepare_options()
+        radio = self.seed_live(enabled=False)
+        values = {"kind": "live", "channel_id": "321", "bot_id": "1"}
+
+        first = self.call("PUT", self.radio_url(radio), rev_body(radio, values), key="chave-setup-1")
+        again = self.call(
+            "PUT", self.radio_url(radio), {"expected_version": f"00{radio.rev}", "values": values}, key="chave-setup-1"
+        )
+
+        assert first.code == again.code == 200 and again.headers["Idempotent-Replayed"] == "true"
 
     def test_configurar_mantem_o_cas_e_rejeita_rev_velho_com_o_atual(self):
         self.premium()
@@ -789,6 +825,19 @@ class RadioStationsRoutesTest(RadioApiCase):
 
         assert body["playlists"] == ["rock.fm"] and len(body["playlists_display"]) == 1
         assert body["playlists_display"][0] != "rock.fm"
+
+    @pytest.mark.regression
+    def test_repetir_a_edicao_da_estacao_com_a_versao_escrita_de_outro_jeito_ainda_e_repeticao(self):
+        """BK-11: ``StationHandler.put`` também usa a versão canônica na impressão da chave."""
+        self.premium()
+        item = self.radio.stations.seed(ALFA, "Minha")
+        url = f"{BASE}/radio-stations/{item.id}"
+        values = {**self.CREATE, "name": "Nova"}
+
+        first = self.call("PUT", url, {"expected_version": str(item.rev), "values": values}, key="chave-estacao-1")
+        again = self.call("PUT", url, {"expected_version": f"0{item.rev}", "values": values}, key="chave-estacao-1")
+
+        assert first.code == again.code == 200 and again.headers["Idempotent-Replayed"] == "true"
 
     def test_genre_nao_se_escreve_nem_como_tipo_nem_como_campo_a_mais(self):
         self.premium()

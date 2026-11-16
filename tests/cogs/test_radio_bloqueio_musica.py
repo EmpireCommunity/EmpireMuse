@@ -123,7 +123,9 @@ async def test_a_radio_token_never_enters_music_selection(path):
         reserve = make_bot(3, "TOKEN_RESERVE_Z")
         reserve.get_guild = MagicMock(side_effect=NextCandidate)
         pool = pool_of(radio_bot, reserve)
-        bot = SimpleNamespace(user=SimpleNamespace(id=1), pool=pool)
+        bot = SimpleNamespace(
+            user=SimpleNamespace(id=1), pool=pool, identifier="TOKEN", music=SimpleNamespace(players={})
+        )
         inter = SimpleNamespace(bot=bot, guild_id=GID, guild=SimpleNamespace(), author=member(100))
         inter.author.voice.channel.voice_states = {}
         with pytest.raises(NextCandidate):
@@ -172,3 +174,68 @@ async def test_read_only_views_allow_a_radio_player_and_queue_commands_still_ref
         with pytest.raises(GenericError) as refusal:
             await player_check(command)(inter)
         assert "player" in str(refusal.value) and "locked" in str(refusal.value)
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize("radio", [True, False], ids=["radio_player", "music_bot"])
+async def test_the_shortcut_never_picks_a_bot_that_plays_a_radio_here(radio):
+    """CodeRabbit #200: com o membro na call do próprio bot, o atalho devolvia ``inter.bot`` mesmo com o player de uma rádio. Agora o atalho só
+    vale para quem toca música; o bot da rádio segue para o laço (que o pula e escolhe outro)."""
+
+    class ReachedThePool(Exception):
+        pass
+
+    own = make_bot(2, "TOKEN_RESERVE_2", call=100, radio=radio)
+    reserve = make_bot(3, "TOKEN_RESERVE_3")
+    reserve.get_guild = MagicMock(side_effect=ReachedThePool)
+    own.pool = pool_of(own, reserve)
+    author = member(100)
+    author.voice.channel.voice_states = {2: object()}  # o membro está na call deste bot
+    inter = SimpleNamespace(bot=own, guild_id=GID, guild=SimpleNamespace(), author=author)
+
+    if radio:
+        with pytest.raises(ReachedThePool):
+            await checks.check_pool_bots(inter, bypass_attribute=True)
+    else:
+        assert await checks.check_pool_bots(inter, bypass_attribute=True) == (own, inter.guild)
+        reserve.get_guild.assert_not_called()
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "options",
+    [{"check_player": False}, {"check_player": True, "return_first": True}],
+    ids=["no_check_player", "return_first"],
+)
+async def test_a_mention_prefix_without_voice_on_a_radio_bot_goes_to_the_pool(options):
+    """CodeRabbit no PR 265: prefixo por menção, autor fora de voz e o bot atual com player de rádio. Antes: ``AttributeError`` em
+    ``voice.channel`` (sem ``check_player``) ou ``NoVoice`` sem olhar os outros bots (com ``return_first``). Agora a escolha segue para o laço."""
+    from empiremuse.utils.others import CustomContext
+
+    class ReachedThePool(Exception):
+        pass
+
+    class MentionCtx(CustomContext):
+        author = guild = channel = message = None  # sombra das propriedades do ``Context``: o teste monta tudo
+
+        def __init__(self, **fields):
+            self.__dict__.update(fields)
+
+    own = make_bot(2, "TOKEN_RESERVE_2", call=100, radio=True)
+    own.check_bot_forum_post = lambda *args, **kwargs: True
+    reserve = make_bot(3, "TOKEN_RESERVE_3")
+    reserve.get_guild = MagicMock(side_effect=ReachedThePool)
+    own.pool = SimpleNamespace(get_all_bots=lambda: [own, reserve], bot_mentions=("<@2>",), message_ids={})
+    inter = MentionCtx(
+        bot=own,
+        guild_id=GID,
+        guild=own.get_guild(GID),
+        author=member(None),
+        channel=SimpleNamespace(id=9, owner_id=None),
+        message=SimpleNamespace(content="<@2> play x", id=1),
+    )
+
+    with pytest.raises(ReachedThePool):
+        await checks.check_pool_bots(inter, bypass_attribute=True, **options)

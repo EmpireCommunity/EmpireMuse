@@ -12,9 +12,9 @@ import asyncio
 import dataclasses
 import logging
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import disnake
 
@@ -122,7 +122,24 @@ async def _send(bot: Any, pending: PendingUpdate, embed: disnake.Embed) -> bool:
         return False
 
 
-def _sender(pool: Any, pending: PendingUpdate) -> Any | None:
+class NoticePool(Protocol):
+    """O que os avisos de atualização usam do pool (PI 116): só leitura. ``secret_values`` são os valores mascarados no log do auxiliar que vai
+    por DM a quem pediu; ``pool_is_healthy`` decide se o pendente vira ``ready``."""
+
+    @property
+    def bots(self) -> Sequence[Any]: ...
+
+    @property
+    def config(self) -> Mapping[str, Any]: ...
+
+    def get_all_bots(self) -> Iterable[Any]: ...
+
+    def secret_values(self) -> frozenset[str]: ...
+
+    def pool_is_healthy(self) -> bool: ...
+
+
+def _sender(pool: NoticePool, pending: PendingUpdate) -> Any | None:
     """O bot que pediu, se está pronto (inclusive um bot de guild); senão o primeiro bot pronto de ``pool.bots`` (ou ``None``)."""
     for bot in pool.get_all_bots():
         if bot.bot_ready and getattr(bot.user, "id", None) == pending.bot_id:
@@ -132,7 +149,7 @@ def _sender(pool: Any, pending: PendingUpdate) -> Any | None:
 
 
 async def deliver_update_notice(
-    pool: Any,
+    pool: NoticePool,
     *,
     runtime_dir: Path | None = None,
     now: Callable[[], float] = time.time,
@@ -198,7 +215,7 @@ def build_docker_notice(
 
 
 async def deliver_docker_notice(
-    pool: Any,
+    pool: NoticePool,
     client: ProxyClient | None,
     *,
     runtime_dir: Path | None = None,
@@ -261,7 +278,7 @@ class DiscordReport:
 
 
 async def on_pool_ready(
-    pool: Any,
+    pool: NoticePool,
     *,
     runtime_dir: Path | None = None,
     now: Callable[[], float] = time.time,

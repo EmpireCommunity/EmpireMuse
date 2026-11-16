@@ -404,7 +404,9 @@ class Radio(RadioPrefixCommands, commands.Cog):
             return tr("radio.panel.no_other_station")
         if self._too_soon(radio.id, "station", STATION_GAP_S):
             return tr("radio.panel.wait")
-        station = await self.hub.directory.by_uuid(neighbor)
+        station = await panel_handlers.live_station(
+            self.hub, neighbor
+        )  # leitura estrita: o diretório fora é "indisponível"
         if station is None:
             return tr("radio.live.not_found")
         await actions.change_station(self.hub, radio_id=radio.id, station=station, actor=self._authorized(interaction))
@@ -430,10 +432,7 @@ class Radio(RadioPrefixCommands, commands.Cog):
 
     async def _station_of(self, radio: Any) -> Station | None:
         """A estação no ar, pela leitura estrita: ``None`` só quando o diretório diz que ela não existe; falha vira ``RadioUnavailable``."""
-        try:
-            return await self.hub.directory.by_uuid_strict(radio.source["station"])
-        except DirectoryError as error:
-            raise RadioUnavailable from error
+        return await panel_handlers.live_station(self.hub, radio.source["station"])
 
     async def _favorite(self, interaction: Any, tr: Any, radio: Any, runner: Any = None) -> str:
         if self._too_soon(radio.id, "lookup", LOOKUP_GAP_S):

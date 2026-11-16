@@ -53,6 +53,12 @@ def read_rev(source: Mapping[str, Any]) -> str:
     return str(int(version))  # forma canônica (``01`` é ``1``): é a que se compara e a que o ``409`` devolve
 
 
+def fingerprint_body(body: Mapping[str, Any], write: Write) -> dict[str, Any]:
+    """O corpo que entra na impressão da ``Idempotency-Key``: um NOVO dict com a versão canônica (``01`` e ``1`` são o mesmo pedido, como no
+    ``DELETE`` com ``?expected_version=``). Só depois de ``read_rev`` validar; o resto do corpo fica como veio."""
+    return {**body, "expected_version": write.version}
+
+
 def parse_versioned(body: Mapping[str, Any], spec: Spec) -> Write:
     """``PUT``: ``{expected_version, values}``; a ``versao`` segue com os campos para o serviço."""
     return Write("", read_rev(body), values_to_args(body.get("values"), spec))

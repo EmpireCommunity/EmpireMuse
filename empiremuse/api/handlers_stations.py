@@ -20,7 +20,13 @@ from empiremuse.api.radio_base import (
     raise_for_status,
 )
 from empiremuse.api.radio_data import custom_station_entry, safe_text
-from empiremuse.api.writes_radio import CUSTOM_STATION_SPEC, parse_create, parse_versioned, read_station_version
+from empiremuse.api.writes_radio import (
+    CUSTOM_STATION_SPEC,
+    fingerprint_body,
+    parse_create,
+    parse_versioned,
+    read_station_version,
+)
 from empiremuse.panel.services.base import FormContext
 from empiremuse.panel.services.radio_stations import STATIONS_MAX, StationsView
 from empiremuse.rules.panel_serialize import error_fields
@@ -101,7 +107,7 @@ class StationHandler(RadioRoute):
             saved = await self.hub(ctx).stations.get(ctx.guild_id, station.id)
             return Reply(200, await custom_station_entry(ctx, saved))
 
-        await self.run_write(body, work)
+        await self.run_write(fingerprint_body(body, write), work)  # a impressão usa a versão canônica, como no DELETE
 
     @radio_endpoint
     async def delete(self, guild_id: str, station_id: str) -> None:

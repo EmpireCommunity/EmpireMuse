@@ -14,6 +14,7 @@ from empiremuse.rules.radio import LIST_MAX
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.rules.text import stored_text
 from empiremuse.utils.radio import actions
+from empiremuse.utils.radio.directory import DirectoryError
 from empiremuse.utils.radio.picker import FAVORITES_ID
 from empiremuse.utils.radio.premium import RadioUnavailable
 
@@ -28,10 +29,19 @@ async def reconnect(cog: RadioCog, tr: Any, runner: Any) -> str:
     return tr("radio.panel.reconnecting" if runner.reconnect_now() else "radio.panel.reconnect_not_needed")
 
 
+async def live_station(hub: Any, uuid: object) -> Any:
+    """A estação pelo ``uuid``, pela leitura ESTRITA: ``None`` só quando o diretório diz que ela não existe; falha ou balde sem ficha vira
+    ``RadioUnavailable`` (o painel diz "indisponível, tente de novo", nunca "estação não encontrada")."""
+    try:
+        return await hub.directory.by_uuid_strict(uuid)
+    except DirectoryError as error:
+        raise RadioUnavailable from error
+
+
 async def _change(cog: RadioCog, interaction: Any, tr: Any, radio: Any, uuid: str) -> str:
     if cog._too_soon(radio.id, "station", cog_gap()):
         return tr("radio.panel.wait")
-    station = await cog.hub.directory.by_uuid(uuid)
+    station = await live_station(cog.hub, uuid)
     if station is None:
         return tr("radio.live.not_found")
     await actions.change_station(cog.hub, radio_id=radio.id, station=station, actor=cog._authorized(interaction))
@@ -93,8 +103,10 @@ async def pick_filter(cog: RadioCog, interaction: Any, tr: Any, radio: Any, node
         first = next((u for u in uuids if not hub.health.unavailable(u)), None)
         if first is None:
             return tr("radio.local.no_results")
-        station = known.get(first) or await hub.directory.by_uuid(first)
-        if station is None:  # a consulta falhou (limite global do diretório, por exemplo): não é "sem resultados"
+        station = known.get(first) or await live_station(
+            hub, first
+        )  # a consulta que falha vira "indisponível", não "sem resultados"
+        if station is None:
             return tr("radio.live.not_found")
         saved = await actions.change_station(
             hub, radio_id=radio.id, station=station, actor=cog._authorized(interaction), station_list=uuids[:LIST_MAX]
