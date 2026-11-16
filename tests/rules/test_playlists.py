@@ -19,6 +19,7 @@ from empiremuse.rules.playlists import (
     check_playlist,
     edit_item,
     clean_stored_url,
+    find_selected,
     format_report,
     may_manage,
     normalize_url,
@@ -312,3 +313,32 @@ def test_chained_icon_names_settle_in_the_same_migration_pass():
     assert [(entry["name"], entry.get("icon")) for entry in moved] == [("🔵 Rock", "🔴"), ("Rock", "🔵")]
     assert count == 2
     assert move_leading_icons(moved) == (moved, 0)  # idempotente: nada fica para a próxima subida
+
+
+LEGACY_VALUE = "🔴 Red Line"  # o valor que um select montado antes da migração dos ícones deixou na mensagem
+
+
+@pytest.mark.parametrize(
+    ("stored", "value", "expected"),
+    [
+        ([item("Red Line", icon="🔴")], LEGACY_VALUE, "Red Line"),  # só o nome novo existe: o valor antigo o acha
+        ([item("Red Line", icon="🔴")], "red line", "Red Line"),  # casefold
+        ([item("Red Line")], "Blue Line", None),  # nada casa
+        ([item("Red Line")], "red   line", None),  # sem emoji no valor não há segunda tentativa
+    ],
+    ids=["legacy-value", "casefold", "missing", "no-icon-no-fallback"],
+)
+def test_find_selected_resolves_the_select_value(stored, value, expected):
+    found = find_selected(stored, value)
+
+    assert (found.name if found else None) == expected
+
+
+def test_find_selected_prefers_the_exact_name_when_it_collides_with_the_name_without_the_emoji():
+    """Duas playlists, "Red Line" e "🔴 Red Line": o valor "🔴 Red Line" é da segunda, nunca da que sobra ao tirar o emoji."""
+    plain = item("Red Line", order=1)
+    with_emoji_in_name = item(LEGACY_VALUE, order=2)
+
+    assert find_selected([plain, with_emoji_in_name], LEGACY_VALUE) is with_emoji_in_name
+    assert find_selected([with_emoji_in_name, plain], LEGACY_VALUE) is with_emoji_in_name
+    assert find_selected([plain, with_emoji_in_name], "Red Line") is plain

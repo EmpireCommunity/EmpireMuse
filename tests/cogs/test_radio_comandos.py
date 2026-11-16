@@ -380,6 +380,7 @@ class TestBoot:
         w.hub.manager.ports_factory = None
         w.hub.manager.resume_all = AsyncMock(return_value=0)
         w.hub.manager.start_ticker = MagicMock()
+        w.hub.ensure_indexes = AsyncMock()  # os índices têm teste próprio (``test_radio_estacao_indice.py``)
 
         await w.cog.radio_boot()
         await w.cog.radio_boot()  # on_ready pode vir mais de uma vez
@@ -471,8 +472,11 @@ async def test_boot_migrates_in_order_and_resumes_even_if_genres_fail(monkeypatc
     monkeypatch.setattr(migrate_r5, "run", r5)
     monkeypatch.setattr(migrate_genres, "run", genres)
     w.hub.manager.resume_all_with_retry = AsyncMock(side_effect=lambda: events.append("resume"))
+    w.hub.ensure_indexes = AsyncMock(side_effect=lambda: events.append("indexes"))
     await w.cog.radio_boot()
     await w.cog.radio_boot()
     await settle(w)
-    assert events == ["r5", "genres", "resume"]
+    # os índices vêm depois das migrações, numa tarefa de fundo própria, ao lado da retomada (Alicerce BK-4b A1: nunca a seguram)
+    assert events[:2] == ["r5", "genres"] and sorted(events[2:]) == ["indexes", "resume"]
     w.hub.manager.resume_all_with_retry.assert_awaited_once()
+    w.hub.ensure_indexes.assert_awaited_once()

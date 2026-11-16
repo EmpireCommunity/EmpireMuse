@@ -39,3 +39,20 @@ def refused_text(tr: Callable[..., str], code: str, support_url: object) -> str:
     """``radio.refused.<code>``; o de servidor sem acesso (``no_premium``) ganha como pedir."""
     text = tr(f"radio.refused.{code}")
     return with_ask(tr, text, support_url) if code == NO_PREMIUM else text
+
+
+# ---------------------------------------------------------------- comandos Limitados a Apoiadores (fonte do site-data)
+
+SUPPORTER_LIMITED_ATTR = "__supporter_limited__"
+
+
+def limited_to_supporters[F: Callable[..., object]](func: F) -> F:
+    """Marca o callback de um comando que RECUSA sem o acesso de Apoiador do servidor (a recusa ``no_premium``). Fica ao lado da definição do
+    comando; o exportador do site-data lê a marca (``supporter_limited``) e um teste confere que todo comando marcado recusa sem o acesso e
+    que nenhum não marcado recusa por isso. Ponha a marca ABAIXO do decorador do comando (ela vai na função)."""
+    setattr(func, SUPPORTER_LIMITED_ATTR, True)
+    return func
+
+
+def is_limited_to_supporters(callback: object) -> bool:
+    return getattr(callback, SUPPORTER_LIMITED_ATTR, False) is True

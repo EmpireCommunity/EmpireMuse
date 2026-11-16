@@ -13,6 +13,7 @@ import hashlib
 import logging
 import random
 import time
+from datetime import datetime, timezone
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -20,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 from empiremuse.rules.radio_genres import find_genre, recipe, shipped_catalog
 from empiremuse.rules.radio_shuffle import Track, build_pool, next_pick, remember, track_key
 from empiremuse.rules.radio_station import KIND_ARTISTS, KIND_GENRE, KIND_PLAYLISTS, CustomStation
+from empiremuse.utils.db import IndexDefinitionConflict
 from empiremuse.utils.radio.premium import GLOBAL_DB
 
 if TYPE_CHECKING:
@@ -30,6 +32,7 @@ logger = logging.getLogger(__name__)
 RESOLVED_DB = "radio_resolved"  # nome da coleção do cache negativo
 FAIL_TTL_S = 24 * 3600
 RESOLVED_TTL_S = 7 * 24 * 3600  # a faixa resolvida vale 7 dias
+EXPIRE_FIELD = "expire_at"  # a data do índice TTL de ``radio_resolved``
 ABSENT_TTL_S = (
     300  # "não há nada guardado para esta faixa" é lembrado por 5 min (sem uma consulta por faixa a cada sorteio)
 )
@@ -149,9 +152,29 @@ class ResolvedTracks:
         encoded = entry.get("encoded")
         return entry if isinstance(encoded, str) and encoded else None
 
+    async def ensure_indexes(self) -> bool:
+        """O índice TTL em ``expire_at`` e, uma vez, a limpeza das entradas antigas sem o campo (é só cache: a faixa volta a ser resolvida quando
+        sortear). ``False`` = falha passageira, vale tentar de novo; nunca levanta. O log leva só o tipo do erro e a contagem."""
+        try:
+            await self._database.ensure_ttl_index(EXPIRE_FIELD, db_name=RESOLVED_DB, collection=GLOBAL_DB)
+            removed = await self._database.delete_matching(
+                {EXPIRE_FIELD: {"$exists": False}}, db_name=RESOLVED_DB, collection=GLOBAL_DB
+            )
+        except IndexDefinitionConflict as error:  # TTL mexido à mão com outro prazo: final, tentar de novo não resolve
+            logger.warning("Índice TTL do cache de faixas resolvidas não criado (%s)", type(error).__name__)
+            return True
+        except Exception as error:  # noqa: BLE001 - sem o TTL o cache segue; só o tipo vai ao log
+            logger.warning("Índice TTL do cache de faixas resolvidas não criado (%s)", type(error).__name__)
+            return False
+        if removed:
+            logger.info("Cache de faixas resolvidas: %d entradas antigas sem validade apagadas", removed)
+        return True
+
     async def _write(self, track: Track, body: dict[str, Any]) -> None:
         key, now = failure_id(track), self._clock()
-        document = {**body, "at": now}
+        ttl = FAIL_TTL_S if body.get("fail") else RESOLVED_TTL_S
+        # ``at`` (época) é o que o código confere; ``expire_at`` (data) é o que o TTL do MongoDB apaga, no mesmo prazo
+        document = {**body, "at": now, EXPIRE_FIELD: datetime.fromtimestamp(now + ttl, tz=timezone.utc)}
         self._memory[key] = (document, now)
         try:
             stored = await self._database.find_doc(key, db_name=RESOLVED_DB, collection=GLOBAL_DB)

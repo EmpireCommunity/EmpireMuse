@@ -66,14 +66,35 @@ async def test_cancel_does_not_allow_the_purge():
 
 @pytest.mark.asyncio
 async def test_no_answer_in_time_does_not_allow_the_purge(monkeypatch):
-    monkeypatch.setattr(jukebox_confirm, "CONFIRM_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(jukebox_confirm, "CONFIRM_TIMEOUT_S", 0)  # o prazo já venceu: sem espera real
 
     async def act(view):
         return None
 
     inter, target, message, _s = setup(act)
     assert await confirm_purge(inter, target) is False
-    message.edit.assert_awaited()
+    message.edit.assert_awaited_once_with(content=tr_for("pt-BR")("jukebox.setup.purge.timeout"), view=None)
+
+
+@pytest.mark.asyncio
+async def test_the_confirmation_waits_for_the_declared_60_seconds(monkeypatch):
+    waited = []
+
+    async def fake_wait_for(awaitable, timeout):
+        waited.append(timeout)
+        awaitable.close()  # nunca aguardada: o laço nem precisa de relógio
+        raise asyncio.TimeoutError
+
+    monkeypatch.setattr(  # só o módulo do código, não o asyncio global
+        jukebox_confirm, "asyncio", SimpleNamespace(wait_for=fake_wait_for, TimeoutError=asyncio.TimeoutError)
+    )
+
+    async def act(view):
+        return None
+
+    inter, target, _, _s = setup(act)
+    assert await confirm_purge(inter, target) is False
+    assert waited == [60]
 
 
 @pytest.mark.asyncio

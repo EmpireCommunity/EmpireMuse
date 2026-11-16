@@ -22,6 +22,7 @@ import traceback
 from collections import deque
 from dataclasses import dataclass
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import aiohttp
@@ -43,7 +44,9 @@ ROOT = RAIZ
 
 VERSAO_APP = "3.0.0"
 ESPERA = 2.0  # teto de espera por um evento do servidor
-ASSENTAR = 0.15  # tempo para o servidor processar uma mensagem que não tem resposta
+ASSENTAR = (
+    0.15  # janela em que "nada acontece" (afirmações negativas: a conexão seguiu aberta); nunca espera por um efeito
+)
 TAMANHO_MAXIMO_MENSAGEM = 64 * 1024
 AMBIENTE = ("RPC_SERVER_SECRET", "RPC_ALLOWED_ORIGINS", "WEB_BIND_ADDRESS", "ENABLE_RPC_AUTH", "PORT", "SERVER_PORT")
 
@@ -89,11 +92,41 @@ def _mensagem_usuario(ids: list, token: str = "", **extra) -> dict:
 # ---------------------------------------------------------------------------------------------------------------------
 
 
+class _Contagem:
+    """Quantas mensagens o servidor já terminou de tratar e quantas conexões já terminou de fechar.
+
+    É o sinal do próprio servidor (``on_message``/``on_close`` do handler real, vistos por um wrapper): o teste espera o evento, não um tempo.
+    """
+
+    def __init__(self) -> None:
+        self.mensagens = 0
+        self.fechadas = 0
+        self._mudou = asyncio.Event()
+
+    def somar(self, campo: str) -> None:
+        setattr(self, campo, getattr(self, campo) + 1)
+        self._mudou.set()
+
+    async def ate(self, campo: str, minimo: int) -> None:
+        while getattr(self, campo) < minimo:
+            self._mudou.clear()  # sem ``await`` entre o teste da condição e o clear: nenhum aviso se perde
+            await asyncio.wait_for(self._mudou.wait(), ESPERA)  # ESPERA é só o teto de uma falha, não uma espera
+
+
 @dataclass
 class _Servidor:
     pool: BotPool
     porta: int
     escuta: dict
+    contagem: _Contagem
+
+    async def depois_de(self, campo: str, acao) -> None:
+        """Roda ``acao()`` (que provoca UM evento do servidor) e volta quando o servidor o terminou de tratar."""
+        esperado = getattr(self.contagem, campo) + 1
+        resultado = acao()
+        if asyncio.iscoroutine(resultado):
+            await resultado
+        await self.contagem.ate(campo, esperado)
 
     @property
     def base(self) -> str:
@@ -132,6 +165,31 @@ async def iniciar_servidor(tmp_path, monkeypatch):
     web_app.users_ws.clear()
     web_app.bots_ws.clear()
     abertos = []
+    contagem = _Contagem()
+    on_message, on_close = web_app.WebSocketHandler.on_message, web_app.WebSocketHandler.on_close
+
+    def contando_mensagens(self, message):
+        pendente = on_message(self, message)
+        if pendente is None:
+            contagem.somar("mensagens")
+            return None
+
+        async def tratada():
+            try:
+                await pendente
+            finally:
+                contagem.somar("mensagens")
+
+        return tratada()
+
+    def contando_fechadas(self):
+        try:
+            return on_close(self)
+        finally:
+            contagem.somar("fechadas")
+
+    monkeypatch.setattr(web_app.WebSocketHandler, "on_message", contando_mensagens)
+    monkeypatch.setattr(web_app.WebSocketHandler, "on_close", contando_fechadas)
 
     def iniciar(env: dict | None = None) -> _Servidor:
         for nome, valor in (env or {}).items():
@@ -147,7 +205,7 @@ async def iniciar_servidor(tmp_path, monkeypatch):
 
         monkeypatch.setattr(TCPServer, "listen", escutar)
         web_app.run_app(pool)
-        return _Servidor(pool=pool, porta=escuta["porta"], escuta=escuta)
+        return _Servidor(pool=pool, porta=escuta["porta"], escuta=escuta, contagem=contagem)
 
     yield iniciar
 
@@ -182,15 +240,13 @@ async def _registrar_bot(servidor: _Servidor, sessao, chave: str | None, ids: li
     """Conecta e registra um bot como o WSClient faz (``user_ids`` + ``bot: True``); devolve (ws, ids)."""
     ids = ids or [_snowflake()]
     ws = await _conectar(servidor, sessao, chave=chave)
-    await ws.send_json({"user_ids": ids, "bot": True})
-    await asyncio.sleep(ASSENTAR)
+    await servidor.depois_de("mensagens", lambda: ws.send_json({"user_ids": ids, "bot": True}))
     return ws, ids
 
 
 async def _registrar_usuario(servidor: _Servidor, sessao, ids: list, token: str = "", **extra):
     ws = await _conectar(servidor, sessao)
-    await ws.send_json(_mensagem_usuario(ids, token, **extra))
-    await asyncio.sleep(ASSENTAR)
+    await servidor.depois_de("mensagens", lambda: ws.send_json(_mensagem_usuario(ids, token, **extra)))
     return ws
 
 
@@ -241,7 +297,7 @@ class _UsuarioDoBot:
 async def _stats(op: str, usuario: int, token_no_banco: str, auth: bool = False) -> dict:
     """Roda o process_rpc real e devolve o dict que ele entrega ao ``ws_client.send`` (op: update, idle ou close)."""
     enviados: list[dict] = []
-    jogador = object.__new__(LavalinkPlayer)
+    jogador: Any = object.__new__(LavalinkPlayer)  # Any: o jogador é montado sem __init__, com fakes nos atributos
     jogador.bot = SimpleNamespace(
         user=_UsuarioDoBot(),
         config={"ENABLE_RPC_AUTH": auth, "INVITE_PERMISSIONS": 3145728, "SUPPORT_SERVER": "https://exemplo.invalid/s"},
@@ -326,7 +382,7 @@ async def servidor_aiohttp_falso():
         runners.append(runner)
         site = web.TCPSite(runner, "127.0.0.1", 0)
         await site.start()
-        return f"ws://127.0.0.1:{site._server.sockets[0].getsockname()[1]}/ws"
+        return f"ws://127.0.0.1:{cast(Any, site._server).sockets[0].getsockname()[1]}/ws"
 
     yield montar
     for runner in runners:
@@ -345,7 +401,7 @@ def _bot_falso(bot_id: int, jogadores: dict | None = None) -> SimpleNamespace:
 def _wsclient(url: str, bots: list, tmp_path, monkeypatch) -> WSClient:
     monkeypatch.setenv("EMPIREMUSE_HOME", str(tmp_path))
     pool = BotPool()
-    pool.get_all_bots = lambda: bots
+    cast(Any, pool).get_all_bots = lambda: bots
     return WSClient(url, pool)
 
 
@@ -375,8 +431,7 @@ async def _rodar_ws_loop(servidor_aiohttp_falso, tmp_path, monkeypatch, quadros)
         await ws.receive_json()  # registro do bot
         for quadro in quadros(usuarios):
             await ws.send_str(quadro)
-        await asyncio.sleep(0.2)
-        await ws.close()
+        await ws.close()  # os quadros chegam em ordem e o ws_loop trata cada um antes de ler o fechamento
 
     url = await servidor_aiohttp_falso(roteiro)
     client = _wsclient(url, [_bot_falso(_snowflake(), jogadores)], tmp_path, monkeypatch)
@@ -533,10 +588,9 @@ async def test_registro_de_bot_fecha_com_4401_tambem_quando_o_segredo_nao_foi_co
 
 async def _wsclient_interno(servidor: _Servidor) -> WSClient:
     """O WSClient como o BotPool o usa: aponta para o próprio servidor, com a MESMA pool/config, sem segredo à mão."""
-    servidor.pool.get_all_bots = lambda: [_bot_falso(_snowflake())]
+    cast(Any, servidor.pool).get_all_bots = lambda: [_bot_falso(_snowflake())]
     client = WSClient(servidor.url_ws, servidor.pool)
-    await client.connect()
-    await asyncio.sleep(0.4)  # deixa o registro chegar ao servidor
+    await servidor.depois_de("mensagens", client.connect)  # o registro do bot chega ao servidor e é tratado
     client.clear_tasks()
     return client
 
@@ -837,15 +891,16 @@ async def _fechar_e_observar(servidor, sessao, caplog, como: str) -> list[str]:
     """Abre uma conexão, faz ``como`` e a fecha; devolve os ValueError do servidor vistos no log."""
     with caplog.at_level(logging.DEBUG):
         ws = await _conectar(servidor, sessao)
-        if como == "bot-rejeitado":
-            await ws.send_json({"user_ids": [_snowflake()], "bot": True})
-        elif como == "usuario-registrado":
-            await ws.send_json(_mensagem_usuario([_snowflake()]))
-        elif como == "mensagem-sem-ids":
-            await ws.send_json({"op": "rpc_update"})
-        await asyncio.sleep(ASSENTAR)
-        await ws.close()
-        await asyncio.sleep(0.4)
+        enviada = {
+            "bot-rejeitado": {"user_ids": [_snowflake()], "bot": True},
+            "usuario-registrado": _mensagem_usuario([_snowflake()]),
+            "mensagem-sem-ids": {"op": "rpc_update"},
+        }.get(como)
+        if enviada is not None:
+            await servidor.depois_de("mensagens", lambda: ws.send_json(enviada))
+        await servidor.depois_de(
+            "fechadas", ws.close
+        )  # o ``on_close`` do servidor já registrou o que tinha a registrar
     return _value_error_do_servidor(caplog)
 
 
@@ -1078,8 +1133,7 @@ async def test_conexao_alem_do_limite_e_fechada_com_1013(iniciar_servidor, sessa
     assert await _fechamento(abertas[-1], ASSENTAR) is None, "a última conexão dentro do limite foi recusada"
     excedente = await _conectar(servidor, sessao)
     assert await _fechamento(excedente) == 1013, "a conexão acima do limite não foi recusada com 1013"
-    await abertas[0].close()
-    await asyncio.sleep(ASSENTAR)
+    await servidor.depois_de("fechadas", abertas[0].close)
     de_novo = await _conectar(servidor, sessao)
     assert await _fechamento(de_novo, ASSENTAR) is None, "o limite não foi liberado quando uma conexão fechou"
 

@@ -142,7 +142,9 @@ class TestChangeStationAction:
                 world.hub, radio_id=radio.id, station=station(RESERVE, "B"), actor=Actor(7, True)
             )
 
-        assert refused.value.code in (actions.NO_PREMIUM, actions.NOT_FOUND)
+        assert (
+            refused.value.code == actions.NO_PREMIUM
+        )  # a rádio segue ligada (revogar só apaga o premium): a recusa é pelo premium
 
 
 class TestManagerChangeStation:

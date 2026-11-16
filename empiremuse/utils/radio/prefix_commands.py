@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Optional, Union
 import disnake
 from disnake.ext import commands
 
+from empiremuse.rules.apoiador import limited_to_supporters
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.others import CustomContext
 from empiremuse.utils.radio import setup_flow
@@ -104,6 +105,7 @@ class RadioPrefixCommands:
 
     @radio_prefix.command(name="on", aliases=["ligar"])
     @commands.check(radio_manager_only)
+    @limited_to_supporters  # recusa ``no_premium`` sem o acesso de Apoiador (site-data: ``supporter_limited``)
     async def prefix_on(
         self, ctx: CustomContext, channel: Optional[Union[disnake.VoiceChannel, disnake.StageChannel]] = None
     ):
