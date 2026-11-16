@@ -263,15 +263,15 @@ async def check_pool_bots(
                         return update_attr(inter, inter.bot, inter.guild)
 
             elif not inter.author.voice:
-                if return_first:
-                    if serves_music:
-                        return update_attr(inter, inter.bot, inter.guild)
-
-                raise NoVoice()
+                if not return_first:
+                    raise NoVoice()
+                if serves_music:
+                    return update_attr(inter, inter.bot, inter.guild)
+                # o bot atual não toca música: o laço procura outro (com ``return_first`` ele aceita quem está fora de voz)
             else:
                 user_vc = True
 
-            if inter.bot.user.id in inter.author.voice.channel.voice_states:
+            if inter.author.voice and inter.bot.user.id in inter.author.voice.channel.voice_states:
                 if serves_music:
                     return update_attr(inter, inter.bot, inter.guild)
 
