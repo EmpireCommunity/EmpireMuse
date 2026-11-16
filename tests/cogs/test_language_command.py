@@ -18,8 +18,11 @@ pytestmark = pytest.mark.critical
 
 @pytest.fixture
 def world(monkeypatch):
-    # uma CÓPIA do mapping de produção: o estado de cada teste é novo, mas o (1, 10 s) é o do código
-    monkeypatch.setattr(language_cog, "LANGUAGE_COOLDOWN", language_cog.LANGUAGE_COOLDOWN.copy())
+    # um mapping NOVO e vazio, com o mesmo cooldown e o mesmo tipo de balde do código; ``.copy()`` levaria junto o cache de quem chamou antes
+    production = language_cog.LANGUAGE_COOLDOWN
+    monkeypatch.setattr(
+        language_cog, "LANGUAGE_COOLDOWN", commands.CooldownMapping(production._cooldown, production._type)
+    )
     banco = Banco()
     banco.put(*SERVERS, GID, stored(language="pt-BR"))
     bot = make_bot(MAIN_ID, "TOKEN")

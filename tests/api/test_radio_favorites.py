@@ -368,11 +368,14 @@ class RadioFavoritesRisk(FavoritesApiCase):
     def test_nenhum_id_de_usuario_no_documento_do_servidor_e_o_log_nao_leva_uuid_nome_nem_usuario(self):
         self.premium()
         self.radio.directory.stations[LIVE_UUID] = station(LIVE_UUID, "Rock FM")
+        fixed = {
+            "headers": {"X-Request-ID": "req-fixo-0000"}
+        }  # o id aleatório (hex) podia conter "1001" e quebrar o assert do USER
         with self.assertLogs(level=logging.DEBUG) as logs:
             logging.getLogger("empiremuse").debug("sentinela")  # garante ao menos um registro
-            response = self.add(SERVER, "station", LIVE_UUID)
-            self.add(SERVER, "genre", GENRE)
-            self.remove(SERVER, "station", LIVE_UUID)
+            response = self.add(SERVER, "station", LIVE_UUID, **fixed)
+            self.add(SERVER, "genre", GENRE, **fixed)
+            self.remove(SERVER, "station", LIVE_UUID, **fixed)
 
         text = "\n".join(logs.output)
         stored = str(self.db.tables[FAVORITES_DB])

@@ -9,6 +9,7 @@ aparece em registro de log. Tudo com fakes; os valores de token são montados em
 import asyncio
 import logging
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import disnake
@@ -124,14 +125,19 @@ class Cenario:
         if com_efeitos:
             self.yml.write_text(YML_ORIGINAL, encoding="utf-8")
         self.cog = ll_yt_oauth.YtOauthLL.__new__(ll_yt_oauth.YtOauthLL)
-        self.cog.bot = SimpleNamespace(
-            get_color=lambda *a: 0,
-            session=self.sessao,
-            pool=SimpleNamespace(mongo_database=self.mongo if com_efeitos else None),
-            music=SimpleNamespace(nodes={"LOCAL": self.no_local} if com_efeitos else {}),
+        self.cog.bot = cast(
+            Any,
+            SimpleNamespace(
+                get_color=lambda *a: 0,
+                session=self.sessao,
+                pool=SimpleNamespace(mongo_database=self.mongo if com_efeitos else None),
+                music=SimpleNamespace(nodes={"LOCAL": self.no_local} if com_efeitos else {}),
+            ),
         )
         self.mensagem = SimpleNamespace(edit=registrar(self.eventos, "canal:edicao"))
-        erro_dm = disnake.Forbidden(SimpleNamespace(status=403, reason="x"), "Cannot send messages to this user")
+        erro_dm = disnake.Forbidden(
+            cast(Any, SimpleNamespace(status=403, reason="x")), "Cannot send messages to this user"
+        )
         self.dm = registrar(self.eventos, "dm", erro=erro_dm if dm_falha_em else None, falha_em=dm_falha_em)
         self.ctx = SimpleNamespace(
             guild=SimpleNamespace(me=None),
@@ -143,7 +149,7 @@ class Cenario:
 
     def rodar(self) -> None:
         try:
-            asyncio.run(self.cog.oauth_command(self.ctx))
+            asyncio.run(self.cog.oauth_command(cast(Any, self.ctx)))
         except GenericError as erro:
             self.erro = erro
 
