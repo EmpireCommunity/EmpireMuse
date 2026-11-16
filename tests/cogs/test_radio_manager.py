@@ -512,3 +512,24 @@ class TestShutdownDeadline:
             await close_radios(Broken())
 
         assert any("Falha ao encerrar as rádios" in record.getMessage() for record in caplog.records)
+
+
+class TestCloseOrder:
+    @pytest.mark.regression
+    @pytest.mark.asyncio
+    async def test_the_radio_tasks_are_cancelled_and_the_runners_stopped_before_the_relay_closes(self, world):
+        """Alicerce BK-4: o relay fecha por último; a espera dele (até 10 s) não pode deixar tarefa de rádio viva."""
+        r = await enabled_radio(world)
+        await world.manager.activate(r)
+        runner = world.manager._runners[r.id]
+        tasks = [world.manager._spawn(asyncio.Event().wait())]  # trabalho de fundo da rádio que só termina cancelado
+        seen = {}
+
+        async def relay_close():
+            seen["tasks_done"] = all(task.done() for task in tasks)
+            seen["runner_stopped"] = runner._stopped and runner.phase is Phase.OFF
+
+        world.hub.relay.close = relay_close
+        await world.manager.close()
+
+        assert seen == {"tasks_done": True, "runner_stopped": True}
