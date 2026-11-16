@@ -52,7 +52,7 @@ class MemberApiCase(FavoritesApiCase):
     def setUp(self):
         super().setUp()
         # orçamento folgado: os testes fazem muitas escritas sem o relógio andar (o T6 testa o orçamento de verdade)
-        self.ctx.member_authorizer._budget = MemberBudget(self.clock, burst=1000)
+        self.ctx.member_authorizer._budget = MemberBudget(self.clock, burst=1000, user_burst=1000)
         g100 = self.world.g100
         g100.fetchable[int(MEMBER)] = g100.members[
             int(MEMBER)
@@ -296,7 +296,7 @@ class MemberRisk(MemberApiCase):
 
     def test_t6_orcamento_de_consultas_esgotado_e_503_e_nao_vira_404_guardado(self):
         self.premium()
-        self.ctx.member_authorizer._budget = MemberBudget(self.clock, burst=1, per_second=1.0)
+        self.ctx.member_authorizer._budget = MemberBudget(self.clock, burst=1, per_second=1.0, user_burst=1000)
         assert self.add_mine("genre", GENRE).code == 200
         refused = self.add_mine("genre", GENRE)  # o balde do bot esgotou (entre todos os usuários)
         assert (refused.code, error_code(refused)) == (503, "bot_unavailable")
@@ -332,7 +332,7 @@ class MemberRisk(MemberApiCase):
     def test_t2_quem_saiu_escreve_negado_na_hora(self):
         self.premium()
         assert self.m("GET", LIST).code == 200
-        del self.world.g100.fetchable[int(MEMBER)]  # saiu; o gateway (sem o intent de membros) ainda o mostra
+        del self.world.g100.fetchable[int(MEMBER)]  # saiu; o evento ainda não chegou ao gateway (a escrita confia só na API)
         assert self.add_mine("genre", GENRE).code == 404
 
     def test_t2_pending_e_negado(self):

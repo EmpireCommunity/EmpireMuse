@@ -54,7 +54,7 @@ def setup(*, member=True, bot_ready=True, pending=False, cached=True, budget=Non
 
 
 def authorize(authorizer, session=None, guild_id=GID, *, fresh=False):
-    return run(authorizer.authorize(session or member_session(), guild_id, fresh=fresh))
+    return run(authorizer.authorize(session or member_session(), guild_id, fresh=fresh)).access
 
 
 # --------------------------------------------------------------------------- T2, T4: a ordem das conferências
@@ -117,18 +117,18 @@ def test_a_write_always_asks_discord_even_with_the_member_in_the_gateway_cache()
     assert guild.calls["fetch_member"] == 1
 
 
-def test_who_left_after_login_is_denied_on_write_at_once_and_on_read_within_30_seconds():
+def test_who_left_is_denied_on_write_at_once_and_the_denied_write_drops_the_cached_read():
     guild, _, clock, authorizer = setup()
     authorize(authorizer)
-    guild.fetchable[UID] = not_found()  # saiu (sem o intent de membros, o gateway ainda o mostra)
+    guild.fetchable[UID] = not_found()  # saiu; o evento ainda não chegou ao gateway (a escrita confia só na API)
 
     with pytest.raises(MemberAccessDenied):
         authorize(authorizer, fresh=True)
-    assert authorize(authorizer).guild_id == GID  # a leitura em cache vale até 30 s (residual aceito)
-    del guild.members[UID]
-    clock.advance(31)
+    del guild.members[UID]  # o gateway também registrou a saída
     with pytest.raises(MemberAccessDenied):
-        authorize(authorizer)
+        authorize(
+            authorizer
+        )  # Crivo CS1: sem a decisão guardada (a escrita negada a descartou), nada de 30 s de leitura velha
 
 
 # --------------------------------------------------------------------------- CC2: só o definitivo é negativo; o resto é 503 sem cache
@@ -173,7 +173,7 @@ def test_only_not_found_and_forbidden_become_the_cached_denial(definitive):
 def test_the_budget_is_global_per_bot_and_exhausted_means_unavailable():
     """T6: o orçamento de consultas ao Discord é do BOT, entre todos os usuários; esgotado = 503, sem negativo guardado."""
     clock = FakeClock()
-    budget = MemberBudget(clock, burst=2, per_second=1.0, concurrency=4)
+    budget = MemberBudget(clock, burst=2, per_second=1.0, concurrency=4, user_burst=10)
     guild, _, _, authorizer = setup(cached=False, budget=budget)
     authorizer._clock = clock
     for user in ("2001", "2002", "2003"):
@@ -192,10 +192,10 @@ def test_the_budget_is_global_per_bot_and_exhausted_means_unavailable():
 
 
 def test_the_budget_caps_concurrent_lookups_and_releases_them():
-    budget = MemberBudget(FakeClock(), burst=10, per_second=1.0, concurrency=1)
-    assert budget.acquire("1") and not budget.acquire("1")
+    budget = MemberBudget(FakeClock(), burst=10, per_second=1.0, concurrency=1, user_burst=10)
+    assert budget.acquire("1", "u1") and not budget.acquire("1", "u2")
     budget.release("1")
-    assert budget.acquire("1") and budget.acquire("2")
+    assert budget.acquire("1", "u1") and budget.acquire("2", "u1")
 
 
 # --------------------------------------------------------------------------- T1, T7: caches separados e chaveados pela sessão
@@ -265,3 +265,57 @@ def test_an_erasure_during_a_lookup_in_progress_leaves_nothing_in_the_cache():
     run(scenario())
 
     assert authorizer._cache == {}
+
+
+# --------------------------------------------------------------------------- revisão do PR 264
+
+
+def test_cm3_the_cache_is_lru_a_hit_moves_the_entry_to_the_end(monkeypatch):
+    from empiremuse.panel import member_authz
+
+    monkeypatch.setattr(member_authz, "MAX_CACHE_ENTRIES", 2)
+    clock = FakeClock()
+    authorizer = MemberAuthorizer(FakePool([]), clock=clock)
+    access = member_authz.MemberAccess(GID, "S", None)
+    for user in ("a", "b"):
+        authorizer._remember((user, GID), access, 0)
+
+    authorizer._cached(("a", GID))  # "a" foi usada agora
+    authorizer._remember(("c", GID), access, 0)
+
+    assert list(authorizer._cache) == [("a", GID), ("c", GID)]  # saiu "b", a menos usada
+
+
+def test_cs2_no_generation_is_kept_for_a_user_without_a_lookup_in_progress():
+    _, _, _, authorizer = setup()
+    authorize(authorizer)
+    authorizer.purge_user(USER_ID)
+    authorizer.purge_user("9999")
+
+    assert authorizer._generation == {} and authorizer._inflight == {}
+
+
+def test_sf1_one_user_draining_their_own_bucket_does_not_take_the_others_lookups():
+    clock = FakeClock()
+    budget = MemberBudget(clock, burst=10, per_second=1.0, user_burst=2, user_per_second=0.5)
+    guild, _, _, authorizer = setup(cached=False, budget=budget)
+    authorizer._clock = clock
+    guild.fetchable[2002] = FakeMember()
+    other = dataclasses.replace(member_session(), user=dataclasses.replace(member_session().user, id="2002"))
+
+    authorize(authorizer, fresh=True)
+    authorize(authorizer, fresh=True)
+    with pytest.raises(MemberLookupUnavailable):
+        authorize(authorizer, fresh=True)  # o balde de 1001 neste bot acabou
+    assert authorize(authorizer, session=other, fresh=True).guild_id == GID  # o de 2002 e o global seguem
+
+
+def test_sf1_a_read_in_a_chunked_guild_trusts_the_gateway_and_spends_no_rest():
+    guild, _, _, authorizer = setup(cached=False)
+    guild.chunked = True  # o bot liga o intent de membros: servidor carregado = o cache do gateway é completo
+
+    with pytest.raises(MemberAccessDenied):
+        authorize(authorizer)  # fora do cache do gateway = não está
+
+    assert guild.calls["fetch_member"] == 0
+    assert authorize(authorizer, fresh=True).guild_id == GID  # a escrita segue perguntando à API

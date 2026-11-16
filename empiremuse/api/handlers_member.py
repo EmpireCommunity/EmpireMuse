@@ -87,17 +87,17 @@ class MemberRoute(DataHandler):
     async def member_access(self, guild_id: str, *, write: bool) -> tuple[MemberContext, MemberAccess, UsageScope]:
         """Membro agora (a escrita sempre pergunta ao Discord). Não membro, inexistente, sem bot ou fora das listas = o mesmo ``404``."""
         try:
-            access = await self.ctx.member_authorizer.authorize(self.session, guild_id, fresh=write)
+            grant = await self.ctx.member_authorizer.authorize(self.session, guild_id, fresh=write)
         except MemberAccessDenied:
             raise not_found() from None
         except MemberLookupUnavailable:
             raise ApiError(503, BOT_UNAVAILABLE) from None
-        present = ready_bots_with_guild(self.ctx.pool, int(guild_id))
-        if not present:
-            raise not_found()
-        bot, guild = present[0]
         ctx = MemberContext(pool=self.ctx.pool, guild_id=int(guild_id), user_id=self.session.user.id)
-        return ctx, access, UsageScope(pool=self.ctx.pool, bot=bot, guild=guild)
+        return (
+            ctx,
+            grant.access,
+            UsageScope(pool=self.ctx.pool, bot=grant.bot, guild=grant.guild),
+        )  # o par que a decisão usou
 
 
 class MemberGuildsHandler(MemberRoute):
