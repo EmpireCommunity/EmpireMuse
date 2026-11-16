@@ -319,3 +319,72 @@ def test_sf1_a_read_in_a_chunked_guild_trusts_the_gateway_and_spends_no_rest():
 
     assert guild.calls["fetch_member"] == 0
     assert authorize(authorizer, fresh=True).guild_id == GID  # a escrita segue perguntando à API
+
+
+def test_sg1_a_read_in_progress_does_not_store_its_positive_after_a_denied_write():
+    """Sentinela SG1: a leitura (REST) começou antes da escrita negada; ao terminar, ela não regrava o positivo descartado."""
+    guild, _, _, authorizer = setup(cached=False)
+    started, release = asyncio.Event(), asyncio.Event()
+    calls = 0
+
+    async def fetch(user_id):
+        nonlocal calls
+        calls += 1
+        if calls == 1:  # a leitura lenta, ainda vendo o membro
+            started.set()
+            await release.wait()
+            return FakeMember()
+        raise not_found()  # a escrita: saiu
+
+    guild.fetch_member = fetch
+
+    async def scenario():
+        read = asyncio.create_task(authorizer.authorize(member_session(), GID, fresh=False))
+        await started.wait()
+        with pytest.raises(MemberAccessDenied):
+            await authorizer.authorize(member_session(), GID, fresh=True)
+        release.set()
+        await read
+
+    run(scenario())
+
+    assert authorizer._cache == {} and authorizer._generation == {} and authorizer._inflight == {}
+
+
+def test_cs4_two_overlapping_lookups_and_a_purge_the_second_does_not_store():
+    """Crivo CS4: com duas consultas do mesmo usuário em andamento, o apagamento vale para as duas (o ``_end`` com ``left > 0`` guarda a geração)."""
+    guild, _, _, authorizer = setup(cached=False)
+    first_in, second_in, first_go, second_go = asyncio.Event(), asyncio.Event(), asyncio.Event(), asyncio.Event()
+    order = []
+
+    async def fetch(user_id):
+        if not first_in.is_set():
+            first_in.set()
+            await first_go.wait()
+        else:
+            second_in.set()
+            await second_go.wait()
+        order.append(len(order))
+        return FakeMember()
+
+    guild.fetch_member = fetch
+    other_guild = FakeGuild("43", name="Outra")
+    other_guild.fetch_member = fetch
+    authorizer._pool.bots[0].guilds[43] = other_guild
+
+    async def scenario():
+        session = dataclasses.replace(member_session(), member_guild_ids=frozenset({GID, "43"}))
+        a = asyncio.create_task(authorizer.authorize(session, GID, fresh=False))
+        await first_in.wait()
+        b = asyncio.create_task(authorizer.authorize(session, "43", fresh=False))
+        await second_in.wait()
+        authorizer.purge_user(USER_ID)
+        first_go.set()
+        await a
+        assert authorizer._generation.get(USER_ID) == 1  # ``left > 0``: a geração fica para a segunda
+        second_go.set()
+        await b
+
+    run(scenario())
+
+    assert authorizer._cache == {} and authorizer._generation == {} and authorizer._inflight == {}

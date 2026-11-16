@@ -181,7 +181,9 @@ class MemberAuthorizer:
             return MemberGrant(access, bot, guild)
         except MemberAccessDenied:
             if fresh:
-                self._cache.pop(key, None)  # quem saiu deixa de ler pela decisão guardada (CS1)
+                # quem saiu deixa de ler pela decisão guardada (CS1), e uma leitura que estava em andamento não a grava de volta (SG1)
+                self._generation[user_id] = self._generation.get(user_id, 0) + 1
+                self._cache.pop(key, None)
             else:
                 self._remember(key, None, generation)
             raise

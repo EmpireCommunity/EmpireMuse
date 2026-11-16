@@ -389,12 +389,18 @@ class MemberRisk(MemberApiCase):
                     patch.object(
                         handlers_radio_favorites,
                         "record_panel_action",
-                        lambda usage, label, code: recorded.append((label, code, type(usage).__name__)),
+                        lambda usage, label, code: recorded.append(
+                            (label, code, type(usage).__name__, usage.bot, usage.guild)
+                        ),
                     ),
                 ):
                     response = self.add_mine("custom", custom) if verb == "POST" else self.remove_mine("custom", custom)
                 assert response.code == status, (verb, status, response.body)
-                assert recorded == [("radios/favoritas", status, "UsageScope")], (verb, recorded)
+                # CS5: o objeto de uso leva o par bot/servidor que a decisão usou (CS3), nunca o usuário
+                assert recorded == [("radios/favoritas", status, "UsageScope", self.world.bot1, self.world.g100)], (
+                    verb,
+                    recorded,
+                )
                 self.advance(4)
 
     def test_as3_toda_rota_da_aplicacao_sob_member_e_memberroute(self):
