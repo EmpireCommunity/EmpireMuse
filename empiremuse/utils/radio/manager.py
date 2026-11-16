@@ -148,21 +148,23 @@ class RadioManager:
 
     async def close(self) -> None:
         """Para as rádios ANTES de fechar o relay: a espera dele (até 10 s) nunca deixa tarefa de rádio viva nem runner marcado como ligado."""
-        if self._ticker is not None:
-            self._ticker.cancel()
-        self.hub.health_checker.stop()
-        for runner in list(self._runners.values()):
-            runner._stopped = True
-            runner.phase = Phase.OFF
-        for task in list(self._tasks):
-            task.cancel()
-        await asyncio.gather(*self._tasks, return_exceptions=True)
-        for radio_id in list(self._sweepers):
-            self._stop_sweeper(radio_id)
-        self._runners.clear()
-        self._radios.clear()
-        self._starts.clear()
-        await self.hub.relay.close()
+        try:
+            if self._ticker is not None:
+                self._ticker.cancel()
+            self.hub.health_checker.stop()
+            for runner in list(self._runners.values()):
+                runner._stopped = True
+                runner.phase = Phase.OFF
+            for task in list(self._tasks):
+                task.cancel()
+            await asyncio.gather(*self._tasks, return_exceptions=True)
+            for radio_id in list(self._sweepers):
+                self._stop_sweeper(radio_id)
+            self._runners.clear()
+            self._radios.clear()
+            self._starts.clear()
+        finally:
+            await self.hub.relay.close()  # mesmo que parar as rádios falhe, o relay fecha
 
     # ------------------------------------------------------------------ ativar / desativar
 

@@ -164,9 +164,12 @@ class PlayerAutoqueueMixin:
                     # sem consulta nenhuma (o nó não tem provedor de busca) também é falha da BUSCA: não prova que a faixa não existe
                     if req.exceptions or not search_queries:
                         _mark_resolve_error(track)
-                        logger.warning(
-                            "Falha ao resolver PartialTrack (%s)", ", ".join(type(e).__name__ for e in req.exceptions)
+                        reason = (
+                            ", ".join(type(e).__name__ for e in req.exceptions)
+                            if req.exceptions
+                            else "nenhum provedor de busca no nó"
                         )
+                        logger.warning("Falha ao resolver PartialTrack (%s)", reason)
                         logger.debug("Exceções ao resolver PartialTrack: %r", req.exceptions)
                     return
 
