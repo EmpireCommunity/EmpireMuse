@@ -138,7 +138,7 @@ class EraseGateTest(EraseBase):
         assert (
             "O que será apagado" in body
             and "O que fica" in body
-            and "4 semanas" in body
+            and "2 semanas" in body
             and "Não dá para desfazer" in body
         )
         assert 'value=""' in body and "banimento" not in body

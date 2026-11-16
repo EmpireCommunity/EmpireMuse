@@ -113,7 +113,7 @@ O **canal** do alerta (e-mail, monitoramento da Hostinger ou um webhook, que é 
 
 ## 8. Cópias do provedor e Atlas (C2, precisa do dono)
 
-As imagens semanais do disco da VPS (Hostinger) incluem o volume de dados e `/var/log/traefik/`. O dono confere no painel da Hostinger quantas imagens ficam (decidido: cerca de 4) e, no console do Atlas, o backup e a janela do oplog. Dado apagado ou log podado permanece na imagem até ela ser sobrescrita; não dá para apagar item de uma imagem. A Política já diz "até 4 semanas".
+As imagens semanais do disco da VPS (Hostinger) incluem o volume de dados e `/var/log/traefik/`. A Hostinger guarda no máximo 2 imagens semanais (confirmado pelo dono em 2026-11-16); no console do Atlas o dono confere o backup e a janela do oplog. Dado apagado ou log podado permanece na imagem até ela ser sobrescrita; não dá para apagar item de uma imagem. A Política, o painel e o resumo do apagamento (`backups_up_to_weeks`) dizem "até 2 semanas".
 
 ## 9. Expurgo do canal do webhook de erro (C7)
 
