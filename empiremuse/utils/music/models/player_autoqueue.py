@@ -161,7 +161,8 @@ class PlayerAutoqueueMixin:
                 try:
                     req.selected_track = req.tracks[0]
                 except Exception:
-                    if req.exceptions:
+                    # sem consulta nenhuma (o nó não tem provedor de busca) também é falha da BUSCA: não prova que a faixa não existe
+                    if req.exceptions or not search_queries:
                         _mark_resolve_error(track)
                         logger.warning(
                             "Falha ao resolver PartialTrack (%s)", ", ".join(type(e).__name__ for e in req.exceptions)

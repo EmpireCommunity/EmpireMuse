@@ -272,3 +272,32 @@ class TestASearchFailureIsNotTheTracksFault:
             await session.next_playable(ports._resolve)
 
         assert await ResolvedTracks(db).failed(TRACK) is marked
+
+    @pytest.mark.regression
+    @pytest.mark.asyncio
+    async def test_no_search_provider_is_not_a_miss(self):
+        """CodeRabbit PR 257: sem provedor de busca no nó nenhuma consulta roda; isso não prova que a faixa não existe."""
+        from unittest.mock import AsyncMock
+
+        from empiremuse.utils.music.models.player_autoqueue import PlayerAutoqueueMixin, resolve_error
+        from empiremuse.utils.music.models.tracks import PartialTrack
+        from empiremuse.utils.radio.custom_source import StreakLimit
+
+        get_tracks = AsyncMock(return_value=[])
+        player = SimpleNamespace(
+            native_yt=False,
+            node=SimpleNamespace(get_tracks=get_tracks, info={"sourceManagers": []}, partial_providers=[]),
+            bot=SimpleNamespace(pool=SimpleNamespace(partial_track_cache={})),
+        )
+        track = PartialTrack(title="Song", author="Artist", duration=180_000, source_name="spotify")
+
+        await PlayerAutoqueueMixin.resolve_track(player, track)
+
+        assert track.id is None and resolve_error(track) and get_tracks.await_count == 0
+
+        db = FakeDb()
+        ports, _ = TestThePortsUseTheCache.make_ports(db, resolves=False)
+        ports._player().resolve_track = lambda partial: PlayerAutoqueueMixin.resolve_track(player, partial)
+        with pytest.raises(StreakLimit):
+            await CustomSession([TRACK], ResolvedTracks(db)).next_playable(ports._resolve)
+        assert await ResolvedTracks(db).failed(TRACK) is False
