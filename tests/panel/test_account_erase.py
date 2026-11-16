@@ -141,6 +141,8 @@ class EraseGateTest(EraseBase):
             and "2 semanas" in body
             and "Não dá para desfazer" in body
         )
+        assert "avisos de entrada e saída dos servidores de que você é dono" in body  # D5
+        assert "cumprir a lei" not in body  # A11
         assert 'value=""' in body and "banimento" not in body
         assert "entrar de novo" not in body, "login recente: sem o aviso"
 

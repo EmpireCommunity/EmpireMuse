@@ -129,6 +129,18 @@ O `AUTO_ERROR_REPORT_WEBHOOK` copia erros para um canal do Discord sem prazo. De
 | :--- | :--- | :--- |
 | _(nenhum ainda)_ | | |
 
+## 9.1 Expurgo do canal de avisos de entrada e saída (D5)
+
+Com `BOT_ADD_REMOVE_LOG` (URL de webhook) ou `BOT_ADD_REMOVE_LOG_CHANNEL_ID` preenchidos, o bot avisa num canal do Discord cada servidor em que entra ou de que sai, **com o nome e o ID de quem é dono do servidor** (decisão do dono D5, 2026-11-15). A Política e a tela de apagar dados dizem que esses avisos ficam por até 6 meses (183 dias); apagar os dados de uma pessoa não os remove antes disso.
+
+**A cada 183 dias**, no mesmo dia do expurgo da seção 9 (um registro só):
+
+1. O dono (precisa do OK dele) apaga o canal dos avisos e cria outro de mesmo nome. Como na seção 9, a exclusão em massa por API não alcança mensagens com mais de 14 dias.
+2. Se o aviso sai por webhook, cria um webhook novo no canal novo e atualiza `BOT_ADD_REMOVE_LOG` no `.env` (é segredo: nunca no repositório nem no chat); se sai por canal, atualiza `BOT_ADD_REMOVE_LOG_CHANNEL_ID` com o ID do canal novo. Recria o contêiner do bot.
+3. Registra a data na tabela da seção 9, com a nota "e avisos de entrada e saída".
+
+Sem nenhuma das duas variáveis, não há canal a limpar.
+
 ## 10. Suspensão legal (ordem de guarda)
 
 Se houver ordem legal para guardar registros além de 183 dias, o dono decide e documenta: copie o `access.log*` e os arquivos pedidos para um local protegido (modo 0600, fora das pastas podadas) **antes** da poda, e suspenda a poda: **mova** a configuração do `logrotate` para fora de `/etc/logrotate.d/` (por exemplo para uma pasta de custódia; renomear no lugar não basta, o `logrotate` pode continuar lendo o arquivo) e desabilite o timer do Lavalink. Retome e apague a cópia quando a ordem acabar.
