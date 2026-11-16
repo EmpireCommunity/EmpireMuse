@@ -42,32 +42,45 @@ def test_listas_do_repositorio_sao_validas() -> None:
 
 
 @pytest.mark.parametrize(
-    "linha_ruim",
+    ("linha_ruim", "motivo"),
     [
-        "0.0.0.0/0",  # liberaria tudo
-        "16.0.0.0/11",  # prefixo curto demais
-        "192.168.0.0/16",  # privada
-        "203.0.113.0",  # sem prefixo
-        "203.0.113.1/24",  # bits de host ligados
-        "não é uma faixa",
-        "2606:4700::/32",  # IPv6 na lista IPv4
-        V4_OK[0],  # repetida
+        ("0.0.0.0/0", "prefixo menor"),  # liberaria tudo
+        ("16.0.0.0/11", "prefixo menor"),
+        ("192.168.0.0/16", "não global"),  # privada
+        ("8.8.8.0", "falta o prefixo"),  # global, então só o prefixo ausente a recusa
+        ("8.8.8.1/24", "não é uma faixa CIDR válida"),  # global, bits de host ligados
+        ("abc/24", "não é uma faixa CIDR válida"),
+        ("2606:4700::/32", "família de endereço errada"),  # IPv6 na lista IPv4
+        (V4_OK[0], "repetida"),
+        ("20.0.0.0%1/16", "escopo"),
     ],
 )
-def test_lista_v4_com_linha_ruim_e_recusada(tmp_path: Path, linha_ruim: str) -> None:
+def test_lista_v4_com_linha_ruim_e_recusada_pelo_motivo_certo(tmp_path: Path, linha_ruim: str, motivo: str) -> None:
     write_lists(tmp_path, [*V4_OK, linha_ruim])
 
     result = run_script("check", list_dir=tmp_path)
 
     assert result.returncode != 0
-    assert "cf-firewall" in result.stderr
+    assert motivo in result.stderr, result.stderr
 
 
-@pytest.mark.parametrize("linha_ruim", ["::/0", "2a06:98c0::/28", "fd00::/32"])
-def test_lista_v6_com_linha_ruim_e_recusada(tmp_path: Path, linha_ruim: str) -> None:
+@pytest.mark.parametrize(
+    ("linha_ruim", "motivo"),
+    [
+        ("::/0", "prefixo menor"),
+        ("2a06:98c0::/28", "prefixo menor"),
+        ("fd00::/32", "não global"),
+        ("2606:4700::%1,2001:db8::/32", "escopo"),  # F-m1: injetaria um RETURN para outra faixa no ip6tables-restore
+        ("2606:4700::%eth0/32", "escopo"),
+    ],
+)
+def test_lista_v6_com_linha_ruim_e_recusada_pelo_motivo_certo(tmp_path: Path, linha_ruim: str, motivo: str) -> None:
     write_lists(tmp_path, V4_OK, [*V6_OK, linha_ruim])
 
-    assert run_script("check", list_dir=tmp_path).returncode != 0
+    result = run_script("check", list_dir=tmp_path)
+
+    assert result.returncode != 0
+    assert motivo in result.stderr, result.stderr
 
 
 def test_lista_com_poucas_faixas_ou_ausente_e_recusada(tmp_path: Path) -> None:
@@ -101,35 +114,107 @@ def test_interface_invalida_e_recusada(tmp_path: Path) -> None:
     assert result.returncode != 0
 
 
-def _namespace_isolado_disponivel() -> bool:
+EMPTY_NAMESPACE_PROBE = '[ "$(iptables -S | wc -l)" = 3 ] && [ "$(ip6tables -S | wc -l)" = 3 ]'
+
+
+def _run_in_namespace(roteiro: str, list_dir: Path) -> subprocess.CompletedProcess[str]:
+    """Roda o roteiro num network namespace novo e vazio; recusa começar se ele não estiver vazio."""
     if os.geteuid() != 0 or shutil.which("unshare") is None or shutil.which("iptables") is None:
-        return False
-    probe = subprocess.run(
-        ["unshare", "-n", "sh", "-c", "iptables -S | wc -l"], capture_output=True, text=True, timeout=30, check=False
+        pytest.skip("precisa de root, unshare e iptables (rodado à mão e no passo dedicado do CI)")
+    env = {"PATH": os.environ["PATH"], "SCRIPT": str(SCRIPT), "CF_FW_LIST_DIR": str(list_dir), "CF_FW_PUB_IF": "eth0"}
+    guarda = f"set -eu\n{EMPTY_NAMESPACE_PROBE} || {{ echo 'namespace não está vazio' >&2; exit 99; }}\n"
+    result = subprocess.run(
+        ["unshare", "-n", "sh", "-c", guarda + roteiro],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
     )
-    return probe.returncode == 0 and probe.stdout.strip() == "3"  # só as 3 políticas padrão: namespace vazio
+    if result.returncode == 99:
+        pytest.skip("o network namespace não veio vazio: recusa tocar em regra")
+    return result
 
 
-@pytest.mark.skipif(not _namespace_isolado_disponivel(), reason="precisa de root e de um network namespace isolado")
 def test_on_off_em_namespace_isolado(tmp_path: Path) -> None:
     write_lists(tmp_path, V4_OK)
+    ruins = tmp_path / "ruins"
+    ruins.mkdir()
+    write_lists(ruins, [*V4_OK, "0.0.0.0/0"])
     roteiro = """
-    set -eu
-    [ "$(iptables -S | wc -l)" = 3 ]
     for f in iptables ip6tables; do $f -N DOCKER-USER; $f -A DOCKER-USER -j RETURN; done
-    sh "$SCRIPT" on >/dev/null
-    sh "$SCRIPT" on >/dev/null
-    echo "ganchos=$(iptables -S DOCKER-USER | grep -c -- '-j CF-ONLY')"
-    echo "regras=$(iptables -S CF-ONLY | wc -l)"
+    sh "$SCRIPT" on >/dev/null 2>&1
+    sh "$SCRIPT" on >/dev/null 2>&1
+    echo "ganchos4=$(iptables -S DOCKER-USER | grep -c -- '-j CF-ONLY')"
+    echo "regras4=$(iptables -S CF-ONLY | wc -l)"
+    echo "ganchos6=$(ip6tables -S DOCKER-USER | grep -c -- '-j CF-ONLY')"
+    echo "regras6=$(ip6tables -S CF-ONLY | wc -l)"
+    sh "$SCRIPT" status >/dev/null
+    # caminho de erro: uma lista inválida recusa o on e deixa cadeia e gancho como estavam
+    if CF_FW_LIST_DIR="$RUINS" sh "$SCRIPT" on >/dev/null 2>&1; then echo "on-invalido=aceito"; fi
+    echo "apos-erro4=$(iptables -S DOCKER-USER | grep -c -- '-j CF-ONLY') $(iptables -S CF-ONLY | wc -l)"
     sh "$SCRIPT" off >/dev/null
     sh "$SCRIPT" off >/dev/null
-    echo "depois=$(iptables -S | grep -c CF-ONLY || true)"
+    echo "depois=$(iptables -S | grep -c CF-ONLY || true) $(ip6tables -S | grep -c CF-ONLY || true)"
+    if sh "$SCRIPT" status >/dev/null 2>&1; then echo "status-desligado=ok"; fi
     """
-    env = {"PATH": os.environ["PATH"], "SCRIPT": str(SCRIPT), "CF_FW_LIST_DIR": str(tmp_path), "CF_FW_PUB_IF": "eth0"}
 
-    result = subprocess.run(
-        ["unshare", "-n", "sh", "-c", roteiro], env=env, capture_output=True, text=True, timeout=60, check=False
-    )
+    result = _run_in_namespace(roteiro.replace('"$RUINS"', f'"{ruins}"'), tmp_path)
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.split() == ["ganchos=1", f"regras={len(V4_OK) + 2}", "depois=0"]
+    n = len(V4_OK) + 2
+    assert result.stdout.split("\n")[:-1] == [
+        "ganchos4=1",
+        f"regras4={n}",
+        "ganchos6=1",
+        f"regras6={len(V6_OK) + 2}",
+        f"apos-erro4=1 {n}",
+        "depois=0 0",
+    ]
+
+
+def test_ipv6_publicado_pelo_docker_proxy_e_filtrado_pela_input(tmp_path: Path) -> None:
+    """Sem DOCKER-USER no IPv6 e com um listener em [::]:443 (docker-proxy), o filtro tem de entrar na INPUT."""
+    write_lists(tmp_path, V4_OK)
+    roteiro = """
+    iptables -N DOCKER-USER; iptables -A DOCKER-USER -j RETURN
+    sh "$SCRIPT" on >/dev/null 2>&1
+    echo "sem-listener=$(ip6tables -S | grep -c CF-ONLY || true)"
+    sh "$SCRIPT" off >/dev/null
+    python3 -c 'import socket,time
+s=socket.socket(socket.AF_INET6); s.bind(("::",443)); s.listen(1); time.sleep(30)' &
+    pid=$!
+    sleep 1
+    sh "$SCRIPT" on >/dev/null 2>&1
+    echo "input=$(ip6tables -S INPUT | grep -c -- '-j CF-ONLY')"
+    echo "ssh-intacto=$(ip6tables -S INPUT | grep -c -- '--dport 22' || true)"
+    sh "$SCRIPT" status >/dev/null
+    sh "$SCRIPT" off >/dev/null
+    echo "depois=$(ip6tables -S | grep -c CF-ONLY || true)"
+    kill $pid
+    """
+    if shutil.which("ss") is None:
+        pytest.skip("precisa de ss para o listener ser detectado")
+
+    result = _run_in_namespace(roteiro, tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == ["sem-listener=0", "input=1", "ssh-intacto=0", "depois=0"]
+
+
+def test_falha_no_ipv6_depois_do_ipv4_desfaz_tudo(tmp_path: Path) -> None:
+    """Um ip6tables-restore que falha não pode deixar o IPv4 ligado pela metade."""
+    write_lists(tmp_path, V4_OK)
+    roteiro = """
+    for f in iptables ip6tables; do $f -N DOCKER-USER; $f -A DOCKER-USER -j RETURN; done
+    mkdir -p "$SHIM"
+    printf '#!/bin/sh\\nexit 1\\n' > "$SHIM/ip6tables-restore"
+    chmod +x "$SHIM/ip6tables-restore"
+    if PATH="$SHIM:$PATH" sh "$SCRIPT" on >/dev/null 2>&1; then echo "on=aceito"; fi
+    echo "restou=$(iptables -S | grep -c CF-ONLY || true)"
+    """
+
+    result = _run_in_namespace(roteiro.replace("$SHIM", f"{tmp_path}/shim"), tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == ["restou=0"]

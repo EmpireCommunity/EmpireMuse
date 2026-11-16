@@ -1,5 +1,5 @@
 # Faixas IPv4 da Cloudflare (https://www.cloudflare.com/ips-v4), copiadas em 2026-11-16. Lista estática e revisada: o firewall NÃO baixa nada.
-# Atualizar à mão e por PR, junto do forwardedHeaders.trustedIPs do Traefik (ver deploy/README.md).
+# Atualizar à mão e por PR. Uma faixa nova da Cloudflare que não esteja aqui é cortada pelo firewall (ver deploy/README.md).
 173.245.48.0/20
 103.21.244.0/22
 103.22.200.0/22

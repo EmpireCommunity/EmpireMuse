@@ -38,29 +38,31 @@ Para quem hospeda atrás da Cloudflare com o Docker publicando a 443: o host só
 | Arquivo | Para quê |
 | :--- | :--- |
 | [`host/cf-firewall.sh`](host/cf-firewall.sh) | `on`, `off`, `status`, `check`, `print`, `arm-undo` e `cancel-undo` (o cabeçalho do script explica cada um) |
-| [`host/empire-cf-firewall.service`](host/empire-cf-firewall.service) | Liga o firewall na partida e o refaz quando o Docker reinicia |
+| [`host/empire-cf-firewall.service`](host/empire-cf-firewall.service) | Liga o firewall quando o Docker sobe (boot, start ou restart) e o desliga/refaz com ele |
 | [`host/cf-ips-v4.txt`](host/cf-ips-v4.txt), [`host/cf-ips-v6.txt`](host/cf-ips-v6.txt) | Faixas da Cloudflare, **estáticas e revisadas** (copiadas de `https://www.cloudflare.com/ips-v4` e `ips-v6`) |
 
 Como funciona, em resumo:
 
-- O gancho casa só `-m conntrack --ctstate NEW --ctdir ORIGINAL --ctorigdstport 443` pela interface pública. O `--ctdir ORIGINAL` é essencial: sem ele, as **respostas** das conexões HTTPS que os próprios containers abrem para fora (que também têm a 443 como destino original) cairiam no `DROP`.
+- O gancho casa só `-m conntrack --ctstate NEW --ctdir ORIGINAL --ctorigdstport 443` pela interface pública. O que poupa as **respostas** das conexões HTTPS que os próprios containers abrem para fora é o `--ctstate NEW` (uma resposta nunca é `NEW`); o `--ctdir ORIGINAL` fica como defesa em profundidade, e os dois devem ficar.
 - O script **não baixa nada**: lê as listas de `/etc/empire/`. Cada lista é validada antes de qualquer regra (CIDR válido, só endereços globais, prefixo no mínimo `/12` em IPv4 e `/29` em IPv6, que recusa `0.0.0.0/0` e `::/0`, e uma quantidade mínima de faixas). Qualquer falha sai com erro e **não toca em nada**.
 - A troca é atômica: o `iptables-restore --noflush` carrega a cadeia inteira numa transação só (a cadeia nunca fica vazia nem só com o `DROP`) e o gancho entra depois, uma vez só. Rodar `on` de novo é seguro.
-- IPv4 e IPv6; se a `DOCKER-USER` do IPv6 não existir, o IPv6 é pulado com um aviso.
+- IPv4 e IPv6. **Atenção ao IPv6:** se a rede do Traefik não tem IPv6 (ou o `ip6tables` do Docker está desligado), o Docker publica `[::]:443` pelo `docker-proxy`, que entra pela `INPUT` e **nunca** pela `DOCKER-USER`. Por isso o `on` olha `ss -ltn -6 'sport = :443'` (sem `ss`, assume que há listener) e, havendo um, põe o mesmo gancho também na `INPUT` do `ip6tables`, só para a 443 (SSH e outras portas não são tocados). Sem `DOCKER-USER` v6 e sem listener, o IPv6 é pulado com um aviso. Se há listener e o `ip6tables` não filtra a `INPUT`, o `on` falha antes de aplicar qualquer coisa.
+- Se uma falha vier depois de começar a aplicar (por exemplo o IPv6 depois do IPv4), o `on` desfaz tudo e sai com erro: nunca fica metade ligado.
+- Pré-condição QUIC: o filtro é só TCP. Confira `ss -lun 'sport = :443'` vazio (sem HTTP/3 publicado); se houver UDP 443, ele **não** é filtrado e a decisão é do operador.
 
 Instalar (à mão, com o OK de quem opera o host, e com um **segundo acesso** ao host aberto, por exemplo o console do provedor):
 
 1. Copiar as listas para `/etc/empire/` (0644), o script para `/usr/local/sbin/cf-firewall.sh` (root, 0755) e a unit para `/etc/systemd/system/`. Do mesmo commit/tag da release, não da `main`.
 2. `cf-firewall.sh check` (só valida) e `cf-firewall.sh print` (mostra o que seria aplicado, sem aplicar).
 3. Rede de segurança: `cf-firewall.sh arm-undo 10` agenda o `off` para daqui a 10 minutos. Depois `cf-firewall.sh on`.
-4. Dentro dos 10 minutos, confira: o site abre pela Cloudflare; **um container ainda alcança a internet** (por exemplo `docker exec <container> ... https://example.com`, esperando 200); de fora da Cloudflare, `curl --max-time 8 --resolve <host>:443:<ip-do-host> https://<host>/` estoura o tempo; o SSH segue vivo. O contador do `DROP` (`cf-firewall.sh status`) pode ser maior que zero: são conexões novas de fora, que é o efeito desejado.
-5. Se estiver tudo certo: `cf-firewall.sh cancel-undo` e `systemctl enable --now empire-cf-firewall.service`. Sem o `enable`, um reinício apaga as regras. Depois de todo reboot, confira `systemctl is-failed empire-cf-firewall.service`.
+4. Dentro dos 10 minutos, confira: o site abre pela Cloudflare; **um container ainda alcança a internet** (por exemplo `docker exec <container> ... https://example.com`, esperando 200); de fora da Cloudflare, `curl --max-time 8 --resolve <host>:443:<ip-do-host> https://<host>/` estoura o tempo, **e o mesmo por IPv6** (`curl -6 --max-time 8 --resolve <host>:443:[<ipv6-do-host>] https://<host>/`, se o host tem IPv6 público); o SSH segue vivo. O contador do `DROP` (`cf-firewall.sh status`) pode ser maior que zero: são conexões novas de fora, que é o efeito desejado.
+5. Se estiver tudo certo: `cf-firewall.sh cancel-undo` (avisa se o desfazer já rodou) e `systemctl enable --now empire-cf-firewall.service`. Sem o `enable`, um reinício apaga as regras. Depois de todo reboot **e de toda parada ou reinício do Docker**, confira `systemctl is-active empire-cf-firewall.service` = `active` **e** `cf-firewall.sh status` com exit 0 e ganchos presentes (`is-failed` sozinho não pega uma unit inativa).
 
 Voltar: `cf-firewall.sh off` (ou `systemctl disable --now empire-cf-firewall.service`).
 
-Manutenção: as faixas da Cloudflare mudam raramente. Quando mudarem, atualize **juntos**, por revisão: estas duas listas e o `forwardedHeaders.trustedIPs` do Traefik, senão tráfego legítimo é cortado. Atenção: se o Docker reiniciar, a unit refaz as regras (`PartOf`); o comportamento da `DOCKER-USER` num reinício do Docker deve ser conferido no seu ambiente.
+Manutenção: as faixas da Cloudflare mudam raramente. Quando mudarem, atualize estas duas listas por revisão: uma faixa nova que não esteja nelas tem a conexão **cortada pelo firewall**. Ciclo de vida: o Docker iniciado puxa a unit (`WantedBy=docker.service`), e o Docker parado ou reiniciado desliga/refaz o firewall (`PartOf`); com o Docker parado nada escuta a 443. Confira o comportamento da `DOCKER-USER` num reinício do Docker no seu ambiente.
 
-**Verificado** (em rede isolada, sem tocar nenhuma regra do host): o `on` cria a cadeia e o gancho em IPv4 e IPv6; repetir o `on` não duplica o gancho e **substitui** o conteúdo da cadeia (não acumula); durante 120 trocas seguidas, leituras repetidas da cadeia só viram o conteúdo antigo ou o novo inteiro; o `off` remove tudo e é idempotente. **Não verificado:** a unit rodando no systemd de um host real, o comportamento com o Docker reiniciando e o tráfego real (conntrack com DNAT) de ponta a ponta.
+**Verificado** (num network namespace vazio e descartável, sem tocar nenhuma regra do host; o CI roda isso como root a cada PR, e o passo falha se o teste for pulado): o `on` cria a cadeia e o gancho em IPv4 e IPv6 (regras e ganchos contados nas duas famílias); repetir o `on` não duplica o gancho; um `on` com lista inválida recusa e deixa cadeia e gancho intactos; um listener em `[::]:443` faz o gancho entrar na `INPUT` do IPv6; uma falha do `ip6tables-restore` depois do IPv4 desfaz tudo; o `off` remove tudo e é idempotente. Medido à mão antes: durante 120 trocas seguidas, leituras repetidas da cadeia só viram o conteúdo antigo ou o novo inteiro. **Não verificado:** a unit rodando no systemd de um host real (inclusive o endurecimento da unit), o comportamento com o Docker reiniciando e o tráfego real (conntrack com DNAT, `docker-proxy`) de ponta a ponta.
 
 ## Antes de usar
 

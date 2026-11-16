@@ -2,25 +2,34 @@
 # Firewall da porta 443 do host: só as faixas da Cloudflare abrem conexões novas de fora (ver deploy/README.md).
 #
 # Uso: cf-firewall.sh COMANDO
-#   on            valida as listas, monta a cadeia CF-ONLY de uma vez e só então liga o gancho na DOCKER-USER
-#   off           tira o gancho e apaga a cadeia (volta ao estado de antes; sem erro se nada estiver ligado)
-#   status        mostra se o gancho existe e os contadores da cadeia (precisa de root)
+#   on            valida as listas, monta a cadeia CF-ONLY de uma vez e só então liga os ganchos (DOCKER-USER; no IPv6
+#                 também a INPUT se houver listener em [::]:443)
+#   off           tira os ganchos e apaga a cadeia (volta ao estado sem firewall; sem erro se nada estiver ligado)
+#   status        mostra ganchos e contadores (precisa de root); sai com erro se o firewall estiver incompleto
 #   check         só valida as duas listas e imprime as contagens (não precisa de root nem de iptables)
 #   print         imprime o que o `on` aplicaria, sem aplicar nada (não precisa de root)
 #   arm-undo [M]  agenda `off` daqui a M minutos (1 a 60; padrão 10) com systemd-run: rede de segurança antes do `on`
 #   cancel-undo   cancela o desfazer agendado
 #
-# Como funciona: o Docker publica a 443 por DNAT, então o tráfego passa pela FORWARD e pela DOCKER-USER, não pelo INPUT
-# (o SSH, que é INPUT, nunca é tocado). O gancho casa SÓ o primeiro pacote de uma conexão nova, na direção original, com
-# destino original na porta 443, vindo da interface pública:
+# Como funciona: o Docker publica a 443 por DNAT, então o tráfego passa pela FORWARD e pela DOCKER-USER, não pelo INPUT.
+# O gancho casa SÓ o primeiro pacote de uma conexão nova, na direção original, com destino original na porta 443, vindo da
+# interface pública:
 #   -m conntrack --ctstate NEW --ctdir ORIGINAL --ctorigdstport 443
-# Sem o `--ctdir ORIGINAL`, as respostas das conexões HTTPS que os próprios containers abrem para fora (que chegam pela
-# mesma interface e também têm a 443 como destino original) cairiam no DROP e a saída dos containers quebraria. A cadeia
+# O `--ctstate NEW` é o que exclui as respostas das conexões HTTPS que os próprios containers abrem para fora (uma
+# resposta nunca é NEW); o `--ctdir ORIGINAL` é defesa em profundidade e não deve ser removido junto com ele. A cadeia
 # libera (RETURN) as faixas da Cloudflare e descarta (DROP) o resto.
+#
+# IPv6 e docker-proxy: se a rede do Traefik não tem IPv6 (ou o ip6tables do Docker está desligado), o Docker publica
+# [::]:443 pelo docker-proxy, que é atendido pela INPUT e NUNCA passa pela DOCKER-USER. Por isso, no `on`, se `ss` achar um
+# listener TCP em [::]:443 (ou se `ss` não existir: por precaução), o mesmo gancho entra também na INPUT do ip6tables,
+# só para a 443 (NEW, interface pública). O SSH e qualquer outra porta nunca são tocados. Se o listener existe e o
+# ip6tables não consegue filtrá-lo, o `on` falha antes de aplicar qualquer coisa.
 #
 # As faixas vêm de listas ESTÁTICAS e revisadas (padrão /etc/empire/cf-ips-v4.txt e cf-ips-v6.txt, as de deploy/host/):
 # o script nunca baixa nada, então sem rede no boot ele continua funcionando. Cada lista é validada ANTES de tocar em
-# qualquer regra; qualquer falha sai com código diferente de 0 e deixa tudo como estava (falha fechada).
+# qualquer regra; qualquer falha de validação ou de pré-condição sai com código diferente de 0 SEM tocar em regra. Se uma
+# falha ocorrer depois de começar a aplicar (por exemplo o IPv6 depois do IPv4), o `on` desfaz tudo (`off`) e sai com erro,
+# para não deixar metade ligado; a unit fica `failed` e o `status`/`systemctl is-active` pegam.
 #   - cada linha é um CIDR válido, com barra, da família certa (comentário # e linha vazia são ignorados);
 #   - prefixo no mínimo /12 (IPv4) e /29 (IPv6): isso recusa 0.0.0.0/0 e ::/0, que liberariam tudo;
 #   - só endereços globais (nada privado, de loopback ou reservado), sem linha repetida;
@@ -30,8 +39,10 @@
 # janela. O gancho entra uma vez só, depois de a cadeia estar cheia.
 #
 # Variáveis (para teste e casos especiais): CF_FW_LIST_DIR (pasta das listas), CF_FW_PUB_IF (interface pública; sem ela,
-# a da rota padrão, e para IPv6 a da rota padrão IPv6 se houver). Sem IPv6 na DOCKER-USER, o IPv6 é pulado com um aviso.
+# a da rota padrão, e para IPv6 a da rota padrão IPv6 se houver). Sem IPv6 na DOCKER-USER e sem listener em [::]:443, o
+# IPv6 é pulado com um aviso.
 set -eu
+set -f # as faixas e as linhas do iptables são palavras soltas: nunca expandir globs
 
 LIST_DIR=${CF_FW_LIST_DIR:-/etc/empire}
 CHAIN=CF-ONLY
@@ -56,6 +67,7 @@ need_root() {
 validate_list() {
     python3 -I - "$1" "$2" "$3" "$4" <<'PY'
 import ipaddress
+import re
 import sys
 
 version, min_prefix, min_count, path = int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3]), sys.argv[4]
@@ -77,6 +89,8 @@ for number, raw in enumerate(lines, 1):
     line = raw.strip()
     if not line or line.startswith("#"):
         continue
+    if "%" in line:
+        fail(f"linha {number}: escopo de interface (%) não é aceito")
     if "/" not in line:
         fail(f"linha {number}: falta o prefixo")
     try:
@@ -95,8 +109,12 @@ for number, raw in enumerate(lines, 1):
 
 if len(networks) < min_count:
     fail(f"só {len(networks)} faixas, o mínimo é {min_count}")
+SHAPE = re.compile(r"^[0-9A-Fa-f:.]+/[0-9]{1,3}$")
 for network in networks:
-    print(network)
+    text = str(network)
+    if not SHAPE.match(text):
+        fail(f"formato inesperado: {text}")
+    print(text)
 PY
 }
 
@@ -123,6 +141,22 @@ hook_spec() {
     echo "-i $1 -p tcp -m conntrack --ctstate NEW --ctdir ORIGINAL --ctorigdstport $PORT -j $CHAIN"
 }
 
+fam_cmd() { # $1 = 4 ou 6; define ipt e restore
+    if [ "$1" = 4 ]; then
+        ipt=iptables
+        restore=iptables-restore
+    else
+        ipt=ip6tables
+        restore=ip6tables-restore
+    fi
+}
+
+# Sucesso se há (ou, sem `ss`, pode haver) um listener TCP IPv6 em [::]:443: o docker-proxy, que passa pela INPUT.
+v6_listener_443() {
+    command -v ss >/dev/null 2>&1 || return 0
+    [ -n "$(ss -H -ltn -6 "sport = :$PORT" 2>/dev/null)" ]
+}
+
 # Conteúdo do iptables-restore: a declaração da cadeia (que a esvazia na mesma transação) e as regras novas.
 restore_text() {
     echo "*filter"
@@ -134,36 +168,47 @@ restore_text() {
     echo "COMMIT"
 }
 
-apply_family() { # $1 = 4 ou 6, $2 = faixas validadas, $3 = interface
-    if [ "$1" = 4 ]; then
-        ipt=iptables
-        restore=iptables-restore
-    else
-        ipt=ip6tables
-        restore=ip6tables-restore
-    fi
-    if ! "$ipt" -n -L DOCKER-USER >/dev/null 2>&1; then
-        if [ "$1" = 6 ]; then
-            echo "cf-firewall: IPv6: sem a cadeia DOCKER-USER, pulado (nada publicado por IPv6 para filtrar)" >&2
-            return 0
-        fi
+# Quais cadeias recebem o gancho nesta família. IPv4: DOCKER-USER. IPv6: DOCKER-USER se existir e INPUT se há listener.
+# Imprime os nomes, um por linha; sai com erro (e mensagem) se algo que precisa ser filtrado não pode ser.
+hook_parents() { # $1 = 4 ou 6
+    fam_cmd "$1"
+    parents=""
+    if "$ipt" -n -L DOCKER-USER >/dev/null 2>&1; then
+        parents="DOCKER-USER"
+    elif [ "$1" = 4 ]; then
         die "a cadeia DOCKER-USER não existe (o Docker está no ar?)"
     fi
+    if [ "$1" = 6 ] && v6_listener_443; then
+        "$ipt" -n -L INPUT >/dev/null 2>&1 || die "IPv6: há listener em [::]:$PORT mas o ip6tables não filtra a INPUT: falha fechada, nada foi aplicado"
+        parents="$parents INPUT"
+    fi
+    if [ -z "$parents" ]; then
+        echo "cf-firewall: IPv6: sem DOCKER-USER e sem listener em [::]:$PORT, nada para filtrar (pulado)" >&2
+    fi
+    echo "$parents"
+}
+
+apply_family() { # $1 = 4 ou 6, $2 = faixas validadas, $3 = interface, $4 = cadeias de gancho
+    fam_cmd "$1"
+    [ -n "$4" ] || return 0
     restore_text "$2" | "$restore" --noflush
     spec=$(hook_spec "$3")
-    # shellcheck disable=SC2086 # a regra é uma lista de palavras de propósito
-    "$ipt" -C DOCKER-USER $spec 2>/dev/null || "$ipt" -I DOCKER-USER 1 $spec
-    jumps=$("$ipt" -S DOCKER-USER | grep -c -- " -j $CHAIN\$" || true)
-    [ "$jumps" = 1 ] || die "IPv$1: $jumps ganchos para $CHAIN na DOCKER-USER (esperado 1): rode off e depois on"
-    echo "cf-firewall: IPv$1: ligado ($(printf '%s\n' "$2" | wc -l) faixas, interface $3)"
+    for parent in $4; do
+        # shellcheck disable=SC2086 # a regra é uma lista de palavras de propósito
+        "$ipt" -C "$parent" $spec 2>/dev/null || "$ipt" -I "$parent" 1 $spec
+        jumps=$("$ipt" -S "$parent" | grep -c -- " -j $CHAIN\$" || true)
+        [ "$jumps" = 1 ] || die "IPv$1: $jumps ganchos para $CHAIN na $parent (esperado 1): rode off e depois on"
+    done
+    echo "cf-firewall: IPv$1: ligado ($(printf '%s\n' "$2" | wc -l) faixas, interface $3, ganchos: $4)"
 }
 
 remove_family() { # $1 = 4 ou 6
-    if [ "$1" = 4 ]; then ipt=iptables; else ipt=ip6tables; fi
-    if "$ipt" -n -L DOCKER-USER >/dev/null 2>&1; then
-        "$ipt" -S DOCKER-USER | while read -r line; do
+    fam_cmd "$1"
+    for parent in DOCKER-USER INPUT; do
+        "$ipt" -n -L "$parent" >/dev/null 2>&1 || continue
+        "$ipt" -S "$parent" | while read -r line; do
             case $line in
-                "-A DOCKER-USER "*" -j $CHAIN")
+                "-A $parent "*" -j $CHAIN")
                     # shellcheck disable=SC2086
                     set -- $line
                     shift
@@ -171,12 +216,19 @@ remove_family() { # $1 = 4 ou 6
                     ;;
             esac
         done
-    fi
+    done
     if "$ipt" -n -L "$CHAIN" >/dev/null 2>&1; then
         "$ipt" -F "$CHAIN"
         "$ipt" -X "$CHAIN"
     fi
     echo "cf-firewall: IPv$1: desligado"
+}
+
+rollback_on_error() {
+    trap - EXIT
+    echo "cf-firewall: falha ao aplicar: desfazendo tudo (off) para não deixar metade ligado" >&2
+    remove_family 4 || true
+    remove_family 6 || true
 }
 
 cmd_on() {
@@ -185,8 +237,13 @@ cmd_on() {
     v6=$(valid_v6) || exit 1
     if4=$(public_interface -4)
     if6=$(public_interface -6)
-    apply_family 4 "$v4" "$if4"
-    apply_family 6 "$v6" "$if6"
+    # Tudo o que pode falhar por pré-condição falha AQUI, antes de tocar em qualquer regra.
+    parents4=$(hook_parents 4) || exit 1
+    parents6=$(hook_parents 6) || exit 1
+    trap rollback_on_error EXIT
+    apply_family 4 "$v4" "$if4" "$parents4"
+    apply_family 6 "$v6" "$if6" "$parents6"
+    trap - EXIT
 }
 
 cmd_off() {
@@ -195,17 +252,33 @@ cmd_off() {
     remove_family 6
 }
 
+hooks_count() { # $1 = família, $2 = cadeia pai
+    fam_cmd "$1"
+    "$ipt" -S "$2" 2>/dev/null | grep -c -- " -j $CHAIN\$" || true
+}
+
 cmd_status() {
     need_root
+    bad=0
     for fam in 4 6; do
-        if [ "$fam" = 4 ]; then ipt=iptables; else ipt=ip6tables; fi
+        fam_cmd "$fam"
         if "$ipt" -n -L "$CHAIN" >/dev/null 2>&1; then
-            echo "IPv$fam: cadeia $CHAIN presente; ganchos na DOCKER-USER: $("$ipt" -S DOCKER-USER 2>/dev/null | grep -c -- " -j $CHAIN\$" || true)"
+            du=$(hooks_count "$fam" DOCKER-USER)
+            inp=$(hooks_count "$fam" INPUT)
+            echo "IPv$fam: cadeia $CHAIN presente; ganchos na DOCKER-USER: $du; na INPUT: $inp"
             "$ipt" -L "$CHAIN" -n -v
+            [ $((du + inp)) -ge 1 ] || bad=1
+            [ "$fam" = 4 ] && [ "$du" != 1 ] && bad=1
         else
             echo "IPv$fam: cadeia $CHAIN ausente (firewall desligado)"
+            [ "$fam" = 4 ] && bad=1
+            if [ "$fam" = 6 ] && [ -n "$(ss -H -ltn -6 "sport = :$PORT" 2>/dev/null || true)" ]; then
+                echo "IPv$fam: ATENÇÃO: há listener em [::]:$PORT e nenhum filtro" >&2
+                bad=1
+            fi
         fi
     done
+    [ "$bad" = 0 ] || die "firewall incompleto ou desligado (ver acima)"
 }
 
 cmd_check() {
@@ -225,6 +298,7 @@ cmd_print() {
     echo "# --- ip6tables-restore --noflush (IPv6) ---"
     restore_text "$v6"
     echo "# gancho (IPv6), depois da cadeia: ip6tables -I DOCKER-USER 1 $(hook_spec "$if6")"
+    echo "# gancho (IPv6, só se houver listener em [::]:$PORT): ip6tables -I INPUT 1 $(hook_spec "$if6")"
 }
 
 cmd_arm_undo() {
@@ -235,8 +309,12 @@ cmd_arm_undo() {
     esac
     { [ "$minutes" -ge 1 ] && [ "$minutes" -le 60 ]; } || die "minutos fora do intervalo 1 a 60"
     self=$(readlink -f "$0")
-    systemd-run --quiet --unit="$UNDO_UNIT" --on-active="${minutes}min" "$self" off
+    # Um desfazer anterior que falhou deixa a unit transitória em failed e o nome ocupado.
+    systemctl reset-failed "$UNDO_UNIT.service" "$UNDO_UNIT.timer" 2>/dev/null || true
+    # /bin/sh: o arquivo pode não ter o bit de execução (modo 0644 no git).
+    systemd-run --quiet --unit="$UNDO_UNIT" --on-active="${minutes}min" /bin/sh "$self" off
     echo "cf-firewall: desfazer agendado para daqui a $minutes min (cancel-undo cancela)"
+    systemctl list-timers "$UNDO_UNIT.timer" --no-pager || true
 }
 
 cmd_cancel_undo() {
@@ -244,9 +322,12 @@ cmd_cancel_undo() {
     if systemctl is-active --quiet "$UNDO_UNIT.timer"; then
         systemctl stop "$UNDO_UNIT.timer"
         echo "cf-firewall: desfazer cancelado"
+    elif [ "$(hooks_count 4 DOCKER-USER)" = 0 ]; then
+        echo "cf-firewall: ATENÇÃO: nenhum desfazer agendado E o gancho IPv4 não está na DOCKER-USER: o desfazer provavelmente já rodou e o firewall está DESLIGADO" >&2
     else
         echo "cf-firewall: nenhum desfazer agendado"
     fi
+    systemctl reset-failed "$UNDO_UNIT.service" "$UNDO_UNIT.timer" 2>/dev/null || true
 }
 
 case ${1:-} in
