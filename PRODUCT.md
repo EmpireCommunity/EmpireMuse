@@ -32,7 +32,7 @@ Funcionalidades exclusivas, não vistas em outros bots (confirmado pelo dono). A
 ## Capabilities and Constraints
 
 - Python 3.14, disnake, aiohttp, tornado; nenhuma dependência nova sem decisão explícita. Lockfiles `requirements-*-lock.txt`.
-- Painel web: TS/JS inexistente por decisão (htmx); CSS único `empiremuse/panel/static/css/nebulosa.css`; templates em `empiremuse/panel/templates/`.
+- Painel web: TS/JS inexistente por decisão (htmx); CSS único `empiremuse/panel/static/css/painel.css`; templates em `empiremuse/panel/templates/`.
 - Discord: segurança de texto de terceiros (nomes, faixas, URLs) só via `md_link`/`md_code`/`escape_markdown`, mensagens com `AllowedMentions.none()`; call privada nunca expõe faixa nem quem pediu.
 - Indecidido: métricas de sucesso (adoção, uso diário) não foram definidas pelo dono; registrar quando houver.
 
@@ -60,4 +60,4 @@ Funcionalidades exclusivas, não vistas em outros bots (confirmado pelo dono). A
 
 ## Accessibility & Inclusion
 
-Alvo WCAG 2.2 AA no painel web (HTML semântico, foco visível, teclado, contraste na paleta Nebulosa, mobile-first de 360 px em diante), conforme o padrão da equipe; o dono não pediu nada além disso.
+Alvo WCAG 2.2 AA no painel web (HTML semântico, foco visível, teclado, contraste na paleta neutra do painel, mobile-first de 360 px em diante), conforme o padrão da equipe; o dono não pediu nada além disso.

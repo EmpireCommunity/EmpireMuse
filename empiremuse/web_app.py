@@ -62,6 +62,7 @@ from empiremuse.rpc_protocol import (
     pick_fields,
     same_secret,
 )
+from empiremuse.rules.bot_name import bot_display_name
 from empiremuse.utils import branding
 from empiremuse.utils.rpc_proof import ProofUnavailable, TokenProof
 
@@ -88,14 +89,6 @@ bots_ws = []
 _proof_unavailable_log = LogThrottle(PROOF_LOG_INTERVAL, time.monotonic)
 
 
-def _logo_url() -> str:
-    """URL pública do logo pequeno da marca (nunca embutido na página); vazia se o arquivo não existir, e a página sai sem o logo."""
-    try:
-        return branding.asset_url("logo-256.png")
-    except ValueError:
-        return ""
-
-
 minimal_version = version.parse("2.6.1")
 
 _status_loader_cache = None
@@ -116,8 +109,7 @@ class IndexHandler(tornado.web.RequestHandler):
         self.set_header("X-Frame-Options", "DENY")
         self.set_header("Referrer-Policy", "same-origin")
 
-    def initialize(self, pool: Optional[BotPool] = None, config: dict = None, panel_enabled: bool = False):
-        self.panel_enabled = panel_enabled
+    def initialize(self, pool: Optional[BotPool] = None, config: dict = None):
         self.pool = pool
         self.config = config
 
@@ -174,14 +166,9 @@ class IndexHandler(tornado.web.RequestHandler):
                 commit=commit,
                 commit_url=f"{self.pool.remote_git_url}/commit/{commit}" if commit else "",
                 painel_url=self.pool.public_panel_url,
-                generic_panel_enabled=self.panel_enabled,
-                suporte_url=branding.SUPPORT_SERVER_URL,
-                nome_bot=branding.BOT_NAME,
+                nome_bot=bot_display_name(self.pool),
                 repo_url=branding.REPO_URL,
-                upstream_nome=branding.UPSTREAM_NAME,
-                upstream_autor=branding.UPSTREAM_AUTHOR,
-                upstream_url=branding.UPSTREAM_URL,
-                logo_src=_logo_url(),
+                license_url=branding.LICENSE_URL,
             )
         )
 
@@ -823,7 +810,6 @@ def run_app(pool: BotPool, config: dict = None):
                 {
                     "pool": pool,
                     "config": config,
-                    "panel_enabled": panel_app is not None,
                 },
             ),
             (

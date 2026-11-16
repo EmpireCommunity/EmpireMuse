@@ -1,4 +1,4 @@
-// Configuração do htmx e proteção XSRF do painel EmpireMuse.
+// Configuração do htmx e proteção XSRF do painel.
 // Sem eval, sem script inline: a CSP do painel só permite scripts do próprio domínio.
 (function () {
   "use strict";

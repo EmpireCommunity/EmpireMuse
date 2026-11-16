@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping, NamedTuple, Optional, Sequence
 
 from empiremuse.i18n import I18n, get_i18n
+from empiremuse.rules.bot_name import bot_display_name, bot_name_of
 from empiremuse.rules.i18n import Translator
 from empiremuse.utils.db import DBModel
 

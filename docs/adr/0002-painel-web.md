@@ -43,7 +43,7 @@ Principais pilares da arquitetura adotada:
    - Leituras utilizam cache curto de até 30 segundos; escritas exigem validação mandatória em tempo real (`fresh=True`).
 
 5. **Interface Server-Driven com htmx e Pico CSS Vendorizados**:
-   - Em vez de uma Single Page Application (SPA) pesada, adota-se renderização orientada a hipertexto no servidor (templates Tornado) com trocas parciais de fragmentos HTML via **htmx 2.0.10** (licença 0BSD) e estilo visual base via **Pico CSS 2.1.1** (licença MIT), customizado pelos tokens de design da marca em `panel/static/css/nebulosa.css`.
+   - Em vez de uma Single Page Application (SPA) pesada, adota-se renderização orientada a hipertexto no servidor (templates Tornado) com trocas parciais de fragmentos HTML via **htmx 2.0.10** (licença 0BSD) e estilo visual base via **Pico CSS 2.1.1** (licença MIT), customizado pelos tokens de design da marca em `panel/static/css/painel.css`.
    - Ambas as bibliotecas são vendorizadas estaticamente em `panel/static/vendor/` com hashes conferidos em `SHA256SUMS`, sem requisições a CDNs externas e sem ferramentas de build Node.js em produção.
    - Política de Segurança de Conteúdo (CSP) rígida: `default-src 'self'`, `script-src 'self'`, `style-src 'self'`, `img-src 'self' https://cdn.discordapp.com data:`, sem uso de `'unsafe-inline'` nem `'unsafe-eval'`.
 
@@ -89,7 +89,7 @@ Principais pilares da arquitetura adotada:
 ### Negativas
 - **Sessões em Memória**: O reinício do processo do bot invalida as sessões ativas dos administradores no painel web, exigindo uma nova autenticação via Discord;
 - **Limitação Temporária de Escopo**: Usuários que utilizam skins personalizadas legadas ou desejam cadastrar novos links de "ouvir junto" ainda precisam utilizar temporariamente os comandos no Discord até a conclusão das etapas de saneamento;
-- **Manutenção de CSS Vendorizado**: O congelamento do Pico CSS v2.1.1 exige que correções de estilo pontuais sejam feitas na camada própria `nebulosa.css`.
+- **Manutenção de CSS Vendorizado**: O congelamento do Pico CSS v2.1.1 exige que correções de estilo pontuais sejam feitas na camada própria `painel.css`.
 
 ### Riscos e Mitigações
 - **Risco**: Colisão de alterações simultâneas entre moderadores no Discord e administradores na web.

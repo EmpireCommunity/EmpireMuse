@@ -1,4 +1,4 @@
-"""Aplicação do painel: rotas, 404 genérico, cabeçalhos, cookie _xsrf e marca."""
+"""Aplicação do painel: rotas, 404 genérico, cabeçalhos, cookie _xsrf e arquivos estáticos."""
 
 import json
 
@@ -6,7 +6,6 @@ import tornado.web
 from tornado.testing import AsyncHTTPTestCase
 
 from tests.panel.helpers import (
-    BRAND_DIR,
     EXPECTED_CSP,
     ROOT,
     fake_pool,
@@ -127,41 +126,7 @@ class PanelXsrfTest(PanelTestBase):
         self.assert_all(["/painel/", "/painel/saude"], check)
 
 
-class PanelBrandTest(PanelTestBase):
-    def test_allowed_brand_files_are_served(self):
-        def check(case):
-            name, mime = case
-            response = self.get_page(f"/painel/marca/{name}")
-            assert response.code == 200, f"status {response.code}"
-            assert response.headers["Content-Type"].startswith(mime), response.headers["Content-Type"]
-            assert response.body == (BRAND_DIR / name).read_bytes(), "conteúdo difere de assets/brand/"
-
-        self.assert_all(
-            [("logo.svg", "image/svg+xml"), ("avatar.png", "image/png"), ("favicon.ico", "image/x-icon")], check
-        )
-
-    BRAND_BLOCKED_PATHS = [
-        "/painel/marca/banner.png",  # existe em assets/brand/, mas fora da lista fechada
-        "/painel/marca/FAVICON.ICO",
-        "/painel/marca/favicon.ico/",
-        "/painel/marca/favicon.ico%00.png",
-        "/painel/marca/favicon.ico/..%2flogo.svg",
-        "/painel/marca/avatares/Avatar-EmpireMuse_1.png",  # subpasta de assets/brand/, fora da lista fechada
-        "/painel/marca/Avatar-EmpireMuse_1.png",
-        "/painel/marca/",
-        "/painel/marca",
-        "/painel/marca/LOGO.SVG",
-        "/painel/marca/logo.svg/",
-        "/painel/marca/logo.svg%00.png",
-        "/painel/marca/..%2fanother",
-        "/painel/marca/..%2f..%2fempiremuse%2fconfig_loader.py",
-        "/painel/marca/%2e%2e/%2e%2e/LICENSE",
-        "/painel/marca/..%5c..%5cLICENSE",
-        "/painel/marca/../../empiremuse/config_loader.py",
-        "/painel/marca/%2e%2e%2f%2e%2e%2fLICENSE",
-        "/painel/marca/sub/logo.svg",
-    ]
-
+class PanelStaticTest(PanelTestBase):
     STATIC_BLOCKED_PATHS = [
         "/painel/static/../../empiremuse/config_loader.py",
         "/painel/static/%2e%2e/%2e%2e/LICENSE",

@@ -8,7 +8,7 @@ from typing import Any, Optional
 
 import tornado.web
 
-from empiremuse.panel.services.base import panel_translator
+from empiremuse.panel.services.base import bot_display_name, panel_translator
 from empiremuse.panel.sessions import PanelUser, Session, SessionStore
 from empiremuse.rules.user_cleanup import UserCleanupError
 from empiremuse.panel.settings import PanelSettings
@@ -117,7 +117,12 @@ class PanelResponseMixin:
         user = self.current_session.user if self.current_session else None
         # ``_`` (I-13): devolve ``str`` já traduzido; nos templates só em texto ou atributo entre aspas.
         translator = panel_translator(self.application.settings.get("pool"))
-        namespace.update(usuario=user, avatar_url=avatar_url_for(user), _=translator)
+        namespace.update(
+            usuario=user,
+            avatar_url=avatar_url_for(user),
+            _=translator,
+            bot_name=bot_display_name(self.application.settings.get("pool")),
+        )
         return namespace
 
     def _request_summary(self) -> str:

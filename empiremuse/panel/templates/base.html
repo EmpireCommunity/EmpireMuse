@@ -1,16 +1,17 @@
 <!DOCTYPE html>
-<html lang="pt-BR" data-theme="dark">
+<html lang="pt-BR">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark">
-  <meta name="theme-color" content="#0B0A1F">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#111317" media="(prefers-color-scheme: dark)">
   <meta name="xsrf-token" content="{{ handler.xsrf_token.decode('ascii') }}">
   <meta name="htmx-config" content='{"allowEval": false, "allowScriptTags": false, "selfRequestsOnly": true, "includeIndicatorStyles": false}'>
-  <title>{% block titulo %}Painel{% end %} · EmpireMuse</title>
-  <link rel="icon" href="/painel/marca/favicon.ico" sizes="any">
+  <title>{% block titulo %}Painel{% end %} · {{ bot_name }}</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6 2v8.2A2.5 2.5 0 1 0 7.5 12.5V5h5V2z' fill='%23737b8a'/%3E%3C/svg%3E" type="image/svg+xml">
   <link rel="stylesheet" href="{{ static_url('vendor/pico.min.css') }}">
-  <link rel="stylesheet" href="{{ static_url('css/nebulosa.css') }}">
+  <link rel="stylesheet" href="{{ static_url('css/painel.css') }}">
   <script src="{{ static_url('vendor/htmx.min.js') }}" defer></script>
   <script src="{{ static_url('js/painel.js') }}" defer></script>
 </head>
@@ -18,9 +19,8 @@
   <a class="pular-conteudo" href="#conteudo">Pular para o conteúdo</a>
   <header class="topo">
     <div class="container topo-conteudo">
-      <a class="marca" href="/painel/" aria-label="EmpireMuse — página inicial do painel">
-        <img src="/painel/marca/logo-256.png" alt="" width="40" height="40">
-        <span class="marca-nome">EmpireMuse</span>
+      <a class="marca" href="/painel/" aria-label="{{ bot_name }} — página inicial do painel">
+        <span class="marca-nome">{{ bot_name }}</span>
         <span class="marca-selo">Painel</span>
       </a>
       {% block navegacao %}
@@ -49,10 +49,16 @@
 
   <footer class="rodape">
     <div class="container">
-      <p>
-        EmpireMuse é software livre (GPL-2.0), baseado no
-        <a href="https://github.com/zRitsu/MuseHeart-MusicBot" rel="noopener noreferrer">MuseHeart-MusicBot</a>
-        de zRitsu.
+      <div class="rodape-linha">
+        <p>
+          Painel por EmpireCommunity · Bot por EmpireCommunity e
+          <a href="https://github.com/zRitsu" rel="noopener noreferrer">zRitsu</a> (MuseHeart)
+        </p>
+        <a class="rodape-github" href="https://github.com/EmpireCommunity" rel="noopener noreferrer"
+           aria-label="EmpireCommunity no GitHub" title="EmpireCommunity no GitHub"></a>
+      </div>
+      <p class="rodape-creditos">
+        Licença <a href="https://github.com/EmpireCommunity/EmpireMuse/blob/main/LICENSE" rel="noopener noreferrer">GPL-2.0</a> ·
         <a href="https://github.com/EmpireCommunity/EmpireMuse" rel="noopener noreferrer">Código-fonte</a>
       </p>
       <p class="rodape-creditos">

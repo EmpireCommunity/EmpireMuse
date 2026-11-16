@@ -18,7 +18,6 @@ from empiremuse.panel.authz import GuildAuthorizer
 from empiremuse.panel.handlers.account import AccountHandler, FavoritesExportHandler
 from empiremuse.panel.handlers.auth import CallbackHandler, LoginHandler, LogoutHandler
 from empiremuse.panel.handlers.base import NotFoundHandler, PanelStaticHandler
-from empiremuse.panel.handlers.brand import BRAND_ROUTE, BrandHandler
 from empiremuse.panel.handlers.erase import ERASE_PATH, AccountEraseHandler
 from empiremuse.panel.handlers.pages import HealthHandler, IndexHandler, RedirectToIndexHandler
 from empiremuse.panel.handlers.servers import ServerDetailHandler, ServersHandler
@@ -117,7 +116,6 @@ def build_panel_app(
             (PANEL_PREFIX + r"/servidores/([^/]+)/radios/([^/]+)", RadioChatHandler),
             (PANEL_PREFIX + r"/servidores/([^/]+)/radios", RadiosHandler),
             (PANEL_PREFIX + r"/servidores/([^/]+)/([^/]+)", SettingsHandler),
-            (BRAND_ROUTE, BrandHandler),
             (LOGO_ROUTE, RadioLogoHandler),
             (PANEL_PREFIX + "/.*", NotFoundHandler),
         ],

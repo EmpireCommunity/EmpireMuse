@@ -1,72 +1,95 @@
 /*
- * Identidade visual "Nebulosa" do painel EmpireMuse, aplicada sobre o Pico CSS 2.1.1.
- * Paleta de marca: #0B0A1F fundo · #8B5CF6 violeta · #3B82F6 azul · #C026D3 magenta · #E11D48 vermelho.
- * Contrastes (WCAG 2.2 AA, medidos): texto #F5F3FF/#0B0A1F 17,8:1 · texto suave #C4B5FD/#0B0A1F 10,6:1 ·
- * link #A78BFA/#0B0A1F 7,2:1 · botão #FFFFFF/#7C3AED 5,7:1 (hover #FFFFFF/#6D28D9 7,1:1) ·
- * erro #FB7185/#15133A 6,6:1 · foco #3B82F6/#0B0A1F 5,3:1 · borda de campo #6B64B8/#15133A 3,5:1.
+ * Estilo neutro do painel, aplicado sobre o Pico CSS 2.1.1: fonte do sistema, sem gradientes, tema claro e escuro
+ * pela preferência do navegador (prefers-color-scheme).
+ * Contrastes (WCAG 2.2 AA, medidos) · claro: texto #1A1D23/#FFFFFF 16,9:1 · texto suave #4B5563/#FFFFFF 7,6:1 ·
+ * link e botão #1D4ED8/#FFFFFF 6,7:1 · erro #B91C1C/#FFFFFF 6,5:1 · sucesso #166534/#FFFFFF 7,1:1 · borda de campo
+ * #6B7280/#F6F7F9 4,5:1. Escuro: texto #ECEFF4/#111317 16,1:1 · texto suave #A9B1BF/#111317 8,6:1 · link #8AB4FF/#111317
+ * 8,9:1 · botão #FFFFFF/#2F5FD0 5,7:1 · erro #FF9A9A/#111317 9,2:1 · sucesso #6EE7A0/#111317 12,0:1 · borda de campo
+ * #808998/#1A1D23 4,8:1. Em ambos, o texto sobre superfície e sobre fundo elevado fica acima de 4,5:1.
  */
 
-:root,
-:root[data-theme="dark"] {
-  color-scheme: dark;
+/* Tema claro (padrão). O seletor :root:not([data-theme]) tem a mesma força do usado pelo Pico e vem depois dele. */
+:root:not([data-theme]) {
+  color-scheme: light dark;
 
-  /* Tokens de marca */
-  --nb-fundo: #0b0a1f;
-  --nb-superficie: #15133a;
-  --nb-elevada: #1e1b4b;
-  --nb-borda: #2e2a6b;
-  --nb-borda-campo: #6b64b8;
-  --nb-texto: #f5f3ff;
-  --nb-texto-suave: #c4b5fd;
-  --nb-violeta: #8b5cf6;
-  --nb-violeta-botao: #7c3aed;
-  --nb-violeta-botao-hover: #6d28d9;
-  --nb-violeta-link: #a78bfa;
-  --nb-azul: #3b82f6;
-  --nb-magenta: #c026d3;
-  --nb-vermelho: #e11d48;
-  --nb-erro-texto: #fb7185;
+  --painel-fundo: #ffffff;
+  --painel-superficie: #f6f7f9;
+  --painel-elevada: #eceef2;
+  --painel-borda: #d0d5dd;
+  --painel-borda-campo: #6b7280;
+  --painel-texto: #1a1d23;
+  --painel-texto-suave: #4b5563;
+  --painel-link: #1d4ed8;
+  --painel-link-hover: #1e40af;
+  --painel-acao: #1d4ed8;
+  --painel-acao-hover: #1e40af;
+  --painel-foco: #1d4ed8;
+  --painel-erro-texto: #b91c1c;
+  --painel-sucesso-texto: #166534;
+  --painel-sucesso-borda: #15803d;
+  --painel-perigo: #b91c1c;
+  --painel-perigo-hover: #991b1b;
 
   /* Sobrescritas do Pico */
-  --pico-background-color: var(--nb-fundo);
-  --pico-color: var(--nb-texto);
-  --pico-muted-color: var(--nb-texto-suave);
-  --pico-muted-border-color: var(--nb-borda);
-  --pico-primary: var(--nb-violeta-link);
-  --pico-primary-background: var(--nb-violeta-botao);
-  --pico-primary-border: var(--nb-violeta-botao);
-  --pico-primary-underline: rgb(167 139 250 / 50%);
-  --pico-primary-hover: #c4b5fd;
-  --pico-primary-hover-background: var(--nb-violeta-botao-hover);
-  --pico-primary-hover-border: var(--nb-violeta-botao-hover);
+  --pico-background-color: var(--painel-fundo);
+  --pico-color: var(--painel-texto);
+  --pico-muted-color: var(--painel-texto-suave);
+  --pico-muted-border-color: var(--painel-borda);
+  --pico-primary: var(--painel-link);
+  --pico-primary-background: var(--painel-acao);
+  --pico-primary-border: var(--painel-acao);
+  --pico-primary-underline: rgb(29 78 216 / 50%);
+  --pico-primary-hover: var(--painel-link-hover);
+  --pico-primary-hover-background: var(--painel-acao-hover);
+  --pico-primary-hover-border: var(--painel-acao-hover);
   --pico-primary-hover-underline: var(--pico-primary-hover);
-  --pico-primary-focus: rgb(59 130 246 / 55%);
+  --pico-primary-focus: rgb(29 78 216 / 40%);
   --pico-primary-inverse: #fff;
-  --pico-h1-color: var(--nb-texto);
-  --pico-h2-color: var(--nb-texto);
-  --pico-h3-color: var(--nb-texto);
-  --pico-card-background-color: var(--nb-superficie);
-  --pico-card-border-color: var(--nb-borda);
-  --pico-card-sectioning-background-color: var(--nb-elevada);
-  --pico-form-element-background-color: var(--nb-superficie);
-  --pico-form-element-border-color: var(--nb-borda-campo);
-  --pico-form-element-color: var(--nb-texto);
-  --pico-form-element-focus-color: var(--nb-azul);
-  --pico-form-element-active-border-color: var(--nb-azul);
-  --pico-form-element-placeholder-color: var(--nb-texto-suave);
-  --pico-form-element-invalid-border-color: var(--nb-erro-texto);
-  --pico-form-element-invalid-active-border-color: var(--nb-erro-texto);
-  --pico-form-element-invalid-focus-color: var(--nb-erro-texto);
-  --pico-switch-checked-background-color: var(--nb-violeta-botao);
+  --pico-h1-color: var(--painel-texto);
+  --pico-h2-color: var(--painel-texto);
+  --pico-h3-color: var(--painel-texto);
+  --pico-card-background-color: var(--painel-superficie);
+  --pico-card-border-color: var(--painel-borda);
+  --pico-card-sectioning-background-color: var(--painel-elevada);
+  --pico-form-element-background-color: var(--painel-superficie);
+  --pico-form-element-border-color: var(--painel-borda-campo);
+  --pico-form-element-color: var(--painel-texto);
+  --pico-form-element-focus-color: var(--painel-foco);
+  --pico-form-element-active-border-color: var(--painel-foco);
+  --pico-form-element-placeholder-color: var(--painel-texto-suave);
+  --pico-form-element-invalid-border-color: var(--painel-erro-texto);
+  --pico-form-element-invalid-active-border-color: var(--painel-erro-texto);
+  --pico-form-element-invalid-focus-color: var(--painel-erro-texto);
+  --pico-switch-checked-background-color: var(--painel-acao);
   --pico-border-radius: 0.5rem;
 }
 
+/* Tema escuro: mesmas variáveis, valores próprios */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --painel-fundo: #111317;
+    --painel-superficie: #1a1d23;
+    --painel-elevada: #242933;
+    --painel-borda: #394150;
+    --painel-borda-campo: #808998;
+    --painel-texto: #eceff4;
+    --painel-texto-suave: #a9b1bf;
+    --painel-link: #8ab4ff;
+    --painel-link-hover: #b5cfff;
+    --painel-acao: #2f5fd0;
+    --painel-acao-hover: #254fb5;
+    --painel-foco: #8ab4ff;
+    --painel-erro-texto: #ff9a9a;
+    --painel-sucesso-texto: #6ee7a0;
+    --painel-sucesso-borda: #4ade80;
+
+    --pico-primary-underline: rgb(138 180 255 / 50%);
+    --pico-primary-focus: rgb(138 180 255 / 45%);
+  }
+}
+
 body {
-  background:
-    radial-gradient(60rem 30rem at 85% -10%, rgb(139 92 246 / 22%), transparent 70%),
-    radial-gradient(45rem 28rem at -10% 10%, rgb(59 130 246 / 14%), transparent 70%),
-    var(--nb-fundo);
-  background-attachment: fixed;
+  background: var(--painel-fundo);
   display: flex;
   flex-direction: column;
   min-height: 100vh;
@@ -83,12 +106,12 @@ main:focus {
 
 /* Foco visível em todos os controles (WCAG 2.4.7 / 2.4.11) */
 :focus-visible {
-  outline: 0.1875rem solid var(--nb-azul);
+  outline: 0.1875rem solid var(--painel-foco);
   outline-offset: 0.1875rem;
 }
 
 .pular-conteudo {
-  background: var(--nb-violeta-botao);
+  background: var(--painel-acao);
   border-radius: 0 0 var(--pico-border-radius) var(--pico-border-radius);
   color: #fff;
   left: 1rem;
@@ -105,8 +128,8 @@ main:focus {
 
 /* Cabeçalho */
 .topo {
-  background: rgb(21 19 58 / 85%);
-  border-bottom: 1px solid var(--nb-borda);
+  background: var(--painel-superficie);
+  border-bottom: 1px solid var(--painel-borda);
 }
 
 .topo-conteudo {
@@ -120,26 +143,26 @@ main:focus {
 
 .marca {
   align-items: center;
-  color: var(--nb-texto);
+  color: var(--painel-texto);
   display: inline-flex;
   gap: 0.75rem;
+  max-width: 100%;
+  min-width: 0; /* sem isso o item flex não encolhe abaixo do nome e um nome longo estoura o cabeçalho */
   text-decoration: none;
 }
 
-.marca img {
-  height: 2.5rem;
-  width: 2.5rem;
-}
-
+/* O nome do bot vem do Discord (até 32 caracteres, sem espaços): quebra em qualquer ponto em vez de estourar a tela de 360 px */
 .marca-nome {
   font-size: 1.25rem;
   font-weight: 700;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .marca-selo {
-  border: 1px solid var(--nb-violeta-link);
+  border: 1px solid var(--painel-borda-campo);
   border-radius: 999px;
-  color: var(--nb-texto-suave);
+  color: var(--painel-texto-suave);
   font-size: 0.75rem;
   letter-spacing: 0.05em;
   padding: 0.125rem 0.625rem;
@@ -155,7 +178,7 @@ main:focus {
 }
 
 .usuario-avatar {
-  background: var(--nb-elevada);
+  background: var(--painel-elevada);
   border-radius: 50%;
   height: 2rem;
   width: 2rem;
@@ -173,18 +196,18 @@ main:focus {
 }
 
 .botao-sair {
-  --pico-color: var(--nb-texto-suave);
-  --pico-border-color: var(--nb-borda-campo);
+  --pico-color: var(--painel-texto-suave);
+  --pico-border-color: var(--painel-borda-campo);
   --pico-background-color: transparent;
-  color: var(--nb-texto-suave);
+  color: var(--painel-texto-suave);
   margin: 0;
   padding: 0.375rem 1rem;
   width: auto;
 }
 
 .botao-sair:hover {
-  background: var(--nb-elevada);
-  color: var(--nb-texto);
+  background: var(--painel-elevada);
+  color: var(--painel-texto);
 }
 
 @media (max-width: 480px) {
@@ -201,20 +224,13 @@ main:focus {
   text-align: center;
 }
 
-.boas-vindas-logo {
-  filter: drop-shadow(0 0 1.5rem rgb(139 92 246 / 45%));
-  height: 7.5rem;
-  margin-bottom: 1rem;
-  width: 7.5rem;
-}
-
 .lead {
-  color: var(--nb-texto-suave);
+  color: var(--painel-texto-suave);
   font-size: 1.125rem;
 }
 
 .nota {
-  color: var(--nb-texto-suave);
+  color: var(--painel-texto-suave);
   font-size: 0.9rem;
 }
 
@@ -225,10 +241,7 @@ main:focus {
 }
 
 .erro-codigo {
-  background: linear-gradient(90deg, var(--nb-azul), var(--nb-violeta), var(--nb-magenta));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--painel-texto-suave);
   font-size: clamp(4rem, 18vw, 7rem);
   font-weight: 800;
   line-height: 1;
@@ -241,10 +254,10 @@ main:focus {
 }
 
 .aviso {
-  background: var(--nb-superficie);
-  border: 1px solid var(--nb-erro-texto);
+  background: var(--painel-superficie);
+  border: 1px solid var(--painel-erro-texto);
   border-radius: var(--pico-border-radius);
-  color: var(--nb-erro-texto);
+  color: var(--painel-erro-texto);
   padding: 0.75rem 1rem;
 }
 
@@ -261,8 +274,8 @@ main:focus {
 
 /* Rodapé */
 .rodape {
-  border-top: 1px solid var(--nb-borda);
-  color: var(--nb-texto-suave);
+  border-top: 1px solid var(--painel-borda);
+  color: var(--painel-texto-suave);
   flex-shrink: 0;
   font-size: 0.875rem;
   padding-block: 1.5rem;
@@ -271,6 +284,40 @@ main:focus {
 
 .rodape p {
   margin: 0;
+}
+
+.rodape-linha {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  justify-content: center;
+}
+
+/* Botão do GitHub (ícone): alvo de 2,25 rem, acima do mínimo de 24 px do WCAG 2.5.8 */
+.rodape-github {
+  align-items: center;
+  border: 1px solid var(--painel-borda-campo);
+  border-radius: 50%;
+  color: var(--painel-texto-suave);
+  display: inline-flex;
+  height: 2.25rem;
+  justify-content: center;
+  width: 2.25rem;
+}
+
+.rodape-github:hover {
+  background: var(--painel-elevada);
+  color: var(--painel-texto);
+}
+
+.rodape-github::before {
+  background-color: currentcolor;
+  content: "";
+  height: 1.25rem;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%3E%3Cpath%20d='M8%200c4.42%200%208%203.58%208%208a8.013%208.013%200%200%201-5.45%207.59c-.4.08-.55-.17-.55-.38%200-.27.01-1.13.01-2.2%200-.75-.25-1.23-.54-1.48%201.78-.2%203.65-.88%203.65-3.95%200-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12%200%200-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68%200-1.36.09-2%20.27-1.53-1.03-2.2-.82-2.2-.82-.44%201.1-.16%201.92-.08%202.12-.51.56-.82%201.28-.82%202.15%200%203.06%201.86%203.75%203.64%203.95-.23.2-.44.55-.51%201.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82%201.13.16.45.68%201.31%202.69.94%200%20.67.01%201.3.01%201.49%200%20.21-.15.45-.55.38A7.995%207.995%200%200%201%200%208c0-4.42%203.58-8%208-8Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%3E%3Cpath%20d='M8%200c4.42%200%208%203.58%208%208a8.013%208.013%200%200%201-5.45%207.59c-.4.08-.55-.17-.55-.38%200-.27.01-1.13.01-2.2%200-.75-.25-1.23-.54-1.48%201.78-.2%203.65-.88%203.65-3.95%200-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12%200%200-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68%200-1.36.09-2%20.27-1.53-1.03-2.2-.82-2.2-.82-.44%201.1-.16%201.92-.08%202.12-.51.56-.82%201.28-.82%202.15%200%203.06%201.86%203.75%203.64%203.95-.23.2-.44.55-.51%201.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82%201.13.16.45.68%201.31%202.69.94%200%20.67.01%201.3.01%201.49%200%20.21-.15.45-.55.38A7.995%207.995%200%200%201%200%208c0-4.42%203.58-8%208-8Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  width: 1.25rem;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -290,7 +337,7 @@ main:focus {
 
 .menu-principal a {
   align-items: center;
-  color: var(--nb-texto-suave);
+  color: var(--painel-texto-suave);
   display: inline-flex;
   gap: 0.375rem;
   padding: 0.25rem 0.5rem;
@@ -299,7 +346,7 @@ main:focus {
 }
 
 .menu-principal a:hover {
-  color: var(--nb-texto);
+  color: var(--painel-texto);
   text-decoration: underline;
 }
 
@@ -313,8 +360,8 @@ main:focus {
 }
 
 .cartao-servidor {
-  background: var(--nb-superficie);
-  border: 1px solid var(--nb-borda);
+  background: var(--painel-superficie);
+  border: 1px solid var(--painel-borda);
   border-radius: var(--pico-border-radius);
   display: flex;
   flex-direction: column;
@@ -341,7 +388,7 @@ main:focus {
 }
 
 .servidor-icone {
-  background: var(--nb-elevada);
+  background: var(--painel-elevada);
   border-radius: 50%;
   flex-shrink: 0;
   height: 48px;
@@ -355,7 +402,7 @@ main:focus {
 
 .servidor-inicial {
   align-items: center;
-  color: var(--nb-texto);
+  color: var(--painel-texto);
   display: inline-flex;
   font-size: 1.25rem;
   font-weight: 700;
@@ -384,8 +431,8 @@ main:focus {
 }
 
 .estado-vazio {
-  background: var(--nb-superficie);
-  border: 1px dashed var(--nb-borda);
+  background: var(--painel-superficie);
+  border: 1px dashed var(--painel-borda);
   border-radius: var(--pico-border-radius);
   margin-top: 1.5rem;
   padding: 2rem 1rem;
@@ -415,8 +462,8 @@ main:focus {
 }
 
 .bot-item {
-  background: var(--nb-superficie);
-  border: 1px solid var(--nb-borda);
+  background: var(--painel-superficie);
+  border: 1px solid var(--painel-borda);
   border-radius: var(--pico-border-radius);
   padding: 0.5rem 0.75rem;
 }
@@ -434,10 +481,10 @@ main:focus {
 
 .categoria-item {
   align-items: center;
-  background: var(--nb-superficie);
-  border: 1px solid var(--nb-borda);
+  background: var(--painel-superficie);
+  border: 1px solid var(--painel-borda);
   border-radius: var(--pico-border-radius);
-  color: var(--nb-texto-suave);
+  color: var(--painel-texto-suave);
   display: flex;
   gap: 0.625rem;
   padding: 0.75rem 1rem;
@@ -456,22 +503,22 @@ main:focus {
 }
 
 .categoria-link {
-  color: var(--nb-texto);
+  color: var(--painel-texto);
   text-decoration: none;
 }
 
 .categoria-link:hover {
-  background: var(--nb-elevada);
+  background: var(--painel-elevada);
 }
 
 .categoria-link[aria-current="page"] {
-  background: var(--nb-elevada);
-  border-color: var(--pico-primary-hover-background, #8B5CF6);
+  background: var(--painel-elevada);
+  border-color: var(--painel-link);
   font-weight: 600;
 }
 
 .migalhas {
-  color: var(--nb-texto-suave);
+  color: var(--painel-texto-suave);
   font-size: 0.875rem;
 }
 
@@ -497,8 +544,8 @@ main:focus {
 }
 
 .bloco-config {
-  background: var(--nb-superficie);
-  border: 1px solid var(--nb-borda);
+  background: var(--painel-superficie);
+  border: 1px solid var(--painel-borda);
   border-radius: var(--pico-border-radius);
   margin-bottom: 1.5rem;
   max-width: 40rem;
@@ -511,14 +558,14 @@ main:focus {
 }
 
 .opcoes {
-  border: 1px solid var(--nb-borda);
+  border: 1px solid var(--painel-borda);
   border-radius: var(--pico-border-radius);
   margin-bottom: 1rem;
   padding: 0.75rem 1rem;
 }
 
 .opcoes legend {
-  color: var(--nb-texto-suave);
+  color: var(--painel-texto-suave);
   font-size: 0.875rem;
   padding-inline: 0.25rem;
 }
@@ -536,19 +583,19 @@ main:focus {
 }
 
 .mensagem-sucesso {
-  background: var(--nb-superficie);
-  border-color: #34D399;
-  color: #6EE7B7;
+  background: var(--painel-superficie);
+  border-color: var(--painel-sucesso-borda);
+  color: var(--painel-sucesso-texto);
 }
 
 .mensagem-erro {
-  background: var(--nb-superficie);
-  border-color: var(--nb-erro-texto);
-  color: var(--nb-erro-texto);
+  background: var(--painel-superficie);
+  border-color: var(--painel-erro-texto);
+  color: var(--painel-erro-texto);
 }
 
 .erro-campo {
-  color: var(--nb-erro-texto);
+  color: var(--painel-erro-texto);
   display: block;
   font-weight: 600;
 }
@@ -601,7 +648,7 @@ main:focus {
 }
 
 .contagem-links {
-  color: var(--nb-texto-suave);
+  color: var(--painel-texto-suave);
   margin: 0;
 }
 
@@ -615,7 +662,7 @@ main:focus {
 
 .item-link {
   align-items: flex-start;
-  border: 1px solid var(--nb-borda);
+  border: 1px solid var(--painel-borda);
   border-radius: var(--pico-border-radius);
   display: flex;
   flex-wrap: wrap;
@@ -640,12 +687,12 @@ main:focus {
 }
 
 .item-link-url {
-  color: var(--nb-link, #A78BFA);
+  color: var(--painel-link);
   font-size: 0.875rem;
 }
 
 .item-link-descricao {
-  color: var(--nb-texto-suave);
+  color: var(--painel-texto-suave);
   font-size: 0.875rem;
   overflow-wrap: anywhere;
 }
@@ -681,21 +728,21 @@ main:focus {
 }
 
 .botao-perigo {
-  --pico-color: var(--nb-erro-texto);
-  --pico-border-color: var(--nb-erro-texto);
+  --pico-color: var(--painel-erro-texto);
+  --pico-border-color: var(--painel-erro-texto);
 }
 
 .aviso-info {
-  background: var(--nb-superficie);
-  border: 1px solid var(--nb-borda);
+  background: var(--painel-superficie);
+  border: 1px solid var(--painel-borda);
   border-radius: var(--pico-border-radius);
-  color: var(--nb-texto-suave);
+  color: var(--painel-texto-suave);
   padding: 0.75rem 1rem;
 }
 
 /* Item 17 — playlists do servidor */
 .item-link-ordem {
-  color: var(--nb-texto-suave);
+  color: var(--painel-texto-suave);
   font-variant-numeric: tabular-nums;
   margin-right: 0.25rem;
 }
@@ -710,9 +757,9 @@ main:focus {
 }
 
 .chip-genero {
-  border: 1px solid var(--nb-borda);
+  border: 1px solid var(--painel-borda);
   border-radius: 999px;
-  color: var(--nb-texto-suave);
+  color: var(--painel-texto-suave);
   font-size: 0.8125rem;
   line-height: 1.4;
   list-style: none;
@@ -721,8 +768,8 @@ main:focus {
 }
 
 .relatorio-importacao {
-  background: var(--nb-superficie);
-  border: 1px solid var(--nb-borda);
+  background: var(--painel-superficie);
+  border: 1px solid var(--painel-borda);
   border-radius: var(--pico-border-radius);
   margin-bottom: 1rem;
   padding: 0.75rem 1rem;
@@ -733,7 +780,7 @@ main:focus {
 }
 
 .relatorio-ignoradas {
-  color: var(--nb-texto-suave);
+  color: var(--painel-texto-suave);
   font-size: 0.875rem;
   margin: 0.5rem 0 0;
   padding-left: 1.25rem;
@@ -745,8 +792,8 @@ main:focus {
 
 /* Etapa 4c — Jukebox (configurar, redefinir, tarefas) */
 .tarefa {
-  background: var(--nb-superficie);
-  border: 1px solid var(--nb-borda);
+  background: var(--painel-superficie);
+  border: 1px solid var(--painel-borda);
   border-radius: var(--pico-border-radius);
   margin-bottom: 1.5rem;
   max-width: 52rem;
@@ -763,19 +810,19 @@ main:focus {
 }
 
 .tarefa-ok {
-  border-color: #34D399;
+  border-color: var(--painel-sucesso-borda);
 }
 
 .tarefa-erro {
-  border-color: var(--nb-erro-texto);
+  border-color: var(--painel-erro-texto);
 }
 
 .tarefa-erro .tarefa-mensagem {
-  color: var(--nb-erro-texto);
+  color: var(--painel-erro-texto);
 }
 
 .bloco-perigo {
-  border-color: var(--nb-erro-texto);
+  border-color: var(--painel-erro-texto);
 }
 
 /* Rádios — configurar e redefinir (contrato-nomes-radios §4.3) */
@@ -790,7 +837,7 @@ main:focus {
 }
 
 .radio-redefinir {
-  border: 1px solid var(--nb-erro-texto);
+  border: 1px solid var(--painel-erro-texto);
   border-radius: var(--pico-border-radius);
   display: grid;
   gap: 0.75rem;
@@ -804,16 +851,16 @@ main:focus {
 }
 
 .botao-perigo-cheio {
-  --pico-background-color: #BE123C;
-  --pico-border-color: #BE123C;
-  --pico-color: #FFFFFF;
+  --pico-background-color: var(--painel-perigo);
+  --pico-border-color: var(--painel-perigo);
+  --pico-color: #fff;
   width: auto;
 }
 
 .botao-perigo-cheio:hover,
 .botao-perigo-cheio:focus {
-  --pico-background-color: #9F1239;
-  --pico-border-color: #9F1239;
+  --pico-background-color: var(--painel-perigo-hover);
+  --pico-border-color: var(--painel-perigo-hover);
 }
 
 /* Etapa 5 — minha conta */
@@ -834,13 +881,6 @@ main:focus {
   flex-shrink: 0;
   height: 1.25rem;
   width: 1.25rem;
-}
-
-.categoria-link:hover .icone,
-.categoria-link[aria-current="page"] .icone,
-.menu-principal a:hover .icone,
-.secao-link:hover .icone {
-  filter: drop-shadow(0 0.0625rem 0.25rem rgb(139 92 246 / 55%));
 }
 
 /* A lista de seções da conta é o <nav ul> flex do Pico: com os ícones ela precisa quebrar linha em telas estreitas (a grade de categorias não é flex e não muda) */
@@ -886,7 +926,7 @@ main:focus {
 }
 
 .cascata-descricao {
-  color: var(--nb-texto-suave);
+  color: var(--painel-texto-suave);
   display: block;
   margin-top: -0.5rem;
   margin-bottom: 1rem;
@@ -908,8 +948,8 @@ main:focus {
 
 /* Logo da estação (PNG servido pelo próprio painel; sem logo, o ícone de onda sonora) */
 .estacao-logo {
-  background: var(--nb-elevada);
-  border: 1px solid var(--nb-borda);
+  background: var(--painel-elevada);
+  border: 1px solid var(--painel-borda);
   border-radius: 0.5rem;
   flex-shrink: 0;
   height: 2.5rem;
@@ -928,7 +968,7 @@ main:focus {
 
 .paginacao {
   align-items: center;
-  color: var(--nb-texto-suave);
+  color: var(--painel-texto-suave);
   display: flex;
   flex-wrap: wrap;
   font-variant-numeric: tabular-nums;
@@ -943,7 +983,7 @@ main:focus {
 }
 
 .aviso-estacao {
-  color: var(--nb-texto);
+  color: var(--painel-texto);
 }
 
 .form-apagar {
@@ -966,7 +1006,7 @@ main:focus {
 
 /* Playlists por escopo (item 10): filtro Jukebox | Rádio, só visual, sem JS (CSS :has) */
 .filtro-escopo {
-  border: 1px solid var(--nb-borda);
+  border: 1px solid var(--painel-borda);
   border-radius: var(--pico-border-radius);
   display: inline-flex;
   margin: 0;
@@ -983,35 +1023,35 @@ main:focus {
 }
 
 .filtro-escopo label {
-  color: var(--nb-texto-suave);
+  color: var(--painel-texto-suave);
   cursor: pointer;
   margin: 0;
   padding: 0.375rem 0.875rem;
 }
 
 .filtro-escopo label + .filtro-escopo-opcao + label {
-  border-left: 1px solid var(--nb-borda);
+  border-left: 1px solid var(--painel-borda);
 }
 
 .filtro-escopo-opcao:checked + label {
-  background: var(--nb-elevada);
-  color: var(--nb-texto);
+  background: var(--painel-elevada);
+  color: var(--painel-texto);
   font-weight: 600;
 }
 
 .filtro-escopo-opcao:focus-visible + label {
-  outline: 2px solid var(--nb-violeta);
+  outline: 2px solid var(--painel-foco);
   outline-offset: -2px;
 }
 
 .contagem-escopo {
-  color: var(--nb-texto-suave);
+  color: var(--painel-texto-suave);
   font-size: 0.875em;
   font-weight: 400;
 }
 
 .escopo-bloco {
-  border-top: 1px solid var(--nb-borda);
+  border-top: 1px solid var(--painel-borda);
   margin-top: 1rem;
   padding-top: 1rem;
 }
