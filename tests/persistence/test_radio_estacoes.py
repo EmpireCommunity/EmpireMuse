@@ -232,11 +232,13 @@ class TestDeleteRacesAnAssignment:
                 break
             await asyncio.sleep(0)
         proceed.set()
-        results = await asyncio.gather(deleting, assigning, return_exceptions=True)
+        deleted, assigned = await asyncio.gather(deleting, assigning, return_exceptions=True)
 
-        gone = await world.stations.get(GUILD, station.id) is None
-        points = (await world.store.get(radio.id)).source.get("station") == station.id
-        assert not (gone and points), results
+        # nesta ordem o apagar segura a trava: termina normalmente, a estação some e a atribuição, que lê depois, é recusada
+        assert deleted is None
+        assert isinstance(assigned, RadioInvalid), assigned
+        assert await world.stations.get(GUILD, station.id) is None
+        assert (await world.store.get(radio.id)).source.get("station") != station.id
 
 
 class TestEditingReloadsTheRadiosThatPlayTheStation:
