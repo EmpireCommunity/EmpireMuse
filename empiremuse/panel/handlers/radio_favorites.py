@@ -68,7 +68,7 @@ class RadioFavoritesHandler(RadioFavoritesBase):
     """``POST /painel/servidores/<gid>/radios/favoritas``: adiciona ou remove uma favorita do servidor."""
 
     async def _get(self, guild_id: str) -> None:
-        self.redirect(f"{SERVERS_PATH}/{guild_id}/{RADIOS_CATEGORY}")
+        self.redirect(f"{SERVERS_PATH}/{int(guild_id)}/{RADIOS_CATEGORY}")
 
     async def _post(self, guild_id: str) -> None:
         if len(self.request.body) > MAX_BODY_BYTES:

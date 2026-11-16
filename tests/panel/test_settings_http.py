@@ -98,8 +98,6 @@ class AccessTest(HttpBase):
             "membro comum no bot": "600",
             "fora da sessão (com bot e admin)": "500",
             "inexistente": "999",
-            "não numérico": "abc",
-            "gigante": "9" * 25,
         }
 
         def check(case):
@@ -112,7 +110,14 @@ class AccessTest(HttpBase):
                 assert post.code == 404, f"POST {category}: {post.code}"
                 assert normalize(post.body.decode()) == reference, f"POST {category}: página diferente"
 
+        def check_malformed(gid):  # nunca é um servidor: a rota recusa antes do handler, sem ler nada
+            for category in CATEGORIES:
+                assert browser.get(f"/painel/servidores/{gid}/{category}").code == 404, f"GET {category}"
+                post = self.post_raw(browser, f"/painel/servidores/{gid}/{category}", [("versao", "0" * 16)])
+                assert post.code == 404, f"POST {category}: {post.code}"
+
         Each.run(list(denied.items()), check)
+        Each.run(["abc", "9" * 25], check_malformed)
         assert self.db.writes == [], "negado não grava"
         assert len(self.db.reads) == reads_before, "negado não pode nem ler dados do servidor"
 

@@ -276,7 +276,8 @@ class EraseOutcomesTest(EraseBase):
         response = self.post_erase(browser)
         body = response.body.decode().lower()
         assert response.code == 200 and response.headers["Cache-Control"] == "no-store"
-        assert "apagamos parte" in body and "4242" not in body and "radios" not in body
+        # a contagem como número isolado (4242 ou 4.242): o token xsrf leva um timestamp que pode conter "4242"
+        assert "apagamos parte" in body and not re.search(r"(?<![\d.])4\.?242(?![\d.])", body) and "radios" not in body
         assert "tente" not in body and "novamente" not in body, "PARTIAL não promete que repetir resolve"
         assert SESSION_COOKIE not in browser.cookies
 
