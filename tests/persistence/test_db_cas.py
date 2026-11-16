@@ -6,6 +6,7 @@ Documento gravado antes do compare-and-set não tem ``rev``: as regras o leem co
 
 import asyncio
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from cachetools import TTLCache
@@ -106,7 +107,7 @@ def test_filtro_do_mongo_casa_rev_ausente_so_no_rev_0():
 
 
 def _mongo_falso(tabela) -> MongoDatabase:
-    banco = MongoDatabase.__new__(MongoDatabase)
+    banco: Any = MongoDatabase.__new__(MongoDatabase)
     banco.cache = TTLCache(maxsize=10, ttl=300)
     banco._connect = {BANCO: {COLECAO: tabela}}
     return banco

@@ -22,6 +22,7 @@ import traceback
 from collections import deque
 from dataclasses import dataclass
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import aiohttp
@@ -296,7 +297,7 @@ class _UsuarioDoBot:
 async def _stats(op: str, usuario: int, token_no_banco: str, auth: bool = False) -> dict:
     """Roda o process_rpc real e devolve o dict que ele entrega ao ``ws_client.send`` (op: update, idle ou close)."""
     enviados: list[dict] = []
-    jogador = object.__new__(LavalinkPlayer)
+    jogador: Any = object.__new__(LavalinkPlayer)  # Any: o jogador é montado sem __init__, com fakes nos atributos
     jogador.bot = SimpleNamespace(
         user=_UsuarioDoBot(),
         config={"ENABLE_RPC_AUTH": auth, "INVITE_PERMISSIONS": 3145728, "SUPPORT_SERVER": "https://exemplo.invalid/s"},
@@ -381,7 +382,7 @@ async def servidor_aiohttp_falso():
         runners.append(runner)
         site = web.TCPSite(runner, "127.0.0.1", 0)
         await site.start()
-        return f"ws://127.0.0.1:{site._server.sockets[0].getsockname()[1]}/ws"
+        return f"ws://127.0.0.1:{cast(Any, site._server).sockets[0].getsockname()[1]}/ws"
 
     yield montar
     for runner in runners:
@@ -400,7 +401,7 @@ def _bot_falso(bot_id: int, jogadores: dict | None = None) -> SimpleNamespace:
 def _wsclient(url: str, bots: list, tmp_path, monkeypatch) -> WSClient:
     monkeypatch.setenv("EMPIREMUSE_HOME", str(tmp_path))
     pool = BotPool()
-    pool.get_all_bots = lambda: bots
+    cast(Any, pool).get_all_bots = lambda: bots
     return WSClient(url, pool)
 
 
@@ -587,7 +588,7 @@ async def test_registro_de_bot_fecha_com_4401_tambem_quando_o_segredo_nao_foi_co
 
 async def _wsclient_interno(servidor: _Servidor) -> WSClient:
     """O WSClient como o BotPool o usa: aponta para o próprio servidor, com a MESMA pool/config, sem segredo à mão."""
-    servidor.pool.get_all_bots = lambda: [_bot_falso(_snowflake())]
+    cast(Any, servidor.pool).get_all_bots = lambda: [_bot_falso(_snowflake())]
     client = WSClient(servidor.url_ws, servidor.pool)
     await servidor.depois_de("mensagens", client.connect)  # o registro do bot chega ao servidor e é tratado
     client.clear_tasks()
