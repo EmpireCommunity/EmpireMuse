@@ -122,6 +122,7 @@ def _run_in_namespace(roteiro: str, list_dir: Path) -> subprocess.CompletedProce
     if os.geteuid() != 0 or shutil.which("unshare") is None or shutil.which("iptables") is None:
         pytest.skip("precisa de root, unshare e iptables (rodado à mão e no passo dedicado do CI)")
     env = {"PATH": os.environ["PATH"], "SCRIPT": str(SCRIPT), "CF_FW_LIST_DIR": str(list_dir), "CF_FW_PUB_IF": "eth0"}
+    env["CF_FW_LOCK_FILE"] = str(list_dir / "cf-firewall.lock")
     guarda = f"set -eu\n{EMPTY_NAMESPACE_PROBE} || {{ echo 'namespace não está vazio' >&2; exit 99; }}\n"
     result = subprocess.run(
         ["unshare", "-n", "sh", "-c", guarda + roteiro],
@@ -181,10 +182,14 @@ def test_ipv6_publicado_pelo_docker_proxy_e_filtrado_pela_input(tmp_path: Path) 
     ip6tables -A INPUT -p tcp --dport 22 -j ACCEPT
     sh "$SCRIPT" on >/dev/null 2>&1
     echo "input-sem-listener=$(ip6tables -S INPUT | grep -c -- '-j CF-ONLY')"
-    python3 -c 'import socket,time
-s=socket.socket(socket.AF_INET6); s.bind(("::",443)); s.listen(1); time.sleep(30)' &
+    # sincronização por fifo, sem sleep: o listener avisa que já deu listen e vive até o fifo de entrada fechar
+    mkfifo "$FIFOS/in" "$FIFOS/ready"
+    python3 -c 'import socket,sys
+s=socket.socket(socket.AF_INET6); s.bind(("::",443)); s.listen(1); print("ready", flush=True); sys.stdin.read()' \
+        < "$FIFOS/in" > "$FIFOS/ready" &
     pid=$!
-    for _ in $(seq 50); do [ -n "$(ss -H -ltn -6 'sport = :443')" ] && break; sleep 0.1; done
+    exec 7> "$FIFOS/in"
+    read -r _ < "$FIFOS/ready"
     echo "listener=$(ss -H -ltn -6 'sport = :443' | wc -l)"
     if sh "$SCRIPT" status >/dev/null 2>&1; then echo "status-depois=ok"; fi
     echo "ssh-intacto=$(ip6tables -S INPUT | grep -c -- '--dport 22')"
@@ -193,12 +198,14 @@ s=socket.socket(socket.AF_INET6); s.bind(("::",443)); s.listen(1); time.sleep(30
     if sh "$SCRIPT" status >/dev/null 2>&1; then echo "status-sem-gancho=ok"; fi
     sh "$SCRIPT" off >/dev/null
     echo "depois=$(ip6tables -S | grep -c CF-ONLY || true)"
-    kill $pid
+    exec 7>&-
+    wait $pid
     """
     if shutil.which("ss") is None:
         pytest.skip("precisa de ss para o listener ser detectado")
+    (tmp_path / "fifos").mkdir()
 
-    result = _run_in_namespace(roteiro, tmp_path)
+    result = _run_in_namespace(roteiro.replace("$FIFOS", f"{tmp_path}/fifos"), tmp_path)
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.split() == [
@@ -246,3 +253,54 @@ def test_falha_no_ipv6_depois_do_ipv4_desfaz_tudo(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.split() == ["restou=0"]
+
+
+def test_off_que_falha_na_remocao_nao_diz_desligado_e_sai_com_erro(tmp_path: Path) -> None:
+    """CodeRabbit: um -F/-D que falha não pode terminar em sucesso com a mensagem "desligado"."""
+    write_lists(tmp_path, V4_OK)
+    roteiro = """
+    for f in iptables ip6tables; do $f -N DOCKER-USER; $f -A DOCKER-USER -j RETURN; done
+    sh "$SCRIPT" on >/dev/null 2>&1
+    mkdir -p "$SHIM"
+    real=$(command -v iptables)
+    printf '#!/bin/sh\\ncase "$*" in "-F CF-ONLY") exit 1;; esac\\nexec %s "$@"\\n' "$real" > "$SHIM/iptables"
+    chmod +x "$SHIM/iptables"
+    if PATH="$SHIM:$PATH" sh "$SCRIPT" off >"$SHIM/out" 2>"$SHIM/err"; then echo "off=sucesso"; fi
+    echo "disse-desligado4=$(grep -c 'IPv4: desligado' "$SHIM/out" || true)"
+    echo "avisou=$(grep -c 'IPv4: FALHA' "$SHIM/err" || true)"
+    sh "$SCRIPT" off >/dev/null 2>&1
+    echo "depois=$(iptables -S | grep -c CF-ONLY || true)"
+    """
+
+    result = _run_in_namespace(roteiro.replace("$SHIM", f"{tmp_path}/shim3"), tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == ["disse-desligado4=0", "avisou=1", "depois=0"]
+
+
+def test_comandos_que_mudam_regras_esperam_o_lock_exclusivo(tmp_path: Path) -> None:
+    """CodeRabbit: on/off concorrentes se serializam; com o lock ocupado o on recusa sem tocar em regra."""
+    write_lists(tmp_path, V4_OK)
+    roteiro = """
+    for f in iptables ip6tables; do $f -N DOCKER-USER; $f -A DOCKER-USER -j RETURN; done
+    mkfifo "$FIFOS/in" "$FIFOS/held"
+    python3 -c 'import fcntl,sys
+f=open(sys.argv[1],"w"); fcntl.flock(f, fcntl.LOCK_EX); print("held", flush=True); sys.stdin.read()' "$CF_FW_LOCK_FILE" \
+        < "$FIFOS/in" > "$FIFOS/held" &
+    pid=$!
+    exec 7> "$FIFOS/in"
+    read -r _ < "$FIFOS/held"
+    if CF_FW_LOCK_TIMEOUT=1 sh "$SCRIPT" on >/dev/null 2>&1; then echo "on-com-lock-ocupado=aceito"; fi
+    if CF_FW_LOCK_TIMEOUT=1 sh "$SCRIPT" off >/dev/null 2>&1; then echo "off-com-lock-ocupado=aceito"; fi
+    echo "regras-com-lock=$(iptables -S | grep -c CF-ONLY || true)"
+    exec 7>&-
+    wait $pid
+    sh "$SCRIPT" on >/dev/null 2>&1
+    echo "regras-depois=$(iptables -S DOCKER-USER | grep -c CF-ONLY)"
+    """
+    (tmp_path / "fifos").mkdir()
+
+    result = _run_in_namespace(roteiro.replace("$FIFOS", f"{tmp_path}/fifos"), tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == ["regras-com-lock=0", "regras-depois=1"]

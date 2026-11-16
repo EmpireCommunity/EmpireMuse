@@ -9,7 +9,7 @@
 #   check         só valida as duas listas e imprime as contagens (não precisa de root nem de iptables)
 #   print         imprime o que o `on` aplicaria, sem aplicar nada (não precisa de root)
 #   arm-undo [M]  agenda `off` daqui a M minutos (1 a 60; padrão 10) com systemd-run: rede de segurança antes do `on`
-#   cancel-undo   cancela o desfazer agendado
+#   cancel-undo   cancela o desfazer agendado (e avisa, sem confirmar, se ele já começou)
 #
 # Como funciona: o Docker publica a 443 por DNAT, então o tráfego passa pela FORWARD e pela DOCKER-USER, não pelo INPUT.
 # O gancho casa SÓ o primeiro pacote de uma conexão nova, na direção original, com destino original na porta 443, vindo da
@@ -40,6 +40,10 @@
 # nunca fica vazia nem só com o DROP, e rodar `on` de novo (o systemd roda quando o Docker reinicia) troca as faixas sem
 # janela. O gancho entra uma vez só, depois de a cadeia estar cheia.
 #
+# Concorrência: on, off e cancel-undo rodam sob um flock exclusivo (CF_FW_LOCK_FILE, padrão /var/lock/cf-firewall.lock; espera
+# até CF_FW_LOCK_TIMEOUT segundos, padrão 60) que vale do começo ao fim do comando, inclusive o rollback. Sem isso, um `on`
+# manual e o da unit poderiam ver o gancho ausente ao mesmo tempo, e o rollback de um apagaria as regras do outro.
+#
 # Variáveis (para teste e casos especiais): CF_FW_LIST_DIR (pasta das listas), CF_FW_PUB_IF (interface pública; sem ela,
 # a da rota padrão, e para IPv6 a da rota padrão IPv6 se houver).
 set -eu
@@ -53,6 +57,8 @@ MIN_V4_PREFIX=12
 MIN_V6_PREFIX=29
 MIN_V4_COUNT=10
 MIN_V6_COUNT=5
+LOCK_FILE=${CF_FW_LOCK_FILE:-/var/lock/cf-firewall.lock}
+LOCK_TIMEOUT=${CF_FW_LOCK_TIMEOUT:-60}
 
 die() {
     echo "cf-firewall: $*" >&2
@@ -61,6 +67,16 @@ die() {
 
 need_root() {
     [ "$(id -u)" = 0 ] || die "precisa rodar como root"
+}
+
+# Reexecuta o script inteiro sob flock exclusivo (o lock dura até o processo sair). $@ = argumentos originais.
+run_locked() {
+    [ -z "${CF_FW_LOCKED:-}" ] || return 0
+    command -v flock >/dev/null 2>&1 || die "flock não encontrado (util-linux): sem ele não há exclusão mútua"
+    case $LOCK_TIMEOUT in
+        '' | *[!0-9]*) die "CF_FW_LOCK_TIMEOUT deve ser um inteiro" ;;
+    esac
+    CF_FW_LOCKED=1 exec flock -x -w "$LOCK_TIMEOUT" "$LOCK_FILE" /bin/sh "$(readlink -f "$0")" "$@"
 }
 
 # Valida uma lista e imprime as faixas normalizadas, uma por linha. Argumentos: família (4 ou 6), prefixo mínimo,
@@ -200,37 +216,56 @@ apply_family() { # $1 = 4 ou 6, $2 = faixas validadas, $3 = interface, $4 = cade
     echo "cf-firewall: IPv$1: ligado ($(printf '%s\n' "$2" | wc -l) faixas, interface $3, ganchos: $4)"
 }
 
+delete_rule() { # $1 = linha de iptables -S (-A CADEIA ...); apaga essa regra (as palavras viram argumentos de -D)
+    # shellcheck disable=SC2086
+    set -- $1
+    shift
+    "$ipt" -D "$@"
+}
+
+# Tira ganchos e cadeia. Devolve erro (e diz o que restou) se qualquer remoção falhar; só diz "desligado" se tudo saiu.
 remove_family() { # $1 = 4 ou 6
-    fam_cmd "$1"
+    fam=$1
+    fam_cmd "$fam"
+    failed=0
     for parent in DOCKER-USER INPUT; do
         "$ipt" -n -L "$parent" >/dev/null 2>&1 || continue
-        "$ipt" -S "$parent" | while read -r line; do
+        rules=$("$ipt" -S "$parent") || {
+            failed=1
+            continue
+        }
+        # here-doc, não pipe: o laço roda neste shell e não perde o status
+        while read -r line; do
             case $line in
-                "-A $parent "*" -j $CHAIN")
-                    # shellcheck disable=SC2086
-                    set -- $line
-                    shift
-                    "$ipt" -D "$@"
-                    ;;
+                "-A $parent "*" -j $CHAIN") delete_rule "$line" || failed=1 ;;
             esac
-        done
+        done <<EOF
+$rules
+EOF
     done
     if "$ipt" -n -L "$CHAIN" >/dev/null 2>&1; then
-        "$ipt" -F "$CHAIN"
-        "$ipt" -X "$CHAIN"
+        "$ipt" -F "$CHAIN" || failed=1
+        "$ipt" -X "$CHAIN" || failed=1
     fi
-    echo "cf-firewall: IPv$1: desligado"
+    if [ "$failed" = 0 ]; then
+        echo "cf-firewall: IPv$fam: desligado"
+        return 0
+    fi
+    echo "cf-firewall: IPv$fam: FALHA ao remover; restou (confira com status e rode off de novo):" >&2
+    "$ipt" -S 2>/dev/null | grep -- "$CHAIN" >&2 || true
+    return 1
 }
 
 rollback_on_error() {
     trap - EXIT
     echo "cf-firewall: falha ao aplicar: desfazendo tudo (off) para não deixar metade ligado" >&2
-    remove_family 4 || true
-    remove_family 6 || true
+    remove_family 4 || echo "cf-firewall: ATENÇÃO: o rollback do IPv4 não terminou" >&2
+    remove_family 6 || echo "cf-firewall: ATENÇÃO: o rollback do IPv6 não terminou" >&2
 }
 
 cmd_on() {
     need_root
+    run_locked on
     v4=$(valid_v4) || exit 1
     v6=$(valid_v6) || exit 1
     if4=$(public_interface -4)
@@ -246,8 +281,11 @@ cmd_on() {
 
 cmd_off() {
     need_root
-    remove_family 4
-    remove_family 6
+    run_locked off
+    rc=0
+    remove_family 4 || rc=1
+    remove_family 6 || rc=1
+    [ "$rc" = 0 ] || die "off incompleto (ver acima)"
 }
 
 hooks_count() { # $1 = família, $2 = cadeia pai
@@ -328,8 +366,17 @@ cmd_arm_undo() {
 
 cmd_cancel_undo() {
     need_root
+    run_locked cancel-undo
     if systemctl is-active --quiet "$UNDO_UNIT.timer"; then
         systemctl stop "$UNDO_UNIT.timer"
+        # O timer pode ter vencido entre o is-active e o stop: o serviço do desfazer (que roda o off) já seria dele. Parar o
+        # timer não o para, e não o interrompemos (um off pela metade é pior). Se ele começou, não confirmamos o cancelamento.
+        state=$(systemctl show -p ActiveState --value "$UNDO_UNIT.service" 2>/dev/null || true)
+        case $state in
+            active | activating | deactivating)
+                die "o desfazer JÁ COMEÇOU (serviço $state) e vai rodar o off: o cancelamento NÃO vale. Quando ele terminar, rode status e, se o firewall caiu, rode on"
+                ;;
+        esac
         echo "cf-firewall: desfazer cancelado"
     elif [ "$(hooks_count 4 DOCKER-USER)" = 0 ]; then
         echo "cf-firewall: ATENÇÃO: nenhum desfazer agendado E o gancho IPv4 não está na DOCKER-USER: o desfazer provavelmente já rodou e o firewall está DESLIGADO" >&2
