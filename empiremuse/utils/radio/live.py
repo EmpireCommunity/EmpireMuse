@@ -8,11 +8,15 @@ Muda só o que a fonte exige:
   para a reserva, a reserva volta para a principal, desde que a outra esteja saudável. Sem alternativa, a rádio fica na call em silêncio, "fora do
   ar", tentando a cada 60 s; a principal volta sozinha quando o health check a reabilita (``restore_primary``).
 - **Título** (ICY, já limpo pela R-11): vira parte do estado publicado; a página e os painéis só escapam.
+- **Tocou há pouco:** os últimos ``RECENT_TITLES`` títulos distintos seguidos, com a hora do relógio de parede das portas, SÓ em memória
+  (nunca vão ao banco, ao ``player_resume``, ao RPC, ao painel web nem ao log). Um anel por runner (uma rádio de um servidor). Limpo na
+  troca de estação (inclusive ida para a reserva e volta); mantido numa reconexão da mesma estação.
 """
 
 from __future__ import annotations
 
 import logging
+from collections import deque
 from collections.abc import Callable
 from typing import Optional
 
@@ -24,6 +28,7 @@ from empiremuse.utils.radio.service import RadioState
 logger = logging.getLogger(__name__)
 
 OUTAGE_BACKOFF_STEP = 4  # índice de 60 s em ``BACKOFF_STEPS_S``: sem alternativa, uma tentativa por minuto
+RECENT_TITLES = 5  # o anel "Tocou há pouco"
 
 
 class StationFailure(Exception):
@@ -46,6 +51,7 @@ class LiveRadioRunner(RadioRunner):
         self.title: Optional[str] = None
         self._station_fault = False  # a última tentativa falhou por culpa da estação?
         self._playing_since: Optional[float] = None
+        self._recent: deque[tuple[float, str]] = deque(maxlen=RECENT_TITLES)
 
     # ------------------------------------------------------------------ estado
 
@@ -77,12 +83,25 @@ class LiveRadioRunner(RadioRunner):
             )
 
     def set_title(self, title: Optional[str]) -> None:
-        """O título que o relay leu do fluxo (já limpo e com o teto de 1 a cada 15 s). Só vale tocando."""
+        """O título que o relay leu do fluxo (já limpo pelo ``clean_title`` e com o teto de 1 a cada 15 s). Só vale tocando."""
         if title == self.title:
             return
         self.title = title
+        if title and (not self._recent or self._recent[-1][1] != title):
+            self._recent.append((self.ports.wall(), title))
         if self.phase is Phase.PLAYING:
             self._set(Phase.PLAYING)
+
+    @property
+    def recent_titles(self) -> tuple[tuple[float, str], ...]:
+        """O anel "Tocou há pouco": ``(hora de parede, título)`` do mais antigo ao mais novo; cópia imutável.
+
+        O título JÁ vem escapado pelo ``clean_title`` (``external_text(..., markdown=True)``): o destino usa ``stored_text``, nunca
+        ``external_text`` de novo (o escape não é idempotente: sairia barra visível)."""
+        return tuple(self._recent)
+
+    def _forget_recent(self) -> None:
+        self._recent.clear()
 
     # ------------------------------------------------------------------ fonte
 
@@ -124,6 +143,7 @@ class LiveRadioRunner(RadioRunner):
         self.attempt = 0
         await self.ports.cycle_exhausted()  # type: ignore[attr-defined]
         if await self.ports.switch_source():  # type: ignore[attr-defined]
+            self._forget_recent()  # outra estação no ar (reserva ou volta): o anel era da anterior
             logger.warning("Rádio ao vivo trocou de estação")
             return
         self.outage = True
@@ -154,6 +174,7 @@ class LiveRadioRunner(RadioRunner):
         tentativa já usa a estação nova."""
         if self._stopped:
             return
+        self._forget_recent()  # troca de estação limpa o anel, em qualquer fase
         if self.phase is Phase.STANDBY:
             await self.leave_standby()  # a rádio só esperava a estação: toca na hora
             return
@@ -171,6 +192,7 @@ class LiveRadioRunner(RadioRunner):
             return False
         if not await self.ports.use_primary():  # type: ignore[attr-defined]
             return False
+        self._forget_recent()
         self.failures = 0
         self.outage = False
         if self.phase is Phase.PLAYING:
