@@ -18,6 +18,7 @@ from empiremuse.utils.radio.favorites import RadioFavorites
 from empiremuse.utils.radio.user_favorites import UserRadioFavorites
 from empiremuse.utils.radio.lastfm_feed import LastFmFeed
 from empiremuse.utils.radio.health import HealthChecker, StationHealth
+from empiremuse.utils.radio.jukebox_radio import JukeboxRadio
 from empiremuse.utils.radio.locations import LocationDataError, LocationTree
 from empiremuse.utils.radio.manager import RadioManager
 from empiremuse.utils.radio.premium import PremiumStore
@@ -76,6 +77,9 @@ class RadioHub:
         self.user_favorites = UserRadioFavorites(pool, self)
         self.relay = RadioRelay()  # o único endereço que o Lavalink recebe: http://127.0.0.1:<porta>/r/<token>
         self.health = StationHealth(pool)  # estações indisponíveis (R-10)
+        self.jukebox = JukeboxRadio(
+            pool, self
+        )  # o modo rádio da Jukebox (T-434 J2a): ao vivo tocado por um bot de música
         self.health_checker = HealthChecker(
             self,
             self._probe_station,

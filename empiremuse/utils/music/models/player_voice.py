@@ -308,6 +308,15 @@ class PlayerVoiceMixin:
                     pass
                 return
 
+        if self.keep_connected and (mode := getattr(self, "radio_mode", None)) is not None:
+            # call esvaziada no modo rádio da Jukebox com o "manter conectado" ligado (§2.2): R → ocioso, nunca a economia de recursos (ela guardaria a faixa ao vivo e a
+            # reenviaria depois com a ficha velha do relay; Alicerce s4)
+            from empiremuse.utils.music.models.playback_steps import go_idle
+
+            if await self.bot.pool.radio.jukebox.release(self, mode):
+                await go_idle(self)
+            return
+
         if self.keep_connected:
             if self.paused or self.auto_pause:
                 return

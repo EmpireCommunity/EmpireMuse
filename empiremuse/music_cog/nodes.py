@@ -59,6 +59,10 @@ class NodesMixin:
 
         player: LavalinkPlayer = bot.music.players[inter.guild_id]
 
+        if getattr(player, "radio_mode", None) is not None:
+            # o ao vivo da Jukebox só toca no nó LOCAL: o codificado dele leva a ficha do relay (m1, R-8)
+            raise GenericError(player.tr("jukebox.radio.no_change_node"))
+
         if node == player.node.identifier:
             raise GenericError(f"O player já está no servidor de música **{node}**.")
 

@@ -17,11 +17,11 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from empiremuse.rules.icy import TITLE_LIMIT as ICY_TITLE_LIMIT
 from empiremuse.rules.radio import VOLUME_DEFAULT, Radio
-from empiremuse.rules.radio_stations import NAME_LIMIT as STATION_NAME_LIMIT
 from empiremuse.rules.text import stored_text, unescape_markdown
 from empiremuse.utils.radio.directory import DirectoryError
 from empiremuse.utils.radio.discord_ports import DiscordRadioPorts
 from empiremuse.utils.radio.live import StationFailure
+from empiremuse.utils.radio.live_play import LocalNodeUnavailable, local_node, open_stream
 from empiremuse.utils.radio.panel import LiveView, StationCard
 
 if TYPE_CHECKING:
@@ -31,10 +31,6 @@ logger = logging.getLogger(__name__)
 
 PANEL_EDIT_INTERVAL_S = 15.0
 FLOW_WAIT_S = 25.0  # o primeiro áudio tem de chegar ao Lavalink neste prazo, senão a rádio NÃO está tocando (abrir a estação leva até 20 s)
-
-
-class LocalNodeUnavailable(RuntimeError):
-    """O nó ``LOCAL`` ainda não existe (na subida a rádio tenta antes do Lavalink local registrar): o recuo tenta de novo; o log mostra este tipo, não um ``RuntimeError`` mudo."""
 
 
 class LiveRadioPorts(DiscordRadioPorts):
@@ -124,75 +120,28 @@ class LiveRadioPorts(DiscordRadioPorts):
         bot, guild, player = self._bot(), self._guild(), self._player()
         if bot is None or guild is None or player is None:
             raise RuntimeError("sem player")
-        from empiremuse.utils.music.models import (
-            LavalinkPlaylist,
-            LavalinkTrack,
-        )  # tarde: os modelos importam o cliente
-
-        self._local_node(bot)  # sem nó local nada é aberto (e isso não é falha da estação)
-        await hub.relay.ensure_started()
-        if (
-            self.active != wanted
-        ):  # a estação mudou enquanto o diretório respondia: nada desta tentativa vale, o recuo já pega a nova
-            raise RuntimeError("estação trocada durante a partida")
-        token = hub.relay.register(
-            station.url_resolved, codec=station.codec, bitrate=station.bitrate, on_title=self._on_title
-        )
-        self._token = token
-        try:
-            # SÓ o nó local e a URL exata (R-8): o get_tracks genérico trocaria a consulta por "ytsearch:<url>" e, sem resultado, a mandaria a
-            # Deezer, Spotify e aos outros nós, vazando o endereço e o token e tocando outra coisa no lugar do fluxo
-            found = await self._local_node(
-                bot
-            ).get_tracks(
-                hub.relay.local_url(token),
-                track_cls=LavalinkTrack,
-                playlist_cls=LavalinkPlaylist,
-                requester=bot.user.id,
-                trusted_local=True,  # só aqui: o filtro de IP do nó recusaria o 127.0.0.1 do relay (que é nosso, com token) e a faixa tocaria sem conferência
-            )
-            tracks = list(getattr(found, "tracks", found) or [])
-            if not tracks:
-                raise RuntimeError("o fluxo não abriu")
-            track = tracks[0]
-            track.info["uri"] = (
-                ""  # o endereço local (com o token) só existe para o Lavalink: nenhuma tela, comando ou RPC o mostra
-            )
-            # o nome guardado vem escapado (``check_station``): a faixa leva o texto sem o escape, como qualquer faixa, e o status do canal de voz
-            # (``voice_status_value``) escapa uma vez só
-            track.info["title"] = track.title = stored_text(station.name, STATION_NAME_LIMIT, markdown=False) or "—"
-            track.author = self._live_label(
+        await open_stream(
+            hub,
+            bot,
+            player,
+            station,
+            on_title=self._on_title,
+            author=self._live_label(
                 player
-            )  # e o "autor" é o que está no ar: o título do fluxo quando ele chega, senão "Ao vivo"
-            player.queue.clear()
-            player.queue.append(track)
-            player.volume = self.volume  # o volume da rádio vale para cada fluxo novo (o player começa a faixa com ele)
-            hub.relay.expect_flow(token)  # o que o loadtracks leu não conta: só o áudio do play
-            await player.process_next()
-            if not await hub.relay.wait_flowing(token, FLOW_WAIT_S):
-                # a rádio só "toca" quando o áudio chegou: fluxo mudo é falha, não estado. Se o relay chegou a abrir a estação, a culpa é dela
-                raise StationFailure if hub.relay.reached(token) else RuntimeError("o fluxo não chegou ao Lavalink")
-        except BaseException as error:
-            station_fault = (
-                hub.relay.reached(token)
-                and not hub.relay.limited(token)
-                and not isinstance(error, asyncio.CancelledError)
-            )
-            with suppress(Exception):
-                await (
-                    player.stop()
-                )  # nada de faixa velha esperando o Lavalink: parada de verdade, o runner decide a próxima tentativa
-            await self._release()
-            if station_fault and not isinstance(error, StationFailure):
-                raise StationFailure from error  # o Lavalink chegou ao relay e o fluxo não abriu: a estação falhou
-            raise
+            ),  # o "autor" é o que está no ar: o título do fluxo quando ele chega, senão "Ao vivo"
+            volume=self.volume,  # o volume da rádio vale para cada fluxo novo
+            keep_token=self._keep_token,
+            release=self._release,
+            still_wanted=lambda: self.active == wanted,
+            flow_wait=FLOW_WAIT_S,
+        )
+
+    def _keep_token(self, token: str) -> None:
+        self._token = token
 
     @staticmethod
     def _local_node(bot: Any) -> Any:
-        node = bot.music.nodes.get("LOCAL")
-        if node is None:
-            raise LocalNodeUnavailable("sem nó local")  # o relay só atende o Lavalink deste host
-        return node
+        return local_node(bot)
 
     async def _pick_node(self, bot: Any) -> Any:
         return self._local_node(bot)
