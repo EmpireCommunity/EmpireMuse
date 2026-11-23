@@ -350,7 +350,7 @@ class RadioStore:
     ) -> Radio:
         """Muda UM campo de cabeçalho (``look``, ``filter``) com compare-and-set no ``rev``; o valor passa pela mesma validação do documento.
 
-        Com ``guild_id``, a rádio relida tem que ser desse servidor; senão ``RadioNotFound``, sem escrever (F-7)."""
+        Com ``guild_id``, a rádio relida tem que ser desse servidor; senão ``RadioNotFound``, sem escrever."""
         current = self._radio(await self._find(radio_id))
         if current is None or (guild_id is not None and current.guild_id != int(guild_id)):
             raise RadioNotFound
