@@ -5,7 +5,6 @@ import asyncio
 import datetime
 import os
 import logging
-from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, Any, Union, Optional
 
 import disnake
@@ -16,7 +15,6 @@ from empiremuse.utils.confirm_view import ConfirmView
 from empiremuse.utils.ephemeral import CONFIRMATION_TTL_S, cleanup_later
 from empiremuse.rules.errors import ROLE_DUPLICATE, RuleError
 from empiremuse.rules.limits import (
-    CUSTOM_SKIN_PREFIX,
     FORUM_TITLE_MAX,
     FORUM_TITLE_MIN,
     MAX_DJ_ROLES,
@@ -24,8 +22,8 @@ from empiremuse.rules.limits import (
 )
 from empiremuse.rules.rpc import TOKEN_LENGTH, generate_rpc_token
 from empiremuse.rules.servers import SettingError
-from empiremuse.rules.skins import global_skin_changes, jukebox_skin, saved_player_skins
-from empiremuse.rules.settings import add_dj_role as add_role, allowed_names
+from empiremuse.rules.skins import jukebox_skin, saved_player_skins
+from empiremuse.rules.settings import add_dj_role as add_role
 from empiremuse.utils import branding
 from empiremuse.utils.branding import asset_url
 from empiremuse.utils import playlists_commands
@@ -37,6 +35,18 @@ from empiremuse.utils.music.converters import time_format, md_link, md_code, per
 from empiremuse.utils.music.errors import GenericError, NoVoice
 from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.utils.music.interactions import SkinEditorMenu, EmbedPaginatorInteraction, ButtonInteraction
+from empiremuse.utils.music.interactions.i18n_views import guild_translator
+from empiremuse.utils.music.interactions.skins_draft import plan_is_valid, plan_save
+from empiremuse.utils.music.interactions.skins_view import (
+    SkinsView,
+    can_configure_radios,
+    can_manage_skins,
+    initial_draft,
+    load_choices,
+    redraw_radio_panels,
+    save_skins,
+    summary_lines,
+)
 from empiremuse.utils.music.skin_store import load_custom_skins
 from empiremuse.utils.music.models import LavalinkPlayer
 from empiremuse.utils.others import (
@@ -71,153 +81,10 @@ from empiremuse.utils.user_docs import change_user_doc
 logger = logging.getLogger(__name__)
 
 NODE_REGION_LIMIT = 32  # a região vem do dono ou da lista externa de servidores
-SKIN_LINKS_PER_ROW = 4  # o parágrafo de ~0,7 mil caracteres formou os links no desktop; o de ~1,4 mil não (2.1.1)
-
-
-def skin_link(skins: Mapping[str, Any], name: str) -> str:
-    """Nome da skin como link embutido (só o nome clica), com a URL da prévia; sem URL válida sai só o nome."""
-    return md_link(name, skins[name].preview, code=False)
-
-
-def skin_links(skins: Mapping[str, Any], names: Iterable[str]) -> str:
-    """Os links das skins em linhas curtas de até ``SKIN_LINKS_PER_ROW``, separados por " • "."""
-    links = [skin_link(skins, name) for name in names]
-    rows = (links[i : i + SKIN_LINKS_PER_ROW] for i in range(0, len(links), SKIN_LINKS_PER_ROW))
-    return "\n".join(" • ".join(row) for row in rows)
-
-
-def skin_selector_description(
-    skins: Mapping[str, Any], names: Iterable[str], static_skins: Mapping[str, Any], static_names: Iterable[str]
-) -> str:
-    """Descrição da embed do seletor: títulos em negrito (o ```ansi sumia no fundo escuro) e as duas listas de links."""
-    return (
-        f"**Modo Normal:**\n{skin_links(skins, names)}\n\n"
-        f"**Modo Fixo (Jukebox):**\n{skin_links(static_skins, static_names)}\n\n"
-        "`Nota: No modo global a skin será aplicada globalmente em todos os bots.`"
-    )
 
 
 if TYPE_CHECKING:
     from empiremuse.utils.client import BotCore
-
-
-class SkinSelector(disnake.ui.View):
-    def __init__(
-        self,
-        ctx: Union[disnake.ApplicationCommandInteraction, CustomContext],
-        embed: disnake.Embed,
-        select_opts: list,
-        static_select_opts: list,
-        global_select_opts: list = None,
-        global_static_select_opts: list = None,
-        global_mode=False,
-    ):
-        super().__init__(timeout=180)
-        self.ctx = ctx
-        self.interaction: Optional[disnake.MessageInteraction] = None
-        self.global_mode = global_mode
-        self.skin_selected = None
-        self.static_skin_selected = None
-        self.select_opts = select_opts
-        self.static_select_opts = static_select_opts
-        self.global_select_opts = global_select_opts
-        self.global_static_select_opts = global_static_select_opts
-        self.embed = embed
-
-        if not global_mode:
-            self.skin_selected = [s.value for s in select_opts if s.default][0]
-            self.static_skin_selected = [s.value for s in static_select_opts if s.default][0]
-        else:
-            try:
-                self.skin_selected = [s.value for s in global_select_opts if s.default][0]
-            except IndexError:
-                self.skin_selected = self.ctx.bot.pool.default_skin
-            try:
-                self.static_skin_selected = [s.value for s in global_static_select_opts if s.default][0]
-            except IndexError:
-                self.static_skin_selected = self.ctx.bot.pool.default_static_skin
-
-        self.rebuild_selects()
-
-    def rebuild_selects(self):
-        self.clear_items()
-
-        if not self.global_mode:
-            self.embed.title = "Seletor de skin (Aplicar no bot selecionado)"
-
-            for s in self.select_opts:
-                s.default = self.skin_selected == s.value
-
-            for s in self.static_select_opts:
-                s.default = self.static_skin_selected == s.value
-
-            select_opts = self.select_opts
-            static_select_opts = self.static_select_opts
-
-        else:
-            self.embed.title = "Seletor de skin (Aplicar em todos os bots do servidor)"
-
-            for s in self.global_select_opts:
-                s.default = self.skin_selected == s.value
-
-            for s in self.global_static_select_opts:
-                s.default = self.static_skin_selected == s.value
-
-            select_opts = self.global_select_opts
-            static_select_opts = self.global_static_select_opts
-
-        select_opts = disnake.ui.Select(options=select_opts, min_values=1, max_values=1)
-        select_opts.callback = self.skin_callback
-        self.add_item(select_opts)
-
-        static_select_opts = disnake.ui.Select(options=static_select_opts, min_values=1, max_values=1)
-        static_select_opts.callback = self.static_skin_callback
-        self.add_item(static_select_opts)
-
-        global_mode = disnake.ui.Button(
-            label=("Desativar" if self.global_mode else "Ativar") + " modo Global ", emoji="🌐"
-        )
-        global_mode.callback = self.mode_callback
-        self.add_item(global_mode)
-
-        confirm_button = disnake.ui.Button(label="Salvar", emoji="💾")
-        confirm_button.callback = self.confirm_callback
-        self.add_item(confirm_button)
-
-        cancel_button = disnake.ui.Button(label="Cancelar", emoji="❌")
-        cancel_button.callback = self.stop_callback
-        self.add_item(cancel_button)
-
-    async def interaction_check(self, inter: disnake.MessageInteraction) -> bool:
-        if inter.author.id == self.ctx.author.id:
-            return True
-
-        await inter.send(f"Apenas {self.ctx.author.mention} pode interagir aqui!", ephemeral=True)
-        return False
-
-    async def skin_callback(self, inter: disnake.MessageInteraction):
-        self.skin_selected = inter.data.values[0]
-        self.rebuild_selects()
-        await inter.response.edit_message(view=self)
-
-    async def static_skin_callback(self, inter: disnake.MessageInteraction):
-        self.static_skin_selected = inter.data.values[0]
-        self.rebuild_selects()
-        await inter.response.edit_message(view=self)
-
-    async def mode_callback(self, inter: disnake.MessageInteraction):
-        self.global_mode = not self.global_mode
-        self.rebuild_selects()
-        await inter.response.edit_message(view=self, embed=self.embed)
-
-    async def confirm_callback(self, inter: disnake.MessageInteraction):
-        self.interaction = inter
-        self.stop()
-
-    async def stop_callback(self, inter: disnake.MessageInteraction):
-        self.interaction = inter
-        self.skin_selected = None
-        self.stop()
 
 
 class PlayerSettings(disnake.ui.View):
@@ -1195,99 +1062,42 @@ class MusicSettings(commands.Cog):
         await self.change_skin.callback(self=self, interaction=ctx)
 
     @commands.slash_command(
-        name=localized("cmd.change_skin.name"),
-        description=localized("cmd.change_skin.description"),
+        name=localized("cmd.skins.name"),
+        description=localized("cmd.skins.description"),
         cooldown=skin_cd,
         max_concurrency=skin_mc,
         default_member_permissions=disnake.Permissions(manage_guild=True),
     )
     @commands.contexts(guild=True)
     async def change_skin(self, interaction: disnake.ApplicationCommandInteraction):
+        """O ``/skins`` (2.3): rascunho na view até o Salvar; o par das rádios só com a permissão de quem configura rádio."""
         inter, bot = await select_bot_pool(interaction, return_new=True)
 
         if not bot:
             return
 
-        skin_list = list(allowed_names(bot.player_skins, bot.config["IGNORE_SKINS"]))
-        static_skin_list = list(allowed_names(bot.player_static_skins, bot.config["IGNORE_STATIC_SKINS"]))
-
         await inter.response.defer(ephemeral=True)
 
         guild = bot.get_guild(inter.guild_id) or inter.guild
-
-        add_skin_prefix = lambda d: [f"{CUSTOM_SKIN_PREFIX}{i}" for i in d.keys()]
-
-        guild_data = await bot.get_data(inter.guild_id, db_name=DBModel.guilds)
-
+        tr = await guild_translator(bot, guild)
+        colour = bot.get_color(guild.me)
+        if not can_manage_skins(inter.author):  # a permissão do comando pode ser trocada pelo servidor nas integrações
+            await inter.edit_original_message(embed=disnake.Embed(description=tr("skin.no_permission"), colour=colour))
+            return
+        radio_allowed = can_configure_radios(inter.author)
+        settings = await bot.pool.servers.settings(guild.id)
         global_data = await bot.get_global_data(guild.id, db_name=DBModel.guilds)
+        choices = await load_choices(bot, guild, global_data, radio_allowed=radio_allowed)
+        footer = tr("skin.ui.bot", bot=bot.user.display_name) if bot.user.id != self.bot.user.id else None
 
-        global_mode = global_data["global_skin"]
-
-        selected = jukebox_skin(guild_data["player_controller"]["skin"], bot.pool.default_skin)
-        static_selected = jukebox_skin(guild_data["player_controller"]["static_skin"], bot.pool.default_static_skin)
-
-        # mesma precedência da criação do player: a escolha global, senão a do servidor, senão o padrão do pool
-        global_choice, global_static_choice = saved_player_skins(
-            guild_data["player_controller"]["skin"],
-            guild_data["player_controller"]["static_skin"],
-            {**global_data, "global_skin": True},
-        )
-        global_selected = jukebox_skin(global_choice, bot.pool.default_skin)
-        global_static_selected = jukebox_skin(global_static_choice, bot.pool.default_static_skin)
-
-        skins_opts = [
-            disnake.SelectOption(
-                emoji="💠" if s.startswith(CUSTOM_SKIN_PREFIX) else "🎨",
-                label=f"Modo normal: {s.replace(CUSTOM_SKIN_PREFIX, '')}",
-                value=s,
-                **{"default": True, "description": "skin atual"} if selected == s else {},
-            )
-            for s in skin_list + add_skin_prefix(global_data["custom_skins"])
-        ]
-        static_skins_opts = [
-            disnake.SelectOption(
-                emoji="💠" if s.startswith(CUSTOM_SKIN_PREFIX) else "🎨",
-                label=f"Jukebox: {s.replace(CUSTOM_SKIN_PREFIX, '')}",
-                value=s,
-                **{"default": True, "description": "skin atual"} if static_selected == s else {},
-            )
-            for s in static_skin_list + add_skin_prefix(global_data["custom_skins_static"])
-        ]
-
-        global_skins_opts = [
-            disnake.SelectOption(
-                emoji="💠" if s.startswith(CUSTOM_SKIN_PREFIX) else "🎨",
-                label=f"Modo Normal: {s.replace(CUSTOM_SKIN_PREFIX, '')}",
-                value=s,
-                **{"default": True, "description": "skin atual"} if global_selected == s else {},
-            )
-            for s in skin_list + add_skin_prefix(global_data["custom_skins"])
-        ]
-        global_static_skins_opts = [
-            disnake.SelectOption(
-                emoji="💠" if s.startswith(CUSTOM_SKIN_PREFIX) else "🎨",
-                label=f"Jukebox: {s.replace(CUSTOM_SKIN_PREFIX, '')}",
-                value=s,
-                **{"default": True, "description": "skin atual"} if global_static_selected == s else {},
-            )
-            for s in static_skin_list + add_skin_prefix(global_data["custom_skins_static"])
-        ]
-
-        embed = disnake.Embed(
-            description=skin_selector_description(
-                bot.player_skins, skin_list, bot.player_static_skins, static_skin_list
-            ),
-            colour=bot.get_color(guild.me),
-        ).set_image(asset_url("ui_rainbow_bar_2.gif"))
-
-        try:
-            if bot.user.id != self.bot.user.id:
-                embed.set_footer(text=f"Bot selecionado: {bot.user.display_name}", icon_url=bot.user.display_avatar.url)
-        except AttributeError:
-            pass
-
-        select_view = SkinSelector(
-            inter, embed, skins_opts, static_skins_opts, global_skins_opts, global_static_skins_opts, global_mode
+        view = SkinsView(
+            bot=bot,
+            author_id=inter.author.id,
+            tr=tr,
+            choices=choices,
+            initial=initial_draft(bot.pool, settings, global_data, choices),
+            colour=colour,
+            footer=footer,
         )
 
         try:
@@ -1298,132 +1108,86 @@ class MusicSettings(commands.Cog):
             except AttributeError:
                 func = inter.send
 
-        msg = await func(embed=embed, view=select_view)
+        view.message = await func(**view.payload())
 
-        await select_view.wait()
+        await view.wait()
 
-        if select_view.skin_selected is None:
-            await select_view.interaction.response.edit_message(
-                view=None, embed=disnake.Embed(description="**Solicitação cancelada.**", colour=bot.get_color(guild.me))
+        if view.interaction is None:
+            return  # o tempo acabou: ``on_timeout`` já desligou os componentes
+
+        update_inter(interaction, view.interaction)
+        inter = view.interaction
+
+        if view.result != "save":
+            await inter.response.edit_message(
+                embeds=[disnake.Embed(description=tr("skin.cancelled"), colour=colour)], view=None, attachments=[]
             )
             return
-
-        if not select_view.interaction:
-            try:
-                msg = await inter.original_message()
-            except AttributeError:
-                pass
-            for c in select_view.children:
-                c.disabled = True
-            await msg.edit(view=select_view)
-            return
-
-        update_inter(interaction, select_view.interaction)
-
-        inter = select_view.interaction
 
         await inter.response.defer()
+        await self._save_skins(bot, guild, inter, tr, view, radio_allowed)
 
-        try:
-            global_data.update({"global_skin": select_view.global_mode})
-        except Exception:
-            pass
+    async def _save_skins(self, bot, guild, inter, tr, view: SkinsView, radio_allowed: bool) -> None:
+        """O Salvar do ``/skins``: a permissão de novo, tudo revalidado contra as listas relidas e só o que mudou é gravado."""
+        colour = bot.get_color(guild.me)
 
-        changed_skins_txt = ""
-
-        if select_view.global_mode:
-            # só o que o usuário trocou: sem troca, a ausência de escolha global fica (o player segue a do servidor)
-            global_data.update(
-                global_skin_changes(
-                    (global_selected, global_static_selected),
-                    (select_view.skin_selected, select_view.static_skin_selected),
-                )
-            )
-            await bot.update_global_data(inter.guild_id, global_data, db_name=DBModel.guilds)
-
-            if global_selected != select_view.skin_selected:
-                try:
-                    changed_skins_txt += (
-                        f"Global - Modo Normal: {skin_link(self.bot.player_skins, select_view.skin_selected)}\n"
-                    )
-                except Exception:
-                    changed_skins_txt += f"Global - Modo Normal: `{select_view.skin_selected.replace(CUSTOM_SKIN_PREFIX, '[custom skin]: ')}`\n"
-
-            if global_static_selected != select_view.static_skin_selected:
-                try:
-                    changed_skins_txt += f"Global - Jukebox: {skin_link(self.bot.player_static_skins, select_view.static_skin_selected)}\n"
-                except Exception:
-                    changed_skins_txt += f"Global - Jukebox: `{select_view.static_skin_selected.replace(CUSTOM_SKIN_PREFIX, '[custom skin]: ')}`\n"
-
-        else:
-            # só o que o usuário trocou: o outro campo pode ter sido alterado por outro admin enquanto a tela estava aberta
-            skin_changes = {}
-            if selected != select_view.skin_selected:
-                skin_changes["skin"] = select_view.skin_selected
-            if static_selected != select_view.static_skin_selected:
-                skin_changes["static_skin"] = select_view.static_skin_selected
-            if skin_changes:
-                await bot.pool.servers.patch(inter.guild_id, "settings", skin_changes)
-
-            if selected != select_view.skin_selected:
-                try:
-                    changed_skins_txt += f"Modo Normal: {skin_link(self.bot.player_skins, select_view.skin_selected)}\n"
-                except Exception:
-                    changed_skins_txt += (
-                        f"Modo Normal: `{select_view.skin_selected.replace(CUSTOM_SKIN_PREFIX, '[custom skin]: ')}`\n"
-                    )
-
-            if static_selected != select_view.static_skin_selected:
-                try:
-                    changed_skins_txt += (
-                        f"Jukebox: {skin_link(self.bot.player_static_skins, select_view.static_skin_selected)}\n"
-                    )
-                except Exception:
-                    changed_skins_txt += f"Jukebox: `{select_view.static_skin_selected.replace(CUSTOM_SKIN_PREFIX, '[custom skin]: ')}`\n"
-
-        if global_mode != select_view.global_mode:
-            changed_skins_txt += "Skin Global: `" + ("Ativado" if select_view.global_mode else "Desativado") + "`\n"
-
-        if not changed_skins_txt:
-            txt = "**Não houve alterações nas configurações de skin...**"
-        else:
-            txt = f"**A skin do player do servidor foi alterada com sucesso.**\n{changed_skins_txt}"
-
-        skins = await load_custom_skins(bot, guild.id, global_data)
-
-        if skins.rejected:
-            txt += (
-                f"\n\n⚠️ {skins.rejected} skin(s) personalizada(s) do servidor estão em um formato "
-                "incompatível e foram ignoradas (o player usa a skin padrão no lugar)."
-            )
-
-        kwargs = {
-            "embed": disnake.Embed(description=txt, color=bot.get_color(guild.me)).set_footer(
+        async def reply(text: str) -> None:
+            embed = disnake.Embed(description=text, colour=colour).set_footer(
                 text=f"{bot.user} - [{bot.user.id}]", icon_url=bot.user.display_avatar.with_format("png").url
             )
-        }
+            await inter.edit_original_message(embeds=[embed], view=None, attachments=[])
 
-        if isinstance(inter, CustomContext):
-            await msg.edit(view=None, **kwargs)
-        elif inter.response.is_done():
-            await inter.edit_original_message(view=None, **kwargs)
+        if not can_manage_skins(inter.author):
+            await reply(tr("skin.no_permission"))
+            return
+
+        radio_allowed = radio_allowed and can_configure_radios(inter.author)
+        plan = plan_save(view.initial, view.draft, view.choices.radios, radio_allowed=radio_allowed)
+        fresh = await bot.get_global_data(guild.id, db_name=DBModel.guilds)
+        if not plan_is_valid(plan, await load_choices(bot, guild, fresh, radio_allowed=radio_allowed)):
+            await reply(tr("skin.invalid"))
+            return
+
+        failed = await save_skins(bot, guild.id, plan, updated_by=str(inter.author.id))
+        saved_plan = plan._replace(radio_looks=tuple(i for i in plan.radio_looks if i.bot_id not in failed))
+        lines = summary_lines(tr, saved_plan, view.choices.radios)
+        text = "\n".join([f"**{tr('skin.saved')}**", *lines]) if lines else f"**{tr('skin.unchanged')}**"
+        labels = {row.bot_id: row.label for row in view.choices.radios}
+        for bot_id in failed:
+            text += "\n⚠️ " + tr("skin.radio.changed", radio=labels.get(bot_id, str(bot_id)))
+
+        global_data = await bot.get_global_data(guild.id, db_name=DBModel.guilds)
+        skins = await load_custom_skins(bot, guild.id, global_data)
+        if skins.rejected:
+            text += "\n\n⚠️ " + tr("skin.custom_rejected", count=skins.rejected)
+
+        await reply(text)
+
+        if "radio_skin" in plan.global_fields:
+            redraw_radio_panels(bot.pool, guild.id, [row.bot_id for row in view.choices.radios])
         else:
-            await inter.send(ephemeral=True, **kwargs)
+            redraw_radio_panels(bot.pool, guild.id, [item.bot_id for item in saved_plan.radio_looks])
+
+        if plan.global_fields or plan.server_fields:
+            await self._reload_player_skins(bot, guild.id, global_data, skins, inter.author.mention, tr)
+
+    async def _reload_player_skins(self, bot, guild_id: int, global_data, skins, mention: str, tr) -> None:
+        """Recarrega os players ativos com a skin efetiva (mesma precedência da criação do player). A animação do disco mudou:
+        o cartão se redesenha no próximo ciclo, mesmo sem troca de skin."""
+        settings = await bot.pool.servers.settings(guild_id)
+        skin, static = saved_player_skins(settings.get("skin"), settings.get("static_skin"), global_data)
+        skin = jukebox_skin(skin, bot.pool.default_skin)
+        static = jukebox_skin(static, bot.pool.default_static_skin)
 
         for b in self.bot.pool.get_all_bots():
             try:
-                player: LavalinkPlayer = b.music.players[inter.guild_id]
+                player: LavalinkPlayer = b.music.players[guild_id]
             except KeyError:
                 continue
 
-            last_skin = str(player.skin)
-            last_static_skin = str(player.skin_static)
-
-            if player.static:
-                if select_view.static_skin_selected == last_static_skin:
-                    continue
-
-            elif select_view.skin_selected == last_skin:
+            if (static if player.static else skin) == str(player.skin_static if player.static else player.skin):
+                player.last_data = {}
+                player.update = True
                 continue
 
             try:
@@ -1431,8 +1195,8 @@ class MusicSettings(commands.Cog):
             except Exception:
                 logger.exception("Falha ao apagar a mensagem do player")
 
-            player.skin = select_view.skin_selected
-            player.skin_static = select_view.static_skin_selected
+            player.skin = skin
+            player.skin_static = static
 
             player.custom_skin_data = skins.normal
             player.custom_skin_static_data = skins.static
@@ -1440,7 +1204,7 @@ class MusicSettings(commands.Cog):
 
             player.setup_hints()
             player.process_hint()
-            player.set_command_log(text=f"{inter.author.mention} alterou a skin do player.", emoji="🎨")
+            player.set_command_log(text=tr("skin.command_log", mention=mention), emoji="🎨")
 
             try:
                 if player.controller_mode and not [m for m in player.guild.me.voice.channel.members if not m.bot]:

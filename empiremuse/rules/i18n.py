@@ -70,7 +70,7 @@ COMMAND_GROUPS: Mapping[str, str] = {
     "autoplay": "music",
     "back": "music",
     "change_node": "music",
-    "change_skin": "settings",
+    "skins": "settings",
     "command_log": "music",
     "connect": "music",
     "controller": "music",

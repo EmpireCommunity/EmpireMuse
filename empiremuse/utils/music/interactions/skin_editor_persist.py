@@ -184,16 +184,12 @@ class SkinEditorPersistMixin:
     def _skin_saved_text(self) -> str:
         try:
             cmd = (
-                f"</change_skin:"
-                + str(
-                    self.bot.get_global_command_named(
-                        "change_skin", cmd_type=disnake.ApplicationCommandType.chat_input
-                    ).id
-                )
+                f"</skins:"
+                + str(self.bot.get_global_command_named("skins", cmd_type=disnake.ApplicationCommandType.chat_input).id)
                 + ">"
             )
         except AttributeError:
-            cmd = "/change_skin"
+            cmd = "/skins"
 
         try:
             guild_prefix = self.bot.pool.guild_prefix_cache[self.ctx.guild_id]

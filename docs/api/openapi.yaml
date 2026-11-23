@@ -3791,6 +3791,32 @@ components:
           $ref: "#/components/schemas/GlobalSkinValues"
         extras:
           $ref: "#/components/schemas/SkinExtras"
+    DiscMotionForm:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+        - version
+        - values
+        - extras
+      properties:
+        key:
+          const: disco
+        version:
+          $ref: "#/components/schemas/Version"
+        values:
+          type: object
+          additionalProperties: false
+          required:
+            - disc_motion
+          properties:
+            disc_motion:
+              description: A animação do disco nas skins de imagem (2.3). Nunca escolhida vale ligada.
+              type: boolean
+        extras:
+          type: object
+          additionalProperties: false
+          maxProperties: 0
     LinksForm:
       type: object
       additionalProperties: false
@@ -3958,6 +3984,7 @@ components:
         - $ref: "#/components/schemas/ListenAlongForm"
         - $ref: "#/components/schemas/ServerSkinForm"
         - $ref: "#/components/schemas/GlobalSkinForm"
+        - $ref: "#/components/schemas/DiscMotionForm"
         - $ref: "#/components/schemas/LinksForm"
     AccountForms:
       type: object
@@ -4460,6 +4487,24 @@ components:
                   type:
                     - string
                     - "null"
+        - type: object
+          required:
+            - expected_version
+            - values
+            - form
+          properties:
+            form:
+              const: disco
+            expected_version:
+              $ref: "#/components/schemas/Version"
+            values:
+              type: object
+              additionalProperties: false
+              required:
+                - disc_motion
+              properties:
+                disc_motion:
+                  type: boolean
         - type: object
           required:
             - expected_version

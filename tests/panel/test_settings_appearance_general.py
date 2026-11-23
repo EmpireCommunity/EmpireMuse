@@ -3,6 +3,7 @@ do comando, skins personalizadas preservadas (S-04 privado), prefixo + cache do 
 e efeitos em memória. Regras extraídas do código em helpers_settings (command_*)."""
 
 import copy
+from urllib.parse import urlencode
 
 from tests.panel.helpers_settings import HOSTILE_SKIN, assentar, command_prefix_max_length
 from tests.panel.test_settings_http import Each, HttpBase, external_change
@@ -73,6 +74,41 @@ class AppearanceGlobalTest(HttpBase):
         browser = self.logged_in()
         assert self.save(browser, 800, "aparencia", "global_skin").code == 200
         assert self.world.p800a.calls == [] and self.world.p800b.calls == []
+
+
+# ============================================================================ Aparência: animação do disco (2.3)
+
+
+class DiscMotionTest(HttpBase):
+    def test_unchecking_writes_false_in_the_global_doc_and_redraws_the_players(self):
+        browser = self.logged_in()
+        url, form, _ = self.open_form(browser, 800, "aparencia", "disco")
+        pairs = [(name, value) for name, value in form.pairs() if name != "disc_motion"]
+        assert self.submit(browser, url, form, pairs=pairs).code == 200
+        assert self.db.doc("global", 800)["disc_motion"] is False
+        assert self.world.p800a.update is True and self.world.p800a.last_data == {}
+
+    def test_saving_without_change_keeps_the_never_chosen_value(self):
+        browser = self.logged_in()
+        assert self.save(browser, 100, "aparencia", "disco").code == 200
+        assert self.db.doc("global", 100).get("disc_motion") is None
+
+    def test_post_to_a_guild_the_user_cannot_manage_is_refused_and_writes_nothing(self):
+        browser = self.logged_in()
+        _, form, _ = self.open_form(browser, 100, "aparencia", "disco")
+        before = copy.deepcopy(self.db.doc("global", 600))
+        pairs = [(name, value) for name, value in form.pairs() if name != "disc_motion"]
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        response = browser.post(self.url(600, "aparencia"), body=urlencode(pairs), headers=headers)
+        assert response.code in (403, 404)
+        assert self.db.doc("global", 600) == before
+
+    def test_post_without_xsrf_is_refused(self):
+        browser = self.logged_in()
+        url, form, _ = self.open_form(browser, 100, "aparencia", "disco")
+        pairs = [(name, value) for name, value in form.pairs() if name not in ("disc_motion", "_xsrf")]
+        assert self.submit(browser, url, form, pairs=pairs).code == 403
+        assert self.db.doc("global", 100).get("disc_motion") is None
 
 
 # ============================================================================ Geral: prefixo (G-12)

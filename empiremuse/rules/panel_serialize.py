@@ -88,6 +88,7 @@ _REGISTRY: Mapping[str, Mapping[str, FormShape]] = {
         ),
         "skin_servidor": FormShape({"skin": None, "static_skin": None}, _SKINS),
         "skin_global": FormShape({"global_skin": None, "player_skin": None, "player_skin_static": None}, _SKINS),
+        "disco": FormShape({"disc_motion": None}),  # 2.3: a animação do disco das skins de imagem
         "links": FormShape(
             {},
             {
