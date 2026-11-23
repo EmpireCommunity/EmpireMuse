@@ -22,7 +22,6 @@ import logging
 import sys
 import time
 from collections.abc import Awaitable, Callable, Sequence
-from contextlib import suppress
 from pathlib import Path
 from typing import NamedTuple, Optional, Protocol
 
@@ -246,12 +245,9 @@ async def decode_in_worker(fmt: str, data: bytes) -> bytes:
         raise LogoError("deadline") from error
     finally:
         if process.returncode is None:
-            sandbox.kill_group(process.pid)  # o grupo inteiro (``start_new_session``), não só o PID
-            with suppress(ProcessLookupError):
-                process.kill()  # se o grupo não morreu; o laço pode já ter recolhido o worker morto
+            sandbox.kill_worker(process)  # o grupo inteiro (``start_new_session``), não só o PID
             await process.wait()
-    if process.returncode == sandbox.SANDBOX_EXIT:
-        sandbox.report(logger)
+    if sandbox.refused(process.returncode, logger):
         raise LogoError("sandbox")
     if process.returncode != 0:
         raise LogoError("decode")
@@ -259,6 +255,14 @@ async def decode_in_worker(fmt: str, data: bytes) -> bytes:
 
 
 # ---------------------------------------------------------------------- o serviço
+
+
+def _sandbox_ready() -> bool:
+    return sandbox.may_spawn(logger)
+
+
+def _always() -> bool:
+    return True
 
 
 class LogoService:
@@ -269,10 +273,13 @@ class LogoService:
         fetch: Optional[Fetch] = None,
         decode: Optional[Decode] = None,
         clock: Callable[[], float] = time.monotonic,
+        ready: Optional[Callable[[], bool]] = None,
     ) -> None:
         self._source = source
         self._fetch: Fetch = fetch or LogoFetcher()
         self._decode: Decode = decode or decode_in_worker
+        # o decodificador pode rodar aqui? Conferido ANTES de buscar a imagem de terceiros; com outro ``decode`` (testes), sempre
+        self._ready: Callable[[], bool] = ready or (_sandbox_ready if decode is None else _always)
         self._clock = clock
         self._hits: TTLCache = TTLCache(maxsize=CACHE_BYTES, ttl=CACHE_TTL_S, timer=clock, getsizeof=len)
         self._misses: TTLCache = TTLCache(maxsize=FAILURE_ENTRIES, ttl=FAILURE_TTL_S, timer=clock)
@@ -323,6 +330,10 @@ class LogoService:
         return result
 
     async def _load(self, uuid: str, configured: bool) -> LogoResult:
+        if not self._ready():
+            return (
+                LogoResult()
+            )  # sem sandbox (política fechada): nem busca a imagem, nem gasta ficha, nem entra no cache de falhas
         if not self._admit():
             return LogoResult(transient=True)
         self._inflight += 1

@@ -9,6 +9,8 @@ import select
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace as NS
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -147,33 +149,165 @@ async def test_the_logo_worker_refuses_to_decode_when_the_sandbox_fails(monkeypa
     assert raised.value.code == "sandbox"
 
 
+@needs_landlock
+@pytest.mark.critical
+@pytest.mark.regression
+def test_a_sandboxed_decoder_opens_no_socket(tmp_path):
+    body = (
+        "import socket\n"
+        "print('confined' if sandbox.confine() else 'open')\n"
+        "for family, kind in ((socket.AF_INET, socket.SOCK_STREAM), (socket.AF_INET6, socket.SOCK_STREAM),\n"
+        "                     (socket.AF_INET, socket.SOCK_DGRAM), (socket.AF_UNIX, socket.SOCK_STREAM)):\n"
+        "    try:\n        socket.socket(family, kind)\n        print('opened')\n"
+        "    except PermissionError:\n        print('refused')\n"
+    )
+    assert run_probe(tmp_path, body) == ["confined", "refused", "refused", "refused", "refused"]
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.parametrize("abi", [0, 1, 3, 5])
+def test_a_kernel_below_the_minimum_abi_is_not_enough(monkeypatch, caplog, abi):
+    monkeypatch.setattr(sandbox, "landlock_abi", lambda: abi)
+    monkeypatch.setattr(sandbox, "_reported", False)
+    assert sandbox.supported() is False
+    assert sandbox.may_spawn(logo_module.logger) is (not sandbox.FAIL_CLOSED)
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    ("allowed", "app_root", "exposed"),
+    [
+        (["/"], "/app", True),
+        (["/usr"], "/usr/src/app", True),
+        (["/srv/app"], "/srv/app", True),
+        (["/usr/local", "/opt/venv", "/usr/lib"], "/app", False),
+        (["/ap"], "/app", False),
+    ],
+)
+def test_an_allowed_path_that_contains_the_app_is_refused(allowed, app_root, exposed):
+    assert sandbox.exposes_app(allowed, app_root) is exposed
+
+
+@needs_landlock
+@pytest.mark.critical
+@pytest.mark.regression
+def test_the_sandbox_refuses_when_an_allowed_path_contains_the_app(tmp_path):
+    body = "sandbox._APP_ROOT = sandbox.python_paths()[0]\nprint('confined' if sandbox.confine() else 'refused')\n"
+    assert run_probe(tmp_path, body) == ["refused"]
+
+
+@pytest.mark.critical
+def test_only_the_standard_library_loads_before_the_sandbox():
+    code = (
+        "import sys\n"
+        "before = set(sys.modules)\n"
+        f"sys.path.append({str(ROOT)!r})\n"
+        "from empiremuse.utils import sandbox\n"
+        "new = sorted(m for m in set(sys.modules) - before if m.split('.')[0] not in sys.stdlib_module_names)\n"
+        "print(' '.join(new))\n"
+    )
+    done = subprocess.run(
+        [sys.executable, "-I", "-c", code], capture_output=True, text=True, env={}, cwd="/", check=True
+    )
+    assert done.stdout.split() == ["empiremuse", "empiremuse.utils", "empiremuse.utils.sandbox"]
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.skipif(not hasattr(os, "pidfd_open"), reason="sem pidfd")
+def test_killing_a_worker_ends_its_whole_group():
+    """Um worker que deixou outro processo para trás: ``kill_worker`` encerra o grupo inteiro, não só o worker."""
+    script = (
+        "import subprocess, sys, time\n"
+        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+        "print(child.pid, flush=True)\n"
+        "time.sleep(60)\n"
+    )
+    worker = subprocess.Popen(
+        [sys.executable, "-I", "-c", script], stdout=subprocess.PIPE, text=True, start_new_session=True
+    )
+    try:
+        grandchild = int(worker.stdout.readline())  # bloqueia até o neto existir: sem espera por relógio
+        sandbox.kill_worker(worker)
+        worker.wait(timeout=10)
+        try:
+            fd = os.pidfd_open(grandchild)
+        except ProcessLookupError:
+            return  # já terminou e foi recolhido
+        try:
+            readable, _, _ = select.select([fd], [], [], 10)  # legível quando o processo termina
+        finally:
+            os.close(fd)
+        assert readable
+    finally:
+        if worker.poll() is None:
+            worker.kill()
+        worker.stdout.close()
+
+
+class _StuckProcess:
+    """Um worker falso que nunca responde: o prazo vence e o pai tem de encerrá-lo pelo ``kill_worker``."""
+
+    pid = 4_000_000
+    returncode = None
+
+    def __init__(self):
+        self.stdin = NS(write=lambda data: None, drain=AsyncMock(), close=lambda: None)
+        self.stdout = NS(read=self._never)
+        self.ended = asyncio.Event()
+
+    async def _never(self, size):
+        await self.ended.wait()
+        return b""
+
+    async def wait(self):
+        await self.ended.wait()
+        return self.returncode
+
+
 @pytest.mark.critical
 @pytest.mark.regression
 @pytest.mark.asyncio
-@pytest.mark.skipif(not hasattr(os, "pidfd_open"), reason="sem pidfd")
-async def test_the_deadline_ends_the_whole_decoder_group(monkeypatch, tmp_path):
-    """Um worker que deixa outro processo para trás: no prazo o grupo inteiro termina, não só o worker."""
-    pid_file = tmp_path / "neto.pid"
-    slow = tmp_path / "lento.py"
-    slow.write_text(
-        "import subprocess, sys, time\n"
-        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
-        f"open({str(pid_file)!r}, 'w').write(str(child.pid))\n"
-        "time.sleep(60)\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(logo_module, "WORKER_TIMEOUT_S", 1.0)
-    monkeypatch.setattr(logo_module, "_WORKER", slow)
-    with pytest.raises(LogoError):
-        await decode_in_worker("PNG", image_bytes("PNG"))
-    try:
-        fd = os.pidfd_open(int(pid_file.read_text()))
-    except ProcessLookupError:
-        return  # já terminou e foi recolhido
-    try:
-        readable, _, _ = select.select(
-            [fd], [], [], 5
-        )  # fica legível quando o processo termina; espera limitada, sem sleep
-    finally:
-        os.close(fd)
-    assert readable
+async def test_the_deadline_hands_the_worker_to_kill_worker(monkeypatch):
+    stuck = _StuckProcess()
+    killed = []
+
+    def kill_worker(process):
+        killed.append(process)
+        process.returncode = -9
+        process.ended.set()
+
+    async def spawn(*args, **kwargs):
+        return stuck
+
+    monkeypatch.setattr(sandbox, "landlock_abi", lambda: sandbox.MIN_ABI)
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", spawn)
+    monkeypatch.setattr(sandbox, "kill_worker", kill_worker)
+    monkeypatch.setattr(logo_module, "WORKER_TIMEOUT_S", 0.01)
+    with pytest.raises(LogoError) as raised:
+        await decode_in_worker("PNG", b"x")
+    assert raised.value.code == "deadline" and killed == [stuck]
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_without_the_sandbox_the_service_fetches_nothing():
+    fetched = []
+
+    async def fetch(url):
+        fetched.append(url)
+        return b""
+
+    class Source:
+        def favicon_of(self, uuid):
+            return "https://cdn.example/l.png"
+
+        def knows(self, uuid):
+            return True
+
+    svc = logo_module.LogoService(Source(), fetch=fetch, ready=lambda: False)
+    result = await svc.png("00000000-0000-0000-0000-000000000001")
+    assert result == logo_module.LogoResult() and fetched == [] and svc.fetches == 0

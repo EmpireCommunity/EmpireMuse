@@ -1,31 +1,36 @@
 """Sandbox dos decodificadores de imagem: o processo filho que decodifica se confina logo ao começar, antes de importar o Pillow.
 
-Só stdlib e ``ctypes`` (o worker o importa com ``python -I``, antes de qualquer outra coisa). O confinamento tem três partes:
+Só stdlib e ``ctypes`` (o worker o importa com ``python -I``, antes de qualquer outra coisa). O confinamento tem quatro partes:
 
-- **Landlock** (Linux): sistema de arquivos só de leitura e só nos caminhos da instalação do Python (biblioteca padrão e
-  ``site-packages``); nenhuma escrita. A partir do ABI 4 também fecha TCP e, a partir do ABI 6, sinais e sockets abstratos para
-  fora do domínio.
+- **Landlock** (Linux, ABI ``MIN_ABI`` ou mais): sistema de arquivos só de leitura e só nos caminhos da instalação do Python
+  (biblioteca padrão e ``site-packages``) e nas bibliotecas do sistema que ela carrega; nenhuma escrita nem execução; sinais e
+  sockets abstratos só dentro do domínio. Um caminho permitido que contenha o diretório do app recusa o sandbox.
+- **seccomp:** nenhum socket novo (``socket()`` devolve ``EPERM``), em ``x86_64`` e ``aarch64``; outra arquitetura recusa o sandbox.
 - ``RLIMIT_NPROC = 0`` (nenhum processo ou thread novo) e ``RLIMIT_FSIZE = 0`` (nenhum arquivo cresce).
-- **No pai:** ``start_new_session`` e, no prazo, o grupo inteiro morre (``kill_group``).
+- **No pai:** ``start_new_session`` e, no prazo, o grupo inteiro morre (``kill_worker``).
 
-Política (``FAIL_CLOSED``): sem Landlock, ou se ele falha, o worker não decodifica (sai com ``SANDBOX_EXIT``) e o pai nem abre o
-worker; quem chama cai na imagem padrão. O código vai ao log uma vez por processo. ``FAIL_CLOSED = False`` é o modo degradado:
-decodifica só com os limites, com um aviso no log também uma vez.
+Política (``FAIL_CLOSED``): sem o sandbox completo, o worker não decodifica (sai com ``SANDBOX_EXIT``) e o pai nem abre o worker
+(nem busca a imagem: ``may_spawn`` antes); quem chama cai na imagem padrão. O código vai ao log uma vez por processo.
+``FAIL_CLOSED = False`` é o modo degradado: decodifica só com o que conseguiu aplicar, com um aviso no log também uma vez.
 """
 
 from __future__ import annotations
 
 import ctypes
+import errno
 import logging
 import os
+import platform
 import resource
 import signal
 import struct
 import sys
 import sysconfig
 from contextlib import suppress
+from typing import Any
 
 FAIL_CLOSED = True
+MIN_ABI = 6  # o que a política precisa: escrita e truncamento (3) e sinais e sockets abstratos fora do domínio (6)
 SANDBOX_EXIT = 70
 UNAVAILABLE_CODE = "SANDBOX-OFF"
 DEGRADED_CODE = "SANDBOX-DEGRADED"
@@ -35,6 +40,8 @@ _SYS_CREATE_RULESET, _SYS_ADD_RULE, _SYS_RESTRICT_SELF = 444, 445, 446
 _CREATE_RULESET_VERSION = 1 << 0
 _RULE_PATH_BENEATH = 1
 _PR_SET_NO_NEW_PRIVS = 38
+_PR_SET_SECCOMP = 22
+_SECCOMP_MODE_FILTER = 2
 _O_PATH = getattr(os, "O_PATH", 0o10000000)
 
 _FS_READ_FILE = 1 << 2
@@ -47,9 +54,19 @@ _NET_ALL = (1 << 0) | (1 << 1)  # ABI 4: bind e connect TCP
 _SCOPE_ALL = (1 << 0) | (1 << 1)  # ABI 6: socket abstrato e sinal
 _READ_ONLY = _FS_READ_FILE | _FS_READ_DIR
 
+# seccomp (seccomp(2), filter.h): arquitetura conferida e o número de ``socket`` de cada uma
+_AUDIT_ARCH = {"x86_64": 0xC000003E, "aarch64": 0xC00000B7}
+_SOCKET_NR = {"x86_64": 41, "aarch64": 198}
+_X32_SYSCALL_BIT = 0x40000000  # x32 no x86_64: outra numeração, recusada por inteiro
+_BPF_LD_W_ABS, _BPF_JEQ_K, _BPF_JGE_K, _BPF_RET_K = 0x20, 0x15, 0x35, 0x06
+_RET_ALLOW, _RET_KILL_PROCESS = 0x7FFF0000, 0x80000000
+_RET_EPERM = 0x00050000 | errno.EPERM
+_DATA_NR, _DATA_ARCH = 0, 4  # offsets em ``struct seccomp_data``
+
 # o que o carregador dinâmico lê para achar as bibliotecas do sistema que o decodificador usa (``libz`` e afins)
 _SYSTEM_LIBRARY_DIRS = ("/lib", "/lib64", "/usr/lib", "/usr/lib64")
 _SYSTEM_LIBRARY_FILES = ("/etc/ld.so.cache",)
+_APP_ROOT = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, os.pardir))
 
 _reported = False
 
@@ -60,6 +77,10 @@ class _RulesetAttr(ctypes.Structure):
         ("handled_access_net", ctypes.c_uint64),
         ("scoped", ctypes.c_uint64),
     ]
+
+
+class _SockFprog(ctypes.Structure):
+    _fields_ = [("len", ctypes.c_ushort), ("filter", ctypes.c_void_p)]
 
 
 def _path_beneath(allowed: int, fd: int) -> ctypes.Array:
@@ -84,6 +105,11 @@ def landlock_abi() -> int:
     return max(0, int(version))
 
 
+def supported() -> bool:
+    """O sandbox inteiro cabe aqui? Landlock com o ABI que a política pede e uma arquitetura com o filtro de sockets."""
+    return landlock_abi() >= MIN_ABI and platform.machine() in _SOCKET_NR
+
+
 def python_paths() -> list[str]:
     """Os diretórios que o decodificador pode ler: a instalação do Python (prefixos, biblioteca padrão e ``site-packages``) e as
     bibliotecas do sistema que ela carrega."""
@@ -94,6 +120,12 @@ def python_paths() -> list[str]:
         if os.path.isdir(path) and path not in found:
             found.append(path)
     return found
+
+
+def exposes_app(paths: list[str], app_root: str | None = None) -> bool:
+    """Algum caminho permitido é o diretório do app ou o contém (um Python instalado em ``/`` ou no próprio diretório do app)?"""
+    app_root = app_root or _APP_ROOT
+    return any(app_root == path or app_root.startswith(path.rstrip(os.sep) + os.sep) for path in paths)
 
 
 def _library_files() -> list[str]:
@@ -141,34 +173,76 @@ def _landlock(abi: int, paths: list[str]) -> bool:
         os.close(ruleset)
 
 
+def _bpf(code: int, jt: int, jf: int, k: int) -> bytes:
+    return struct.pack("=HBBI", code, jt, jf, k)
+
+
+def socket_filter(machine: str) -> bytes:
+    """O programa BPF: arquitetura diferente da esperada mata o processo; ``socket`` (e, no ``x86_64``, toda chamada x32) devolve
+    ``EPERM``; o resto passa. Os saltos são relativos à instrução seguinte."""
+    nr = _SOCKET_NR[machine]
+    head = [_bpf(_BPF_LD_W_ABS, 0, 0, _DATA_ARCH), _bpf(_BPF_JEQ_K, 1, 0, _AUDIT_ARCH[machine])]
+    head.append(_bpf(_BPF_RET_K, 0, 0, _RET_KILL_PROCESS))
+    body = [_bpf(_BPF_LD_W_ABS, 0, 0, _DATA_NR)]
+    if machine == "x86_64":
+        body.append(_bpf(_BPF_JGE_K, 2, 0, _X32_SYSCALL_BIT))  # salta o JEQ e o ALLOW: EPERM
+    body.append(_bpf(_BPF_JEQ_K, 1, 0, nr))  # salta o ALLOW: EPERM
+    tail = [_bpf(_BPF_RET_K, 0, 0, _RET_ALLOW), _bpf(_BPF_RET_K, 0, 0, _RET_EPERM)]
+    return b"".join(head + body + tail)
+
+
+def _seccomp(machine: str) -> bool:
+    program = socket_filter(machine)
+    buffer = ctypes.create_string_buffer(program, len(program))
+    fprog = _SockFprog(len(program) // 8, ctypes.cast(buffer, ctypes.c_void_p))
+    libc = _libc()
+    if libc.prctl(_PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0):
+        return False
+    return libc.prctl(_PR_SET_SECCOMP, _SECCOMP_MODE_FILTER, ctypes.byref(fprog), 0, 0) == 0
+
+
 def _limits() -> None:
     resource.setrlimit(resource.RLIMIT_NPROC, (0, 0))
     resource.setrlimit(resource.RLIMIT_FSIZE, (0, 0))
 
 
 def confine() -> bool:
-    """Aplica os limites e o Landlock a ESTE processo, sem volta. ``True`` só com tudo aplicado; nunca levanta."""
+    """Aplica os limites, o Landlock e o filtro de sockets a ESTE processo, sem volta. ``True`` só com tudo aplicado; nunca levanta."""
     try:
         _limits()
-        abi = landlock_abi()
-        return abi > 0 and _landlock(abi, python_paths())
+        abi, machine = landlock_abi(), platform.machine()
+        if abi < MIN_ABI or machine not in _SOCKET_NR:
+            return False
+        paths = python_paths()
+        if exposes_app(paths):
+            return False
+        return _landlock(abi, paths) and _seccomp(machine)
     except Exception:  # noqa: BLE001 - qualquer falha é "não confinado", e a política decide
         return False
 
 
 def enter_sandbox() -> None:
     """No worker, antes de ler a entrada e de importar o decodificador. Na política fechada, sem sandbox o processo sai na hora
-    com ``SANDBOX_EXIT`` (nada na saída); no modo degradado segue só com os limites que conseguiu."""
+    com ``SANDBOX_EXIT`` (nada na saída); no modo degradado segue só com o que conseguiu aplicar."""
     if not confine() and FAIL_CLOSED:
         os._exit(SANDBOX_EXIT)
 
 
 def may_spawn(log: logging.Logger) -> bool:
-    """No pai, antes de abrir um worker: o kernel oferece Landlock? Sem ele, a política decide e o código vai ao log uma vez."""
-    if landlock_abi() > 0:
+    """No pai, antes de buscar a imagem e de abrir um worker: o sandbox cabe aqui? Sem ele, a política decide e o código vai ao log
+    uma vez."""
+    if supported():
         return True
     report(log)
     return not FAIL_CLOSED
+
+
+def refused(returncode: object, log: logging.Logger) -> bool:
+    """No pai, depois do worker: ele se recusou por falta de sandbox? Nesse caso o código vai ao log (uma vez)."""
+    if returncode != SANDBOX_EXIT:
+        return False
+    report(log)
+    return True
 
 
 def report(log: logging.Logger) -> None:
@@ -180,10 +254,16 @@ def report(log: logging.Logger) -> None:
     if FAIL_CLOSED:
         log.error("Decodificador de imagens recusado: sem sandbox (%s)", UNAVAILABLE_CODE)
     else:
-        log.warning("Decodificador de imagens sem sandbox, só com limites (%s)", DEGRADED_CODE)
+        log.warning("Decodificador de imagens sem sandbox completo (%s)", DEGRADED_CODE)
 
 
-def kill_group(pid: int) -> None:
-    """Mata o grupo do worker (aberto com ``start_new_session``, então o grupo é o PID dele). Só enquanto o PID não foi recolhido."""
-    with suppress(ProcessLookupError, PermissionError):
-        os.killpg(pid, signal.SIGKILL)
+def kill_worker(process: Any) -> None:
+    """Mata o grupo do worker (aberto com ``start_new_session``, então o grupo é o PID dele) e, se não der, o próprio processo. Só
+    enquanto o worker não foi recolhido (``returncode is None``): depois disso o PID pode ser de outro."""
+    if getattr(process, "returncode", None) is not None:
+        return
+    with suppress(ProcessLookupError, PermissionError, AttributeError):
+        os.killpg(process.pid, signal.SIGKILL)
+        return
+    with suppress(ProcessLookupError):
+        process.kill()  # o laço pode já ter recolhido o worker morto

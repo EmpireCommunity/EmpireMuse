@@ -13,8 +13,9 @@ import resource
 import sys
 from pathlib import Path
 
-# o módulo do sandbox pelo caminho do próprio pacote (``-I`` não põe nada no ``sys.path``); só stdlib, antes de qualquer outra coisa
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+# o módulo do sandbox pelo caminho do próprio pacote (``-I`` não põe nada no ``sys.path``); só stdlib, antes de qualquer outra coisa.
+# No fim do ``sys.path``: a biblioteca padrão e o ``site-packages`` continuam na frente.
+sys.path.append(str(Path(__file__).resolve().parents[3]))
 from empiremuse.utils.sandbox import enter_sandbox  # noqa: E402
 
 MAX_INPUT = 256 * 1024

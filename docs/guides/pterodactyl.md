@@ -47,6 +47,9 @@ O egg disponibiliza duas opções de imagem Docker:
 > [!TIP]
 > O daemon do Pterodactyl (**Wings**) baixa novamente a imagem selecionada ao reiniciar o servidor caso haja atualizações na tag correspondente no registro.
 
+> [!NOTE]
+> O decodificador de imagens roda em sandbox e exige suporte do kernel do nó (Landlock). Sem ele, logos e capas ficam no ícone padrão e o log mostra `SANDBOX-OFF` uma vez.
+
 ---
 
 ## 3. Dimensionamento de Recursos e Memória
