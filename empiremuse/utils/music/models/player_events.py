@@ -133,6 +133,8 @@ class PlayerEventsMixin:
                 logger.exception("Falha em hook_events")
 
     async def track_end(self, ignore_track_loop=False):
+        from empiremuse.utils.radio.jukebox_station import is_station_track
+
         self.votes.clear()
 
         self.locked = True
@@ -155,7 +157,9 @@ class PlayerEventsMixin:
             elif self.last_track.track_loops and not ignore_track_loop:
                 self.last_track.info["extra"]["track_loops"] -= 1
                 self.queue.insert(0, self.last_track)
-            elif self.loop == "queue":  # or self.keep_connected:
+            elif self.loop == "queue" and not is_station_track(
+                self.last_track
+            ):  # A6: só as pedidas repetem; a estação não é item da fila
                 if self.is_previows_music:
                     self.queue.insert(1, self.last_track)
                     self.is_previows_music = False

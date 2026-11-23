@@ -55,11 +55,15 @@ class PlayerStateMixin:
 
         self.is_closing = True
 
-        if getattr(self, "radio_mode", None) is not None or getattr(self, "radio_vote", None) is not None:
+        if (
+            getattr(self, "radio_mode", None) is not None
+            or getattr(self, "radio_vote", None) is not None
+            or getattr(self, "station", None) is not None
+        ):
             try:
                 await self.bot.pool.radio.jukebox.forget(
                     self
-                )  # modo rádio: token revogado e voto/tentativas cancelados, sem tarefa solta
+                )  # modo rádio ou estação: token revogado, estação zerada, voto/tentativas cancelados, sem tarefa solta
             except Exception:
                 logger.exception("Falha ao encerrar o modo rádio da Jukebox")
 

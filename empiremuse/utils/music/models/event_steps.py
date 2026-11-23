@@ -246,7 +246,7 @@ async def _he_dispatch(self, event) -> None:
                 and not _he_jukebox_radio(self, event)
                 and not await _he_custom_radio_failure(self, event)
             ):
-                await _he_track_stuck(self)
+                await _he_track_stuck(self, event)
         else:
             logger.debug("Evento Wavelink desconhecido: %s", type(event).__name__)
 
@@ -286,6 +286,10 @@ async def _he_track_end(self, event) -> None:
 
     if event.reason in PLAYED_END_REASONS:
         self.network_abandon_streak = 0
+
+    if getattr(self, "station", None) is not None:
+        # a sequência de falhas da estação zera só com progresso real; LOAD_FAILED tira a faixa do pool dela (§2.6)
+        self.bot.pool.radio.jukebox.station_track_ended(self, _he_event_encoded(event), event.reason)
 
     if event.reason == "FINISHED":
         # Só o progresso real devolve a nova tentativa: o TrackStart sai antes de o Lavalink abrir o stream.
@@ -352,7 +356,19 @@ async def _he_wait_for_bot_voice_state(self) -> bool:
     return True
 
 
-async def _he_track_stuck(self) -> None:
+def _he_event_encoded(event) -> object:
+    """A faixa de um evento do Lavalink: o ``encoded`` (v4 manda o objeto da faixa; v3, a string). ``None`` se o evento não diz."""
+    track = getattr(event, "track", None)
+    if isinstance(track, dict):
+        return track.get("encoded")
+    return track if isinstance(track, str) else None
+
+
+async def _he_track_stuck(self, event=None) -> None:
+    if getattr(self, "station", None) is not None:
+        # a faixa da estação travou: sai do pool dela (identificada pelo evento, não por ``current``)
+        self.bot.pool.radio.jukebox.station_track_failed(self, _he_event_encoded(event) or self.current)
+
     _he_cancel_message_updater(self)
 
     await self.track_end()
@@ -513,6 +529,9 @@ def _he_is_youtube_plugin_cause(event) -> bool:
 
 async def _he_track_exception(self, event) -> None:
     track = self.current or self.last_track
+    if getattr(self, "station", None) is not None and event.node.identifier == self.node.identifier:
+        # a faixa da estação não carregou: sai do pool dela (identificada pelo evento, não por ``current``)
+        self.bot.pool.radio.jukebox.station_track_failed(self, _he_event_encoded(event) or track)
     embed, error_code = _he_exception_embed(self, event, track)
     error_format = pprint.pformat(event.data)
 

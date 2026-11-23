@@ -1,0 +1,105 @@
+"""Endurecimento do processo na subida (``process_hardening``): a marcação vale no Linux, com um caso de controle sem ela.
+Cada caso roda num processo à parte: o do pytest não muda."""
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+from empiremuse import __main__ as main_module
+from empiremuse import process_hardening
+
+pytestmark = [
+    pytest.mark.critical,
+    pytest.mark.skipif(not sys.platform.startswith("linux"), reason="prctl só existe no Linux"),
+]
+
+ROOT = str(Path(__file__).resolve().parents[2])
+
+PARENT = """
+import os, subprocess, sys
+sys.path.insert(0, sys.argv[1])
+from empiremuse.process_hardening import is_dumpable, mark_non_dumpable
+if sys.argv[2] == "mark":
+    assert mark_non_dumpable() and is_dumpable() is False
+child = '''
+import os
+try:
+    open(f"/proc/{os.getppid()}/environ", "rb").read()
+    print("read")
+except PermissionError:
+    print("denied")
+'''
+out = subprocess.run(
+    [sys.executable, "-I", "-c", child], env={}, cwd="/", close_fds=True, start_new_session=True,
+    stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=20,
+)
+print(out.stdout.decode().strip())
+"""
+
+
+def _run(*args: str) -> str:
+    done = subprocess.run([sys.executable, "-I", "-c", *args], capture_output=True, timeout=30, check=True, cwd="/")
+    return done.stdout.decode().strip()
+
+
+def test_the_bot_process_is_marked_non_dumpable():
+    code = (
+        "import sys; sys.path.insert(0, sys.argv[1]);"
+        "from empiremuse.process_hardening import is_dumpable, mark_non_dumpable;"
+        "print(is_dumpable(), mark_non_dumpable(), is_dumpable())"
+    )
+
+    assert _run(code, ROOT) == "True True False"
+
+
+def test_outside_linux_it_is_a_no_op():
+    assert process_hardening.mark_non_dumpable(platform="darwin") is False
+    assert process_hardening.is_dumpable(platform="win32") is None
+
+
+@pytest.mark.parametrize(
+    ("done", "platform", "status"),
+    [(True, "linux", "ok"), (False, "linux", "warn"), (False, "darwin", "ok")],
+)
+def test_the_boot_report_gets_ok_or_warn_for_the_marking(done, platform, status):
+    assert process_hardening.hardening_step(done, platform)[0] == status
+
+
+@pytest.mark.parametrize("failure", ["refused", "broken"])
+def test_a_failed_marking_is_never_silent(monkeypatch, capsys, failure):
+    def broken():
+        raise ImportError
+
+    monkeypatch.setattr(process_hardening, "mark_non_dumpable", (lambda: False) if failure == "refused" else broken)
+
+    status, detail = main_module.harden_process()
+
+    assert status == "warn" and detail
+    assert ("[boot]" in capsys.readouterr().err) is (failure == "broken")
+
+
+@pytest.mark.parametrize(
+    ("hardening", "with_report", "deferred", "on_stderr"),
+    [
+        (("warn", "não marcado"), True, True, False),
+        (("warn", "não marcado"), False, False, True),  # sem relatório o aviso não some
+        (("ok", "marcado"), False, False, False),
+    ],
+)
+def test_the_hardening_step_reaches_the_report_or_stderr(capsys, hardening, with_report, deferred, on_stderr):
+    calls = []
+    report = type("Report", (), {"defer": lambda self, *step: calls.append(step)})() if with_report else None
+
+    main_module.record_hardening(report, hardening)
+
+    assert (calls == [("Processo", *hardening)]) is deferred
+    assert (hardening[1] in capsys.readouterr().err) is on_stderr
+
+
+@pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0, reason="precisa de um usuário sem privilégio")
+@pytest.mark.parametrize(("mode", "expected"), [("mark", "denied"), ("plain", "read")])
+def test_a_process_of_the_same_user_cannot_inspect_the_marked_process(mode, expected):
+    assert _run(PARENT, ROOT, mode) == expected

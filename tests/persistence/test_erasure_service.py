@@ -619,6 +619,29 @@ async def test_falha_ao_destruir_sessoes_do_painel_vira_partial(mundo, falha_na_
     assert relatorio.status is ErasureStatus.PARTIAL and relatorio.failed == ("memory",) and len(chamadas) == 2
 
 
+@pytest.mark.regression
+def test_sessoes_destruidas_contam_mesmo_quando_um_ouvinte_de_limpeza_falha(mundo):
+    """Backlog "Erasure exc.destroyed": as sessões que caíram antes de um ouvinte falhar contam no relatório (limpeza parcial)."""
+    from empiremuse.rules.user_cleanup import UserCleanupError
+
+    class Loja:
+        def __init__(self, falha):
+            self.falha = falha
+
+        def destroy_user(self, user_id):
+            if self.falha:
+                raise UserCleanupError(3, 1)  # 3 sessões destruídas, 1 ouvinte falhou
+            return 3
+
+    mundo.pool.panel_sessions = Loja(falha=False)
+    inteira = mundo.service._close_connections(ALVO)
+    mundo.pool.panel_sessions = Loja(falha=True)
+    parcial = mundo.service._close_connections(ALVO)
+
+    assert inteira.ok is True and parcial.ok is False
+    assert parcial.count == inteira.count  # as 3 sessões aparecem nos dois casos
+
+
 @pytest.mark.asyncio
 async def test_falha_ao_ler_o_documento_do_usuario_para_a_passada_2_vira_partial_em_users(mundo, monkeypatch):
     await semear_membro(mundo, ALVO)

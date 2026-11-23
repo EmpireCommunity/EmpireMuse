@@ -203,6 +203,15 @@ jobs:
           if [ "$PASSARAM" -lt "$MINIMO" ]; then echo "::error::Esperava ao menos $MINIMO testes Mongo PASSED, vieram $PASSARAM"; exit 1; fi
           if grep -q '^SKIPPED' "$RUNNER_TEMP/mongo-integracao.txt"; then echo "::error::teste de integração pulado"; exit 1; fi
 
+      - name: Sandbox dos decodificadores de imagem roda de verdade (sem skip)
+        if: steps.detect-changes.outputs.code == 'true'
+        shell: bash
+        run: |
+          # Num kernel sem o sandbox os testes dele são pulados em silêncio; o runner é Linux e não é root, então nenhum pode ser pulado.
+          set -o pipefail
+          pytest tests/audio/test_decoder_sandbox.py -rA -p no:cacheprovider --no-header | tee "$RUNNER_TEMP/decoder-sandbox.txt"
+          if grep -q '^SKIPPED' "$RUNNER_TEMP/decoder-sandbox.txt"; then echo "::error::teste do sandbox pulado"; exit 1; fi
+
       - name: Firewall da 443 (on/off, IPv6 e rollback) roda de verdade em namespace descartável (sem skip)
         shell: bash
         run: |

@@ -81,6 +81,9 @@ RUN_RPC_SERVER=false
 PANEL_ENABLED=false
 ```
 
+> [!NOTE]
+> O decodificador de imagens roda em sandbox e exige suporte do kernel do host (Landlock, kernel 6.12 ou mais novo). Sem ele, logos e capas ficam no ícone padrão e o log mostra `SANDBOX-OFF` uma vez.
+
 ### 3.2 Variáveis Essenciais
 ```env
 TOKEN=seu_token_do_discord_aqui

@@ -105,6 +105,42 @@ class TestEnsurePanel:
         assert w.hub.manager._panels == {4242: w.ports.radio.id}
 
     @pytest.mark.asyncio
+    async def test_with_the_render_slot_busy_the_panel_goes_out_without_the_visor_and_asks_for_the_redraw(self):
+        """T-S1-FIX: a rádio subindo nunca espera a vaga de render; o painel sai sem a imagem e a edição de sempre a traz."""
+        w = build_ports()
+        await grant(w)
+        w.channel.send = AsyncMock(return_value=SimpleNamespace(id=4242))
+        w.channel.fetch_message = AsyncMock()
+        w.ports._uses_visor = lambda: True
+        w.ports._panel_payload = AsyncMock(return_value={"embeds": [disnake.Embed()], "components": []})
+        w.ports.refresh_panel = MagicMock()
+
+        await w.ports.ensure_panel()
+
+        assert w.ports._panel_payload.await_args.kwargs == {"now": True}
+        w.channel.send.assert_awaited_once()
+        w.ports.refresh_panel.assert_called_once_with()
+        assert (await w.hub.store.get(w.ports.radio.id)).panel_message_id == 4242
+
+    @pytest.mark.asyncio
+    async def test_with_the_render_slot_busy_an_existing_panel_is_kept_and_redrawn_later(self):
+        w = build_ports()
+        await grant(w)
+        await w.hub.store.set_panel_message(w.ports.radio.id, 4242)
+        existing = SimpleNamespace(id=4242, edit=AsyncMock())
+        w.channel.send = AsyncMock()
+        w.channel.fetch_message = AsyncMock(return_value=existing)
+        w.ports._uses_visor = lambda: True
+        w.ports._panel_payload = AsyncMock(return_value={"embeds": [disnake.Embed()], "components": []})
+        w.ports.refresh_panel = MagicMock()
+
+        await w.ports.ensure_panel()
+
+        existing.edit.assert_not_awaited()
+        w.channel.send.assert_not_awaited()
+        w.ports.refresh_panel.assert_called_once_with()
+
+    @pytest.mark.asyncio
     async def test_a_deleted_panel_is_replaced(self):
         w = build_ports()
         await grant(w)
