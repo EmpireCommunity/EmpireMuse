@@ -22,7 +22,10 @@ from empiremuse.rules.errors import RuleError
 from empiremuse.rules.radio import (
     KIND_CUSTOM,
     KIND_LIVE,
+    LOOK_INVALID,
     MAX_PER_GUILD,
+    SKIN_INVALID,
+    SKINS,
     SOURCE_INVALID,
     Radio,
     check_chat,
@@ -33,6 +36,7 @@ from empiremuse.rules.radio import (
 from empiremuse.rules.radio_station import from_document as from_station_document
 from empiremuse.rules.radio_station import is_genre, valid_station_id
 from empiremuse.rules.radio_stations import valid_uuid
+from empiremuse.rules.skins import legacy_radio_skin, valid_radio_look
 from empiremuse.utils.radio.premium import CAS_ATTEMPTS, GLOBAL_DB, PremiumStore, RadioUnavailable
 
 if TYPE_CHECKING:
@@ -334,15 +338,25 @@ class RadioStore:
         return checked
 
     async def _set_field(
-        self, radio_id: str, field_name: str, value: object, *, expected_rev: int, updated_by: str
+        self,
+        radio_id: str,
+        field_name: str,
+        value: object,
+        *,
+        expected_rev: int,
+        updated_by: str,
+        guild_id: Optional[int] = None,
+        **also: object,
     ) -> Radio:
-        """Muda UM campo de cabeçalho (``skin``, ``filter``) com compare-and-set no ``rev``; o valor passa pela mesma validação do documento."""
+        """Muda UM campo de cabeçalho (``look``, ``filter``) com compare-and-set no ``rev``; o valor passa pela mesma validação do documento.
+
+        Com ``guild_id``, a rádio relida tem que ser desse servidor; senão ``RadioNotFound``, sem escrever (F-7)."""
         current = self._radio(await self._find(radio_id))
-        if current is None:
+        if current is None or (guild_id is not None and current.guild_id != int(guild_id)):
             raise RadioNotFound
         if current.rev != expected_rev:
             raise RadioConflict
-        updated = dataclasses.replace(current, **{field_name: value}, rev=current.rev + 1)
+        updated = dataclasses.replace(current, **{field_name: value}, **also, rev=current.rev + 1)
         checked = check_radio(to_document(updated))
         if isinstance(checked, RuleError):
             raise RadioInvalid(checked)
@@ -370,9 +384,33 @@ class RadioStore:
             raise RadioConflict
         return checked
 
-    async def set_skin(self, radio_id: str, skin: object, *, expected_rev: int, updated_by: str = "") -> Radio:
-        """O visual do painel (``black`` ou ``white``). ``RadioInvalid`` para qualquer outro valor."""
-        return await self._set_field(radio_id, "skin", skin, expected_rev=expected_rev, updated_by=updated_by)
+    async def set_look(
+        self, guild_id: int, radio_id: str, look: object, *, expected_rev: int, updated_by: str = ""
+    ) -> Radio:
+        """A skin própria da rádio (``rules/skins.RADIO_LOOKS``); ``None`` = usar a de todas as rádios do servidor.
+
+        Relê o documento e confere o servidor (outra rádio = ``RadioNotFound``, sem escrever); valor fora da lista =
+        ``RadioInvalid``. O campo antigo ``skin`` acompanha o tema (``white`` só para skin clara), para o rc anterior."""
+        if look is not None and not valid_radio_look(look):
+            raise RadioInvalid(RuleError(LOOK_INVALID, "look"))
+        return await self._set_field(
+            radio_id,
+            "look",
+            look,
+            expected_rev=expected_rev,
+            updated_by=updated_by,
+            guild_id=guild_id,
+            skin=legacy_radio_skin(look),
+        )
+
+    async def set_skin(
+        self, guild_id: int, radio_id: str, skin: object, *, expected_rev: int, updated_by: str = ""
+    ) -> Radio:
+        """O visual de antes do 2.3 (``black`` ou ``white``), gravado como a skin própria da rádio. ``RadioInvalid`` para
+        qualquer outro valor; rádio de outro servidor = ``RadioNotFound``."""
+        if skin not in SKINS:
+            raise RadioInvalid(RuleError(SKIN_INVALID, "skin"))
+        return await self.set_look(guild_id, radio_id, skin, expected_rev=expected_rev, updated_by=updated_by)
 
     async def set_filter(self, radio_id: str, node_id: object, *, expected_rev: int, updated_by: str = "") -> Radio:
         """Lembra o último filtro de local aplicado (id do nó da árvore; ``None`` o esquece). Vale para as duas espécies de rádio."""

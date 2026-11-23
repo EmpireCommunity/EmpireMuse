@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from empiremuse.rules.errors import RuleError
+from empiremuse.rules.skins import LEGACY_RADIO_SKINS, legacy_radio_skin, look_from_legacy, valid_radio_look
 
 KIND_CUSTOM = "custom"
 KIND_LIVE = "live"
@@ -39,8 +40,9 @@ CHAT_UNKNOWN_FIELD = "radio_chat_unknown_field"
 ENABLED_INVALID = "radio_enabled_invalid"
 REV_INVALID = "radio_rev_invalid"
 SKIN_INVALID = "radio_skin_invalid"
+LOOK_INVALID = "radio_look_invalid"
 FILTER_INVALID = "radio_filter_invalid"
-SKINS = ("black", "white")
+SKINS = LEGACY_RADIO_SKINS  # o campo antigo ``skin``: continua estrito (o rc anterior lê o mesmo documento)
 DEFAULT_SKIN = SKINS[0]
 
 _SNOWFLAKE = re.compile(r"[0-9]{1,20}")
@@ -67,10 +69,12 @@ class Radio:
     clock_started_at: float | None = (
         None  # época (``time.time()``) em que a programação virtual ligou: sobrevive ao reinício (Q3)
     )
-    skin: str = "black"  # o visual do painel (R7): ``SKINS``
+    skin: str = "black"  # o campo antigo (R7): ``SKINS``; sempre o tema claro/escuro de ``look`` quando há ``look``
     filter: str | None = (
         None  # o ÚLTIMO filtro de local aplicado (id do nó da árvore; ``f:fav`` = as favoritas): o painel o reabre já expandido (R6)
     )
+    # A skin própria desta rádio (2.3, ``rules/skins.RADIO_LOOKS``); ``None`` = usa a de todas as rádios do servidor.
+    look: str | None = None
     extra: dict[str, Any] = field(default_factory=dict, compare=False)
 
 
@@ -249,6 +253,7 @@ def check_radio(raw: object) -> Radio | RuleError:
     skin = raw.get("skin", DEFAULT_SKIN)
     if skin not in SKINS:
         return RuleError(SKIN_INVALID, "skin")
+    look = _look(raw, skin)
     last_filter = raw.get("filter")
     if last_filter is not None and not (isinstance(last_filter, str) and _FILTER_ID.fullmatch(last_filter)):
         return RuleError(FILTER_INVALID, "filter")
@@ -264,9 +269,19 @@ def check_radio(raw: object) -> Radio | RuleError:
         rev=rev,
         panel_message_id=panel_id,
         clock_started_at=None if clock is None else float(clock),
-        skin=skin,
+        skin=skin if look is None else legacy_radio_skin(look),
         filter=last_filter,
+        look=look,
     )
+
+
+def _look(raw: Mapping[str, Any], skin: object) -> str | None:
+    """O ``look`` nunca invalida o documento: fora de ``RADIO_LOOKS`` vira ``None``. Documento de antes do 2.3 (sem a chave)
+    deriva do ``skin`` antigo (``look_from_legacy``)."""
+    if "look" not in raw:
+        return look_from_legacy(skin)
+    value = raw["look"]
+    return value if valid_radio_look(value) else None
 
 
 def to_document(radio: Radio, *, updated_by: str = "") -> dict[str, Any]:
@@ -284,7 +299,8 @@ def to_document(radio: Radio, *, updated_by: str = "") -> dict[str, Any]:
         "enabled": radio.enabled,
         "panel_message_id": None if radio.panel_message_id is None else str(radio.panel_message_id),
         "clock_started_at": radio.clock_started_at,
-        "skin": radio.skin,
+        "skin": radio.skin if radio.look is None else legacy_radio_skin(radio.look),
+        "look": radio.look,
         "filter": radio.filter,
         "rev": radio.rev,
         "updated_by": str(updated_by)[:40],

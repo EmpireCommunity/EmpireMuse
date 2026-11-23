@@ -9,6 +9,7 @@ from disnake.ext import commands
 
 import empiremuse.wavelink as wavelink
 from empiremuse.logs.context import guild_extra
+from empiremuse.rules.skins import jukebox_choice
 from empiremuse.rules.voice_status import resolve_voice_status
 from empiremuse.utils.client import BotCore
 from empiremuse.utils.db import DBModel
@@ -126,6 +127,9 @@ class PlayerLifecycleMixin:
         if global_data["global_skin"]:
             skin = global_data["player_skin"] or skin
             static_skin = global_data["player_skin_static"] or guild_data["player_controller"]["static_skin"]
+
+        # Q1 (2.3): o que conta como escolha; ``None`` = nunca escolhido = o padrão do registro (Expandida escura, D2).
+        skin, static_skin = jukebox_choice(skin), jukebox_choice(static_skin)
 
         try:
             invite = global_data["listen_along_invites"][str(vc.id)]

@@ -48,12 +48,12 @@ class TestSkinAndFilterInTheDocument:
         await premium(w)
         radio = await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2, kind="live")
 
-        saved = await w.hub.store.set_skin(radio.id, "white", expected_rev=radio.rev)
+        saved = await w.hub.store.set_skin(GUILD, radio.id, "white", expected_rev=radio.rev)
         saved = await w.hub.store.set_filter(radio.id, "br:sp", expected_rev=saved.rev)
 
         assert (saved.skin, saved.filter) == ("white", "br:sp")
         with pytest.raises(RadioInvalid):
-            await w.hub.store.set_skin(radio.id, "neon", expected_rev=saved.rev)
+            await w.hub.store.set_skin(GUILD, radio.id, "neon", expected_rev=saved.rev)
         with pytest.raises(RadioConflict):
             await w.hub.store.set_filter(radio.id, "br", expected_rev=radio.rev)  # rev velho
 
