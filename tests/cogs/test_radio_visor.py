@@ -8,6 +8,7 @@ from PIL import Image
 from empiremuse.i18n import get_i18n
 from empiremuse.utils.music.skins.radio_player import SKIN_NAMES, TOKEN_NAMES, load_radio_skin, load_radio_skins
 from empiremuse.utils.radio.visor import HEIGHT, SCALE, WIDTH, NextStation, VisorData, clean_text, render_visor
+from tests.support.radio_snapshot import snapshot
 
 pytestmark = pytest.mark.critical
 
@@ -84,40 +85,6 @@ def test_a_logo_that_is_not_an_image_does_not_break_the_visor():
 
 
 # ============================================================================ adaptador do snapshot do Turbine
-
-
-def snapshot(**overrides):
-    from empiremuse.utils.radio.snapshot import RadioPanelSnapshot, StationOption
-
-    window = tuple(StationOption(i, f"id{i}", f"Estação {i}", 64 * i, "mp3", "good") for i in range(1, 6))
-    base = dict(
-        radio_id="1:100",
-        skin="white",
-        station_name="Estação 3",
-        country="Brasil",
-        codec="mp3",
-        bitrate_kbps=192,
-        logo=None,
-        quality="ok",
-        now_title="Música",
-        now_artist=None,
-        state="live",
-        reserve_number=None,
-        volume=150,
-        started_at=None,
-        on_air_minutes=7,
-        filter_path=("América do Sul", "Brasil", "SP", "Campinas"),
-        list_kind="stations",
-        position=3,
-        total=40,
-        stations=window,
-        current_index=2,
-        favorite=True,
-        favorites_full=False,
-        retry_seconds=None,
-    )
-    base.update(overrides)
-    return RadioPanelSnapshot(**base)
 
 
 def test_the_snapshot_adapter_maps_every_field_and_takes_the_two_stations_after_the_current_one():
