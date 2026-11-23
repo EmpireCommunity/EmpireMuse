@@ -163,7 +163,7 @@ class CustomRadioPorts(DiscordRadioPorts):
         playing = radio_track_of(getattr(self._player(), "current", None))
         if playing is not None and playing != self.current:
             self.current = playing
-            self._refresh_panel()
+            self.refresh_panel()
 
     async def _from_cache(self, player: Any, track: Track) -> Any | None:
         """A faixa do cache de resolvidas, se o nó ainda decodifica o ``encoded`` guardado; senão a entrada é apagada e a busca segue."""
@@ -205,14 +205,14 @@ class CustomRadioPorts(DiscordRadioPorts):
         player.queue.append(partial)
         self.current = track
         await player.process_next()
-        self._refresh_panel()
+        self.refresh_panel()
         await self._stock()
 
     def _source_broken(self) -> None:
         """Pool vazio ou Last.fm fora sem lista velha: a rádio segue ligada, o painel avisa e a próxima tentativa só vem em ``RETRY_AFTER_S``."""
         self.no_tracks = True
         self.retry_at = self.now() + RETRY_AFTER_S
-        self._refresh_panel()
+        self.refresh_panel()
 
     async def _retry_broken_source(self) -> bool:
         """Chamado a cada passo com a fonte quebrada. ``False`` enquanto não chegou a hora (nenhum ``prepare``, nenhuma consulta ao Last.fm); chegada a hora,
@@ -247,7 +247,7 @@ class CustomRadioPorts(DiscordRadioPorts):
         """Recua, relê a estação e as listas (o cache de 24 h vale) e recomeça com histórico e sequência zerados; o pool que continua tendo faixas é a
         fonte boa. Pool vazio, ou Last.fm fora sem lista velha, é fonte quebrada: ``NoPlayableTracks``."""
         self.searching = True
-        self._refresh_panel()
+        self.refresh_panel()
         try:
             await self.sleep(REBUILD_BACKOFF_S)
             try:
@@ -258,7 +258,7 @@ class CustomRadioPorts(DiscordRadioPorts):
                 self.session.rebuilt = True
         finally:
             self.searching = False
-            self._refresh_panel()
+            self.refresh_panel()
 
     async def track_failed(self, partial: Any) -> None:
         """A faixa que tocava falhou (carga, ``TrackException``, ``LOAD_FAILED``, travou): cache negativo pela chave DELA e a próxima na hora (a adiantada, ou um
@@ -329,7 +329,7 @@ class CustomRadioPorts(DiscordRadioPorts):
             return
         await player.process_next()
         self.sync_current()
-        self._refresh_panel()
+        self.refresh_panel()
         await self._stock()
 
     async def sleep(self, seconds: float) -> None:
@@ -351,7 +351,7 @@ class CustomRadioPorts(DiscordRadioPorts):
         if self.no_tracks or self.searching:
             self._wake.set()  # a fonte estava quebrada ou em recuo: a estação nova tenta na hora, sem esperar os 10 min
         self.station, self.session, self.current, self.no_tracks = None, None, None, False
-        self._refresh_panel()
+        self.refresh_panel()
 
     def durations_ms(self) -> list[int]:
         return []  # sem relógio virtual: a faixa é sorteada, não calculada pelo tempo
@@ -388,7 +388,7 @@ class CustomRadioPorts(DiscordRadioPorts):
             unknown=self.unknown,
         )
 
-    def _refresh_panel(self) -> None:
+    def refresh_panel(self) -> None:
         """Refaz o painel (faixa no ar, sem faixas) em segundo plano; no máximo uma edição por vez. O pedido que chega durante
         a edição em curso não se perde: ela edita de novo ao terminar."""
         self._panel_dirty = True

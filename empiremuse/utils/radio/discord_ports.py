@@ -365,11 +365,13 @@ class DiscordRadioPorts:
         """O painel desta rádio é o visor em imagem? (a ao vivo e a personalizada; só as portas da personalizada têm estação)"""
         return self.radio.kind == "live" or (self.radio.kind == "custom" and hasattr(self, "station"))
 
+    def refresh_panel(self) -> None:
+        """Pede o redesenho do painel (a skin mudou, uma escolha no menu); a ao vivo e a personalizada sobrescrevem. Aqui,
+        sem painel próprio, nada."""
+
     def _redraw_panel_later(self) -> None:
         """Pede a edição que traz o visor (o painel saiu sem a imagem porque a vaga de render estava ocupada)."""
-        redraw = getattr(self, "refresh_panel", None) or getattr(self, "_refresh_panel", None)
-        if redraw is not None:
-            redraw()
+        self.refresh_panel()
 
     async def _panel_payload(
         self, bot: BotCore, guild: disnake.Guild, current: Radio, *, now: bool = False

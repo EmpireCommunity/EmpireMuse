@@ -106,7 +106,7 @@ class TestTheRadioPlayerSwapsTheCandidate:
         ports.session = CustomSession([radio_track], cache)
         ports._load_failed_expected = False
         ports.play_next = AsyncMock()
-        ports._refresh_panel = MagicMock()
+        ports.refresh_panel = MagicMock()
         player.bot = SimpleNamespace(
             pool=SimpleNamespace(
                 radio=SimpleNamespace(manager=SimpleNamespace(runner=lambda rid: SimpleNamespace(ports=ports)))
@@ -251,12 +251,12 @@ class TestTheRadioPlayerSwapsTheCandidate:
     @pytest.mark.asyncio
     async def test_the_panel_follows_the_track_that_is_playing_even_when_it_came_from_the_stock(self):
         w = self.make_world("b")
-        w.ports._refresh_panel.reset_mock()
+        w.ports.refresh_panel.reset_mock()
 
         w.ports.sync_current()
 
         assert w.ports.current == w.track  # o player toca a faixa etiquetada, o painel passa a mostrar ela
-        w.ports._refresh_panel.assert_called_once()
+        w.ports.refresh_panel.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_cached_radio_track_swaps_candidates_without_a_search_marker(self):

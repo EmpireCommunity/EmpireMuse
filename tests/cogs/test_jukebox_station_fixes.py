@@ -553,7 +553,7 @@ async def test_the_24h_radio_treats_unavailable_playlists_as_a_broken_source():
         prepare=AsyncMock(side_effect=PlaylistsUnavailable()),
         _source_broken=Mock(),
         sleep=AsyncMock(),
-        _refresh_panel=Mock(),
+        refresh_panel=Mock(),
         searching=False,
         session=None,
     )

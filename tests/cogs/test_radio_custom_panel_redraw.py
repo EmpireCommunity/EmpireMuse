@@ -55,7 +55,7 @@ def ports_with(payloads):
 )
 async def test_a_busy_render_slot_retries_the_custom_panel_later(payloads, edits, waits):
     ports, message, slept = ports_with(list(payloads))
-    ports._refresh_panel()
+    ports.refresh_panel()
     await ports._panel_task
     assert message.edit.await_count == edits and slept == [custom_ports.PANEL_BUSY_RETRY_S] * waits
 
@@ -69,9 +69,19 @@ async def test_a_redraw_asked_during_an_edit_is_not_dropped():
         await gate.wait()
 
     message.edit.side_effect = slow_edit
-    ports._refresh_panel()
+    ports.refresh_panel()
     await asyncio.sleep(0)
-    ports._refresh_panel()  # chega com a primeira edição em curso
+    ports.refresh_panel()  # chega com a primeira edição em curso
     gate.set()
     await ports._panel_task
     assert message.edit.await_count == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_the_public_panel_refresh_redraws_the_custom_panel():
+    """Quem está fora das portas (o menu do painel, o ``/skins``) acha o redesenho pelo nome público."""
+    ports, message, _ = ports_with([{"file": "visor"}])
+    getattr(ports, "refresh_panel")()
+    await ports._panel_task
+    assert message.edit.await_count == 1
