@@ -242,6 +242,16 @@ class TestSaveSkins:
         await skins_view.save_skins(Bot({}, store=store), GUILD, plan, updated_by="9")
         assert store.calls == [(GUILD, f"{BOT_B}:{GUILD}", "text", 7)]
 
+    def test_the_radio_panels_of_this_guild_are_asked_to_redraw(self):
+        redrawn = []
+        ports = {f"{BOT_A}:{GUILD}": SimpleNamespace(refresh_panel=lambda: redrawn.append(BOT_A))}
+        runner = lambda rid: SimpleNamespace(ports=ports[rid]) if rid in ports else None  # noqa: E731
+        pool = SimpleNamespace(radio=SimpleNamespace(manager=SimpleNamespace(runner=runner)))
+
+        skins_view.redraw_radio_panels(pool, GUILD, [BOT_A, BOT_B])
+
+        assert redrawn == [BOT_A]
+
 
 # ============================================================================ o comando de ponta a ponta (tela de mentira)
 
