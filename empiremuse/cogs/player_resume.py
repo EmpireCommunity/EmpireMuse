@@ -791,7 +791,7 @@ class PlayerSession(commands.Cog):
 
     @staticmethod
     def _refill_kept_connected(player, *, radio_session: bool) -> None:
-        """24/7 com a fila vazia: as que falharam e depois o histórico voltam para a fila. Nunca numa sessão gravada no modo rádio: o
+        """``keep_connected`` com a fila vazia: as que falharam e depois o histórico voltam para a fila. Nunca numa sessão gravada no modo rádio: o
         histórico é de antes da rádio, e a retomada fica ociosa."""
         if radio_session:
             return
@@ -804,8 +804,8 @@ class PlayerSession(commands.Cog):
                 player.played.clear()
 
     async def _start_resumed(self, player, voice_channel, pause, start_position: int, check, *, radio_session: bool):
-        """Volta a tocar o player retomado. A sessão gravada no modo rádio da Jukebox fica ociosa: nem a fila vazia nem o 24/7 chamam o
-        autoplay (a rádio não volta, e uma recomendação no lugar dela tocaria sem ninguém pedir). As preferências de autoplay e 24/7 são mantidas."""
+        """Volta a tocar o player retomado. A sessão gravada no modo rádio da Jukebox fica ociosa: nem a fila vazia nem o ``keep_connected`` chamam o
+        autoplay (a rádio não volta, e uma recomendação no lugar dela tocaria sem ninguém pedir). As duas preferências são mantidas."""
         saved = (player.autoplay, player.keep_connected) if radio_session else None
         if radio_session:
             player.autoplay = player.keep_connected = False
