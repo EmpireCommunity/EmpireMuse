@@ -73,6 +73,8 @@ async def go_idle(self) -> None:
     if getattr(self, "is_closing", False):
         return
     await self.stop()
+    if getattr(self, "radio_mode", None) is not None or getattr(self, "is_closing", False):
+        return  # uma rádio abriu (ou o player fechou) durante o ``stop``: o temporizador de ociosidade não pode derrubá-la depois
     now = disnake.utils.utcnow()
     self.idle_start_timestamp = int(now.timestamp())
     self.idle_endtime = now + datetime.timedelta(seconds=self.bot.config["IDLE_TIMEOUT"])
@@ -141,7 +143,8 @@ async def _pn_next_track(self, req):
 
     if mode is not None and track is not mode.track:
         # uma música entrou no lugar do ao vivo (⏮, pular para, pedido que passou pela porta): o modo rádio acaba aqui, sem deixar token vivo
-        await self.bot.pool.radio.jukebox.release(self, mode)
+        if not await self.bot.pool.radio.jukebox.release(self, mode) and getattr(self, "radio_mode", None) is not None:
+            return True  # outra rádio abriu enquanto esperava o lock: a música do modo antigo não toca por cima dela
 
     req.track = track
     return False

@@ -291,9 +291,12 @@ class LavalinkPlayer(
         if live:
             self.current = None
             self.current_encoded = None
-        await super().change_node(identifier)
-        if live and (mode := getattr(self, "radio_mode", None)) is not None:
-            self.bot.pool.radio.jukebox.on_stream_lost(self, mode)
+        try:
+            await super().change_node(identifier)
+        finally:
+            # também quando a troca falha: a faixa já saiu do player e a próxima tentativa não veria mais nada para avisar
+            if live and (mode := getattr(self, "radio_mode", None)) is not None:
+                self.bot.pool.radio.jukebox.on_stream_lost(self, mode)
 
     def radio_view_changed(self) -> None:
         """O gancho único do modo rádio (§1.5.1): algo que ``JukeboxRadio.view`` mostra mudou. Hoje só pede o redesenho do player; as skins

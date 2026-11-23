@@ -12,9 +12,8 @@ no ``custom_id`` e a espera é a do ``wait_for`` que o ``play`` já usa (45 s). 
 para os outros votarem.
 """
 
-from __future__ import annotations
-
 import asyncio
+import logging
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any, Optional
@@ -22,6 +21,8 @@ from typing import Any, Optional
 import disnake
 
 from empiremuse.utils.music.errors import GenericError
+
+logger = logging.getLogger(__name__)
 
 CONFIRM_TIMEOUT_S = 45
 CLOSED_GRACE_S = 5.0  # depois de fechado, o passo ainda é lembrado um instante: o ouvinte não confunde o clique do autor com o de outro
@@ -84,8 +85,10 @@ async def _close(target: Any, text: str, *, clicked: bool) -> None:
             await target.edit_original_message(content=text, components=[])
         else:
             await target.edit(content=text, components=[])
-    except Exception:  # noqa: BLE001,S110 - a mensagem pode ter sido apagada; o resultado já valeu
-        pass
+    except disnake.HTTPException:
+        pass  # a mensagem foi apagada (ou o canal sumiu): o resultado já valeu
+    except Exception as error:  # noqa: BLE001 - o resultado já valeu; só o tipo vai ao log
+        logger.warning("Passo de confirmação do modo rádio não fechado (%s)", type(error).__name__)
 
 
 async def confirm_leave_radio(

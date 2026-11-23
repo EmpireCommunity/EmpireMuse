@@ -46,11 +46,14 @@ def build_guild_pin(
     fixed_entries: Sequence[disnake.SelectOption] = (),
     *,
     placeholder_key: str = "player.idle.server_songs_placeholder",
+    show_fixed: bool = True,
 ) -> disnake.ui.Select | None:
-    if not playlists and not fixed_entries:
+    """``fixed_entries`` reservam vagas na página 1 em TODA página (a divisão das playlists nunca muda entre o select público e o efêmero);
+    ``show_fixed`` só decide se elas aparecem."""
+    if not playlists and not (fixed_entries and show_fixed):
         return None
     layout = plan(len(playlists), len(fixed_entries), page)
-    options = list(fixed_entries) if layout.page == 1 else []
+    options = list(fixed_entries) if layout.page == 1 and show_fixed else []
     if layout.previous:
         options.append(
             disnake.SelectOption(label=tr("jukebox.select.previous.label"), value=f"jb:page:{layout.previous}")
@@ -84,9 +87,13 @@ async def load_guild_pin(
     radio: bool = True,
     placeholder_key: str = "player.idle.server_songs_placeholder",
 ) -> disnake.ui.Select | None:
-    """O select do canal com as playlists do servidor; ``radio`` põe as entradas fixas (só a página 1 as mostra; o efêmero de página não)."""
-    fixed = await radio_entries(bot, tr, guild_id) if radio and page == 1 else ()
-    return build_guild_pin(bot, tr, await safe_list(bot, guild_id), page, fixed, placeholder_key=placeholder_key)
+    """O select do canal com as playlists do servidor; ``radio`` mostra as entradas fixas (só a página 1 as mostra; o efêmero de página não).
+
+    As entradas são lidas em toda página: a vaga delas na página 1 entra na divisão de todas, senão a navegação pulava uma playlist."""
+    fixed = await radio_entries(bot, tr, guild_id)
+    return build_guild_pin(
+        bot, tr, await safe_list(bot, guild_id), page, fixed, placeholder_key=placeholder_key, show_fixed=radio
+    )
 
 
 def replace_guild_pin(message, select: disnake.ui.Select | None) -> list[disnake.ui.ActionRow]:

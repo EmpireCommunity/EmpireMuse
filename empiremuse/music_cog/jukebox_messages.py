@@ -364,7 +364,7 @@ class JukeboxMessagesMixin:
 
             executor = await self.jukebox_executor(req)
             await executor.parse_jukebox_request(
-                req.message, req.text_channel, req.data, response=req.msg, source=req.source
+                req.message, req.text_channel, req.data, response=req.msg, source=req.source, reader=self.bot
             )
             if action is JukeboxAction.DELETE_AND_PROCESS:
                 await self.delete_message(req.message)
@@ -442,6 +442,7 @@ class JukeboxMessagesMixin:
         response=None,
         attachment: disnake.Attachment = None,
         source=None,
+        reader=None,
     ):
         req = JukeboxParseState(
             message=message,
@@ -451,6 +452,7 @@ class JukeboxMessagesMixin:
             attachment=attachment,
             source=source,
         )
+        req.reader = reader
         await _pr_checks(self, req)
         if req.stopped:
             return

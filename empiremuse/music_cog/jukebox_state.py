@@ -18,6 +18,7 @@ class JukeboxParseState:
         "tracks",
         "stopped",
         "radio_epoch",
+        "reader",
     )
 
     def __init__(self, *, message, text_channel, data, response, attachment, source):
@@ -35,6 +36,7 @@ class JukeboxParseState:
         # o pedido parou no passo de confirmação do modo rádio (cancelado, expirado ou votação aberta)
         self.stopped = False
         self.radio_epoch = None  # lido logo depois da porta do modo rádio; conferido no enfileirar
+        self.reader = None  # o bot que leu a mensagem: a resposta (e o clique nela) é dele, não do executor
 
 
 class JukeboxState:

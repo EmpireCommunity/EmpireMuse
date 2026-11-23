@@ -95,6 +95,7 @@ class RadioVote:
     station_name: str
     epoch: int
     expires_at: float = 0.0  # relógio de parede, para ``<t:..:R>``
+    deadline: float = 0.0  # relógio monotônico: um clique que esperou o lock depois do prazo não conta
     voters: set[int] = field(default_factory=set)
     place_node: Optional[str] = None
     message: Any = None
@@ -334,6 +335,9 @@ class JukeboxRadio(JukeboxStationMixin):
         if previous is not None:
             self._cancel_tasks(previous)
             await self._revoke(previous)
+        if player.is_closing:
+            # destruído durante o diretório ou a limpeza: ``forget`` já rodou e não veria o modo novo (CodeRabbit, PR 270)
+            raise Refused("jukebox.radio.player_closed")
         discarded = len(player.queue)
         player.queue.clear()
         player.queue_autoplay.clear()
@@ -373,6 +377,11 @@ class JukeboxRadio(JukeboxStationMixin):
             logger.warning("Modo rádio da Jukebox não abriu (%s)", type(error).__name__)
             await self._abort(player, mode)
             raise Refused("radio.owner.unavailable") from None
+        except asyncio.CancelledError:
+            # o modo desta tentativa não fica instalado sem fluxo; o cancelamento segue
+            with suppress(Exception):
+                await self._abort(player, mode)
+            raise
         logger.info("Modo rádio da Jukebox iniciado (%d música(s) descartada(s) da fila)", discarded)
         return station
 
@@ -416,7 +425,12 @@ class JukeboxRadio(JukeboxStationMixin):
             flow_wait=FLOW_WAIT_S,
             on_track=on_track,
         )
-        mode.track = track
+        if mode.track is not track:
+            # o fluxo caiu enquanto o relay esperava o áudio (``on_stream_lost`` tirou a faixa): não fica "no ar" sem fluxo
+            with suppress(Exception):
+                await player.stop()
+            await self._revoke(mode)
+            raise RuntimeError("o fluxo caiu durante a abertura")
         mode.on_air_since = self.now()
         mode.on_air, mode.retry_at = True, None
         _changed(player)
@@ -631,6 +645,7 @@ class JukeboxRadio(JukeboxStationMixin):
             station_name=station_name,
             epoch=player.radio_epoch,
             expires_at=self.wall() + VOTE_TTL_S,
+            deadline=self.now() + VOTE_TTL_S,
             voters={member.id},
             place_node=place_node,
         )
@@ -654,6 +669,10 @@ class JukeboxRadio(JukeboxStationMixin):
             player.radio_vote = None
             logger.warning("Votação do modo rádio não enviada (%s)", type(error).__name__)
             raise Refused("radio.owner.unavailable") from None
+        except asyncio.CancelledError:
+            if player.radio_vote is vote:
+                player.radio_vote = None  # sem mensagem nem prazo, o voto não pode bloquear os próximos pedidos
+            raise
         vote.task = self._spawn(self._expire_later(player, vote.nonce))
         _changed(player)
         return "jukebox.radio.vote.opened", {"channel": f"<#{channel.id}>", "seconds": VOTE_TTL_S}
@@ -701,6 +720,8 @@ class JukeboxRadio(JukeboxStationMixin):
             if vote.epoch != player.radio_epoch:
                 await self._drop_vote(player)  # anulado, não expirado: sem o cooldown do autor (Crivo S1)
                 return "jukebox.radio.vote.over", {}
+            if self.now() >= vote.deadline:
+                return "jukebox.radio.vote.over", {}  # fora do prazo: o encerramento recontará os votos já aceitos
             if not voter_ok(member, player):
                 return "jukebox.radio.vote.not_eligible", {}
             if member.id in vote.voters:
@@ -836,6 +857,9 @@ class JukeboxRadio(JukeboxStationMixin):
             _changed(player)
             await self._revoke(mode)
             if await self._reopen(player, mode):
+                retry = mode.retry_task
+                if retry is not None and not retry.done() and retry is not asyncio.current_task():
+                    retry.cancel()  # a volta pendente não abre um segundo fluxo depois desta (CodeRabbit, PR 270)
                 return
             epoch = player.radio_epoch
         if mode.retry_task is None or mode.retry_task.done():
@@ -852,6 +876,8 @@ class JukeboxRadio(JukeboxStationMixin):
                 mode.fault = True
                 return False
             await self._to_local(player)  # de volta ao nó LOCAL, sem reenviar nada (Minor 2)
+            # nunca dois fluxos no mesmo modo: a ficha anterior, se ainda houver, cai antes da nova
+            await self._revoke(mode)
             await self._open(player, mode, station)
             return True
         except StationFailure:

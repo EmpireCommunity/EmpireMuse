@@ -142,11 +142,16 @@ class QueueEditMixin:
 
         player: LavalinkPlayer = bot.music.players[inter.guild_id]
 
+        if not player.played and not player.failed_tracks:
+            # antes da porta: sem nada a readicionar, a rádio não para por um pedido que não faria nada
+            raise GenericError(await guild_text(bot, inter.guild, "legacy.queue.no_played"))
+
         if not await confirm_leave_radio(
             self.bot.pool, bot, inter, player, stopped_key="jukebox.radio.leave.stopped_plain"
         ):
             return  # ``/readd`` em R é um pedido de música: passa pela porta
 
+        # de novo: a espera da confirmação pode ter mudado o histórico
         if not player.played and not player.failed_tracks:
             raise GenericError(await guild_text(bot, inter.guild, "legacy.queue.no_played"))
 

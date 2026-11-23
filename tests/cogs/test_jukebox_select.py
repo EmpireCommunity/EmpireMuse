@@ -209,3 +209,21 @@ async def test_pagination_failures_reach_the_interaction_error_handler(monkeypat
     await ControllerDispatchMixin.guild_pin(handler, inter)
     handler.bot.dispatch.assert_called_once_with("interaction_player_error", inter, error)
     cog.play.callback.assert_not_awaited()
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_the_ephemeral_pages_keep_the_split_of_the_first_page_with_the_live_entry():
+    """CodeRabbit (PR 270): com o premium, a página 1 reserva a vaga da rádio; as páginas efêmeras recalculavam sem ela e pulavam a playlist 23."""
+    from empiremuse.utils.music.guild_pin import load_guild_pin
+
+    handler, _, _ = world("jb:page:2")
+    handler.bot.pool.radio = NS(premium=NS(get=AsyncMock(return_value=object())))
+    seen, page = [], 1
+    while page:
+        select = await load_guild_pin(handler.bot, tr, 1, page, radio=page == 1)
+        values = [o.value for o in select.options]
+        assert ("jb:live" in values) is (page == 1)
+        seen += [v for v in values if v.startswith("pl:")]
+        page = next((int(v.removeprefix("jb:page:")) for v in values if v == f"jb:page:{page + 1}"), None)
+    assert seen == [f"pl:Lista {i}" for i in range(100)]

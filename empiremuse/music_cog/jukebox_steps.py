@@ -125,7 +125,13 @@ async def _pr_checks(self, req):
 
     # a porta do modo rádio (Sentinela Minor 1) vem DEPOIS da busca e do painel, logo antes de enfileirar, como no /play (Alicerce N-m1):
     # a rádio só para quando a faixa já foi achada, e o epoch lido aqui é conferido no enfileirar (``enqueue_fence``)
-    if not await confirm_leave_radio(self.bot.pool, self.bot, message, player):
+    await _pr_gate(self, req, player)
+
+
+async def _pr_gate(self, req, player):
+    """A porta do modo rádio. O passo de confirmação responde pela mensagem, então o clique chega ao bot que a LEU (``req.reader``), não ao
+    executor (outro bot do pool, quando é ele quem toca)."""
+    if not await confirm_leave_radio(self.bot.pool, req.reader or self.bot, req.message, player):
         req.stopped = True
         return
     req.radio_epoch = getattr(player, "radio_epoch", None)
