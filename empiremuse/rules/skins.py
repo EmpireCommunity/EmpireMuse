@@ -16,7 +16,8 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import NamedTuple
+from collections.abc import Mapping
+from typing import Any, NamedTuple
 
 
 class Surface(StrEnum):
@@ -189,10 +190,24 @@ def jukebox_choice(saved: object) -> object:
 def jukebox_skin(saved: object, default: str) -> str:
     """A skin que um leitor usa ou mostra para o valor gravado: a escolha (``jukebox_choice``, Q1), senão ``default``.
 
-    TODO leitor da skin gravada da Jukebox passa por aqui ou por ``jukebox_choice`` (criação do player, ``/skin``, painel,
+    Todo leitor da skin gravada da Jukebox passa por aqui ou por ``jukebox_choice`` (criação do player, ``/skin``, painel,
     sessão retomada); assim o Q1 muda só em ``SAVED_DEFAULT_IS_A_CHOICE``."""
     choice = jukebox_choice(saved)
     return choice if isinstance(choice, str) and choice else default
+
+
+def saved_player_skins(
+    server_skin: object, server_static: object, global_data: Mapping[str, Any]
+) -> tuple[object, object]:
+    """As skins gravadas que o player novo usa (antes do ``check_skin``), com o Q1 aplicado em CADA nível antes do recuo.
+
+    No modo global, a skin global vale se for uma escolha; senão a do servidor. Assim, com o Q1 = não, um ``"default"``
+    global gravado não esconde a skin escolhida no servidor."""
+    skin, static = jukebox_choice(server_skin), jukebox_choice(server_static)
+    if global_data.get("global_skin"):
+        skin = jukebox_choice(global_data.get("player_skin")) or skin
+        static = jukebox_choice(global_data.get("player_skin_static")) or static
+    return skin, static
 
 
 def disc_motion_on(value: object) -> bool:

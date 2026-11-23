@@ -20,6 +20,7 @@ from empiremuse.rules.skins import (
     disc_motion_on,
     jukebox_choice,
     jukebox_skin,
+    saved_player_skins,
     legacy_radio_skin,
     radio_look,
 )
@@ -188,7 +189,7 @@ def test_the_jukebox_skin_a_player_gets(saved, loaded, expected):
         (False, "mini", "mini", "mini"),
     ],
 )
-def test_every_reader_of_the_saved_jukebox_skin_follows_the_q1_switch(monkeypatch, q1, saved, shown, global_field):
+def test_the_panel_skin_forms_follow_the_q1_switch(monkeypatch, q1, saved, shown, global_field):
     from empiremuse.panel.services.appearance import SkinsGlobalForm, SkinsServerForm
 
     monkeypatch.setattr(skins, "SAVED_DEFAULT_IS_A_CHOICE", q1)
@@ -223,3 +224,29 @@ def test_the_classic_lists_match_the_skin_files_of_each_mode(folder, listed):
     }
 
     assert sorted(listed) == sorted(files)
+
+
+@pytest.mark.parametrize(
+    ("q1", "global_mode", "global_skin", "expected"),
+    [
+        (False, True, "default", ("mini", "classic")),  # Q1 = não: o "default" global não esconde a skin do servidor
+        (True, True, "default", ("default", "default")),
+        (False, True, "slim", ("slim", "slim")),
+        (False, True, None, ("mini", "classic")),
+        (False, False, "slim", ("mini", "classic")),  # sem modo global, a global não conta
+    ],
+)
+def test_the_new_player_skin_applies_q1_at_each_level_before_falling_back(
+    monkeypatch, q1, global_mode, global_skin, expected
+):
+    monkeypatch.setattr(skins, "SAVED_DEFAULT_IS_A_CHOICE", q1)
+    global_data = {"global_skin": global_mode, "player_skin": global_skin, "player_skin_static": global_skin}
+
+    assert saved_player_skins("mini", "classic", global_data) == expected
+
+
+@pytest.mark.parametrize(("q1", "expected"), [(False, (None, None)), (True, ("default", "default"))])
+def test_a_never_chosen_server_skin_falls_to_the_registry_default(monkeypatch, q1, expected):
+    monkeypatch.setattr(skins, "SAVED_DEFAULT_IS_A_CHOICE", q1)
+
+    assert saved_player_skins("default", "default", {"global_skin": False}) == expected
