@@ -196,7 +196,8 @@ class SkinsGlobalForm(SettingsForm):
 
 class DiscMotionForm(SettingsForm):
     """A animação do disco nas skins de imagem (2.3): um booleano no documento global do servidor. Desligada, o cartão sai
-    sempre parado (PNG). Os players se redesenham no próximo ciclo: o render lê o valor a cada desenho."""
+    sempre parado (PNG). O render guarda o valor por até 60 s (``np_steps._disc_motion``) e o relê no redesenho; o ``effects``
+    (``last_data = {}``) força esse redesenho, então os players mudam no próximo ciclo."""
 
     key = "disco"
     category = "aparencia"

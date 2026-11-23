@@ -101,15 +101,22 @@ def can_configure_radios(member: Any) -> bool:
 # ---------------------------------------------------------------------- nomes e prévias
 
 
-def _clean(value: object) -> str:
+def _label(value: object) -> str:
+    """Texto de fora para rótulo e placeholder de select (não renderizam markdown)."""
     return external_text(value, NAME_MAX, markdown=False)
 
 
-def skin_name(tr: Translator, value: str) -> str:
-    """Nome de uma skin do player para mostrar: o do catálogo, o id (Clássicas) ou o nome da personalizada."""
+def _text(value: object) -> str:
+    """Texto de fora para embed e conteúdo de mensagem: o markdown escapado."""
+    return external_text(value, NAME_MAX)
+
+
+def skin_name(tr: Translator, value: str, *, markdown: bool = True) -> str:
+    """Nome de uma skin do player para mostrar: o do catálogo, o id (Clássicas) ou o nome da personalizada (escapado para
+    embed e conteúdo; ``markdown=False`` só em select)."""
     custom = stored_custom_name(value)
     if custom is not None:
-        return _clean(custom)
+        return _text(custom) if markdown else _label(custom)
     entry = _PLAYER_ENTRIES.get(value)
     return tr(entry.name_key) if entry is not None and entry.name_key else value
 
@@ -155,9 +162,11 @@ async def radio_rows(bot: Any, guild: Any) -> tuple[RadioRow, ...]:
         if radio.guild_id != guild.id:
             continue
         channel = guild.get_channel(radio.channel_id)
-        channel_name = _clean(channel.name) if channel is not None else str(radio.channel_id)
-        bot_name = _clean(names.get(radio.bot_id, radio.bot_id))
-        rows.append(RadioRow(radio.bot_id, f"#{channel_name} · {bot_name}", radio.look, radio.rev))
+        channel_name = channel.name if channel is not None else str(radio.channel_id)
+        bot_name = names.get(radio.bot_id, radio.bot_id)
+        label = f"#{_label(channel_name)} · {_label(bot_name)}"
+        text = f"#{_text(channel_name)} · {_text(bot_name)}"
+        rows.append(RadioRow(radio.bot_id, label, radio.look, radio.rev, text))
     return tuple(rows)
 
 
@@ -249,7 +258,7 @@ def summary_lines(tr: Translator, plan: SavePlan, radios: Sequence[RadioRow]) ->
         lines.append(tr("skin.disc_motion.on" if fields["disc_motion"] else "skin.disc_motion.off"))
     if "radio_skin" in fields:
         lines.append(f"{tr('skin.radio.all')}: {radio_skin_name(tr, str(fields['radio_skin']))}")
-    labels = {row.bot_id: row.label for row in radios}
+    labels = {row.bot_id: row.text for row in radios}
     for item in plan.radio_looks:
         skin = tr("skin.radio.follow") if item.look is None else radio_skin_name(tr, item.look)
         lines.append(f"{labels.get(item.bot_id, item.bot_id)}: {skin}")
@@ -283,7 +292,7 @@ def player_options(
     if custom is not None:
         options.append(
             disnake.SelectOption(
-                label=fit(_clean(custom), LABEL_MAX),
+                label=fit(_label(custom), LABEL_MAX),
                 value=custom_value(custom),
                 description=fit(tr("skin.custom.desc"), DESCRIPTION_MAX),
                 emoji=CUSTOM_EMOJI,
@@ -293,7 +302,7 @@ def player_options(
     for skin_id in ids:
         options.append(
             disnake.SelectOption(
-                label=fit(skin_name(tr, skin_id), LABEL_MAX),
+                label=fit(skin_name(tr, skin_id, markdown=False), LABEL_MAX),
                 value=skin_id,
                 description=_player_description(tr, skin_id, default),
                 emoji=_kind_emoji(bot, _PLAYER_ENTRIES.get(skin_id)),
@@ -357,9 +366,13 @@ def radio_skin_options(bot: Any, tr: Translator, draft: Draft) -> list[disnake.S
     return options
 
 
-def _target_label(tr: Translator, draft: Draft, radios: Sequence[RadioRow]) -> str:
+def _target_label(tr: Translator, draft: Draft, radios: Sequence[RadioRow], *, markdown: bool) -> str:
+    """O alvo das rádios: ``label`` no select, ``text`` (escapado) no embed."""
     bot_id = draft.target_bot()
-    return next((row.label for row in radios if row.bot_id == bot_id), tr("skin.radio.all"))
+    row = next((row for row in radios if row.bot_id == bot_id), None)
+    if row is None:
+        return tr("skin.radio.all")
+    return row.text if markdown else row.label
 
 
 # ---------------------------------------------------------------------- a view
@@ -379,6 +392,7 @@ class SkinsView(disnake.ui.View):
         initial: Draft,
         colour: Any = None,
         footer: str | None = None,
+        note: str | None = None,
     ) -> None:
         super().__init__(timeout=VIEW_TIMEOUT_S)
         self.bot = bot
@@ -389,6 +403,7 @@ class SkinsView(disnake.ui.View):
         self.draft = initial
         self.colour = colour
         self.footer = footer
+        self.note = note  # uma linha a mais no topo (pelo prefixo: as rádios se configuram no ``/skins``)
         self.defaults = (bot.pool.default_skin, bot.pool.default_static_skin)
         self.result: str | None = None
         self.interaction: disnake.MessageInteraction | None = None
@@ -405,7 +420,7 @@ class SkinsView(disnake.ui.View):
             options = player_options(self.bot, tr, self.choices.ids(mode), draft.player(mode), default)
             self._select(row, fit(tr(key), LABEL_MAX), options, self._on_player(mode))
         if self.choices.radios:
-            target = _target_label(tr, draft, self.choices.radios)
+            target = _target_label(tr, draft, self.choices.radios, markdown=False)
             self._select(
                 2,
                 fit(tr("skin.select.radio_target", target=target), LABEL_MAX),
@@ -461,7 +476,7 @@ class SkinsView(disnake.ui.View):
         if draft.focus == FOCUS_RADIO and self.choices.radios:
             look = draft.effective_radio_skin()
             entry = _RADIO_ENTRIES.get(look)
-            scope = _target_label(tr, draft, self.choices.radios)
+            scope = _target_label(tr, draft, self.choices.radios, markdown=True)
             desc = tr(entry.desc_key) if entry is not None else ""
             return (
                 radio_skin_name(tr, look),
@@ -484,6 +499,8 @@ class SkinsView(disnake.ui.View):
         """Os embeds (o seletor e a prévia), a view e o anexo da prévia, se houver."""
         tr = self.tr
         intro = f"{tr('skin.ui.intro')}\n{tr('skin.ui.global_on' if self.draft.global_mode else 'skin.ui.global_off')}"
+        if self.note:
+            intro += f"\n-# {self.note}"
         main = disnake.Embed(title=tr("skin.ui.title"), description=intro, colour=self.colour)
         if self.footer:
             main.set_footer(text=self.footer)
@@ -501,7 +518,10 @@ class SkinsView(disnake.ui.View):
         return data
 
     async def refresh(self, inter: disnake.MessageInteraction | None = None) -> None:
-        """Mostra o rascunho: responde à interação do componente, ou edita a mensagem (escolha feita na das personalizadas)."""
+        """Mostra o rascunho: responde à interação do componente, ou edita a mensagem (escolha feita na das personalizadas).
+        Com a tela encerrada (Salvar, Cancelar ou o tempo), não edita: religaria componentes que ninguém escuta mais."""
+        if self.is_finished():
+            return
         self.rebuild()
         data = {**self.payload(), "attachments": []}
         if inter is not None:
@@ -558,6 +578,7 @@ class SkinsView(disnake.ui.View):
     async def _on_custom(self, inter: disnake.MessageInteraction) -> None:
         view = CustomSkinsView(self)
         await inter.response.send_message(view.text(), view=view, ephemeral=True)
+        view.interaction = inter  # a efêmera só se edita pela interação que a abriu (``on_timeout``)
 
     async def _on_save(self, inter: disnake.MessageInteraction) -> None:
         self.result, self.interaction = "save", inter
@@ -588,6 +609,7 @@ class CustomSkinsView(disnake.ui.View):
         self.parent = parent
         self.pages = {MODE_NORMAL: 1, MODE_STATIC: 1}
         self.picked: str | None = None
+        self.interaction: disnake.MessageInteraction | None = None
         self.rebuild()
 
     def text(self) -> str:
@@ -614,7 +636,7 @@ class CustomSkinsView(disnake.ui.View):
             for name in names[page.start : page.stop]:
                 options.append(
                     disnake.SelectOption(
-                        label=fit(_clean(name), LABEL_MAX), value=custom_value(name), emoji=CUSTOM_EMOJI
+                        label=fit(_label(name), LABEL_MAX), value=custom_value(name), emoji=CUSTOM_EMOJI
                     )
                 )
             if page.next is not None:
@@ -630,6 +652,17 @@ class CustomSkinsView(disnake.ui.View):
     async def interaction_check(self, inter: disnake.MessageInteraction) -> bool:
         return await self.parent.interaction_check(inter)
 
+    async def on_timeout(self) -> None:
+        for item in self.children:
+            if isinstance(item, disnake.ui.Select):
+                item.disabled = True
+        if self.interaction is None:
+            return
+        try:
+            await self.interaction.edit_original_message(view=self)
+        except disnake.HTTPException as error:
+            logger.info("Falha ao desligar as personalizadas do /skins (%s)", type(error).__name__)
+
     def _on_pick(self, mode: str) -> Any:
         async def callback(inter: disnake.MessageInteraction) -> None:
             raw = (inter.values or [None])[0]
@@ -639,7 +672,7 @@ class CustomSkinsView(disnake.ui.View):
                 self.rebuild()
                 return await inter.response.edit_message(content=self.text(), view=self)
             value = player_value(raw, (), self.parent.choices.customs(mode))
-            if value is None or self.parent.result is not None:
+            if value is None or self.parent.is_finished():  # Salvar, Cancelar ou o tempo da tela principal
                 return await self.parent._refuse(inter)
             self.parent.draft = self.parent.draft.with_player(mode, value)
             self.picked = skin_name(self.parent.tr, value)
