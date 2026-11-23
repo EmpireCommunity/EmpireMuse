@@ -121,17 +121,34 @@ def _he_jukebox_radio(self, event) -> bool:
     """Modo rádio da Jukebox (T-434 §2.4): em R, fim, exceção e travada do fluxo NUNCA seguem o caminho de música (fila, autoplay); a queda
     (fim ``FINISHED``/``LOAD_FAILED``, exceção ou travada) vai ao controlador, que tenta em 2, 4 e 8 s. ``STOPPED``/``REPLACED`` são nossos.
     Devolve ``True`` se o evento foi consumido aqui."""
-    if getattr(self, "radio_mode", None) is None or not isinstance(
-        event, (wavelink.TrackEnd, wavelink.TrackException, wavelink.TrackStuck)
-    ):
+    mode = getattr(self, "radio_mode", None)
+    if mode is None or not isinstance(event, (wavelink.TrackEnd, wavelink.TrackException, wavelink.TrackStuck)):
         return False
     node = getattr(event, "node", None)
     if node is not None and node.identifier != self.node.identifier:
         return True  # evento atrasado de um nó antigo (a troca para o nó local): não é queda do fluxo de agora
+    if not _he_is_live_event(mode, event):
+        return (
+            True  # fim atrasado do fluxo antigo ou da música parada na entrada: nunca revoga a ficha nova (Crivo MI2)
+        )
     lost = not isinstance(event, wavelink.TrackEnd) or str(getattr(event, "reason", "")).upper() in LIVE_LOST_REASONS
     if lost:
-        self.bot.pool.radio.jukebox.on_stream_lost(self)
+        self.bot.pool.radio.jukebox.on_stream_lost(self, mode)
     return True
+
+
+def _he_is_live_event(mode, event) -> bool:
+    """O evento é da faixa ao vivo de AGORA (``mode.track``)? Sem faixa (abrindo ou reconectando), não. Lavalink 3 manda o codificado em
+    texto; o 4, o objeto da faixa com ``encoded``. Sem o codificado no evento não há como descartar: conta como sendo dela."""
+    track = mode.track
+    if track is None:
+        return False
+    sent = getattr(event, "track", None)
+    if isinstance(sent, dict):
+        sent = sent.get("encoded")
+    if not isinstance(sent, str) or not sent:
+        return True
+    return sent == getattr(track, "id", None)
 
 
 def _he_custom_ports(self):

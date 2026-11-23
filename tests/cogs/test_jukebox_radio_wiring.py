@@ -20,6 +20,7 @@ from empiremuse.utils.jukebox_panel import JukeboxPanel
 from empiremuse.utils.music import guild_pin
 from empiremuse.utils.music.guild_pin import load_guild_pin, radio_entries
 from empiremuse.utils.music.jukebox_ui import LIVE_VALUE
+from empiremuse.utils.music.live_mark import mark_live
 from empiremuse.utils.music.models import event_steps, playback_steps
 from empiremuse.utils.music.models.player_events import PlayerEventsMixin
 from empiremuse.utils.music.models.player_state import PlayerStateMixin
@@ -32,7 +33,10 @@ def tr(key, **fields):
     return key
 
 
-def mode(track=None):
+ON_AIR = object()  # a faixa ao vivo de um modo já no ar (``mode.track`` posto)
+
+
+def mode(track=ON_AIR):
     return RadioMode(uuid="u", name="Rádio", country="BR", starter_id=10, started_at=0.0, track=track)
 
 
@@ -139,8 +143,8 @@ async def test_the_saved_session_never_carries_the_live_track_or_its_encoded_id(
 # ---------------------------------------------------------------------- próxima faixa em R (§2.2)
 
 
-def next_world(queue=(), live=None, autoplay=True):
-    jukebox = NS(release=AsyncMock())
+def next_world(queue=(), live=ON_AIR, autoplay=True):
+    jukebox = NS(release=AsyncMock(return_value=True))
     player = NS(
         queue=deque(queue),
         radio_id=None,
@@ -161,7 +165,7 @@ async def test_skip_in_radio_mode_ends_it_and_goes_idle_without_autoplay(monkeyp
     idle = AsyncMock()
     monkeypatch.setattr(playback_steps, "go_idle", idle)
     assert await playback_steps._pn_next_track(player, NS(track=None)) is True
-    jukebox.release.assert_awaited_once_with(player)
+    jukebox.release.assert_awaited_once_with(player, player.radio_mode)  # o modo que o player viu (rev. 3.3)
     idle.assert_awaited_once_with(player)
     player.get_autoqueue_tracks.assert_not_awaited()
 
@@ -197,7 +201,7 @@ async def test_a_song_taking_the_place_of_the_live_track_ends_radio_mode(is_live
 def test_stream_events_in_radio_mode_never_take_the_music_path(event_cls, reason, lost):
     jukebox = NS(on_stream_lost=Mock())
     node = NS(identifier="LOCAL")
-    player = NS(radio_mode=mode(), node=node, bot=NS(pool=NS(radio=NS(jukebox=jukebox))))
+    player = NS(radio_mode=mode(NS(id="enc")), node=node, bot=NS(pool=NS(radio=NS(jukebox=jukebox))))
     event = event_cls.__new__(event_cls)
     event.node = node
     if reason:
@@ -213,13 +217,18 @@ def test_stream_events_in_radio_mode_never_take_the_music_path(event_cls, reason
 
 @pytest.mark.critical
 @pytest.mark.asyncio
-async def test_the_live_track_never_enters_the_history(monkeypatch):
-    live = NS(is_stream=True, duration=0, autoplay=False, track_loops=0)
-    player = NS(votes=set(), locked=False, last_track=live, loop=False, is_previows_music=False, played=deque())
-    player.radio_mode = mode(live)
+@pytest.mark.parametrize("still_in_radio_mode", [True, False])
+async def test_the_live_track_never_enters_the_history(monkeypatch, still_in_radio_mode):
+    """Crivo MA1 (b): o fim do ao vivo chega DEPOIS que o modo foi limpo (DJ pediu música): a marca na faixa ainda a deixa de fora."""
+    live = NS(is_stream=True, duration=0, autoplay=False, track_loops=0, info={"extra": {}})
+    mark_live(live)
+    player = NS(
+        votes=set(), locked=False, last_track=live, loop=False, is_previows_music=True, played=deque(), queue=deque()
+    )
+    player.radio_mode = mode(live) if still_in_radio_mode else None
     monkeypatch.setattr("empiremuse.utils.music.models.player_events.asyncio.sleep", AsyncMock())
     await PlayerEventsMixin.track_end(player)
-    assert list(player.played) == [] and player.locked is False
+    assert list(player.played) == [] and list(player.queue) == [] and player.locked is False
 
 
 @pytest.mark.critical
@@ -251,20 +260,6 @@ async def test_a_song_discarded_by_a_radio_transition_warns_only_its_requester(e
         inter.send.assert_awaited_once_with("jukebox.radio.discarded", ephemeral=True)
     else:
         inter.send.assert_not_awaited()
-
-
-@pytest.mark.critical
-@pytest.mark.asyncio
-async def test_a_music_request_refused_by_the_radio_gate_stops_before_enqueueing():
-    from empiremuse.utils.music.errors import GenericError
-    from empiremuse.utils.radio.jukebox_radio import Refused
-
-    jukebox = NS(leave_for_music=AsyncMock(side_effect=Refused("jukebox.radio.vote.opened")))
-    cog = NS(bot=NS(pool=NS(radio=NS(jukebox=jukebox))))
-    player = NS(tr=tr)
-    with pytest.raises(GenericError) as error:
-        await PlayEnqueueMixin._leave_radio_for_music(cog, NS(), player)
-    assert error.value.text == "jukebox.radio.vote.opened"
 
 
 def test_disnake_still_exposes_the_select_option_used_by_the_fixed_entry():

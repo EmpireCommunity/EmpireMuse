@@ -14,7 +14,7 @@ from empiremuse.utils.music.converters import (
     time_format,
 )
 from empiremuse.utils.music.guild_pin import GUILD_PIN, GUILD_PIN_PAGE, load_guild_pin, replace_guild_pin
-from empiremuse.utils.music.jukebox_ui import LIVE_VALUE, VOTE_PREFIX, chosen_warning
+from empiremuse.utils.music.jukebox_ui import LEAVE_PREFIX, LIVE_VALUE, VOTE_PREFIX, chosen_warning, vote_warning
 from empiremuse.utils.music.errors import (
     GenericError,
 )
@@ -443,44 +443,64 @@ class ControllerDispatchMixin:
         tr = await self.bot.pool.i18n.for_guild(interaction.guild)
         hub = getattr(self.bot.pool, "radio", None)
         try:
+            premium = None if hub is None else await hub.premium.fresh(interaction.guild_id)
+        except RadioUnavailable:
+            premium, unavailable = None, True
+        else:
+            unavailable = False
+        try:
+            # depois do premium fresco (Alicerce s1): com o premium perdido o select volta SEM a entrada
             first = await load_guild_pin(self.bot, tr, interaction.guild_id)
             await interaction.edit_original_message(components=replace_guild_pin(interaction.message, first))
         except Exception as error:  # noqa: BLE001 - redesenhar o select é conveniência; só o tipo vai ao log
             logger.warning("Select da Jukebox não redesenhado (%s)", type(error).__name__)
-        try:
-            if hub is None or await hub.premium.fresh(interaction.guild_id) is None:
-                await interaction.followup.send(tr("radio.refused.no_premium"), ephemeral=True)
-                return  # select antigo com o premium perdido: recusa (e o select já foi redesenhado sem a entrada)
-        except RadioUnavailable:
+        if unavailable:
             await interaction.followup.send(tr("radio.owner.unavailable"), ephemeral=True)
             return
+        if premium is None:
+            await interaction.followup.send(tr("radio.refused.no_premium"), ephemeral=True)
+            return  # select antigo com o premium perdido: recusa
         if hub.locations is None:
             await interaction.followup.send(tr("jukebox.radio.picker.unavailable"), ephemeral=True)
             return
 
         async def apply(click: disnake.MessageInteraction, station, station_list) -> str:
+            node = picker.node_id if picker.list_mode is None else None  # o local escolhido, para a visão (§1.5.1)
             try:
                 key, fields = await hub.jukebox.request_live(
-                    click, station.uuid
+                    click, station.uuid, place_node=node
                 )  # só o uuid: a estação é relida no servidor (s6)
             except Refused as refused:
                 raise GenericError(tr(refused.key, **refused.fields)) from None
             return tr(key, **fields)
 
-        def warning() -> str:
-            from empiremuse.utils.music.checks import resolve_player
+        from empiremuse.rules.radio_mode import VOTE_TTL_S
+        from empiremuse.utils.music.checks import resolve_player
 
-            resolved = resolve_player(self.bot.pool, interaction.guild_id, interaction.author)
-            if resolved is None:
+        resolved = resolve_player(self.bot.pool, interaction.guild_id, interaction.author)
+        try:  # prévia, só para o aviso ``warn.vote``: a porta é refeita no clique
+            votes = resolved is not None and await hub.jukebox.live_preview(
+                resolved[1].guild.get_member(interaction.author.id) or interaction.author, resolved[1]
+            )
+        except Exception as error:  # noqa: BLE001 - o aviso é conveniência; só o tipo vai ao log
+            logger.warning("Prévia do modo rádio falhou (%s)", type(error).__name__)
+            votes = False
+
+        def warning() -> str:
+            found = resolve_player(self.bot.pool, interaction.guild_id, interaction.author)
+            if found is None:
                 return ""
-            player = resolved[1]
-            mode = player.radio_mode
-            return chosen_warning(
+            player = found[1]
+            view = hub.jukebox.view(player)
+            text = chosen_warning(
                 tr,
                 playing=player.current is not None,
                 queued=bool(player.queue),
-                radio_name=mode.name if mode is not None else None,
+                radio_name=view.name if view is not None else None,
             )
+            if text and votes:
+                text += "\n" + vote_warning(tr, VOTE_TTL_S)
+            return text
 
         guild_locale = getattr(interaction.guild, "preferred_locale", None)
         picker = RadioPicker(
@@ -522,6 +542,19 @@ class ControllerDispatchMixin:
             logger.warning("Voto do modo rádio falhou (%s)", type(error).__name__)
             key, fields = "radio.owner.unavailable", {}
         await interaction.send(tr(key, **fields), ephemeral=True)
+
+    @commands.Cog.listener("on_button_click")
+    async def jukebox_radio_leave(self, interaction: disnake.MessageInteraction) -> None:
+        """O passo de confirmação do pedido em R é do autor (s3): quem clica na resposta pública do prefixo recebe uma recusa efêmera, sem
+        efeito (o ``wait_for`` do autor ignora o clique, e o Discord mostraria "Esta interação falhou")."""
+        from empiremuse.music_cog.radio_guard import answer_stray_click
+
+        if not interaction.data.custom_id.startswith(LEAVE_PREFIX):
+            return
+        try:
+            await answer_stray_click(interaction, await self.bot.pool.i18n.for_guild(interaction.guild))
+        except Exception as error:  # noqa: BLE001 - só o tipo vai ao log
+            logger.warning("Clique no passo de confirmação do modo rádio sem resposta (%s)", type(error).__name__)
 
     @commands.Cog.listener("on_dropdown")
     async def player_dropdown_event(self, interaction: disnake.MessageInteraction):

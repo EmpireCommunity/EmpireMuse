@@ -19,6 +19,7 @@ from empiremuse.serialization.schema import SchemaError
 from empiremuse.utils.client import BotCore
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.jukebox_panel import fetch_panel_message
+from empiremuse.utils.music.live_mark import is_live, without_live
 from empiremuse.utils.music.checks import can_connect, can_send_message
 from empiremuse.utils.music.errors import PoolException
 from empiremuse.utils.music.filters import AudioFilter
@@ -121,7 +122,7 @@ class PlayerSession(commands.Cog):
         failed_tracks = []
         # modo rádio da Jukebox [m1]: o ao vivo nunca é gravado (``track.id`` carrega o endereço local do relay com o token) e o modo rádio não
         # volta numa retomada; a sessão sai como a de um player ocioso
-        live = getattr(player, "radio_mode", None) is not None
+        live = getattr(player, "radio_mode", None) is not None or is_live(player.current)
 
         if player.current and not live:
             player.current.info["id"] = player.current.id
@@ -136,23 +137,24 @@ class PlayerSession(commands.Cog):
                     pass
             tracks.append(player.current.info)
 
-        for t in player.queue:
+        # a faixa ao vivo é marcada nela mesma: fica fora mesmo depois que o modo rádio acabou (⏮, pedido de DJ em R) [m1]
+        for t in without_live(player.queue):
             t.info["id"] = t.id
             if t.playlist:
                 t.info["playlist"] = {"name": t.playlist_name, "url": t.playlist_url}
             tracks.append(t.info)
 
-        for t in player.played:
+        for t in without_live(player.played):
             t.info["id"] = t.id
             if t.playlist:
                 t.info["playlist"] = {"name": t.playlist_name, "url": t.playlist_url}
             played.append(t.info)
 
-        for t in player.queue_autoplay:
+        for t in without_live(player.queue_autoplay):
             t.info["id"] = t.id
             autoqueue.append(t.info)
 
-        for t in player.failed_tracks:
+        for t in without_live(player.failed_tracks):
             t.info["id"] = t.id
             if t.playlist:
                 t.info["playlist"] = {"name": t.playlist_name, "url": t.playlist_url}

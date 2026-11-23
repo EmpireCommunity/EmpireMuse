@@ -452,6 +452,8 @@ class JukeboxMessagesMixin:
             source=source,
         )
         await _pr_checks(self, req)
+        if req.stopped:
+            return
 
         if not isinstance(req.tracks, list):
             await _pr_playlist(self, req)

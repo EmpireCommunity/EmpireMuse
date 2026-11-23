@@ -140,7 +140,7 @@ class Player:
         self.is_closing = False
         self.volume = 70
         self.node = NS(identifier="LOCAL")
-        self.text_channel = NS(send=AsyncMock(side_effect=self._sent))
+        self.text_channel = NS(id=60, send=AsyncMock(side_effect=self._sent))
         self.messages = []
         self.tr = tr
         self.stopped = 0
@@ -273,10 +273,20 @@ async def test_a_bot_playing_a_24h_radio_is_never_chosen(world):
 @pytest.mark.critical
 @pytest.mark.parametrize(
     ("kind", "expected"),
-    [("self_promoted", False), ("creator", True), ("dj_role", True), ("move_members", True), ("admin", True)],
+    [
+        ("self_promoted", False),
+        ("creator", True),
+        ("dj_role", True),
+        ("move_members", True),
+        ("manage_channels", True),
+        ("manage_guild", True),
+        ("admin", True),
+    ],
 )
 def test_only_real_permissions_count_as_dj_and_player_dj_is_never_read(world, kind, expected):
     someone = member(10, world.channel, admin=kind == "admin")
+    if kind in ("manage_channels", "manage_guild"):
+        setattr(someone.guild_permissions, kind, True)
     player = Player(world, creator=10 if kind == "creator" else 99)
     player.dj = {10}  # a autopromoção de check_player_perm: nunca conta
     guild_data = {"djroles": ["777"] if kind == "dj_role" else []}
@@ -389,13 +399,21 @@ async def test_two_concurrent_last_votes_execute_once(world):
 
 @pytest.mark.critical
 @pytest.mark.asyncio
-async def test_a_transition_after_the_vote_opened_cancels_it(world):
+async def test_a_dj_transition_cancels_the_open_vote_and_closes_its_message(world):
+    """Alicerce m2 + Crivo MI1: o DJ não é recusado por um voto aberto; a transição real anula o voto e a mensagem perde o botão."""
     player = await open_member_vote(world, voters=3)
     vote = player.radio_vote
-    player.radio_epoch += 1  # outra transição aconteceu
+    task = vote.task
+    dj = world.add(member(20, world.channel, admin=True))
+    key, _ = await world.radio.request_live(world.inter(dj), OTHER)
+    await settle()
+    assert key == "jukebox.radio.started" and player.radio_mode.uuid == OTHER
+    assert player.radio_vote is None and task.cancelled()
+    closed = player.messages[0].edit.await_args.kwargs
+    assert closed["components"] == [] and closed["content"] == "jukebox.radio.vote.expired"
     key, _ = await world.radio.vote_click(world.inter(world.members[11]), vote.nonce)
-    assert key == "jukebox.radio.vote.over"
-    assert player.radio_mode is None and player.radio_vote is None
+    assert key == "jukebox.radio.vote.over"  # o botão velho não faz nada
+    assert 10 not in player.radio_vote_expired  # anulado não é expirado: sem cooldown para o autor
 
 
 @pytest.mark.critical
@@ -416,7 +434,8 @@ async def test_the_vote_message_mentions_only_the_author_and_neutralizes_the_sta
     mentions = player.messages[0].kwargs["allowed_mentions"]
     assert [u.id for u in mentions.users] == [10] and mentions.roles is False and mentions.everyone is False
     vote = player.radio_vote
-    payload = jukebox_ui.vote_payload(lambda key, **f: f.get("station", key), vote, 1, 2)
+    world.radio._tr = lambda player: lambda key, **f: f.get("station", key)  # o texto mostra só o nome da estação
+    payload = world.radio._vote_payload(player, vote)
     content = payload["content"]
     assert "@everyone" not in content and "<@&" not in content
     assert "discord.gg" not in content and "](" not in content and "‮" not in content
@@ -536,6 +555,7 @@ async def test_destroying_the_player_revokes_the_token_and_cancels_the_vote(worl
     await world.radio.forget(player)
     await settle()
     assert player.radio_vote is None and task.cancelled()
+    assert player.messages[0].edit.await_args.kwargs["components"] == []  # a mensagem pública perde o botão (Crivo MI1)
 
 
 # ---------------------------------------------------------------------- MJ1 e m1 na faixa ao vivo (11.1, 11.2)
@@ -552,7 +572,7 @@ async def test_the_live_track_carries_no_local_url_and_no_live_link_or_mention(w
     for text in (track.title, track.author, player.radio_mode.title):
         assert "@everyone" not in text and "<@&" not in text and "discord.gg" not in text and "](" not in text
         assert "127.0.0.1" not in text and "/r/" not in text and "‮" not in text
-    lines = "\n".join(jukebox_ui.now_playing_lines(tr, player.radio_mode, world.wall.t + 120))
+    lines = "\n".join(jukebox_ui.now_playing_lines(tr, world.radio.view(player), world.wall.t + 120))
     assert "@everyone" not in lines and "discord.gg" not in lines and "](" not in lines
     dropped = jukebox_ui.dropped_text(lambda key, **f: f["station"], player.radio_mode.name, "<@10>")
     assert "@everyone" not in dropped and "discord.gg" not in dropped
@@ -618,7 +638,12 @@ async def test_a_free_bot_gets_a_new_player_on_the_local_node_and_the_requester_
         world.bot.music.players[world.guild.id] = player
         return player
 
-    cog = NS(create_player=AsyncMock(side_effect=create_player), do_connect=AsyncMock())
+    async def do_connect(inter, **kwargs):
+        world.bot.music.players[
+            world.guild.id
+        ].channel_id = world.channel.id  # o ``connect`` do wavelink grava a call na hora
+
+    cog = NS(create_player=AsyncMock(side_effect=create_player), do_connect=AsyncMock(side_effect=do_connect))
     world.bot.get_cog = lambda name: cog
     world.bot.get_channel = lambda cid: None
     world.bot.get_data = AsyncMock(return_value={"djroles": [], "check_other_bots_in_vc": False})

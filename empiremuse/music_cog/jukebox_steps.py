@@ -10,6 +10,7 @@ import disnake
 from disnake.ext import commands
 
 from empiremuse.utils.music.guild_text import guild_text
+from empiremuse.music_cog.radio_guard import confirm_leave_radio
 from empiremuse.utils.client import BotCore
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.jukebox_panel import fetch_panel_message
@@ -89,6 +90,10 @@ async def _pr_checks(self, req):
         player = self.bot.music.players[message.guild.id]
         await check_player_perm(message, self.bot, message.channel, guild_data=data)
         destroy_message = bool(req.destroy_message)
+        # o pedido digitado no canal da Jukebox também passa pela porta do modo rádio, antes de buscar a faixa (Sentinela Minor 1)
+        if not await confirm_leave_radio(self.bot.pool, self.bot, message, player):
+            req.stopped = True
+            return
     except KeyError:
         destroy_message = False
         player = await self.create_player(

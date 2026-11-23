@@ -113,7 +113,8 @@ class NowPlayingMixin:
 
         footer_kw = {}
 
-        if (mode := getattr(player, "radio_mode", None)) is not None:
+        jukebox = getattr(getattr(player.bot.pool, "radio", None), "jukebox", None)
+        if (mode := (jukebox.view(player) if jukebox is not None else None)) is not None:
             # modo rádio da Jukebox (A6): a estação SEM link (nem a busca do YouTube), o título ICY e "🔴 Ao vivo · no ar há {n} min"
             txt = "### " + "\n> ".join(jukebox_ui.now_playing_lines(player.tr, mode, time.time())) + "\n"
         else:

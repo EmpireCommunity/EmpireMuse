@@ -1,6 +1,7 @@
 """Apresentação do modo rádio da Jukebox (T-434 J2a): só monta texto e componentes; nenhuma decisão (essa é de ``jukebox_radio``).
 
-Separada do controlador para as skins novas (T-SKINS-1) reaproveitarem as mesmas peças. Todo nome de estação e título ICY chega GUARDADO
+Separada do controlador para as skins novas (T-SKINS-1) reaproveitarem as mesmas peças: o que mostra o modo rádio lê só a visão imutável
+(``JukeboxRadio.view``, §1.5.1), nunca ``player.radio_mode``. Todo nome de estação e título ICY chega GUARDADO
 (escapado pelo diretório ou sem escape no ``radio_mode``) e sai por ``stored_text``: com escape de markdown onde o destino renderiza markdown
 e sem link nem menção em qualquer destino (MJ1). Quem é mencionado é só o autor, por ``<@id>`` com ``allowed_mentions`` só dele.
 """
@@ -50,20 +51,37 @@ def chosen_warning(tr: Tr, *, playing: bool, queued: bool, radio_name: object = 
     return ""
 
 
-def vote_payload(tr: Tr, vote: Any, votes: int, needed: int) -> dict[str, Any]:
-    """A mensagem da votação no canal do player e o botão ``jukebox_radio_vote:<nonce>`` (o alvo nunca vai no botão)."""
-    member = f"<@{int(vote.author_id)}>"
-    if vote.target is Target.LEAVE:
-        text = tr("jukebox.radio.vote.leave_text", member=member, votes=votes, needed=needed)
+def vote_payload(
+    tr: Tr,
+    *,
+    nonce: str,
+    author_id: int,
+    target: Target,
+    station_name: object,
+    votes: int,
+    needed: int,
+    expires_at: float,
+) -> dict[str, Any]:
+    """A mensagem da votação no canal do player e o botão ``jukebox_radio_vote:<nonce>`` (o alvo nunca vai no botão). O prazo vai como
+    ``<t:..:R>``: o Discord atualiza sozinho, sem edição a cada segundo."""
+    member = f"<@{int(author_id)}>"
+    deadline = f"<t:{int(expires_at)}:R>"
+    if target is Target.LEAVE:
+        text = tr("jukebox.radio.vote.leave_text", member=member, votes=votes, needed=needed, deadline=deadline)
     else:
         text = tr(
-            "jukebox.radio.vote.text", member=member, station=station_md(vote.station_name), votes=votes, needed=needed
+            "jukebox.radio.vote.text",
+            member=member,
+            station=station_md(station_name),
+            votes=votes,
+            needed=needed,
+            deadline=deadline,
         )
     button = disnake.ui.Button(
         label=fit(tr("jukebox.radio.vote.button"), 80),
         emoji="✋",
         style=disnake.ButtonStyle.primary,
-        custom_id=f"{VOTE_PREFIX}{vote.nonce}",
+        custom_id=f"{VOTE_PREFIX}{nonce}",
     )
     return {"content": text, "components": [button]}
 
@@ -89,16 +107,60 @@ def dropped_text(tr: Tr, station_name: object, mention: str) -> str:
     return tr("jukebox.radio.dropped", station=station_md(station_name), member=mention)
 
 
-def live_line(tr: Tr, mode: Any, now: float) -> str:
-    """ "🔴 Ao vivo · no ar há {n} min" no lugar da barra de progresso (A6)."""
-    minutes = max(0, int((now - float(mode.started_at)) // 60))
+def live_line(tr: Tr, view: Any, now: float) -> str:
+    """ "🔴 Ao vivo · no ar há {n} min" no lugar da barra de progresso (A6). ``view`` = ``RadioView``."""
+    minutes = max(0, int((now - float(view.since)) // 60))
     return tr("jukebox.radio.live_line", minutes=minutes)
 
 
-def now_playing_lines(tr: Tr, mode: Any, now: float) -> list[str]:
-    """Tocando agora em R: a estação (sem link), o título ICY quando há e a linha "Ao vivo"."""
-    lines = [f"📻 **{station_md(mode.name)}**"]
-    if mode.title:
-        lines.append(external_text(mode.title, TITLE_LIMIT))  # guardado SEM escape: escapa uma vez aqui
-    lines.append(live_line(tr, mode, now))
+def now_playing_lines(tr: Tr, view: Any, now: float) -> list[str]:
+    """Tocando agora em R: a estação (sem link), o título ICY quando há e a linha "Ao vivo". ``view`` = ``RadioView``."""
+    lines = [f"📻 **{station_md(view.name)}**"]
+    if view.title:
+        lines.append(external_text(view.title, TITLE_LIMIT))  # guardado SEM escape: escapa uma vez aqui
+    lines.append(live_line(tr, view, now))
     return [line for line in lines if line]
+
+
+def vote_warning(tr: Tr, seconds: int) -> str:
+    """A 2ª linha do aviso do passo "Estação escolhida" para quem não é DJ: o clique abre uma votação (prévia; a porta é refeita no clique)."""
+    return tr("jukebox.radio.warn.vote", seconds=seconds)
+
+
+LEAVE_PREFIX = "jukebox_radio_leave:"  # ``jukebox_radio_leave:<id do pedido>:<go|vote|cancel>``: o alvo (sair de R) é fixo no código [s3]
+LEAVE_GO, LEAVE_VOTE, LEAVE_CANCEL = "go", "vote", "cancel"
+
+
+def leave_confirm(
+    tr: Tr, *, request_id: object, station_name: object, vote: bool, seconds: int, disabled: bool = False
+) -> dict[str, Any]:
+    """O passo de confirmação do pedido de música em R (desvio 4, P3 "avisa antes"): variante A (parar e tocar) ou B (abrir votação)."""
+    station = station_md(station_name)
+    if vote:
+        content = (
+            tr("jukebox.radio.leave.warn_vote", station=station, seconds=seconds)
+            + "\n"
+            + tr("jukebox.radio.leave.vote_note")
+        )
+        first = disnake.ui.Button(
+            label=fit(tr("jukebox.radio.leave.vote"), 80),
+            emoji="✋",
+            style=disnake.ButtonStyle.primary,
+            custom_id=f"{LEAVE_PREFIX}{request_id}:{LEAVE_VOTE}",
+            disabled=disabled,
+        )
+    else:
+        content = tr("jukebox.radio.leave.warn", station=station)
+        first = disnake.ui.Button(
+            label=fit(tr("jukebox.radio.leave.confirm"), 80),
+            style=disnake.ButtonStyle.danger,
+            custom_id=f"{LEAVE_PREFIX}{request_id}:{LEAVE_GO}",
+            disabled=disabled,
+        )
+    cancel = disnake.ui.Button(
+        label=fit(tr("jukebox.radio.leave.cancel"), 80),
+        style=disnake.ButtonStyle.secondary,
+        custom_id=f"{LEAVE_PREFIX}{request_id}:{LEAVE_CANCEL}",
+        disabled=disabled,
+    )
+    return {"content": content, "components": [first, cancel]}
