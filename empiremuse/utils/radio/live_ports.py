@@ -23,6 +23,7 @@ from empiremuse.utils.radio.directory import DirectoryError
 from empiremuse.utils.radio.discord_ports import DiscordRadioPorts
 from empiremuse.utils.radio.live import StationFailure
 from empiremuse.utils.radio.panel import LiveView, StationCard
+from empiremuse.utils.render.slot import RenderBusy
 
 if TYPE_CHECKING:
     from empiremuse.utils.client import BotPool
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 PANEL_EDIT_INTERVAL_S = 15.0
+PANEL_BUSY_RETRIES = 2  # novas tentativas do visor com a vaga de render ocupada, uma por janela
 FLOW_WAIT_S = 25.0  # o primeiro áudio tem de chegar ao Lavalink neste prazo, senão a rádio NÃO está tocando (abrir a estação leva até 20 s)
 
 
@@ -285,16 +287,24 @@ class LiveRadioPorts(DiscordRadioPorts):
         self._panel_task = asyncio.get_running_loop().create_task(self._edit_when_due())
 
     async def _edit_when_due(self) -> None:
-        if self._last_edit is not None:
-            wait = self._last_edit + PANEL_EDIT_INTERVAL_S - self.now()
-            if wait > 0:
-                await self.sleep(wait)
-        view = self._merged(self._view)
-        self._shown, self._last_edit = view, self.now()
-        try:
-            await self._edit_panel(view)
-        except Exception as error:  # noqa: BLE001 - o painel é conveniência: só o tipo vai ao log (R-12)
-            logger.warning("Painel da rádio ao vivo não editado (%s)", type(error).__name__)
+        """Uma edição por janela. Se a edição não sai, ``_shown`` volta a ``None`` (o painel mostra o que já mostrava): a
+        próxima ``update_panel`` refaz a edição mesmo com a mesma visão. Com a vaga de render ocupada, tenta de novo na
+        janela seguinte, até ``PANEL_BUSY_RETRIES`` vezes (a rádio subindo sem visor não espera outra mudança)."""
+        for _attempt in range(PANEL_BUSY_RETRIES + 1):
+            if self._last_edit is not None:
+                wait = self._last_edit + PANEL_EDIT_INTERVAL_S - self.now()
+                if wait > 0:
+                    await self.sleep(wait)
+            view = self._merged(self._view)
+            self._shown, self._last_edit = view, self.now()
+            try:
+                await self._edit_panel(view)
+                return
+            except Exception as error:  # noqa: BLE001 - o painel é conveniência: só o tipo vai ao log (R-12)
+                self._shown = None
+                logger.warning("Painel da rádio ao vivo não editado (%s)", type(error).__name__)
+                if not isinstance(error, RenderBusy):
+                    return
 
     async def _edit_panel(self, view: LiveView) -> None:
         bot, guild, channel = self._bot(), self._guild(), self._channel()

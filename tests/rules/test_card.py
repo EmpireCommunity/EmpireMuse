@@ -46,6 +46,7 @@ HOSTILE = [
     "z" + "́" * 300,
     "x" * 100_000,
     "🎵 emoji",
+    "ß" * 8,  # ``upper`` dobra: o teto vale depois dele
 ]
 
 

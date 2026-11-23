@@ -214,7 +214,7 @@ def make_radio(
         title=card_text(title, TITLE_MAX),
         country=card_text(country, NAME_MAX),
         place=card_text(place, NAME_MAX),
-        codec=card_text(codec, CODEC_MAX).upper(),
+        codec=card_text(card_text(codec, CODEC_MAX).upper(), CODEC_MAX),  # ``upper`` pode alongar (ß → SS)
         bitrate=_whole(bitrate),
         attempt=_whole(attempt),
         on_air=bool(on_air),
