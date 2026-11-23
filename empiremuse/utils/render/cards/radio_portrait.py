@@ -1,22 +1,27 @@
-"""O Retrato da rádio 24 h, v2 (skins 2.3, spec §6; skins ``portrait_black`` e ``portrait_white``): o visor aprovado na vertical.
+"""O Retrato, v2 (skins 2.3, spec §6 e D14): o visor aprovado na vertical, 480×840 lógicos desenhados em ``SCALE``x. Um
+renderizador só para as duas superfícies; muda só de onde vêm os fatos.
 
-Entrada = ``PortraitCard`` (os fatos do visor, ``VisorData``, mais a skin e a call privada); saída = bytes PNG, 480×840 lógicos
-desenhados em ``SCALE``x. Puro: nenhum I/O além das fontes e nenhum estado. Tokens, estados (``live``, ``muted``, ``offline``),
-ícones monocromáticos e rótulos (chaves ``visor.*``) são os do visor (``utils/radio/visor.py``); só a geometria muda, e "A
-seguir" mostra ``NEXT_MAX`` estações.
+- **Rádio 24 h** (``portrait_black`` e ``portrait_white``): ``PortraitCard`` montado do snapshot da rádio
+  (``from_radio_snapshot``) e ``render_portrait`` devolve o PNG. "A seguir" mostra ``NEXT_MAX`` estações.
+- **Jukebox** (``muse_radio_portrait_black`` e ``_white``, D14): a interface do pipeline de cartões (``project``,
+  ``disc_box``, ``disc_tiles``, ``draw``). Os fatos e os rótulos vêm do ``CardSpec`` pela tabela M/S do visor da Jukebox
+  (``visor_jukebox.visor_view``, com ``NEXT_MAX`` pílulas); a call privada é o ``private`` do ``project`` (contrato §2.2:
+  nada da faixa, da estação nem da rádio; o título vira "Faixa oculta", como no visor). Sem disco: só PNG.
+
+Puro: nenhum I/O além das fontes e nenhum estado. Tokens, estados (``live``, ``muted``, ``offline``), ícones e rótulos
+(chaves ``visor.*``) são os do visor (``utils/radio/visor.py``); só a geometria muda.
 
 - **Texto de fora:** nome da estação, filtro e próximas estações por ``clean_text`` (como no visor); título e artista ICY por
   ``stored_text(markdown=False)``: o ``clean_title`` já os guardou escapados, e escapar de novo deixaria a barra visível.
-- **Fontes:** Inter (família Rádio, D7); o caractere que ela não tem vai para a Noto Sans conferida pelo ``FontBook``; sem
-  glifo nas duas, o caractere sai. Texto da direita para a esquerda sem ``raqm`` não é desenhado (o embed leva o real).
-- **Call privada:** ``seal`` tira estação, logo, título, artista, filtro e os nomes das próximas; ficam só contagens e
-  controles.
-- **Layout:** a rodada 2 ainda não foi aprovada pelo dono; toda medida vive em ``LAYOUT`` (coordenadas lógicas, 1×).
+- **Fontes:** só Inter (família Rádio, D7), como o visor: o ``clean_text`` tira o que ela não desenha (emoji, CJK, escrita da
+  direita para a esquerda), e o desenho tira de novo qualquer caractere fora dela: nunca sai caixa vazia.
+- **Call privada da rádio 24 h:** ``seal`` tira estação, logo, título, artista, filtro e os nomes das próximas; ficam só
+  contagens e controles.
+- **Layout:** toda medida vive em ``LAYOUT`` (coordenadas lógicas, 1×).
 """
 
 from __future__ import annotations
 
-import unicodedata
 from collections.abc import Callable, Mapping
 from functools import cache
 from types import MappingProxyType
@@ -24,6 +29,7 @@ from typing import Any, NamedTuple
 
 from PIL import Image, ImageDraw, ImageFont
 
+from empiremuse.rules.card import CardSpec
 from empiremuse.rules.text import stored_text
 from empiremuse.utils.music.skins.radio_player import RGB, load_radio_skin
 from empiremuse.utils.radio.visor import (
@@ -33,18 +39,26 @@ from empiremuse.utils.radio.visor import (
     VisorData,
     clean_text,
     from_snapshot,
+    inter_points,
     volume_level,
 )
-from empiremuse.utils.render.fonts import FALLBACK, FONTS_DIR, RUNS_MAX, FontBook, cmap_points
+from empiremuse.utils.render.cards import visor_jukebox
+from empiremuse.utils.render.cards.layout import LIGHT_THEME_NAME, CardArt, Translate
+from empiremuse.utils.render.fonts import FONTS_DIR, FontBook
 from empiremuse.utils.render.gif import encode_png
 from empiremuse.utils.render.primitives import circle_logo, fit, mono_icon
 
 Translator = Callable[..., str]
 
-SKINS = MappingProxyType({"portrait_black": "black", "portrait_white": "white"})  # skin → tokens do visor
+RADIO_SKINS = MappingProxyType(
+    {"portrait_black": "black", "portrait_white": "white"}
+)  # rádio 24 h: skin → tokens do visor
+JUKEBOX_SKINS = MappingProxyType({"muse_radio_portrait_black": "black", "muse_radio_portrait_white": "white"})  # D14
+SKINS = frozenset(JUKEBOX_SKINS)  # as skins da Jukebox que o pipeline de cartões desenha aqui
 DEFAULT_SKIN = "portrait_black"
 SCALE = 2  # desenha em 960×1680 para o Discord reduzir com nitidez
 WIDTH, HEIGHT = 480, 840
+SIZE = (WIDTH, HEIGHT)  # 1×, o tamanho do cartão para o pipeline
 NEXT_MAX = 4
 NAME_SIZES = (24, 21, 18)  # o nome da estação encolhe antes das reticências
 TITLE_MAX = 120
@@ -140,44 +154,11 @@ def _inter(weight: str, size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(str(FONTS_DIR / f"Inter-{weight}.ttf"), size)
 
 
-@cache
-def _inter_points(weight: str) -> frozenset[int]:
-    return cmap_points((FONTS_DIR / f"Inter-{weight}.ttf").read_bytes())
-
-
-@cache
-def _book() -> FontBook:
-    return FontBook()
-
-
-_WEIGHTS = MappingProxyType({"Regular": 400, "Medium": 500, "SemiBold": 600, "Bold": 700})
-_RTL = frozenset({"R", "AL", "RLE", "RLO", "RLI"})
-
-
 def _runs(text: str, weight: str, size_px: int) -> tuple[tuple[str, ImageFont.FreeTypeFont], ...]:
-    """O texto em trechos: Inter, e o caractere que ela não tem na Noto Sans conferida; sem glifo nas duas, ele sai."""
-    book = _book()
-    if not book.raqm and any(unicodedata.bidirectional(c) in _RTL for c in text):
-        return ()
-    inter = _inter(weight, size_px)
-    noto: ImageFont.FreeTypeFont | None = None
-    points = _inter_points(weight)
-    pieces: list[tuple[list[str], ImageFont.FreeTypeFont]] = []
-    for char in text:
-        if ord(char) in points:
-            font = inter
-        elif book.has_glyph(FALLBACK, char):
-            noto = noto or book.font(FALLBACK, _WEIGHTS[weight], size_px)
-            font = noto
-        else:
-            continue
-        if pieces and pieces[-1][1] is font:
-            pieces[-1][0].append(char)
-        elif len(pieces) < RUNS_MAX:
-            pieces.append(([char], font))
-        else:
-            break
-    return tuple(("".join(chars), font) for chars, font in pieces)
+    """O texto em Inter, sem o caractere que ela não desenha (o de fora já chega limpo pelo ``clean_text``)."""
+    points = inter_points()
+    kept = "".join(char for char in text if ord(char) in points or char.isspace())
+    return ((kept, _inter(weight, size_px)),) if kept.strip() else ()
 
 
 # ------------------------------------------------------------------------------------------------------------- desenho
@@ -413,10 +394,16 @@ def _draw_controls(c: _Canvas, t: Mapping[str, RGB], tr: Translator, data: Visor
     c.icon("minus", 9, t["knob_pm"], (kcx - ring - 4, kcy + ring - 6))
 
 
-def render_portrait(card: PortraitCard, tr: Translator) -> bytes:
-    """O PNG do retrato (960×1680, 2× de 480×840) para ``card``; skin desconhecida = a padrão. A call privada passa pelo ``seal``."""
+def _tokens(skin: str) -> Mapping[str, RGB]:
+    """Os tokens do visor para a skin (da rádio 24 h ou da Jukebox); desconhecida = a padrão."""
+    name = RADIO_SKINS.get(skin) or JUKEBOX_SKINS.get(skin) or RADIO_SKINS[DEFAULT_SKIN]
+    return load_radio_skin(name).tokens
+
+
+def paint(card: PortraitCard, tr: Translator) -> Image.Image:
+    """O retrato em RGBA (960×1680, cantos transparentes). A call privada passa pelo ``seal``."""
     card = seal(card)
-    tokens = load_radio_skin(SKINS.get(card.skin, SKINS[DEFAULT_SKIN])).tokens
+    tokens = _tokens(card.skin)
     c = _Canvas()
     c.rrect((0, 0, WIDTH, HEIGHT), LAYOUT["radius"], fill=tokens["card"], outline=tokens["card_border"], width=1.5)
     _draw_lcd(c, tokens, tr, card.data)
@@ -426,4 +413,35 @@ def render_portrait(card: PortraitCard, tr: Translator) -> bytes:
     _draw_filter_reserve(c, tokens, tr, card.data)
     _draw_next(c, tokens, tr, card.data)
     _draw_controls(c, tokens, tr, card.data)
-    return encode_png(c.image)
+    return c.image
+
+
+def render_portrait(card: PortraitCard, tr: Translator) -> bytes:
+    """O PNG do retrato (960×1680, 2× de 480×840) para ``card``; skin desconhecida = a padrão."""
+    return encode_png(paint(card, tr))
+
+
+# ----------------------------------------------------------------------------- Jukebox (D14): o pipeline de cartões
+
+
+def project(spec: CardSpec) -> CardSpec:
+    """O que o retrato da Jukebox desenha: a projeção do visor da Jukebox com ``NEXT_MAX`` pílulas (call privada incluída)."""
+    return visor_jukebox.project(spec, next_max=NEXT_MAX)
+
+
+def disc_box(spec: CardSpec) -> tuple[int, int, int, int] | None:
+    return None
+
+
+def disc_tiles(spec: CardSpec, art: CardArt, frames: int) -> list[Image.Image]:
+    raise ValueError("o Retrato não tem disco")
+
+
+def draw(spec: CardSpec, art: CardArt, tr: Translate, book: FontBook) -> Image.Image:
+    """O retrato da Jukebox em RGB (960×1680): os fatos e rótulos do visor da Jukebox, desenhados aqui; os cantos na cor ``card``."""
+    view = visor_jukebox.visor_view(spec, art, tr, book, next_max=NEXT_MAX)
+    skin = "muse_radio_portrait_white" if spec.theme == LIGHT_THEME_NAME else "muse_radio_portrait_black"
+    picture = paint(PortraitCard(view.data, skin), visor_jukebox.translator(tr, view.labels))
+    out = Image.new("RGB", picture.size, _tokens(skin)["card"])
+    out.paste(picture, (0, 0), picture)
+    return out

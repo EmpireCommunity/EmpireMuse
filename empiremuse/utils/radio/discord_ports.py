@@ -24,7 +24,7 @@ from empiremuse.rules.radio import Radio
 from empiremuse.rules.skins import LEGACY_RADIO_SKINS, radio_look
 from empiremuse.utils.radio.chat import PermissionLost
 from empiremuse.utils.radio.runner import Allowed
-from empiremuse.utils.render.cards.radio_portrait import SKINS as PORTRAIT_SKINS
+from empiremuse.utils.render.cards.radio_portrait import RADIO_SKINS as PORTRAIT_SKINS
 
 if TYPE_CHECKING:
     from empiremuse.utils.client import BotCore, BotPool

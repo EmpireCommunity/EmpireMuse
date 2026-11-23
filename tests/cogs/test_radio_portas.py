@@ -697,7 +697,7 @@ class TestRetryWake:
 @pytest.mark.asyncio
 @pytest.mark.regression
 async def test_the_live_visor_receives_the_server_radio_skin(monkeypatch):
-    from empiremuse.utils.radio import panel, snapshot
+    from empiremuse.utils.radio import discord_ports, panel, snapshot
 
     w = build()
     seen = {}
@@ -711,7 +711,7 @@ async def test_the_live_visor_receives_the_server_radio_skin(monkeypatch):
 
     monkeypatch.setattr(snapshot, "live_snapshot", fake_snapshot)
     monkeypatch.setattr(panel, "filter_select_options", lambda *_a, **_kw: [])
-    monkeypatch.setattr(panel, "visor_payload_async", fake_payload)
+    monkeypatch.setattr(discord_ports, "look_payload", fake_payload)  # o painel na skin efetiva (S7)
     w.ports.pool.radio = SimpleNamespace(
         manager=SimpleNamespace(runner=lambda _id: None),
         favorites=SimpleNamespace(list=AsyncMock(return_value=[])),

@@ -32,6 +32,7 @@ from empiremuse.utils.radio.lastfm_feed import LastFmMissing, LastFmUnavailable
 from empiremuse.utils.radio.discord_ports import DiscordRadioPorts
 from empiremuse.utils.radio.panel import CustomView
 from empiremuse.utils.radio.playlist_tracks import PlaylistsUnavailable, radio_playlist_tracks
+from empiremuse.utils.render.slot import RenderBusy
 
 if TYPE_CHECKING:
     from empiremuse.utils.client import BotPool
@@ -39,6 +40,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 SOURCE_NAME = "last.fm"  # o ``PartialTrack`` por metadados: o nó o resolve pelos provedores de busca, como o autoplay
+PANEL_BUSY_RETRIES = 2  # novas tentativas do visor com a vaga de render ocupada (como a rádio ao vivo)
+PANEL_BUSY_RETRY_S = 5.0  # espera antes de cada nova tentativa
 
 
 def _tag(partial: Any, track: Track) -> Any:
@@ -73,6 +76,10 @@ class CustomRadioPorts(DiscordRadioPorts):
             asyncio.Event()
         )  # editar ou trocar a estação acorda a espera de uma fonte quebrada (10 min) ou do recuo (20 s)
         self._panel_task: Optional[asyncio.Task] = None
+        self._panel_dirty = False  # um pedido de redesenho chegou durante a edição em curso
+        self.panel_sleep = (
+            asyncio.sleep
+        )  # a espera entre as tentativas do visor (injetável; não é o ``sleep`` do runner)
 
     def _configure_player(self, player: Any) -> None:
         player.loop = False  # cada faixa é sorteada pelo runner; a fila nunca dá a volta
@@ -382,10 +389,28 @@ class CustomRadioPorts(DiscordRadioPorts):
         )
 
     def _refresh_panel(self) -> None:
-        """Refaz o painel (faixa no ar, sem faixas) em segundo plano; no máximo uma edição por vez."""
+        """Refaz o painel (faixa no ar, sem faixas) em segundo plano; no máximo uma edição por vez. O pedido que chega durante
+        a edição em curso não se perde: ela edita de novo ao terminar."""
+        self._panel_dirty = True
         if self._panel_task is not None and not self._panel_task.done():
             return
-        self._panel_task = asyncio.get_running_loop().create_task(self._edit_panel_now())
+        self._panel_task = asyncio.get_running_loop().create_task(self._edit_panel_until_clean())
+
+    async def _edit_panel_until_clean(self) -> None:
+        """Edita enquanto houver pedido. Com a vaga de render ocupada, tenta de novo depois de ``PANEL_BUSY_RETRY_S``, até
+        ``PANEL_BUSY_RETRIES`` vezes: o painel que nasceu sem o visor não espera a próxima faixa para ganhá-lo."""
+        busy = 0
+        while self._panel_dirty:
+            self._panel_dirty = False
+            try:
+                await self._edit_panel_now()
+            except RenderBusy:
+                busy += 1
+                logger.warning("Painel da rádio personalizada não editado (RenderBusy)")
+                if busy > PANEL_BUSY_RETRIES:
+                    return
+                self._panel_dirty = True
+                await self.panel_sleep(PANEL_BUSY_RETRY_S)
 
     async def _edit_panel_now(self) -> None:
         bot, guild, channel = self._bot(), self._guild(), self._channel()
@@ -396,5 +421,7 @@ class CustomRadioPorts(DiscordRadioPorts):
             message = await channel.fetch_message(current.panel_message_id)
             payload = await self._panel_payload(bot, guild, current)
             await message.edit(allowed_mentions=disnake.AllowedMentions.none(), **self.edit_kwargs(payload))
+        except RenderBusy:
+            raise  # quem pediu tenta de novo (``_edit_panel_until_clean``)
         except Exception as error:  # noqa: BLE001 - o painel é conveniência: só o tipo vai ao log (R-12)
             logger.warning("Painel da rádio personalizada não editado (%s)", type(error).__name__)

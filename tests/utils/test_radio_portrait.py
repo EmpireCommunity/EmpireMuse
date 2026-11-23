@@ -178,10 +178,16 @@ def test_hostile_names_are_drawn_without_controls_escapes_or_length(drawn):
 
 
 @pytest.mark.critical
-def test_right_to_left_text_without_the_layout_engine_is_not_drawn(monkeypatch):
-    monkeypatch.setattr(radio_portrait._book(), "raqm", False)
-    assert radio_portrait._runs("أغنية عربية", "SemiBold", 34) == ()
-    png = render_portrait(PortraitCard(data(now_title="أغنية عربية")), tr)
+def test_a_character_inter_lacks_is_never_drawn(drawn):
+    from empiremuse.utils.radio.visor import inter_points
+
+    glyphless = "Canção 🎵 夜に駆ける أغنية"
+    names = dict(station_name=glyphless, now_title=glyphless, now_artist=glyphless, filter_path=(glyphless,))
+    png = render_portrait(PortraitCard(data(**names, next_stations=(NextStation(4, glyphless, 128, "good"),))), tr)
+
+    points = inter_points()
+    assert all(ord(char) in points for text in drawn for char in text if not char.isspace())
+    assert any("Canção" in text for text in drawn)
     assert decoded(png).size == (960, 1680)
 
 
