@@ -107,7 +107,6 @@ from empiremuse.utils.render.cards.layout import (
     Theme,
     Translate,
     clock,
-    fill,
     is_station,
     private,
     theme_for,
@@ -367,14 +366,18 @@ def _requester_chip(spec: CardSpec, tr: Translate) -> Chip | None:
         return Chip("sparkle", tr("jbx.recommended"))
     if track.by is By.STATION:
         name = spec.station.name if spec.station is not None else ""
-        return Chip("radio", fill(tr("jbx.from_station"), nome=name)) if name else None
+        return Chip("radio", tr("jbx.from_station", nome=name)) if name else None
     return Chip("person", track.requester) if track.requester else None
 
 
 def _flag_chips(spec: CardSpec, tr: Translate) -> list[Chip]:
     flags = spec.flags
     table = (
-        (FLAG_REPEAT_TRACK, "repeat", lambda: fill(tr("jbx.repeat.track"), n=spec.repeat_left)),
+        (
+            FLAG_REPEAT_TRACK,
+            "repeat",
+            lambda: tr("jbx.repeat.track", n=spec.repeat_left) if spec.repeat_left else tr("jbx.repeat.track_on"),
+        ),
         (FLAG_REPEAT_QUEUE, "repeat", lambda: tr("jbx.repeat.queue")),
         (FLAG_AUTOPLAY, "sparkle", lambda: tr("jbx.chip.autoplay")),
         (FLAG_NIGHTCORE, "moon", lambda: tr("jbx.chip.nightcore")),
@@ -400,7 +403,7 @@ def chip_items(spec: CardSpec, tr: Translate) -> list[Chip]:
             items.append(who)
     items += _flag_chips(spec, tr)
     if radio is not None and radio.vote is not None:
-        items.append(Chip("ballot", fill(tr("jbx.vote"), votos=radio.vote[0], quorum=radio.vote[1])))
+        items.append(Chip("ballot", tr("jbx.vote", votos=radio.vote[0], quorum=radio.vote[1])))
     return items
 
 
@@ -503,12 +506,12 @@ def title_and_sub(spec: CardSpec, tr: Translate) -> tuple[str, str, bool]:
         if radio is None:
             return tr("jbx.state.radio"), "", False
         if spec.state is CardState.RADIO_RETRY:
-            return radio.name, fill(tr("jbx.retry"), n=radio.attempt), True
+            return radio.name, tr("jbx.retry", n=radio.attempt), True
         return (radio.title, radio.name, True) if radio.title else (radio.name, "", True)
     track = spec.track
     if track is None:
         return tr("jbx.idle.title"), "", False
-    second = fill(tr("jbx.from_station"), nome=spec.station.name) if spec.station is not None else track.origin
+    second = tr("jbx.from_station", nome=spec.station.name) if spec.station is not None else track.origin
     return track.title, " · ".join(part for part in (track.artists, second) if part), True
 
 
@@ -671,16 +674,16 @@ def paint_queue(ctx: Ctx, spec: CardSpec) -> None:
         paint_on_air(ctx, spec.radio)
         return
     recommended = spec.queue_kind == QUEUE_KIND_RECOMMENDED and not spec.hidden
-    heading = tr("jbx.recommended_list") if recommended else fill(tr("jbx.up_next"), n=spec.queue_total)
+    heading = tr("jbx.recommended_list") if recommended else tr("jbx.up_next", n=spec.queue_total)
     put_text(ctx, heading.upper(), HEADING_FONT, (layout.x0, sum(layout.upnext) / 2), ctx.theme.muted, 300)
     if spec.hidden:
         return
     shown, more = queue_plan(spec, layout.rows_max)
     for index, item in enumerate(spec.queue[:shown]):
         paint_row(ctx, index, index + 1, item)
-    notes = [fill(tr("jbx.and_more"), n=more)] if more else []
+    notes = [tr("jbx.and_more", n=more)] if more else []
     if spec.station is not None:
-        notes.append(fill(tr("jbx.then_station"), nome=spec.station.name))
+        notes.append(tr("jbx.then_station", nome=spec.station.name))
     elif not shown and not more:
         notes.append(tr("jbx.queue.empty"))
     for offset, note in enumerate(notes):

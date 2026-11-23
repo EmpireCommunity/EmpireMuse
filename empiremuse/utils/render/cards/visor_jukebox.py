@@ -37,7 +37,6 @@ from empiremuse.utils.render.cards.layout import (
     CardArt,
     Translate,
     clock,
-    fill,
     is_station,
     private,
 )
@@ -116,7 +115,7 @@ def _radio_view(spec: CardSpec, art: CardArt, tr: Translate) -> VisorView:
     retry = spec.state is CardState.RADIO_RETRY
     labels = {"visor.on_air": tr("jbx.on_air"), "visor.stations": tr("jbx.on_air").upper()}
     if retry:
-        labels["visor.retry"] = fill(tr("jbx.retry"), n=radio.attempt)
+        labels["visor.retry"] = tr("jbx.retry", n=radio.attempt)
     quality = station_quality(radio.bitrate, check_ok=None, unavailable=False)
     data = VisorData(
         station_name=radio.name,
@@ -153,8 +152,8 @@ def _who(spec: CardSpec, tr: Translate) -> str:
     if track.by is By.RECOMMENDED:
         return tr("jbx.recommended")
     if track.by is By.STATION:
-        return fill(tr("jbx.from_station"), nome=spec.station.name) if spec.station is not None else ""
-    return fill(tr("jbx.requested_by"), nome=track.requester) if track.requester else ""
+        return tr("jbx.from_station", nome=spec.station.name) if spec.station is not None else ""
+    return tr("jbx.requested_by", nome=track.requester) if track.requester else ""
 
 
 def _origin(spec: CardSpec, tr: Translate) -> tuple[str, ...]:
@@ -192,7 +191,7 @@ def _music_labels(spec: CardSpec, tr: Translate) -> dict[str, str]:
         "visor.live": word,
         "visor.offline": word,
         "visor.on_air": length,
-        "visor.stations": fill(tr("jbx.up_next"), n=spec.queue_total).upper(),
+        "visor.stations": tr("jbx.up_next", n=spec.queue_total).upper(),
         "visor.filter": tr("jbx.origin").upper(),
         "visor.no_reserve": spec.bot_name or NO_VALUE,
         "visor.quality.good": chips,
@@ -239,7 +238,7 @@ def translator(tr: Translate, labels: dict[str, str]) -> Callable[..., str]:
     """O tradutor que o ``render_visor`` usa: as chaves trocadas saem prontas; as outras, do catálogo com ``{nome}``."""
 
     def translate(key: str, **values: object) -> str:
-        return labels[key] if key in labels else fill(tr(key), **values)
+        return labels[key] if key in labels else tr(key, **values)
 
     return translate
 

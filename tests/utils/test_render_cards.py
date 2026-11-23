@@ -29,10 +29,10 @@ from empiremuse.utils.render.cards.layout import (
     SLIM,
     CardArt,
     FontSpec,
-    fill,
     gif_fits,
     theme_for,
 )
+from empiremuse.rules.i18n import Translator
 from empiremuse.utils.render.fonts import FIGTREE, FontBook
 from empiremuse.utils.render.gif import encode_png
 
@@ -55,13 +55,31 @@ class RecordingBook(FontBook):
         return super().runs(text, name, weight, size)
 
 
+# Os textos com marcadores como o catálogo de verdade os terá; as outras chaves viram "T:chave".
+TEMPLATES = {
+    "jbx.requested_by": "Pedida por {nome}",
+    "jbx.from_station": "estação {nome}",
+    "jbx.then_station": "Depois: estação {nome}",
+    "jbx.up_next": "A seguir · {n}",
+    "jbx.and_more": "e mais {n}",
+    "jbx.retry": "Tentativa {n}",
+    "jbx.vote": "{votos}/{quorum}",
+    "jbx.repeat.track": "Repetir a faixa ({n})",
+}
+CATALOG = {**{key: f"T:{key}" for key in LABEL_KEYS}, **TEMPLATES}
+
+
 class RecordingTr:
+    """O ``Translator`` de verdade (``rules/i18n.py``) com um catálogo de teste, gravando as chaves pedidas. Como o real, uma
+    chave com marcador pedida sem os valores devolve a PRÓPRIA chave: o teste de marcadores pega isso."""
+
     def __init__(self) -> None:
         self.keys: list[str] = []
+        self._real = Translator("pt-BR", CATALOG, CATALOG)
 
-    def __call__(self, key: str) -> str:
+    def __call__(self, key: str, **values) -> str:
         self.keys.append(key)
-        return key
+        return self._real(key, **values)
 
 
 @pytest.fixture(scope="module")
@@ -463,7 +481,7 @@ def test_every_card_facts_flag_becomes_its_chip(flag, key):
 
     chips = expanded.chip_items(expanded.project(base_spec(flags=frozenset({flag}), repeat_left=2)), tr)
 
-    assert key in [chip.text for chip in chips]
+    assert RecordingTr()(key, n=2) in [chip.text for chip in chips]  # o texto do catálogo, com o marcador preenchido
 
 
 def test_recommended_track_shows_the_recommended_chip_instead_of_the_requester():
@@ -471,7 +489,7 @@ def test_recommended_track_shows_the_recommended_chip_instead_of_the_requester()
 
     chips = expanded.chip_items(base_spec(track=track, flags=frozenset()), RecordingTr())
 
-    assert [chip.text for chip in chips][1] == "jbx.recommended"
+    assert [chip.text for chip in chips][1] == CATALOG["jbx.recommended"]
 
 
 # ---------------------------------------------------------------------- texto
@@ -499,5 +517,20 @@ def test_a_long_title_is_cut_to_the_layout_lines_with_an_ellipsis(layout, lines,
     assert all(expanded.text_length(book.runs(line, *font)) <= width for line in wrapped)
 
 
-def test_fill_never_reads_a_value_as_a_template():
-    assert fill("e mais {n} de {nome}", n="{nome}", nome="Ana") == "e mais {nome} de Ana"
+@pytest.mark.regression
+@pytest.mark.parametrize("family", list(FAMILIES))
+@pytest.mark.parametrize("state", ["playing", "radio_retry", "station", "paused"])
+def test_texts_with_placeholders_are_filled_never_drawn_as_the_key(family, state, book):
+    spec = STATES[state]()
+    spec = spec._replace(
+        flags=spec.flags | {card_facts.FLAG_REPEAT_TRACK},
+        repeat_left=2,
+        queue=queue(6),
+        queue_total=6,
+        queue_kind="queue",
+    )
+
+    FAMILIES[family].draw(spec, CardArt(cover_bytes(), logo_png()), RecordingTr(), book)
+
+    drawn = " ".join(book.texts)
+    assert not any(key in drawn for key in TEMPLATES) and "{" not in drawn

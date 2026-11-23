@@ -38,7 +38,7 @@ RGBA = tuple[int, int, int, int]
 Box = tuple[int, int, int, int]
 Span = tuple[int, int]  # y de cima e y de baixo de uma faixa do cartão
 
-Translate = Callable[[str], str]
+Translate = Callable[..., str]  # ``player.tr``: chave e os valores dos ``{marcadores}``
 
 
 class CardArt(NamedTuple):
@@ -123,6 +123,7 @@ LABEL_KEYS: tuple[str, ...] = (
     "jbx.chip.always_on",
     "jbx.chip.restricted",
     "jbx.repeat.track",
+    "jbx.repeat.track_on",
     "jbx.repeat.queue",
     "jbx.title_in_text",
     # já existem no catálogo (o visor da rádio): a qualidade da estação em R
@@ -131,13 +132,6 @@ LABEL_KEYS: tuple[str, ...] = (
     "visor.quality.weak",
     "visor.quality.failing",
 )
-
-_PLACEHOLDER = re.compile(r"\{(\w+)\}")
-
-
-def fill(template: str, **values: object) -> str:
-    """Troca os ``{nome}`` do texto do catálogo numa passada só (um valor com chaves nunca é lido de novo como modelo)."""
-    return _PLACEHOLDER.sub(lambda m: str(values[m[1]]) if m[1] in values else m[0], template)
 
 
 def clock(seconds: int) -> str:
