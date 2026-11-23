@@ -219,7 +219,9 @@ class JukeboxStationMixin:
             # fora do lock: o Last.fm pode demorar; só com a porta liberando
             loaded = await self._station_pool(player, station)
         except Exception:
-            # a carga já foi gasta: a recusa conta como troca para a espera curta [s1], e outro clique logo em seguida não carrega de novo
+            # a carga já foi gasta: a recusa conta como troca para a espera curta [s1], e outro clique logo em seguida não carrega de novo.
+            # Fora do lock de propósito: esta escrita só pode adiantar o carimbo de uma troca concorrente (estender a espera curta), nunca abrir
+            # uma troca que a espera barraria
             player.radio_switched_at = self.now()
             raise
         async with player.radio_lock:

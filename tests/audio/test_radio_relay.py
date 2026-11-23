@@ -1203,3 +1203,19 @@ async def test_a_token_the_node_never_used_expires_and_a_used_one_does_not():
     now[0] = UNCLAIMED_TTL_S / 2 + UNCLAIMED_TTL_S + 1  # o recém-registrado ainda está no prazo
     r.register("https://station.example/d", codec="MP3", bitrate=128)
     assert r._find(fresh) is not None
+
+
+@pytest.mark.critical
+@pytest.mark.asyncio
+async def test_a_token_expired_unclaimed_is_refused_when_the_node_arrives():
+    """Sentinela S-b (PR 282): o token vencido fecha a conexão do nó sem abrir a estação."""
+    from empiremuse.utils.radio.relay import UNCLAIMED_TTL_S
+
+    now = [0.0]
+    head = b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n"
+    async with Station(sends(head, MP3 + b"A" * 100)) as station, relay(clock=lambda: now[0]) as r:
+        token = r.register(station.url, codec="MP3", bitrate=128)
+        now[0] = UNCLAIMED_TTL_S + 1
+        r.register(station.url, codec="MP3", bitrate=128)  # o vencimento roda no registro seguinte
+        got_head, got_body = await fetch(r, token)
+    assert got_head == b"" and got_body == b"" and station.connections == 0

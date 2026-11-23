@@ -40,6 +40,13 @@ async def radio_entries(bot, tr: Translator, guild_id: int) -> tuple[disnake.Sel
     return jukebox_ui.live_entry(tr), jukebox_ui.server_entry(tr, count)
 
 
+def pin_reserved(bot) -> int:
+    """As vagas da página 1 que entram na divisão de TODA página: ``RADIO_SLOTS`` sempre que o bot tem rádios, mesmo sem premium ou com o
+    banco fora nesse desenho. Uma regra só para o painel de 2+ players, o select do player e o efêmero de página: a divisão nunca muda
+    de um para o outro, e a navegação nunca pula nem repete uma playlist."""
+    return RADIO_SLOTS if getattr(getattr(bot, "pool", None), "radio", None) is not None else 0
+
+
 def build_guild_pin(
     bot,
     tr: Translator,
@@ -49,13 +56,12 @@ def build_guild_pin(
     *,
     placeholder_key: str = "player.idle.server_songs_placeholder",
     show_fixed: bool = True,
-    reserved: int | None = None,
 ) -> disnake.ui.Select | None:
-    """``reserved`` (por padrão, quantas são as ``fixed_entries``) são as vagas da página 1 que entram na divisão de TODA página: a
-    divisão das playlists nunca muda entre o select público e o efêmero. ``show_fixed`` só decide se as entradas aparecem."""
+    """A divisão reserva ``pin_reserved(bot)`` vagas (ou as ``fixed_entries``, se forem mais) em toda página. ``show_fixed`` só decide se
+    as entradas aparecem."""
     if not playlists and not (fixed_entries and show_fixed):
         return None
-    layout = plan(len(playlists), len(fixed_entries) if reserved is None else max(reserved, len(fixed_entries)), page)
+    layout = plan(len(playlists), max(pin_reserved(bot), len(fixed_entries)), page)
     options = list(fixed_entries) if layout.page == 1 and show_fixed else []
     if layout.previous:
         options.append(
@@ -91,20 +97,10 @@ async def load_guild_pin(
     placeholder_key: str = "player.idle.server_songs_placeholder",
 ) -> disnake.ui.Select | None:
     """O select do canal com as playlists do servidor; ``radio`` mostra as entradas fixas (só a página 1 as mostra; o efêmero de página não).
-
-    A vaga das entradas na página 1 entra na divisão de todas as páginas sempre que o bot tem rádios, mesmo sem premium ou com o banco
-    fora nesse clique: a divisão não muda de uma página para a outra, e a navegação nunca pula nem repete uma playlist."""
+    A divisão das páginas vem de ``pin_reserved``."""
     fixed = await radio_entries(bot, tr, guild_id)
-    reserved = RADIO_SLOTS if getattr(getattr(bot, "pool", None), "radio", None) is not None else 0
     return build_guild_pin(
-        bot,
-        tr,
-        await safe_list(bot, guild_id),
-        page,
-        fixed,
-        placeholder_key=placeholder_key,
-        show_fixed=radio,
-        reserved=reserved,
+        bot, tr, await safe_list(bot, guild_id), page, fixed, placeholder_key=placeholder_key, show_fixed=radio
     )
 
 

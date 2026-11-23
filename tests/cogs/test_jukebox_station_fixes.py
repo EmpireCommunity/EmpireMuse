@@ -818,26 +818,52 @@ async def test_the_confirm_button_plays_the_station_of_its_own_screen():
 @pytest.mark.critical
 @pytest.mark.regression
 @pytest.mark.asyncio
-@pytest.mark.parametrize("transition", ["radio", "station"])
-async def test_a_recommendation_fetched_while_radio_or_a_station_starts_does_not_play(transition, monkeypatch):
-    """J2a (nota da Alicerce m1): o autoplay buscava uma recomendação durante M → R e a tocava por cima da rádio que abria."""
+@pytest.mark.parametrize(
+    ("transition", "plays"),
+    [("station", "faixa da estação"), ("radio_on_air", "ao vivo"), ("radio_opening", None), ("closing", None)],
+)
+async def test_a_transition_during_the_autoplay_search_takes_the_player(transition, plays, monkeypatch):
+    """J2a (nota da Alicerce m1): a recomendação buscada durante M → R ou M → S tocava por cima da transição. Revisão do PR 282: a busca
+    segura ``locked``, o ``process_next`` da transição se perdia e a estação ficava muda; a escolha recomeça depois da busca."""
     from empiremuse.utils.music.models import playback_steps
+    from empiremuse.utils.radio.jukebox_station import StationNext
 
     idle = AsyncMock()
     monkeypatch.setattr(playback_steps, "go_idle", idle)
-    player = NS(queue=deque(), radio_id=None, radio_mode=None, station=None, autoplay=True, keep_connected=False)
+    live = NS(name="ao vivo")
+    jukebox = NS(next_station_track=AsyncMock(return_value=(StationNext.TRACK, "faixa da estação")))
+    player = NS(
+        queue=deque(),
+        queue_autoplay=deque(),
+        radio_id=None,
+        radio_mode=None,
+        station=None,
+        autoplay=True,
+        keep_connected=False,
+        locked=False,
+        is_closing=False,
+        bot=NS(pool=NS(radio=NS(jukebox=jukebox))),
+    )
 
     async def autoqueue():
-        if transition == "radio":
-            player.radio_mode = object()  # R abrindo durante a busca
-        else:
+        player.locked = True  # a busca segura o player: o process_next da transição volta sem fazer nada
+        if transition == "station":
             player.station = NS(ref="g:rock")
+        elif transition == "radio_on_air":
+            player.radio_mode = NS(track=live)
+            player.queue.append(live)
+        elif transition == "radio_opening":
+            player.radio_mode = NS(track=None)
+        else:
+            player.is_closing = True
+        player.queue_autoplay.extend(["sugestão 1", "sugestão 2"])  # guardadas depois do descarte da transição
+        player.locked = False
         return "recomendação"
 
     player.get_autoqueue_tracks = autoqueue
     req = NS(track=None)
-    assert await playback_steps._pn_next_track(player, req) is True
-    assert req.track is None and not idle.await_count
+    assert await playback_steps._pn_next_track(player, req) is (plays is None)
+    assert getattr(req.track, "name", req.track) == plays and not player.queue_autoplay and not idle.await_count
 
 
 @pytest.mark.critical
