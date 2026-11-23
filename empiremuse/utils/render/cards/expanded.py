@@ -388,7 +388,7 @@ def _flag_chips(spec: CardSpec, tr: Translate) -> list[Chip]:
 
 
 def chip_items(spec: CardSpec, tr: Translate) -> list[Chip]:
-    """Os chips da linha (fonte e duração, quem pediu, repetir, autoplay, nightcore, 24/7, restrito, local, votação)."""
+    """Os chips da linha (fonte e duração, quem pediu, repetir, autoplay, nightcore, rádio, restrito, local, votação)."""
     items: list[Chip] = []
     radio, track = spec.radio, spec.track
     if spec.state in RADIO_STATES and radio is not None:
