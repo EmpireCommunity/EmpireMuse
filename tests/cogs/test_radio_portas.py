@@ -69,6 +69,7 @@ def build(*, stage=False, premium=True, perms=(True, True), has_channel=True, mu
         user=SimpleNamespace(id=BOT_ID),
         get_guild=lambda gid: guild if gid == GUILD else None,
         get_cog=lambda name: music,
+        get_global_data=AsyncMock(return_value={"radio_skin": None}),
         pool=SimpleNamespace(i18n=SimpleNamespace(for_guild=AsyncMock(return_value=_fake_tr))),
         music=SimpleNamespace(players={}, get_player=MagicMock(side_effect=lambda **kw: _register(bot, player, kw))),
     )
@@ -691,3 +692,33 @@ class TestRetryWake:
 
         assert time.monotonic() - started < 1
         await asyncio.wait_for(w.ports.sleep(0.05), 1)  # sem despertar: espera o prazo e segue
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_the_live_visor_receives_the_server_radio_skin(monkeypatch):
+    from empiremuse.utils.radio import panel, snapshot
+
+    w = build()
+    seen = {}
+
+    async def fake_snapshot(*_args, **kwargs):
+        seen.update(kwargs)
+        return "snap"
+
+    async def fake_payload(_tr, snap, **_kw):
+        return snap
+
+    monkeypatch.setattr(snapshot, "live_snapshot", fake_snapshot)
+    monkeypatch.setattr(panel, "filter_select_options", lambda *_a, **_kw: [])
+    monkeypatch.setattr(panel, "visor_payload_async", fake_payload)
+    w.ports.pool.radio = SimpleNamespace(
+        manager=SimpleNamespace(runner=lambda _id: None),
+        favorites=SimpleNamespace(list=AsyncMock(return_value=[])),
+        locations=None,
+    )
+    w.bot.get_global_data.return_value = {"radio_skin": "portrait_white"}
+    w.bot.get_color = lambda _me: 1
+
+    assert await w.ports._visor_payload(w.bot, w.guild, w.ports.radio, _fake_tr) == "snap"
+    assert seen["guild_radio_skin"] == "portrait_white"

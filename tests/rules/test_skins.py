@@ -18,6 +18,7 @@ from empiremuse.rules.skins import (
     REGISTRY,
     Surface,
     disc_motion_on,
+    global_skin_changes,
     jukebox_choice,
     jukebox_skin,
     saved_player_skins,
@@ -250,3 +251,44 @@ def test_a_never_chosen_server_skin_falls_to_the_registry_default(monkeypatch, q
     monkeypatch.setattr(skins, "SAVED_DEFAULT_IS_A_CHOICE", q1)
 
     assert saved_player_skins("default", "default", {"global_skin": False}) == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    ("global_mode", "global_skin", "applied"),
+    [
+        (True, None, ("mini", "classic")),  # sem escolha global, o painel aplica a do servidor (como a criação)
+        (True, "default", ("mini", "classic")),  # Q1 = não: o "default" global também cai na do servidor
+        (True, "slim", ("slim", "slim")),
+        (False, "slim", ("mini", "classic")),
+    ],
+)
+async def test_the_panel_applies_skins_with_the_same_precedence_as_a_new_player(
+    monkeypatch, global_mode, global_skin, applied
+):
+    from unittest.mock import AsyncMock
+
+    from empiremuse.panel.services.appearance import SkinsGlobalForm
+
+    monkeypatch.setattr(skins, "SAVED_DEFAULT_IS_A_CHOICE", False)
+    servers = SimpleNamespace(settings=AsyncMock(return_value={"skin": "mini", "static_skin": "classic"}))
+    ctx = SimpleNamespace(
+        guild_id=1, pool=SimpleNamespace(default_skin="pool", default_static_skin="pool_static", servers=servers)
+    )
+    new = {"global_skin": global_mode, "player_skin": global_skin, "player_skin_static": global_skin}
+
+    assert await SkinsGlobalForm._effective(ctx, new) == applied
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    ("shown", "picked", "written"),
+    [
+        (("mini", "classic"), ("mini", "classic"), {}),  # salvar sem trocar não grava a skin herdada como escolha
+        (("mini", "classic"), ("slim", "classic"), {"player_skin": "slim"}),
+        (("mini", "classic"), ("mini", "slim"), {"player_skin_static": "slim"}),
+    ],
+)
+def test_the_global_skin_command_writes_only_what_was_changed(shown, picked, written):
+    assert global_skin_changes(shown, picked) == written

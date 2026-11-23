@@ -13,7 +13,7 @@ from empiremuse.panel.services.base import DBModel, Args, FormContext, ParseResu
 from empiremuse.panel.services.player import active_player, guild_players
 from empiremuse.rules import limits
 from empiremuse.rules.settings import allowed_names
-from empiremuse.rules.skins import jukebox_choice, jukebox_skin
+from empiremuse.rules.skins import jukebox_choice, jukebox_skin, saved_player_skins
 
 logger = logging.getLogger(__name__)
 
@@ -157,14 +157,11 @@ class SkinsGlobalForm(SettingsForm):
 
     @staticmethod
     async def _effective(ctx: FormContext, new: dict[str, Any]) -> tuple[str, str]:
-        """Skins que os players devem usar: as globais (modo global) ou as do servidor."""
-        if new["global_skin"]:
-            return (
-                jukebox_skin(new["player_skin"], ctx.pool.default_skin),
-                jukebox_skin(new["player_skin_static"], ctx.pool.default_static_skin),
-            )
+        """Skins que os players devem usar, com a mesma precedência da criação do player (``saved_player_skins``): no modo
+        global, a escolha global; sem ela, a do servidor; por fim o padrão do pool."""
         own = await ctx.pool.servers.settings(ctx.guild_id)
+        skin, static_skin = saved_player_skins(own["skin"], own["static_skin"], new)
         return (
-            jukebox_skin(own["skin"], ctx.pool.default_skin),
-            jukebox_skin(own["static_skin"], ctx.pool.default_static_skin),
+            jukebox_skin(skin, ctx.pool.default_skin),
+            jukebox_skin(static_skin, ctx.pool.default_static_skin),
         )

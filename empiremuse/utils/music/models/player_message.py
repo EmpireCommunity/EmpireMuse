@@ -120,12 +120,12 @@ class PlayerMessageMixin:
                 continue
 
             elif self.update:
+                # zerado antes: um redesenho que o próprio invoke_np pede (cartão adiado) fica para o próximo ciclo
+                self.update = False
                 try:
                     await self.invoke_np()
                 except Exception:
                     logger.exception("Falha em message_updater")
-
-                self.update = False
 
                 await asyncio.sleep(5)
 

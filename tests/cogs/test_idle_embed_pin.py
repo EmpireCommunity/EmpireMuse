@@ -77,3 +77,10 @@ class TestFixarMensagens:
         mensagem = await rodar(disnake.Permissions(pin_messages=False, manage_messages=True))
 
         mensagem.pin.assert_not_awaited()
+
+
+@pytest.mark.regression
+async def test_the_idle_embed_edit_drops_any_old_card_attachment():
+    mensagem = await rodar(disnake.Permissions(pin_messages=True))
+
+    assert mensagem.edit.await_args.kwargs["attachments"] == []

@@ -34,8 +34,11 @@ class RenderStates:
         return state
 
     def forget(self, player: Any) -> None:
-        """A mensagem do player foi trocada (nova mensagem, skin de texto): o anexo antigo não vale mais."""
-        self._states.pop(player, None)
+        """A mensagem do player foi trocada (nova mensagem, skin de texto): o anexo antigo não vale mais. O relógio do
+        último GIF frio fica: o intervalo entre GIFs frios é do player, não da mensagem."""
+        state = self._states.get(player)
+        if state is not None:
+            self._states[player] = state._replace(last=None, upgrade_due=False)
 
     def __len__(self) -> int:
         return len(self._states)

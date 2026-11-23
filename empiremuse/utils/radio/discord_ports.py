@@ -432,7 +432,7 @@ class DiscordRadioPorts:
         self, bot: BotCore, guild: disnake.Guild, current: Radio, tr: Any, *, now: bool = False
     ) -> dict[str, Any]:
         """O painel da rádio AO VIVO (R6/R7): o retrato imutável (``live_snapshot``) vira o PNG do visor numa thread e os controles.
-        Custa, por edição (no máximo uma a cada ``live_ports.PANEL_EDIT_INTERVAL_S``): o logo em cache, um ``by_uuids`` e duas leituras das favoritas."""
+        Custa, por edição (no máximo uma a cada ``live_ports.PANEL_EDIT_INTERVAL_S``): o logo em cache, um ``by_uuids``, duas leituras das favoritas e a do documento global do servidor (``radio_skin``)."""
         from empiremuse.utils.music.app_emojis import emoji as app_emoji  # tarde: o módulo importa o cliente
         from empiremuse.utils.radio.panel import filter_select_options
         from empiremuse.utils.radio.snapshot import live_snapshot
