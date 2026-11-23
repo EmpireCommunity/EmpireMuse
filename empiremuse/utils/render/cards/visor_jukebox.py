@@ -7,12 +7,14 @@ O desenho é o ``utils/radio/visor.render_visor``, sem cópia: aqui só se monta
   o logo vira a capa, a escala vira a sessão, a caixa FILTRO vira ORIGEM, a reserva mostra o bot, a fila nas pílulas.
   Os rótulos do visor (chaves ``visor.*``) que mudam de sentido são trocados por textos ``jbx.*`` já traduzidos.
 - Sem disco: o visor é só PNG (``disc_box`` = ``None``, ``disc_tiles`` levanta).
-- O visor escreve em Inter, sem a reserva por caractere; o título passa antes pelo ``FontBook.runs`` só para a regra do
-  texto da direita para a esquerda (``jbx.title_in_text``).
+- O visor escreve em Inter, sem a reserva por caractere: todo texto de fora passa antes por ``inter_text``, que tira o
+  que a Inter não desenha (emoji, CJK), para nunca sair caixa vazia. O título com perda (ou da direita para a esquerda,
+  pelo ``FontBook.runs``) vira ``jbx.title_in_text``: o título real já vai no autor do embed.
 """
 
 from __future__ import annotations
 
+import functools
 import io
 from collections.abc import Callable
 from typing import NamedTuple
@@ -40,7 +42,7 @@ from empiremuse.utils.render.cards.layout import (
     is_station,
     private,
 )
-from empiremuse.utils.render.fonts import FontBook
+from empiremuse.utils.render.fonts import FontBook, cmap_points
 from empiremuse.utils.render.gif import encode_png
 
 SKINS = frozenset({"muse_radio_black", "muse_radio_white"})
@@ -57,6 +59,25 @@ CHIP_FLAGS: tuple[tuple[str, str], ...] = (
     (FLAG_RESTRICTED, "jbx.chip.restricted"),
 )
 DRAWN_FLAGS = frozenset(flag for flag, _key in CHIP_FLAGS)
+INTER_FILES = ("Inter-Regular.ttf", "Inter-Medium.ttf", "Inter-SemiBold.ttf", "Inter-Bold.ttf")
+
+
+@functools.cache
+def inter_points() -> frozenset[int]:
+    """Os códigos que as quatro Inter do visor desenham (a interseção: o mesmo texto sai em qualquer peso)."""
+    return frozenset.intersection(*(cmap_points((visor.FONTS_DIR / name).read_bytes()) for name in INTER_FILES))
+
+
+def inter_text(text: str) -> tuple[str, bool]:
+    """``text`` só com o que a Inter desenha, espaços colapsados, e se algo saiu (``lossy``)."""
+    points = inter_points()
+    whole = " ".join(text.split())
+    kept = " ".join("".join(char for char in whole if ord(char) in points or char.isspace()).split())
+    return kept, kept != whole
+
+
+def _drawn(text: str) -> str:
+    return inter_text(text)[0]
 
 
 QUALITIES: dict[str, visor.Quality] = {"good": "good", "ok": "ok", "weak": "weak", "failing": "failing"}
@@ -118,15 +139,15 @@ def _radio_view(spec: CardSpec, art: CardArt, tr: Translate) -> VisorView:
         labels["visor.retry"] = tr("jbx.retry", n=radio.attempt)
     quality = station_quality(radio.bitrate, check_ok=None, unavailable=False)
     data = VisorData(
-        station_name=radio.name,
+        station_name=_drawn(radio.name),
         codec=radio.codec,
         bitrate_kbps=radio.bitrate,
         logo=art.logo,
         state="offline" if retry else "live",
         position=0,
         total=1,
-        filter_path=tuple(part for part in (radio.country, radio.place) if part),
-        now_title=radio.title,
+        filter_path=tuple(_drawn(part) for part in (radio.country, radio.place) if part),
+        now_title=_drawn(radio.title),
         volume=spec.volume,
         quality=QUALITIES.get(quality, "good"),
     )
@@ -176,8 +197,10 @@ def _title(spec: CardSpec, tr: Translate, book: FontBook) -> str:
         return tr("jbx.idle.title")
     if spec.hidden or spec.track is None:
         return tr("jbx.hidden_track") if spec.hidden else tr("jbx.idle.title")
-    title = spec.track.title
-    return tr("jbx.title_in_text") if book.runs(title, *VISOR_TEXT_CHECK).in_message else title
+    title, lossy = inter_text(spec.track.title)
+    if lossy or not title or book.runs(spec.track.title, *VISOR_TEXT_CHECK).in_message:
+        return tr("jbx.title_in_text")
+    return title
 
 
 def _music_labels(spec: CardSpec, tr: Translate) -> dict[str, str]:
@@ -209,7 +232,9 @@ def _music_labels(spec: CardSpec, tr: Translate) -> dict[str, str]:
 
 def _music_view(spec: CardSpec, art: CardArt, tr: Translate, book: FontBook) -> VisorView:
     position = spec.session_played + 1
-    pills = tuple(NextStation(position + i + 1, item.title, 0, "good") for i, item in enumerate(spec.queue[:NEXT_MAX]))
+    pills = tuple(
+        NextStation(position + i + 1, _drawn(item.title), 0, "good") for i, item in enumerate(spec.queue[:NEXT_MAX])
+    )
     data = VisorData(
         station_name=_title(spec, tr, book),
         codec=spec.track.source if spec.track is not None else "",
@@ -217,9 +242,9 @@ def _music_view(spec: CardSpec, art: CardArt, tr: Translate, book: FontBook) -> 
         state="offline" if spec.state is CardState.IDLE else "live",
         position=0 if spec.state is CardState.IDLE else position,
         total=position + spec.queue_total,
-        filter_path=_origin(spec, tr),
-        now_title=spec.track.artists if spec.track is not None else "",
-        now_artist=_who(spec, tr),
+        filter_path=tuple(_drawn(part) for part in _origin(spec, tr)),
+        now_title=_drawn(spec.track.artists) if spec.track is not None else "",
+        now_artist=_drawn(_who(spec, tr)),
         volume=spec.volume,
         next_stations=pills,
     )

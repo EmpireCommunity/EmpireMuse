@@ -888,6 +888,7 @@ async def test_drawing_the_list_resets_each_players_cache_so_going_back_to_one_p
 
     message.edit.assert_awaited_once()
     assert message.edit.await_args.kwargs["allowed_mentions"].everyone is False
+    assert message.edit.await_args.kwargs["attachments"] == []  # o cartão de um player nunca fica preso na lista
     assert one.music.players[GID].last_data == {} and two.music.players[GID].last_data == {}
 
 

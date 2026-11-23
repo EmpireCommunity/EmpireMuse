@@ -217,9 +217,10 @@ Os métodos mais longos do player (KI-29b) seguem o mesmo padrão do `/play`: `i
 
 - **Faixas parciais** (Spotify/Deezer): o player busca equivalentes nas `partial_providers` do node
   (`ytsearch`, `scsearch`, `dzsearch`, …) e filtra por duração/título (`LavalinkPlayer._process_next` em `empiremuse/utils/music/models/player_playback.py` e `LavalinkPlayer.resolve_track` em `empiremuse/utils/music/models/player_autoqueue.py`).
-- **Skins** são módulos com função `load()`: 10 em `empiremuse/utils/music/skins/normal_player/` e 5 em
-  `static_player/` (15 no total), carregados dinamicamente por `BotPool.load_skins` em `empiremuse/utils/client.py`. Skins
-  personalizadas por servidor são guardadas no banco (ver seção 8).
+- **Skins** são módulos com função `load()`: as 15 Clássicas (10 em `empiremuse/utils/music/skins/normal_player/` e 5 em
+  `static_player/`), carregadas do diretório por `BotPool.load_skins` em `empiremuse/utils/client.py`, e as skins do
+  EmpireMuse (2.3) em `skins/muse/`, carregadas só pelos ids do registro (ver "Skins do EmpireMuse e o cartão de imagem"
+  abaixo). Skins personalizadas por servidor são guardadas no banco (ver seção 8).
 - **UI**: views, botões e modais em `empiremuse/utils/music/interactions/` (pacote desde a KI-29; o `__init__.py` reexporta os nomes
   públicos): `player_views.py` (volume, fila, paginador, botões, seletores), `stage_title.py` (`SetStageTitle`), `fav_menu.py`
   (`FavMenuView`, com os mixins `fav_menu_components.py` para selects e botões, `fav_menu_text.py` para o texto da mensagem e `fav_menu_radio.py` para o modo "Rádios favoritas": Tocar (modo rádio da Jukebox), Remover e Limpar, sempre em mensagem efêmera), `fav_menu_server.py` (`/radio favoritas`: lista do servidor, Remover e Limpar com confirmação, só para quem gerencia o servidor),
@@ -231,6 +232,46 @@ Os métodos mais longos do player (KI-29b) seguem o mesmo padrão do `/play`: `i
   controlador estão em `PlayerControls` (`empiremuse/utils/others.py`, prefixo `musicplayer_`).
 - **Rich Presence**: `LavalinkPlayer.process_rpc` monta o payload e `LavalinkPlayer._send_rpc_data` o envia por `ws_client`
   (`empiremuse/utils/music/models/player_state.py`).
+
+### Skins do EmpireMuse e o cartão de imagem (2.3)
+
+- **Registro:** `empiremuse/rules/skins.py` lista toda skin de fábrica na ordem do `/skins` (`REGISTRY`: as do EmpireMuse,
+  as Clássicas e as da rádio 24 h) e decide qual vale (`jukebox_skin`, `saved_player_skins`, `radio_look`,
+  `disc_motion_on`). `BotPool.load_muse_skins` importa só os ids de `JUKEBOX_IDS` e registra cada um nos dois dicionários
+  (`player_skins` e `player_static_skins`): a mesma skin vale no modo normal e no canal da Jukebox, e o `check_skin`, o
+  painel e a API as aceitam sem ramo novo. Nenhum nome de módulo sai de um valor do banco.
+- **Módulos** (`utils/music/skins/muse/`): `load()` devolve a skin com `name`, `preview`, `setup_features` e `load(player)`,
+  como as Clássicas, mais `card`, `theme` e `project`. A Jukebox Texto (`muse_text`) é só texto
+  (`card = None`). Nas de imagem (`muse_expanded_*`, `muse_slim_*`, `muse_radio_*`), `card`
+  é a família do renderizador, `theme` é `black` ou `white` e `project` é a projeção do próprio renderizador. O
+  `load(player)` é síncrono e sem I/O: monta o embed do cartão em `embeds[0]` (sem imagem; o autor só com o link e o
+  ícone) e os componentes de sempre, com os mesmos `custom_id` das Clássicas. Os textos vêm do catálogo (`jbx.*`,
+  `skin.*`). Em call privada nada da faixa, de quem pediu, da fila ou da rádio aparece.
+- **Fatos e projeção:** `utils/music/card_facts.build(player, settings)` monta o `CardSpec` (`rules/card.py`: tuplas
+  imutáveis comparáveis por `==`, com o texto de fora já limpo e cortado e nada que envelheça além da posição pausada).
+  A skin o projeta (`skin.project(spec)`) para ficar só com o que ela desenha: uma mudança que a skin não mostra não
+  redesenha.
+- **Pipeline** (`utils/render/cards/pipeline.py`, uma instância por processo): fora da vaga, a capa (com prazo) e a
+  escolha do formato; dentro da vaga única de desenho (`utils/render/slot.py`), o desenho, os ladrilhos do disco e a
+  codificação. Um desenho por player: o resultado de um pedido já superado por um mais novo é descartado depois da vaga.
+  O teto do GIF é conferido antes de alocar; uma falha do GIF cai para o PNG. Com a vaga ocupada, a mensagem mantém o
+  anexo que já tem, desde que a privacidade da call não tenha mudado, e o redesenho fica adiado (`upgrade_due`). Os
+  módulos, as regras e o orçamento de memória estão em `empiremuse/utils/render/README.md`.
+- **Na mensagem do player** (`utils/music/models/np_steps.py`): `_np_data` compara a chave estável do payload
+  (`payload_key`: embeds por `to_dict()`, componentes por `to_component_dict()`), então uma releitura igual não edita. Para
+  skin de imagem, `_np_render` sai cedo só quando a chave, o `CardSpec` e o anexo são os mesmos e não há redesenho
+  adiado; senão pede o cartão, e `_put_card` põe a imagem `attachment://card.png|gif`, o título real no autor (sem autor
+  em call privada) e o anexo com texto alternativo. Qualquer falha do cartão, inclusive ao montar o `CardSpec`, cai para
+  o payload da `muse_text` naquela edição. Toda edição que deixa de ter cartão manda `attachments=[]`, então o anexo
+  antigo sai. Uma mensagem nova nunca reaproveita o anexo de outra. O redesenho adiado liga `player.update` e sobrevive
+  ao ciclo do `message_updater` até sair. O ocioso das skins do EmpireMuse sai por `idle_payload` (o cartão no estado
+  ocioso; sem cartão, o ocioso em texto).
+- **Cadência:** as skins de imagem redesenham por evento (`auto_update = 0`); a Jukebox Texto e a barra em texto da
+  Expandida usam `auto_update` de 15 s ou mais (`card_facts.text_bar_interval_s`), e a chave estável impede a edição
+  enquanto o segmento da barra não muda.
+- **Configuração:** a skin da Jukebox segue os campos de sempre (do servidor e globais); a animação do disco
+  (`disc_motion`) e a skin de todas as rádios (`radio_skin`) ficam no documento global do servidor, e a skin própria de
+  uma rádio no campo `look` do documento dela (seção 8).
 
 ### Modo rádio da Jukebox (T-434 J2a)
 
@@ -388,7 +429,7 @@ conferência do apagamento de dados e poderia recriar um documento recém-apagad
 | `<id do bot>` / `guilds` | `db_models[guilds]` v1.11 | Canal/mensagem do controlador, skin, `autoplay`, volume padrão, DJ roles, modo restrito. |
 | `<id do bot>` / `users` | `db_models[users]` v1.0 | Favoritos do usuário. |
 | `global` / `users` | `global_db_models[users]` v1.6 | Favoritos, integrações, `token` do RPC, prefixo próprio, últimas faixas, dados do Last.fm. |
-| `global` / `guilds` | `global_db_models[guilds]` v1.5 | Prefixo, skins globais, **skins personalizadas**, convites "ouvir junto" e o **status do canal de voz**: `voice_status_permanent` (`None` = nunca escolhido = ligado; `True` ligado; `False` desligado) e o modelo `voice_channel_status` (vazio ou inválido = modelo padrão). São um valor por servidor, global para todos os bots do pool. |
+| `global` / `guilds` | `global_db_models[guilds]` v1.6 | Prefixo, skins globais, **skins personalizadas**, skin de todas as rádios (`radio_skin`) e animação do disco (`disc_motion`; `None` = nunca escolhido = ligada), convites "ouvir junto" e o **status do canal de voz**: `voice_status_permanent` (`None` = nunca escolhido = ligado; `True` ligado; `False` desligado) e o modelo `voice_channel_status` (vazio ou inválido = modelo padrão). São um valor por servidor, global para todos os bots do pool. |
 | `global` / `default` | `global_db_models[default]` v1.0 | Tokens extras. |
 | `global` / `global` (id `youtube_data`) | sem modelo | `refresh_tokens` do OAuth do YouTube (`BotPool.check_node` em `empiremuse/utils/client.py`). |
 | `player_sessions_json` / `<id do bot>` | sem modelo | Sessões de players para retomada em formato JSON (a coleção `player_sessions` do formato antigo não é lida nem apagada). |
@@ -464,7 +505,8 @@ Linhas medidas com `wc -l` (total do projeto: ~34,5 mil linhas Python; testes em
 | `empiremuse/utils/music/checks.py` | Roteamento do pool, checks de DJ/voz/permissão | 813 |
 | `empiremuse/utils/music/local_lavalink.py` | Download/execução do Lavalink e do JDK locais | 497 |
 | `empiremuse/utils/music/audio_sources/` | Clientes Spotify (488) e Deezer (300) | 788 |
-| `empiremuse/utils/music/skins/` | 15 skins (10 normal + 5 estática) | 3.032 (soma) |
+| `empiremuse/utils/music/skins/` | 15 Clássicas (10 normal + 5 estática) e as do EmpireMuse em `muse/` (texto e cartões de imagem) | 4.571 (soma) |
+| `empiremuse/utils/render/` | Pipeline de imagem das skins 2.3: vaga de desenho, quadros do disco, GIF/PNG, fontes e os renderizadores em `cards/` | ver o README do pacote |
 | `empiremuse/utils/music/{converters,errors,filters,skin_utils,track_encoder,…}.py` | Auxiliares de música | 1.506 |
 | `empiremuse/wavelink/` | Cliente Lavalink v3/v4 (node, websocket, player, eventos) | 2.850 |
 | `empiremuse/cogs/music.py` | Cog `Music` (núcleo, bases e `setup`); os comandos vivem nos mixins de `music_cog/` | 275 |

@@ -6,7 +6,7 @@
 - **Call privada:** o mesmo predicado do painel (``jukebox_panel.is_private``); sem call conhecida, conta como privada (como o
   ``card_facts``). Oculta faixa, capa, call, quem pediu, títulos da fila e a rádio.
 - **Nada que muda sozinho entre duas leituras:** todo horário ``<t:…>`` sai arredondado em ``TIME_QUANTUM_S``, para o
-  ``data == last_data`` do ``_np_data`` não editar a mensagem só pelo relógio (a barra em texto anda a cada 15 s).
+  ``payload_key`` do ``_np_data`` não editar a mensagem só pelo relógio (a barra em texto anda a cada 15 s).
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from __future__ import annotations
 import itertools
 from typing import Any, Callable, NamedTuple, Optional
 
+from empiremuse.rules.jukebox_panel import last_action_of
 from empiremuse.rules.text import external_text
 from empiremuse.utils.jukebox_panel import is_private
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
@@ -91,7 +92,7 @@ def track_end(player: Any, now: float) -> Optional[float]:
 
 
 def queue_end(player: Any, now: float) -> Optional[float]:
-    """Quando a fila termina (como as Clássicas: nada com repetir, 24/7, pausa ou fila vazia)."""
+    """Quando a fila termina (como as Clássicas: nada com repetir, rádio, pausa ou fila vazia)."""
     end = track_end(player, now)
     if end is None or not player.queue or player.loop or player.keep_connected:
         return None
@@ -297,11 +298,13 @@ def queue_limit(player: Any) -> int:
 # ---------------------------------------------------------------------- rodapé e última ação
 
 
-def last_action(player: Any) -> str:
-    """A última ação ("> Alex pulou a música"): texto montado pelo próprio bot, como nas Clássicas."""
-    if not player.command_log:
+def last_action(player: Any, ctx: Context) -> str:
+    """A última ação ("> Alex pulou a música"): texto montado pelo próprio bot, como nas Clássicas. Nada em call privada
+    (a mesma regra do painel, ``last_action_of``): o registro pode trazer o título e o link da faixa."""
+    text = last_action_of([(ctx.hidden, player.command_log)])
+    if not text:
         return ""
-    return f"> {player.command_log_emoji} {player.command_log}".rstrip()
+    return f"> {player.command_log_emoji} {text}".rstrip()
 
 
 def set_footer(embed: Any, player: Any, tr: Tr) -> None:

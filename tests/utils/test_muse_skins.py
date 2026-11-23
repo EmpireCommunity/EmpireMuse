@@ -14,7 +14,8 @@ import pytest
 
 from empiremuse.i18n import loader
 from empiremuse.rules.i18n import Translator
-from empiremuse.utils.music.skins.muse import _card, muse_text, muse_text_classic
+from empiremuse.utils.music.models import np_steps
+from empiremuse.utils.music.skins.muse import _card, muse_text
 
 pytestmark = pytest.mark.critical
 
@@ -131,7 +132,7 @@ def _image_build(skin_id: str):
     return build
 
 
-BUILDS = [muse_text.build, muse_text_classic.build, *(_image_build(i) for i in IMAGE_IDS)]
+BUILDS = [muse_text.build, *(_image_build(i) for i in IMAGE_IDS)]
 
 
 @pytest.mark.parametrize("static", [False, True])
@@ -162,10 +163,11 @@ def test_private_call_hides_track_requester_and_queue(tr, build, static):
 @pytest.mark.parametrize("paused", [False, True])
 @pytest.mark.parametrize("build", BUILDS, ids=lambda b: b.__module__.rsplit(".", 1)[-1] + "." + b.__name__)
 def test_text_is_stable_between_two_reads(tr, build, paused):
-    """Um segundo depois (com a posição andando junto), o texto é o mesmo: o ``_np_data`` não edita só pelo relógio."""
+    """Um segundo depois (com a posição andando junto), o payload inteiro tem a mesma chave estável (embeds E componentes):
+    o ``auto_update`` de 15 s da barra em texto não edita a mensagem só pelo relógio."""
     first = build(_player(tr, paused=paused, position=72_000), NOW)
     later = build(_player(tr, paused=paused, position=72_000 if paused else 73_000), NOW + 1)
-    assert first["embeds"] == later["embeds"]
+    assert np_steps.payload_key(first) == np_steps.payload_key(later)
 
 
 def test_text_bar_moves_with_the_segment(tr):
@@ -202,10 +204,9 @@ def test_unknown_image_skin_id_is_refused(skin_id):
         _card.parse_id(skin_id)
 
 
-def test_text_skins_have_no_render_family():
-    for module in (muse_text, muse_text_classic):
-        skin = module.load()
-        assert skin.card is None and skin.project is None
+def test_text_skin_has_no_render_family():
+    skin = muse_text.load()
+    assert skin.card is None and skin.project is None
 
 
 @pytest.mark.parametrize("build", BUILDS, ids=lambda b: b.__module__.rsplit(".", 1)[-1] + "." + b.__name__)
@@ -250,3 +251,15 @@ def test_radio_mode_text_is_neutralized_and_hidden_in_private_call(tr, build, on
     private.bot.pool.radio.jukebox = _radio_jukebox(on_air=on_air)
     private_text = _texts(build(private, NOW))
     assert "everyone" not in private_text  # nem o nome da estação nem o título ICY
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize("private", [False, True])
+@pytest.mark.parametrize("build", BUILDS, ids=lambda b: b.__module__.rsplit(".", 1)[-1] + "." + b.__name__)
+def test_the_last_action_never_shows_in_a_private_call(tr, build, private):
+    player = _player(tr, private=private)
+    player.command_log = "Tocando música obtida via metadados: [Faixa Secreta](https://www.youtube.com/watch?v=abc)"
+
+    text = _texts(build(player, NOW))
+
+    assert ("Faixa Secreta" in text) is not private

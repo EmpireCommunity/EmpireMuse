@@ -172,3 +172,125 @@ async def test_the_radio_card_uses_the_station_logo(font_book):
     done = await make(font_book).render(Player(), "visor_jukebox", spec, RecordingTr(), station_logo=station_logo)
 
     assert done.key.fmt is CardFormat.PNG and asked == ["u-1"]
+
+
+# ---------------------------------------------------------------------- rodada de correções do S5
+
+
+class DrawnThenWait(Slot):
+    """A vaga que desenha e só devolve quando ``after`` abre (o desenho terminou na thread, o laço ainda não viu)."""
+
+    def __init__(self):
+        super().__init__()
+        self.after = None
+        self.level = 0
+
+    def pressure(self):
+        return self.level
+
+    async def run(self, fn, *args, label="render", wait_s=None):
+        self.runs += 1
+        done = fn(*args)
+        if self.after is not None:
+            await self.after.wait()
+        return done
+
+
+@pytest.mark.regression
+async def test_a_drawing_already_superseded_is_dropped_after_the_slot(font_book):
+    slot = DrawnThenWait()
+    pipe, who = make(font_book, slot=slot), Player()
+    paused = base_spec(**SLIM)
+    shown = await pipe.render(who, "slim", paused, RecordingTr())
+    slot.after = asyncio.Event()
+    older = asyncio.ensure_future(pipe.render(who, "slim", base_spec(**SLIM, volume=10), RecordingTr()))
+    for _ in range(5):  # o mais velho já desenhou e espera a volta da thread
+        await asyncio.sleep(0)
+
+    newer = await pipe.render(who, "slim", paused, RecordingTr())  # o mesmo de antes: mantém o anexo na hora
+    slot.after.set()
+    old = await older
+
+    assert newer.key == shown.key and newer.data is None
+    assert old.stale and old.data is None and pipe.states.get(who).last == shown.key
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize("became_private", [False, True])
+async def test_a_busy_slot_keeps_the_attachment_only_when_privacy_did_not_change(font_book, became_private):
+    slot = Slot()
+    pipe, who = make(font_book, slot=slot), Player()
+    shown = await pipe.render(who, "slim", base_spec(**SLIM), RecordingTr())
+    slot.busy = True
+    change = {"hidden": True, "track": None, "cover": None} if became_private else {"volume": 10}
+
+    busy = await pipe.render(who, "slim", base_spec(**SLIM, **change), RecordingTr())
+
+    assert busy.busy and busy.data is None
+    assert busy.key == (None if became_private else shown.key)
+    assert pipe.states.get(who).upgrade_due is True
+
+
+@pytest.mark.regression
+async def test_a_failing_gif_goes_out_as_png(font_book, monkeypatch):
+    def broken_tiles(*_args):
+        raise MemoryError
+
+    monkeypatch.setattr(expanded, "disc_tiles", broken_tiles)
+
+    done = await make(font_book).render(Player(), "expanded", base_spec(), RecordingTr())
+
+    assert done.key.fmt is CardFormat.PNG and done.data[:4] == b"\x89PNG"
+
+
+@pytest.mark.regression
+async def test_two_cold_gifs_of_one_player_inside_the_gap_make_the_second_a_png_even_after_forget(font_book):
+    covers = Covers()
+    pipe, who = make(font_book, covers=covers), Player()
+    first = await pipe.render(who, "expanded", base_spec(), RecordingTr())
+    pipe.states.forget(who)  # mensagem nova: o anexo some, o relógio do GIF frio fica
+    covers.result = CoverResult(bytes(reversed(cover_bytes())))  # outra capa: quadros frios de novo
+
+    second = await pipe.render(who, "expanded", base_spec(cover="https://covers.example/y.jpg"), RecordingTr())
+
+    assert first.key.fmt is CardFormat.GIF and second.key.fmt is CardFormat.PNG
+    assert pipe.states.get(who).upgrade_due is True
+
+
+@pytest.mark.regression
+async def test_under_pressure_the_fourth_request_is_png_and_a_gif_on_screen_stays(font_book):
+    slot = DrawnThenWait()
+    pipe = make(font_book, slot=slot)
+    shown_gif, fresh = Player(), Player()
+    gif = await pipe.render(shown_gif, "expanded", base_spec(), RecordingTr())
+    slot.level = 3  # três esperando a vaga
+
+    kept = await pipe.render(shown_gif, "expanded", base_spec(), RecordingTr())
+    png = await pipe.render(fresh, "expanded", base_spec(volume=10), RecordingTr())
+
+    assert gif.key.fmt is CardFormat.GIF and (kept.key, kept.data) == (gif.key, None) and slot.runs == 2
+    assert png.key.fmt is CardFormat.PNG and pipe.states.get(fresh).upgrade_due is True
+
+
+@pytest.mark.regression
+async def test_a_station_logo_that_is_late_draws_the_bot_logo_and_asks_for_a_redraw(font_book, monkeypatch):
+    never = asyncio.Event()
+
+    async def station_logo(_uuid):
+        await never.wait()
+
+    spec = base_spec(
+        skin="muse_radio_black",
+        state=CardState.RADIO_LIVE,
+        track=None,
+        cover=None,
+        radio=radio_facts(logo_key="u-1"),
+        motion=False,
+    )
+    monkeypatch.setattr(pipeline, "COVER_WAIT_S", 0)  # o prazo já passou: sem relógio de verdade
+    pipe, who = make(font_book), Player()
+
+    done = await pipe.render(who, "visor_jukebox", spec, RecordingTr(), station_logo=station_logo)
+    never.set()
+
+    assert done.key.fmt is CardFormat.PNG and pipe.states.get(who).upgrade_due is True

@@ -5,15 +5,19 @@
 - **Fora da vaga:** a capa (até ``COVER_WAIT_S``), a escolha do formato (``rules.card.choose_format``) e o cache de
   quadros (sem trava: só no laço de eventos). **Dentro da vaga (thread):** o desenho, os ladrilhos e a codificação.
 - **Teto do GIF antes de alocar:** ``layout.gif_fits`` (cartão e caixa do disco medidos) decide antes de qualquer
-  ladrilho; GIF acima de ``GIF_MAX_BYTES`` vira PNG.
+  ladrilho; GIF acima de ``GIF_MAX_BYTES`` ou que falha ao montar vira PNG.
 - **Um desenho por player:** cada pedido leva o número do pedido mais novo do player; quem entra na vaga já velho sai
-  sem desenhar (``Rendered.stale``).
-- **Vaga ocupada (``RenderBusy``):** nada é desenhado; quem chamou mantém o anexo que está na mensagem e o próximo ciclo
-  redesenha (``upgrade_due``).
+  sem desenhar, e quem sai dela já velho descarta o desenho sem gravar o estado (``Rendered.stale``).
+- **Vaga ocupada (``RenderBusy``):** nada é desenhado; quem chamou mantém o anexo que está na mensagem (só se a call
+  não mudou de privacidade; senão ``key`` = ``None`` e a mensagem sai sem imagem) e o próximo ciclo redesenha
+  (``upgrade_due``).
+- **GIF mantido sob pressão:** com o mesmo ``CardSpec`` e a mesma capa, um GIF que já está na mensagem não é trocado
+  por PNG.
 """
 
 from __future__ import annotations
 
+import asyncio
 import io
 import logging
 import time
@@ -25,6 +29,7 @@ from typing import Any, Awaitable, Callable, NamedTuple, Optional
 from PIL import Image
 
 from empiremuse.rules.card import CardFormat, CardSpec, RenderedKey, choose_format, cover_digest
+from empiremuse.rules.cover import COVER_WAIT_S
 from empiremuse.utils.render.budget import GIF_FRAMES, GIF_MAX_BYTES
 from empiremuse.utils.render.cards import expanded, slim, visor_jukebox
 from empiremuse.utils.render.cards.layout import ARC_STOPS, EXPANDED, SLIM, CardArt, Translate, gif_fits, theme_for
@@ -33,6 +38,7 @@ from empiremuse.utils.render.frames import DiscFrames, FramesCache, frames_key
 from empiremuse.utils.render.gif import build_palette, encode_gif, encode_png, quantize_tiles
 from empiremuse.utils.render.slot import RenderBusy, RenderSlot, shared_slot
 from empiremuse.utils.render.state import RENDER_STATES, RenderStates
+from empiremuse.utils.safe_error import safe_error
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +96,17 @@ def palette_colors(theme: str) -> tuple[tuple[int, int, int], ...]:
     return tuple(theme_for(theme)) + tuple(color for _stop, color in ARC_STOPS)
 
 
+def _consume(task: "asyncio.Future[Any]") -> None:
+    if not task.cancelled():
+        task.exception()
+
+
+def keeps_gif(shown: Optional[RenderedKey], want: RenderedKey) -> bool:
+    """Um GIF já na mensagem com o mesmo ``CardSpec`` e a mesma capa fica, mesmo que agora o formato escolhido seja PNG
+    (pressão na vaga ou intervalo do GIF frio): trocar só pioraria a imagem e custaria um desenho e um envio."""
+    return shown is not None and shown.fmt is CardFormat.GIF and shown._replace(fmt=want.fmt) == want
+
+
 def file_box(box: tuple[int, int, int, int], scale: int) -> tuple[int, int, int, int]:
     factor = max(1, int(scale))
     x0, y0, x1, y1 = box
@@ -137,14 +154,19 @@ class CardPipeline:
     async def _art(self, spec: CardSpec, station_logo: Optional[StationLogo]) -> tuple[CardArt, bool]:
         """Os pixels de fora do desenho e se a capa ainda pode chegar (``pending``)."""
         cover = await self.covers.pixels(spec.cover) if spec.cover is not None else None
+        pending = bool(cover is not None and cover.pending)
         logo = self._bot_logo
         if spec.radio is not None and spec.radio.logo_key and station_logo is not None:
+            fetch = asyncio.ensure_future(station_logo(spec.radio.logo_key))
+            fetch.add_done_callback(_consume)  # a busca que passa do prazo e falha depois não deixa erro sem dono
             try:
-                logo = await station_logo(spec.radio.logo_key) or logo
+                logo = await asyncio.wait_for(asyncio.shield(fetch), COVER_WAIT_S) or logo
+            except asyncio.TimeoutError:
+                pending = True  # o logo da estação chega depois (o serviço segue buscando): o próximo ciclo redesenha
             except Exception as error:  # noqa: BLE001 - o logo é conveniência: só o tipo vai ao log
-                logger.warning("Logo da estação não obtido para o cartão (%s)", type(error).__name__)
+                logger.warning("Logo da estação não obtido para o cartão (%s)", safe_error(error))
         pixels = cover.pixels if cover is not None else None
-        return CardArt(cover=pixels, logo=logo), bool(cover is not None and cover.pending)
+        return CardArt(cover=pixels, logo=logo), pending
 
     async def render(
         self,
@@ -175,19 +197,21 @@ class CardPipeline:
         )
         upgrade_due = choice.upgrade_due or pending
         want = RenderedKey(spec, cover_digest(art.cover), choice.fmt)
-        if state.last is not None and want == state.last:
-            self.states.replace(player, upgrade_due=upgrade_due)
-            return Rendered(state.last)
+        shown = state.last
+        if shown is not None and (want == shown or keeps_gif(shown, want)):
+            self.states.replace(player, upgrade_due=upgrade_due if want == shown else pending)
+            return Rendered(shown)
         job = (renderer, spec, art, tr, choice.fmt, box, cached, ticket, number)
         try:
             drawn: _Drawn = await self.slot.run(self._draw, *job, label=spec.skin)
         except RenderBusy:
             self.states.replace(player, upgrade_due=True)
-            return Rendered(state.last, busy=True)
-        if drawn.data is None:
-            return Rendered(state.last, stale=True)
+            same_privacy = shown is not None and shown.spec.hidden == spec.hidden
+            return Rendered(shown if same_privacy else None, busy=True)
         if drawn.frames is not None and fkey is not None:
             self.frames.put(fkey, drawn.frames)
+        if drawn.data is None or ticket.latest != number:
+            return Rendered(self.states.get(player).last, stale=True)  # um pedido mais novo deste player manda
         key = want._replace(fmt=drawn.fmt)
         cold_gif = drawn.fmt is CardFormat.GIF and cached is None
         self.states.replace(
@@ -216,9 +240,13 @@ class CardPipeline:
         image: Image.Image = renderer.draw(spec, art, tr, self.book)
         if fmt is not CardFormat.GIF or box is None:
             return _Drawn(encode_png(image), CardFormat.PNG, None)
-        frames = cached or self._frames(renderer, spec, art, box)
+        try:
+            frames = cached or self._frames(renderer, spec, art, box)
+            data = encode_gif(image, frames)
+        except Exception as error:  # noqa: BLE001 - a imagem já desenhada ainda dá o PNG
+            logger.warning("GIF do cartão não saiu, vai o PNG (skin %s: %s)", spec.skin, safe_error(error))
+            return _Drawn(encode_png(image), CardFormat.PNG, None)
         fresh = None if cached else frames
-        data = encode_gif(image, frames)
         if len(data) > GIF_MAX_BYTES:
             return _Drawn(encode_png(image), CardFormat.PNG, fresh)
         return _Drawn(data, CardFormat.GIF, fresh)
@@ -250,3 +278,11 @@ def card_pipeline(cover_hosts: object) -> CardPipeline:
 
         _PIPELINE = CardPipeline(CoverService.from_config(cover_hosts))
     return _PIPELINE
+
+
+async def close_card_pipeline() -> None:
+    """No encerramento do pool: cancela as buscas de capa em voo (cada worker é morto e coletado)."""
+    global _PIPELINE
+    pipe, _PIPELINE = _PIPELINE, None
+    if pipe is not None:
+        await pipe.covers.aclose()
