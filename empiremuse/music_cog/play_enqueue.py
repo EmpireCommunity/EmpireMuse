@@ -21,6 +21,7 @@ from empiremuse.utils.music.checks import (
 )
 from empiremuse.utils.music.converters import time_format, fix_characters, URL_REG, music_source_image, md_link, md_code
 from empiremuse.utils.music.errors import (
+    GenericError,
     NoVoice,
 )
 from empiremuse.utils.others import (
@@ -296,6 +297,10 @@ class PlayEnqueueMixin:
                 modal_message_id=modal_message_id,
             )
 
+        if getattr(player, "radio_mode", None) is not None:
+            await self._leave_radio_for_music(inter, player)  # o ponto único do pedido em R (T-434 §2.2)
+        req.radio_epoch = getattr(player, "radio_epoch", None)
+
         req.bot = bot
         req.channel = channel
         req.guild = guild
@@ -304,6 +309,42 @@ class PlayEnqueueMixin:
         req.player = player
         req.voice_channel = voice_channel
         return False
+
+    async def _leave_radio_for_music(self, inter, player) -> None:
+        """Pedido de música com a Jukebox no modo rádio: DJ/admin sai de R e o pedido segue; membro abre a votação (plano B: se passar, ele
+        pede de novo) e o pedido para aqui; modo restrito recusa. Toda a decisão é do controlador (``jukebox_radio.leave_for_music``)."""
+        from empiremuse.utils.radio.jukebox_radio import Refused
+
+        try:
+            await self.bot.pool.radio.jukebox.leave_for_music(inter, player)
+        except Refused as refused:
+            key, fields = (
+                refused.key,
+                refused.fields,
+            )  # só a chave e os campos do controlador, nunca o texto de uma exceção
+        else:
+            return
+        raise GenericError(player.tr(key, **fields))
+
+    @staticmethod
+    def _enqueued(tracks) -> list:
+        if isinstance(tracks, list):
+            return tracks
+        return list(getattr(tracks, "tracks", None) or ([tracks] if tracks is not None else []))
+
+    async def _warn_discarded(self, req: "PlayState") -> None:
+        """A música entrou na fila enquanto uma transição para o modo rádio estava em curso e foi descartada com a fila (G1, m3): quem
+        pediu recebe um aviso efêmero, sem voto. O ``radio_epoch`` mudou e nenhuma das faixas está mais na fila nem tocando."""
+        player = req.player
+        if req.radio_epoch is None or getattr(player, "radio_epoch", None) == req.radio_epoch:
+            return
+        mine = self._enqueued(req.tracks)
+        if not mine or any(t is player.current or t in player.queue for t in mine):
+            return
+        try:
+            await req.inter.send(player.tr("jukebox.radio.discarded"), ephemeral=True)
+        except Exception as error:  # noqa: BLE001 - o aviso é cortesia; só o tipo vai ao log
+            logger.warning("Aviso de música descartada não enviado (%s)", type(error).__name__)
 
     def _play_enqueue_track(self, req: "PlayState") -> None:
         """Adiciona a faixa única à fila e monta o embed."""
@@ -717,3 +758,4 @@ class PlayEnqueueMixin:
         )
 
         req.guild_data = guild_data
+        await self._warn_discarded(req)

@@ -14,6 +14,7 @@ from empiremuse.utils.music.converters import (
     time_format,
 )
 from empiremuse.utils.music.guild_pin import GUILD_PIN, GUILD_PIN_PAGE, load_guild_pin, replace_guild_pin
+from empiremuse.utils.music.jukebox_ui import LIVE_VALUE, VOTE_PREFIX, chosen_warning
 from empiremuse.utils.music.errors import (
     GenericError,
 )
@@ -372,6 +373,9 @@ class ControllerDispatchMixin:
             return
 
         query = interaction.data.values[0]
+        if query == LIVE_VALUE:
+            await self.jukebox_live(interaction)
+            return
         if query.startswith("jb:"):
             await interaction.response.defer(with_message=False)
             tr = await self.bot.pool.i18n.for_guild(interaction.guild)
@@ -381,7 +385,12 @@ class ControllerDispatchMixin:
                 return
             try:
                 select = await load_guild_pin(
-                    self.bot, tr, interaction.guild_id, int(number), placeholder_key="jukebox.select.page.placeholder"
+                    self.bot,
+                    tr,
+                    interaction.guild_id,
+                    int(number),
+                    radio=False,  # o efêmero de página nunca traz as entradas fixas
+                    placeholder_key="jukebox.select.page.placeholder",
                 )
                 components = []
                 if select is not None:
@@ -422,6 +431,97 @@ class ControllerDispatchMixin:
             await cog.play.callback(self=cog, inter=interaction, **kwargs)
         except Exception as e:
             self.bot.dispatch("interaction_player_error", interaction, e)
+
+    async def jukebox_live(self, interaction: disnake.MessageInteraction) -> None:
+        """ "📻 Rádios ao Vivo" (T-434 A1/A2): premium conferido de novo (sem cache), o select fixo volta à página 1 e o seletor de estação abre
+        numa mensagem efêmera só para quem clicou. Acesso = o do pedido de música (em call; sem Gerenciar Servidor)."""
+        from empiremuse.utils.radio.jukebox_radio import Refused
+        from empiremuse.utils.radio.picker import RadioPicker
+        from empiremuse.utils.radio.premium import RadioUnavailable
+
+        await interaction.response.defer(with_message=False)
+        tr = await self.bot.pool.i18n.for_guild(interaction.guild)
+        hub = getattr(self.bot.pool, "radio", None)
+        try:
+            first = await load_guild_pin(self.bot, tr, interaction.guild_id)
+            await interaction.edit_original_message(components=replace_guild_pin(interaction.message, first))
+        except Exception as error:  # noqa: BLE001 - redesenhar o select é conveniência; só o tipo vai ao log
+            logger.warning("Select da Jukebox não redesenhado (%s)", type(error).__name__)
+        try:
+            if hub is None or await hub.premium.fresh(interaction.guild_id) is None:
+                await interaction.followup.send(tr("radio.refused.no_premium"), ephemeral=True)
+                return  # select antigo com o premium perdido: recusa (e o select já foi redesenhado sem a entrada)
+        except RadioUnavailable:
+            await interaction.followup.send(tr("radio.owner.unavailable"), ephemeral=True)
+            return
+        if hub.locations is None:
+            await interaction.followup.send(tr("jukebox.radio.picker.unavailable"), ephemeral=True)
+            return
+
+        async def apply(click: disnake.MessageInteraction, station, station_list) -> str:
+            try:
+                key, fields = await hub.jukebox.request_live(
+                    click, station.uuid
+                )  # só o uuid: a estação é relida no servidor (s6)
+            except Refused as refused:
+                raise GenericError(tr(refused.key, **refused.fields)) from None
+            return tr(key, **fields)
+
+        def warning() -> str:
+            from empiremuse.utils.music.checks import resolve_player
+
+            resolved = resolve_player(self.bot.pool, interaction.guild_id, interaction.author)
+            if resolved is None:
+                return ""
+            player = resolved[1]
+            mode = player.radio_mode
+            return chosen_warning(
+                tr,
+                playing=player.current is not None,
+                queued=bool(player.queue),
+                radio_name=mode.name if mode is not None else None,
+            )
+
+        guild_locale = getattr(interaction.guild, "preferred_locale", None)
+        picker = RadioPicker(
+            hub,
+            hub.locations,
+            tr,
+            author_id=interaction.author.id,
+            guild_id=interaction.guild_id,
+            locale=tr.locale,
+            guild_locale=str(getattr(guild_locale, "value", guild_locale)) if guild_locale else None,
+            apply=apply,
+            confirm_label=tr("jukebox.radio.picker.confirm"),
+            check=lambda click: getattr(click.author, "voice", None) is not None,
+            deny_key="player.you_must_join_a_voice_2",
+            warning=warning,
+            no_results_key="jukebox.radio.picker.no_results",
+        )
+        try:
+            payload = await picker.render()
+            await interaction.followup.send(**payload, ephemeral=True, allowed_mentions=disnake.AllowedMentions.none())
+        except Exception as error:
+            self.bot.dispatch("interaction_player_error", interaction, error)
+
+    @commands.Cog.listener("on_button_click")
+    async def jukebox_radio_vote(self, interaction: disnake.MessageInteraction) -> None:
+        """ "✋ Votar" do modo rádio: o ``nonce`` do botão só descarta voto velho; o player é o da call de quem clicou (T-434 §2.3)."""
+        custom_id = interaction.data.custom_id
+        if not custom_id.startswith(VOTE_PREFIX):
+            return
+        await interaction.response.defer(ephemeral=True)
+        tr = await self.bot.pool.i18n.for_guild(interaction.guild)
+        hub = getattr(self.bot.pool, "radio", None)
+        if hub is None:
+            await interaction.send(tr("jukebox.radio.vote.over"), ephemeral=True)
+            return
+        try:
+            key, fields = await hub.jukebox.vote_click(interaction, custom_id.removeprefix(VOTE_PREFIX))
+        except Exception as error:  # noqa: BLE001 - o clique não fica sem resposta; só o tipo vai ao log
+            logger.warning("Voto do modo rádio falhou (%s)", type(error).__name__)
+            key, fields = "radio.owner.unavailable", {}
+        await interaction.send(tr(key, **fields), ephemeral=True)
 
     @commands.Cog.listener("on_dropdown")
     async def player_dropdown_event(self, interaction: disnake.MessageInteraction):

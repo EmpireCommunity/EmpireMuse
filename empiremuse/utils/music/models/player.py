@@ -77,6 +77,13 @@ class LavalinkPlayer(
         self.interaction_cooldown: bool = False
         self.votes: set = set()
         self.dj: set = set()
+        # Modo rádio da Jukebox (T-434 J2a): só memória, nunca gravado. NUNCA ``radio_id`` (esse é o player da rádio 24 h, §0.1).
+        self.radio_mode: Any = None  # ``jukebox_radio.RadioMode`` enquanto toca o ao vivo
+        self.radio_vote: Any = None  # ``jukebox_radio.RadioVote``: uma votação aberta por player
+        self.radio_lock = asyncio.Lock()  # toda transição, voto, expiração e queda rodam sob ele [m3]
+        self.radio_epoch: int = 0  # muda a cada transição: voto e tentativa velhos se anulam
+        self.radio_switched_at: Optional[float] = None  # a última troca de rádio (relógio do controlador) [s1]
+        self.radio_vote_expired: dict[int, float] = {}  # autor -> quando a votação dele expirou [m5]
         self.player_creator: Optional[int] = kwargs.pop("player_creator", None)
         self.filters: dict = {}
         self.idle_task: Optional[asyncio.Task] = None

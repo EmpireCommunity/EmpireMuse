@@ -54,6 +54,14 @@ class PlayerStateMixin:
 
         self.is_closing = True
 
+        if getattr(self, "radio_mode", None) is not None or getattr(self, "radio_vote", None) is not None:
+            try:
+                await self.bot.pool.radio.jukebox.forget(
+                    self
+                )  # modo rádio: token revogado e voto/tentativas cancelados, sem tarefa solta
+            except Exception:
+                logger.exception("Falha ao encerrar o modo rádio da Jukebox")
+
         try:
             self.track_load_task.cancel()
         except Exception:
@@ -149,8 +157,8 @@ class PlayerStateMixin:
         users: List[int] = None,
         wait: bool = False,
     ):
-        if getattr(self, "radio_id", None):
-            return  # rádio (item 8): o RPC levaria a URL do relay local, com o token, a cada membro da call
+        if getattr(self, "radio_id", None) or getattr(self, "radio_mode", None) is not None:
+            return  # rádio (item 8) e modo rádio da Jukebox [m1]: o RPC levaria a URL do relay local, com o token, a cada membro da call
         try:
             if not voice_channel and not close:
                 try:

@@ -67,6 +67,17 @@ async def _pn_pre_checks(self, req):
     return False
 
 
+async def go_idle(self) -> None:
+    """Para o player e entra no modo ocioso (o ``IDLE_TIMEOUT`` de sempre), sem pedir autoplay."""
+    await self.stop()
+    now = disnake.utils.utcnow()
+    self.idle_start_timestamp = int(now.timestamp())
+    self.idle_endtime = now + datetime.timedelta(seconds=self.bot.config["IDLE_TIMEOUT"])
+    self.last_track = None
+    self.idle_task = self.bot.loop.create_task(self.idling_mode())
+    self.bot.dispatch("player_queue_end", player=self)
+
+
 async def _pn_next_track(self, req):
     """Escolhe a próxima faixa: fila, autoplay ou modo ocioso."""
     try:
@@ -77,6 +88,12 @@ async def _pn_next_track(self, req):
             # Rádio (ao vivo ou personalizada) toca só o que o runner mandou: fila vazia NÃO puxa autoplay nem entra em modo ocioso (o autoplay buscaria
             # recomendações no YouTube e afins). Quem decide o que tocar de novo é o runner.
             await self.stop()
+            return True
+        if getattr(self, "radio_mode", None) is not None:
+            # Modo rádio da Jukebox (T-434 §2.2): em R não há "próxima faixa". ⏭ (ou a fila que acabou) encerra o ao vivo e o player fica
+            # ocioso, sem autoplay nem sugestão.
+            await self.bot.pool.radio.jukebox.release(self)
+            await go_idle(self)
             return True
         try:
             track = None
@@ -93,13 +110,7 @@ async def _pn_next_track(self, req):
                     return True
 
             if not track:
-                await self.stop()
-                now = disnake.utils.utcnow()
-                self.idle_start_timestamp = int(now.timestamp())
-                self.idle_endtime = now + datetime.timedelta(seconds=self.bot.config["IDLE_TIMEOUT"])
-                self.last_track = None
-                self.idle_task = self.bot.loop.create_task(self.idling_mode())
-                self.bot.dispatch("player_queue_end", player=self)
+                await go_idle(self)
                 return True
 
         except Exception:
@@ -109,6 +120,11 @@ async def _pn_next_track(self, req):
     if not track:
         await self.process_next()
         return True
+
+    mode = getattr(self, "radio_mode", None)
+    if mode is not None and track is not mode.track:
+        # uma música entrou no lugar do ao vivo (⏮, pular para, pedido que passou pela porta): o modo rádio acaba aqui, sem deixar token vivo
+        await self.bot.pool.radio.jukebox.release(self)
 
     req.track = track
     return False

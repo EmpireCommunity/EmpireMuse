@@ -102,12 +102,26 @@ async def test_navigation_clamps_and_reloads_without_playing_or_editing_other_co
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("value", ["jb:live", "jb:unknown", "jb:page:x", "jb:page:-1"])
+@pytest.mark.parametrize("value", ["jb:server", "jb:unknown", "jb:page:x", "jb:page:-1"])
 async def test_unknown_controls_are_refused_without_playing(value):
     handler, inter, cog = world(value)
+    handler.jukebox_live = AsyncMock()
     await ControllerDispatchMixin.guild_pin(handler, inter)
     inter.send.assert_awaited_once()
     handler.request_executor.assert_not_awaited()
+    handler.jukebox_live.assert_not_awaited()
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_the_live_radio_entry_opens_the_radio_flow_and_never_plays_a_playlist():
+    """T-JB-BUG: o rc.4 recusava ``jb:live`` como item desconhecido; agora ele abre o seletor do modo rádio."""
+    handler, inter, cog = world("jb:live")
+    handler.jukebox_live = AsyncMock()
+    await ControllerDispatchMixin.guild_pin(handler, inter)
+    handler.jukebox_live.assert_awaited_once_with(inter)
+    handler.request_executor.assert_not_awaited()
+    cog.play.callback.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -222,7 +222,7 @@ Os métodos mais longos do player (KI-29b) seguem o mesmo padrão do `/play`: `i
   personalizadas por servidor são guardadas no banco (ver seção 8).
 - **UI**: views, botões e modais em `empiremuse/utils/music/interactions/` (pacote desde a KI-29; o `__init__.py` reexporta os nomes
   públicos): `player_views.py` (volume, fila, paginador, botões, seletores), `stage_title.py` (`SetStageTitle`), `fav_menu.py`
-  (`FavMenuView`, com os mixins `fav_menu_components.py` para selects e botões, `fav_menu_text.py` para o texto da mensagem e `fav_menu_radio.py` para o modo "Rádios favoritas", só Remover e Limpar e sempre em mensagem efêmera), `fav_menu_server.py` (`/radio favoritas`: lista do servidor, Remover e Limpar com confirmação, só para quem gerencia o servidor),
+  (`FavMenuView`, com os mixins `fav_menu_components.py` para selects e botões, `fav_menu_text.py` para o texto da mensagem e `fav_menu_radio.py` para o modo "Rádios favoritas": Tocar (modo rádio da Jukebox), Remover e Limpar, sempre em mensagem efêmera), `fav_menu_server.py` (`/radio favoritas`: lista do servidor, Remover e Limpar com confirmação, só para quem gerencia o servidor),
   `fav_modals.py` (importação e adição de favoritos), `favorites_texts.py`, `skin_editor.py` (`SkinEditorMenu`, `SkinSettingsButton`
   e o ciclo de vida da view, com os mixins `skin_editor_components.py` para montagem dos componentes, `skin_editor_modals.py`
   para os callbacks que abrem modais, `skin_editor_submit.py` para aplicar o que os modais enviam, `skin_editor_persist.py` para
@@ -231,6 +231,19 @@ Os métodos mais longos do player (KI-29b) seguem o mesmo padrão do `/play`: `i
   controlador estão em `PlayerControls` (`empiremuse/utils/others.py`, prefixo `musicplayer_`).
 - **Rich Presence**: `LavalinkPlayer.process_rpc` monta o payload e `LavalinkPlayer._send_rpc_data` o envia por `ws_client`
   (`empiremuse/utils/music/models/player_state.py`).
+
+### Modo rádio da Jukebox (T-434 J2a)
+
+A Jukebox toca uma estação **ao vivo** do Radio Browser na call de quem pediu, sem canal de rádio, num bot de música escolhido por `pick_request_bot` (nunca o só-rádio nem um bot com player de rádio 24 h). Não confundir com a rádio 24 h: o player da Jukebox nunca recebe `radio_id`; ganha estado próprio só em memória (`player.radio_mode`, `radio_vote`, `radio_lock`, `radio_epoch`).
+
+- **Dono único do estado:** `empiremuse/utils/radio/jukebox_radio.py` (`pool.radio.jukebox`). Entrar (M → R), trocar (R → R), sair por pedido de música (R → M), ir para ocioso (⏭, queda esgotada) e a votação rodam sob `player.radio_lock`; cada transição muda `radio_epoch`, o que anula voto e tentativa antigos. Relógio, parede e espera são injetáveis.
+- **Porta pura:** `empiremuse/rules/radio_mode.py` (`gate`, `quorum`, `next_retry`, esperas). DJ real (`checks.can_act_as_dj`: administrador, Gerenciar Servidor, Gerenciar Canais, Mover Membros na call, cargo DJ ou o criador do player; nunca a autopromoção de `player.dj`) entra direto; membro abre votação (quórum `clamp(ceil(humanos/2), 1, VOTE_SKIP_AMOUNT)`, 60 s, um voto por player, sem ensurdecidos); modo restrito recusa. Player ocioso e fila vazia entra sem voto.
+- **Tocar:** o mesmo miolo da rádio 24 h, `empiremuse/utils/radio/live_play.py` (relay em `127.0.0.1` com token, só o nó `LOCAL`, `uri` e `identifier` vazios na faixa). `live_ports.py` passou a chamá-lo sem mudar de comportamento.
+- **Pré-condições refeitas em cada efeito** (início, troca e passagem do voto): premium sem cache, nenhuma rádio 24 h na call (`manager.running_in`), nó local e a estação relida pelo diretório (`fresh_for_play`).
+- **Queda:** o evento de fim/exceção/travada do fluxo em R vai a `on_stream_lost` (`event_steps._he_jukebox_radio`), nunca ao caminho de música. Tentativas em 2, 4 e 8 s, com ficha nova; esgotado, o player fica ocioso, sai **uma** mensagem no canal do player e a estação conta uma falha na saúde (só se a culpa foi dela; recusa por política do relay não conta).
+- **Fora de R por construção:** a faixa ao vivo nunca entra no histórico (`track_end`), no RPC (`process_rpc`) nem na sessão salva (`player_resume` grava o player como ocioso, sem `current` nem `current_encoded`). Em R não há próxima faixa: `_pn_next_track` encerra o modo e entra no ocioso sem autoplay; uma música que entra no lugar do ao vivo encerra o modo (o token é revogado).
+- **Entrada pela Jukebox:** a entrada fixa `jb:live` ("📻 Rádios ao Vivo") só aparece na página 1 do select público e só em servidor premium (`guild_pin.radio_entries`). O clique confere o premium de novo e abre o `RadioPicker` numa mensagem efêmera com "Tocar na minha call". O pedido de música em R passa por `jukebox_radio.leave_for_music` em `PlayEnqueueMixin._play_ensure_player`.
+- **Apresentação separada:** `empiremuse/utils/music/jukebox_ui.py` monta a entrada fixa, os avisos, a votação, a mensagem de queda e a linha "🔴 Ao vivo · no ar há {n} min". Nome de estação e título ICY ficam guardados sem escape de markdown e sem link nem menção; o escape é aplicado só no destino que renderiza markdown.
 
 Na reprodução comum, uma seleção feita por busca de provider registra `extra.resolved_by_search` na faixa. Se o nó
 responder "No playable stream", o player rejeita o candidato e refaz a busca, com até três trocas por faixa;

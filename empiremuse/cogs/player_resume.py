@@ -119,8 +119,11 @@ class PlayerSession(commands.Cog):
         played = []
         autoqueue = []
         failed_tracks = []
+        # modo rádio da Jukebox [m1]: o ao vivo nunca é gravado (``track.id`` carrega o endereço local do relay com o token) e o modo rádio não
+        # volta numa retomada; a sessão sai como a de um player ocioso
+        live = getattr(player, "radio_mode", None) is not None
 
-        if player.current:
+        if player.current and not live:
             player.current.info["id"] = player.current.id
             if player.current.playlist_name:
                 player.current.info["playlist"] = {
@@ -204,8 +207,11 @@ class PlayerSession(commands.Cog):
 
         with suppress(AttributeError):
             data["live_lyrics_status"] = player.live_lyrics_enabled
-        with suppress(AttributeError):
-            data["current_encoded"] = player.current_encoded
+        if live:
+            data["position"] = 0
+        else:
+            with suppress(AttributeError):
+                data["current_encoded"] = player.current_encoded
         with suppress(AttributeError):
             data["command_log_list"] = player.command_log_list
 

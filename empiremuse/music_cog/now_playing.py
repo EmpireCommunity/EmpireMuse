@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import itertools
+import time
 from typing import Optional
 
 import disnake
@@ -29,6 +30,7 @@ from empiremuse.utils.others import (
 )
 
 # O corpo da classe usa estes nomes, então eles precisam existir neste módulo.
+from empiremuse.utils.music import jukebox_ui
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
 
 
@@ -109,18 +111,22 @@ class NowPlayingMixin:
             player.guild.id != inter.guild_id and not await player.bot.is_owner(inter.author)
         ) or await self.is_jukebox_channel(inter, data=guild_data)
 
-        url = player.current.uri or player.current.search_uri
-
-        if player.current.info["sourceName"] == "youtube":
-            url += f"&t={int(player.position / 1000)}s"
-
-        txt = f"### {md_link(player.current.title, url, code=False)}\n"
-
         footer_kw = {}
 
-        if player.current.is_stream:
-            txt += f"> {app_emoji(inter.bot, 'record')} **⠂Transmissão ao vivo**\n"
+        if (mode := getattr(player, "radio_mode", None)) is not None:
+            # modo rádio da Jukebox (A6): a estação SEM link (nem a busca do YouTube), o título ICY e "🔴 Ao vivo · no ar há {n} min"
+            txt = "### " + "\n> ".join(jukebox_ui.now_playing_lines(player.tr, mode, time.time())) + "\n"
         else:
+            url = player.current.uri or player.current.search_uri
+
+            if player.current.info["sourceName"] == "youtube":
+                url += f"&t={int(player.position / 1000)}s"
+
+            txt = f"### {md_link(player.current.title, url, code=False)}\n"
+
+        if mode is None and player.current.is_stream:
+            txt += f"> {app_emoji(inter.bot, 'record')} **⠂Transmissão ao vivo**\n"
+        elif mode is None:
             progress = ProgressBar(player.position, player.current.duration, bar_count=8)
 
             txt += (
@@ -128,9 +134,10 @@ class NowPlayingMixin:
                 f"[{time_format(player.current.duration)}][0m```\n"
             )
 
-        txt += f"> {app_emoji(inter.bot, 'microphone')} **⠂Uploader:** {player.current.authors_md}\n"
+        if mode is None:
+            txt += f"> {app_emoji(inter.bot, 'microphone')} **⠂Uploader:** {player.current.authors_md}\n"
 
-        if player.current.album_name:
+        if mode is None and player.current.album_name:
             txt += f"> {app_emoji(inter.bot, 'disc')} **⠂Álbum:** {md_link(player.current.album_name, player.current.album_url, limit=20)}\n"
 
         if not player.current.autoplay:

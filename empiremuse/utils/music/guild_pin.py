@@ -1,5 +1,6 @@
 """Construtor único do select de playlists da Jukebox, público e efêmero."""
 
+import logging
 from collections.abc import Sequence
 
 import disnake
@@ -7,10 +8,27 @@ import disnake
 from empiremuse.rules.i18n import Translator, fit
 from empiremuse.rules.jukebox_select import SELECT_CAPACITY, plan
 from empiremuse.rules.playlists import Playlist
+from empiremuse.utils.music import jukebox_ui
 from empiremuse.utils.server_playlists import safe_list, select_options
 
 GUILD_PIN = "player_guild_pin"
 GUILD_PIN_PAGE = "player_guild_pin_page"
+
+logger = logging.getLogger(__name__)
+
+
+async def radio_entries(bot, tr: Translator, guild_id: int) -> tuple[disnake.SelectOption, ...]:
+    """As entradas fixas do topo da página 1 (T-434 §3, A1): "📻 Rádios ao Vivo" só em servidor premium. Banco fora ou rádios desligadas:
+    nenhuma (o select não perde vagas). O clique confere o premium de novo, sem cache."""
+    hub = getattr(getattr(bot, "pool", None), "radio", None)
+    if hub is None:
+        return ()
+    try:
+        premium = await hub.premium.get(guild_id)
+    except Exception as error:  # noqa: BLE001 - o select é desenhado sem a entrada; só o tipo vai ao log
+        logger.warning("Premium não lido para o select da Jukebox (%s)", type(error).__name__)
+        return ()
+    return (jukebox_ui.live_entry(tr),) if premium is not None else ()
 
 
 def build_guild_pin(
@@ -55,13 +73,13 @@ async def load_guild_pin(
     tr: Translator,
     guild_id: int,
     page: int = 1,
-    fixed_entries: Sequence[disnake.SelectOption] = (),
     *,
+    radio: bool = True,
     placeholder_key: str = "player.idle.server_songs_placeholder",
 ) -> disnake.ui.Select | None:
-    return build_guild_pin(
-        bot, tr, await safe_list(bot, guild_id), page, fixed_entries, placeholder_key=placeholder_key
-    )
+    """O select do canal com as playlists do servidor; ``radio`` põe as entradas fixas (só a página 1 as mostra; o efêmero de página não)."""
+    fixed = await radio_entries(bot, tr, guild_id) if radio and page == 1 else ()
+    return build_guild_pin(bot, tr, await safe_list(bot, guild_id), page, fixed, placeholder_key=placeholder_key)
 
 
 def replace_guild_pin(message, select: disnake.ui.Select | None) -> list[disnake.ui.ActionRow]:
