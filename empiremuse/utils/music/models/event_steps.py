@@ -289,7 +289,7 @@ async def _he_track_end(self, event) -> None:
 
     if getattr(self, "station", None) is not None:
         # a sequência de falhas da estação zera só com progresso real; LOAD_FAILED tira a faixa do pool dela (§2.6)
-        self.bot.pool.radio.jukebox.station_track_ended(self, self.last_track, event.reason)
+        self.bot.pool.radio.jukebox.station_track_ended(self, _he_event_encoded(event), event.reason)
 
     if event.reason == "FINISHED":
         # Só o progresso real devolve a nova tentativa: o TrackStart sai antes de o Lavalink abrir o stream.
@@ -356,7 +356,20 @@ async def _he_wait_for_bot_voice_state(self) -> bool:
     return True
 
 
+def _he_event_encoded(event) -> object:
+    """A faixa de um evento do Lavalink: o ``encoded`` (v4 manda o objeto da faixa; v3, a string). ``None`` se o evento não diz."""
+    track = getattr(event, "track", None)
+    if isinstance(track, dict):
+        return track.get("encoded")
+    return track if isinstance(track, str) else None
+
+
 async def _he_track_stuck(self) -> None:
+    if getattr(self, "station", None) is not None:
+        self.bot.pool.radio.jukebox.station_track_failed(
+            self, self.current
+        )  # a faixa da estação travou: sai do pool dela
+
     _he_cancel_message_updater(self)
 
     await self.track_end()

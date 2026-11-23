@@ -369,3 +369,134 @@ async def test_a_broken_radio_playlist_is_skipped_and_the_others_still_load():
     guild = NS(id=1, me=NS())
     found = await radio_playlist_tracks(pool, bot, guild, None, None, ["a", "b"])
     assert [(t.artist, t.title) for t in found] == [("Artista", "Faixa")]
+
+
+# ---------------------------------------------------------------------- revisão 2 do PR 277 (T-J2B-FIX2)
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("results", "raises", "found"),
+    [
+        ({"a": RuntimeError("nó"), "b": RuntimeError("nó")}, True, []),  # o nó fora: sobe, não vira estação vazia
+        ({"a": [NS(author="", title="")]}, False, []),  # carregou, mas sem autor ou título: vazia de verdade
+    ],
+)
+async def test_the_playlist_loader_raises_only_when_nothing_loaded_and_something_failed(results, raises, found):
+    """Sentinela M-1 = Alicerce N2, com o ajuste do Crivo: a falha total do Lavalink não pode virar "estação sem faixas"."""
+    from empiremuse.utils.radio.playlist_tracks import radio_playlist_tracks
+
+    async def get_tracks(url, *args, **kwargs):
+        outcome = results[url]
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome, None
+
+    playlists = {name: NS(url=name) for name in results}
+    pool = NS(servers=NS(playlists=NS(find=AsyncMock(side_effect=lambda gid, name, scope: playlists[name]))))
+    bot = NS(get_cog=lambda name: NS(get_tracks=get_tracks))
+    call = radio_playlist_tracks(pool, bot, NS(id=1, me=NS()), None, None, list(results))
+    if raises:
+        with pytest.raises(RuntimeError):
+            await call
+    else:
+        assert await call == found
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_station_vote_does_not_start_after_the_station_was_turned_off_meanwhile(world):
+    """Alicerce N1: S → M não incrementa o epoch; um desligar durante a carga do pool anula o voto S1 → S2."""
+    world.add(member(11, world.channel))
+    world.add(member(12, world.channel))
+    player = await started(world, current="música")
+    player.player_creator = 99
+    world.clock.t += 10
+    await world.radio.request_station(world.inter(world.members[10]), ROCK)  # S1 ligada: o membro abre voto para S2
+    gate = asyncio.Event()
+    original = world.hub.lastfm.recipe_tracks
+
+    async def slow(*args, **kwargs):
+        await gate.wait()
+        return await original(*args, **kwargs)
+
+    world.hub.lastfm.recipe_tracks = AsyncMock(side_effect=slow)
+    await world.radio.vote_click(world.inter(world.members[11]), player.radio_vote.nonce)
+    await settle()
+    vote_message = player.messages[0]
+    frozen = vote_message.edit.await_args.kwargs["components"]
+    assert frozen and all(button.disabled for button in frozen)  # Crivo s-A: o botão desativado durante a carga
+    await world.radio.end_station(player)  # alguém desliga a estação no meio
+    gate.set()
+    await settle()
+    assert player.station is None
+    assert vote_message.edit.await_args.kwargs["content"] == "jukebox.radio.vote.failed"
+
+
+def handler_player(world, player, monkeypatch):
+    """O player do mundo falso com o que ``_he_track_end`` e ``_he_track_stuck`` leem (o fim de verdade não roda: ``locked``)."""
+    from empiremuse.utils.music.models import event_steps
+
+    player.node = NS(identifier="LOCAL")
+    player.bot.dispatch = lambda *args, **kwargs: None
+    player.bot.pool = NS(radio=NS(jukebox=world.radio))
+    player.network_paused = False
+    player.network_abandon_streak = 0
+    player.locked = True
+    player.track_end = AsyncMock()
+    player.set_command_log = lambda *args, **kwargs: None
+    monkeypatch.setattr(event_steps, "_he_cancel_message_updater", lambda self: None)
+    return event_steps
+
+
+def end_event(track, reason):
+    return NS(node=NS(identifier="LOCAL"), track={"encoded": track.id}, reason=reason)
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_finished_station_track_resets_the_streak_through_the_track_end_handler(world, monkeypatch):
+    """Crivo m-A (1): a fiação do fim no handler; sem ela a sequência nunca zera e uma estação saudável para depois de 5 faixas."""
+    player = await started(world)
+    steps = handler_player(world, player, monkeypatch)
+    active = player.station
+    _, track = await world.radio.next_station_track(player, active)
+    await steps._he_track_end(player, end_event(track, "FINISHED"))
+    assert active.session.streak == 0 and active.pending is None
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_station_track_that_fails_to_load_leaves_the_pool_through_the_handler(world, monkeypatch):
+    player = await started(world)
+    steps = handler_player(world, player, monkeypatch)
+    active = player.station
+    size = len(active.session.pool)
+    _, track = await world.radio.next_station_track(player, active)
+    await steps._he_track_end(player, end_event(track, "LOAD_FAILED"))
+    assert active.session.streak == 1 and len(active.session.pool) == size - 1
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_stuck_station_track_counts_and_the_replaced_end_does_not_reset(world, monkeypatch):
+    """Crivo m-A (2): a travada sai do pool; o ``REPLACED`` dela chega quando ``last_track`` já é a faixa nova e não zera nada."""
+    player = await started(world)
+    steps = handler_player(world, player, monkeypatch)
+    player.process_next = AsyncMock()
+    active = player.station
+    size = len(active.session.pool)
+    _, stuck = await world.radio.next_station_track(player, active)
+    player.current = stuck
+    await steps._he_track_stuck(player)
+    assert len(active.session.pool) == size - 1 and active.pending is None
+    _, fresh = await world.radio.next_station_track(player, active)
+    player.last_track = fresh
+    await steps._he_track_end(player, end_event(stuck, "REPLACED"))
+    assert active.session.streak == 2 and active.pending[1] is fresh

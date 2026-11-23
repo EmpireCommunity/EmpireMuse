@@ -256,22 +256,26 @@ class JukeboxStationMixin:
         fora do lock, que volta a ele com a cerca de epoch e fecha a mensagem do voto."""
         await self._station_checks(player.guild.id, channel_id)
         station = await self._station_of(player.guild.id, vote.uuid)
-        self._spawn(self._finish_station_vote(player, vote, station, player.radio_epoch))
+        origin = getattr(player, "station", None)  # S → M não mexe no epoch: a estação de antes também é conferida
+        self._spawn(self._finish_station_vote(player, vote, station, player.radio_epoch, origin))
 
     async def _finish_station_vote(
-        self: JukeboxRadio, player: Any, vote: Any, station: CustomStation, epoch: int
+        self: JukeboxRadio, player: Any, vote: Any, station: CustomStation, epoch: int, origin: Any = None
     ) -> None:
         from empiremuse.utils.music import jukebox_ui
 
         tr = self._tr(player)
         now = False
+        await self._freeze_vote_button(player, vote)
         try:
             loaded = await self._station_pool(player, station)
             async with player.radio_lock:
                 if player.is_closing:
                     raise Refused("jukebox.radio.player_closed")
-                if player.radio_epoch != epoch:
-                    raise Refused("jukebox.radio.vote.expired")  # outra transição veio durante a carga
+                if player.radio_epoch != epoch or getattr(player, "station", None) is not origin:
+                    raise Refused(
+                        "jukebox.radio.vote.expired"
+                    )  # outra transição (inclusive S → M) veio durante a carga
                 await self._station_checks(player.guild.id, self._player_channel_id(player))
                 found = await self._station_of(player.guild.id, station.id)
                 name = self.station_name(tr, found)
@@ -285,6 +289,20 @@ class JukeboxStationMixin:
         await self._close_vote_message(vote, text)
         if now:
             await player.process_next()
+
+    async def _freeze_vote_button(self: JukeboxRadio, player: Any, vote: Any) -> None:
+        """O voto passou e a estação carrega: o botão "Votar" fica desativado até a mensagem fechar (nenhum clique responde "acabou")."""
+        import disnake
+
+        if vote.message is None:
+            return
+        payload = self._vote_payload(player, vote)
+        for component in payload["components"]:
+            component.disabled = True
+        try:
+            await vote.message.edit(**payload, allowed_mentions=disnake.AllowedMentions.none())
+        except Exception as error:  # noqa: BLE001 - conveniência; a mensagem fecha no fim de qualquer jeito
+            logger.warning("Botão da votação não desativado (%s)", type(error).__name__)
 
     async def _start_station(
         self: JukeboxRadio, player: Any, station: CustomStation, loaded: Loaded, *, name: str, starter_id: int
@@ -378,27 +396,41 @@ class JukeboxStationMixin:
             return StationNext.SUPERSEDED
         return StationNext.ENDED
 
-    def station_track_ended(self: JukeboxRadio, player: Any, track: Any, reason: object) -> None:
-        """O fim de uma faixa da estação. ``LOAD_FAILED`` é falha (o ``TrackStart`` sai antes de o stream abrir); qualquer outro fim é progresso
-        real e zera a sequência."""
-        if str(reason).upper() == "LOAD_FAILED":
-            self.station_track_failed(player, track)
+    def station_track_ended(self: JukeboxRadio, player: Any, ended: Any, reason: object) -> None:
+        """O fim de uma faixa, identificada pelo evento (``ended``: o ``encoded`` que o Lavalink mandou, ou a própria faixa), nunca por
+        ``last_track`` (no ``REPLACED`` ele já é a faixa nova). Só conta se for a faixa da estação que ainda não provou que toca:
+        ``LOAD_FAILED`` é falha (o ``TrackStart`` sai antes de o stream abrir); qualquer outro fim é progresso real e zera a sequência."""
+        active = self._pending_station(player, ended)
+        if active is None:
             return
-        active = getattr(player, "station", None)
-        if active is not None and is_station_track(track, active.ref):
-            active.session.streak = 0
-            active.pending = None
+        if str(reason).upper() == "LOAD_FAILED":
+            self._drop_pending(active)
+            return
+        active.session.streak = 0
+        active.pending = None
 
     def station_track_failed(self: JukeboxRadio, player: Any, track: Any) -> None:
-        """A faixa da estação não carregou (exceção do Lavalink ou ``LOAD_FAILED``): sai do pool desta estação, para a estação não girar para
-        sempre. Já contou na sequência quando foi sorteada."""
+        """A faixa da estação não carregou ou travou (exceção do Lavalink, ``LOAD_FAILED``, ``TrackStuck``): sai do pool desta estação,
+        para a estação não girar para sempre. Já contou na sequência quando foi sorteada."""
+        active = self._pending_station(player, track)
+        if active is not None:
+            self._drop_pending(active)
+
+    @staticmethod
+    def _pending_station(player: Any, ended: Any) -> Optional[ActiveStation]:
         active = getattr(player, "station", None)
-        if active is None or active.pending is None or not is_station_track(track, active.ref):
-            return
-        pick, partial = active.pending
-        if partial is not track:
-            return
+        if active is None or active.pending is None:
+            return None
+        partial = active.pending[1]
+        same = ended == getattr(partial, "id", None) if isinstance(ended, str) else ended is partial
+        return active if same else None
+
+    @staticmethod
+    def _drop_pending(active: ActiveStation) -> None:
+        pick = active.pending[0] if active.pending is not None else None
         active.pending = None
+        if pick is None:
+            return
         session = active.session
         session.pool = [t for t in session.pool if track_key(t) != track_key(pick)] or session.pool
 
