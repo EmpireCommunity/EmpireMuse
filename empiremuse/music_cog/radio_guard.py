@@ -160,19 +160,34 @@ async def confirm_leave_radio(
         return False
     if player.radio_mode is None:
         # a rádio acabou nos 45 s; se o player foi destruído no meio, o pedido não segue sobre ele (Sentinela N1)
-        alive = not player.is_closing and player.bot.music.players.get(player.guild.id) is player
-        key = "jukebox.radio.leave.already_off" if alive else "radio.owner.unavailable"
-        await _close(click, tr(key), clicked=True)
-        return alive
+        alive = _alive(player)
+        return await _close_and_fence(
+            click, player, tr("jukebox.radio.leave.already_off" if alive else "jukebox.radio.player_closed"), alive
+        )
     try:
         await jukebox.leave_for_music(click, player)  # a porta de verdade, refeita sob o lock
     except Refused as refused:
         key, fields = refused.key, refused.fields
     else:
-        await _close(click, tr(stopped_key), clicked=True)
-        return True
+        alive = _alive(player)  # destruído na espera do lock: ``forget`` zerou o modo e a porta não segue (Crivo S-2)
+        return await _close_and_fence(click, player, tr(stopped_key if alive else "jukebox.radio.player_closed"), alive)
     await _close(click, tr(key, **fields), clicked=True)
     return False
+
+
+def _alive(player: Any) -> bool:
+    """O player ainda é o da guild e não está fechando."""
+    return not player.is_closing and player.bot.music.players.get(player.guild.id) is player
+
+
+async def _close_and_fence(click: Any, player: Any, text: str, proceed: bool) -> bool:
+    """Fecha o passo e devolve ``proceed``. O epoch é lido ANTES do ``_close`` (sem ``await`` desde a porta): se outro membro pôs o player
+    em R durante a edição, o pedido é descartado com o aviso (Crivo MI-D2, 11.4), e a superfície nem chega a enfileirar."""
+    epoch = getattr(player, "radio_epoch", None)
+    await _close(click, text, clicked=True)
+    if proceed:
+        enqueue_fence(player, epoch)
+    return proceed
 
 
 def enqueue_fence(player: Any, epoch: Optional[int]) -> None:

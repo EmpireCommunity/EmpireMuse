@@ -450,7 +450,14 @@ def confirm_world(preview, *, radio=True):
         view=lambda player: NS(name="Rádio"),
         leave_for_music=AsyncMock(),
     )
-    player = NS(radio_mode=object() if radio else None, tr=tr, guild=NS(get_member=lambda i: None))
+    player = NS(
+        radio_mode=object() if radio else None,
+        radio_epoch=1,
+        is_closing=False,
+        tr=tr,
+        guild=NS(id=1, get_member=lambda i: None),
+    )
+    player.bot = NS(music=NS(players={1: player}))  # o player vivo da guild
     sent = NS(edit=AsyncMock())
     inter = NS(id=555, author=NS(id=10), message=NS(reply=AsyncMock(return_value=sent)))  # prefixo: resposta à mensagem
     return NS(radio=NS(jukebox=jukebox)), player, inter, sent
@@ -817,7 +824,7 @@ async def test_the_radio_gone_with_the_player_destroyed_during_the_wait_does_not
         return answer
 
     assert await radio_guard.confirm_leave_radio(pool, None, inter, player, wait_for=wait_for) is False
-    assert answer.edit_original_message.await_args.kwargs["content"] == "radio.owner.unavailable"
+    assert answer.edit_original_message.await_args.kwargs["content"] == "jukebox.radio.player_closed"
 
 
 def real_confirm(world):
@@ -943,3 +950,75 @@ async def test_the_rpc_is_not_sent_for_a_live_track_even_after_radio_mode_ended(
     player.radio_id, player.radio_mode, player.current = None, None, live_track()
     await PlayerStateMixin.process_rpc(player)
     player._send_rpc_data.assert_not_called()
+
+
+# ---------------------------------------------------------------------- revisão do delta (T-J2A-FIX3)
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize("control", ["embed_enqueue_track", "embed_forceplay"])
+@pytest.mark.parametrize("passes", [False, True])
+async def test_an_embed_track_found_in_the_history_leaves_it_only_after_the_gate_passes(monkeypatch, control, passes):
+    """Crivo MI-D1: a faixa achada em ``played`` só sai de lá depois da porta; um pedido que para na porta não muda o histórico."""
+    from empiremuse.music_cog import controller_embed
+    from empiremuse.utils.others import PlayerControls
+
+    old = faixa_youtube(1)
+    player = NS(radio_mode=object(), current=live_track(), queue=deque(), played=deque([old]), failed_tracks=deque())
+    player.tr, player.update, player.is_connected, player.controller_link = tr, False, True, ""
+    player.process_next = AsyncMock()
+    monkeypatch.setattr(controller_embed, "confirm_leave_radio", AsyncMock(return_value=passes))
+    cog = NS(
+        bot=NS(pool=NS()),
+        check_player_queue=AsyncMock(),
+        check_stage_title=AsyncMock(),
+        process_music=AsyncMock(),
+        get_tracks=AsyncMock(side_effect=AssertionError("a faixa veio do histórico, sem busca")),
+    )
+    inter = NS(send=AsyncMock(), author=NS(id=10, mention="<@10>"), guild_id=1)
+    req = NS(
+        author=inter.author,
+        bot=cog.bot,
+        channel=NS(guild=NS()),
+        control=getattr(PlayerControls, control),
+        interaction=inter,
+        node=None,
+        player=player,
+        url=old.uri,
+        vc_id=5,
+    )
+    await controller_embed._pc_embed_find_track(cog, req)
+    assert list(player.played) == [old]  # só procurou
+    await controller_embed._pc_embed_track(cog, req)
+    assert list(player.played) == ([] if passes else [old])
+    assert list(player.queue) == ([old] if passes else [])
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_entering_radio_mode_while_the_gate_closes_drops_the_request_with_the_notice():
+    """Crivo MI-D2 (11.4): outro membro põe o player em R durante a edição final da porta; o pedido é descartado com o aviso."""
+    pool, player, inter, _ = confirm_world(Decision.DIRECT)
+    answer = click("go")
+
+    async def back_on_air(**kwargs):
+        player.radio_epoch += 1  # ``_start`` de outra pessoa: ``_bump`` + ``queue.clear()``
+
+    answer.edit_original_message.side_effect = back_on_air
+    with pytest.raises(GenericError) as error:
+        await radio_guard.confirm_leave_radio(pool, None, inter, player, wait_for=answered(answer))
+    assert error.value.text == "jukebox.radio.discarded"
+
+
+@pytest.mark.critical
+@pytest.mark.asyncio
+async def test_a_player_destroyed_while_the_click_waited_for_the_lock_does_not_let_the_request_go_on():
+    """Crivo S-2: ``forget`` zera o modo e ``leave_for_music`` volta sem erro; a porta confere o player de novo."""
+    pool, player, inter, _ = confirm_world(Decision.DIRECT)
+    answer = click("go")
+    pool.radio.jukebox.leave_for_music.side_effect = lambda *a: setattr(player, "is_closing", True)
+    assert await radio_guard.confirm_leave_radio(pool, None, inter, player, wait_for=answered(answer)) is False
+    assert answer.edit_original_message.await_args.kwargs["content"] == "jukebox.radio.player_closed"
