@@ -22,6 +22,7 @@ import logging
 import sys
 import time
 from collections.abc import Awaitable, Callable, Sequence
+from contextlib import suppress
 from pathlib import Path
 from typing import NamedTuple, Optional, Protocol
 
@@ -31,6 +32,7 @@ from cachetools import TTLCache
 
 from empiremuse.rules.playlists import is_public_address
 from empiremuse.rules.radio_stations import favicon_thumbnail, valid_uuid
+from empiremuse.utils import sandbox
 from empiremuse.utils.server_playlists_fetch import PinnedResolver
 from empiremuse.utils.url_guard import (
     system_resolve,
@@ -203,7 +205,9 @@ def _checked_png(out: bytes) -> bytes:
 
 
 async def decode_in_worker(fmt: str, data: bytes) -> bytes:
-    """Decodifica ``data`` num processo filho (``python -I``, ``env={}``, limites de memória e CPU, prazo) e devolve o PNG pequeno. ``LogoError`` em qualquer falha."""
+    """Decodifica ``data`` num processo filho (``python -I``, ``env={}``, sandbox, limites de memória e CPU, prazo) e devolve o PNG pequeno. ``LogoError`` em qualquer falha."""
+    if not sandbox.may_spawn(logger):
+        raise LogoError("sandbox")
     try:
         process = await asyncio.create_subprocess_exec(
             sys.executable,
@@ -242,8 +246,13 @@ async def decode_in_worker(fmt: str, data: bytes) -> bytes:
         raise LogoError("deadline") from error
     finally:
         if process.returncode is None:
-            process.kill()
+            sandbox.kill_group(process.pid)  # o grupo inteiro (``start_new_session``), não só o PID
+            with suppress(ProcessLookupError):
+                process.kill()  # se o grupo não morreu; o laço pode já ter recolhido o worker morto
             await process.wait()
+    if process.returncode == sandbox.SANDBOX_EXIT:
+        sandbox.report(logger)
+        raise LogoError("sandbox")
     if process.returncode != 0:
         raise LogoError("decode")
     return _checked_png(bytes(out))
