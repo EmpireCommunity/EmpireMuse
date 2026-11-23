@@ -104,27 +104,46 @@ async def _pn_next_track(self, req):
             if await self.bot.pool.radio.jukebox.release(self, mode):
                 await go_idle(self)
             return True
-        try:
-            track = None
+        drawn = None
+        if (active := getattr(self, "station", None)) is not None:
+            # estação da Jukebox (J2b, §0.3): com a fila vazia ela vem ANTES do autoplay. Acabou (S → M): segue o de sempre. Outra transição
+            # tomou o player no meio (R abrindo, outra estação): nada segue daqui, quem manda é ela (a cerca de epoch da J2a)
+            from empiremuse.utils.radio.jukebox_station import StationNext
 
-            if self.autoplay or self.keep_connected:
-                try:
-                    track = await self.get_autoqueue_tracks()
-                except Exception:
-                    logger.exception("Falha em _pn_next_track")
-                    self.locked = False
-                    await asyncio.sleep(60)
-                    if not self.current and (self.autoplay or self.keep_connected):
-                        await self.process_next()
+            outcome, station_track = await self.bot.pool.radio.jukebox.next_station_track(self, active)
+            if outcome is StationNext.TRACK:
+                if not self.queue:
+                    req.track = station_track
+                    return False
+                # um pedido entrou durante o sorteio: ele vem antes (e passa pelas guardas comuns abaixo); a faixa da estação não toca
+                self.bot.pool.radio.jukebox.station_track_unused(self, station_track)
+                drawn = self.queue.popleft()
+            elif outcome is StationNext.SUPERSEDED:
+                return True
+        if drawn is not None:
+            track = drawn
+        else:
+            try:
+                track = None
+
+                if self.autoplay or self.keep_connected:
+                    try:
+                        track = await self.get_autoqueue_tracks()
+                    except Exception:
+                        logger.exception("Falha em _pn_next_track")
+                        self.locked = False
+                        await asyncio.sleep(60)
+                        if not self.current and (self.autoplay or self.keep_connected):
+                            await self.process_next()
+                        return True
+
+                if not track:
+                    await go_idle(self)
                     return True
 
-            if not track:
-                await go_idle(self)
-                return True
-
-        except Exception:
-            logger.exception("Falha em _pn_next_track")
-            track = None
+            except Exception:
+                logger.exception("Falha em _pn_next_track")
+                track = None
 
     if not track:
         await self.process_next()
@@ -405,6 +424,10 @@ async def _pn_start(self, req):
             controller=True,
         )
     else:
+        if getattr(self, "station", None) is not None:
+            # ANTES do envio: um evento de falha rápida pode chegar durante o ``await`` do ``play``. É o encoded que vai ao Lavalink (no
+            # caminho alternativo, o de outra plataforma), o mesmo que ``play`` calcula: é ele que volta nos eventos da faixa da estação
+            self.bot.pool.radio.jukebox.station_track_sent(self, track, encoded_track or track.id)
         await self.play(track, start=start_position, temp_id=encoded_track)
 
     # TODO: rever essa parte caso adicione função de ativar track loops em músicas da fila

@@ -1,4 +1,4 @@
-"""Modo rádio da Jukebox (T-434 J2a): a porta DJ/voto/recusa, o quórum da votação e o recuo da queda, sem I/O.
+"""Modo rádio e estação da Jukebox (T-434 J2a e J2b): a porta DJ/voto/recusa, o quórum da votação e o recuo da queda, sem I/O.
 
 O controlador (``utils/radio/jukebox_radio.py``) junta o que só ele sabe (membro, player, relógio) e pergunta aqui. Nada daqui lê o
 Discord, o banco ou o relógio: tudo chega por argumento, para a tabela de testes cobrir cada caso.
@@ -27,6 +27,7 @@ class Decision(StrEnum):
 class Target(StrEnum):
     LIVE = "live"  # entrar no modo rádio ou trocar a estação ao vivo (A4)
     LEAVE = "leave"  # sair do modo rádio por um pedido de música (A4, plano B)
+    STATION = "station"  # ligar ou trocar a estação (pronta ou do servidor) no lugar do autoplay (A5, J2b)
 
 
 class Actor(NamedTuple):
@@ -43,6 +44,7 @@ class PlayerState(NamedTuple):
     queued: bool  # há música na fila
     radio: bool  # já está no modo rádio
     station: bool = False  # estação ativa (J2b)
+    foreign_queue: bool = False  # há na fila música pedida por OUTRA pessoa (A5: só a do próprio autor não pede voto)
 
     @property
     def busy(self) -> bool:
@@ -58,6 +60,10 @@ def gate(actor: Actor, state: PlayerState, target: Target) -> Gate:
     """DIRECT, VOTE ou DENY para o pedido. A tela avisa antes, mas a decisão é sempre esta, refeita no clique e de novo dentro do lock."""
     if target is Target.LIVE and not state.busy:
         return Gate(Decision.DIRECT)  # player ocioso e fila vazia: sem aviso nem voto
+    if target is Target.STATION and not (state.radio or state.station or state.foreign_queue):
+        return Gate(
+            Decision.DIRECT
+        )  # fila vazia ou só com músicas do autor, sem R nem S: a música atual termina e a estação segue
     if actor.is_dj:
         return Gate(Decision.DIRECT)
     if actor.restricted:
