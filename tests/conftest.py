@@ -20,6 +20,12 @@ import pytest
 
 from tests.support.runtime_guard import DEV_RUNTIME_DIRNAME, REAL_PROJECT_DIR, hide_path
 
+# Isolamento entre módulos de teste: a PRIMEIRA importação de ``empiremuse.cogs.music`` apaga ``empiremuse.music_cog.*`` de ``sys.modules``
+# e os importa de novo (cada carga da extensão reexecuta os mixins). Se isso acontecesse no meio da sessão, um módulo de teste já
+# coletado ficaria com as classes antigas, e um ``monkeypatch`` pelo caminho em texto corrigiria o módulo novo, que o teste não usa.
+# Importar aqui, antes da coleta, faz essa limpeza acontecer uma vez só, no começo.
+import empiremuse.cogs.music  # noqa: E402,F401
+
 
 @pytest.fixture(autouse=True)
 def _isolate_real_dotenv(monkeypatch):

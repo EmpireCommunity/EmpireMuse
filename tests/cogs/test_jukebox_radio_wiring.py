@@ -19,7 +19,7 @@ from empiremuse.music_cog.play_enqueue import PlayEnqueueMixin
 from empiremuse.utils.jukebox_panel import JukeboxPanel
 from empiremuse.utils.music import guild_pin
 from empiremuse.utils.music.guild_pin import load_guild_pin, radio_entries
-from empiremuse.utils.music.jukebox_ui import LIVE_VALUE
+from empiremuse.utils.music.jukebox_ui import LIVE_VALUE, SERVER_VALUE
 from empiremuse.utils.music.live_mark import mark_live
 from empiremuse.utils.music.models import event_steps, playback_steps
 from empiremuse.utils.music.models.player_events import PlayerEventsMixin
@@ -61,7 +61,7 @@ def bot_with(premium):
 )
 async def test_the_live_radio_entry_appears_only_for_a_premium_server(bot, shown):
     entries = await radio_entries(bot, tr, 1)
-    assert [e.value for e in entries] == ([LIVE_VALUE] if shown else [])
+    assert [e.value for e in entries] == ([LIVE_VALUE, SERVER_VALUE] if shown else [])
 
 
 @pytest.mark.critical

@@ -11,10 +11,10 @@ mais o bot que recebeu a interação. Todo texto de fora (estação, título do 
 
 from __future__ import annotations
 
-import asyncio
 import io
+import logging
 from collections.abc import Callable
-from functools import cache
+from functools import cache, partial
 from pathlib import Path
 from typing import Any, NamedTuple, Optional
 
@@ -42,6 +42,9 @@ from empiremuse.rules.radio import (
 from empiremuse.rules.text import external_text, stored_text
 from empiremuse.utils.music.app_emojis import APP_EMOJIS
 from empiremuse.utils.radio.visor import QUALITY_COLORS, render_snapshot
+from empiremuse.utils.render.slot import RenderBusy, RenderSlot, shared_slot
+
+logger = logging.getLogger(__name__)
 
 FAVORITES_FILTER = (
     "f:fav"  # o mesmo valor de ``utils/radio/picker.FAVORITES_ID`` (importar o picker aqui criaria ciclo)
@@ -462,13 +465,16 @@ def visor_payload(
     emojis: Emojis = fallback_emojis,
     picture: Optional[bytes] = None,
     custom: bool = False,
+    blank: bool = False,
 ) -> dict[str, Any]:
     """O painel da rádio AO VIVO no desenho aprovado (P1-P8): embed só com a imagem do visor e o rodapé, duas fileiras de cinco botões
     só com emoji e os dois selects. ``{"embeds", "components", "file"}``; quem envia põe ``AllowedMentions.none()`` e, ao editar,
-    troca o anexo (``edit_kwargs``). ``picture`` = o PNG já renderizado (``visor_payload_async`` o faz fora do laço); sem ele, renderiza aqui."""
+    troca o anexo (``edit_kwargs``). ``picture`` = o PNG já renderizado (``visor_payload_async`` o faz fora do laço); sem ele, renderiza aqui.
+    ``blank`` = sem a imagem (nem ``file``): o painel sai já com os controles e a próxima edição traz o visor."""
     muted = getattr(snapshot, "state", "live") == "muted"
     embed = disnake.Embed(color=color)
-    embed.set_image(url=f"attachment://{VISOR_NAME}")
+    if not blank:
+        embed.set_image(url=f"attachment://{VISOR_NAME}")
     embed.set_footer(text=fit(tr("visor.footer"), 2048))
     if custom:  # só os botões que o cog atende na personalizada: andar pelas estações do servidor, favoritar, aleatória e desligar
         row1 = [
@@ -504,9 +510,7 @@ def visor_payload(
         max_values=1,
         disabled=not filter_options,
     )
-    if picture is None:
-        picture = render_snapshot(snapshot, tr, custom=custom)
-    return {
+    payload: dict[str, Any] = {
         "embeds": [embed],
         "components": [
             disnake.ui.ActionRow(*row1),
@@ -514,8 +518,12 @@ def visor_payload(
             disnake.ui.ActionRow(_station_select(tr, snapshot, custom=custom)),
             disnake.ui.ActionRow(filter_select),
         ],
-        "file": disnake.File(io.BytesIO(picture), filename=VISOR_NAME),
     }
+    if blank:
+        return payload
+    if picture is None:
+        picture = render_snapshot(snapshot, tr, custom=custom)
+    return {**payload, "file": disnake.File(io.BytesIO(picture), filename=VISOR_NAME)}
 
 
 async def visor_payload_async(
@@ -526,9 +534,25 @@ async def visor_payload_async(
     color: int = 0,
     emojis: Emojis = fallback_emojis,
     custom: bool = False,
+    slot: RenderSlot | None = None,
+    now: bool = False,
 ) -> dict[str, Any]:
-    """``visor_payload`` com o PNG renderizado numa thread (``asyncio.to_thread``): o desenho com Pillow não segura o laço do bot."""
-    picture = await asyncio.to_thread(render_snapshot, snapshot, tr, custom=custom)
+    """``visor_payload`` com o PNG renderizado na vaga única de render do processo (``utils/render/slot.py``), numa thread: o
+    desenho com Pillow não segura o laço do bot e não disputa CPU com os cartões das skins. Sem vaga em ``SLOT_WAIT_S``,
+    ``RenderBusy`` sobe: quem edita registra só o tipo e o painel anterior fica.
+
+    ``now`` = quem chama não pode esperar a vaga (a rádio subindo: o áudio nunca espera um desenho). Vaga ocupada: o painel
+    sai sem a imagem (``blank``, sem ``file``) e quem chama pede a edição que a traz."""
+    render = partial(render_snapshot, custom=custom)
+    try:
+        picture = await (slot or shared_slot()).run(render, snapshot, tr, label="visor", wait_s=0 if now else None)
+    except RenderBusy:
+        if not now:
+            raise
+        logger.debug("Vaga de render ocupada: painel da rádio sai sem o visor por ora")
+        return visor_payload(
+            tr, snapshot, filter_options=filter_options, color=color, emojis=emojis, custom=custom, blank=True
+        )
     return visor_payload(
         tr, snapshot, filter_options=filter_options, color=color, emojis=emojis, picture=picture, custom=custom
     )

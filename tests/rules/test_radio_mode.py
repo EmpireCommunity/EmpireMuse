@@ -31,6 +31,9 @@ ONLY_QUEUE = PlayerState(playing=False, queued=True, radio=False)
 RADIO = PlayerState(playing=True, queued=False, radio=True)
 STATION = PlayerState(playing=False, queued=False, radio=False, station=True)
 BUSY = (PLAYING, QUEUED, ONLY_QUEUE, RADIO, STATION)
+OWN_QUEUE = PlayerState(playing=True, queued=True, radio=False)  # a fila só tem músicas de quem pede
+FOREIGN_QUEUE = PlayerState(playing=True, queued=True, radio=False, foreign_queue=True)
+STATION_BUSY = (FOREIGN_QUEUE, RADIO, STATION)
 
 
 @pytest.mark.critical
@@ -50,6 +53,16 @@ BUSY = (PLAYING, QUEUED, ONLY_QUEUE, RADIO, STATION)
         (DJ, RADIO, Target.LEAVE, Decision.DIRECT),
         (MEMBER, RADIO, Target.LEAVE, Decision.VOTE),
         (RESTRICTED_MEMBER, RADIO, Target.LEAVE, Decision.DENY),
+        # estação (A5, Q5): fila vazia ou só com músicas do autor, sem R nem S, entra direto para qualquer um
+        *[
+            (who, state, Target.STATION, Decision.DIRECT)
+            for who in (MEMBER, RESTRICTED_MEMBER)
+            for state in (IDLE, PLAYING, OWN_QUEUE)
+        ],
+        # com músicas de outros, em R ou em S: DJ direto, membro vota, restrito não-DJ é recusado
+        *[(DJ, state, Target.STATION, Decision.DIRECT) for state in STATION_BUSY],
+        *[(MEMBER, state, Target.STATION, Decision.VOTE) for state in STATION_BUSY],
+        *[(RESTRICTED_MEMBER, state, Target.STATION, Decision.DENY) for state in STATION_BUSY],
     ],
 )
 def test_the_gate_table(actor, state, target, expected):
