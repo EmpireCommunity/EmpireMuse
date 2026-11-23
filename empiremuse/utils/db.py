@@ -82,13 +82,15 @@ global_db_models = {
         },
     },
     DBModel.guilds: {
-        "ver": 1.5,
+        "ver": 1.6,
         "prefix": "",
         "global_skin": False,
         "player_skin": None,
         "player_skin_static": None,
         "voice_channel_status": "",
         "voice_status_permanent": None,  # None = nunca escolhido = ligado (2.1.2); um valor por servidor para todo o pool
+        "radio_skin": None,  # None = nunca escolhido = ``rules/skins.DEFAULT_RADIO_LOOK`` (2.3, D5): a skin de todas as rádios
+        "disc_motion": None,  # None = nunca escolhido = ligada (2.3): a animação do disco nas skins de imagem
         "custom_skins": {},
         "custom_skins_static": {},
         "listen_along_invites": {},

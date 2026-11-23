@@ -14,6 +14,7 @@ from empiremuse.utils.owner_gate import admin_owner_only
 from empiremuse.logs.context import guild_extra
 from empiremuse.rules.bot_tokens import is_radio_only_identifier
 from empiremuse.rules.radio import radio_id
+from empiremuse.rules.skins import jukebox_choice
 from empiremuse.rules.voice_status import resolve_voice_status
 from empiremuse.serialization.schema import SchemaError
 from empiremuse.utils.client import BotCore
@@ -642,8 +643,9 @@ class PlayerSession(commands.Cog):
                         channel=text_channel,
                         message=message or message_without_thread,
                         last_message_id=data["message_id"],
-                        skin=data["skin"],
-                        skin_static=data["skin_static"],
+                        # Q1: a skin salva na sessão passa pela mesma regra (``rules/skins.jukebox_choice``)
+                        skin=jukebox_choice(data["skin"]) or self.bot.pool.default_skin,
+                        skin_static=jukebox_choice(data["skin_static"]) or self.bot.pool.default_static_skin,
                         player_creator=data["player_creator"],
                         autoplay=data.get("autoplay", False),
                         static=data["static"],

@@ -91,8 +91,10 @@ DEFAULT_CONFIG = {
     "AUTO_DOWNLOAD_LAVALINK_SERVERLIST": False,
     "LAVALINK_SERVER_LIST": branding.LAVALINK_SERVER_LIST_URL,
     "LAVALINK_RECONNECT_RETRIES": 30,
-    "DEFAULT_SKIN": "default",
-    "DEFAULT_STATIC_SKIN": "default",
+    # 2.3 (D2): a Expandida escura nos dois modos (``rules/skins.DEFAULT_JUKEBOX_SKIN``). Enquanto o módulo dela não está
+    # carregado, o ``load_skins`` volta para a ``default``.
+    "DEFAULT_SKIN": "muse_expanded_black",
+    "DEFAULT_STATIC_SKIN": "muse_expanded_black",
     "DEFAULT_IDLING_SKIN": "default",
     "VOTE_SKIP_AMOUNT": 3,
     "IDLE_TIMEOUT": 180,
