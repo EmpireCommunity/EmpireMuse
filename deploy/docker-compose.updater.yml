@@ -1,0 +1,68 @@
+# Complemento opcional do auto-update (docs/guides/auto-update.md): o serviço updater-proxy deixa o comando /update trocar a
+# imagem do bot. É o mesmo bloco que o compose de produção traz inline, só que num arquivo à parte.
+# Uso, a partir da raiz (sempre junto do docker-compose.yml base; nunca suba este arquivo sozinho):
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.updater.yml --env-file .env up -d
+# Pré-requisitos (seção 2.1 do guia): DOCKER_GID e UPDATER_PROJECT_DIR (caminho do projeto no host) no .env, e o compose e
+# o .env de root, sem escrita para grupo ou outros.
+# O auxiliar do /update lê UM arquivo, <pasta>/docker-compose.yml, e troca nele a linha "    image: empirecommunity/empiremuse:X.Y.Z@sha256:..."
+# (4 espaços) do bot. Para atualizar pelo /update, portanto, o bot precisa ter essa linha fixa num docker-compose.yml que
+# também enxergue o updater-proxy (com "include:" desta pasta, Compose 2.20 ou mais novo). O "include:" não altera o bot:
+# nesse caso acrescente no bot do arquivo principal o volume "updater-sock:/run/empiremuse-updater" e UPDATE_PROXY_SOCKET.
+#
+# As duas linhas de imagem (bot e updater-proxy) usam tag@sha256 com o digest do image-digest.txt da release
+# (docs/guides/release.md); o digest abaixo é um MARCADOR de zeros e precisa ser trocado na implantação, junto da tag.
+
+services:
+  bot:
+    environment:
+      # Socket do proxy de atualização (serviço updater-proxy); o bot nunca recebe o grupo do Docker.
+      UPDATE_PROXY_SOCKET: /run/empiremuse-updater/updater.sock
+    volumes:
+      - updater-sock:/run/empiremuse-updater
+
+  # Proxy de atualização: a única peça com acesso ao docker.sock (equivale a root no host, por isso fica minúsculo,
+  # sem rede, só leitura e sem capabilities). Só aceita 5 operações sobre um container auxiliar de nome fixo; o auxiliar
+  # troca UMA linha do compose e faz o "compose up" do bot. Detalhes e ameaças: docs/adr/0004-auto-update-proxy.md.
+  updater-proxy:
+    container_name: empiremuse-updater-proxy
+    # Nome completo (docker.io/...): a linha nunca casa com a do bot, que é a que o auxiliar edita. O digest é
+    # obrigatório: só com tag um token vazado do Hub viraria root pelo proxy. Troque o marcador pelo digest do
+    # image-digest.txt da mesma release do bot.
+    image: docker.io/empirecommunity/empiremuse:2.3.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    pull_policy: missing
+    restart: unless-stopped
+    command: ["/usr/local/bin/python3", "-I", "-S", "/app/empiremuse/updater/proxy.py"]
+    user: "10002:10001"
+    # GID do dono do docker.sock no host (stat -c %g /var/run/docker.sock), definido no .env.
+    group_add:
+      - "${DOCKER_GID:?defina DOCKER_GID no .env (stat -c %g /var/run/docker.sock)}"
+    environment:
+      # Caminho DESTE projeto no host: o auxiliar monta a pasta nesse mesmo caminho para ler e editar o compose.
+      UPDATER_PROJECT_DIR: ${UPDATER_PROJECT_DIR:?defina UPDATER_PROJECT_DIR no .env (caminho do projeto no host)}
+      # Só o bot (uid 10001) fala com o proxy.
+      UPDATER_PEER_UID: "10001"
+    healthcheck:
+      disable: true
+    network_mode: none
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 64m
+    pids_limit: 32
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - updater-sock:/run/empiremuse-updater
+      # A imagem declara VOLUME /data e o proxy não grava lá: um volume nomeado e só leitura evita um volume anônimo
+      # novo (órfão) a cada recriação do container.
+      - updater-proxy-data:/data:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  updater-sock:
+  updater-proxy-data:

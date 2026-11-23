@@ -409,13 +409,14 @@ jobs:
           DOCKER_GID: "999"
           PANEL_BASE_URL: https://painel.exemplo.invalid
           RPC_PUBLIC_URL: wss://painel.exemplo.invalid/ws
+          UPDATER_PROJECT_DIR: /docker/empiremuse
         run: |
           # Valores falsos só para as variáveis obrigatórias; os arquivos .env ficam vazios.
           : > .env
           : > .env.mongo
           for file in deploy/docker-compose*.yml; do
             case "$file" in
-              *.traefik.yml) continue ;; # só vale combinado com o base (par abaixo)
+              *.traefik.yml | *.updater.yml) continue ;; # só valem combinados com o base (pares abaixo)
             esac
             echo "::group::$file"
             docker compose -f "$file" config -q
@@ -423,6 +424,7 @@ jobs:
           done
           docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.traefik.yml config -q
           docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.deps.yml config -q
+          docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.updater.yml config -q
 
       - name: Nenhuma porta publicada fora de 127.0.0.1
         env:
@@ -430,6 +432,7 @@ jobs:
           DOCKER_GID: "999"
           PANEL_BASE_URL: https://painel.exemplo.invalid
           RPC_PUBLIC_URL: wss://painel.exemplo.invalid/ws
+          UPDATER_PROJECT_DIR: /docker/empiremuse
         run: |
           : > .env
           : > .env.mongo
@@ -443,12 +446,13 @@ jobs:
           }
           for file in deploy/docker-compose*.yml; do
             case "$file" in
-              *.traefik.yml) continue ;;
+              *.traefik.yml | *.updater.yml) continue ;;
             esac
             check_ports -f "$file"
           done
           check_ports -f deploy/docker-compose.yml -f deploy/docker-compose.traefik.yml
           check_ports -f deploy/docker-compose.yml -f deploy/docker-compose.deps.yml
+          check_ports -f deploy/docker-compose.yml -f deploy/docker-compose.updater.yml
 
       - name: Validar o egg do Pterodactyl (JSON)
         run: python3 -m json.tool deploy/pterodactyl/egg-empiremuse.json > /dev/null

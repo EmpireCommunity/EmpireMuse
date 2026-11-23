@@ -211,6 +211,8 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - updater-sock:/run/empiremuse-updater
+      # Volume nomeado e só leitura no lugar do anônimo do VOLUME /data da imagem (que ficava órfão a cada recriação).
+      - updater-proxy-data:/data:ro
     logging:
       driver: json-file
       options:
@@ -220,3 +222,4 @@ services:
 volumes:
   empiremuse-data:
   updater-sock:
+  updater-proxy-data:
