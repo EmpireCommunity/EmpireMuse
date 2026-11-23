@@ -19,6 +19,7 @@ from empiremuse.utils.music.errors import (
 )
 from empiremuse.utils.others import PlayerControls, string_to_file
 from empiremuse.utils.music.guild_pin import load_guild_pin
+from empiremuse.utils.music.models.np_steps import _card_for_new_message, _send_kwargs, idle_payload
 from empiremuse.wavelink import TrackStart, TrackEnd
 
 if TYPE_CHECKING:
@@ -296,6 +297,9 @@ class PlayerPlaybackMixin:
         except Exception:
             pass
 
+        kwargs = await idle_payload(self, kwargs)  # skins do EmpireMuse: o ocioso delas (as antigas ficam como estão)
+        self.last_data = {}  # a volta da música redesenha mesmo com o mesmo payload de antes
+
         try:
             if self.has_thread or self.static or self.text_channel.last_message_id == self.message.id:
                 try:
@@ -303,7 +307,8 @@ class PlayerPlaybackMixin:
                 except Exception:
                     logger.exception("Falha em process_idle_message")
                     if self.text_channel and not self.static:
-                        self.message = await self.text_channel.send(**kwargs)
+                        _card_for_new_message(self, kwargs)
+                        self.message = await self.text_channel.send(**_send_kwargs(kwargs))
                 send_message = False
             else:
                 send_message = True
@@ -315,7 +320,8 @@ class PlayerPlaybackMixin:
                 await self.message.delete()
             except Exception:
                 pass
-            self.message = await self.text_channel.send(**kwargs)
+            _card_for_new_message(self, kwargs)
+            self.message = await self.text_channel.send(**_send_kwargs(kwargs))
 
     async def idling_mode(self):
         try:

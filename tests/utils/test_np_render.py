@@ -219,3 +219,79 @@ def test_a_kept_attachment_never_reaches_a_new_message():
 
 def test_send_never_receives_attachments():
     assert "attachments" not in np_steps._send_kwargs({"attachments": [], "content": "x"})
+
+
+# ---------------------------------------------------------------------- ocioso (despacho por skin)
+
+
+def idle_kwargs():
+    embed = disnake.Embed(description="Nada na fila. Desliga <t:9:R>")
+    embed.set_thumbnail(url="https://cdn.example/avatar.png")
+    return {"embed": embed, "content": None, "components": [disnake.ui.Button(label="x", custom_id="idle")]}
+
+
+class ClassicSkin:
+    name = "default"
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+@pytest.mark.parametrize("kind", ["classic", "muse_text", "image", "image_without_card"])
+async def test_the_idle_message_follows_the_skin_and_keeps_the_old_skins_as_they_were(world, kind):
+    from empiremuse.rules.card import CardState
+
+    world.spec["value"] = base_spec(skin="muse_slim_black", state=CardState.IDLE, track=None, cover=None, queue=())
+    world.pipe.no_card = kind == "image_without_card"
+    text = TextSkin()
+    text.name = "muse_text"
+    skin = {"classic": ClassicSkin(), "muse_text": text}.get(kind, world.skin)
+    world.player.skin = skin.name
+    world.player.bot.pool.player_skins[skin.name] = skin
+    kwargs = idle_kwargs()
+
+    out = await np_steps.idle_payload(world.player, kwargs)
+
+    if kind == "classic":
+        assert out is kwargs and "embeds" not in out and world.pipe.calls == 0
+        return
+    embed = out["embeds"][0]
+    assert "embed" not in out and embed.description.startswith("Nada na fila") and out["components"]
+    if kind == "image":
+        assert embed.image.url == "attachment://card.png" and embed.thumbnail.url is None and "file" in out
+    else:
+        assert embed.author.name == "jbx.idle.title" and "file" not in out
+
+
+# ---------------------------------------------------------------------- edição em thread que falhou
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_the_thread_retry_sends_the_whole_card_again(monkeypatch):
+    from unittest.mock import AsyncMock, MagicMock
+
+    sent = []
+
+    async def edit(**kwargs):
+        sent.append(kwargs["file"].fp.read())
+        if len(sent) == 1:
+            raise disnake.HTTPException(MagicMock(status=500), "falhou")
+
+    thread = MagicMock(spec=disnake.Thread)
+    thread.id, thread.locked, thread.archived = 5, False, False
+    monkeypatch.setattr(np_steps.asyncio, "sleep", AsyncMock())
+    player = SimpleNamespace(
+        message=SimpleNamespace(edit=edit),
+        text_channel=thread,
+        bot=SimpleNamespace(get_channel=lambda _id: thread),
+        guild=SimpleNamespace(me=object()),
+        allowed_mentions=None,
+        start_message_updater_task=MagicMock(),
+        updating=True,
+        ignore_np_once=False,
+    )
+    data = card_payload()
+    data.update(file=disnake.File(io.BytesIO(b"GIF89a-card"), filename="card.gif"), attachments=[])
+
+    assert await np_steps._np_message_edit(player, SimpleNamespace(data=data, interaction=None)) is True
+    assert sent == [b"GIF89a-card", b"GIF89a-card"]

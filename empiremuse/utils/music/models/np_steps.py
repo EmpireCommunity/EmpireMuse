@@ -27,6 +27,7 @@ from empiremuse.utils.music.models.helpers import (
 )
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
 from empiremuse.utils.music import card_facts
+from empiremuse.rules.skins import JUKEBOX_IDS
 from empiremuse.utils.render.state import RENDER_STATES
 
 ATTACHMENT_PREFIX = "attachment://"
@@ -88,18 +89,27 @@ def payload_key(value):
     return value
 
 
-def _load_skin(self):
-    """O payload da skin e o objeto dela (``None`` para skin personalizada)."""
+def _skin_object(self):
+    """O objeto da skin do modo atual (``None`` para skin personalizada)."""
     if self.static:
         if self.skin_static.startswith("> custom_skin: "):
-            data = skin_converter(self.custom_skin_static_data[self.skin_static[15:]], player=self, guild=self.guild)
-            return data, None
-        skin = self.bot.pool.player_static_skins[self.skin_static]
+            return None
+        return self.bot.pool.player_static_skins[self.skin_static]
+    if self.skin.startswith("> custom_skin: "):
+        return None
+    return self.bot.pool.player_skins[self.skin]
+
+
+def _load_skin(self):
+    """O payload da skin e o objeto dela (``None`` para skin personalizada)."""
+    skin = _skin_object(self)
+    if skin is not None:
+        return skin.load(self), skin
+    if self.static:
+        data = skin_converter(self.custom_skin_static_data[self.skin_static[15:]], player=self, guild=self.guild)
     else:
-        if self.skin.startswith("> custom_skin: "):
-            return skin_converter(self.custom_skin_data[self.skin[15:]], player=self, guild=self.guild), None
-        skin = self.bot.pool.player_skins[self.skin]
-    return skin.load(self), skin
+        data = skin_converter(self.custom_skin_data[self.skin[15:]], player=self, guild=self.guild)
+    return data, None
 
 
 def _will_edit(self, req) -> bool:
@@ -186,6 +196,16 @@ async def _np_render(self, req, skin, data, key):
     return False
 
 
+def _refresh_file(data) -> bool:
+    """Remonta o ``File`` do cartão dos mesmos bytes (um envio anterior o deixa no fim do buffer). ``False`` = sem ``File``."""
+    file = data.get("file")
+    read = getattr(getattr(file, "fp", None), "getvalue", None)
+    if not callable(read):
+        return False
+    data["file"] = disnake.File(io.BytesIO(read()), filename=file.filename, description=file.description)
+    return True
+
+
 def _card_for_new_message(self, data):
     """O cartão numa mensagem nova (inclusive depois de uma edição que falhou): o ``File`` é remontado dos mesmos bytes
     (o envio anterior o deixa no fim do buffer). Sem ``File`` (anexo mantido da mensagem antiga, que não vale na nova), sai
@@ -195,16 +215,43 @@ def _card_for_new_message(self, data):
     if not (image or "").startswith(ATTACHMENT_PREFIX):
         return
     data.pop("attachments", None)
-    file = data.get("file")
-    read = getattr(getattr(file, "fp", None), "getvalue", None)
-    if callable(read):
-        data["file"] = disnake.File(io.BytesIO(read()), filename=file.filename, description=file.description)
+    if _refresh_file(data):
         return
     embeds[0].set_image(url=None)
     data.pop("file", None)
     RENDER_STATES.forget(self)
     self.last_data = {}
     self.update = True
+
+
+async def idle_payload(self, kwargs):
+    """A mensagem de ocioso na skin do player. Skins antigas e personalizadas: ``kwargs`` como está. Jukebox Texto: o
+    título ``jbx.idle.title`` no autor. Skins de imagem: o cartão no estado ocioso (logo no rótulo, sem miniatura) com o
+    texto e os componentes de ocioso de sempre; sem cartão, o ocioso em texto."""
+    skin = _skin_object(self)
+    if getattr(skin, "name", None) not in JUKEBOX_IDS:
+        return kwargs
+    embed = kwargs["embed"]
+    data = {name: value for name, value in kwargs.items() if name != "embed"}
+    data["embeds"] = [embed]
+    rendered = None
+    if getattr(skin, "card", None):
+        from empiremuse.utils.render.cards.pipeline import card_pipeline
+
+        RENDER_STATES.forget(self)  # o ocioso sempre leva um anexo novo (a mensagem pode ser outra)
+        spec = await _card_spec(self, skin)
+        try:
+            pipe = card_pipeline(self.bot.config["COVER_HOSTS"])
+            rendered = await pipe.render(self, skin.card, spec, self.tr, station_logo=_station_logo(self))
+        except Exception as e:
+            log_unexpected_error(logger, e, "desenho do cartão ocioso")
+    if rendered is None or rendered.data is None:
+        RENDER_STATES.forget(self)
+        embed.set_author(name=fit(self.tr("jbx.idle.title"), card_facts.AUTHOR_MAX))
+        return data
+    embed.set_thumbnail(url=None)
+    _put_card(self, data, spec, rendered)
+    return data
 
 
 async def _np_data(self, req):
@@ -556,6 +603,7 @@ async def _np_message_edit(self, req):
                     else:
                         await self.text_channel.send(self.tr("player.unarchiving_the_thread"), delete_after=2)
 
+                _refresh_file(data)  # a edição que falhou já leu o anexo até o fim
                 await self.message.edit(allowed_mentions=self.allowed_mentions, **data)
                 await asyncio.sleep(0.5)
 
