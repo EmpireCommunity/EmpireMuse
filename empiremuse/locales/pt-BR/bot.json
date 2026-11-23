@@ -1408,7 +1408,7 @@
   "jbx.origin": "Origem",
   "jbx.chip.autoplay": "Auto",
   "jbx.chip.nightcore": "Nightcore",
-  "jbx.chip.always_on": "24/7",
+  "jbx.chip.always_on": "Rádio",
   "jbx.chip.restricted": "Restrito",
   "jbx.chip.station": "Estação {nome}",
   "jbx.repeat.track": "Repetir a faixa ({n})",

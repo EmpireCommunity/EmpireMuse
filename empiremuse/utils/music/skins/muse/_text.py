@@ -92,7 +92,7 @@ def track_end(player: Any, now: float) -> Optional[float]:
 
 
 def queue_end(player: Any, now: float) -> Optional[float]:
-    """Quando a fila termina (como as Clássicas: nada com repetir, 24/7, pausa ou fila vazia)."""
+    """Quando a fila termina (como as Clássicas: nada com repetir, rádio, pausa ou fila vazia)."""
     end = track_end(player, now)
     if end is None or not player.queue or player.loop or player.keep_connected:
         return None

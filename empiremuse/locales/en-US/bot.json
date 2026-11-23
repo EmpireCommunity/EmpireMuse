@@ -1392,7 +1392,7 @@
   "jbx.origin": "Source",
   "jbx.chip.autoplay": "Auto",
   "jbx.chip.nightcore": "Nightcore",
-  "jbx.chip.always_on": "24/7",
+  "jbx.chip.always_on": "Radio",
   "jbx.chip.restricted": "Restricted",
   "jbx.chip.station": "Station {nome}",
   "jbx.repeat.track": "Repeat track ({n})",
