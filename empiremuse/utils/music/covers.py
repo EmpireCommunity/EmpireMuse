@@ -223,6 +223,14 @@ class CoverService:
             raise
         return CoverResult(pixels)
 
+    async def aclose(self) -> None:
+        """Cancela os voos em andamento e espera cada um terminar (o worker de cada um é morto e coletado). O dono chama ao
+        descarregar; quem esperava um voo cancelado recebe o logo."""
+        flights = list(self._flights.values())
+        for flight in flights:
+            flight.cancel()
+        await asyncio.gather(*flights, return_exceptions=True)
+
     def _landed(self, key: bytes) -> None:
         """O voo terminou (com capa, falha ou cancelamento): libera a vaga de saída e a chave."""
         self._inflight -= 1

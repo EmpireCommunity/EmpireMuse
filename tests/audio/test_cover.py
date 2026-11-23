@@ -359,11 +359,23 @@ async def test_a_worker_past_the_deadline_is_killed_with_its_group_and_reaped(mo
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("process", [FakeProcess(PIXELS[:-1]), FakeProcess(PIXELS + b"x"), FakeProcess(PIXELS, code=1)])
-async def test_worker_output_of_the_wrong_size_or_a_failed_exit_is_refused(process):
+@pytest.mark.parametrize(
+    ("process", "killed"),
+    [(FakeProcess(PIXELS[:-1]), False), (FakeProcess(PIXELS + b"x"), True), (FakeProcess(PIXELS, code=1), False)],
+)
+async def test_worker_output_of_the_wrong_size_or_a_failed_exit_is_refused(monkeypatch, process, killed):
     spawn, _ = spawner(process)
+    groups = []
+
+    def killpg(pid, sig):  # nunca um sinal de verdade: o pid do dublê não é um processo deste teste
+        groups.append(pid)
+        process.kill()
+
+    monkeypatch.setattr(covers_module.os, "killpg", killpg)
+
     with pytest.raises(CoverError):
         await decode_in_worker("PNG", b"x", spawn=spawn)
+    assert (groups == [4242]) is killed  # saída acima do teto: o filho ainda vivo é morto antes do ``wait``
 
 
 # ---------------------------------------------------------------------- o serviço: SK-3, SK-5, SK-6, SK-8, SK-10
@@ -616,6 +628,20 @@ async def test_a_cancelled_flight_answers_its_waiters_with_the_logo_but_a_cancel
     other.cancel()
     with pytest.raises(asyncio.CancelledError):
         await other
+
+
+@pytest.mark.asyncio
+async def test_closing_the_service_cancels_and_awaits_every_flight():
+    svc = service(Fetch(gate=asyncio.Event()))
+    waiters = [asyncio.create_task(svc.pixels(COVER.replace("segredo", s), wait_s=5)) for s in ("a", "b")]
+    await settle()
+    flights = list(svc._flights.values())
+    assert len(flights) == 2
+
+    await svc.aclose()
+
+    assert all(f.cancelled() for f in flights) and not svc._flights and svc._inflight == 0
+    assert [await w for w in waiters] == [CoverResult(), CoverResult()]
 
 
 @contextlib.asynccontextmanager
