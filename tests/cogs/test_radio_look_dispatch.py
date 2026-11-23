@@ -1,5 +1,5 @@
 """A skin efetiva no painel da rádio 24 h (skins 2.3, S7): a da rádio, senão a de todas as rádios do servidor, senão o Retrato
-preto (``rules/skins.radio_look``); as ``portrait_*`` saem no Retrato e as ``black``/``white`` no visor. Só fakes; os
+preto (``rules/skins.radio_look``); as ``portrait_*`` saem no Retrato, as ``black``/``white`` no visor e a ``text`` em texto, sem desenho. Só fakes; os
 desenhos são trocados por gravadores (o PNG de cada um tem os seus próprios testes)."""
 
 from __future__ import annotations
@@ -53,7 +53,6 @@ def drawn(monkeypatch):
         (None, None, ("portrait", "portrait_black")),  # nunca escolhida: o padrão
         (None, RuntimeError("banco fora"), ("portrait", "portrait_black")),
         ("portrait_white", RuntimeError("banco fora"), ("portrait", "portrait_white")),
-        (None, "text", ("visor", "black")),  # a de texto ainda sai no visor da skin gravada
     ],
 )
 async def test_the_radio_panel_draws_the_effective_skin(own, guild, expected, drawn):
@@ -64,8 +63,33 @@ async def test_the_radio_panel_draws_the_effective_skin(own, guild, expected, dr
     cog.hub.custom_favorites = FakeFavs()
     cog.hub.manager = SimpleNamespace(runner=lambda _id: None)
     ports = SimpleNamespace(
-        pool=SimpleNamespace(radio=cog.hub), station=STATIONS[0], current=None, no_tracks=False, wall=lambda: 1.0
+        pool=SimpleNamespace(radio=cog.hub),
+        station=STATIONS[0],
+        current=None,
+        no_tracks=False,
+        wall=lambda: 1.0,
     )
     tr = await get_i18n().for_guild(None)
     payload = await DiscordRadioPorts._custom_visor_payload(ports, bot_with(guild), SimpleNamespace(me=None), radio, tr)
     assert drawn == [expected] and payload["file"].filename.endswith(".png")
+
+
+@pytest.mark.asyncio
+async def test_the_text_skin_sends_the_panel_without_drawing(drawn):
+    from empiremuse.i18n import get_i18n
+
+    radio, cog, *_ = world(active=1)
+    radio.look, radio.channel_id = "text", 1
+    cog.hub.custom_favorites = FakeFavs()
+    cog.hub.manager = SimpleNamespace(runner=lambda _id: None)
+    ports = SimpleNamespace(
+        pool=SimpleNamespace(radio=cog.hub),
+        station=STATIONS[0],
+        current=None,
+        no_tracks=False,
+        wall=lambda: 1.0,
+    )
+    tr = await get_i18n().for_guild(None)
+    guild = SimpleNamespace(me=None, get_channel=lambda _id: SimpleNamespace(name="Lounge"))
+    payload = await DiscordRadioPorts._custom_visor_payload(ports, bot_with(None), guild, radio, tr)
+    assert drawn == [] and payload["embeds"] and "file" in payload  # o logo substitui o visor.png de antes

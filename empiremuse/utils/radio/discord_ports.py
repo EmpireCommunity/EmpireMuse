@@ -14,6 +14,7 @@ import logging
 import random
 import time
 from collections.abc import Sequence
+from functools import partial
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -64,9 +65,15 @@ async def guild_radio_skin(bot: Any, guild_id: int) -> object:
     return data.get("radio_skin") if isinstance(data, dict) else None
 
 
+def call_name(guild: Any, radio: Radio) -> Optional[str]:
+    """O nome da call da rádio, que a Rádio Texto mostra no autor (o snapshot não o traz); fora do cache, nenhum."""
+    get_channel = getattr(guild, "get_channel", None)
+    return getattr(get_channel(radio.channel_id), "name", None) if get_channel is not None else None
+
+
 def render_look(snapshot: Any, tr: Any, *, custom: bool = False) -> bytes:
     """O PNG do painel na skin efetiva (``snapshot.look``, de ``rules/skins.radio_look``): o Retrato nas ``portrait_*``; o visor
-    nas ``black``/``white``. A ``text`` ainda sai no visor da skin gravada até o painel de texto ter o despacho dele."""
+    nas ``black``/``white``. É o ``render`` de ``panel.skin_payload_async``, que leva a ``text`` ao painel em texto antes."""
     look = getattr(snapshot, "look", None)
     if look in PORTRAIT_LOOKS:
         from empiremuse.utils.render.cards.radio_portrait import PortraitCard, from_radio_snapshot, render_portrait
@@ -77,43 +84,6 @@ def render_look(snapshot: Any, tr: Any, *, custom: bool = False) -> bytes:
     if look in LEGACY_RADIO_SKINS:
         snapshot = snapshot._replace(skin=look)  # o visor desenha a skin efetiva, não o campo antigo ``skin`` da rádio
     return render_snapshot(snapshot, tr, custom=custom)
-
-
-async def look_payload(
-    tr: Any,
-    snapshot: Any,
-    *,
-    filter_options: list[disnake.SelectOption],
-    color: int = 0,
-    emojis: Any = None,
-    custom: bool = False,
-    now: bool = False,
-    slot: Any = None,
-) -> dict[str, Any]:
-    """O painel da rádio com a imagem da skin efetiva desenhada na vaga única de render (como ``panel.visor_payload_async``):
-    mesmos controles e o mesmo anexo. ``now`` = a rádio está subindo: vaga ocupada, o painel sai sem a imagem e quem chama pede
-    a edição que a traz; sem ``now``, ``RenderBusy`` sobe."""
-    from functools import partial
-
-    from empiremuse.utils.radio.panel import fallback_emojis, visor_payload
-    from empiremuse.utils.render.slot import RenderBusy, shared_slot
-
-    common: dict[str, Any] = {
-        "filter_options": filter_options,
-        "color": color,
-        "emojis": emojis or fallback_emojis,
-        "custom": custom,
-    }
-    try:
-        picture = await (slot or shared_slot()).run(
-            partial(render_look, custom=custom), snapshot, tr, label="visor", wait_s=0 if now else None
-        )
-    except RenderBusy:
-        if not now:
-            raise
-        logger.debug("Vaga de render ocupada: painel da rádio sai sem a imagem por ora")
-        return visor_payload(tr, snapshot, blank=True, **common)
-    return visor_payload(tr, snapshot, picture=picture, **common)
 
 
 class RadioBotUnavailable(Exception):
@@ -434,7 +404,7 @@ class DiscordRadioPorts:
         """O painel da rádio AO VIVO (R6/R7): o retrato imutável (``live_snapshot``) vira o PNG do visor numa thread e os controles.
         Custa, por edição (no máximo uma a cada ``live_ports.PANEL_EDIT_INTERVAL_S``): o logo em cache, um ``by_uuids``, duas leituras das favoritas e a do documento global do servidor (``radio_skin``)."""
         from empiremuse.utils.music.app_emojis import emoji as app_emoji  # tarde: o módulo importa o cliente
-        from empiremuse.utils.radio.panel import filter_select_options
+        from empiremuse.utils.radio.panel import filter_select_options, skin_payload_async
         from empiremuse.utils.radio.snapshot import live_snapshot
 
         hub = self.pool.radio
@@ -458,13 +428,15 @@ class DiscordRadioPorts:
             guild_locale=str(getattr(guild_locale, "value", guild_locale)) if guild_locale else None,
             emojis=lambda name: app_emoji(bot, name),
         )
-        return await look_payload(
+        return await skin_payload_async(
             tr,
             snapshot,
             filter_options=options,
             color=bot.get_color(guild.me),
             emojis=lambda name: app_emoji(bot, name),
             now=now,
+            render=render_look,
+            channel=call_name(guild, current),
         )
 
     async def _custom_visor_payload(
@@ -473,7 +445,7 @@ class DiscordRadioPorts:
         """O painel da rádio PERSONALIZADA no visor: estações do servidor (do filtro) e select 2 = tipo + Favoritas do membro que as escolheu."""
         from empiremuse.utils.music.app_emojis import emoji as app_emoji  # tarde: o módulo importa o cliente
         from empiremuse.utils.radio import custom_panel
-        from empiremuse.utils.radio.panel import type_select_options
+        from empiremuse.utils.radio.panel import skin_payload_async, type_select_options
 
         hub, emojis = self.pool.radio, (lambda name: app_emoji(bot, name))
         snapshot = await custom_panel.custom_snapshot(
@@ -494,8 +466,16 @@ class DiscordRadioPorts:
                 default=owner is not None,
             )
         )
-        return await look_payload(
-            tr, snapshot, filter_options=options, color=bot.get_color(guild.me), emojis=emojis, custom=True, now=now
+        return await skin_payload_async(
+            tr,
+            snapshot,
+            filter_options=options,
+            color=bot.get_color(guild.me),
+            emojis=emojis,
+            custom=True,
+            now=now,
+            render=partial(render_look, custom=True),
+            channel=call_name(guild, current),
         )
 
     async def _refresh_existing(self, message: Any, bot: BotCore, guild: disnake.Guild, current: Radio) -> None:
