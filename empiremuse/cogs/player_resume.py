@@ -722,21 +722,8 @@ class PlayerSession(commands.Cog):
 
                     await self.voice_check(voice_channel)
 
-            tracks, playlists = self.bot.pool.process_track_cls(data["queue"])
-
-            player.queue.extend(tracks)
-
-            played_tracks, playlists = self.bot.pool.process_track_cls(data["played"], playlists)
-
-            player.played.extend(played_tracks)
-
-            queue_autoplay_tracks, playlists = self.bot.pool.process_track_cls(data.get("queue_autoplay", []))
-
-            player.queue_autoplay.extend(queue_autoplay_tracks)
-
-            failed_tracks, playlists = self.bot.pool.process_track_cls(data.get("failed_tracks", []), playlists)
-
-            player.queue.extend(failed_tracks)
+            radio_session = bool(data.get("radio_session"))
+            self._restore_tracks(player, data, radio_session=radio_session)
 
             if player.controller_mode is False:
                 try:
@@ -750,13 +737,7 @@ class PlayerSession(commands.Cog):
                 player.update = True
 
             else:
-                if player.keep_connected and not player.queue and not player.queue_autoplay:
-                    if player.failed_tracks:
-                        player.queue.extend(reversed(player.failed_tracks))
-                        player.failed_tracks.clear()
-                    if not player.queue:
-                        player.queue.extend(player.played)
-                        player.played.clear()
+                self._refill_kept_connected(player, radio_session=radio_session)
 
                 player.set_command_log(text="O player foi restaurado com sucesso!", emoji="🔰")
 
@@ -783,7 +764,7 @@ class PlayerSession(commands.Cog):
                         pause,
                         start_position,
                         check,
-                        radio_session=bool(data.get("radio_session")),
+                        radio_session=radio_session,
                     )
 
                     player._session_resuming = False
@@ -796,12 +777,38 @@ class PlayerSession(commands.Cog):
         except Exception:
             logger.exception("Falha crítica ao retomar players")
 
-    async def _start_resumed(self, player, voice_channel, pause, start_position: int, check, *, radio_session: bool):
-        """Volta a tocar o player retomado. A sessão gravada no modo rádio da Jukebox fica ociosa: nem a fila vazia nem o histórico chamam o
-        autoplay (a rádio não volta, e uma recomendação no lugar dela tocaria sem ninguém pedir). A preferência de autoplay é mantida."""
-        autoplay = player.autoplay if radio_session else None
+    def _restore_tracks(self, player, data: dict, *, radio_session: bool) -> None:
+        """Fila, histórico, fila do autoplay e faixas que falharam da sessão gravada. Na sessão gravada no modo rádio da Jukebox as que falharam
+        voltam para ``failed_tracks``, não para a fila: elas são de antes da rádio, e a retomada fica ociosa (Crivo, revisão 4 do PR 270)."""
+        tracks, playlists = self.bot.pool.process_track_cls(data["queue"])
+        player.queue.extend(tracks)
+        played_tracks, playlists = self.bot.pool.process_track_cls(data["played"], playlists)
+        player.played.extend(played_tracks)
+        queue_autoplay_tracks, playlists = self.bot.pool.process_track_cls(data.get("queue_autoplay", []))
+        player.queue_autoplay.extend(queue_autoplay_tracks)
+        failed_tracks, playlists = self.bot.pool.process_track_cls(data.get("failed_tracks", []), playlists)
+        (player.failed_tracks if radio_session else player.queue).extend(failed_tracks)
+
+    @staticmethod
+    def _refill_kept_connected(player, *, radio_session: bool) -> None:
+        """24/7 com a fila vazia: as que falharam e depois o histórico voltam para a fila. Nunca numa sessão gravada no modo rádio: o
+        histórico é de antes da rádio, e a retomada fica ociosa."""
         if radio_session:
-            player.autoplay = False
+            return
+        if player.keep_connected and not player.queue and not player.queue_autoplay:
+            if player.failed_tracks:
+                player.queue.extend(reversed(player.failed_tracks))
+                player.failed_tracks.clear()
+            if not player.queue:
+                player.queue.extend(player.played)
+                player.played.clear()
+
+    async def _start_resumed(self, player, voice_channel, pause, start_position: int, check, *, radio_session: bool):
+        """Volta a tocar o player retomado. A sessão gravada no modo rádio da Jukebox fica ociosa: nem a fila vazia nem o 24/7 chamam o
+        autoplay (a rádio não volta, e uma recomendação no lugar dela tocaria sem ninguém pedir). As preferências de autoplay e 24/7 são mantidas."""
+        saved = (player.autoplay, player.keep_connected) if radio_session else None
+        if radio_session:
+            player.autoplay = player.keep_connected = False
         try:
             if player.node.version > 3:
                 await self.update_player(
@@ -818,8 +825,8 @@ class PlayerSession(commands.Cog):
                     if not check:
                         player.start_members_timeout(check=False)
         finally:
-            if radio_session:
-                player.autoplay = autoplay
+            if saved is not None:
+                player.autoplay, player.keep_connected = saved
         if player.node.version > 3:
             await player.invoke_np()
 

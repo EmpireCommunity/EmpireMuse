@@ -839,6 +839,8 @@ class JukeboxRadio:
                 retry = mode.retry_task
                 if retry is not None and not retry.done() and retry is not asyncio.current_task():
                     retry.cancel()  # a volta pendente não abre um segundo fluxo depois desta (CodeRabbit, PR 270)
+                    # o cancelamento só conclui quando o loop roda a tarefa: uma queda neste meio tempo armaria outra volta (Crivo S1)
+                    mode.retry_task = None
                 return
             epoch = player.radio_epoch
         if mode.retry_task is None or mode.retry_task.done():
