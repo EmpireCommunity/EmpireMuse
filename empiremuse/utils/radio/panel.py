@@ -11,10 +11,9 @@ mais o bot que recebeu a interação. Todo texto de fora (estação, título do 
 
 from __future__ import annotations
 
-import asyncio
 import io
 from collections.abc import Callable
-from functools import cache
+from functools import cache, partial
 from pathlib import Path
 from typing import Any, NamedTuple, Optional
 
@@ -42,6 +41,7 @@ from empiremuse.rules.radio import (
 from empiremuse.rules.text import external_text, stored_text
 from empiremuse.utils.music.app_emojis import APP_EMOJIS
 from empiremuse.utils.radio.visor import QUALITY_COLORS, render_snapshot
+from empiremuse.utils.render.slot import RenderSlot, shared_slot
 
 FAVORITES_FILTER = (
     "f:fav"  # o mesmo valor de ``utils/radio/picker.FAVORITES_ID`` (importar o picker aqui criaria ciclo)
@@ -526,9 +526,13 @@ async def visor_payload_async(
     color: int = 0,
     emojis: Emojis = fallback_emojis,
     custom: bool = False,
+    slot: RenderSlot | None = None,
 ) -> dict[str, Any]:
-    """``visor_payload`` com o PNG renderizado numa thread (``asyncio.to_thread``): o desenho com Pillow não segura o laço do bot."""
-    picture = await asyncio.to_thread(render_snapshot, snapshot, tr, custom=custom)
+    """``visor_payload`` com o PNG renderizado na vaga única de render do processo (``utils/render/slot.py``), numa thread: o
+    desenho com Pillow não segura o laço do bot e não disputa CPU com os cartões das skins. Sem vaga em ``SLOT_WAIT_S``,
+    ``RenderBusy`` sobe: quem edita registra só o tipo e o painel anterior fica."""
+    render = partial(render_snapshot, custom=custom)
+    picture = await (slot or shared_slot()).run(render, snapshot, tr, label="visor")
     return visor_payload(
         tr, snapshot, filter_options=filter_options, color=color, emojis=emojis, picture=picture, custom=custom
     )
