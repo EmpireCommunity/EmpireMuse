@@ -56,6 +56,9 @@ class RadioPanelSnapshot(NamedTuple):
     favorite: bool  # a estação no ar está nas favoritas do servidor
     favorites_full: bool
     retry_seconds: Optional[int]  # fora do ar: segundos para a próxima tentativa
+    recent_titles: tuple[
+        tuple[float, str], ...
+    ] = ()  # "Tocou há pouco": (hora de parede, título limpo), do mais antigo ao mais novo
 
 
 def _window(uuids: list[str], active: str) -> tuple[int, list[str]]:
@@ -134,4 +137,5 @@ async def live_snapshot(
         favorite=active in favorites,
         favorites_full=len(favorites) >= MAX_FAVORITES,
         retry_seconds=runner.retry_seconds() if runner is not None else None,
+        recent_titles=tuple(getattr(runner, "recent_titles", ())) if runner is not None else (),
     )
