@@ -14,6 +14,7 @@ from yt_dlp import YoutubeDL
 from empiremuse import paths
 from empiremuse.utils.branding import asset_url
 from empiremuse.utils.db import DBModel
+from empiremuse.music_cog.radio_guard import confirm_leave_radio
 from empiremuse.utils.music.checks import (
     can_send_message,
     check_pool_bots,
@@ -297,8 +298,11 @@ class PlayEnqueueMixin:
                 modal_message_id=modal_message_id,
             )
 
-        if getattr(player, "radio_mode", None) is not None:
-            await self._leave_radio_for_music(inter, player)  # o ponto único do pedido em R (T-434 §2.2)
+        # o ponto único do pedido em R (T-434 §2.2): o passo de confirmação e a porta; cancelado, expirado ou votação aberta param aqui
+        if not await confirm_leave_radio(self.bot.pool, getattr(inter, "bot", None) or bot, inter, player):
+            return True
+        # [m3] lido DEPOIS da porta e sem ``await`` daqui até enfileirar (``_play_enqueue_*`` são síncronos): uma transição no meio muda o
+        # epoch e o ``_warn_discarded`` avisa quem pediu (Alicerce s5)
         req.radio_epoch = getattr(player, "radio_epoch", None)
 
         req.bot = bot
@@ -309,22 +313,6 @@ class PlayEnqueueMixin:
         req.player = player
         req.voice_channel = voice_channel
         return False
-
-    async def _leave_radio_for_music(self, inter, player) -> None:
-        """Pedido de música com a Jukebox no modo rádio: DJ/admin sai de R e o pedido segue; membro abre a votação (plano B: se passar, ele
-        pede de novo) e o pedido para aqui; modo restrito recusa. Toda a decisão é do controlador (``jukebox_radio.leave_for_music``)."""
-        from empiremuse.utils.radio.jukebox_radio import Refused
-
-        try:
-            await self.bot.pool.radio.jukebox.leave_for_music(inter, player)
-        except Refused as refused:
-            key, fields = (
-                refused.key,
-                refused.fields,
-            )  # só a chave e os campos do controlador, nunca o texto de uma exceção
-        else:
-            return
-        raise GenericError(player.tr(key, **fields))
 
     @staticmethod
     def _enqueued(tracks) -> list:

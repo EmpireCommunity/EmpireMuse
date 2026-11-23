@@ -15,6 +15,7 @@ from empiremuse.i18n.payload import fit_payload
 from empiremuse.logs.webhook import minimal_embed, minimal_report_text
 from empiremuse.rules.voice_status import DEFAULT_VOICE_TEMPLATE
 from empiremuse.utils.music.converters import time_format, md_link
+from empiremuse.utils.music.live_mark import is_live
 from empiremuse.utils.music.skin_utils import skin_converter
 from empiremuse.utils.others import string_to_file
 from empiremuse.utils.usage import usage_of
@@ -280,6 +281,23 @@ class LavalinkPlayer(
                 error_kwargs["file"] = string_to_file(minimal_report_text(error, code), "error_playback.txt")
 
             await cog.error_report_queue.put(error_kwargs)
+
+    async def change_node(self, identifier: str = None) -> None:
+        """Toda troca de nó passa aqui (``/change_node``, perda do nó, recuo do ``update_player``). A faixa ao vivo da Jukebox NUNCA é
+        reenviada a outro nó: o codificado dela leva o endereço local do relay com a ficha (m1, R-8). Ela sai do player antes da troca e o
+        controlador reabre o fluxo no nó LOCAL (2, 4 e 8 s), como numa queda."""
+        live = is_live(self.current)
+        if live:
+            self.current = None
+            self.current_encoded = None
+        await super().change_node(identifier)
+        if live and (mode := getattr(self, "radio_mode", None)) is not None:
+            self.bot.pool.radio.jukebox.on_stream_lost(self, mode)
+
+    def radio_view_changed(self) -> None:
+        """O gancho único do modo rádio (§1.5.1): algo que ``JukeboxRadio.view`` mostra mudou. Hoje só pede o redesenho do player; as skins
+        da T-SKINS-1 ligam aqui o debounce delas."""
+        self.update = True
 
     async def connect(self, channel_id: int, self_mute: bool = False, self_deaf: bool = False):
         await super().connect(channel_id, self_mute=self_mute, self_deaf=True)

@@ -9,7 +9,7 @@ from empiremuse.logs.context import guild_extra
 from empiremuse.rules.text import plain_snippet
 from empiremuse.utils.music.models.event_steps import _he_dispatch
 from empiremuse.utils.music.models.helpers import LAVALINK_LOG_LIMIT
-from empiremuse.utils.radio.jukebox_radio import is_live_track
+from empiremuse.utils.music.live_mark import is_live
 
 logger = logging.getLogger("empiremuse.player")
 
@@ -140,8 +140,9 @@ class PlayerEventsMixin:
         await asyncio.sleep(0.5)
 
         if self.last_track:
-            if is_live_track(self, self.last_track):
+            if is_live(self.last_track):
                 self.locked = False
+                self.is_previows_music = False
                 return  # modo rádio da Jukebox: sem repetir, sem fila, sem histórico; quem decide é o controlador
             if not self.last_track.is_stream and self.last_track.duration < 60000:
                 await asyncio.sleep(7)
@@ -160,7 +161,7 @@ class PlayerEventsMixin:
                     self.is_previows_music = False
                 else:
                     self.queue.append(self.last_track)
-            elif not self.last_track.autoplay and not is_live_track(self, self.last_track):
+            elif not self.last_track.autoplay and not is_live(self.last_track):
                 self.played.append(self.last_track)  # o ao vivo da Jukebox nunca entra no histórico [m1]
 
         elif self.is_previows_music:

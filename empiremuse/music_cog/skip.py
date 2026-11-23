@@ -4,6 +4,8 @@ import disnake
 from disnake.ext import commands
 
 from empiremuse.utils.music.guild_text import guild_text
+from empiremuse.utils.music.live_mark import is_live
+from empiremuse.music_cog.radio_guard import confirm_leave_radio
 from empiremuse.i18n import localized
 from empiremuse.utils.music.checks import (
     check_voice,
@@ -280,6 +282,9 @@ class SkipMixin:
 
         player: LavalinkPlayer = bot.music.players[inter.guild_id]
 
+        if not await confirm_leave_radio(self.bot.pool, bot, inter, player):
+            return  # ⏮ em R é um pedido de música: passa pela porta (Sentinela Minor 1)
+
         if not len(player.queue) and (player.keep_connected or not len(player.played)):
             await player.seek(0)
             await self.interaction_message(inter, "voltou para o início da música.", emoji="⏪")
@@ -296,7 +301,7 @@ class SkipMixin:
             except Exception:
                 pass
 
-        if player.current:
+        if player.current and not is_live(player.current):  # a faixa ao vivo nunca volta à fila [m1]
             if player.current.autoplay:
                 if player.autoplay:
                     player.queue_autoplay.appendleft(player.current)
@@ -310,7 +315,8 @@ class SkipMixin:
         if isinstance(inter, disnake.MessageInteraction):
             interaction = inter
             player.set_command_log(text=f"{inter.author.mention} voltou para a música atual.", emoji="⏮️")
-            await inter.response.defer()
+            if not inter.response.is_done():  # o passo de confirmação do modo rádio pode já ter respondido
+                await inter.response.defer()
         else:
             interaction = None
 

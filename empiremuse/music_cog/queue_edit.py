@@ -4,6 +4,7 @@ import disnake
 from disnake.ext import commands
 
 from empiremuse.utils.music.guild_text import guild_text
+from empiremuse.music_cog.radio_guard import confirm_leave_radio
 from empiremuse.i18n import localized
 from empiremuse.utils.music.checks import (
     check_voice,
@@ -140,6 +141,9 @@ class QueueEditMixin:
             bot = inter.bot
 
         player: LavalinkPlayer = bot.music.players[inter.guild_id]
+
+        if not await confirm_leave_radio(self.bot.pool, bot, inter, player):
+            return  # ``/readd`` em R é um pedido de música: passa pela porta
 
         if not player.played and not player.failed_tracks:
             raise GenericError(await guild_text(bot, inter.guild, "legacy.queue.no_played"))

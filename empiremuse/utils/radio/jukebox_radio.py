@@ -14,7 +14,7 @@ import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, NamedTuple, Optional
 
 import disnake
 
@@ -35,6 +35,7 @@ from empiremuse.rules.radio_mode import (
 )
 from empiremuse.rules.radio_stations import Station, valid_uuid
 from empiremuse.rules.text import stored_text
+from empiremuse.utils.music.live_mark import mark_live
 from empiremuse.utils.radio.directory import DirectoryError
 from empiremuse.utils.radio.live import StationFailure
 from empiremuse.utils.radio.live_play import LOCAL_NODE, LocalNodeUnavailable, local_node, open_stream
@@ -59,17 +60,25 @@ class Refused(Exception):
 
 @dataclass
 class RadioMode:
-    """O ao vivo que a Jukebox toca agora. Nome e título guardados SEM escape de markdown e já sem link nem menção (MJ1)."""
+    """O ao vivo que a Jukebox toca agora. Nome e título guardados SEM escape de markdown e já sem link nem menção (MJ1).
+
+    Só o controlador lê isto: carrega token, faixa e tarefas. As telas leem ``JukeboxRadio.view`` (§1.5.1)."""
 
     uuid: str
     name: str  # o nome do diretório, como veio (escapado por ``check_station``): o destino usa ``stored_text``
     country: str
     starter_id: int
     started_at: float  # relógio de parede: "no ar há {n} min"
+    favicon: str = ""  # https já limpo pelo diretório; nunca vai cru para embed, componente ou painel (s5)
+    codec: str = ""
+    bitrate: int = 0
+    place_node: Optional[str] = None  # nó da árvore de local, quando a estação veio do seletor por local
     title: str = ""  # título ICY, sem escape
     attempt: int = 0
+    retry_at: Optional[float] = None  # relógio de parede da próxima tentativa
+    on_air: bool = False  # o áudio chegou (``wait_flowing``); False na abertura e na reconexão
     token: Optional[str] = None
-    track: Any = None
+    track: Any = None  # ``None`` = abertura ou reconexão em curso: o player não age sobre o modo (rev. 3.3)
     on_air_since: Optional[float] = None  # relógio do controlador: zera as tentativas (``RETRY_RESET_S``)
     fault: bool = False  # alguma tentativa falhou por culpa da estação: conta UMA vez na saúde ao esgotar (Q5)
     retry_task: Optional[asyncio.Task] = None
@@ -84,9 +93,38 @@ class RadioVote:
     uuid: Optional[str]  # o alvo guardado AQUI, nunca no botão
     station_name: str
     epoch: int
+    expires_at: float = 0.0  # relógio de parede, para ``<t:..:R>``
     voters: set[int] = field(default_factory=set)
+    place_node: Optional[str] = None
     message: Any = None
     task: Optional[asyncio.Task] = None
+
+
+class VoteView(NamedTuple):
+    """A votação aberta como a tela a mostra (§1.5.1): sem votantes, autor nem ``nonce`` (m7)."""
+
+    target: Target
+    votes: int  # votos válidos agora (``voter_ok`` de cada votante, recalculado)
+    needed: int  # quórum agora (Q1)
+    expires_at: float
+
+
+class RadioView(NamedTuple):
+    """A cópia imutável do modo rádio que a apresentação lê (§1.5.1): sem token, URL, faixa, tarefa nem ``starter_id``."""
+
+    uuid: str
+    name: str
+    title: str
+    country: str
+    place_node: Optional[str]
+    favicon: str
+    codec: str
+    bitrate: int
+    since: float
+    on_air: bool
+    attempt: int
+    retry_at: Optional[float]
+    vote: Optional[VoteView]
 
 
 def voter_ok(member: Any, player: Any) -> bool:
@@ -106,9 +144,12 @@ def eligible_humans(player: Any) -> list[Any]:
     return [m for m in getattr(channel, "members", ()) if voter_ok(m, player)]
 
 
-def is_live_track(player: Any, track: Any) -> bool:
-    mode = getattr(player, "radio_mode", None)
-    return mode is not None and track is not None and track is mode.track
+def _changed(player: Any) -> None:
+    """O gancho único da apresentação (§1.5.1): algo que a visão mostra mudou. Quem desenha decide o debounce."""
+    hook = getattr(player, "radio_view_changed", None)
+    if callable(hook):
+        with suppress(Exception):
+            hook()
 
 
 class JukeboxRadio:
@@ -174,7 +215,7 @@ class JukeboxRadio:
 
     # ------------------------------------------------------------------ entrar (M → R) e trocar (R → R)
 
-    async def request_live(self, inter: Any, uuid: str) -> Reply:
+    async def request_live(self, inter: Any, uuid: str, *, place_node: Optional[str] = None) -> Reply:
         """ "Tocar na minha call" (picker, busca, ``/fav_manager``): o texto de volta. ``Refused`` traz a recusa."""
         from empiremuse.utils.music.checks import has_radio_player, is_radio_only, pick_request_bot
 
@@ -198,24 +239,42 @@ class JukeboxRadio:
         async with player.radio_lock:
             if player.is_closing:
                 raise Refused("radio.owner.unavailable")
-            if player.radio_vote is not None:
-                raise Refused("jukebox.radio.vote.running")
-            if player.radio_mode is not None and switch_wait(player.radio_switched_at, self.now()) > 0:
-                raise Refused("jukebox.radio.switch_wait")  # [s1]
+            # dentro do lock, de novo: quem pediu está AGORA na call deste player (Minor 3); a P12 olha essa call
+            channel_id = self._requester_channel(member, player)
+            if switch_wait(player.radio_switched_at, self.now()) > 0:
+                raise Refused("jukebox.radio.switch_wait")  # [s1, S3]: vale também para começos seguidos
             decision = gate(await self._actor(member, player), self.state_of(player), Target.LIVE)
             if decision.decision is Decision.DENY:
                 raise Refused(decision.reason)
             if decision.decision is Decision.VOTE:
+                self._may_open_vote(player, member)  # antes do diretório: não gasta consulta num pedido recusado (S2)
                 station = await self._station_for_vote(uuid)
-                vote = self._new_vote(player, member, Target.LIVE, uuid, station.name)
+                vote = self._new_vote(player, member, Target.LIVE, uuid, station.name, place_node=place_node)
                 if not self._passes(player, vote):
                     return await self._post_vote(player, vote)
                 # sozinho (ou o único elegível): n = 1, passa no ato e segue como DJ (Q1)
             await self._entry_checks(
-                guild_id, voice.id, bot
+                guild_id, channel_id, bot
             )  # dentro do lock: nada do que valia antes de esperar vale agora
-            station = await self._start(player, uuid, starter_id=member.id)
+            station = await self._start(player, uuid, starter_id=member.id, place_node=place_node)
         return "jukebox.radio.started", {"station": stored_text(station.name, 80)}
+
+    @staticmethod
+    def _player_channel_id(player: Any) -> Optional[int]:
+        channel = getattr(getattr(getattr(player.guild, "me", None), "voice", None), "channel", None)
+        if channel is not None:
+            return channel.id
+        channel_id = getattr(player, "channel_id", None)
+        return int(channel_id) if channel_id else None
+
+    def _requester_channel(self, member: Any, player: Any) -> int:
+        """A call do player, se quem pediu está nela agora; senão ``Refused`` (dois pedidos de calls diferentes no mesmo bot livre)."""
+        voice = getattr(getattr(member, "voice", None), "channel", None)
+        if voice is None:
+            raise Refused("player.you_must_join_a_voice_2")
+        if self._player_channel_id(player) != voice.id:
+            raise Refused("jukebox.radio.other_call")
+        return voice.id
 
     async def _station_for_vote(self, uuid: str) -> Station:
         try:
@@ -251,7 +310,7 @@ class JukeboxRadio:
             )
         return player
 
-    async def _start(self, player: Any, uuid: str, *, starter_id: int) -> Station:
+    async def _start(self, player: Any, uuid: str, *, starter_id: int, place_node: Optional[str] = None) -> Station:
         """M → R ou R → R, já sob o lock e com as pré-condições conferidas. Descarta fila, autoplay e repetir (G1) e abre o fluxo."""
         try:
             station = await self.hub.directory.fresh_for_play(uuid)
@@ -261,7 +320,7 @@ class JukeboxRadio:
             raise Refused("radio.live.not_found")
         previous = player.radio_mode
         self._bump(player)
-        self._cancel_vote(player)
+        await self._drop_vote(player)  # uma transição real anula o voto aberto e fecha a mensagem dele (m2, MI1)
         if previous is not None:
             self._cancel_tasks(previous)
             await self._revoke(previous)
@@ -270,36 +329,68 @@ class JukeboxRadio:
         player.queue_autoplay.clear()
         player.loop = False
         mode = RadioMode(
-            uuid=station.uuid, name=station.name, country=station.country, starter_id=starter_id, started_at=self.wall()
+            uuid=station.uuid,
+            name=station.name,
+            country=station.country,
+            starter_id=starter_id,
+            started_at=self.wall(),
+            favicon=station.favicon,
+            codec=station.codec,
+            bitrate=station.bitrate,
+            place_node=place_node,
         )
         player.radio_mode = mode
         player.radio_switched_at = self.now()
+        _changed(player)
         try:
-            if player.node is None or player.node.identifier != LOCAL_NODE:
-                await player.change_node(LOCAL_NODE)
-            if player.current is not None:
-                await player.stop()  # o fim (STOPPED) é consumido pelo modo rádio: nada de próxima música
+            await self._to_local(
+                player
+            )  # parar ANTES de trocar de nó: nada da faixa velha é reenviado ao nó local (m1)
+            if player.radio_mode is not mode:
+                raise Refused("radio.owner.unavailable")  # o player foi destruído durante a espera (m5)
             await self._open(player, mode, station)
+        except Refused:
+            await self._abort(player, mode)
+            raise
         except StationFailure:
-            await self._to_idle(player, mode)
+            await self._abort(player, mode)
             raise Refused("radio.refused.station_down") from None
         except LocalNodeUnavailable:
-            await self._to_idle(player, mode)
+            await self._abort(player, mode)
             raise Refused("jukebox.radio.no_local_node") from None
         except Exception as error:  # noqa: BLE001 - só o tipo vai ao log (R-12)
             logger.warning("Modo rádio da Jukebox não abriu (%s)", type(error).__name__)
-            await self._to_idle(player, mode)
+            await self._abort(player, mode)
             raise Refused("radio.owner.unavailable") from None
         logger.info("Modo rádio da Jukebox iniciado (%d música(s) descartada(s) da fila)", discarded)
         return station
+
+    async def _abort(self, player: Any, mode: RadioMode) -> None:
+        """A abertura falhou: ocioso se o modo ainda é este; se o player foi destruído no meio (``forget``), só a ficha é revogada (m5)."""
+        if player.radio_mode is mode and not player.is_closing:
+            await self._to_idle(player, mode)
+            return
+        self._cancel_tasks(mode)
+        await self._revoke(mode)
+
+    @staticmethod
+    async def _to_local(player: Any) -> None:
+        """Para o que toca e leva o player ao nó LOCAL (o relay só atende o Lavalink deste host, R-8)."""
+        if player.current is not None:
+            await player.stop()  # o fim (STOPPED) é consumido pelo modo rádio: nada de próxima música
+        if player.node is None or player.node.identifier != LOCAL_NODE:
+            local_node(player.bot)
+            await player.change_node(LOCAL_NODE)
 
     async def _open(self, player: Any, mode: RadioMode, station: Station) -> None:
         def keep(token: str) -> None:
             mode.token = token
 
         def on_track(track: Any) -> None:
+            mark_live(track)  # a marca vale na própria faixa, mesmo depois de ``radio_mode = None`` (m1)
             mode.track = track
 
+        mode.on_air = False
         track = await open_stream(
             self.hub,
             player.bot,
@@ -316,6 +407,8 @@ class JukeboxRadio:
         )
         mode.track = track
         mode.on_air_since = self.now()
+        mode.on_air, mode.retry_at = True, None
+        _changed(player)
 
     def _author(self, player: Any, mode: RadioMode) -> str:
         return mode.title or str(self._tr(player)("radio.live.status_author"))
@@ -325,6 +418,7 @@ class JukeboxRadio:
         if player.radio_mode is not mode:
             return
         mode.title = stored_text(title, ICY_TITLE_LIMIT, markdown=False) if title else ""
+        _changed(player)
         track = mode.track
         if track is None or track.author == self._author(player, mode):
             return
@@ -365,9 +459,10 @@ class JukeboxRadio:
         if player.radio_mode is mode:
             player.radio_mode = None
         self._bump(player)
-        self._cancel_vote(player)
+        await self._drop_vote(player)
         self._cancel_tasks(mode)
         await self._revoke(mode)
+        _changed(player)
 
     async def _to_idle(self, player: Any, mode: Optional[RadioMode] = None) -> None:
         """R → ocioso: sai de R e o player fica ocioso, SEM próximo item nem autoplay (§2.2)."""
@@ -377,10 +472,37 @@ class JukeboxRadio:
         player.queue.clear()
         await go_idle(player)
 
-    async def release(self, player: Any) -> None:
-        """Chamado pelo player quando a fila acaba em R (⏭, por exemplo) ou quando uma música entra no lugar do ao vivo."""
+    async def release(self, player: Any, mode: RadioMode) -> bool:
+        """O player saiu de R por conta própria (a fila acabou, ⏭, ou uma música entrou no lugar do ao vivo). ``mode`` = o modo que o player
+        viu: sob o lock, só sai se ele ainda é o de agora (rev. 3.3, achado M1), para um ``process_next`` atrasado nunca derrubar a rádio que
+        acabou de abrir. ``True`` se saiu."""
         async with player.radio_lock:
-            await self._leave(player)
+            if player.radio_mode is not mode:
+                return False
+            await self._leave(player, mode)
+            return True
+
+    async def leave_preview(self, member: Any, player: Any) -> Optional[Decision]:
+        """A PRÉVIA do pedido de música em R, só para o passo de confirmação escolher o texto: ``None`` fora de R, ``DIRECT`` (DJ, ou um voto que
+        passaria no ato) ou ``VOTE``; ``Refused`` sem confirmação (modo restrito, voto aberto, autor em espera). Sem lock e sem efeito: a porta de
+        verdade é ``leave_for_music``, refeita no clique."""
+        if player.radio_mode is None:
+            return None
+        decision = gate(await self._actor(member, player), self.state_of(player), Target.LEAVE)
+        if decision.decision is Decision.DENY:
+            raise Refused(decision.reason)
+        if decision.decision is Decision.VOTE:
+            self._may_open_vote(player, member)
+            if self._needed(player) > 1:
+                return Decision.VOTE
+        return Decision.DIRECT
+
+    async def live_preview(self, member: Any, player: Any) -> bool:
+        """O aviso ``warn.vote`` do passo "Estação escolhida": ``True`` se o clique abriria uma votação que não passa no ato. Só prévia."""
+        if player is None or not self.state_of(player).busy:
+            return False
+        decision = gate(await self._actor(member, player), self.state_of(player), Target.LIVE)
+        return decision.decision is Decision.VOTE and self._needed(player) > 1
 
     async def leave_for_music(self, inter: Any, player: Any) -> None:
         """O ponto único de interceptação do pedido de música em R (§2.2): DJ sai na hora; membro abre o voto (plano B, Q3); modo restrito recusa.
@@ -394,11 +516,13 @@ class JukeboxRadio:
             if decision.decision is Decision.DENY:
                 raise Refused(decision.reason)
             if decision.decision is Decision.VOTE:
+                self._may_open_vote(player, member)
                 vote = self._new_vote(player, member, Target.LEAVE, None, player.radio_mode.name)
                 if not self._passes(player, vote):
                     key, fields = await self._post_vote(player, vote)
                     raise Refused(key, **fields)
             await self._leave(player)
+            player.last_track = None  # o fim (STOPPED) do ao vivo não leva a faixa ao histórico (m1)
             with suppress(Exception):
                 await player.stop()  # o pedido segue e toca no lugar do ao vivo
 
@@ -406,12 +530,58 @@ class JukeboxRadio:
         """O player foi destruído (``stop``, call vazia, saída do bot): revoga o token e cancela voto e tentativas, sem tarefa solta."""
         mode, player.radio_mode = player.radio_mode, None
         self._bump(player)
-        self._cancel_vote(player)
+        await self._drop_vote(player)
         if mode is not None:
             self._cancel_tasks(mode)
             await self._revoke(mode)
 
+    # ------------------------------------------------------------------ visão (§1.5.1)
+
+    def view(self, player: Any) -> Optional[RadioView]:
+        """A cópia imutável do modo rádio para as telas e as skins: ``None`` fora de R. Síncrona, sem lock e sem I/O (um passo só)."""
+        mode = getattr(player, "radio_mode", None)
+        if mode is None:
+            return None
+        vote = getattr(player, "radio_vote", None)
+        vote_view = (
+            VoteView(vote.target, len(self._valid(player, vote)), self._needed(player), vote.expires_at)
+            if vote is not None
+            else None
+        )
+        return RadioView(
+            uuid=mode.uuid,
+            name=mode.name,
+            title=mode.title,
+            country=mode.country,
+            place_node=mode.place_node,
+            favicon=mode.favicon,
+            codec=mode.codec,
+            bitrate=mode.bitrate,
+            since=mode.started_at,
+            on_air=mode.on_air,
+            attempt=mode.attempt if not mode.on_air else 0,
+            retry_at=mode.retry_at,
+            vote=vote_view,
+        )
+
     # ------------------------------------------------------------------ votação (§2.3)
+
+    async def _drop_vote(self, player: Any) -> None:
+        """Uma transição ou a destruição anula o voto aberto: cancela o prazo e fecha a mensagem ("A votação acabou. Nada mudou."), sem botão."""
+        from empiremuse.utils.music import jukebox_ui
+
+        vote = self._cancel_vote(player)
+        if vote is not None:
+            await self._close_vote_message(vote, jukebox_ui.vote_expired(self._tr(player)))
+
+    def _may_open_vote(self, player: Any, member: Any) -> None:
+        """Pode abrir um voto agora? Um por player, o cooldown do autor depois de um expirado [m5], e o autor tem de poder votar (S6)."""
+        if player.radio_vote is not None:
+            raise Refused("jukebox.radio.vote.running")
+        if (wait := cooldown_wait(player.radio_vote_expired.get(member.id), self.now())) > 0:
+            raise Refused("jukebox.radio.vote.cooldown", when=f"<t:{int(self.wall() + wait)}:R>")  # [m5]
+        if not voter_ok(member, player):
+            raise Refused("jukebox.radio.vote.not_eligible")
 
     def _cancel_vote(self, player: Any) -> Optional[RadioVote]:
         vote, player.radio_vote = player.radio_vote, None
@@ -424,12 +594,18 @@ class JukeboxRadio:
             vote.task.cancel()
         return vote
 
-    def _new_vote(self, player: Any, member: Any, target: Target, uuid: Optional[str], station_name: str) -> RadioVote:
-        """Um voto novo (ainda não guardado), já sob o lock. O pedido conta como o 1º voto, se quem pediu é elegível."""
-        if player.radio_vote is not None:
-            raise Refused("jukebox.radio.vote.running")
-        if cooldown_wait(player.radio_vote_expired.get(member.id), self.now()) > 0:
-            raise Refused("jukebox.radio.vote.cooldown")  # [m5]
+    def _new_vote(
+        self,
+        player: Any,
+        member: Any,
+        target: Target,
+        uuid: Optional[str],
+        station_name: str,
+        *,
+        place_node: Optional[str] = None,
+    ) -> RadioVote:
+        """Um voto novo (ainda não guardado), já sob o lock. O pedido conta como o 1º voto."""
+        self._may_open_vote(player, member)
         return RadioVote(
             nonce=secrets.token_hex(4),
             author_id=member.id,
@@ -437,7 +613,9 @@ class JukeboxRadio:
             uuid=uuid,
             station_name=station_name,
             epoch=player.radio_epoch,
-            voters={member.id} if voter_ok(member, player) else set(),
+            expires_at=self.wall() + VOTE_TTL_S,
+            voters={member.id},
+            place_node=place_node,
         )
 
     async def _post_vote(self, player: Any, vote: RadioVote) -> Reply:
@@ -450,7 +628,7 @@ class JukeboxRadio:
         player.radio_vote = vote
         try:
             vote.message = await channel.send(
-                **jukebox_ui.vote_payload(self._tr(player), vote, len(self._valid(player, vote)), self._needed(player)),
+                **self._vote_payload(player, vote),
                 allowed_mentions=disnake.AllowedMentions(
                     users=[disnake.Object(vote.author_id)], roles=False, everyone=False
                 ),
@@ -460,7 +638,22 @@ class JukeboxRadio:
             logger.warning("Votação do modo rádio não enviada (%s)", type(error).__name__)
             raise Refused("radio.owner.unavailable") from None
         vote.task = self._spawn(self._expire_later(player, vote.nonce))
-        return "jukebox.radio.vote.opened", {}
+        _changed(player)
+        return "jukebox.radio.vote.opened", {"channel": f"<#{channel.id}>", "seconds": VOTE_TTL_S}
+
+    def _vote_payload(self, player: Any, vote: RadioVote) -> dict[str, Any]:
+        from empiremuse.utils.music import jukebox_ui
+
+        return jukebox_ui.vote_payload(
+            self._tr(player),
+            nonce=vote.nonce,
+            author_id=vote.author_id,
+            target=vote.target,
+            station_name=vote.station_name,
+            votes=len(self._valid(player, vote)),
+            needed=self._needed(player),
+            expires_at=vote.expires_at,
+        )
 
     def _valid(self, player: Any, vote: RadioVote) -> set[int]:
         """Só contam os votos de quem AINDA passa em ``voter_ok`` (saiu da call ou ensurdeceu: deixa de contar)."""
@@ -477,7 +670,6 @@ class JukeboxRadio:
 
     async def vote_click(self, inter: Any, nonce: str) -> Reply:
         """O clique em "✋ Votar": o player vem da call de quem clicou (``resolve_player``), o ``nonce`` só descarta voto velho."""
-        from empiremuse.utils.music import jukebox_ui
         from empiremuse.utils.music.checks import resolve_player
 
         resolved = resolve_player(self.pool, inter.guild_id, inter.author)
@@ -490,7 +682,7 @@ class JukeboxRadio:
             if vote is None or not secrets.compare_digest(vote.nonce, str(nonce)):
                 return "jukebox.radio.vote.over", {}
             if vote.epoch != player.radio_epoch:
-                await self._expire(player, vote)
+                await self._drop_vote(player)  # anulado, não expirado: sem o cooldown do autor (Crivo S1)
                 return "jukebox.radio.vote.over", {}
             if not voter_ok(member, player):
                 return "jukebox.radio.vote.not_eligible", {}
@@ -502,11 +694,9 @@ class JukeboxRadio:
                 return "jukebox.radio.vote.counted", {}
             with suppress(Exception):
                 await vote.message.edit(
-                    **jukebox_ui.vote_payload(
-                        self._tr(player), vote, len(self._valid(player, vote)), self._needed(player)
-                    ),
-                    allowed_mentions=disnake.AllowedMentions.none(),
+                    **self._vote_payload(player, vote), allowed_mentions=disnake.AllowedMentions.none()
                 )
+            _changed(player)
             return "jukebox.radio.vote.counted", {}
 
     async def _pass(self, player: Any) -> None:
@@ -525,13 +715,16 @@ class JukeboxRadio:
             if vote.target is Target.LIVE and vote.uuid is not None:
                 channel = getattr(getattr(player.guild.me, "voice", None), "channel", None)
                 await self._entry_checks(player.guild.id, getattr(channel, "id", None), player.bot)
-                station = await self._start(player, vote.uuid, starter_id=vote.author_id)
+                station = await self._start(player, vote.uuid, starter_id=vote.author_id, place_node=vote.place_node)
                 text = jukebox_ui.vote_passed_live(tr, station.name)
             else:
                 await self._to_idle(player)
                 text = jukebox_ui.vote_passed_leave(tr, mention)
         except Refused as refused:
             text = jukebox_ui.vote_failed(tr, tr(refused.key, **refused.fields))
+        except Exception as error:  # noqa: BLE001 - banco ou diretório fora (S1): a mensagem fecha mesmo assim; só o tipo vai ao log
+            logger.warning("Votação do modo rádio passou, mas o efeito falhou (%s)", type(error).__name__)
+            text = jukebox_ui.vote_failed(tr, tr("radio.owner.unavailable"))
         await self._close_vote_message(vote, text, mention_id=vote.author_id if vote.target is Target.LEAVE else None)
 
     async def _expire(self, player: Any, vote: RadioVote) -> None:
@@ -541,6 +734,7 @@ class JukeboxRadio:
             self._cancel_vote(player)
         player.radio_vote_expired[vote.author_id] = self.now()
         await self._close_vote_message(vote, jukebox_ui.vote_expired(self._tr(player)))
+        _changed(player)
 
     async def _expire_later(self, player: Any, nonce: str) -> None:
         await self.sleep(VOTE_TTL_S)
@@ -567,12 +761,19 @@ class JukeboxRadio:
 
     # ------------------------------------------------------------------ queda (§2.4)
 
-    def on_stream_lost(self, player: Any) -> None:
-        """O fluxo caiu (fim, exceção ou travada do Lavalink em R): o recuo roda numa tarefa, sob o lock."""
-        mode = player.radio_mode
-        if mode is None or (mode.retry_task is not None and not mode.retry_task.done()):
-            return  # fora de R, ou já há uma volta em curso (exceção e fim do mesmo fluxo)
-        mode.retry_task = self._spawn(self._recover(player, mode, player.radio_epoch))
+    def on_stream_lost(self, player: Any, mode: Optional[RadioMode] = None) -> None:
+        """O fluxo caiu (fim, exceção ou travada do Lavalink em R, ou o player saiu do nó local): o recuo roda numa tarefa, sob o lock.
+
+        ``mode`` = o modo que quem chama viu (rev. 3.3). A faixa sai do modo na hora: até a nova abertura o player não age sobre ele
+        (``_pn_next_track`` não faz nada) e evento nenhum da faixa velha conta como queda."""
+        current = player.radio_mode
+        if current is None or (mode is not None and current is not mode):
+            return
+        current.track, current.on_air = None, False
+        if current.retry_task is not None and not current.retry_task.done():
+            return  # já há uma volta em curso (exceção e fim do mesmo fluxo)
+        current.retry_task = self._spawn(self._recover(player, current, player.radio_epoch))
+        _changed(player)
 
     async def _recover(self, player: Any, mode: RadioMode, epoch: int) -> None:
         relay = self.hub.relay
@@ -589,6 +790,8 @@ class JukeboxRadio:
                 await self._exhausted(player, mode, epoch)
                 return
             mode.on_air_since = None
+            mode.retry_at = self.wall() + retry.delay
+            _changed(player)
             await self.sleep(retry.delay)
             async with player.radio_lock:
                 if player.radio_mode is not mode or player.radio_epoch != epoch or player.is_closing:
@@ -603,6 +806,7 @@ class JukeboxRadio:
             mode = player.radio_mode
             if mode is None:
                 return
+            mode.track, mode.on_air = None, False
             await self._revoke(mode)
             if await self._reopen(player, mode):
                 return
@@ -620,6 +824,7 @@ class JukeboxRadio:
             if station is None:
                 mode.fault = True
                 return False
+            await self._to_local(player)  # de volta ao nó LOCAL, sem reenviar nada (Minor 2)
             await self._open(player, mode, station)
             return True
         except StationFailure:

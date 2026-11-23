@@ -304,7 +304,7 @@ class RadioPicker(disnake.ui.View):
         uuid = self.chosen.uuid if self.chosen is not None else None
         mine = any(f.uuid == uuid for f in self._mine or ())
         star = disnake.ui.Button(
-            label=fit(self.tr("radio.favorites.picker.mine_remove" if mine else "radio.favorites.picker.mine"), 80),
+            label=fit(self.tr("radio.favorites.picker.mine_remove" if mine else "radio.favorites.picker.mine_add"), 80),
             style=disnake.ButtonStyle.secondary,
             row=1,
         )
@@ -314,7 +314,9 @@ class RadioPicker(disnake.ui.View):
             return
         server = any(f.uuid == uuid for f in self._favorites or ())
         guild_star = disnake.ui.Button(
-            label=fit(self.tr("radio.favorites.picker.server_remove" if server else "radio.local.favorites"), 80),
+            label=fit(
+                self.tr("radio.favorites.picker.server_remove" if server else "radio.favorites.picker.server_add"), 80
+            ),
             style=disnake.ButtonStyle.secondary,
             row=1,
         )
