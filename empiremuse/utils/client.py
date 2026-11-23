@@ -738,6 +738,12 @@ class BotPool:
         radio = getattr(self, "radio", None)
         if radio is not None:  # ticker, health check, relay e tarefas das rádios param antes de os bots fecharem
             await close_radios(radio.manager)
+        try:  # as buscas de capa dos cartões em voo: cada worker é morto e coletado
+            from empiremuse.utils.render.cards.pipeline import close_card_pipeline
+
+            await close_card_pipeline()
+        except Exception:
+            logger.warning("Falha ao fechar as buscas de capa dos cartões no encerramento", exc_info=True)
         self.i18n.close()  # leituras de idioma que ficaram pendentes
         for bot in self.get_all_bots():
             try:

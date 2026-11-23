@@ -252,3 +252,15 @@ def test_radio_mode_text_is_neutralized_and_hidden_in_private_call(tr, build, on
     private.bot.pool.radio.jukebox = _radio_jukebox(on_air=on_air)
     private_text = _texts(build(private, NOW))
     assert "everyone" not in private_text  # nem o nome da estação nem o título ICY
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize("private", [False, True])
+@pytest.mark.parametrize("build", BUILDS, ids=lambda b: b.__module__.rsplit(".", 1)[-1] + "." + b.__name__)
+def test_the_last_action_never_shows_in_a_private_call(tr, build, private):
+    player = _player(tr, private=private)
+    player.command_log = "Tocando música obtida via metadados: [Faixa Secreta](https://www.youtube.com/watch?v=abc)"
+
+    text = _texts(build(player, NOW))
+
+    assert ("Faixa Secreta" in text) is not private

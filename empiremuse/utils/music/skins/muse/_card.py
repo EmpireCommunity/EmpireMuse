@@ -79,7 +79,7 @@ def body(player: Any, ctx: tx.Context, tr: tx.Tr, *, bar: bool) -> list[str]:
             lines.append(f"-# {requested}")
         if (end := tx.queue_end(player, ctx.now)) is not None:
             lines.append(f"-# {tr('jbx.text.queue_ends', t=tx.relative(end))}")
-    if action := tx.last_action(player):
+    if action := tx.last_action(player, ctx):
         lines.append(action)
     return lines
 

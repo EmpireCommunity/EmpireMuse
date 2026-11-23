@@ -77,7 +77,7 @@ def build(player: Any, now: float) -> dict:
     embed = disnake.Embed(title=title, url=url, color=player.bot.get_color(player.guild.me))
     embed.set_author(name=fit(tx.author_text(player, ctx, tr), AUTHOR_MAX), icon_url=author_icon(player))
     lines = body(player, ctx, tr)
-    if action := tx.last_action(player):
+    if action := tx.last_action(player, ctx):
         lines.append(action)
     embed.description = fit("\n".join(lines).strip(), DESCRIPTION_MAX)
     if thumb := thumbnail_of(player, ctx):

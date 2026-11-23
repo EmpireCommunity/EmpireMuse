@@ -30,10 +30,18 @@ Os fatos que a imagem pode mostrar (`CardSpec`) e as regras puras (formato, anim
 - O cache de quadros nunca passa do teto em bytes; uma entrada maior que o teto não é guardada e o render segue.
 - A chave dos quadros é o `sha256` dos pixels do rótulo do disco (capa reduzida ou logo, nunca um "sem capa" genérico) mais skin, escala, tema, quadros e `RENDER_VERSION`;
   nunca a URL, a faixa, o servidor ou o membro.
-- Manter o anexo de uma mensagem só com a chave de render **igual** à anterior (igualdade de tupla, nunca o `hash`).
+- Manter o anexo de uma mensagem só com a chave de render **igual** à anterior (igualdade de tupla, nunca o `hash`), ou
+  um GIF já na mensagem com o mesmo `CardSpec` e a mesma capa (sob pressão o GIF não vira PNG). Com `RenderBusy`, o anexo
+  anterior só fica se a call não mudou de privacidade; senão a mensagem sai sem imagem e o redesenho fica pedido.
+- Toda edição que deixa de ter cartão manda `attachments=[]` (recuo para a `muse_text`, skin sem imagem, painel em lista,
+  ocioso do servidor, encerramento); o envio de mensagem nova nunca leva `attachments`.
 - O teto do GIF é conferido **antes** de alocar os 30 ladrilhos (`cards/layout.gif_fits`: cartão e caixa do disco
-  medidos); um GIF acima de `GIF_MAX_BYTES` sai como PNG.
-- Um desenho por player: um pedido mais novo do mesmo player torna o que espera a vaga velho, e o velho sai sem desenhar.
+  medidos); um GIF acima de `GIF_MAX_BYTES`, ou que falha ao montar, sai como PNG.
+- Um desenho por player: um pedido mais novo do mesmo player torna o que espera a vaga velho, e o velho sai sem desenhar;
+  o que já desenhou e voltou da vaga velho é descartado sem gravar o estado.
+- Qualquer falha do cartão (montar o `CardSpec`, ler a configuração, desenhar) cai na `muse_text`; o log leva só o id da
+  skin e o tipo do erro. `forget` apaga o anexo e o GIF adiado, nunca o relógio do último GIF frio do player.
+- O logo da estação espera no máximo `COVER_WAIT_S`; depois o cartão sai com o logo do bot e o redesenho fica pedido.
 - A mensagem do player compara uma chave estável do payload (`np_steps.payload_key`: embeds por `to_dict()`, componentes
   por `to_component_dict()`); a skin de imagem só redesenha com a chave, o `CardSpec` ou o GIF adiado diferentes.
 

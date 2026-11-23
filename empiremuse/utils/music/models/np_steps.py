@@ -7,6 +7,8 @@ import asyncio
 import io
 import itertools
 import random
+import time
+import weakref
 from itertools import cycle
 
 import disnake
@@ -29,9 +31,13 @@ from empiremuse.utils.music.app_emojis import emoji as app_emoji
 from empiremuse.utils.music import card_facts
 from empiremuse.rules.skins import JUKEBOX_IDS
 from empiremuse.utils.render.state import RENDER_STATES
+from empiremuse.utils.safe_error import safe_error
 
 ATTACHMENT_PREFIX = "attachment://"
 FALLBACK_SKIN = "muse_text"  # a skin de texto que entra quando o cartão não sai (contrato §2.2)
+DISC_MOTION_TTL_S = 60.0  # a animação do disco é relida do banco no máximo a cada isto (ou num redesenho pedido)
+
+_DISC_MOTION: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()  # player -> (disc_motion, lido em)
 
 
 async def _np_guards(self, req):
@@ -132,16 +138,69 @@ def _station_logo(self):
     return read
 
 
-async def _card_spec(self, skin):
-    """O ``CardSpec`` projetado pela skin: os fatos do player e o que vem da configuração (tema, idioma, animação)."""
+async def _disc_motion(self, *, fresh: bool = False):
+    """A animação do disco do servidor, sem uma leitura do banco a cada atualização do player (``fresh`` = reler)."""
+    now = time.monotonic()
+    cached = _DISC_MOTION.get(self)
+    if cached is not None and not fresh and now - cached[1] < DISC_MOTION_TTL_S:
+        return cached[0]
     global_data = await self.bot.get_global_data(self.guild_id, db_name=DBModel.guilds)
+    value = global_data.get("disc_motion")
+    _DISC_MOTION[self] = (value, now)
+    return value
+
+
+async def _card_spec(self, skin, *, fresh: bool = False):
+    """O ``CardSpec`` projetado pela skin: os fatos do player e o que vem da configuração (tema, idioma, animação)."""
     settings = card_facts.CardSettings(
         skin=skin.name,
         theme=skin.theme,
         locale=str(getattr(self.tr, "locale", "pt-BR")),
-        disc_motion=global_data.get("disc_motion"),
+        disc_motion=await _disc_motion(self, fresh=fresh),
     )
     return skin.project(card_facts.build(self, settings))
+
+
+def _card_failed(skin, error: BaseException) -> None:
+    """Falha do cartão: só o id da skin e o resumo do erro (sem traceback: o ``CardSpec`` leva a URL da capa)."""
+    logger.warning(
+        "Cartão do player não saiu, vai o texto (skin %s: %s)", getattr(skin, "name", "?"), safe_error(error)
+    )
+
+
+def drop_card(self, data):
+    """Um payload sem cartão numa mensagem que pode ter um: a edição tira o anexo antigo (``attachments=[]``; um envio
+    novo o ignora, ``_send_kwargs``) e o estado de render esquece o anexo."""
+    data["attachments"] = []
+    RENDER_STATES.forget(self)
+    return data
+
+
+def without_card(self, data):
+    """``drop_card`` só se a mensagem do player está com um cartão (as skins antigas seguem como estão)."""
+    if RENDER_STATES.get(self).last is None:
+        return data
+    return drop_card(self, data)
+
+
+def _shown_marker(key, rendered_key, spec):
+    """O que a mensagem mostra depois de uma edição com cartão: o payload, o anexo e o título no autor."""
+    return ("card", key, rendered_key, card_facts.author_title(spec))
+
+
+def _text_fallback(self, data, *, retry: bool):
+    """A ``muse_text`` no lugar do cartão, sem o anexo antigo; ``retry`` (vaga ocupada) = o updater tenta de novo."""
+    fallback = self.bot.pool.player_skins.get(FALLBACK_SKIN)
+    if fallback is not None:
+        try:
+            data = fallback.load(self)
+        except Exception as error:  # noqa: BLE001 - sem a muse_text, vai o texto da própria skin (sem imagem)
+            _card_failed(fallback, error)
+    drop_card(self, data)
+    if retry:
+        RENDER_STATES.replace(self, upgrade_due=True)
+        self.update = True
+    return data
 
 
 def _put_card(self, data, spec, rendered):
@@ -164,34 +223,36 @@ def _put_card(self, data, spec, rendered):
 
 async def _np_render(self, req, skin, data, key):
     """O cartão das skins de imagem (S5). ``True`` = nada a editar; senão ``req.data`` fica pronto (cartão ou, se o
-    desenho não sai, a skin de texto)."""
+    cartão não sai, a ``muse_text`` sem o anexo antigo). Qualquer falha (inclusive montar o ``CardSpec``) cai no texto."""
     from empiremuse.utils.render.cards.pipeline import card_pipeline
 
-    if not self.last_data or not _will_edit(self, req):
+    redraw = not self.last_data
+    if redraw or not _will_edit(self, req):
         RENDER_STATES.forget(self)  # mensagem nova ou redesenho pedido: o anexo antigo não vale
-    spec = await _card_spec(self, skin)
-    state = RENDER_STATES.get(self)
-    if key == self.last_data and state.last is not None and state.last.spec == spec and not state.upgrade_due:
-        return True
+    shown = RENDER_STATES.get(self)
     try:
+        spec = await _card_spec(self, skin, fresh=redraw)
+        unchanged = shown.last is not None and shown.last.spec == spec and not shown.upgrade_due
+        if unchanged and self.last_data == _shown_marker(key, shown.last, spec):
+            return True
         pipe = card_pipeline(self.bot.config["COVER_HOSTS"])
         rendered = await pipe.render(self, skin.card, spec, self.tr, station_logo=_station_logo(self))
-    except Exception as e:
-        log_unexpected_error(logger, e, "desenho do cartão do player")
+    except Exception as error:  # noqa: BLE001 - o player nunca fica sem mensagem (contrato §2.2)
+        _card_failed(skin, error)
         rendered = None
     if rendered is not None and rendered.stale:
         return True  # um pedido mais novo deste player vai editar a mensagem
     if rendered is None or rendered.key is None:
-        fallback = self.bot.pool.player_skins.get(FALLBACK_SKIN)
-        data = fallback.load(self) if fallback is not None else data
-        RENDER_STATES.forget(self)
-        self.last_data = payload_key(data)
-        req.data = data
+        req.data = _text_fallback(self, data, retry=rendered is not None and rendered.busy)
+        self.last_data = payload_key(req.data)
         return False
-    _put_card(self, data, spec, rendered)
     if RENDER_STATES.get(self).upgrade_due:
         self.update = True  # GIF adiado, capa a caminho ou vaga ocupada: o updater redesenha (auto_update 0 não volta)
-    self.last_data = key
+    marker = _shown_marker(key, rendered.key, spec)
+    if rendered.data is None and marker == self.last_data:
+        return True  # o anexo mantido e o mesmo texto: a mesma edição de novo só gastaria uma chamada
+    _put_card(self, data, spec, rendered)
+    self.last_data = marker
     req.data = data
     return False
 
@@ -214,7 +275,6 @@ def _card_for_new_message(self, data):
     image = embeds[0].image.url if embeds and isinstance(embeds[0], disnake.Embed) else None
     if not (image or "").startswith(ATTACHMENT_PREFIX):
         return
-    data.pop("attachments", None)
     if _refresh_file(data):
         return
     embeds[0].set_image(url=None)
@@ -230,7 +290,7 @@ async def idle_payload(self, kwargs):
     texto e os componentes de ocioso de sempre; sem cartão, o ocioso em texto."""
     skin = _skin_object(self)
     if getattr(skin, "name", None) not in JUKEBOX_IDS:
-        return kwargs
+        return without_card(self, kwargs)  # a skin mudou de uma de imagem para uma antiga: o cartão sai da mensagem
     embed = kwargs["embed"]
     data = {name: value for name, value in kwargs.items() if name != "embed"}
     data["embeds"] = [embed]
@@ -239,14 +299,14 @@ async def idle_payload(self, kwargs):
         from empiremuse.utils.render.cards.pipeline import card_pipeline
 
         RENDER_STATES.forget(self)  # o ocioso sempre leva um anexo novo (a mensagem pode ser outra)
-        spec = await _card_spec(self, skin)
         try:
+            spec = await _card_spec(self, skin)
             pipe = card_pipeline(self.bot.config["COVER_HOSTS"])
             rendered = await pipe.render(self, skin.card, spec, self.tr, station_logo=_station_logo(self))
-        except Exception as e:
-            log_unexpected_error(logger, e, "desenho do cartão ocioso")
+        except Exception as error:  # noqa: BLE001 - sem cartão, o ocioso em texto
+            _card_failed(skin, error)
     if rendered is None or rendered.data is None:
-        RENDER_STATES.forget(self)
+        drop_card(self, data)
         embed.set_author(name=fit(self.tr("jbx.idle.title"), card_facts.AUTHOR_MAX))
         return data
     embed.set_thumbnail(url=None)
@@ -272,7 +332,9 @@ async def _np_data(self, req):
             return True
         return False
 
-    if key == self.last_data:
+    if RENDER_STATES.get(self).last is not None:
+        drop_card(self, data)  # de uma skin de imagem para uma de texto na mesma mensagem: o cartão sai
+    elif key == self.last_data:
         await _defer(interaction)
         return True
 
@@ -646,7 +708,8 @@ async def _np_send_new(self, req):
         try:
             message = await panel.resend(self.guild_id)
             if message is not None:
-                await message.edit(allowed_mentions=self.allowed_mentions, **data)
+                # a mensagem do painel pode ser uma que já existia: só fica o anexo que este payload manda
+                await message.edit(allowed_mentions=self.allowed_mentions, **{**data, "attachments": []})
                 self.message = message
                 await self.channel_cleanup()
         except Exception:

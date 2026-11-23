@@ -534,3 +534,40 @@ def test_texts_with_placeholders_are_filled_never_drawn_as_the_key(family, state
 
     drawn = " ".join(book.texts)
     assert not any(key in drawn for key in TEMPLATES) and "{" not in drawn
+
+
+# ---------------------------------------------------------------------- visor da Rádio da Jukebox: só o que a Inter desenha
+
+GLYPHLESS = "Canção 🎵 夜に駆ける"
+
+
+def _visor_texts(view) -> list[str]:
+    data = view.data
+    return [
+        data.station_name,
+        data.now_title,
+        data.now_artist,
+        *data.filter_path,
+        *(s.name for s in data.next_stations),
+    ]
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize("state", ["playing", "radio_live"])
+def test_the_radio_visor_never_draws_a_character_inter_lacks(book, state):
+    track = make_track(title=GLYPHLESS, artists=GLYPHLESS, origin=GLYPHLESS, duration_s=209, requester=GLYPHLESS)
+    items = tuple(make_item(title=GLYPHLESS, artists=GLYPHLESS) for _ in range(3))
+    spec = (
+        base_spec(track=track, queue=items, queue_total=3)
+        if state == "playing"
+        else STATES["radio_live"]()._replace(radio=radio_facts(name=GLYPHLESS, title=GLYPHLESS, place=GLYPHLESS))
+    )
+
+    view = visor_jukebox.visor_view(spec, CardArt(cover_bytes(), logo_png()), RecordingTr(), book)
+
+    points = visor_jukebox.inter_points()
+    texts = _visor_texts(view)
+    assert all(ord(char) in points for text in texts for char in text if not char.isspace())
+    assert any("Canção" in text for text in texts)
+    if state == "playing":
+        assert view.data.station_name == "T:jbx.title_in_text"  # o título real vai no autor do embed
