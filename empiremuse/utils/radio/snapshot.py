@@ -60,6 +60,9 @@ class RadioPanelSnapshot(NamedTuple):
     # A skin efetiva (2.3, ``rules/skins.radio_look``): a da rádio, senão a de todas as rádios, senão o padrão. O ``skin``
     # acima continua o visual de antes (``black``/``white``) até o despacho por skin (S7).
     look: str = DEFAULT_RADIO_LOOK
+    # "Tocou há pouco": (hora de parede, título), do mais antigo ao mais novo. O título JÁ vem escapado pelo ``clean_title``:
+    # o destino usa ``stored_text``, nunca ``external_text`` de novo.
+    recent_titles: tuple[tuple[float, str], ...] = ()
 
 
 def _window(uuids: list[str], active: str) -> tuple[int, list[str]]:
@@ -148,4 +151,5 @@ async def live_snapshot(
         favorite=active in favorites,
         favorites_full=len(favorites) >= MAX_FAVORITES,
         retry_seconds=runner.retry_seconds() if runner is not None else None,
+        recent_titles=tuple(getattr(runner, "recent_titles", ())) if runner is not None else (),
     )
