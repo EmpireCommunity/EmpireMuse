@@ -486,6 +486,48 @@ async def test_ws_loop_do_cliente_ignora_quadro_invalido_e_continua(
     assert len(atualizados) == 2
 
 
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_ws_loop_reconecta_quando_o_receive_levanta_reset_no_pong(tmp_path, monkeypatch, caplog):
+    """O PONG num transporte que fecha levantava ``ClientConnectionResetError`` no ``receive`` e matava o cliente RPC calado."""
+
+    class Conexao:
+        close_code = None
+
+        def __init__(self, quadro=None):
+            self.closed, self.quadro = False, quadro
+
+        async def receive(self):
+            if self.quadro is None:
+                raise aiohttp.ClientConnectionResetError("Cannot write to closing transport")
+            return self.quadro
+
+        async def close(self):
+            self.closed = True
+
+    primeira = Conexao()
+    segunda = Conexao(SimpleNamespace(type=aiohttp.WSMsgType.CLOSE, extra=None))
+    conexoes, esperas = iter([primeira, segunda]), []
+    client = _wsclient("ws://rpc.invalid/ws", [], tmp_path, monkeypatch)
+
+    async def conectar():
+        client.connection = next(conexoes)
+
+    async def esperar(segundos):  # relógio falso: registra o backoff, sem dormir
+        esperas.append(segundos)
+
+    monkeypatch.setattr(client, "connect", conectar)
+    monkeypatch.setattr(web_app.asyncio, "sleep", esperar)
+
+    with caplog.at_level(logging.WARNING, logger=web_app.logger.name):
+        await asyncio.wait_for(client.ws_loop(), 5)
+
+    assert primeira.closed and esperas == [7], "fechou a conexão e esperou o backoff antes de reconectar"
+    assert client.connection is segunda, "o laço reconectou em vez de propagar a exceção"
+    avisos = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(avisos) == 1 and "ClientConnectionResetError" in avisos[0].getMessage()
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # Compatibilidade do relé: o que o servidor repassa (servidor real)
 # ---------------------------------------------------------------------------------------------------------------------
