@@ -158,13 +158,11 @@ class PlayerStateMixin:
         users: List[int] = None,
         wait: bool = False,
     ):
-        if (
-            getattr(self, "radio_id", None)
-            or getattr(self, "radio_mode", None) is not None
-            or is_live(getattr(self, "current", None))
-        ):
+        jukebox_live = getattr(self, "radio_mode", None) is not None or is_live(getattr(self, "current", None))
+        if getattr(self, "radio_id", None) or (jukebox_live and not close):
             # rádio (item 8) e modo rádio da Jukebox [m1]: o RPC levaria a URL do relay local, com o token, a cada membro da call; a marca
-            # cobre também a janela entre sair de R e o ``stop()`` (Alicerce N-s4)
+            # cobre também a janela entre sair de R e o ``stop()`` (Alicerce N-s4). O ``close`` não leva faixa nenhuma e passa: sem ele a
+            # presença da música de antes da rádio ficava no aplicativo de quem estava na call
             return
         try:
             if not voice_channel and not close:

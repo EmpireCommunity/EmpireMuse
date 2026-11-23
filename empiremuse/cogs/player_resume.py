@@ -211,6 +211,8 @@ class PlayerSession(commands.Cog):
             data["live_lyrics_status"] = player.live_lyrics_enabled
         if live:
             data["position"] = 0
+            # a retomada fica ociosa, como no fim da rádio (o ``autoplay`` segue como preferência)
+            data["radio_session"] = True
         else:
             with suppress(AttributeError):
                 data["current_encoded"] = player.current_encoded
@@ -775,21 +777,14 @@ class PlayerSession(commands.Cog):
 
                     start_position = int(float(data.get("position", 0))) if player.queue else 0
 
-                    if player.node.version > 3:
-                        await self.update_player(
-                            player=player,
-                            voice_channel=voice_channel,
-                            pause=pause,
-                            position=start_position,
-                            has_members=check,
-                        )
-                        await player.invoke_np()
-                    else:
-                        await player.process_next(start_position=start_position)
-                        if pause:
-                            await player.set_pause(True)
-                            if not check:
-                                player.start_members_timeout(check=False)
+                    await self._start_resumed(
+                        player,
+                        voice_channel,
+                        pause,
+                        start_position,
+                        check,
+                        radio_session=bool(data.get("radio_session")),
+                    )
 
                     player._session_resuming = False
                 except Exception:
@@ -800,6 +795,33 @@ class PlayerSession(commands.Cog):
 
         except Exception:
             logger.exception("Falha crítica ao retomar players")
+
+    async def _start_resumed(self, player, voice_channel, pause, start_position: int, check, *, radio_session: bool):
+        """Volta a tocar o player retomado. A sessão gravada no modo rádio da Jukebox fica ociosa: nem a fila vazia nem o histórico chamam o
+        autoplay (a rádio não volta, e uma recomendação no lugar dela tocaria sem ninguém pedir). A preferência de autoplay é mantida."""
+        autoplay = player.autoplay if radio_session else None
+        if radio_session:
+            player.autoplay = False
+        try:
+            if player.node.version > 3:
+                await self.update_player(
+                    player=player,
+                    voice_channel=voice_channel,
+                    pause=pause,
+                    position=start_position,
+                    has_members=check,
+                )
+            else:
+                await player.process_next(start_position=start_position)
+                if pause:
+                    await player.set_pause(True)
+                    if not check:
+                        player.start_members_timeout(check=False)
+        finally:
+            if radio_session:
+                player.autoplay = autoplay
+        if player.node.version > 3:
+            await player.invoke_np()
 
     def _uses_mongo(self) -> bool:
         return bool(self.bot.config["PLAYER_SESSIONS_MONGODB"] and self.bot.config["MONGO"])

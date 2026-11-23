@@ -430,16 +430,18 @@ async def test_a_passing_vote_redoes_the_preconditions(world):
 @pytest.mark.asyncio
 async def test_the_vote_message_mentions_only_the_author_and_neutralizes_the_station_name(world):
     world.hub.directory.by_uuid_strict = AsyncMock(return_value=station(name=HOSTILE))
+    # ANTES de abrir: o texto mostra só o nome da estação
+    world.radio._tr = lambda player: lambda key, **f: f.get("station", key)
     player = await open_member_vote(world, voters=3)
-    mentions = player.messages[0].kwargs["allowed_mentions"]
+    sent = player.messages[0].kwargs  # a mensagem que saiu de verdade, não um payload refeito
+    mentions = sent["allowed_mentions"]
     assert [u.id for u in mentions.users] == [10] and mentions.roles is False and mentions.everyone is False
-    vote = player.radio_vote
-    world.radio._tr = lambda player: lambda key, **f: f.get("station", key)  # o texto mostra só o nome da estação
-    payload = world.radio._vote_payload(player, vote)
-    content = payload["content"]
+    vote, content = player.radio_vote, sent["content"]
+    assert HOSTILE not in content and content  # o nome saiu neutralizado, não cru
     assert "@everyone" not in content and "<@&" not in content
     assert "discord.gg" not in content and "](" not in content and "‮" not in content
-    assert vote.nonce in payload["components"][0].custom_id and UUID not in payload["components"][0].custom_id
+    custom_id = sent["components"][0].custom_id
+    assert vote.nonce in custom_id and UUID not in custom_id
 
 
 # ---------------------------------------------------------------------- troca (s1) e saída (A4)

@@ -16,7 +16,7 @@ import pytest
 import empiremuse.wavelink as wavelink
 from empiremuse.music_cog import jukebox_steps, radio_guard
 from empiremuse.music_cog.nodes import NodesMixin
-from empiremuse.rules.radio_mode import LIVE_RETRY_S, SWITCH_COOLDOWN_S, Decision
+from empiremuse.rules.radio_mode import LIVE_RETRY_S, SWITCH_COOLDOWN_S, VOTE_TTL_S, Decision
 from empiremuse.rules.voice_status import voice_status_value
 from empiremuse.utils.jukebox_panel import entry_for
 from empiremuse.utils.music.converters import md_link
@@ -33,6 +33,7 @@ from tests.cogs.test_jukebox_radio_mode import (
     World,
     member,
     on_air,
+    open_member_vote,
     run_retries,
     settle,
     station,
@@ -608,6 +609,7 @@ async def test_a_jukebox_channel_request_in_radio_mode_stops_at_the_gate_after_t
         destroy_message=None,
         stopped=False,
         radio_epoch=None,
+        reader=None,
     )
     monkeypatch.setattr(jukebox_steps, "can_connect", lambda **kw: None)
     monkeypatch.setattr(jukebox_steps, "check_player_perm", AsyncMock())
@@ -619,6 +621,27 @@ async def test_a_jukebox_channel_request_in_radio_mode_stops_at_the_gate_after_t
     monkeypatch.setattr(jukebox_steps, "confirm_leave_radio", gate)
     await jukebox_steps._pr_checks(cog, req)
     assert order == ["search", "gate"] and req.stopped is True and not player.queue
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reader", ["reader", None])
+async def test_the_jukebox_channel_confirmation_waits_on_the_bot_that_read_the_message(monkeypatch, reader):
+    """CodeRabbit (jukebox_steps.py:128): com outro bot executando, o clique na resposta chega ao bot leitor; esperar no executor expirava."""
+    executor, reading = NS(name="executor", pool=NS()), NS(name="reader")
+    player = NS(radio_mode=object(), radio_epoch=1, is_connected=True)
+    seen = []
+
+    async def gate(pool, bot, message, p):
+        seen.append(bot)
+        return False
+
+    monkeypatch.setattr(jukebox_steps, "confirm_leave_radio", gate)
+    cog = NS(bot=executor)
+    req = NS(message=NS(), reader=reading if reader else None, stopped=False, radio_epoch=None)
+    await jukebox_steps._pr_gate(cog, req, player)
+    assert seen == [reading if reader else executor] and req.stopped is True
 
 
 @pytest.mark.critical
@@ -704,6 +727,7 @@ async def test_back_readd_and_embed_requests_in_radio_mode_stop_at_the_gate(monk
         failed_tracks=deque(),
         tr=tr,
         node=None,
+        keep_connected=False,
     )
     player.seek, player.process_next = AsyncMock(), AsyncMock()
     bot = NS(music=NS(players={1: player}), pool=NS(), bot_ready=True, is_ready=lambda: True)
@@ -794,6 +818,28 @@ def test_play_defers_ephemerally_when_the_request_lands_in_radio_mode(monkeypatc
     found = None if resolved is None else (NS(), NS(radio_mode=object() if resolved == "radio" else None))
     monkeypatch.setattr(checks, "resolve_player", lambda pool, guild_id, member: found)
     assert radio_guard.radio_mode_request(NS(), NS(guild_id=1, author=NS(id=10))) is expected
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize("in_radio", [True, False])
+async def test_play_defers_with_the_visibility_the_radio_mode_asks_for(monkeypatch, in_radio):
+    """CodeRabbit (teste :789): o predicado sozinho não prova nada; o ``defer`` do ``/play`` usa o resultado (efêmero só em R)."""
+    from empiremuse.music_cog import play_command
+    from empiremuse.music_cog.play_command import PlayCommandMixin
+
+    monkeypatch.setattr(play_command, "radio_mode_request", lambda pool, inter: in_radio)
+    guild = NS(id=1, get_member=lambda i: NS(id=i))
+    bot = NS(get_data=AsyncMock(return_value={}))
+    inter = NS(
+        music_bot=bot, music_guild=guild, author=NS(id=10), response=NS(is_done=lambda: False, defer=AsyncMock())
+    )
+    cog = NS(bot=NS(pool=NS()), is_jukebox_channel=AsyncMock(return_value=False))
+    req = NS(inter=inter, mix=None)
+    await PlayCommandMixin._play_prepare(cog, req)
+    inter.response.defer.assert_awaited_once_with(ephemeral=True if in_radio else False, with_message=True)
+    assert req.ephemeral is (True if in_radio else False)
 
 
 @pytest.mark.critical
@@ -946,10 +992,32 @@ async def test_the_rpc_is_not_sent_for_a_live_track_even_after_radio_mode_ended(
     """Alicerce N-s4: na janela entre sair de R e o ``stop()``, a marca da faixa segura o RPC como as outras saídas."""
     from empiremuse.utils.music.models.player_state import PlayerStateMixin
 
+    sent = await rpc_sent(live_track(), radio_mode=None)
+    assert sent == []
+    # o mesmo dublê manda a música comum
+    assert [op for op, _ in await rpc_sent(faixa_youtube(1), radio_mode=None)] == ["update"]
+
+
+async def rpc_sent(current, *, radio_mode, close=False):
+    """O ``process_rpc`` real num player de verdade o bastante (aberto, com destinatário explícito e envio esperado): o que foi enviado."""
+    from empiremuse.utils.music.models.player_state import PlayerStateMixin
+
     player = MagicMock()
-    player.radio_id, player.radio_mode, player.current = None, None, live_track()
-    await PlayerStateMixin.process_rpc(player)
-    player._send_rpc_data.assert_not_called()
+    player.radio_id, player.radio_mode, player.current, player.is_closing = None, radio_mode, current, False
+    player.bot.user.id = 900
+    sent = []
+    player._send_rpc_data = AsyncMock(side_effect=lambda users, stats: sent.append((stats["op"], users)))
+    await PlayerStateMixin.process_rpc(player, close=close, users=[10], wait=True)
+    return sent
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_closing_the_player_in_radio_mode_still_clears_the_rpc_presence():
+    """CodeRabbit (player_state.py:164): o ``close`` não leva faixa; barrado em R, a presença da música de antes ficava no aplicativo."""
+    assert await rpc_sent(live_track(), radio_mode=object(), close=True) == [("close", [10])]
+    assert await rpc_sent(live_track(), radio_mode=object()) == []
 
 
 # ---------------------------------------------------------------------- revisão do delta (T-J2A-FIX3)
@@ -1022,3 +1090,260 @@ async def test_a_player_destroyed_while_the_click_waited_for_the_lock_does_not_l
     pool.radio.jukebox.leave_for_music.side_effect = lambda *a: setattr(player, "is_closing", True)
     assert await radio_guard.confirm_leave_radio(pool, None, inter, player, wait_for=answered(answer)) is False
     assert answer.edit_original_message.await_args.kwargs["content"] == "jukebox.radio.player_closed"
+
+
+# ---------------------------------------------------------------------- tópicos do CodeRabbit no PR 270 (T-J2A-CR)
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_player_destroyed_while_the_directory_answers_never_gets_a_radio_mode(world):
+    """CodeRabbit (jukebox_radio.py:322): ``forget`` roda sem o lock durante o ``fresh_for_play``; o modo novo não pode ser instalado depois."""
+    player = world.player()
+
+    async def fresh(uuid):
+        player.is_closing = True
+        await world.radio.forget(player)
+        return station(uuid)
+
+    world.hub.directory.fresh_for_play.side_effect = fresh
+    with pytest.raises(Refused) as refused:
+        await world.radio.request_live(world.inter(world.members[10]), UUID)
+    assert refused.value.key == "jukebox.radio.player_closed"
+    assert player.radio_mode is None and world.relay.registered == []
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_cancelled_opening_leaves_radio_mode_and_revokes_the_token(world):
+    """CodeRabbit (jukebox_radio.py:355): o cancelamento no meio da abertura não deixa o modo instalado sem fluxo, e segue propagando."""
+    player = world.player()
+
+    async def cancelled(token, timeout):
+        raise asyncio.CancelledError
+
+    world.relay.wait_flowing = cancelled
+    with pytest.raises(asyncio.CancelledError):
+        await world.radio.request_live(world.inter(world.members[10]), UUID)
+    assert player.radio_mode is None and world.relay.revoked == ["tok1"]
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_cancelled_vote_message_does_not_leave_a_blocking_vote(world):
+    """CodeRabbit (jukebox_radio.py:642): sem mensagem nem prazo, o voto cancelado não bloqueia o próximo pedido."""
+    world.members.clear()
+    world.channel.members.clear()
+    for i in range(3):
+        world.add(member(10 + i, world.channel))
+    player = world.player(current="música", queue=["fila"], creator=99)
+    player.text_channel.send = AsyncMock(side_effect=asyncio.CancelledError)
+    with pytest.raises(asyncio.CancelledError):
+        await world.radio.request_live(world.inter(world.members[10]), UUID)
+    assert player.radio_vote is None
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_vote_click_served_after_the_deadline_does_not_count(world):
+    """CodeRabbit (jukebox_radio.py:689): o clique que esperou o lock além dos 60 s não dá o quórum fora do prazo."""
+    player = await open_member_vote(world, voters=3)
+    vote = player.radio_vote
+    world.clock.t += VOTE_TTL_S
+    key, _ = await world.radio.vote_click(world.inter(world.members[11]), vote.nonce)
+    assert key == "jukebox.radio.vote.over"
+    assert vote.voters == {10} and player.radio_mode is None
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_successful_resume_cancels_the_pending_retry(world):
+    """CodeRabbit (jukebox_radio.py:804): a volta pendente acordava depois da retomada e abria um segundo fluxo, perdendo a ficha anterior."""
+    player = await on_air(world)
+    world.radio.on_stream_lost(player)
+    await settle()  # a volta está dormindo o 1º recuo
+    retry = player.radio_mode.retry_task
+    await world.radio.resume_live(player)
+    await settle()
+    world.sleeper.release()
+    await settle()
+    assert retry.cancelled()
+    assert [token for _, token in world.relay.registered] == ["tok1", "tok2"]
+    assert player.radio_mode.token == "tok2" and player.radio_mode.on_air
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_drop_while_the_stream_opens_is_not_marked_on_air(world):
+    """CodeRabbit (jukebox_radio.py:779): a queda durante a espera do áudio não deixa a rádio "no ar" sem fluxo; a ficha é revogada."""
+    player = world.player()
+
+    async def drops(token, timeout):
+        world.radio.on_stream_lost(player, player.radio_mode)
+        return True
+
+    world.relay.wait_flowing = drops
+    with pytest.raises(Refused):
+        await world.radio.request_live(world.inter(world.members[10]), UUID)
+    assert player.radio_mode is None and world.relay.revoked == ["tok1"]
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_failed_node_change_still_hands_the_live_stream_over_to_the_controller(monkeypatch):
+    """CodeRabbit (player.py:293): a troca de nó que falha já tirou a faixa ao vivo; sem o aviso, a nova tentativa nunca o daria."""
+
+    async def failing_change_node(self, identifier=None):
+        raise RuntimeError("nó fora")
+
+    monkeypatch.setattr(wavelink.Player, "change_node", failing_change_node)
+    player = LavalinkPlayer.__new__(LavalinkPlayer)
+    mode, jukebox = object(), NS(on_stream_lost=Mock())
+    player.current, player.current_encoded, player.radio_mode = live_track(), "encoded-with-token", mode
+    player.bot = NS(pool=NS(radio=NS(jukebox=jukebox)))
+    with pytest.raises(RuntimeError):
+        await LavalinkPlayer.change_node(player, "REMOTE")
+    assert player.current is None
+    jukebox.on_stream_lost.assert_called_once_with(player, mode)
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_session_saved_in_radio_mode_is_marked_and_the_mark_survives_the_schema(tmp_path, monkeypatch):
+    """CodeRabbit (player_resume.py:213): a sessão gravada em R precisa dizer isso, senão a retomada não distingue um player ocioso."""
+    from empiremuse.serialization.session import decode_session, encode_session
+
+    monkeypatch.setenv("EMPIREMUSE_HOME", str(tmp_path))
+    player = jogador_falso(atual=live_track(), fila=[], tocadas=[faixa_youtube(1)], falhas=[], radio_mode=object())
+    data = await gravar(cog_de_sessoes(), player)
+    assert data["radio_session"] is True and data["autoplay"] == player.autoplay
+    assert decode_session(encode_session(data))["radio_session"] is True
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("radio_session", "autoplay_while_starting"), [(True, False), (False, True)])
+async def test_resuming_a_radio_session_never_calls_the_autoplay(radio_session, autoplay_while_starting):
+    """A retomada de uma sessão gravada em R fica ociosa (como no fim da rádio); a preferência de autoplay volta intacta."""
+    from empiremuse.cogs.player_resume import PlayerSession
+
+    seen = []
+    player = NS(autoplay=True, node=NS(version=4), invoke_np=AsyncMock())
+    cog = NS(update_player=AsyncMock(side_effect=lambda **kw: seen.append(player.autoplay)))
+    await PlayerSession._start_resumed(cog, player, NS(), False, 0, True, radio_session=radio_session)
+    assert seen == [autoplay_while_starting] and player.autoplay is True
+    player.invoke_np.assert_awaited_once()
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_the_chosen_station_warning_reads_the_vote_preview_at_that_moment(world):
+    """CodeRabbit (controller_dispatch.py:484): a prévia da votação era lida ao abrir o seletor; música iniciada depois não mostrava o aviso."""
+    from empiremuse.music_cog.controller_dispatch import live_warning
+
+    world.add(member(11, world.channel))
+    world.add(member(12, world.channel))
+    player = world.player(creator=99)  # quem abre não é DJ; 3 humanos na call
+    hub = NS(jukebox=world.radio)
+    author = world.members[10]
+    assert await live_warning(world.pool, hub, tr, world.guild.id, author) == ""  # ocioso: toca direto, sem aviso
+    player.current = "música"  # outro membro começou música enquanto ele navegava
+    lines = (await live_warning(world.pool, hub, tr, world.guild.id, author)).split("\n")
+    assert len(lines) == 2 and lines[-1] == "jukebox.radio.warn.vote"
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize("surface", ["back", "readd"])
+async def test_back_and_readd_with_nothing_to_play_refuse_before_stopping_the_radio(monkeypatch, surface):
+    """CodeRabbit (skip.py:285, queue_edit.py:148): em R o histórico pode estar vazio; o pedido não para a rádio por nada."""
+    from empiremuse.music_cog import queue_edit, skip
+    from empiremuse.music_cog.queue_edit import QueueEditMixin
+    from empiremuse.music_cog.skip import SkipMixin
+
+    player = NS(radio_mode=object(), current=live_track(), queue=deque(), played=deque(), failed_tracks=deque())
+    player.keep_connected, player.seek = False, AsyncMock()
+    bot = NS(music=NS(players={1: player}), pool=NS())
+    gate = AsyncMock(return_value=True)
+    module, command = (skip, SkipMixin.back) if surface == "back" else (queue_edit, QueueEditMixin.readd_songs)
+    monkeypatch.setattr(module, "confirm_leave_radio", gate)
+    monkeypatch.setattr(module, "guild_text", AsyncMock(side_effect=lambda bot, guild, key, **kw: key))
+    inter = NS(music_bot=bot, guild_id=1, guild=NS(id=1), author=NS(id=10, mention="<@10>"))
+    with pytest.raises(GenericError) as error:
+        await command.callback(NS(bot=bot), inter)
+    assert error.value.text == "legacy.queue.no_played"
+    gate.assert_not_awaited()
+    player.seek.assert_not_awaited()
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_back_after_the_radio_stopped_with_nothing_to_play_never_claims_it_went_back(monkeypatch):
+    """CodeRabbit (skip.py:285): a rádio parou na confirmação e não há música: nada de ``seek(0)`` nem "voltou ao início"."""
+    from empiremuse.music_cog import skip
+    from empiremuse.music_cog.skip import SkipMixin
+
+    # a 1ª checagem só recusa em R; aqui a rádio já parou entre ela e a porta (a 2ª, depois da porta, é a que vale)
+    player = NS(radio_mode=None, current=live_track(), queue=deque(), played=deque(), failed_tracks=deque())
+    player.keep_connected, player.seek = True, AsyncMock()
+    player.played.append(faixa_youtube(1))  # com "manter conectado" o ⏮ volta ao início em vez de tocar a anterior
+
+    async def gate(*args, **kwargs):
+        player.radio_mode, player.current = None, None  # a rádio parou
+        return True
+
+    bot = NS(music=NS(players={1: player}), pool=NS())
+    monkeypatch.setattr(skip, "confirm_leave_radio", gate)
+    monkeypatch.setattr(skip, "guild_text", AsyncMock(side_effect=lambda bot, guild, key, **kw: key))
+    inter = NS(music_bot=bot, guild_id=1, guild=NS(id=1), author=NS(id=10, mention="<@10>"))
+    with pytest.raises(GenericError):
+        await SkipMixin.back.callback(NS(bot=bot), inter)
+    player.seek.assert_not_awaited()
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_radio_opened_during_go_idle_gets_no_idle_timer():
+    """CodeRabbit (playback_steps.py:103): ``release`` solta o lock antes de ``go_idle``; uma rádio que abre durante o ``stop`` não pode
+    herdar o temporizador de ociosidade."""
+    player = NS(is_closing=False, radio_mode=None, idle_task=None)
+
+    async def stop():
+        player.radio_mode = object()  # outra pessoa abriu uma rádio enquanto o player parava
+
+    player.stop = stop
+    await playback_steps.go_idle(player)
+    assert player.idle_task is None
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_song_of_the_old_mode_never_plays_over_a_radio_opened_while_release_waited():
+    """CodeRabbit (playback_steps.py:138): ``release`` recusou porque outro modo abriu; a música tirada da fila no modo antigo não toca."""
+    old = RadioMode(uuid="u", name="R", country="BR", starter_id=1, started_at=0.0)
+    old.track = live_track()
+    new = RadioMode(uuid="v", name="S", country="BR", starter_id=2, started_at=1.0)
+    player = NS(queue=deque([faixa_youtube(1)]), radio_mode=old, radio_id=None)
+
+    async def release(p, mode):
+        p.radio_mode = new  # ``_start`` de outra pessoa instalou o modo novo enquanto esta chamada esperava o lock
+        return False
+
+    player.bot = NS(pool=NS(radio=NS(jukebox=NS(release=release))))
+    req = NS(track=None)
+    assert await playback_steps._pn_next_track(player, req) is True
+    assert req.track is None and player.radio_mode is new

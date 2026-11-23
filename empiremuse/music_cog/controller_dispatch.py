@@ -33,6 +33,30 @@ from empiremuse.logs.context import guild_extra
 logger = logging.getLogger(__name__)
 
 
+async def live_warning(pool, hub, tr, guild_id: int, author) -> str:
+    """O aviso de "Estação escolhida", lido AGORA (o player pode ter mudado enquanto o membro navegava): música, fila ou rádio no ar e,
+    se o clique abriria uma votação, o aviso dela. A prévia só escolhe o texto; a porta é refeita no clique."""
+    from empiremuse.rules.radio_mode import VOTE_TTL_S
+    from empiremuse.utils.music.checks import resolve_player
+
+    found = resolve_player(pool, guild_id, author)
+    if found is None:
+        return ""
+    player = found[1]
+    view = hub.jukebox.view(player)
+    text = chosen_warning(
+        tr, playing=player.current is not None, queued=bool(player.queue), radio_name=view.name if view else None
+    )
+    if not text:
+        return ""
+    try:
+        votes = await hub.jukebox.live_preview(player.guild.get_member(author.id) or author, player)
+    except Exception as error:  # noqa: BLE001 - o aviso é conveniência; só o tipo vai ao log
+        logger.warning("Prévia do modo rádio falhou (%s)", type(error).__name__)
+        votes = False
+    return text + "\n" + vote_warning(tr, VOTE_TTL_S) if votes else text
+
+
 class ControllerDispatchMixin:
     @commands.Cog.listener("on_message_delete")
     async def player_message_delete(self, message: disnake.Message):
@@ -474,33 +498,8 @@ class ControllerDispatchMixin:
                 raise GenericError(tr(refused.key, **refused.fields)) from None
             return tr(key, **fields)
 
-        from empiremuse.rules.radio_mode import VOTE_TTL_S
-        from empiremuse.utils.music.checks import resolve_player
-
-        resolved = resolve_player(self.bot.pool, interaction.guild_id, interaction.author)
-        try:  # prévia, só para o aviso ``warn.vote``: a porta é refeita no clique
-            votes = resolved is not None and await hub.jukebox.live_preview(
-                resolved[1].guild.get_member(interaction.author.id) or interaction.author, resolved[1]
-            )
-        except Exception as error:  # noqa: BLE001 - o aviso é conveniência; só o tipo vai ao log
-            logger.warning("Prévia do modo rádio falhou (%s)", type(error).__name__)
-            votes = False
-
-        def warning() -> str:
-            found = resolve_player(self.bot.pool, interaction.guild_id, interaction.author)
-            if found is None:
-                return ""
-            player = found[1]
-            view = hub.jukebox.view(player)
-            text = chosen_warning(
-                tr,
-                playing=player.current is not None,
-                queued=bool(player.queue),
-                radio_name=view.name if view is not None else None,
-            )
-            if text and votes:
-                text += "\n" + vote_warning(tr, VOTE_TTL_S)
-            return text
+        async def warning() -> str:
+            return await live_warning(self.bot.pool, hub, tr, interaction.guild_id, interaction.author)
 
         guild_locale = getattr(interaction.guild, "preferred_locale", None)
         picker = RadioPicker(

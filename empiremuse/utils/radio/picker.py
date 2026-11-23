@@ -99,7 +99,7 @@ class RadioPicker(disnake.ui.View):
         confirm_label: str,
         check: Callable[[disnake.MessageInteraction], bool],
         deny_key: str = "radio.refused.no_manage_guild",
-        warning: Optional[Callable[[], str]] = None,
+        warning: Optional[Callable[[], Awaitable[str]]] = None,
         no_results_key: str = "radio.local.no_results",
     ) -> None:
         super().__init__(timeout=TIMEOUT_S)
@@ -164,7 +164,7 @@ class RadioPicker(disnake.ui.View):
             lines.append(path)
         if self.chosen is not None:
             lines.append(self.tr("radio.local.chosen", name=stored_text(self.chosen.name, NAME_LIMIT)))
-            if self._warning is not None and (warning := self._warning()):
+            if self._warning is not None and (warning := await self._warning()):
                 lines.append(warning)
             self._add_confirm()
             self._add_stars()

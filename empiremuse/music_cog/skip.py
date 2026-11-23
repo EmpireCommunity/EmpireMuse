@@ -282,12 +282,22 @@ class SkipMixin:
 
         player: LavalinkPlayer = bot.music.players[inter.guild_id]
 
+        def nothing_before() -> bool:
+            return not len(player.queue) and (player.keep_connected or not len(player.played))
+
+        if getattr(player, "radio_mode", None) is not None and nothing_before():
+            # em R não há música anterior (o ao vivo não entra no histórico): a rádio segue, sem passo de confirmação
+            raise GenericError(await guild_text(bot, inter.guild, "legacy.queue.no_played"))
+
         if not await confirm_leave_radio(
             self.bot.pool, bot, inter, player, stopped_key="jukebox.radio.leave.stopped_plain"
         ):
             return  # ⏮ em R é um pedido de música: passa pela porta (Sentinela Minor 1)
 
-        if not len(player.queue) and (player.keep_connected or not len(player.played)):
+        if nothing_before():
+            # a rádio parou na confirmação e não há o que voltar: nada de "voltou ao início" sem música
+            if player.current is None:
+                raise GenericError(await guild_text(bot, inter.guild, "legacy.queue.no_played"))
             await player.seek(0)
             await self.interaction_message(inter, "voltou para o início da música.", emoji="⏪")
             return
