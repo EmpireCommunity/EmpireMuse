@@ -5,6 +5,7 @@ from os.path import basename
 
 import disnake
 
+from empiremuse.utils.music.jukebox_ui import autoplay_label
 from empiremuse.rules.i18n import fit
 from empiremuse.utils.branding import asset_url
 from empiremuse.utils.music.converters import time_format, get_button_style, music_source_image, md_link
@@ -248,9 +249,7 @@ class DefaultProgressbarSkin:
                     disnake.SelectOption(
                         label=(
                             fit(
-                                player.tr("player.disable_autoplay.label")
-                                if player.autoplay
-                                else player.tr("player.enable_autoplay.label"),
+                                autoplay_label(player),
                                 100,
                             )
                         ),

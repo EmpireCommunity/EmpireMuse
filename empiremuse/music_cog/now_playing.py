@@ -138,6 +138,9 @@ class NowPlayingMixin:
         if mode is None:
             txt += f"> {app_emoji(inter.bot, 'microphone')} **⠂Uploader:** {player.current.authors_md}\n"
 
+        if mode is None and jukebox is not None and (station := jukebox.station_view(player)) is not None:
+            txt += f"> {jukebox_ui.station_line(player.tr, station)}\n"  # "📻 Estação: {nome}" (A6, J2b)
+
         if mode is None and player.current.album_name:
             txt += f"> {app_emoji(inter.bot, 'disc')} **⠂Álbum:** {md_link(player.current.album_name, player.current.album_url, limit=20)}\n"
 
