@@ -1358,7 +1358,7 @@
   "jukebox.station.started_next": "📻 The station **{station}** starts after the current song.",
   "jukebox.station.not_found": "That station is no longer available on this server. Pick another one.",
   "jukebox.station.empty": "This station has no tracks to play right now. Pick another one.",
-  "jukebox.station.ended": "📻 The station **{station}** stopped: {count} tracks in a row didn't play. Pick another station or request a song.",
+  "jukebox.station.ended": "📻 The station **{station}** stopped: {tracks} tracks in a row didn't play. Pick another station or request a song.",
   "jukebox.station.autoplay_label": "📻 Station: {station}",
   "jukebox.station.off_log": "turned off the station {station}.",
   "jukebox.station.off": "📻 **⠂{member} turned off the station {station}.**",

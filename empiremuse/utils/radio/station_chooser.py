@@ -21,6 +21,7 @@ from empiremuse.rules.radio_mode import VOTE_TTL_S
 from empiremuse.rules.radio_station import genre_ref
 from empiremuse.rules.text import external_text
 from empiremuse.utils.music import jukebox_ui
+from empiremuse.utils.radio.jukebox_errors import Refused
 
 logger = logging.getLogger(__name__)
 
@@ -158,11 +159,11 @@ class StationChooser(disnake.ui.View):
         warning = jukebox_ui.station_warning(
             self.tr, station_name=self.chosen_name, queued=queued, radio_name=radio_name
         )
-        if not warning:
-            await self._play(interaction)  # fila vazia: escolher já toca (P5)
+        if not warning and not votes:
+            await self._play(interaction)  # fila vazia e sem votação: escolher já toca (P5)
             return
-        if votes:
-            warning += "\n" + jukebox_ui.vote_warning(self.tr, VOTE_TTL_S)
+        if votes:  # também com a estação ligada e a fila vazia: a votação nunca abre sem o aviso antes (§2.1)
+            warning = "\n".join(filter(None, (warning, jukebox_ui.vote_warning(self.tr, VOTE_TTL_S))))
         await interaction.edit_original_message(**self.render(warning, confirm=True))
 
     def _name_of(self, ref: str) -> str:
@@ -180,8 +181,6 @@ class StationChooser(disnake.ui.View):
         await self._play(interaction)
 
     async def _play(self, interaction: disnake.MessageInteraction) -> None:
-        from empiremuse.utils.radio.jukebox_radio import Refused
-
         if self.chosen is None:
             return
         try:
@@ -192,7 +191,7 @@ class StationChooser(disnake.ui.View):
             logger.warning("Estação da Jukebox não ligada (%s)", type(error).__name__)
             key, fields = "radio.owner.unavailable", {}
         if "station" in fields:
-            fields = {**fields, "station": jukebox_ui.station_md(fields["station"])}
+            fields = {**fields, "station": jukebox_ui.server_station_md(fields["station"])}
         if key in STAY_OPEN:
             await self._choose_again(interaction, key, fields)
             return

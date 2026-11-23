@@ -17,10 +17,10 @@ from empiremuse.utils.music import jukebox_ui
 from empiremuse.utils.music.models import playback_steps
 from empiremuse.utils.radio.custom_source import FAIL_STREAK_MAX
 from empiremuse.utils.radio.jukebox_radio import Refused
-from empiremuse.utils.radio.jukebox_station import STATION_MARK, is_station_track
+from empiremuse.utils.radio.jukebox_station import STATION_MARK, StationNext, is_station_track
 from empiremuse.utils.radio.station_chooser import BACK_VALUE, StationChooser
 from empiremuse.utils.radio.stations import COUNT_TTL_S, StationStore
-from tests.cogs.test_jukebox_radio_mode import UUID, World, member, on_air
+from tests.cogs.test_jukebox_radio_mode import UUID, World, member, on_air, settle
 
 ROCK = "g:rock"
 OTHER_GUILD_STATION = "a" * 24  # um id válido que o servidor 1 não tem (é de outro servidor)
@@ -45,8 +45,8 @@ def resolving_player(player, *, playable=True):
     return player
 
 
-@pytest.fixture
-def world(monkeypatch):
+def make_world(monkeypatch):
+    """O mundo falso da estação (também usado em ``test_jukebox_station_fixes``)."""
     w = World(monkeypatch)
     w.bot.user = NS(id=900)
     w.hub.stations = NS(get=AsyncMock(side_effect=lambda gid, ref: StationStore.builtin(gid, ref)))
@@ -58,6 +58,11 @@ def world(monkeypatch):
     w.hub.premium.get = AsyncMock(return_value=object())
     w.hub.custom_favorites = NS(toggle=AsyncMock(return_value=NS(value="added")))
     return w
+
+
+@pytest.fixture
+def world(monkeypatch):
+    return make_world(monkeypatch)
 
 
 def genre_tr(key, **fields):
@@ -124,6 +129,7 @@ async def test_a_passing_station_vote_redoes_the_checks_then_drops_the_queue(wor
     await world.radio.request_station(world.inter(world.members[10]), ROCK)
     key, _ = await world.radio.vote_click(world.inter(world.members[11]), player.radio_vote.nonce)
     assert key == "jukebox.radio.vote.counted"
+    await settle()  # o pool e o efeito saem do lock (T-J2B-FIX): numa tarefa à parte
     assert player.station.ref == ROCK and not player.queue
     closed = player.messages[0].edit.await_args.kwargs
     # Bússola (T-J2B-TEXTS): com música tocando a estação começa depois dela, e o texto diz isso
@@ -225,8 +231,13 @@ async def started(world, **kwargs):
 @pytest.mark.asyncio
 async def test_the_next_track_is_a_resolved_autoplay_partial_marked_with_the_station(world):
     player = await started(world)
-    track = await world.radio.next_station_track(player, player.station)
-    assert track.id.startswith("enc:") and track.autoplay is True and track.requester == 900
+    outcome, track = await world.radio.next_station_track(player, player.station)
+    assert (
+        outcome is StationNext.TRACK
+        and track.id.startswith("enc:")
+        and track.autoplay is True
+        and track.requester == 900
+    )
     assert is_station_track(track, ROCK) and track.info["extra"][STATION_MARK] == ROCK
 
 
@@ -235,7 +246,7 @@ async def test_the_next_track_is_a_resolved_autoplay_partial_marked_with_the_sta
 async def test_five_tracks_in_a_row_without_playing_end_the_station_with_one_message(world):
     player = await started(world)
     resolving_player(player, playable=False)
-    assert await world.radio.next_station_track(player, player.station) is None
+    assert await world.radio.next_station_track(player, player.station) == (StationNext.ENDED, None)
     assert player.station is None
     assert [m.args for m in player.messages] == [("jukebox.station.ended",)]
     assert player.messages[0].kwargs["allowed_mentions"].everyone is False
@@ -243,15 +254,33 @@ async def test_five_tracks_in_a_row_without_playing_end_the_station_with_one_mes
 
 @pytest.mark.critical
 @pytest.mark.asyncio
-async def test_a_track_that_starts_resets_the_streak_and_one_that_never_starts_counts(world):
+async def test_only_real_progress_resets_the_streak(world):
     player = await started(world)
     active = player.station
     for _ in range(FAIL_STREAK_MAX - 1):
         await world.radio.next_station_track(player, active)
-    assert active.session.streak == FAIL_STREAK_MAX - 1  # resolveram, mas nenhuma começou a tocar
-    player.current = await world.radio.next_station_track(player, active)
-    world.radio.station_track_started(player)
+    assert active.session.streak == FAIL_STREAK_MAX - 1  # resolveram, mas nenhuma tocou de fato
+    _, track = await world.radio.next_station_track(player, active)
+    world.radio.station_track_ended(player, track, "FINISHED")
     assert active.session.streak == 0 and player.station is active
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["exception", "LOAD_FAILED"])
+async def test_a_track_that_fails_to_load_counts_and_leaves_the_pool(world, failure):
+    """Crivo m3 (T-J2B-FIX): o TrackStart sai antes de o stream abrir; a faixa que não carrega contava como tocada e a estação girava para sempre."""
+    player = await started(world)
+    active = player.station
+    pool_size = len(active.session.pool)
+    _, track = await world.radio.next_station_track(player, active)
+    if failure == "exception":
+        world.radio.station_track_failed(player, track)
+    else:
+        world.radio.station_track_ended(player, track, failure)
+    assert active.session.streak == 1 and len(active.session.pool) == pool_size - 1
+    assert (track.title, track.author) not in {(t.title, t.artist) for t in active.session.pool}
 
 
 @pytest.mark.critical
@@ -259,7 +288,7 @@ async def test_a_track_that_starts_resets_the_streak_and_one_that_never_starts_c
 async def test_losing_premium_turns_the_station_off_at_the_next_track(world):
     player = await started(world)
     world.hub.premium.get = AsyncMock(return_value=None)  # Q4: confere a cada nova faixa (cache de 30 s)
-    assert await world.radio.next_station_track(player, player.station) is None
+    assert await world.radio.next_station_track(player, player.station) == (StationNext.ENDED, None)
     assert player.station is None
 
 
@@ -269,15 +298,20 @@ async def test_a_station_replaced_meanwhile_gives_no_track(world):
     player = await started(world)
     old = player.station
     player.station = None
-    assert await world.radio.next_station_track(player, old) is None
+    assert await world.radio.next_station_track(player, old) == (StationNext.ENDED, None)
 
 
 @pytest.mark.critical
 @pytest.mark.asyncio
-@pytest.mark.parametrize("has_track", [True, False])
-async def test_the_station_comes_before_the_autoplay_in_the_next_track_hook(has_track):
+@pytest.mark.parametrize("outcome", [StationNext.TRACK, StationNext.ENDED, StationNext.SUPERSEDED])
+async def test_the_station_comes_before_the_autoplay_in_the_next_track_hook(outcome, monkeypatch):
+    """Alicerce m1 (T-J2B-FIX): SUPERSEDED (R abrindo ou outra estação no meio) não cai no autoplay nem no ocioso."""
     partial = NS(name="da estação")
-    jukebox = NS(next_station_track=AsyncMock(return_value=partial if has_track else None))
+    jukebox = NS(
+        next_station_track=AsyncMock(return_value=(outcome, partial if outcome is StationNext.TRACK else None))
+    )
+    idle = AsyncMock()
+    monkeypatch.setattr(playback_steps, "go_idle", idle)
     active = object()
     player = NS(
         queue=deque(),
@@ -291,13 +325,17 @@ async def test_the_station_comes_before_the_autoplay_in_the_next_track_hook(has_
         process_next=AsyncMock(),
     )
     req = NS(track=None)
-    await playback_steps._pn_next_track(player, req)
+    stop = await playback_steps._pn_next_track(player, req)
     jukebox.next_station_track.assert_awaited_once_with(player, active)
-    if has_track:
-        assert req.track is partial
+    if outcome is StationNext.TRACK:
+        assert req.track is partial and stop is False
         player.get_autoqueue_tracks.assert_not_awaited()
-    else:
+    elif outcome is StationNext.ENDED:
         assert req.track == "recomendação"  # a estação acabou: o autoplay normal, se ligado
+    else:
+        assert stop is True and req.track is None
+        player.get_autoqueue_tracks.assert_not_awaited()
+        idle.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------- desligar pelo botão de autoplay e a estrela
@@ -309,7 +347,8 @@ async def test_the_autoplay_button_turns_the_station_off(world):
     player = await started(world)
     epoch = player.radio_epoch
     assert await world.radio.end_station(player) == "Rock"
-    assert player.station is None and player.radio_epoch == epoch + 1
+    # T-J2B-FIX (decisão do Regente): S → M não descarta nada, então não mexe no epoch e um pedido de música em curso segue
+    assert player.station is None and player.radio_epoch == epoch
     assert await world.radio.end_station(player) is None
 
 

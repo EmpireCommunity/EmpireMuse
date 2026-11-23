@@ -15,6 +15,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - `site-data.json`: o campo opcional `supporter_limited` marca os comandos que o bot recusa num servidor sem o acesso Limitado a Apoiadores (hoje `/radio on`, `/radio setup`, `/radio station` e o prefixo `radio on`), para o site mostrar o selo em /commands. Aditivo na versão 1 do formato.
 
 ### Corrigido
+- Rádio personalizada e estação da Jukebox com playlists: uma playlist que falha ao carregar é pulada e as outras ainda formam a lista de faixas (antes a carga inteira falhava).
 - Jukebox: o painel fixado antes de uma atualização é redesenhado na subida do bot e ganha os componentes novos sem esperar o primeiro evento.
 - Cliente RPC do bot: uma conexão que cai no meio de uma resposta de PING não derruba mais o cliente em silêncio; ele fecha a conexão e reconecta como nas outras quedas.
 - Registro de acesso do Traefik (`deploy/traefik/accesslog-flags.txt` e `docs/runbook/log-retention.md`): o `ClientHost` sai e o `ClientAddr` entra (continuam 9 flags). O Traefik troca o `ClientHost` pelo `X-Forwarded-For` inteiro, que o visitante consegue preencher; o IP do visitante é o `request_Cf-Connecting-Ip`, e o `ClientAddr` (a borda da Cloudflare) prova que ele veio dela.

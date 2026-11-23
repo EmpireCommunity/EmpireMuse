@@ -5,7 +5,8 @@ Estado S, sobreposto a M: a fila das pedidas toca primeiro e, com ela vazia, ``_
 relay nem do cache de faixas resolvidas da 24 h. R e S são exclusivos.
 
 Este mixin é parte do controlador (``JukeboxRadio`` o herda): o dono de ``player.station`` continua sendo um só, e toda transição roda sob
-``player.radio_lock`` com a porta (``rules.radio_mode.gate``, alvo ``STATION``) refeita lá dentro. O que chega de fora é só a ref da estação
+``player.radio_lock`` com a porta (``rules.radio_mode.gate``, alvo ``STATION``) refeita lá dentro. Nenhuma carga de pool (Last.fm, playlists) roda com
+o lock preso: ela vem depois da porta, fora do lock, e o efeito volta a ele com tudo refeito. O que chega de fora é só a ref da estação
 (``g:<gênero>`` ou o id de 24 hex), relida no servidor por ``StationStore.get(guild, ref)``: id de outro servidor dá ``None`` (11.9).
 """
 
@@ -13,14 +14,13 @@ from __future__ import annotations
 
 import logging
 import random
+from enum import Enum
 from collections.abc import Sequence
 from dataclasses import dataclass
-from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, NamedTuple, Optional
 
-from empiremuse.rules.playlists import SCOPE_RADIO
 from empiremuse.rules.radio_mode import Decision, PlayerState, Target, gate, switch_wait
-from empiremuse.rules.radio_shuffle import Track
+from empiremuse.rules.radio_shuffle import Track, track_key
 from empiremuse.rules.radio_station import is_genre, valid_station_id
 from empiremuse.rules.text import external_text
 from empiremuse.utils.radio.custom_source import (
@@ -32,7 +32,9 @@ from empiremuse.utils.radio.custom_source import (
     TransientResolve,
     load_pool,
 )
+from empiremuse.utils.radio.jukebox_errors import Refused, Reply
 from empiremuse.utils.radio.lastfm_feed import LastFmMissing, LastFmUnavailable
+from empiremuse.utils.radio.playlist_tracks import radio_playlist_tracks
 
 if TYPE_CHECKING:
     from empiremuse.rules.radio_station import CustomStation
@@ -55,6 +57,16 @@ class _NoNegativeCache:
         return None
 
 
+class StationNext(Enum):
+    """O resultado do gancho da estação em ``_pn_next_track``."""
+
+    TRACK = "track"  # a faixa seguinte, já resolvida
+    ENDED = "ended"  # a estação acabou (S → M): o player segue para o autoplay ou o ocioso
+    SUPERSEDED = (
+        "superseded"  # outra transição tomou o player (R abrindo, outra estação, player fechando): nada segue daqui
+    )
+
+
 @dataclass
 class ActiveStation:
     """A estação que a Jukebox toca. Só o controlador lê isto; a tela lê ``station_view``."""
@@ -65,6 +77,9 @@ class ActiveStation:
     starter_id: int
     started_at: float  # relógio de parede
     session: CustomSession
+    pending: Optional[tuple[Track, Any]] = (
+        None  # a faixa sorteada que ainda não provou que toca: (do pool, o PartialTrack)
+    )
 
 
 class StationView(NamedTuple):
@@ -135,8 +150,6 @@ class JukeboxStationMixin:
 
     async def _station_checks(self: JukeboxRadio, guild_id: int, channel_id: Optional[int]) -> None:
         """Premium (P1) e nenhuma rádio 24 h na call (P12), refeitos em cada efeito. A estação não precisa do nó local."""
-        from empiremuse.utils.radio.jukebox_radio import Refused
-
         if channel_id is None:
             raise Refused("player.you_must_join_a_voice_2")
         if await self.hub.premium.fresh(guild_id) is None:
@@ -146,8 +159,6 @@ class JukeboxStationMixin:
 
     async def _station_of(self: JukeboxRadio, guild_id: int, ref: object) -> CustomStation:
         """A estação relida no servidor pelo id do pedido (nunca do componente); outro servidor, apagada ou ``g:`` desconhecido: recusa."""
-        from empiremuse.utils.radio.jukebox_radio import Refused
-
         station = await self.hub.stations.get(guild_id, ref) if valid_station_id(ref) else None
         if station is None:
             raise Refused("jukebox.station.not_found")
@@ -155,7 +166,6 @@ class JukeboxStationMixin:
 
     async def _station_pool(self: JukeboxRadio, player: Any, station: CustomStation) -> Loaded:
         """O pool da estação (``load_pool``, §2.6). Recusas de hoje: sem faixas, sem ``LASTFM_KEY``, Last.fm fora."""
-        from empiremuse.utils.radio.jukebox_radio import Refused
 
         async def playlist_tracks(names: Sequence[str]) -> list[Track]:
             return await self._playlist_tracks(player, names)
@@ -171,31 +181,17 @@ class JukeboxStationMixin:
 
     async def _playlist_tracks(self: JukeboxRadio, player: Any, names: Sequence[str]) -> list[Track]:
         """As faixas das playlists da rádio do servidor (a mesma leitura da rádio personalizada: a URL exata, sem busca)."""
-        bot, guild = player.bot, player.guild
-        music = bot.get_cog("Music")
-        if music is None:
-            return []
-        shim = SimpleNamespace(guild=guild, guild_id=guild.id, author=guild.me, bot=bot, channel=player.text_channel)
-        found: list[Track] = []
-        for name in names:
-            playlist = await self.pool.servers.playlists.find(guild.id, name, scope=SCOPE_RADIO)
-            if playlist is None:
-                continue
-            result, _ = await music.get_tracks(
-                playlist.url, shim, guild.me, source=False, node=getattr(player, "node", None), bot=bot
-            )
-            for track in list(getattr(result, "tracks", result) or []):
-                author, title = str(getattr(track, "author", "") or ""), str(getattr(track, "title", "") or "")
-                if author.strip() and title.strip():
-                    found.append(Track(author, title))
-        return found
+        node = getattr(player, "node", None)
+        return await radio_playlist_tracks(self.pool, player.bot, player.guild, player.text_channel, node, names)
 
     # ------------------------------------------------------------------ ligar (M/R → S) e trocar (S → S)
 
-    async def request_station(self: JukeboxRadio, inter: Any, ref: object) -> tuple[str, dict[str, Any]]:
-        """Escolher uma estação em "Rádios do Servidor" (A5): o texto de volta. ``Refused`` traz a recusa."""
+    async def request_station(self: JukeboxRadio, inter: Any, ref: object) -> Reply:
+        """Escolher uma estação em "Rádios do Servidor" (A5): o texto de volta. ``Refused`` traz a recusa.
+
+        A porta vem ANTES do pool: um pedido recusado, ou que só abre votação, não gasta Last.fm nem carga de playlist (a lição S2 da J2a). O pool é
+        carregado fora do lock e, de volta a ele, tudo é refeito: a estação relida, a porta e as pré-condições."""
         from empiremuse.utils.music.checks import has_radio_player, is_radio_only, pick_request_bot
-        from empiremuse.utils.radio.jukebox_radio import Refused
 
         if not valid_station_id(ref):
             raise Refused("jukebox.station.not_found")
@@ -213,23 +209,21 @@ class JukeboxStationMixin:
             player = await self._create_player(inter, bot, voice, local=False)
         guild = bot.get_guild(guild_id)
         member = (guild.get_member(member.id) if guild is not None else None) or member
-        name = self.station_name(player.tr, station)
+        async with player.radio_lock:
+            opened, _ = await self._station_decision(player, member, station.id, self.station_name(player.tr, station))
+            if opened is not None:
+                return opened
         loaded = await self._station_pool(
             player, station
-        )  # antes do lock: o Last.fm pode demorar; nada muda até o efeito
+        )  # fora do lock: o Last.fm pode demorar; só com a porta liberando
         async with player.radio_lock:
-            if player.is_closing:
-                raise Refused("jukebox.radio.player_closed")
-            channel_id = self._requester_channel(member, player)
-            if switch_wait(player.radio_switched_at, self.now()) > 0:
-                raise Refused("jukebox.radio.switch_wait")  # [s1]
-            decision = gate(await self._actor(member, player), self.station_state(player, member.id), Target.STATION)
-            if decision.decision is Decision.DENY:
-                raise Refused(decision.reason)
-            if decision.decision is Decision.VOTE:
-                vote = self._new_vote(player, member, Target.STATION, station.id, name)
-                if not self._passes(player, vote):
-                    return await self._post_vote(player, vote)
+            station = await self._station_of(
+                guild_id, station.id
+            )  # relida no efeito: apagada durante a carga não começa
+            name = self.station_name(player.tr, station)
+            opened, channel_id = await self._station_decision(player, member, station.id, name)
+            if opened is not None:
+                return opened
             await self._station_checks(guild_id, channel_id)  # dentro do lock: nada do que valia antes vale agora
             now = await self._start_station(player, station, loaded, name=name, starter_id=member.id)
         if now:
@@ -237,6 +231,60 @@ class JukeboxStationMixin:
                 player.process_next()
             )  # fora do lock: o sorteio e a resolução da 1ª faixa não seguram votos nem trocas
         return ("jukebox.station.started_now" if now else "jukebox.station.started_next"), {"station": name}
+
+    async def _station_decision(
+        self: JukeboxRadio, player: Any, member: Any, station_id: str, name: str
+    ) -> tuple[Optional[Reply], Optional[int]]:
+        """A porta da estação, sob o lock: recusa (``Refused``), voto aberto (a resposta) ou ``None`` (segue para o efeito). Sem efeito nenhum além
+        de abrir o voto; o voto que passa no ato (sozinho na call) segue para o efeito como DJ."""
+        if player.is_closing:
+            raise Refused("jukebox.radio.player_closed")
+        channel_id = self._requester_channel(member, player)
+        if switch_wait(player.radio_switched_at, self.now()) > 0:
+            raise Refused("jukebox.radio.switch_wait")  # [s1]
+        decision = gate(await self._actor(member, player), self.station_state(player, member.id), Target.STATION)
+        if decision.decision is Decision.DENY:
+            raise Refused(decision.reason)
+        if decision.decision is Decision.VOTE:
+            vote = self._new_vote(player, member, Target.STATION, station_id, name)
+            if not self._passes(player, vote):
+                return await self._post_vote(player, vote), channel_id
+        return None, channel_id
+
+    async def _pass_station(self: JukeboxRadio, player: Any, vote: Any, channel_id: Optional[int]) -> None:
+        """O voto de estação passou (sob o lock, chamado por ``_pass``): as pré-condições baratas agora; o pool e o efeito numa tarefa à parte,
+        fora do lock, que volta a ele com a cerca de epoch e fecha a mensagem do voto."""
+        await self._station_checks(player.guild.id, channel_id)
+        station = await self._station_of(player.guild.id, vote.uuid)
+        self._spawn(self._finish_station_vote(player, vote, station, player.radio_epoch))
+
+    async def _finish_station_vote(
+        self: JukeboxRadio, player: Any, vote: Any, station: CustomStation, epoch: int
+    ) -> None:
+        from empiremuse.utils.music import jukebox_ui
+
+        tr = self._tr(player)
+        now = False
+        try:
+            loaded = await self._station_pool(player, station)
+            async with player.radio_lock:
+                if player.is_closing:
+                    raise Refused("jukebox.radio.player_closed")
+                if player.radio_epoch != epoch:
+                    raise Refused("jukebox.radio.vote.expired")  # outra transição veio durante a carga
+                await self._station_checks(player.guild.id, self._player_channel_id(player))
+                found = await self._station_of(player.guild.id, station.id)
+                name = self.station_name(tr, found)
+                now = await self._start_station(player, found, loaded, name=name, starter_id=vote.author_id)
+            text = jukebox_ui.vote_passed_station(tr, name, now=now)
+        except Refused as refused:
+            text = jukebox_ui.vote_failed(tr, tr(refused.key, **refused.fields))
+        except Exception as error:  # noqa: BLE001 - banco ou Last.fm fora: a mensagem fecha mesmo assim; só o tipo vai ao log
+            logger.warning("Votação de estação passou, mas o efeito falhou (%s)", type(error).__name__)
+            text = jukebox_ui.vote_failed(tr, tr("radio.owner.unavailable"))
+        await self._close_vote_message(vote, text)
+        if now:
+            await player.process_next()
 
     async def _start_station(
         self: JukeboxRadio, player: Any, station: CustomStation, loaded: Loaded, *, name: str, starter_id: int
@@ -248,6 +296,10 @@ class JukeboxStationMixin:
         from_radio = player.radio_mode is not None
         if from_radio:
             await self._leave(player)  # R → S: a rádio acaba agora (revoga a ficha)
+        if player.is_closing:
+            raise Refused(
+                "jukebox.radio.player_closed"
+            )  # destruído durante os awaits: ``forget`` já rodou e não veria a estação nova
         discarded = len(player.queue)
         player.queue.clear()
         player.queue_autoplay.clear()
@@ -270,18 +322,19 @@ class JukeboxStationMixin:
 
     # ------------------------------------------------------------------ a próxima faixa (gancho do autoplay, §0.3)
 
-    async def next_station_track(self: JukeboxRadio, player: Any, active: ActiveStation) -> Any:
-        """A faixa seguinte da estação, já resolvida, ou ``None`` (a estação acabou ou mudou; o player segue para o autoplay normal ou o
-        ocioso). Sem o lock: roda dentro do ``process_next`` que uma transição sob o lock pode ter chamado."""
+    async def next_station_track(self: JukeboxRadio, player: Any, active: ActiveStation) -> tuple[StationNext, Any]:
+        """A faixa seguinte da estação, já resolvida (``TRACK``); ``ENDED`` quando a estação acabou (S → M: o player segue para o autoplay ou o
+        ocioso); ``SUPERSEDED`` quando outra transição tomou o player no meio (R abrindo, outra estação, player fechando): aí nada segue daqui e
+        quem manda é essa transição, com a cerca de epoch da J2a. A resolução roda sem o lock; a saída de S toma o lock."""
         from empiremuse.utils.music.models import PartialTrack
         from empiremuse.utils.music.models.player_autoqueue import resolve_error
 
         if player.station is not active:
-            return None
+            return self._after_station(player), None
         try:
             if await self.hub.premium.get(player.guild.id) is None:  # Q4: a cada faixa, com o cache de 30 s
-                await self._drop_station(player, active)
-                return None
+                await self._end_from_hook(player, active)
+                return self._after_station(player), None
         except Exception as error:  # noqa: BLE001 - sem como conferir, segue a faixa; só o tipo vai ao log
             logger.warning("Premium da estação da Jukebox não lido (%s)", type(error).__name__)
 
@@ -306,49 +359,90 @@ class JukeboxStationMixin:
             return None
 
         try:
-            _, partial = await active.session.next_playable(resolve)
+            pick, partial = await active.session.next_playable(resolve)
         except StreakLimit:
-            await self._drop_station(player, active, ended=True)  # 5 seguidas sem tocar encerram a estação (§2.6)
-            return None
-        active.session.streak += 1  # zera quando a faixa começa de fato (``station_track_started``)
-        return partial if player.station is active else None
+            await self._end_from_hook(player, active, ended=True)  # 5 seguidas sem tocar encerram a estação (§2.6)
+            return self._after_station(player), None
+        if player.station is not active:
+            return self._after_station(player), None
+        active.session.streak += (
+            1  # só o progresso real zera (``station_track_ended``); uma falha de carga tira a faixa do pool
+        )
+        active.pending = (pick, partial)
+        return StationNext.TRACK, partial
 
-    def station_track_started(self: JukeboxRadio, player: Any) -> None:
-        """Uma faixa da estação começou a tocar: a sequência de falhas zera (resolveu E tocou)."""
+    @staticmethod
+    def _after_station(player: Any) -> StationNext:
+        """A estação não está mais lá: acabou (S → M, segue o de sempre) ou outra transição tomou o player (nada segue daqui)."""
+        if player.is_closing or player.radio_mode is not None or getattr(player, "station", None) is not None:
+            return StationNext.SUPERSEDED
+        return StationNext.ENDED
+
+    def station_track_ended(self: JukeboxRadio, player: Any, track: Any, reason: object) -> None:
+        """O fim de uma faixa da estação. ``LOAD_FAILED`` é falha (o ``TrackStart`` sai antes de o stream abrir); qualquer outro fim é progresso
+        real e zera a sequência."""
+        if str(reason).upper() == "LOAD_FAILED":
+            self.station_track_failed(player, track)
+            return
         active = getattr(player, "station", None)
-        if active is not None and is_station_track(getattr(player, "current", None), active.ref):
+        if active is not None and is_station_track(track, active.ref):
             active.session.streak = 0
+            active.pending = None
+
+    def station_track_failed(self: JukeboxRadio, player: Any, track: Any) -> None:
+        """A faixa da estação não carregou (exceção do Lavalink ou ``LOAD_FAILED``): sai do pool desta estação, para a estação não girar para
+        sempre. Já contou na sequência quando foi sorteada."""
+        active = getattr(player, "station", None)
+        if active is None or active.pending is None or not is_station_track(track, active.ref):
+            return
+        pick, partial = active.pending
+        if partial is not track:
+            return
+        active.pending = None
+        session = active.session
+        session.pool = [t for t in session.pool if track_key(t) != track_key(pick)] or session.pool
 
     # ------------------------------------------------------------------ desligar (S → M)
 
-    async def _drop_station(self: JukeboxRadio, player: Any, active: ActiveStation, *, ended: bool = False) -> None:
-        """Tira a estação sem o lock (atribuições síncronas; o gancho roda dentro de um ``process_next``). ``ended`` avisa no canal."""
+    async def _end_from_hook(self: JukeboxRadio, player: Any, active: ActiveStation, *, ended: bool = False) -> None:
+        """S → M a partir do gancho (premium perdido, 5 falhas): sob o lock, como toda transição [m3]; o aviso sai fora dele."""
+        async with player.radio_lock:
+            if player.is_closing or not await self._drop_station(player, active):
+                return
+        if ended:
+            await self._station_ended_notice(player, active)
+
+    async def _drop_station(self: JukeboxRadio, player: Any, active: ActiveStation) -> bool:
+        """Tira a estação, já sob o lock. S → M NÃO incrementa o epoch: nada é descartado, e um pedido de música em curso segue (T-J2B-FIX).
+        O voto aberto cai junto, com a mensagem fechada (sob o lock: nunca fica um botão de voto órfão)."""
         if player.station is not active:
-            return
+            return False
         player.station = None
-        self._bump(player)
         await self._drop_vote(player)
         self._changed(player)
-        if ended and player.text_channel is not None:
-            import disnake
+        return True
 
-            from empiremuse.utils.music import jukebox_ui
+    async def _station_ended_notice(self: JukeboxRadio, player: Any, active: ActiveStation) -> None:
+        if player.text_channel is None:
+            return
+        import disnake
 
-            try:
-                await player.text_channel.send(
-                    jukebox_ui.station_ended(player.tr, active.name, FAIL_STREAK_MAX),
-                    allowed_mentions=disnake.AllowedMentions.none(),
-                )
-            except Exception as error:  # noqa: BLE001 - o aviso é conveniência; só o tipo vai ao log
-                logger.warning("Aviso de estação encerrada não enviado (%s)", type(error).__name__)
+        from empiremuse.utils.music import jukebox_ui
+
+        try:
+            await player.text_channel.send(
+                jukebox_ui.station_ended(player.tr, active.name, FAIL_STREAK_MAX),
+                allowed_mentions=disnake.AllowedMentions.none(),
+            )
+        except Exception as error:  # noqa: BLE001 - o aviso é conveniência; só o tipo vai ao log
+            logger.warning("Aviso de estação encerrada não enviado (%s)", type(error).__name__)
 
     async def end_station(self: JukeboxRadio, player: Any) -> Optional[str]:
         """O botão de autoplay com a estação ligada a desliga (S → M, permissão do autoplay de hoje). O nome desligado, ou ``None``."""
         async with player.radio_lock:
             active = getattr(player, "station", None)
-            if active is None:
+            if active is None or player.is_closing or not await self._drop_station(player, active):
                 return None
-            await self._drop_station(player, active)
             return active.name
 
     # ------------------------------------------------------------------ estrela do player (§4.2)

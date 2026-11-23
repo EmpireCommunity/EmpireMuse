@@ -37,6 +37,7 @@ from empiremuse.rules.radio_stations import Station, valid_uuid
 from empiremuse.rules.text import stored_text
 from empiremuse.utils.music.live_mark import mark_live
 from empiremuse.utils.radio.directory import DirectoryError
+from empiremuse.utils.radio.jukebox_errors import Refused, Reply
 from empiremuse.utils.radio.jukebox_station import JukeboxStationMixin
 from empiremuse.utils.radio.live import StationFailure
 from empiremuse.utils.radio.live_play import LOCAL_NODE, LocalNodeUnavailable, local_node, open_stream
@@ -48,15 +49,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 FLOW_WAIT_S = 25.0  # como a 24 h: o primeiro áudio tem de chegar ao Lavalink neste prazo
-Reply = tuple[str, dict[str, Any]]  # a chave do texto e os campos dela: quem responde traduz
-
-
-class Refused(Exception):
-    """Recusa com a chave de texto e os campos dela; a superfície traduz e responde em mensagem efêmera."""
-
-    def __init__(self, key: str, **fields: Any) -> None:
-        super().__init__(key)
-        self.key, self.fields = key, fields
 
 
 @dataclass
@@ -756,15 +748,9 @@ class JukeboxRadio(JukeboxStationMixin):
                 station = await self._start(player, vote.uuid, starter_id=vote.author_id, place_node=vote.place_node)
                 text = jukebox_ui.vote_passed_live(tr, station.name)
             elif vote.target is Target.STATION and vote.uuid is not None:
-                # tudo refeito: premium, 24 h na call, a estação relida no servidor e o pool (J2b)
-                await self._station_checks(player.guild.id, channel_id)
-                found = await self._station_of(player.guild.id, vote.uuid)
-                loaded = await self._station_pool(player, found)
-                name = self.station_name(tr, found)
-                now = await self._start_station(player, found, loaded, name=name, starter_id=vote.author_id)
-                if now:
-                    self._spawn(player.process_next())  # fora do lock: o sorteio da 1ª faixa não segura o voto
-                text = jukebox_ui.vote_passed_station(tr, name, now=now)
+                # premium, 24 h na call e a estação relida agora; o pool e o efeito saem do lock (o mixin fecha a mensagem)
+                await self._pass_station(player, vote, channel_id)
+                return
             else:
                 await self._to_idle(player)
                 text = jukebox_ui.vote_passed_leave(tr, mention)

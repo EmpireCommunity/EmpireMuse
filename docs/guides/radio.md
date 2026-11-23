@@ -81,9 +81,9 @@ Em servidor com o acesso Limitado a Apoiadores, o select da Jukebox ganha no top
 Com o acesso Limitado a Apoiadores, a primeira página do select da Jukebox também traz **🎙️ Rádios do Servidor**. O seletor abre só para quem clicou, com as estações do servidor (as suas ⭐ primeiro) e os gêneros prontos, internacionais e brasileiros.
 
 - **Como o autoplay:** a estação começa depois da música atual (ou na hora, com o player parado ou no modo rádio ao vivo). Uma música pedida toca antes, e a estação volta depois dela.
-- **Quem decide:** com a fila vazia ou só com as suas músicas, toca direto; com músicas de outras pessoas na fila, DJ e quem gerencia o servidor tocam direto e os demais abrem uma votação. A fila é limpa quando a estação começa. No modo restrito, só DJ.
+- **Quem decide:** com a fila vazia ou só com as suas músicas, toca direto; com músicas de outras pessoas na fila, DJ e quem gerencia o servidor tocam direto e os demais abrem uma votação. A fila é limpa quando a estação começa. No modo restrito, com músicas de outras pessoas na fila ou com uma rádio ou estação já ligada, só DJ.
 - **Desligar:** o botão de autoplay do player mostra "📻 Estação: {nome}"; desligá-lo encerra a estação.
-- **Sem faixas:** se as últimas faixas não tocarem, a estação para e avisa no canal do player.
+- **Sem faixas:** se 5 faixas seguidas não tocarem, a estação para e avisa no canal do player. "Repetir fila" repete só as músicas pedidas.
 - **Estrela:** com uma faixa da estação tocando, a estrela do player guarda a estação nas suas favoritas deste servidor.
 - **Não toca:** em call que já tem uma rádio 24 h ou sem o acesso do servidor.
 

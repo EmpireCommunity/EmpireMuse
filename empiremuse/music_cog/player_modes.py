@@ -4,7 +4,7 @@ import disnake
 from disnake.ext import commands
 
 from empiremuse.i18n import localized
-from empiremuse.utils.music.jukebox_ui import station_md
+from empiremuse.utils.music.jukebox_ui import server_station_md
 from empiremuse.utils.music.checks import (
     check_voice,
     has_player,
@@ -107,7 +107,7 @@ class PlayerModesMixin:
             # com a estação da Jukebox ligada o botão é "📻 Estação: {nome}" e desliga a estação (S → M, A5); o autoplay fica como estava
             name = await jukebox.end_station(player)
             if name is not None:
-                station = station_md(name)
+                station = server_station_md(name)
                 await self.interaction_message(
                     inter,
                     [

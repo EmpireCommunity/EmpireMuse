@@ -105,11 +105,16 @@ async def _pn_next_track(self, req):
                 await go_idle(self)
             return True
         if (active := getattr(self, "station", None)) is not None:
-            # estação da Jukebox (J2b, §0.3): com a fila vazia ela vem ANTES do autoplay; ``None`` = acabou ou mudou, segue o de sempre
-            track = await self.bot.pool.radio.jukebox.next_station_track(self, active)
-            if track is not None:
+            # estação da Jukebox (J2b, §0.3): com a fila vazia ela vem ANTES do autoplay. Acabou (S → M): segue o de sempre. Outra transição
+            # tomou o player no meio (R abrindo, outra estação): nada segue daqui, quem manda é ela (a cerca de epoch da J2a)
+            from empiremuse.utils.radio.jukebox_station import StationNext
+
+            outcome, track = await self.bot.pool.radio.jukebox.next_station_track(self, active)
+            if outcome is StationNext.TRACK:
                 req.track = track
                 return False
+            if outcome is StationNext.SUPERSEDED:
+                return True
         try:
             track = None
 

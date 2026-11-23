@@ -1373,7 +1373,7 @@
   "jukebox.station.started_next": "📻 A estação **{station}** começa depois da música atual.",
   "jukebox.station.not_found": "Essa estação não está mais disponível neste servidor. Escolha outra.",
   "jukebox.station.empty": "Esta estação está sem faixas para tocar agora. Escolha outra.",
-  "jukebox.station.ended": "📻 A estação **{station}** parou: {count} faixas seguidas não tocaram. Escolha outra estação ou peça uma música.",
+  "jukebox.station.ended": "📻 A estação **{station}** parou: {tracks} faixas seguidas não tocaram. Escolha outra estação ou peça uma música.",
   "jukebox.station.autoplay_label": "📻 Estação: {station}",
   "jukebox.station.off_log": "desligou a estação {station}.",
   "jukebox.station.off": "📻 **⠂{member} desligou a estação {station}.**",

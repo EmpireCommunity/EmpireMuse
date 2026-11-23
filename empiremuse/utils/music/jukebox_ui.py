@@ -31,6 +31,12 @@ def station_md(name: object) -> str:
     return stored_text(name, NAME_LIMIT) or "—"
 
 
+def server_station_md(name: object) -> str:
+    """O nome de uma estação do servidor ou de um gênero (guardado SEM escape) para um texto com markdown: escapado aqui, sem link nem menção.
+    ``station_md`` é para o nome do diretório, que já vem escapado (desfazer o escape de um nome cru perderia uma barra, como em "AC\\DC")."""
+    return external_text(name, NAME_LIMIT) or "—"
+
+
 def live_entry(tr: Tr) -> disnake.SelectOption:
     """A entrada fixa "📻 Rádios ao Vivo" do topo do select da Jukebox (A1), só com premium (quem decide é o construtor)."""
     return disnake.SelectOption(
@@ -73,7 +79,7 @@ def vote_payload(
         text = tr(
             "jukebox.radio.vote.station_text",
             member=member,
-            station=station_md(station_name),
+            station=server_station_md(station_name),
             votes=votes,
             needed=needed,
             deadline=deadline,
@@ -103,7 +109,7 @@ def vote_passed_live(tr: Tr, station_name: object) -> str:
 def vote_passed_station(tr: Tr, station_name: object, *, now: bool) -> str:
     """Quando a estação toca (A5): já, ou só depois da música atual."""
     key = "jukebox.radio.vote.passed_station_now" if now else "jukebox.radio.vote.passed_station_next"
-    return tr(key, station=station_md(station_name))
+    return tr(key, station=server_station_md(station_name))
 
 
 def vote_passed_leave(tr: Tr, mention: str) -> str:
@@ -205,15 +211,16 @@ def server_description(tr: Tr, count: int) -> str:
 
 def station_ended(tr: Tr, station_name: object, failures: int) -> str:
     """A estação parou sozinha (``failures`` faixas seguidas sem tocar, §2.6): uma mensagem no canal do player, sem menção."""
-    return tr("jukebox.station.ended", station=station_md(station_name), count=failures)
+    # ``tracks``, não ``count``: com ``count`` o tradutor procura as formas de plural e o texto sairia como a chave crua
+    return tr("jukebox.station.ended", station=server_station_md(station_name), tracks=failures)
 
 
 def station_warning(tr: Tr, *, station_name: object, queued: bool, radio_name: object = None) -> str:
     """O aviso antes de "Tocar estação" (A5), mostrado ANTES do clique; a porta é refeita no clique."""
     if radio_name is not None:
-        return tr("jukebox.station.warn.radio", radio=station_md(radio_name), station=station_md(station_name))
+        return tr("jukebox.station.warn.radio", radio=station_md(radio_name), station=server_station_md(station_name))
     if queued:
-        return tr("jukebox.station.warn.queue", station=station_md(station_name))
+        return tr("jukebox.station.warn.queue", station=server_station_md(station_name))
     return ""
 
 
@@ -228,4 +235,4 @@ def autoplay_label(player: Any) -> str:
 
 def station_line(tr: Tr, view: Any) -> str:
     """A linha "📻 Estação: {nome}" do Tocando agora com a estação ligada (A6). ``view`` = ``StationView``."""
-    return tr("jukebox.station.autoplay_label", station=station_md(view.name))
+    return tr("jukebox.station.autoplay_label", station=server_station_md(view.name))

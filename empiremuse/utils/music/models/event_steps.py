@@ -287,6 +287,10 @@ async def _he_track_end(self, event) -> None:
     if event.reason in PLAYED_END_REASONS:
         self.network_abandon_streak = 0
 
+    if getattr(self, "station", None) is not None:
+        # a sequência de falhas da estação zera só com progresso real; LOAD_FAILED tira a faixa do pool dela (§2.6)
+        self.bot.pool.radio.jukebox.station_track_ended(self, self.last_track, event.reason)
+
     if event.reason == "FINISHED":
         # Só o progresso real devolve a nova tentativa: o TrackStart sai antes de o Lavalink abrir o stream.
         _he_reset_retry_budget(self)
@@ -320,11 +324,6 @@ async def _he_track_start(self, event) -> None:
         return
 
     self.bot.dispatch("wavelink_track_start", player=self)
-
-    if getattr(self, "station", None) is not None:
-        self.bot.pool.radio.jukebox.station_track_started(
-            self
-        )  # a faixa da estação tocou: a sequência de falhas zera (§2.6)
 
     if self.text_channel and not _he_can_send_in_text_channel(self):
         self.text_channel = None
@@ -518,6 +517,10 @@ def _he_is_youtube_plugin_cause(event) -> bool:
 
 async def _he_track_exception(self, event) -> None:
     track = self.current or self.last_track
+    if getattr(self, "station", None) is not None and event.node.identifier == self.node.identifier:
+        self.bot.pool.radio.jukebox.station_track_failed(
+            self, track
+        )  # a faixa da estação não carregou: sai do pool dela
     embed, error_code = _he_exception_embed(self, event, track)
     error_format = pprint.pformat(event.data)
 
