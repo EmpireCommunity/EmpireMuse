@@ -13,6 +13,7 @@ from empiremuse.panel.services.base import DBModel, Args, FormContext, ParseResu
 from empiremuse.panel.services.player import active_player, guild_players
 from empiremuse.rules import limits
 from empiremuse.rules.settings import allowed_names
+from empiremuse.rules.skins import jukebox_choice, jukebox_skin
 
 logger = logging.getLogger(__name__)
 
@@ -72,8 +73,8 @@ class SkinsServerForm(SettingsForm):
 
     def display(self, ctx: FormContext, current: dict[str, Any]) -> dict[str, Any]:
         return {
-            "skin": current["skin"] or ctx.pool.default_skin,
-            "static_skin": current["static_skin"] or ctx.pool.default_static_skin,
+            "skin": jukebox_skin(current["skin"], ctx.pool.default_skin),
+            "static_skin": jukebox_skin(current["static_skin"], ctx.pool.default_static_skin),
         }
 
     def extras(self, ctx: FormContext, current: dict[str, Any]) -> dict[str, Any]:
@@ -114,8 +115,8 @@ class SkinsGlobalForm(SettingsForm):
     def display(self, ctx: FormContext, current: dict[str, Any]) -> dict[str, Any]:
         return {
             "global_skin": current["global_skin"],
-            "player_skin": current["player_skin"] or "",
-            "player_skin_static": current["player_skin_static"] or "",
+            "player_skin": jukebox_choice(current["player_skin"]) or "",
+            "player_skin_static": jukebox_choice(current["player_skin_static"]) or "",
         }
 
     def extras(self, ctx: FormContext, current: dict[str, Any]) -> dict[str, Any]:
@@ -159,8 +160,11 @@ class SkinsGlobalForm(SettingsForm):
         """Skins que os players devem usar: as globais (modo global) ou as do servidor."""
         if new["global_skin"]:
             return (
-                new["player_skin"] or ctx.pool.default_skin,
-                new["player_skin_static"] or ctx.pool.default_static_skin,
+                jukebox_skin(new["player_skin"], ctx.pool.default_skin),
+                jukebox_skin(new["player_skin_static"], ctx.pool.default_static_skin),
             )
         own = await ctx.pool.servers.settings(ctx.guild_id)
-        return own["skin"] or ctx.pool.default_skin, own["static_skin"] or ctx.pool.default_static_skin
+        return (
+            jukebox_skin(own["skin"], ctx.pool.default_skin),
+            jukebox_skin(own["static_skin"], ctx.pool.default_static_skin),
+        )

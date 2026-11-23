@@ -57,13 +57,14 @@ async def test_set_look_saves_the_look_and_the_legacy_theme_with_the_rev(look, s
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("method", ["set_look", "set_skin"])
-async def test_a_radio_of_another_server_is_refused_without_writing(monkeypatch, method):
+@pytest.mark.parametrize("guild", [OTHER_GUILD, None, str(GUILD), True, "x", 0])  # None: interação fora de servidor
+async def test_a_radio_of_another_server_is_refused_without_writing(monkeypatch, method, guild):
     w = build()
     radio = await a_radio(w)
     writes = count_writes(monkeypatch, w.hub.store)
 
     with pytest.raises(RadioNotFound):
-        await getattr(w.hub.store, method)(OTHER_GUILD, radio.id, "white", expected_rev=radio.rev)
+        await getattr(w.hub.store, method)(guild, radio.id, "white", expected_rev=radio.rev)
 
     assert writes == [] and (await w.hub.store.get(radio.id)).look is None
 
@@ -94,6 +95,21 @@ async def test_set_look_is_compare_and_set_and_a_missing_radio_is_not_found():
     with pytest.raises(RadioNotFound):
         await w.hub.store.set_look(GUILD, radio_id(3, GUILD), "white", expected_rev=0)
     assert (await w.hub.store.get(radio.id)).look == saved.look
+
+
+@pytest.mark.asyncio
+async def test_set_look_losing_the_compare_and_set_race_is_a_conflict(monkeypatch):
+    w = build()
+    radio = await a_radio(w)
+
+    async def lost(*args, **kwargs):  # outra escrita entrou entre a leitura e a gravação
+        return False
+
+    monkeypatch.setattr(w.hub.store, "_save", lost)
+
+    with pytest.raises(RadioConflict):
+        await w.hub.store.set_look(GUILD, radio.id, "text", expected_rev=radio.rev)
+    assert (await w.hub.store.get(radio.id)).look is None
 
 
 # ---------------------------------------------------------------------- retrato do painel
@@ -131,6 +147,7 @@ def muse_package(tmp_path, monkeypatch):
         "    def load(self, player): return {}\n\ndef load():\n    return Skin()\n"
     )
     (package / f"{broken}.py").write_text("def load():\n    raise RuntimeError('quebrada')\n")
+    (package / f"{JUKEBOX_IDS[2]}.py").write_text("import a_dependency_that_is_missing\n")  # falta DENTRO da skin
     (package / "not_in_the_registry.py").write_text("raise SystemExit('nunca importar')\n")
     monkeypatch.syspath_prepend(str(tmp_path))
     monkeypatch.setattr(client_module, "MUSE_SKINS_PACKAGE", "fake_muse_pkg")
@@ -148,6 +165,7 @@ def test_the_loader_registers_each_muse_skin_in_both_modes_and_only_registry_ids
 
     assert pool.player_skins[good] is pool.player_static_skins[good]
     assert broken not in pool.player_skins and broken in caplog.text
+    assert JUKEBOX_IDS[2] not in pool.player_skins and JUKEBOX_IDS[2] in caplog.text
     assert set(pool.player_skins) == {"default", good} == set(pool.player_static_skins)
     assert "fake_muse_pkg.not_in_the_registry" not in sys.modules
 

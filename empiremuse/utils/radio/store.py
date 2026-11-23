@@ -80,6 +80,15 @@ class ReconcileReport:
     counters_fixed: int = 0  # contadores que estavam errados
 
 
+_NO_GUILD_CHECK = (
+    object()
+)  # ``_set_field`` sem dono por servidor; nunca ``None``, que viria de uma interação fora de servidor
+
+
+def _is_guild_id(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
 class RadioStore:
     def __init__(self, pool: BotPool, premium: PremiumStore) -> None:
         self.pool = pool
@@ -345,14 +354,17 @@ class RadioStore:
         *,
         expected_rev: int,
         updated_by: str,
-        guild_id: Optional[int] = None,
+        guild_id: object = _NO_GUILD_CHECK,
         **also: object,
     ) -> Radio:
         """Muda UM campo de cabeçalho (``look``, ``filter``) com compare-and-set no ``rev``; o valor passa pela mesma validação do documento.
 
-        Com ``guild_id``, a rádio relida tem que ser desse servidor; senão ``RadioNotFound``, sem escrever."""
+        Com ``guild_id`` (qualquer valor, inclusive ``None``), a rádio relida tem que ser desse servidor; senão ``RadioNotFound``,
+        sem escrever. Só quem não passa ``guild_id`` (os campos sem dono por servidor) pula a conferência."""
+        if guild_id is not _NO_GUILD_CHECK and not _is_guild_id(guild_id):
+            raise RadioNotFound
         current = self._radio(await self._find(radio_id))
-        if current is None or (guild_id is not None and current.guild_id != int(guild_id)):
+        if current is None or (guild_id is not _NO_GUILD_CHECK and current.guild_id != guild_id):
             raise RadioNotFound
         if current.rev != expected_rev:
             raise RadioConflict
@@ -385,12 +397,14 @@ class RadioStore:
         return checked
 
     async def set_look(
-        self, guild_id: int, radio_id: str, look: object, *, expected_rev: int, updated_by: str = ""
+        self, guild_id: object, radio_id: str, look: object, *, expected_rev: int, updated_by: str = ""
     ) -> Radio:
         """A skin própria da rádio (``rules/skins.RADIO_LOOKS``); ``None`` = usar a de todas as rádios do servidor.
 
-        Relê o documento e confere o servidor (outra rádio = ``RadioNotFound``, sem escrever); valor fora da lista =
-        ``RadioInvalid``. O campo antigo ``skin`` acompanha o tema (``white`` só para skin clara), para o rc anterior."""
+        Relê o documento e confere o servidor: ``guild_id`` que não é um id inteiro (``None``, texto, booleano) ou rádio de
+        outro servidor = ``RadioNotFound``, sem escrever; valor fora da lista = ``RadioInvalid``. O campo antigo ``skin`` acompanha o tema (``white`` só para skin clara), para o rc anterior."""
+        if not _is_guild_id(guild_id):
+            raise RadioNotFound
         if look is not None and not valid_radio_look(look):
             raise RadioInvalid(RuleError(LOOK_INVALID, "look"))
         return await self._set_field(
@@ -404,7 +418,7 @@ class RadioStore:
         )
 
     async def set_skin(
-        self, guild_id: int, radio_id: str, skin: object, *, expected_rev: int, updated_by: str = ""
+        self, guild_id: object, radio_id: str, skin: object, *, expected_rev: int, updated_by: str = ""
     ) -> Radio:
         """O visual de antes do 2.3 (``black`` ou ``white``), gravado como a skin própria da rádio. ``RadioInvalid`` para
         qualquer outro valor; rádio de outro servidor = ``RadioNotFound``."""

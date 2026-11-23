@@ -186,6 +186,15 @@ def jukebox_choice(saved: object) -> object:
     return saved
 
 
+def jukebox_skin(saved: object, default: str) -> str:
+    """A skin que um leitor usa ou mostra para o valor gravado: a escolha (``jukebox_choice``, Q1), senão ``default``.
+
+    TODO leitor da skin gravada da Jukebox passa por aqui ou por ``jukebox_choice`` (criação do player, ``/skin``, painel,
+    sessão retomada); assim o Q1 muda só em ``SAVED_DEFAULT_IS_A_CHOICE``."""
+    choice = jukebox_choice(saved)
+    return choice if isinstance(choice, str) and choice else default
+
+
 def disc_motion_on(value: object) -> bool:
     """A animação do disco está ligada? ``None`` (nunca escolhido) ou qualquer valor que não seja ``False`` = ligada."""
     return value is not False

@@ -1021,10 +1021,11 @@ class BotPool:
             try:
                 if find_spec(module_name) is None:
                     continue
-                loaded = import_module(module_name).load()
-            except ModuleNotFoundError:
+            except ModuleNotFoundError:  # o pacote das skins ainda não existe
                 continue
-            except Exception as e:
+            try:
+                loaded = import_module(module_name).load()
+            except Exception as e:  # inclusive um import ausente DENTRO da skin: vai ao log
                 logger.warning("Falha ao carregar skin [muse] %s (%s)", skin, type(e).__name__)
                 logger.debug("Detalhe da falha da skin %s", skin, exc_info=True)
                 continue

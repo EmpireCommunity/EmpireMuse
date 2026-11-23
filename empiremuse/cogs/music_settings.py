@@ -24,6 +24,7 @@ from empiremuse.rules.limits import (
 )
 from empiremuse.rules.rpc import TOKEN_LENGTH, generate_rpc_token
 from empiremuse.rules.servers import SettingError
+from empiremuse.rules.skins import jukebox_skin
 from empiremuse.rules.settings import add_dj_role as add_role, allowed_names
 from empiremuse.utils import branding
 from empiremuse.utils.branding import asset_url
@@ -1222,11 +1223,11 @@ class MusicSettings(commands.Cog):
 
         global_mode = global_data["global_skin"]
 
-        selected = guild_data["player_controller"]["skin"] or bot.pool.default_skin
-        static_selected = guild_data["player_controller"]["static_skin"] or bot.pool.default_static_skin
+        selected = jukebox_skin(guild_data["player_controller"]["skin"], bot.pool.default_skin)
+        static_selected = jukebox_skin(guild_data["player_controller"]["static_skin"], bot.pool.default_static_skin)
 
-        global_selected = global_data["player_skin"] or bot.pool.default_skin
-        global_static_selected = global_data["player_skin_static"] or bot.pool.default_static_skin
+        global_selected = jukebox_skin(global_data["player_skin"], bot.pool.default_skin)
+        global_static_selected = jukebox_skin(global_data["player_skin_static"], bot.pool.default_static_skin)
 
         skins_opts = [
             disnake.SelectOption(

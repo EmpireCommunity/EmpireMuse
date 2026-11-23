@@ -19,6 +19,7 @@ from empiremuse.rules.skins import (
     Surface,
     disc_motion_on,
     jukebox_choice,
+    jukebox_skin,
     legacy_radio_skin,
     radio_look,
 )
@@ -176,3 +177,49 @@ def test_the_jukebox_skin_a_player_gets(saved, loaded, expected):
     pool = SimpleNamespace(player_skins=skins_loaded, default_skin=DEFAULT_JUKEBOX_SKIN if loaded else "default")
 
     assert BotPool.check_skin(pool, jukebox_choice(saved)) == expected
+
+
+@pytest.mark.parametrize(
+    ("q1", "saved", "shown", "global_field"),
+    [
+        (True, "default", "default", "default"),
+        (False, "default", DEFAULT_JUKEBOX_SKIN, ""),  # Q1 = não: o "default" gravado aparece como nunca escolhido
+        (False, None, DEFAULT_JUKEBOX_SKIN, ""),
+        (False, "mini", "mini", "mini"),
+    ],
+)
+def test_every_reader_of_the_saved_jukebox_skin_follows_the_q1_switch(monkeypatch, q1, saved, shown, global_field):
+    from empiremuse.panel.services.appearance import SkinsGlobalForm, SkinsServerForm
+
+    monkeypatch.setattr(skins, "SAVED_DEFAULT_IS_A_CHOICE", q1)
+    ctx = SimpleNamespace(
+        pool=SimpleNamespace(default_skin=DEFAULT_JUKEBOX_SKIN, default_static_skin=DEFAULT_JUKEBOX_SKIN)
+    )
+
+    server = SkinsServerForm.display(
+        SkinsServerForm.__new__(SkinsServerForm), ctx, {"skin": saved, "static_skin": saved}
+    )
+    shown_global = SkinsGlobalForm.display(
+        SkinsGlobalForm.__new__(SkinsGlobalForm),
+        ctx,
+        {"global_skin": True, "player_skin": saved, "player_skin_static": saved},
+    )
+
+    assert jukebox_skin(saved, DEFAULT_JUKEBOX_SKIN) == shown
+    assert server == {"skin": shown, "static_skin": shown}
+    assert shown_global["player_skin"] == shown_global["player_skin_static"] == global_field
+
+
+@pytest.mark.parametrize(
+    ("folder", "listed"), [("normal_player", skins.CLASSIC_NORMAL), ("static_player", skins.CLASSIC_STATIC)]
+)
+def test_the_classic_lists_match_the_skin_files_of_each_mode(folder, listed):
+    from pathlib import Path
+
+    import empiremuse.utils.music.skins as package
+
+    files = {
+        path.stem for path in (Path(next(iter(package.__path__))) / folder).glob("*.py") if path.stem != "__init__"
+    }
+
+    assert sorted(listed) == sorted(files)
