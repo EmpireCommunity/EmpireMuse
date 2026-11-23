@@ -1247,7 +1247,7 @@ async def test_a_session_saved_in_radio_mode_is_marked_and_the_mark_survives_the
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("radio_session", "while_starting"), [(True, (False, False)), (False, (True, True))])
 async def test_resuming_a_radio_session_never_calls_the_autoplay(radio_session, while_starting):
-    """A retomada de uma sessão gravada em R fica ociosa (como no fim da rádio): nem o autoplay nem o 24/7 buscam faixa (Crivo Minor 1,
+    """A retomada de uma sessão gravada em R fica ociosa (como no fim da rádio): nem o autoplay nem o ``keep_connected`` buscam faixa (Crivo Minor 1,
     revisão 4: ``_pn_next_track`` chama o autoqueue com ``keep_connected``). As duas preferências voltam intactas."""
     from empiremuse.cogs.player_resume import PlayerSession
 
@@ -1282,7 +1282,7 @@ def test_a_radio_session_does_not_queue_the_tracks_that_failed_before_the_radio(
 @pytest.mark.regression
 @pytest.mark.parametrize(("radio_session", "queue"), [(True, []), (False, ["falhou"])])
 def test_a_radio_session_kept_connected_does_not_requeue_the_history(radio_session, queue):
-    """Crivo Minor 1 (revisão 4 do PR 270): no 24/7 com a fila vazia, a sessão gravada em R punha o histórico de antes da rádio na fila."""
+    """Crivo Minor 1 (revisão 4 do PR 270): com ``keep_connected`` e a fila vazia, a sessão gravada em R punha o histórico de antes da rádio na fila."""
     from empiremuse.cogs.player_resume import PlayerSession
 
     player = resumed_player(keep_connected=True, played=deque(["tocada"]), failed_tracks=deque(["falhou"]))
