@@ -512,6 +512,10 @@ class JukeboxRadio:
         async with player.radio_lock:
             if player.radio_mode is None:
                 return
+            if player.is_closing:
+                raise Refused("radio.owner.unavailable")
+            # o clique pode vir até 45 s depois do pedido (passo de confirmação): quem pediu ainda está na call do player (Sentinela N1)
+            self._requester_channel(member, player)
             decision = gate(await self._actor(member, player), self.state_of(player), Target.LEAVE)
             if decision.decision is Decision.DENY:
                 raise Refused(decision.reason)
@@ -770,10 +774,10 @@ class JukeboxRadio:
         if current is None or (mode is not None and current is not mode):
             return
         current.track, current.on_air = None, False
+        _changed(player)  # "reconectando" aparece já, mesmo com uma volta em curso (Alicerce N-s3)
         if current.retry_task is not None and not current.retry_task.done():
             return  # já há uma volta em curso (exceção e fim do mesmo fluxo)
         current.retry_task = self._spawn(self._recover(player, current, player.radio_epoch))
-        _changed(player)
 
     async def _recover(self, player: Any, mode: RadioMode, epoch: int) -> None:
         relay = self.hub.relay
@@ -807,6 +811,7 @@ class JukeboxRadio:
             if mode is None:
                 return
             mode.track, mode.on_air = None, False
+            _changed(player)
             await self._revoke(mode)
             if await self._reopen(player, mode):
                 return

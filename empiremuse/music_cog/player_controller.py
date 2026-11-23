@@ -37,7 +37,6 @@ from empiremuse.utils.others import (
     PlayerControls,
     music_source_emoji_url,
 )
-from empiremuse.music_cog.radio_guard import confirm_leave_radio
 from empiremuse.music_cog.controller_embed import (
     _pc_embed_resolve,
     _pc_embed_playlist,
@@ -90,12 +89,7 @@ class PlayerControllerMixin:
                 if await _pc_embed_resolve(self, req):
                     return
 
-                # tocar agora, "Adicionar na fila" e a playlist do embed em R passam pela porta do modo rádio (Sentinela Minor 1); parado
-                # ali, segue para liberar o limite de concorrência
-                if req.player and not await confirm_leave_radio(self.bot.pool, req.bot, req.interaction, req.player):
-                    pass
-
-                elif req.control == PlayerControls.embed_enqueue_playlist:
+                if req.control == PlayerControls.embed_enqueue_playlist:
                     await _pc_embed_playlist(self, req)
 
                 else:

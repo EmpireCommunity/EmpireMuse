@@ -1342,5 +1342,6 @@
   "jukebox.radio.leave.timeout": "Time to confirm ran out. The radio keeps playing.",
   "jukebox.radio.leave.not_author": "Only the person who made the request can answer.",
   "jukebox.radio.other_call": "Join the call where the Jukebox is playing to switch the station.",
-  "jukebox.radio.no_change_node": "In radio mode the Jukebox stays on the local music server. Stop the radio before switching servers."
+  "jukebox.radio.no_change_node": "In radio mode the Jukebox stays on the local music server. Stop the radio before switching servers.",
+  "jukebox.radio.leave.stopped_plain": "📻 The radio stopped."
 }

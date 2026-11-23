@@ -552,7 +552,7 @@ class ControllerDispatchMixin:
         if not interaction.data.custom_id.startswith(LEAVE_PREFIX):
             return
         try:
-            await answer_stray_click(interaction, await self.bot.pool.i18n.for_guild(interaction.guild))
+            await answer_stray_click(interaction, lambda: self.bot.pool.i18n.for_guild(interaction.guild))
         except Exception as error:  # noqa: BLE001 - só o tipo vai ao log
             logger.warning("Clique no passo de confirmação do modo rádio sem resposta (%s)", type(error).__name__)
 

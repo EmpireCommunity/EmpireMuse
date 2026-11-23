@@ -7,6 +7,7 @@ from typing import Union, List
 
 import disnake
 
+from empiremuse.utils.music.live_mark import is_live
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.user_ban import user_bans_of
 
@@ -157,8 +158,14 @@ class PlayerStateMixin:
         users: List[int] = None,
         wait: bool = False,
     ):
-        if getattr(self, "radio_id", None) or getattr(self, "radio_mode", None) is not None:
-            return  # rádio (item 8) e modo rádio da Jukebox [m1]: o RPC levaria a URL do relay local, com o token, a cada membro da call
+        if (
+            getattr(self, "radio_id", None)
+            or getattr(self, "radio_mode", None) is not None
+            or is_live(getattr(self, "current", None))
+        ):
+            # rádio (item 8) e modo rádio da Jukebox [m1]: o RPC levaria a URL do relay local, com o token, a cada membro da call; a marca
+            # cobre também a janela entre sair de R e o ``stop()`` (Alicerce N-s4)
+            return
         try:
             if not voice_channel and not close:
                 try:

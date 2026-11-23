@@ -24,19 +24,42 @@ import disnake
 from empiremuse.utils.music.errors import GenericError
 
 CONFIRM_TIMEOUT_S = 45
+CLOSED_GRACE_S = 5.0  # depois de fechado, o passo ainda é lembrado um instante: o ouvinte não confunde o clique do autor com o de outro
 _PENDING: dict[
     str, tuple[int, float]
 ] = {}  # id do pedido → (autor, quando expira): o ouvinte responde a quem NÃO é o autor
 
 
-def pending_author(request_id: str, now: Optional[float] = None) -> Optional[int]:
-    """O autor de um passo de confirmação ainda aberto (``None`` se não há, ou já expirou)."""
-    now = time.monotonic() if now is None else now
+def _sweep(now: float) -> None:
+    """Tira os passos expirados (chamado ao abrir e ao consultar um passo: o registro nunca cresce sem limite, Sentinela N2)."""
     for key, (_, until) in list(_PENDING.items()):
         if until < now:
             _PENDING.pop(key, None)
+
+
+def pending_author(request_id: str, now: Optional[float] = None) -> Optional[int]:
+    """O autor de um passo de confirmação ainda aberto (``None`` se não há, ou já expirou)."""
+    _sweep(time.monotonic() if now is None else now)
     entry = _PENDING.get(request_id)
     return entry[0] if entry is not None else None
+
+
+def receiving_client(inter: Any, bot: Any) -> Any:
+    """O cliente que recebe o clique na mensagem de confirmação: o que recebeu o pedido (``inter.bot`` em interação e no prefixo), nunca o bot
+    do player, que no pool pode ser outro (Crivo MA-N1). A mensagem do canal da Jukebox não tem ``.bot``: vale o bot do cog que a leu."""
+    return getattr(inter, "bot", None) or bot
+
+
+def radio_mode_request(pool: Any, inter: Any) -> bool:
+    """O pedido de música cai num player em R? Para o ``/play`` adiar de forma efêmera ANTES do ``defer`` (Crivo MI-N1): a 1ª resposta herda a
+    visibilidade do ``defer``, e o passo de confirmação tem de ser só do autor."""
+    from empiremuse.utils.music.checks import resolve_player
+
+    try:
+        resolved = resolve_player(pool, inter.guild_id, inter.author)
+    except Exception:  # noqa: BLE001 - sem como saber, o adiamento segue o de sempre
+        return False
+    return resolved is not None and getattr(resolved[1], "radio_mode", None) is not None
 
 
 def _request_id(inter: Any) -> str:
@@ -73,6 +96,7 @@ async def confirm_leave_radio(
     *,
     wait_for: Optional[Callable[..., Awaitable[Any]]] = None,
     clock: Callable[[], float] = time.monotonic,
+    stopped_key: str = "jukebox.radio.leave.stopped",
 ) -> bool:
     """``True`` = o pedido segue (fora de R, a rádio parou, ou já tinha parado). ``False`` = parar em silêncio (cancelado, expirado, votação
     aberta ou recusa no clique: a mensagem já disse). ``GenericError`` = recusa direta, sem confirmação."""
@@ -109,6 +133,7 @@ async def confirm_leave_radio(
         )
 
     message = await _send(inter, payload())
+    _sweep(clock())
     _PENDING[request_id] = (member.id, clock() + 2 * CONFIRM_TIMEOUT_S)
     prefix = f"{jukebox_ui.LEAVE_PREFIX}{request_id}:"
 
@@ -117,31 +142,50 @@ async def confirm_leave_radio(
         return custom_id.startswith(prefix) and getattr(click.author, "id", None) == member.id
 
     try:
-        click = await (wait_for or bot.wait_for)("button_click", timeout=CONFIRM_TIMEOUT_S, check=check)
+        click = await (wait_for or receiving_client(inter, bot).wait_for)(
+            "button_click", timeout=CONFIRM_TIMEOUT_S, check=check
+        )
     except asyncio.TimeoutError:
         await _close(message, tr("jukebox.radio.leave.timeout"), clicked=False)
         return False
+    finally:
+        _PENDING[request_id] = (
+            member.id,
+            clock() + CLOSED_GRACE_S,
+        )  # fechado: some logo (Sentinela N2), sem corrida com o ouvinte
     choice = str(click.data.custom_id).rsplit(":", 1)[-1]
     await click.response.edit_message(**payload(disabled=True))  # processando: botões desativados até o resultado
     if choice == jukebox_ui.LEAVE_CANCEL:
         await _close(click, tr("jukebox.radio.leave.cancelled"), clicked=True)
         return False
     if player.radio_mode is None:
-        await _close(click, tr("jukebox.radio.leave.already_off"), clicked=True)
-        return True
+        # a rádio acabou nos 45 s; se o player foi destruído no meio, o pedido não segue sobre ele (Sentinela N1)
+        alive = not player.is_closing and player.bot.music.players.get(player.guild.id) is player
+        key = "jukebox.radio.leave.already_off" if alive else "radio.owner.unavailable"
+        await _close(click, tr(key), clicked=True)
+        return alive
     try:
         await jukebox.leave_for_music(click, player)  # a porta de verdade, refeita sob o lock
     except Refused as refused:
         key, fields = refused.key, refused.fields
     else:
-        await _close(click, tr("jukebox.radio.leave.stopped"), clicked=True)
+        await _close(click, tr(stopped_key), clicked=True)
         return True
     await _close(click, tr(key, **fields), clicked=True)
     return False
 
 
-async def answer_stray_click(interaction: Any, tr: Callable[..., str]) -> bool:
-    """O clique num passo de confirmação de outra pessoa (a resposta do prefixo é pública): recusa efêmera, sem efeito. ``True`` se respondeu."""
+def enqueue_fence(player: Any, epoch: Optional[int]) -> None:
+    """A cerca de ``radio_epoch`` (§1.5 [m3], 11.4): chamada logo antes de enfileirar, sem ``await`` até o ``queue.append/extend``. Se uma
+    transição do modo rádio aconteceu desde a porta, a música não entra e quem pediu recebe o aviso de música descartada."""
+    if epoch is not None and getattr(player, "radio_epoch", None) != epoch:
+        raise GenericError(player.tr("jukebox.radio.discarded"))
+
+
+async def answer_stray_click(interaction: Any, tr_of: Callable[[], Awaitable[Callable[..., str]]]) -> bool:
+    """O clique num passo de confirmação de outra pessoa (a resposta do prefixo é pública): recusa efêmera, sem efeito. ``True`` se respondeu.
+
+    O autor é lido ANTES de qualquer ``await``: o clique do próprio autor nunca recebe uma segunda resposta."""
     from empiremuse.utils.music import jukebox_ui
 
     custom_id = str(getattr(getattr(interaction, "data", None), "custom_id", ""))
@@ -152,5 +196,6 @@ async def answer_stray_click(interaction: Any, tr: Callable[..., str]) -> bool:
     if author is not None and author == interaction.author.id:
         return False  # é do autor: quem responde é o ``wait_for``
     key = "jukebox.radio.leave.not_author" if author is not None else "jukebox.radio.leave.timeout"
+    tr = await tr_of()
     await interaction.send(tr(key), ephemeral=True)
     return True

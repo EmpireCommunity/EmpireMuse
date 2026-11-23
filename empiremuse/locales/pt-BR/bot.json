@@ -1356,5 +1356,6 @@
   "jukebox.radio.leave.timeout": "O prazo para confirmar acabou. A rádio continua.",
   "jukebox.radio.leave.not_author": "Só quem fez o pedido pode responder.",
   "jukebox.radio.other_call": "Entre na call em que a Jukebox está tocando para trocar a rádio.",
-  "jukebox.radio.no_change_node": "No modo rádio a Jukebox fica no servidor de música local. Pare a rádio antes de trocar de servidor."
+  "jukebox.radio.no_change_node": "No modo rádio a Jukebox fica no servidor de música local. Pare a rádio antes de trocar de servidor.",
+  "jukebox.radio.leave.stopped_plain": "📻 A rádio parou."
 }
