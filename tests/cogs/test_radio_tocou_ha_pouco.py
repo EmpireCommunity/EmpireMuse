@@ -1,11 +1,14 @@
 """O anel "Tocou há pouco" da rádio ao vivo (D4): só títulos ICY já limpos, no máximo 5, sem repetição seguida, com a hora do relógio
 injetado; limpo na troca de estação (inclusive reserva e volta) e mantido na reconexão; um anel por rádio; o retrato o lê como cópia."""
 
+from types import SimpleNamespace
+
 import pytest
 
-from empiremuse.rules.icy import clean_title
 from empiremuse.rules.radio import LIVE_CYCLE_ATTEMPTS
+from empiremuse.utils.radio.manager import RadioManager
 from empiremuse.utils.radio.runner import Phase
+from tests.audio.test_radio_relay import MP3, Station, fetch, icy_stream, relay, sends
 from tests.audio.test_radio_snapshot import TestSnapshot
 from tests.cogs.test_radio_ao_vivo import MAIN, RESERVE, make_live
 
@@ -98,19 +101,23 @@ async def test_two_radios_on_the_same_station_have_independent_rings():
     assert second.recent_titles == () and len(first.recent_titles) == 1
 
 
-HOSTILE = ["@everyone ouçam", "<@&123> cargo", "entra em discord.gg/x", "[clique](https://evil.example)", "abc‮def"]
+HOSTILE = "@everyone ouçam <@&123> cargo entra em discord.gg/x [clique](https://evil.example) abc\u202edef"
 
 
 @pytest.mark.asyncio
-async def test_hostile_icy_titles_reach_the_ring_only_as_clean_title_output():
-    runner, ports = await playing()
-    for raw in HOSTILE:
-        ports.t += 15
-        runner.set_title(clean_title(raw))  # o relay limpa antes do ``note_title``
+async def test_a_hostile_icy_title_reaches_the_ring_only_through_the_relay_and_note_title():
+    runner, _ = await playing()
+    manager = SimpleNamespace(_runners={"r1": runner})  # só o que o ``note_title`` lê
+    body = icy_stream(256, MP3 + b"A" * (256 * 2 - 4), HOSTILE)
+    head = b"ICY 200 OK\r\nicy-metaint:256\r\nContent-Type: audio/mpeg\r\n\r\n"
+    async with Station(sends(head, body)) as station, relay() as r:
+        token = r.register(
+            station.url, codec="MP3", bitrate=128, on_title=lambda t: RadioManager.note_title(manager, "r1", t)
+        )
+        await fetch(r, token)
 
-    text = " ".join(t for _, t in runner.recent_titles)
-    assert len(runner.recent_titles) == 5
-    for bad in ("@everyone", "<@&", "discord.gg", "](", "://", "‮"):
+    ((_, text),) = runner.recent_titles
+    for bad in ("@everyone", "<@&", "discord.gg", "](", "://", "\u202e"):
         assert bad not in text
 
 

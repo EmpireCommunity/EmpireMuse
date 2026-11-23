@@ -56,9 +56,9 @@ class RadioPanelSnapshot(NamedTuple):
     favorite: bool  # a estação no ar está nas favoritas do servidor
     favorites_full: bool
     retry_seconds: Optional[int]  # fora do ar: segundos para a próxima tentativa
-    recent_titles: tuple[
-        tuple[float, str], ...
-    ] = ()  # "Tocou há pouco": (hora de parede, título limpo), do mais antigo ao mais novo
+    # "Tocou há pouco": (hora de parede, título), do mais antigo ao mais novo. O título JÁ vem escapado pelo ``clean_title``:
+    # o destino usa ``stored_text``, nunca ``external_text`` de novo.
+    recent_titles: tuple[tuple[float, str], ...] = ()
 
 
 def _window(uuids: list[str], active: str) -> tuple[int, list[str]]:

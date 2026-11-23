@@ -94,7 +94,10 @@ class LiveRadioRunner(RadioRunner):
 
     @property
     def recent_titles(self) -> tuple[tuple[float, str], ...]:
-        """O anel "Tocou há pouco": ``(hora de parede, título limpo)`` do mais antigo ao mais novo; cópia imutável."""
+        """O anel "Tocou há pouco": ``(hora de parede, título)`` do mais antigo ao mais novo; cópia imutável.
+
+        O título JÁ vem escapado pelo ``clean_title`` (``external_text(..., markdown=True)``): o destino usa ``stored_text``, nunca
+        ``external_text`` de novo (o escape não é idempotente: sairia barra visível)."""
         return tuple(self._recent)
 
     def _forget_recent(self) -> None:
@@ -171,13 +174,13 @@ class LiveRadioRunner(RadioRunner):
         tentativa já usa a estação nova."""
         if self._stopped:
             return
+        self._forget_recent()  # troca de estação limpa o anel, em qualquer fase
         if self.phase is Phase.STANDBY:
             await self.leave_standby()  # a rádio só esperava a estação: toca na hora
             return
         self.failures = 0
         self.outage = False
         self.title = None
-        self._forget_recent()
         if self.phase is Phase.PLAYING:
             self.attempt = 0
             await self.on_disconnect()
