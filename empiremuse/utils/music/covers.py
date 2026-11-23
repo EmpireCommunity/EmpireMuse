@@ -17,8 +17,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-import os
-import signal
 import sys
 import time
 from collections.abc import Awaitable, Callable
@@ -45,6 +43,7 @@ from empiremuse.rules.cover import (
     host_allowed,
     parse_cover_hosts,
 )
+from empiremuse.utils import sandbox
 from empiremuse.utils.music.cover_fetch import CoverError, CoverFetcher, cover_url
 from empiremuse.utils.radio.logo import detect_format
 
@@ -75,8 +74,11 @@ async def decode_in_worker(
     timeout_s: float = COVER_WORKER_TIMEOUT_S,
     worker: Optional[Path] = None,
 ) -> bytes:
-    """Os pixels crus da capa, decodificada num processo filho isolado. ``CoverError`` em qualquer falha; o filho que passa do
-    prazo é morto e o ``returncode`` dele é coletado."""
+    """Os pixels crus da capa, decodificada num processo filho isolado (sandbox dos decodificadores). ``CoverError`` em
+    qualquer falha (``sandbox`` sem o sandbox, nos dois lados); o filho que passa do prazo é morto com o grupo e o ``returncode``
+    dele é coletado."""
+    if not sandbox.may_spawn(logger):
+        raise CoverError("sandbox")
     try:
         process = await spawn(
             sys.executable,
@@ -114,27 +116,24 @@ async def decode_in_worker(
         raise CoverError("deadline") from error
     finally:
         if process.returncode is None:
-            _kill_group(process)
+            sandbox.kill_worker(process)  # o grupo inteiro (``start_new_session``), não só o PID
             await process.wait()
+    if sandbox.refused(process.returncode, logger):
+        raise CoverError("sandbox")
     if process.returncode != 0 or len(out) != COVER_RAW_BYTES:
         raise CoverError("decode")
     return bytes(out)
 
 
-def _kill_group(process: Any) -> None:
-    """Mata o grupo do filho (aberto com ``start_new_session``: o grupo é só dele); sem grupo, o próprio processo."""
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-        return
-    except AttributeError, OSError:
-        pass
-    try:
-        process.kill()
-    except ProcessLookupError:
-        pass  # já saiu: o ``wait`` coleta
-
-
 # ---------------------------------------------------------------------- o serviço
+
+
+def _sandbox_ready() -> bool:
+    return sandbox.may_spawn(logger)
+
+
+def _always() -> bool:
+    return True
 
 
 def cover_key(text: str) -> bytes:
@@ -150,10 +149,13 @@ class CoverService:
         fetch: Optional[Fetch] = None,
         decode: Optional[Decode] = None,
         clock: Callable[[], float] = time.monotonic,
+        ready: Optional[Callable[[], bool]] = None,
     ) -> None:
         self._hosts = hosts
         self._fetch: Fetch = fetch or CoverFetcher(hosts)
         self._decode: Decode = decode or decode_in_worker
+        # o decodificador pode rodar aqui? Conferido ANTES de buscar a imagem; com outro ``decode`` (testes), sempre
+        self._ready: Callable[[], bool] = ready or (_sandbox_ready if decode is None else _always)
         self._clock = clock
         self._pixels: LRUCache[bytes, bytes] = LRUCache(maxsize=COVER_CACHE_BYTES, getsizeof=len)
         self._misses: TTLCache[bytes, bool] = TTLCache(
@@ -206,6 +208,8 @@ class CoverService:
             return self._failed(key, "host")
         flight = self._flights.get(key)
         if flight is None:
+            if not self._ready():
+                return CoverResult()  # sem sandbox: nem busca, nem gasta ficha, nem entra no cache de falhas
             if not self._admit():
                 return CoverResult(pending=True)
             self._inflight += 1  # conta na admissão: uma 3ª busca nunca entra antes de a tarefa começar a rodar

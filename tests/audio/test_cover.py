@@ -10,12 +10,14 @@ import contextlib
 import functools
 import io
 import logging
+from pathlib import Path
 
 import pytest
 import yarl
 from PIL import Image
 
 from empiremuse.rules.cover import COVER_RAW_BYTES, DEFAULT_COVER_HOSTS, parse_cover_hosts
+from empiremuse.utils import sandbox
 from empiremuse.utils.music import cover_fetch as fetch_module
 from empiremuse.utils.music import covers as covers_module
 from empiremuse.utils.music.cover_fetch import CoverError, CoverFetcher, cover_url
@@ -27,6 +29,8 @@ pytestmark = pytest.mark.critical
 
 DEFAULT = parse_cover_hosts(DEFAULT_COVER_HOSTS)
 ANY = parse_cover_hosts("*")
+ROOT = Path(__file__).resolve().parents[2]
+WORKER = ROOT / "empiremuse" / "utils" / "music" / "cover_worker.py"
 COVER = "https://i.scdn.co/image/ab67616d0000b273?token=segredo"
 PIXELS = b"\x07" * COVER_RAW_BYTES
 
@@ -318,6 +322,12 @@ class FakeProcess:
         self.killed = True
 
 
+@pytest.fixture
+def sandbox_supported(monkeypatch):
+    """Com o worker de mentira, o pai acha que o kernel tem o sandbox (o teste não depende do host); o worker real usa o kernel."""
+    monkeypatch.setattr(sandbox, "landlock_abi", lambda: sandbox.MIN_ABI)
+
+
 def spawner(process):
     calls = []
 
@@ -329,7 +339,7 @@ def spawner(process):
 
 
 @pytest.mark.asyncio
-async def test_the_worker_starts_isolated_without_environment():
+async def test_the_worker_starts_isolated_without_environment(sandbox_supported):
     process = FakeProcess(PIXELS)
     spawn, calls = spawner(process)
 
@@ -341,7 +351,7 @@ async def test_the_worker_starts_isolated_without_environment():
 
 
 @pytest.mark.asyncio
-async def test_a_worker_past_the_deadline_is_killed_with_its_group_and_reaped(monkeypatch):
+async def test_a_worker_past_the_deadline_is_killed_with_its_group_and_reaped(sandbox_supported, monkeypatch):
     process = FakeProcess(hang=True)
     spawn, _ = spawner(process)
     groups = []
@@ -350,7 +360,7 @@ async def test_a_worker_past_the_deadline_is_killed_with_its_group_and_reaped(mo
         groups.append(pid)
         process.kill()
 
-    monkeypatch.setattr(covers_module.os, "killpg", killpg)
+    monkeypatch.setattr(sandbox.os, "killpg", killpg)
 
     with pytest.raises(CoverError) as raised:
         await decode_in_worker("PNG", b"x", spawn=spawn, timeout_s=0)
@@ -363,7 +373,9 @@ async def test_a_worker_past_the_deadline_is_killed_with_its_group_and_reaped(mo
     ("process", "killed"),
     [(FakeProcess(PIXELS[:-1]), False), (FakeProcess(PIXELS + b"x"), True), (FakeProcess(PIXELS, code=1), False)],
 )
-async def test_worker_output_of_the_wrong_size_or_a_failed_exit_is_refused(monkeypatch, process, killed):
+async def test_worker_output_of_the_wrong_size_or_a_failed_exit_is_refused(
+    sandbox_supported, monkeypatch, process, killed
+):
     spawn, _ = spawner(process)
     groups = []
 
@@ -371,7 +383,7 @@ async def test_worker_output_of_the_wrong_size_or_a_failed_exit_is_refused(monke
         groups.append(pid)
         process.kill()
 
-    monkeypatch.setattr(covers_module.os, "killpg", killpg)
+    monkeypatch.setattr(sandbox.os, "killpg", killpg)
 
     with pytest.raises(CoverError):
         await decode_in_worker("PNG", b"x", spawn=spawn)
@@ -379,6 +391,54 @@ async def test_worker_output_of_the_wrong_size_or_a_failed_exit_is_refused(monke
 
 
 # ---------------------------------------------------------------------- o serviço: SK-3, SK-5, SK-6, SK-8, SK-10
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_without_the_sandbox_the_parent_opens_no_cover_decoder_and_logs_one_code(monkeypatch, caplog):
+    monkeypatch.setattr(sandbox, "landlock_abi", lambda: 0)
+    monkeypatch.setattr(sandbox, "_reported", False)
+
+    async def never(*args, **kwargs):
+        raise AssertionError("o worker não pode abrir")
+
+    with caplog.at_level(logging.WARNING, logger=covers_module.logger.name):
+        for _ in range(2):
+            with pytest.raises(CoverError) as raised:
+                await decode_in_worker("PNG", encoded("PNG"), spawn=never)
+            assert raised.value.code == "sandbox"
+    assert [r.getMessage() for r in caplog.records].count(
+        f"Decodificador de imagens recusado: sem sandbox ({sandbox.UNAVAILABLE_CODE})"
+    ) == 1
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_the_cover_worker_refuses_to_decode_when_the_sandbox_fails(sandbox_supported, tmp_path):
+    """O worker de verdade com o sandbox falhando sai sem decodificar, e o pai devolve o código ``sandbox``."""
+    wrapper = tmp_path / "sem_sandbox.py"
+    wrapper.write_text(
+        "import runpy, sys\n"
+        f"sys.path.insert(0, {str(ROOT)!r})\n"
+        "from empiremuse.utils import sandbox\n"
+        "sandbox.confine = lambda: False\n"
+        f"sys.argv[0] = {str(WORKER)!r}\n"
+        f"runpy.run_path({str(WORKER)!r}, run_name='__main__')\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(CoverError) as raised:
+        await decode_in_worker("PNG", encoded("PNG"), worker=wrapper)
+    assert raised.value.code == "sandbox"
+
+
+@pytest.mark.asyncio
+async def test_without_the_sandbox_the_service_fetches_nothing():
+    fetch = Fetch()
+    svc = CoverService(DEFAULT, fetch=fetch, decode=Decode(), clock=Clock(), ready=lambda: False)
+
+    assert await svc.pixels(COVER) == CoverResult()
+    assert fetch.urls == [] and svc._inflight == 0 and not svc._misses and not svc._flights
 
 
 class Clock:
