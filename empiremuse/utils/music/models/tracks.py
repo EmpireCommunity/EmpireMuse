@@ -9,6 +9,7 @@ from urllib.parse import quote, quote_plus
 
 import empiremuse.wavelink as wavelink
 from empiremuse.utils.music.converters import fix_characters, md_link, md_code
+from empiremuse.utils.music.live_mark import is_live
 
 
 class PartialPlaylist:
@@ -383,6 +384,8 @@ class LavalinkTrack(wavelink.Track):
 
     @property
     def search_uri(self):
+        if is_live(self):
+            return ""  # a estação ao vivo da Jukebox não tem link nenhum nas telas, nem a busca do YouTube (A6, Alicerce m4)
         return f"https://www.youtube.com/results?search_query={quote(self.title)}"
 
     @property

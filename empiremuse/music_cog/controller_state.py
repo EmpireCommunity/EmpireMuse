@@ -23,6 +23,7 @@ class ControllerState:
         "seek_status",
         "select_type",
         "track",
+        "track_origin",
         "tr",
         "url",
         "user_data",
@@ -49,6 +50,7 @@ class ControllerState:
         self.seek_status = None
         self.select_type = None
         self.track = None
+        self.track_origin = None  # a lista (fila, tocadas, falhas) de onde a faixa do embed sai, só depois da porta
         self.tr = None
         self.url = None
         self.user_data = None

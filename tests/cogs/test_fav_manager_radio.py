@@ -1,4 +1,4 @@
-"""J3 · telas do Discord das favoritas de rádio: modo rádio do ``/fav_manager`` (só Remover e Limpar, sempre efêmero)
+"""J3 · telas do Discord das favoritas de rádio: modo rádio do ``/fav_manager`` (Tocar da J2a, Remover e Limpar, sempre efêmero)
 e a gerência das favoritas do servidor (``/radio favoritas``: gate de admin, Limpar com confirmação).
 
 Backend REAL (``RadioHub`` sobre banco em memória); só o Discord, o diretório e a árvore de local são dublês.
@@ -136,7 +136,7 @@ async def open_radio(world, user=MEMBER):
     return view, inter
 
 
-async def test_radio_mode_in_an_ephemeral_message_lists_and_offers_only_remove_and_clear(world):
+async def test_radio_mode_in_an_ephemeral_message_lists_and_offers_play_remove_and_clear(world):
     await world.seed()
     view, inter = await open_radio(world)
 
@@ -147,6 +147,7 @@ async def test_radio_mode_in_an_ephemeral_message_lists_and_offers_only_remove_a
     assert "@everyone" not in text and "https://" not in text  # nome externo pelo sanitizador único
     tr = world.tr
     assert labels(view) == [
+        tr("radio.favorites.play.label"),  # o Tocar entrou na J2a (T-473): chama o controlador do modo rádio
         tr("radio.favorites.remove_station.label"),
         tr("radio.favorites.clear_stations.label"),
         tr("radio.favorites.remove_filter.label"),
@@ -157,7 +158,22 @@ async def test_radio_mode_in_an_ephemeral_message_lists_and_offers_only_remove_a
     assert view.mode == ViewMode.radio_favorites
     assert all(
         not getattr(c, "custom_id", "").startswith("favmanager_play_button") for c in view.children
-    )  # sem Tocar (J2a)
+    )  # o Tocar do modo rádio é o próprio (user_fav_radio_play), nunca o de música
+
+
+async def test_play_sends_only_the_selected_uuid_of_the_clickers_own_list_to_the_radio_controller(world):
+    """T-473: o Tocar chama o MESMO controlador do "Tocar na minha call"; o menu não decide nada e nunca manda um uuid fora da lista dele."""
+    await world.seed()
+    view, _ = await open_radio(world)
+    world.hub.jukebox.request_live = AsyncMock(return_value=("jukebox.radio.started", {"station": "x"}))
+    view.current_station = uuid(2)
+    click = FakeInter(MEMBER, ephemeral=True)
+    await view.radio_play_station_callback(click)
+    world.hub.jukebox.request_live.assert_awaited_once_with(click, uuid(2))
+    assert click.sent[-1]["ephemeral"] is True
+    view.current_station = uuid(99)  # forjado: não está na lista deste membro
+    await view.radio_play_station_callback(FakeInter(MEMBER, ephemeral=True))
+    assert world.hub.jukebox.request_live.await_count == 1
 
 
 async def test_radio_mode_in_a_public_message_opens_a_new_ephemeral_one_and_leaves_the_public_one_alone(world):
