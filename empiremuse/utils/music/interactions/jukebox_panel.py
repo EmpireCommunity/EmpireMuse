@@ -110,6 +110,7 @@ def render_panel(
     playlists: Sequence[Playlist] = (),
     last_action: str = "",
     genres: Sequence[str] = (),
+    fixed_entries: Sequence[disnake.SelectOption] = (),
 ) -> dict[str, Any]:
     """A mensagem do painel com 2+ players: ``{"content", "embeds", "components"}`` (quem envia põe ``AllowedMentions.none()``)."""
     embed = disnake.Embed(title=tr("player.panel.title"), color=bot.get_color(guild.me))
@@ -130,7 +131,7 @@ def render_panel(
     ]
     if genres:
         components.append(disnake.ui.ActionRow(_genre_select(tr, genres)))
-    select = build_guild_pin(bot, tr, playlists, placeholder_key="player.panel.playlists.placeholder")
+    select = build_guild_pin(bot, tr, playlists, 1, fixed_entries, placeholder_key="player.panel.playlists.placeholder")
     if select is not None:
         components.append(disnake.ui.ActionRow(select))
     return {"content": None, "embeds": [embed], "components": components}

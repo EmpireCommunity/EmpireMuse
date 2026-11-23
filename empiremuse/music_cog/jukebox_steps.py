@@ -10,6 +10,7 @@ import disnake
 from disnake.ext import commands
 
 from empiremuse.utils.music.guild_text import guild_text
+from empiremuse.music_cog.radio_guard import confirm_leave_radio, enqueue_fence
 from empiremuse.utils.client import BotCore
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.jukebox_panel import fetch_panel_message
@@ -122,6 +123,19 @@ async def _pr_checks(self, req):
     req.player = player
     req.tracks = tracks
 
+    # a porta do modo rádio (Sentinela Minor 1) vem DEPOIS da busca e do painel, logo antes de enfileirar, como no /play (Alicerce N-m1):
+    # a rádio só para quando a faixa já foi achada, e o epoch lido aqui é conferido no enfileirar (``enqueue_fence``)
+    await _pr_gate(self, req, player)
+
+
+async def _pr_gate(self, req, player):
+    """A porta do modo rádio. O passo de confirmação responde pela mensagem, então o clique chega ao bot que a LEU (``req.reader``), não ao
+    executor (outro bot do pool, quando é ele quem toca)."""
+    if not await confirm_leave_radio(self.bot.pool, req.reader or self.bot, req.message, player):
+        req.stopped = True
+        return
+    req.radio_epoch = getattr(player, "radio_epoch", None)
+
 
 async def _pr_playlist(self, req):
     """Adiciona a playlist pedida na fila e responde."""
@@ -133,6 +147,7 @@ async def _pr_playlist(self, req):
     response = req.response
     tracks = req.tracks
 
+    enqueue_fence(player, req.radio_epoch)  # sem ``await`` até o extend
     player.queue.extend(tracks.tracks)
 
     if isinstance(message.channel, disnake.Thread) and not isinstance(message.channel.parent, disnake.ForumChannel):
@@ -208,6 +223,7 @@ async def _pr_single(self, req):
 
         track.info["uri"] = ""
 
+    enqueue_fence(player, req.radio_epoch)  # sem ``await`` até o append
     player.queue.append(track)
 
     if isinstance(message.channel, disnake.Thread) and not isinstance(message.channel.parent, disnake.ForumChannel):

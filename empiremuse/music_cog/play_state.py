@@ -58,6 +58,7 @@ class PlayState:
         "source",
         "track_url",
         "tracks",
+        "radio_epoch",
         "txt",
         "urls",
         "user_data",
@@ -125,6 +126,7 @@ class PlayState:
         self.source = None
         self.track_url = None
         self.tracks = None
+        self.radio_epoch = None
         self.txt = None
         self.urls = None
         self.user_data = None

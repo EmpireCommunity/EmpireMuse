@@ -6,6 +6,7 @@ import disnake
 from disnake.ext import commands
 
 from empiremuse.utils.music.guild_text import guild_text
+from empiremuse.utils.music.live_mark import is_live, without_live
 from empiremuse.i18n import localized
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.checks import (
@@ -364,7 +365,8 @@ class PlayerSessionMixin:
 
         tracks = []
 
-        if player.current:
+        # a faixa ao vivo da Jukebox nunca vai para a fila salva (o ``track.id`` tem a ficha do relay) [m1]
+        if player.current and not is_live(player.current):
             player.current.info["id"] = player.current.id
             if player.current.playlist:
                 player.current.info["playlist"] = {
@@ -373,7 +375,7 @@ class PlayerSessionMixin:
                 }
             tracks.append(player.current.info)
 
-        for t in player.queue:
+        for t in without_live(player.queue):
             t.info["id"] = t.id
             if t.playlist:
                 t.info["playlist"] = {"name": t.playlist_name, "url": t.playlist_url}
