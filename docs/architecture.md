@@ -241,8 +241,8 @@ Os métodos mais longos do player (KI-29b) seguem o mesmo padrão do `/play`: `i
   (`player_skins` e `player_static_skins`): a mesma skin vale no modo normal e no canal da Jukebox, e o `check_skin`, o
   painel e a API as aceitam sem ramo novo. Nenhum nome de módulo sai de um valor do banco.
 - **Módulos** (`utils/music/skins/muse/`): `load()` devolve a skin com `name`, `preview`, `setup_features` e `load(player)`,
-  como as Clássicas, mais `card`, `theme` e `project`. A Jukebox Texto (`muse_text`, e a v1 `muse_text_classic`, ainda
-  fora do registro) é só texto (`card = None`). Nas de imagem (`muse_expanded_*`, `muse_slim_*`, `muse_radio_*`), `card`
+  como as Clássicas, mais `card`, `theme` e `project`. A Jukebox Texto (`muse_text`) é só texto
+  (`card = None`). Nas de imagem (`muse_expanded_*`, `muse_slim_*`, `muse_radio_*`), `card`
   é a família do renderizador, `theme` é `black` ou `white` e `project` é a projeção do próprio renderizador. O
   `load(player)` é síncrono e sem I/O: monta o embed do cartão em `embeds[0]` (sem imagem; o autor só com o link e o
   ícone) e os componentes de sempre, com os mesmos `custom_id` das Clássicas. Os textos vêm do catálogo (`jbx.*`,

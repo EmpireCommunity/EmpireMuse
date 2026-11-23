@@ -15,7 +15,7 @@ import pytest
 from empiremuse.i18n import loader
 from empiremuse.rules.i18n import Translator
 from empiremuse.utils.music.models import np_steps
-from empiremuse.utils.music.skins.muse import _card, muse_text, muse_text_classic
+from empiremuse.utils.music.skins.muse import _card, muse_text
 
 pytestmark = pytest.mark.critical
 
@@ -132,7 +132,7 @@ def _image_build(skin_id: str):
     return build
 
 
-BUILDS = [muse_text.build, muse_text_classic.build, *(_image_build(i) for i in IMAGE_IDS)]
+BUILDS = [muse_text.build, *(_image_build(i) for i in IMAGE_IDS)]
 
 
 @pytest.mark.parametrize("static", [False, True])
@@ -204,10 +204,9 @@ def test_unknown_image_skin_id_is_refused(skin_id):
         _card.parse_id(skin_id)
 
 
-def test_text_skins_have_no_render_family():
-    for module in (muse_text, muse_text_classic):
-        skin = module.load()
-        assert skin.card is None and skin.project is None
+def test_text_skin_has_no_render_family():
+    skin = muse_text.load()
+    assert skin.card is None and skin.project is None
 
 
 @pytest.mark.parametrize("build", BUILDS, ids=lambda b: b.__module__.rsplit(".", 1)[-1] + "." + b.__name__)
