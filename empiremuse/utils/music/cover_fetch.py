@@ -2,8 +2,8 @@
 
 Em ordem, e qualquer falha é ``CoverError(code)`` com um código estável (nunca a URL):
 
-1. ``cover_url``: só ``https``, porta 443 ou ausente, host presente, sem usuário/senha, até 2048 caracteres, parse por ``yarl``
-   UMA vez; o mesmo ``yarl.URL`` é a chave do cache e o que vai na requisição.
+1. ``cover_url``: só ``https``, porta 443 ou ausente, host presente, sem usuário/senha, até 2048 caracteres antes e depois do
+   parse por ``yarl``, UMA vez; o mesmo ``yarl.URL`` vai na requisição e o ``sha256`` dele é a chave do cache.
 2. Host fora de ``COVER_HOSTS``: recusa sem resolver nem conectar.
 3. Resolução única (A e AAAA, pela fila própria do ``url_guard.system_resolve``, com prazo); TODO endereço precisa ser público.
 4. Conector com os endereços fixados (``PinnedResolver``), sem cache de DNS, uma conexão, fechada no fim; sem proxy do ambiente,
@@ -57,7 +57,8 @@ def cover_url(raw: object) -> Optional[yarl.URL]:
     except ValueError, TypeError:
         return None
     if (
-        url.scheme != "https"
+        len(str(url)) > COVER_URL_MAX  # o ``yarl`` codifica (``%XX``): o texto que sai na requisição também tem o teto
+        or url.scheme != "https"
         or not url.raw_host
         or url.user is not None
         or url.password is not None

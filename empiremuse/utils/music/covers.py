@@ -6,7 +6,8 @@
   Uma busca por URL exata (*single-flight*). Falha em cache negativo por 1 h, com teto de entradas.
 - **Decodificação:** um processo filho por capa (``cover_worker.py``), um de cada vez, sem ambiente e com limites; o pai recebe
   só 240 × 240 pixels RGB crus e confere o tamanho. Nenhum decodificador roda aqui sobre bytes de fora.
-- **Cache:** ``LRUCache`` limitado por bytes (8 MiB), só os 172.800 bytes de cada capa; chave = a URL exata depois do ``yarl``.
+- **Cache:** ``LRUCache`` limitado por bytes (8 MiB), só os 172.800 bytes de cada capa. Chave (dos dois caches e dos voos) =
+  ``sha256`` da URL exata depois do ``yarl`` (32 bytes, qualquer que seja o tamanho da URL); texto inválido só pelo digest.
 - **Log:** só o código do motivo (``rules.cover.REASONS``). Nada de URL, query, ``repr`` de exceção nem ``exc_info``.
 - **Call privada e modo R:** o ``CardSpec`` já vem sem ``cover``: ``None`` aqui não custa rede nem entrada de cache.
 """
@@ -14,7 +15,10 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
+import os
+import signal
 import sys
 import time
 from collections.abc import Awaitable, Callable
@@ -35,7 +39,6 @@ from empiremuse.rules.cover import (
     COVER_RAW_BYTES,
     COVER_READ_CHUNK,
     COVER_TOTAL_TIMEOUT_S,
-    COVER_URL_MAX,
     COVER_WAIT_S,
     COVER_WORKER_TIMEOUT_S,
     HostRule,
@@ -111,14 +114,32 @@ async def decode_in_worker(
         raise CoverError("deadline") from error
     finally:
         if process.returncode is None:
-            process.kill()
+            _kill_group(process)
             await process.wait()
     if process.returncode != 0 or len(out) != COVER_RAW_BYTES:
         raise CoverError("decode")
     return bytes(out)
 
 
+def _kill_group(process: Any) -> None:
+    """Mata o grupo do filho (aberto com ``start_new_session``: o grupo é só dele); sem grupo, o próprio processo."""
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+        return
+    except AttributeError, OSError:
+        pass
+    try:
+        process.kill()
+    except ProcessLookupError:
+        pass  # já saiu: o ``wait`` coleta
+
+
 # ---------------------------------------------------------------------- o serviço
+
+
+def cover_key(text: str) -> bytes:
+    """A chave de cache de uma URL exata (ou de um texto inválido): 32 bytes, sem guardar o texto de fora."""
+    return hashlib.sha256(text.encode("utf-8", "surrogatepass")).digest()
 
 
 class CoverService:
@@ -134,11 +155,11 @@ class CoverService:
         self._fetch: Fetch = fetch or CoverFetcher(hosts)
         self._decode: Decode = decode or decode_in_worker
         self._clock = clock
-        self._pixels: LRUCache[str, bytes] = LRUCache(maxsize=COVER_CACHE_BYTES, getsizeof=len)
-        self._misses: TTLCache[str, bool] = TTLCache(
+        self._pixels: LRUCache[bytes, bytes] = LRUCache(maxsize=COVER_CACHE_BYTES, getsizeof=len)
+        self._misses: TTLCache[bytes, bool] = TTLCache(
             maxsize=COVER_FAILURE_ENTRIES, ttl=COVER_FAILURE_TTL_S, timer=clock
         )
-        self._flights: dict[str, asyncio.Task[Optional[bytes]]] = {}
+        self._flights: dict[bytes, asyncio.Task[Optional[bytes]]] = {}
         self._inflight = 0
         self._tokens, self._at = COVER_EGRESS_PER_SECOND, clock()
         self._worker_lock = asyncio.Lock()
@@ -170,12 +191,13 @@ class CoverService:
             return CoverResult()
         url = cover_url(raw)
         if url is None:
-            if not isinstance(raw, str) or len(raw) > 2 * COVER_URL_MAX:
-                return CoverResult()  # nem texto razoável: não vira entrada de cache
-            if raw in self._misses:
+            if not isinstance(raw, str):
+                return CoverResult()  # nem texto: não vira entrada de cache
+            bad = cover_key(raw)
+            if bad in self._misses:
                 return CoverResult()
-            return self._failed(raw, "url")  # lembrada por 1 h: um redesenho repetido não repete o log
-        key = str(url)
+            return self._failed(bad, "url")  # lembrada por 1 h (só o digest): um redesenho repetido não repete o log
+        key = cover_key(str(url))
         if (cached := self._pixels.get(key)) is not None:
             return CoverResult(cached)
         if key in self._misses:
@@ -194,22 +216,25 @@ class CoverService:
             pixels = await asyncio.wait_for(asyncio.shield(flight), wait_s)
         except TimeoutError:
             return CoverResult(pending=True)
+        except asyncio.CancelledError:
+            current = asyncio.current_task()
+            if flight.cancelled() and (current is None or current.cancelling() == 0):
+                return CoverResult()  # o voo foi cancelado (desligamento): quem esperava não herda o cancelamento
+            raise
         return CoverResult(pixels)
 
-    def _landed(self, key: str) -> None:
+    def _landed(self, key: bytes) -> None:
         """O voo terminou (com capa, falha ou cancelamento): libera a vaga de saída e a chave."""
         self._inflight -= 1
         self._flights.pop(key, None)
 
-    async def _load(self, key: str, url: yarl.URL) -> Optional[bytes]:
+    async def _load(self, key: bytes, url: yarl.URL) -> Optional[bytes]:
         try:
             return await self._fetch_and_decode(key, url)
-        except Exception as error:  # noqa: BLE001 - quem pede nunca vê exceção; só o tipo vai ao log
-            logger.warning("Capa sem imagem (%s)", type(error).__name__)
-            self._misses[key] = True
-            return None
+        except Exception:  # noqa: BLE001 - quem pede nunca vê exceção; só o código fixo vai ao log
+            return self._failed(key, "internal").pixels
 
-    async def _fetch_and_decode(self, key: str, url: yarl.URL) -> Optional[bytes]:
+    async def _fetch_and_decode(self, key: bytes, url: yarl.URL) -> Optional[bytes]:
         try:
             self.fetches += 1
             body = await asyncio.wait_for(self._fetch(url), COVER_TOTAL_TIMEOUT_S + 1)
@@ -232,7 +257,7 @@ class CoverService:
             pass
         return pixels
 
-    def _failed(self, key: str, code: str) -> CoverResult:
+    def _failed(self, key: bytes, code: str) -> CoverResult:
         self._misses[key] = True
         logger.warning("Capa sem imagem (%s)", code)  # só o código: a URL é de terceiro e pode ter credencial
         return CoverResult()

@@ -1,7 +1,7 @@
 """O processo filho que decodifica a capa de uma faixa (skins de imagem). Não é importado por ninguém: ``covers.py`` o abre
 com ``python -I``, sem ambiente (``env={}``), em ``/`` e com a saída de erro descartada.
 
-Os limites de memória, CPU, arquivos e core são aplicados ANTES de importar o Pillow. Lê o corpo na entrada padrão (até 2 MiB)
+Os limites de memória, CPU, arquivos, processos e core são aplicados ANTES de importar o Pillow. Lê o corpo na entrada padrão (até 2 MiB)
 e o formato já detectado pelo pai no argumento (só JPEG, PNG e WEBP); devolve na saída padrão exatamente 240 × 240 pixels RGB
 crus (172.800 bytes), com o recorte central e a redução já feitos. O pai nunca roda decodificador sobre bytes de fora.
 
@@ -29,6 +29,8 @@ def _limit() -> None:
     resource.setrlimit(resource.RLIMIT_CPU, (CPU_SECONDS, CPU_SECONDS))
     resource.setrlimit(resource.RLIMIT_NOFILE, (16, 16))
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    resource.setrlimit(resource.RLIMIT_FSIZE, (0, 0))  # não grava arquivo (a saída padrão é um pipe)
+    resource.setrlimit(resource.RLIMIT_NPROC, (0, 0))  # não abre processo nem thread
 
 
 def main() -> int:
@@ -55,13 +57,16 @@ def main() -> int:
         if width < 1 or height < 1 or width * height > MAX_PIXELS:
             return 4
         image.seek(0)  # só o quadro 0
-        if image.format == "JPEG":
-            image.draft("RGB", (SIDE, SIDE))  # decodifica já reduzido (escala 1/2, 1/4 ou 1/8, nunca abaixo do alvo)
+        # JPEG (e MPO) decodifica já reduzido (1/2, 1/4 ou 1/8, nunca abaixo do alvo); nos outros formatos não faz nada
+        image.draft("RGB", (SIDE, SIDE))
         image.load()
         width, height = image.size
         if width < 1 or height < 1 or width * height > MAX_PIXELS:
             return 4
-        rgb = image.convert("RGB")
+        if "transparency" in image.info:  # paleta ou cinza com tRNS: o Pillow só converte sem aviso passando por RGBA
+            rgb = image.convert("RGBA").convert("RGB")
+        else:
+            rgb = image.convert("RGB")
     side = min(width, height)
     left, top = (width - side) // 2, (height - side) // 2
     square = rgb.crop((left, top, left + side, top + side)).resize((SIDE, SIDE), Image.Resampling.LANCZOS)

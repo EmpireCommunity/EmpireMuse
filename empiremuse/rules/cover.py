@@ -46,7 +46,20 @@ COVER_WAIT_S = 1.5  # o render espera a capa no máximo isto (fora da vaga); dep
 
 # Os únicos códigos que vão ao log (nunca a URL, a query nem o texto de uma exceção).
 REASONS = frozenset(
-    {"url", "host", "address", "redirect", "status", "size", "encoding", "format", "decode", "deadline", "network"}
+    {
+        "url",
+        "host",
+        "address",
+        "redirect",
+        "status",
+        "size",
+        "encoding",
+        "format",
+        "decode",
+        "deadline",
+        "network",
+        "internal",
+    }
 )
 
 _LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")

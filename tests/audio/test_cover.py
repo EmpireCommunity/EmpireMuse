@@ -6,10 +6,10 @@ Transporte contra um servidor local de verdade; resolvedor, relógio e processo 
 """
 
 import asyncio
+import contextlib
+import functools
 import io
 import logging
-import struct
-import zlib
 
 import pytest
 import yarl
@@ -21,7 +21,7 @@ from empiremuse.utils.music import covers as covers_module
 from empiremuse.utils.music.cover_fetch import CoverError, CoverFetcher, cover_url
 from empiremuse.utils.music.covers import CoverResult, CoverService, decode_in_worker
 from empiremuse.utils.server_playlists_fetch import PinnedResolver
-from tests.audio.test_radio_logo import http_server, response
+from tests.audio.test_radio_logo import free_port, http_server, response
 
 pytestmark = pytest.mark.critical
 
@@ -31,21 +31,22 @@ COVER = "https://i.scdn.co/image/ab67616d0000b273?token=segredo"
 PIXELS = b"\x07" * COVER_RAW_BYTES
 
 
-def _chunk(kind: bytes, data: bytes) -> bytes:
-    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+@functools.cache
+def flat(fmt: str, size: tuple[int, int]) -> bytes:
+    """Uma imagem VÁLIDA e compressível (poucos KB) de ``size``: sem o teto de pixels o filho a decodificaria."""
+    buffer = io.BytesIO()
+    Image.new("L", size, 128).save(buffer, format=fmt)
+    return buffer.getvalue()
 
 
-def declared_png(width: int, height: int) -> bytes:
-    """Um PNG de poucos bytes que DECLARA ``width`` × ``height`` (o filho tem de recusar antes de decodificar)."""
-    header = _chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
-    return b"\x89PNG\r\n\x1a\n" + header + _chunk(b"IDAT", zlib.compress(b"\x00" * 64)) + _chunk(b"IEND", b"")
-
-
-def encoded(fmt: str, size=(300, 200)) -> bytes:
+def encoded(fmt: str, size=(300, 200), *, palette_alpha=False) -> bytes:
     image = Image.new("RGB", size, (10, 20, 30))
     image.paste((200, 100, 50), (50, 0, 250, 200))  # o miolo quadrado tem outra cor que as bordas
     buffer = io.BytesIO()
-    image.save(buffer, format=fmt)
+    if palette_alpha:  # PNG de paleta com transparência em bytes (tRNS)
+        image.convert("P", palette=Image.Palette.ADAPTIVE).save(buffer, format=fmt, transparency=b"\x00\x80")
+    else:
+        image.save(buffer, format=fmt)
     return buffer.getvalue()
 
 
@@ -89,6 +90,7 @@ def local(port, *, resolve=None, hosts=ANY, public=lambda a: True):
         "ftp://i.scdn.co/a",
         "https:///a",
         "https://i.scdn.co/" + "a" * 2048,
+        "https://i.scdn.co/" + "é" * 2000,  # cabe no texto, mas o ``yarl`` codifica para ~12 mil caracteres
         "",
         None,
         5,
@@ -241,9 +243,18 @@ async def test_bad_status_compression_and_bodies_over_2_mib_are_refused(raw, cod
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("fmt", ["JPEG", "PNG", "WEBP"])
-async def test_the_worker_returns_fixed_size_raw_rgb_with_the_center_crop(fmt):
-    out = await decode_in_worker(fmt, encoded(fmt))
+@pytest.mark.parametrize(
+    ("fmt", "body"),
+    [
+        ("JPEG", encoded("JPEG")),
+        ("PNG", encoded("PNG")),
+        ("WEBP", encoded("WEBP")),
+        ("PNG", encoded("PNG", palette_alpha=True)),
+    ],
+    ids=["jpeg", "png", "webp", "png-palette-trns"],
+)
+async def test_the_worker_returns_fixed_size_raw_rgb_with_the_center_crop(fmt, body):
+    out = await decode_in_worker(fmt, body)
 
     image = Image.frombytes("RGB", (240, 240), out)
     r, g, b = image.getpixel((120, 120))
@@ -254,8 +265,9 @@ async def test_the_worker_returns_fixed_size_raw_rgb_with_the_center_crop(fmt):
 @pytest.mark.parametrize(
     ("fmt", "body"),
     [
-        ("PNG", declared_png(1, 5_000_000)),
-        ("PNG", declared_png(5000, 5000)),
+        ("PNG", flat("PNG", (2100, 2100))),  # entre 1× e 2× o teto: no Pillow é só aviso
+        ("PNG", flat("PNG", (1, 4_500_000))),
+        ("JPEG", flat("JPEG", (3000, 3000))),
         ("JPEG", b"\xff\xd8\xff" + b"\x00" * 300),
         ("JPEG", encoded("PNG")),
         ("GIF", encoded("GIF")),
@@ -269,9 +281,15 @@ async def test_bombs_garbage_and_formats_outside_the_list_fail_in_the_worker(fmt
     assert raised.value.code == "decode"
 
 
+@pytest.mark.asyncio
+async def test_a_cover_at_the_pixel_ceiling_still_decodes():
+    assert len(await decode_in_worker("PNG", flat("PNG", (2048, 2048)))) == COVER_RAW_BYTES
+
+
 class FakeProcess:
     def __init__(self, out=b"", code=0, hang=False):
         self._out, self.hang, self.returncode, self._code = out, hang, None, code
+        self.pid = 4242
         self.killed = False
         self.stdin = self
         self.stdout = self
@@ -323,14 +341,21 @@ async def test_the_worker_starts_isolated_without_environment():
 
 
 @pytest.mark.asyncio
-async def test_a_worker_past_the_deadline_is_killed_and_reaped():
+async def test_a_worker_past_the_deadline_is_killed_with_its_group_and_reaped(monkeypatch):
     process = FakeProcess(hang=True)
     spawn, _ = spawner(process)
+    groups = []
+
+    def killpg(pid, sig):
+        groups.append(pid)
+        process.kill()
+
+    monkeypatch.setattr(covers_module.os, "killpg", killpg)
 
     with pytest.raises(CoverError) as raised:
         await decode_in_worker("PNG", b"x", spawn=spawn, timeout_s=0)
 
-    assert raised.value.code == "deadline" and process.killed and process.returncode == -9
+    assert raised.value.code == "deadline" and groups == [4242] and process.returncode == -9
 
 
 @pytest.mark.asyncio
@@ -541,7 +566,7 @@ OUTSIDE = "https://evil.example/c.jpg?token=segredo"
         (COVER, None, Decode(error=CoverError("decode")), "decode"),
         (COVER, Fetch(error=TimeoutError()), None, "deadline"),
         (COVER, Fetch(error=OSError(f"falhou em {COVER}")), None, "network"),
-        (COVER, Fetch(error=RuntimeError(f"inesperado {COVER}")), None, "RuntimeError"),
+        (COVER, Fetch(error=RuntimeError(f"inesperado {COVER}")), None, "internal"),
     ],
 )
 async def test_the_log_carries_only_the_reason_code_never_the_url(caplog, raw, fetch, decode, code):
@@ -560,3 +585,71 @@ async def test_the_outer_deadline_bounds_a_fetch_that_never_ends(monkeypatch):
     svc = service(Fetch(gate=asyncio.Event()))
 
     assert await svc.pixels(COVER) == CoverResult()
+
+
+@pytest.mark.asyncio
+async def test_cache_keys_stay_32_bytes_whatever_the_url_and_raw_invalid_text_is_never_kept():
+    clock = Clock()
+    svc = service(Fetch(error=CoverError("status")), clock=clock)
+    for n in range(20):
+        clock.now += 1
+        await svc.pixels(f"https://evil.example/{n}/" + "😀" * 500)  # fora da lista
+        await svc.pixels(f"http://i.scdn.co/{n}/" + "é" * 4000)  # inválida
+        await svc.pixels(f"https://i.scdn.co/{n}?" + "é" * 600)  # aceita e falha na busca
+
+    keys = list(svc._misses.keys())
+    assert len(keys) == 60 and all(isinstance(k, bytes) and len(k) == 32 for k in keys)
+
+
+@pytest.mark.asyncio
+async def test_a_cancelled_flight_answers_its_waiters_with_the_logo_but_a_cancelled_waiter_still_stops():
+    svc = service(Fetch(gate=asyncio.Event()))
+    waiter = asyncio.create_task(svc.pixels(COVER, wait_s=5))
+    await settle()
+    (flight,) = svc._flights.values()
+    flight.cancel()
+
+    assert await waiter == CoverResult() and svc._inflight == 0 and not svc._flights
+
+    other = asyncio.create_task(svc.pixels(COVER.replace("segredo", "outro"), wait_s=5))
+    await settle()
+    other.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await other
+
+
+@contextlib.asynccontextmanager
+async def stalling_server():
+    """Manda o cabeçalho (com corpo prometido) e para: só o prazo total da sessão encerra a leitura."""
+    port = free_port()
+    release = asyncio.Event()
+
+    async def handle(reader, writer):
+        try:
+            await reader.readuntil(b"\r\n\r\n")
+            writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: 1000\r\n\r\n")
+            await writer.drain()
+            await release.wait()
+        except ConnectionError, asyncio.IncompleteReadError:
+            pass
+        finally:
+            writer.close()
+
+    server = await asyncio.start_server(handle, "127.0.0.1", port)
+    try:
+        yield port
+    finally:
+        release.set()
+        server.close()
+        await server.wait_closed()
+
+
+@pytest.mark.asyncio
+async def test_a_server_that_stalls_after_the_headers_ends_by_the_deadline(monkeypatch, caplog):
+    monkeypatch.setattr(fetch_module, "COVER_TOTAL_TIMEOUT_S", 0.05)  # prazo curto real: o servidor nunca termina
+    async with stalling_server() as port:
+        svc = CoverService(DEFAULT, fetch=local(port), decode=Decode(), clock=Clock())
+        with caplog.at_level(logging.WARNING):
+            assert await svc.pixels(COVER) == CoverResult()
+
+    assert [r.getMessage() for r in caplog.records] == ["Capa sem imagem (deadline)"]
