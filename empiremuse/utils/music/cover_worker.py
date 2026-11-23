@@ -1,7 +1,8 @@
 """O processo filho que decodifica a capa de uma faixa (skins de imagem). Não é importado por ninguém: ``covers.py`` o abre
 com ``python -I``, sem ambiente (``env={}``), em ``/`` e com a saída de erro descartada.
 
-Os limites de memória, CPU, arquivos, processos e core são aplicados ANTES de importar o Pillow. Lê o corpo na entrada padrão (até 2 MiB)
+Roda dentro do sandbox dos decodificadores (``utils/sandbox.py``), com limites de memória, CPU, arquivos, processos e core, tudo
+ANTES de ler a entrada e de importar o Pillow; sem o sandbox, sai sem decodificar. Lê o corpo na entrada padrão (até 2 MiB)
 e o formato já detectado pelo pai no argumento (só JPEG, PNG e WEBP); devolve na saída padrão exatamente 240 × 240 pixels RGB
 crus (172.800 bytes), com o recorte central e a redução já feitos. O pai nunca roda decodificador sobre bytes de fora.
 
@@ -15,6 +16,12 @@ Qualquer defeito é saída com código diferente de zero e nada na saída: o pai
 
 import resource
 import sys
+from pathlib import Path
+
+# o módulo do sandbox pelo caminho do próprio pacote (``-I`` não põe nada no ``sys.path``); só stdlib, antes de qualquer outra coisa.
+# No fim do ``sys.path``: a biblioteca padrão e o ``site-packages`` continuam na frente.
+sys.path.append(str(Path(__file__).resolve().parents[3]))
+from empiremuse.utils.sandbox import enter_sandbox  # noqa: E402
 
 MAX_INPUT = 2 * 1024 * 1024
 MAX_PIXELS = 2048 * 2048
@@ -34,6 +41,7 @@ def _limit() -> None:
 
 
 def main() -> int:
+    enter_sandbox()  # primeiro de tudo; sem sandbox o processo sai aqui
     _limit()  # antes de importar o Pillow (o decodificador é a parte arriscada)
     if len(sys.argv) != 2 or sys.argv[1] not in FORMATS:
         return 2

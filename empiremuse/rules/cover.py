@@ -59,6 +59,7 @@ REASONS = frozenset(
         "deadline",
         "network",
         "internal",
+        "sandbox",
     }
 )
 
