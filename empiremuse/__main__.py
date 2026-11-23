@@ -109,12 +109,20 @@ def harden_process() -> tuple[str, str]:
         return "warn", f"endurecimento não aplicado ({type(e).__name__})"
 
 
+def record_hardening(report, hardening: tuple[str, str]) -> None:
+    """Guarda a etapa ``Processo`` no relatório de subida; sem relatório, um aviso vai para o stderr (nunca some)."""
+    status, detail = hardening
+    if report is not None:
+        report.defer("Processo", status, detail)
+    elif status != "ok":
+        sys.stderr.write(f"[boot] {detail}\n")
+
+
 def main():
     hardening = harden_process()
     install_log_hooks()
     report = new_boot_report()
-    if report is not None:
-        report.defer("Processo", *hardening)
+    record_hardening(report, hardening)
     enter_runtime_dir(report)
     # Antes de importar o bot: um erro de import no código recém-atualizado não pode impedir a volta ao commit anterior.
     boot_guard.run(paths.get_runtime_dir(), paths.PROJECT_DIR, time.time())

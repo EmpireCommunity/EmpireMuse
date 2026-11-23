@@ -81,6 +81,24 @@ def test_a_failed_marking_is_never_silent(monkeypatch, capsys, failure):
     assert ("[boot]" in capsys.readouterr().err) is (failure == "broken")
 
 
+@pytest.mark.parametrize(
+    ("hardening", "with_report", "deferred", "on_stderr"),
+    [
+        (("warn", "não marcado"), True, True, False),
+        (("warn", "não marcado"), False, False, True),  # sem relatório o aviso não some
+        (("ok", "marcado"), False, False, False),
+    ],
+)
+def test_the_hardening_step_reaches_the_report_or_stderr(capsys, hardening, with_report, deferred, on_stderr):
+    calls = []
+    report = type("Report", (), {"defer": lambda self, *step: calls.append(step)})() if with_report else None
+
+    main_module.record_hardening(report, hardening)
+
+    assert (calls == [("Processo", *hardening)]) is deferred
+    assert (hardening[1] in capsys.readouterr().err) is on_stderr
+
+
 @pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0, reason="precisa de um usuário sem privilégio")
 @pytest.mark.parametrize(("mode", "expected"), [("mark", "denied"), ("plain", "read")])
 def test_a_process_of_the_same_user_cannot_inspect_the_marked_process(mode, expected):
