@@ -331,9 +331,8 @@ class LogoService:
 
     async def _load(self, uuid: str, configured: bool) -> LogoResult:
         if not self._ready():
-            return (
-                LogoResult()
-            )  # sem sandbox (política fechada): nem busca a imagem, nem gasta ficha, nem entra no cache de falhas
+            # sem sandbox (política fechada): nem busca a imagem, nem gasta ficha, nem entra no cache de falhas
+            return LogoResult()
         if not self._admit():
             return LogoResult(transient=True)
         self._inflight += 1

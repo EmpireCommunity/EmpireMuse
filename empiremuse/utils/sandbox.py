@@ -5,7 +5,8 @@ Só stdlib e ``ctypes`` (o worker o importa com ``python -I``, antes de qualquer
 - **Landlock** (Linux, ABI ``MIN_ABI`` ou mais): sistema de arquivos só de leitura e só nos caminhos da instalação do Python
   (biblioteca padrão e ``site-packages``) e nas bibliotecas do sistema que ela carrega; nenhuma escrita nem execução; sinais e
   sockets abstratos só dentro do domínio. Um caminho permitido que contenha o diretório do app recusa o sandbox.
-- **seccomp:** nenhum socket novo (``socket()`` devolve ``EPERM``), em ``x86_64`` e ``aarch64``; outra arquitetura recusa o sandbox.
+- **seccomp:** nenhum socket novo e nenhum anel de E/S assíncrona do kernel (essas chamadas devolvem ``EPERM``), em ``x86_64`` e
+  ``aarch64`` com Python de 64 bits; outra arquitetura recusa o sandbox.
 - ``RLIMIT_NPROC = 0`` (nenhum processo ou thread novo) e ``RLIMIT_FSIZE = 0`` (nenhum arquivo cresce).
 - **No pai:** ``start_new_session`` e, no prazo, o grupo inteiro morre (``kill_worker``).
 
@@ -56,7 +57,8 @@ _READ_ONLY = _FS_READ_FILE | _FS_READ_DIR
 
 # seccomp (seccomp(2), filter.h): arquitetura conferida e o número de ``socket`` de cada uma
 _AUDIT_ARCH = {"x86_64": 0xC000003E, "aarch64": 0xC00000B7}
-_SOCKET_NR = {"x86_64": 41, "aarch64": 198}
+# as chamadas negadas: ``socket`` e as três do io_uring (``io_uring_setup``, ``_enter`` e ``_register``, iguais nas duas arquiteturas)
+_DENIED_NR = {"x86_64": (41, 425, 426, 427), "aarch64": (198, 425, 426, 427)}
 _X32_SYSCALL_BIT = 0x40000000  # x32 no x86_64: outra numeração, recusada por inteiro
 _BPF_LD_W_ABS, _BPF_JEQ_K, _BPF_JGE_K, _BPF_RET_K = 0x20, 0x15, 0x35, 0x06
 _RET_ALLOW, _RET_KILL_PROCESS = 0x7FFF0000, 0x80000000
@@ -105,9 +107,15 @@ def landlock_abi() -> int:
     return max(0, int(version))
 
 
+def _filterable() -> bool:
+    """Arquitetura com o filtro e um Python de 64 bits (um Python de 32 bits num kernel de 64 seria morto pelo filtro)."""
+    return platform.machine() in _DENIED_NR and sys.maxsize > 2**32
+
+
 def supported() -> bool:
-    """O sandbox inteiro cabe aqui? Landlock com o ABI que a política pede e uma arquitetura com o filtro de sockets."""
-    return landlock_abi() >= MIN_ABI and platform.machine() in _SOCKET_NR
+    """O sandbox inteiro cabe aqui? Landlock com o ABI que a política pede, o filtro de chamadas e nenhum caminho permitido que contenha o
+    app. O pai confere isto antes de buscar a imagem; o filho refaz tudo em ``confine``."""
+    return landlock_abi() >= MIN_ABI and _filterable() and not exposes_app(python_paths())
 
 
 def python_paths() -> list[str]:
@@ -166,7 +174,7 @@ def _landlock(abi: int, paths: list[str]) -> bool:
                 os.close(fd)
             if added:
                 return False
-        if libc.prctl(_PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0):
+        if not _no_new_privs(libc):
             return False
         return libc.syscall(ctypes.c_long(_SYS_RESTRICT_SELF), ruleset, ctypes.c_uint32(0)) == 0
     finally:
@@ -178,17 +186,22 @@ def _bpf(code: int, jt: int, jf: int, k: int) -> bytes:
 
 
 def socket_filter(machine: str) -> bytes:
-    """O programa BPF: arquitetura diferente da esperada mata o processo; ``socket`` (e, no ``x86_64``, toda chamada x32) devolve
-    ``EPERM``; o resto passa. Os saltos são relativos à instrução seguinte."""
-    nr = _SOCKET_NR[machine]
+    """O programa BPF: arquitetura diferente da esperada mata o processo; as chamadas negadas (e, no ``x86_64``, toda chamada x32)
+    devolvem ``EPERM``; o resto passa. Os saltos são relativos à instrução seguinte: cada teste salta até o ``EPERM``, logo depois do
+    ``ALLOW``."""
+    tests = [(_BPF_JGE_K, _X32_SYSCALL_BIT)] if machine == "x86_64" else []
+    tests += [(_BPF_JEQ_K, nr) for nr in _DENIED_NR[machine]]
     head = [_bpf(_BPF_LD_W_ABS, 0, 0, _DATA_ARCH), _bpf(_BPF_JEQ_K, 1, 0, _AUDIT_ARCH[machine])]
     head.append(_bpf(_BPF_RET_K, 0, 0, _RET_KILL_PROCESS))
     body = [_bpf(_BPF_LD_W_ABS, 0, 0, _DATA_NR)]
-    if machine == "x86_64":
-        body.append(_bpf(_BPF_JGE_K, 2, 0, _X32_SYSCALL_BIT))  # salta o JEQ e o ALLOW: EPERM
-    body.append(_bpf(_BPF_JEQ_K, 1, 0, nr))  # salta o ALLOW: EPERM
+    body += [_bpf(code, len(tests) - index, 0, k) for index, (code, k) in enumerate(tests)]
     tail = [_bpf(_BPF_RET_K, 0, 0, _RET_ALLOW), _bpf(_BPF_RET_K, 0, 0, _RET_EPERM)]
     return b"".join(head + body + tail)
+
+
+def _no_new_privs(libc: ctypes.CDLL) -> bool:
+    zero = ctypes.c_ulong(0)
+    return libc.prctl(ctypes.c_int(_PR_SET_NO_NEW_PRIVS), ctypes.c_ulong(1), zero, zero, zero) == 0
 
 
 def _seccomp(machine: str) -> bool:
@@ -196,9 +209,11 @@ def _seccomp(machine: str) -> bool:
     buffer = ctypes.create_string_buffer(program, len(program))
     fprog = _SockFprog(len(program) // 8, ctypes.cast(buffer, ctypes.c_void_p))
     libc = _libc()
-    if libc.prctl(_PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0):
+    if not _no_new_privs(libc):
         return False
-    return libc.prctl(_PR_SET_SECCOMP, _SECCOMP_MODE_FILTER, ctypes.byref(fprog), 0, 0) == 0
+    zero = ctypes.c_ulong(0)
+    mode = ctypes.c_ulong(_SECCOMP_MODE_FILTER)
+    return libc.prctl(ctypes.c_int(_PR_SET_SECCOMP), mode, ctypes.byref(fprog), zero, zero) == 0
 
 
 def _limits() -> None:
@@ -207,11 +222,11 @@ def _limits() -> None:
 
 
 def confine() -> bool:
-    """Aplica os limites, o Landlock e o filtro de sockets a ESTE processo, sem volta. ``True`` só com tudo aplicado; nunca levanta."""
+    """Aplica os limites, o Landlock e o filtro de chamadas a ESTE processo, sem volta. ``True`` só com tudo aplicado; nunca levanta."""
     try:
         _limits()
         abi, machine = landlock_abi(), platform.machine()
-        if abi < MIN_ABI or machine not in _SOCKET_NR:
+        if abi < MIN_ABI or not _filterable():
             return False
         paths = python_paths()
         if exposes_app(paths):

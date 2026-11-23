@@ -80,7 +80,7 @@ PANEL_ENABLED=false
 ```
 
 > [!NOTE]
-> O decodificador de imagens roda em sandbox e exige suporte do kernel do host (Landlock). Sem ele, logos e capas ficam no ícone padrão e o log mostra `SANDBOX-OFF` uma vez.
+> O decodificador de imagens roda em sandbox e exige suporte do kernel do host (Landlock, kernel 6.12 ou mais novo). Sem ele, logos e capas ficam no ícone padrão e o log mostra `SANDBOX-OFF` uma vez.
 
 ### 3.2 Variáveis Essenciais
 ```env

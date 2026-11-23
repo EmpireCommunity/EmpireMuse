@@ -21,7 +21,7 @@ from empiremuse.utils.radio.logo import LogoError, decode_in_worker
 ROOT = Path(__file__).resolve().parents[2]
 WORKER = ROOT / "empiremuse" / "utils" / "radio" / "logo_worker.py"
 IS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
-needs_landlock = pytest.mark.skipif(sandbox.landlock_abi() == 0, reason="kernel sem Landlock")
+needs_landlock = pytest.mark.skipif(not sandbox.supported(), reason="kernel sem o sandbox completo (Landlock ABI 6)")
 
 
 def image_bytes(fmt: str) -> bytes:
@@ -322,3 +322,111 @@ async def test_without_the_sandbox_the_service_fetches_nothing():
     svc = logo_module.LogoService(Source(), fetch=fetch, ready=lambda: False)
     result = await svc.png("00000000-0000-0000-0000-000000000001")
     assert result == logo_module.LogoResult() and fetched == [] and svc.fetches == 0
+
+
+# ---------------------------------------------------------------------- revisão 2 do PR 279
+
+
+@needs_landlock
+@pytest.mark.critical
+@pytest.mark.regression
+def test_a_sandboxed_decoder_cannot_set_up_a_kernel_io_ring(tmp_path):
+    body = (
+        "import ctypes\n"
+        "libc = ctypes.CDLL(None, use_errno=True)\n"
+        "params = ctypes.create_string_buffer(120)\n"
+        "print('confined' if sandbox.confine() else 'open')\n"
+        "fd = libc.syscall(ctypes.c_long(425), ctypes.c_uint(1), params)\n"
+        "print('refused' if fd < 0 and ctypes.get_errno() == 1 else 'opened')\n"
+    )
+    assert run_probe(tmp_path, body) == ["confined", "refused"]
+
+
+@needs_landlock
+@pytest.mark.critical
+@pytest.mark.regression
+def test_a_sandboxed_decoder_writes_nothing_into_the_allowed_paths(tmp_path):
+    body = (
+        "target = os.path.join(sandbox.python_paths()[0], '.sandbox-probe.tmp')\n"
+        "print('confined' if sandbox.confine() else 'open')\n"
+        "try:\n"
+        "    open(target, 'x').close()\n"
+        "    os.unlink(target)\n"
+        "    print('wrote')\n"
+        "except PermissionError:\n"
+        "    print('refused')\n"
+    )
+    assert run_probe(tmp_path, body) == ["confined", "refused"]
+
+
+@needs_landlock
+@pytest.mark.critical
+@pytest.mark.regression
+def test_a_sandboxed_decoder_signals_no_process_outside_it(tmp_path):
+    body = (
+        "print('confined' if sandbox.confine() else 'open')\n"
+        "try:\n"
+        "    os.kill(os.getppid(), 0)\n"
+        "    print('signalled')\n"
+        "except PermissionError:\n"
+        "    print('refused')\n"
+    )
+    assert run_probe(tmp_path, body) == ["confined", "refused"]
+
+
+@needs_landlock
+@pytest.mark.critical
+@pytest.mark.regression
+def test_the_worker_side_refuses_a_kernel_below_the_minimum_abi(tmp_path):
+    body = "sandbox.landlock_abi = lambda: sandbox.MIN_ABI - 1\nprint('confined' if sandbox.confine() else 'refused')\n"
+    assert run_probe(tmp_path, body) == ["refused"]
+
+
+def run_bpf(program: bytes, arch: int, nr: int) -> int:
+    """Um interpretador mínimo das quatro instruções que o filtro usa (carga, igual, maior ou igual, retorno)."""
+    import struct
+
+    code = [struct.unpack("=HBBI", program[i : i + 8]) for i in range(0, len(program), 8)]
+    data = {0: nr, 4: arch}
+    accumulator, pc = 0, 0
+    while True:
+        op, jt, jf, k = code[pc]
+        if op == 0x20:
+            accumulator, pc = data[k], pc + 1
+        elif op in (0x15, 0x35):
+            hit = accumulator == k if op == 0x15 else accumulator >= k
+            pc = pc + 1 + (jt if hit else jf)
+        else:
+            return k
+
+
+EPERM, ALLOW, KILL = 0x00050001, 0x7FFF0000, 0x80000000
+
+
+@pytest.mark.critical
+@pytest.mark.parametrize(
+    ("machine", "arch", "nr", "expected"),
+    [
+        ("x86_64", 0xC000003E, 41, EPERM),
+        ("x86_64", 0xC000003E, 425, EPERM),
+        ("x86_64", 0xC000003E, 427, EPERM),
+        ("x86_64", 0xC000003E, 0x40000000 + 41, EPERM),  # a mesma chamada pela numeração x32
+        ("x86_64", 0xC000003E, 0, ALLOW),
+        ("x86_64", 0x40000003, 41, KILL),  # outra arquitetura na mesma chamada
+        ("aarch64", 0xC00000B7, 198, EPERM),
+        ("aarch64", 0xC00000B7, 426, EPERM),
+        ("aarch64", 0xC00000B7, 41, ALLOW),
+        ("aarch64", 0xC000003E, 198, KILL),
+    ],
+)
+def test_the_call_filter_decides_each_branch(machine, arch, nr, expected):
+    assert run_bpf(sandbox.socket_filter(machine), arch, nr) == expected
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+def test_the_parent_already_refuses_a_layout_that_exposes_the_app(monkeypatch):
+    """O pai não busca a imagem quando o filho recusaria: um caminho permitido que contém o app (Alicerce S1, revisão 2)."""
+    monkeypatch.setattr(sandbox, "landlock_abi", lambda: sandbox.MIN_ABI)
+    monkeypatch.setattr(sandbox, "python_paths", lambda: [os.path.dirname(sandbox._APP_ROOT)])
+    assert sandbox.supported() is False
