@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Modo "Rádios favoritas" do ``/fav_manager`` (J3): as estações ao vivo e os filtros de local do próprio membro.
 
-Só **Remover** e **Limpar** (o Tocar é da J2a e não deixa porta aqui). A lista pessoal e os filtros são dado pessoal
+**Tocar** (J2a: chama o controlador do modo rádio com o uuid escolhido; a estação é relida no servidor), **Remover** e **Limpar**. A lista pessoal e os filtros são dado pessoal
 (contrato Jukebox §1.2, m7): só existem em mensagem efêmera. ``radio_private`` é o único portão: nenhum texto com a
 lista é montado sem ele, e ele só vira ``True`` onde o menu já está numa mensagem efêmera (ou numa nova, aberta para
 isso). A identidade vem sempre de ``inter.author``; nenhum ``custom_id`` nem valor de select decide de quem é a lista.
@@ -248,6 +248,13 @@ class FavMenuRadioMixin:
         no_stations, no_filters = not self.radio_stations, not self.radio_filters
         add = self._add_button
         add(
+            tr("radio.favorites.play.label"),
+            "▶️",
+            self.radio_play_station_callback,
+            custom_id=f"user_fav_radio_play:{self._custom_id_suffix}",
+            disabled=no_stations or self._radio_guild_id() is None,
+        )
+        add(
             tr("radio.favorites.remove_station.label"),
             "♻️",
             self.radio_remove_station_callback,
@@ -353,6 +360,29 @@ class FavMenuRadioMixin:
 
     async def radio_retry_callback(self, inter: disnake.MessageInteraction) -> None:
         await self._radio_guarded(inter, None, "", {})
+
+    async def radio_play_station_callback(self, inter: disnake.MessageInteraction) -> None:
+        """Tocar a favorita na call de quem clicou (T-473): o MESMO controlador do "Tocar na minha call" decide tudo (porta, premium,
+        24 h na call, nó local); daqui só sai o uuid selecionado no menu deste membro."""
+        from empiremuse.utils.radio.jukebox_radio import Refused
+
+        tr = self.tr
+        if not self.radio_private or self.mode != ViewMode.radio_favorites:
+            await inter.send(tr("radio.favorites.private_only"), ephemeral=True)
+            return
+        uuid = self.current_station
+        if uuid is None or uuid not in {s.uuid for s in self.radio_stations}:
+            await inter.send(tr("fav.select_item"), ephemeral=True)
+            return
+        await inter.response.defer(ephemeral=True, with_message=True)
+        try:
+            key, fields = await self.bot.pool.radio.jukebox.request_live(inter, uuid)
+            text = tr(key, **fields)
+        except Refused as refused:
+            text = tr(refused.key, **refused.fields)
+        except RadioUnavailable:
+            text = tr("radio.owner.unavailable")
+        await inter.send(text, ephemeral=True, allowed_mentions=disnake.AllowedMentions.none())
 
     async def radio_remove_station_callback(self, inter: disnake.MessageInteraction) -> None:
         uuid = self.current_station

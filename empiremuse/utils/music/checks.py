@@ -773,6 +773,32 @@ def get_available_bots_info(pool: BotPool, guild_id: int, member: disnake.Member
 #######################################################################
 
 
+def can_act_as_dj(member: disnake.Member, player: LavalinkPlayer, guild_data: dict) -> bool:
+    """O membro tem poder REAL de DJ neste player? Para a porta do modo rádio (T-434 §2.1, Q2): ``administrator``, ``manage_guild``,
+    ``manage_channels``, ``move_members`` na call do bot, cargo DJ do servidor ou o criador do player.
+
+    Nunca lê ``player.dj`` (a autopromoção de ``check_player_perm`` numa call sem DJ não conta, m2) e não tem efeito colateral: não promove,
+    não levanta e não envia nada.
+    """
+    if member is None or getattr(member, "bot", False):
+        return False
+    perms = getattr(member, "guild_permissions", None)
+    if perms is not None and (perms.administrator or perms.manage_guild or perms.manage_channels):
+        return True
+    if player is not None and member.id == getattr(player, "player_creator", None):
+        return True
+    voice = getattr(getattr(getattr(player, "guild", None), "me", None), "voice", None)
+    channel = getattr(voice, "channel", None)
+    try:
+        if channel is not None and channel.permissions_for(member).move_members:
+            return True
+    except AttributeError:
+        pass
+    roles = {getattr(role, "id", None) for role in getattr(member, "roles", ())}
+    dj_roles = (guild_data or {}).get("djroles") or ()
+    return any(str(role).isdecimal() and int(role) in roles for role in dj_roles)
+
+
 async def check_player_perm(inter, bot: BotCore, channel, guild_data: dict = None):
     try:
         guild_id = inter.guild_id
