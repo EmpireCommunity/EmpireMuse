@@ -136,6 +136,10 @@ async def _pn_next_track(self, req):
                         if not self.current and (self.autoplay or self.keep_connected):
                             await self.process_next()
                         return True
+                    if getattr(self, "radio_mode", None) is not None or getattr(self, "station", None) is not None:
+                        # o modo rádio ou uma estação começou durante a busca da recomendação: quem manda agora é essa transição
+                        # (a mesma regra do SUPERSEDED do gancho da estação); a recomendação não toca por cima
+                        return True
 
                 if not track:
                     await go_idle(self)

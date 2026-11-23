@@ -227,3 +227,31 @@ async def test_the_ephemeral_pages_keep_the_split_of_the_first_page_with_the_liv
         seen += [v for v in values if v.startswith("pl:")]
         page = next((int(v.removeprefix("jb:page:")) for v in values if v == f"jb:page:{page + 1}"), None)
     assert seen == [f"pl:Lista {i}" for i in range(100)]
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize("later", ["no_premium", "db_down"])
+async def test_the_page_split_holds_when_premium_changes_between_pages(later):
+    """Alicerce S3 (J2a): o premium (ou o banco) muda entre uma página e outra; nenhuma playlist é pulada nem repetida."""
+    from empiremuse.utils.music.guild_pin import load_guild_pin
+
+    handler, _, _ = world("jb:page:2")
+    calls = []
+
+    async def premium(guild_id):
+        calls.append(guild_id)
+        if len(calls) == 1:
+            return object()  # a página 1 com premium
+        if later == "db_down":
+            raise RuntimeError("banco fora")
+        return None
+
+    handler.bot.pool.radio = NS(premium=NS(get=premium), stations=NS(count_for_guild=AsyncMock(return_value=0)))
+    seen, page = [], 1
+    while page:
+        select = await load_guild_pin(handler.bot, tr, 1, page, radio=page == 1)
+        values = [o.value for o in select.options]
+        seen += [v for v in values if v.startswith("pl:")]
+        page = next((int(v.removeprefix("jb:page:")) for v in values if v == f"jb:page:{page + 1}"), None)
+    assert seen == [f"pl:Lista {i}" for i in range(100)]

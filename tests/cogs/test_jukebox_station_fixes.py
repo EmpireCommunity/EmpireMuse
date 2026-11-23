@@ -810,3 +810,89 @@ async def test_the_confirm_button_plays_the_station_of_its_own_screen():
     view.chosen = "b" * 24  # uma seleção atrasada troca ``chosen``
     await view._on_confirm(pick("c" * 24))
     assert jukebox.request_station.await_args.args[1] == "c" * 24
+
+
+# ---------------------------------------------------------------------- backlog J2 (T-J2-BACKLOG)
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize("transition", ["radio", "station"])
+async def test_a_recommendation_fetched_while_radio_or_a_station_starts_does_not_play(transition, monkeypatch):
+    """J2a (nota da Alicerce m1): o autoplay buscava uma recomendação durante M → R e a tocava por cima da rádio que abria."""
+    from empiremuse.utils.music.models import playback_steps
+
+    idle = AsyncMock()
+    monkeypatch.setattr(playback_steps, "go_idle", idle)
+    player = NS(queue=deque(), radio_id=None, radio_mode=None, station=None, autoplay=True, keep_connected=False)
+
+    async def autoqueue():
+        if transition == "radio":
+            player.radio_mode = object()  # R abrindo durante a busca
+        else:
+            player.station = NS(ref="g:rock")
+        return "recomendação"
+
+    player.get_autoqueue_tracks = autoqueue
+    req = NS(track=None)
+    assert await playback_steps._pn_next_track(player, req) is True
+    assert req.track is None and not idle.await_count
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_refusal_after_the_pool_load_holds_the_next_click_for_the_short_wait(world):
+    """Sentinela S-1 (J2b): cada clique recusado depois da carga gastava o Last.fm de novo; agora vale a espera curta entre trocas."""
+    world.hub.lastfm.recipe_tracks.return_value = NS(tracks=[], unknown=())  # a estação está sem faixas
+    station_player(world, creator=10)
+    with pytest.raises(Refused) as first:
+        await world.radio.request_station(world.inter(world.members[10]), ROCK)
+    with pytest.raises(Refused) as second:
+        await world.radio.request_station(world.inter(world.members[10]), ROCK)
+    assert (first.value.key, second.value.key) == ("jukebox.station.empty", "jukebox.radio.switch_wait")
+    assert lastfm_calls(world) == 1
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_the_station_star_confirms_the_click_before_saving():
+    """Sentinela Sug 4 (J2b rev4): defer, depois o toggle (a gravação), depois a resposta; nada é gravado antes da confirmação."""
+    from types import SimpleNamespace
+
+    from empiremuse.cogs.music import Music
+    from empiremuse.utils.others import PlayerControls
+    from tests.support.drivers_de_regras import SERVIDOR_DO_PLAYER, BotDoPlayer, MusicaFalsa, interacao
+
+    order = []
+    bot = BotDoPlayer()
+
+    async def toggle(inter, player):
+        order.append("toggle")
+        return "radio.panel.custom.favorite_added", {"station": "Rock", "max": 24}
+
+    bot.pool.radio = SimpleNamespace(
+        jukebox=SimpleNamespace(
+            station_view=lambda player: SimpleNamespace(playing=True), toggle_station_favorite=toggle
+        )
+    )
+    canal = SimpleNamespace(id=77)
+    guild = SimpleNamespace(me=SimpleNamespace(voice=SimpleNamespace(channel=canal)))
+    inter = interacao(guild)
+    inter.author.voice = SimpleNamespace(channel=canal)
+
+    async def defer(**kwargs):
+        order.append(("defer", kwargs.get("ephemeral")))
+
+    async def edit_original_message(**kwargs):
+        order.append("edit")
+
+    inter.response.defer = defer
+    inter.edit_original_message = edit_original_message
+    bot.music.players[SERVIDOR_DO_PLAYER] = SimpleNamespace(
+        message=inter.message, interaction_cooldown=False, guild=guild, tr=lambda key, **fields: key, current=None
+    )
+    await Music.player_controller(MusicaFalsa(bot), inter, PlayerControls.add_favorite)
+    assert order == [("defer", True), "toggle", "edit"]
