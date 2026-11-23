@@ -318,17 +318,30 @@ class DiscordRadioPorts:
         """Os argumentos de ``message.edit``: com um anexo novo (o logo), troca os anexos de antes em vez de empilhar."""
         return {**payload, "attachments": []} if "file" in payload else dict(payload)
 
-    async def _panel_payload(self, bot: BotCore, guild: disnake.Guild, current: Radio) -> dict[str, Any]:
+    def _uses_visor(self) -> bool:
+        """O painel desta rádio é o visor em imagem? (a ao vivo e a personalizada; só as portas da personalizada têm estação)"""
+        return self.radio.kind == "live" or (self.radio.kind == "custom" and hasattr(self, "station"))
+
+    def _redraw_panel_later(self) -> None:
+        """Pede a edição que traz o visor (o painel saiu sem a imagem porque a vaga de render estava ocupada)."""
+        redraw = getattr(self, "refresh_panel", None) or getattr(self, "_refresh_panel", None)
+        if redraw is not None:
+            redraw()
+
+    async def _panel_payload(
+        self, bot: BotCore, guild: disnake.Guild, current: Radio, *, now: bool = False
+    ) -> dict[str, Any]:
         """O painel do tipo desta rádio: a ao vivo no desenho aprovado (visor em imagem, 2x5 botões só com emoji e os dois selects);
-        a personalizada ainda no painel com o visual da Jukebox: ícones do bot, miniatura e cor."""
+        a personalizada ainda no painel com o visual da Jukebox: ícones do bot, miniatura e cor. ``now`` = a rádio está subindo e não
+        espera a vaga de render: com ela ocupada, o visor vem sem a imagem (sem ``file``)."""
         from empiremuse.utils.music.app_emojis import emoji as app_emoji  # tarde: o módulo importa o cliente
         from empiremuse.utils.radio.panel import panel_payload
 
         tr = await bot.pool.i18n.for_guild(guild)
         if self.radio.kind == "live":
-            return await self._visor_payload(bot, guild, current, tr)
-        if self.radio.kind == "custom" and hasattr(self, "station"):  # só as portas da personalizada têm estação
-            return await self._custom_visor_payload(bot, guild, current, tr)
+            return await self._visor_payload(bot, guild, current, tr, now=now)
+        if self._uses_visor():
+            return await self._custom_visor_payload(bot, guild, current, tr, now=now)
         return panel_payload(
             tr,
             playlist_name=await self._panel_name(current),
@@ -342,7 +355,9 @@ class DiscordRadioPorts:
             logo=await self._logo(current),
         )
 
-    async def _visor_payload(self, bot: BotCore, guild: disnake.Guild, current: Radio, tr: Any) -> dict[str, Any]:
+    async def _visor_payload(
+        self, bot: BotCore, guild: disnake.Guild, current: Radio, tr: Any, *, now: bool = False
+    ) -> dict[str, Any]:
         """O painel da rádio AO VIVO (R6/R7): o retrato imutável (``live_snapshot``) vira o PNG do visor numa thread e os controles.
         Custa, por edição (no máximo uma a cada ``live_ports.PANEL_EDIT_INTERVAL_S``): o logo em cache, um ``by_uuids`` e duas leituras das favoritas."""
         from empiremuse.utils.music.app_emojis import emoji as app_emoji  # tarde: o módulo importa o cliente
@@ -370,10 +385,11 @@ class DiscordRadioPorts:
             filter_options=options,
             color=bot.get_color(guild.me),
             emojis=lambda name: app_emoji(bot, name),
+            now=now,
         )
 
     async def _custom_visor_payload(
-        self, bot: BotCore, guild: disnake.Guild, current: Radio, tr: Any
+        self, bot: BotCore, guild: disnake.Guild, current: Radio, tr: Any, *, now: bool = False
     ) -> dict[str, Any]:
         """O painel da rádio PERSONALIZADA no visor: estações do servidor (do filtro) e select 2 = tipo + Favoritas do membro que as escolheu."""
         from empiremuse.utils.music.app_emojis import emoji as app_emoji  # tarde: o módulo importa o cliente
@@ -399,13 +415,18 @@ class DiscordRadioPorts:
             )
         )
         return await visor_payload_async(
-            tr, snapshot, filter_options=options, color=bot.get_color(guild.me), emojis=emojis, custom=True
+            tr, snapshot, filter_options=options, color=bot.get_color(guild.me), emojis=emojis, custom=True, now=now
         )
 
     async def _refresh_existing(self, message: Any, bot: BotCore, guild: disnake.Guild, current: Radio) -> None:
         """O painel que já existia (de antes de uma atualização do bot, ou do reinício) é redesenhado uma vez com o visual de agora."""
         try:
-            payload = await self._panel_payload(bot, guild, current)
+            payload = await self._panel_payload(
+                bot, guild, current, now=True
+            )  # a rádio está subindo: não espera a vaga
+            if self._uses_visor() and "file" not in payload:
+                self._redraw_panel_later()  # vaga ocupada: o painel de antes fica até a edição com o visor
+                return
             await message.edit(allowed_mentions=disnake.AllowedMentions.none(), **self.edit_kwargs(payload))
         except Exception as error:  # noqa: BLE001 - o painel é conveniência: só o tipo vai ao log (R-12)
             logger.warning("Painel da rádio não redesenhado (%s)", type(error).__name__)
@@ -444,7 +465,9 @@ class DiscordRadioPorts:
             except disnake.Forbidden:
                 logger.warning("Painel da rádio sem permissão para ler o chat da call")
                 return
-        payload = await self._panel_payload(bot, guild, current)
+        payload = await self._panel_payload(
+            bot, guild, current, now=True
+        )  # a rádio está subindo: o áudio nunca espera a vaga
         if self.purge_on_arrival:
             self.purge_on_arrival = False
             await self._purge_chat(channel)
@@ -456,6 +479,8 @@ class DiscordRadioPorts:
             return
         await hub.store.set_panel_message(self.radio.id, message.id)
         hub.manager.note_panel(self.radio.id, message.id)
+        if self._uses_visor() and "file" not in payload:
+            self._redraw_panel_later()  # saiu sem o visor (vaga ocupada): a edição de sempre o traz
 
     async def _purge_chat(self, channel: Any) -> None:
         """Apaga as mensagens do chat da call (até ``ARRIVAL_PURGE_LIMIT``). Sem permissão ou com o Discord falhando, só avisa: o painel sai do mesmo jeito."""

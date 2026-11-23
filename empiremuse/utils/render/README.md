@@ -9,7 +9,7 @@ resume o que o código garante e o orçamento de memória.
 |---|---|---|
 | `slot.py` | `RenderSlot`: uma vaga de desenho (`asyncio.Semaphore(1)`) com contador de espera; `run(fn, *args)` numa thread; `pressure()`; `RenderBusy` quando a espera passa de `SLOT_WAIT_S` | uma por processo (`shared_slot()`) |
 | `budget.py` | todos os tetos nomeados (os de regra pura vêm de `rules/card.py` e são reexportados) | constantes |
-| `frames.py` | `DiscFrames` (paleta + ladrilhos `P` crus) e `FramesCache`, um LRU limitado por **bytes**; `frames_key` | cache por bytes |
+| `frames.py` | `DiscFrames` (paleta + ladrilhos `P` crus) e `FramesCache`, um LRU limitado por **bytes** e sem trava (só no laço de eventos); `frames_key` | cache por bytes |
 | `gif.py` | paleta única por faixa, quantização dos ladrilhos, GIF (`disposal=1`, `optimize=False`, 30 × 60 ms, laço infinito) e PNG (`compress_level=6`) | puro |
 | `primitives.py` | ícones, logo em círculo (só PNG), `fit` por busca binária, texto recortado na caixa | puro |
 | `state.py` | estado de render por player num `WeakKeyDictionary` (último anexo, GIF adiado, último GIF frio), fora de `player.py` | memória |
@@ -21,11 +21,12 @@ Os fatos que a imagem pode mostrar (`CardSpec`) e as regras puras (formato, anim
 
 - **Uma vaga só** para os players dos 5 bots e o visor da rádio 24 h. A vaga é só do desenho: busca e decodificação de
   capa ficam fora. A vaga só é devolvida quando a thread do desenho termina, mesmo que quem pediu seja cancelado.
-- O visor da rádio passa pela mesma vaga (`panel.visor_payload_async`). Sem vaga em `SLOT_WAIT_S`, `RenderBusy` sobe e
-  o painel anterior fica (quem edita registra só o tipo do erro).
+- O visor da rádio passa pela mesma vaga (`panel.visor_payload_async`). Na edição, sem vaga em `SLOT_WAIT_S`, `RenderBusy`
+  sobe e o painel anterior fica (quem edita registra só o tipo do erro). A rádio subindo nunca espera a vaga: ocupada, o
+  painel sai sem o visor e a edição de sempre o traz.
 - Um desenho acima de `SLOW_RENDER_S` vai ao log só com o rótulo (`visor` ou o id da skin) e a duração.
 - O cache de quadros nunca passa do teto em bytes; uma entrada maior que o teto não é guardada e o render segue.
-- A chave dos quadros é o `sha256` dos pixels da capa reduzida mais skin, escala, tema, quadros e `RENDER_VERSION`;
+- A chave dos quadros é o `sha256` dos pixels do rótulo do disco (capa reduzida ou logo, nunca um "sem capa" genérico) mais skin, escala, tema, quadros e `RENDER_VERSION`;
   nunca a URL, a faixa, o servidor ou o membro.
 - Manter o anexo de uma mensagem só com a chave de render **igual** à anterior (igualdade de tupla, nunca o `hash`).
 

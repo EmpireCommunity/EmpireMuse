@@ -48,22 +48,26 @@ class RenderSlot:
     def pressure(self) -> int:
         return self._waiting
 
-    async def _acquire(self) -> None:
+    async def _acquire(self, wait_s: float | None) -> None:
         if not self._semaphore.locked():  # vaga livre e ninguém na fila: entra sem esperar (nem prazo)
             await self._semaphore.acquire()
             return
+        if (
+            wait_s is not None and wait_s <= 0
+        ):  # quem não pode esperar (a rádio subindo): ocupada = ``RenderBusy`` na hora
+            raise RenderBusy
         self._waiting += 1
         try:
-            await asyncio.wait_for(self._semaphore.acquire(), self._wait_s)
+            await asyncio.wait_for(self._semaphore.acquire(), self._wait_s if wait_s is None else wait_s)
         except TimeoutError:
             raise RenderBusy from None
         finally:
             self._waiting -= 1
 
-    async def run(self, fn: Callable[..., T], *args: Any, label: str = "render") -> T:
-        """``fn(*args)`` numa thread, dentro da vaga. ``RenderBusy`` se a espera passar do prazo. ``label`` (o id da skin ou
-        ``"visor"``) só aparece no log de desenho lento, nunca o conteúdo."""
-        await self._acquire()
+    async def run(self, fn: Callable[..., T], *args: Any, label: str = "render", wait_s: float | None = None) -> T:
+        """``fn(*args)`` numa thread, dentro da vaga. ``RenderBusy`` se a espera passar do prazo (``wait_s``; ``None`` = o da
+        vaga, ``0`` = não espera). ``label`` (o id da skin ou ``"visor"``) só aparece no log de desenho lento, nunca o conteúdo."""
+        await self._acquire(wait_s)
         started = self._clock()
         work = asyncio.ensure_future(self._to_thread(fn, *args))
         try:

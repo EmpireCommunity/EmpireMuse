@@ -10,15 +10,18 @@ import logging
 import pytest
 from PIL import Image, ImageFont
 
+from empiremuse.i18n import get_i18n
 from empiremuse.rules.card import RENDER_VERSION, CardFormat, CardSpec, CardState, choose_format
 from empiremuse.utils.render.frames import DiscFrames, FramesCache, frames_key, frames_size
 from empiremuse.utils.render.gif import build_palette, encode_gif, encode_png, quantize_tiles
 from empiremuse.utils.render.primitives import circle_logo, draw_clipped, fit
 from empiremuse.utils.render.slot import RenderBusy, RenderSlot, shared_slot
+from tests.support.radio_snapshot import snapshot
 
 pytestmark = pytest.mark.critical
 
 FONT = ImageFont.load_default(size=40)
+PT = get_i18n().for_locale("pt-BR")
 
 
 class Gate:
@@ -89,7 +92,6 @@ async def test_a_cancelled_caller_keeps_the_slot_until_the_drawing_ends():
 @pytest.mark.asyncio
 async def test_the_radio_visor_goes_through_the_shared_slot(monkeypatch, caplog):
     from empiremuse.utils.radio import panel
-    from tests.cogs.test_radio_visor import PT, snapshot
 
     ticks = iter([0.0, 2.5])
     calls = []
@@ -106,6 +108,29 @@ async def test_the_radio_visor_goes_through_the_shared_slot(monkeypatch, caplog)
     assert payload["file"].fp.read() == b"png" and len(calls) == 1
     assert [r.getMessage() for r in caplog.records] == ["Render lento (visor, 2.50 s)"]
     assert shared_slot() is shared_slot(), "uma vaga por processo (por laço)"
+
+
+@pytest.mark.asyncio
+async def test_a_busy_slot_never_holds_the_radio_panel_creation_it_goes_out_without_the_visor(caplog):
+    from empiremuse.utils.radio import panel
+
+    gate = Gate()
+    slot = RenderSlot(
+        to_thread=gate, wait_s=0
+    )  # a edição de sempre (sem ``now``) desiste na hora, sem esperar de verdade
+    holder = asyncio.create_task(slot.run(lambda: b"x"))
+    await settle()
+
+    with caplog.at_level(logging.DEBUG, logger="empiremuse.utils.radio.panel"):
+        blank = await panel.visor_payload_async(PT, snapshot(), filter_options=[], slot=slot, now=True)
+    with pytest.raises(RenderBusy):
+        await panel.visor_payload_async(PT, snapshot(), filter_options=[], slot=slot)
+    gate.open.set()
+    await holder
+
+    assert "file" not in blank and blank["embeds"][0].image.url is None and len(blank["components"]) == 4
+    assert gate.started == 1 and slot.pressure() == 0, "a criação não entrou na fila da vaga"
+    assert [r.levelname for r in caplog.records] == ["DEBUG"] and "Estação" not in caplog.text
 
 
 # ------------------------------------------------------------------------------------------------- cache de quadros
@@ -128,6 +153,11 @@ def spec(**changes) -> CardSpec:
     return base._replace(**changes)
 
 
+def test_frames_key_refuses_a_missing_label_digest():
+    with pytest.raises(ValueError):
+        frames_key(spec(), "", 30)
+
+
 def test_frames_cache_never_passes_its_byte_ceiling_and_refuses_an_oversized_entry():
     cache = FramesCache(max_bytes=10_000)
     sizes = []
@@ -147,7 +177,7 @@ def test_frames_key_changes_with_everything_that_changes_the_pixels(change):
     base = frames_key(spec(), "a" * 64, 30)
 
     assert frames_key(spec(**change), "a" * 64, 30) != base
-    assert frames_key(spec(), "b" * 64, 30) != base and frames_key(spec(), None, 30) != base
+    assert frames_key(spec(), "b" * 64, 30) != base, "outra capa ou outro logo = outra entrada"
     assert frames_key(spec(), "a" * 64, 20) != base
     assert frames_key(spec(volume=50, hidden=True), "a" * 64, 30) == base, "só o que muda o disco entra na chave"
 

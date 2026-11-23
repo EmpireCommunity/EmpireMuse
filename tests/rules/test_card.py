@@ -4,14 +4,17 @@ import pytest
 
 from empiremuse.rules.card import (
     ARTISTS_MAX,
+    CODEC_MAX,
     COLD_GIF_GAP_S,
     DEGRADE_AT,
     NAME_MAX,
+    ORIGIN_MAX,
     QUEUE_FACTS_MAX,
     RENDER_VERSION,
     SESSION_PLAYED_MAX,
     STATION_MAX,
     TITLE_MAX,
+    WHOLE_MAX,
     By,
     CardFormat,
     CardSpec,
@@ -23,6 +26,7 @@ from empiremuse.rules.card import (
     keep_attachment,
     make_item,
     make_radio,
+    make_station,
     make_track,
     motion_allowed,
     seal,
@@ -87,15 +91,27 @@ def assert_clean(text: str, limit: int) -> None:
 def test_external_text_reaches_the_card_clean_and_capped(hostile):
     track = make_track(title=hostile, artists=hostile, origin=hostile, requester=hostile)
     item = make_item(title=hostile, artists=hostile, requester=hostile)
-    radio = make_radio(name=hostile, title=hostile + r" \*escapado\*", country=hostile, place=hostile)
+    radio = make_radio(name=hostile, title=hostile + r" \*escapado\*", country=hostile, place=hostile, codec=hostile)
+    station = make_station(name=hostile, kind=hostile)
+    sealed = seal(spec(bot_name=hostile, voice_name=hostile))
 
     for text, limit in (
         (track.title, TITLE_MAX),
         (track.artists, ARTISTS_MAX),
+        (track.origin, ORIGIN_MAX),
         (track.requester, NAME_MAX),
         (item.title, TITLE_MAX),
+        (item.artists, ARTISTS_MAX),
+        (item.requester, NAME_MAX),
         (radio.title, TITLE_MAX),
         (radio.name, STATION_MAX),
+        (radio.country, NAME_MAX),
+        (radio.place, NAME_MAX),
+        (radio.codec, CODEC_MAX),
+        (station.name, STATION_MAX),
+        (station.kind, NAME_MAX),
+        (sealed.bot_name, NAME_MAX),
+        (sealed.voice_name, NAME_MAX),
     ):
         assert_clean(text, limit)
     assert "\\" not in track.title, "a imagem não leva escape de markdown"
@@ -106,14 +122,21 @@ def test_source_is_a_fixed_code_and_requester_only_for_member_requests():
     assert make_track(title="t", artists="a", source="https://evil.example").source == "WEB"
     assert make_track(title="t", artists="a", requester="Ana", by=By.RECOMMENDED).requester == ""
     assert make_track(title="t", artists="a", duration_s="abc").duration_s is None
+    assert make_track(title="t", artists="a", duration_s=1e308).duration_s == WHOLE_MAX
+    assert make_radio(name="r", bitrate="9" * 400, vote=(10**20, -1)).bitrate == 0
+    assert make_radio(name="r", vote=(10**20, -1)).vote == (WHOLE_MAX, 0)
 
 
 @pytest.mark.parametrize("state", list(CardState))
-def test_private_call_hides_track_cover_voice_and_queue_titles(state):
-    sealed = seal(spec(hidden=True, state=state, queue_total=5))
+def test_private_call_hides_track_cover_voice_queue_titles_radio_and_station(state):
+    radio = make_radio(name="Rádio X", title="Artista - Música", country="Brasil", place="SP", logo_key="u-1")
+    sealed = seal(
+        spec(hidden=True, state=state, queue_total=5, radio=radio, station=make_station(name="Estação Y", kind="genre"))
+    )
 
     assert sealed.track is None and sealed.cover is None and sealed.voice_name == ""
     assert sealed.queue == () and sealed.queue_total == 5
+    assert sealed.radio is None and sealed.station is None, "nem a estação nem o título ICY numa call privada"
 
 
 def test_only_a_pause_carries_a_position_and_caps_hold():

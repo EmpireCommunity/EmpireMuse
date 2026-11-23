@@ -27,6 +27,10 @@ ORIGIN_MAX = 80
 STATION_MAX = 80
 NAME_MAX = 60
 CODEC_MAX = 8
+WHOLE_MAX = (
+    1_000_000  # teto de número de fora (bitrate, tentativa, votos, duração em segundos): acima disso é cosmético
+)
+WHOLE_DIGITS_MAX = 32
 
 QUEUE_FACTS_MAX = 8
 SESSION_PLAYED_MAX = 5  # a escala da Rádio da Jukebox
@@ -144,11 +148,13 @@ def card_text(value: object, limit: int) -> str:
 
 
 def _whole(value: object) -> int:
-    """Um inteiro não negativo de um valor de fora; o que não é número vira 0."""
+    """Um inteiro de 0 a ``WHOLE_MAX`` de um valor de fora; o que não é número vira 0 e o que passa do teto vira o teto."""
     if isinstance(value, bool) or not isinstance(value, int | float | str):
         return 0
+    if isinstance(value, str) and len(value) > WHOLE_DIGITS_MAX:
+        return 0
     try:
-        return max(0, int(value))
+        return min(max(0, int(value)), WHOLE_MAX)
     except ValueError, OverflowError:
         return 0
 
@@ -225,17 +231,20 @@ def make_station(*, name: object, kind: object) -> CardStation:
 
 
 def seal(spec: CardSpec) -> CardSpec:
-    """As invariantes que nenhuma skin decide: call privada sem título, artista, capa, call nem quem pediu (só a contagem
-    da fila); posição só na pausa; fila e sessão nos tetos."""
+    """As invariantes que nenhuma skin decide: call privada sem título, artista, capa, call, quem pediu, rádio nem estação
+    (só a contagem da fila); posição só na pausa; fila e sessão nos tetos; nome do bot e da call (editáveis no servidor)
+    pelo ``card_text``."""
     queue = spec.queue[:QUEUE_FACTS_MAX]
     sealed = spec._replace(
         queue=queue,
         queue_total=max(0, spec.queue_total, len(spec.queue)),
         session_played=min(max(0, spec.session_played), SESSION_PLAYED_MAX),
         paused_at_s=spec.paused_at_s if spec.state is CardState.PAUSED else None,
+        bot_name=card_text(spec.bot_name, NAME_MAX),
+        voice_name=card_text(spec.voice_name, NAME_MAX),
     )
-    if spec.hidden:
-        return sealed._replace(track=None, cover=None, voice_name="", queue=())
+    if spec.hidden:  # como o painel de texto de hoje: nada do que toca, nem a rádio (título ICY) nem a estação
+        return sealed._replace(track=None, cover=None, voice_name="", queue=(), radio=None, station=None)
     return sealed
 
 
@@ -282,7 +291,7 @@ def choose_format(
 
 def keep_attachment(want: RenderedKey, last: RenderedKey | None) -> bool:
     """Manter o anexo da mensagem só com a chave IGUAL à última (igualdade de tupla, nunca só o ``hash``)."""
-    return last is not None and tuple.__eq__(want, last) is True
+    return last is not None and want == last
 
 
 def cover_digest(pixels: bytes | None) -> str | None:

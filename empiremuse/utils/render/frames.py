@@ -1,8 +1,11 @@
 """Quadros do disco já quantizados (``DiscFrames``) e o cache deles, limitado por BYTES.
 
-A chave nunca é a faixa nem a URL: é o ``sha256`` dos pixels da capa reduzida mais tudo o que muda os pixels (skin, escala,
-tema, número de quadros e ``RENDER_VERSION``). Duas faixas do mesmo álbum dividem a entrada; nenhum dado de servidor ou de
-membro entra na chave nem no valor.
+A chave nunca é a faixa nem a URL: é o ``sha256`` dos pixels que vão no rótulo do disco (a capa reduzida OU o logo, nunca
+"sem capa" genérico: dois logos diferentes nunca dividem a entrada) mais tudo o que muda os pixels (skin, escala, tema,
+número de quadros e ``RENDER_VERSION``). Duas faixas do mesmo álbum dividem a entrada; nenhum dado de servidor ou de membro
+entra na chave nem no valor.
+
+``FramesCache`` NÃO é seguro entre threads: ``get`` e ``put`` só no laço de eventos, nunca dentro do desenho (a thread da vaga).
 """
 
 from __future__ import annotations
@@ -27,7 +30,7 @@ class DiscFrames(NamedTuple):
 
 
 class FramesKey(NamedTuple):
-    cover_digest: str | None  # ``None`` = sem capa (o logo)
+    label_digest: str  # ``sha256`` dos pixels do rótulo (capa ou logo)
     skin: str
     scale: int
     theme: str
@@ -35,9 +38,12 @@ class FramesKey(NamedTuple):
     render_version: int
 
 
-def frames_key(spec: CardSpec, cover_digest: str | None, frames: int) -> FramesKey:
-    """A chave dos quadros de um ``CardSpec`` já projetado pela skin: só o que muda os pixels do disco."""
-    return FramesKey(cover_digest, spec.skin, spec.scale, spec.theme, frames, spec.render_version)
+def frames_key(spec: CardSpec, label_digest: str, frames: int) -> FramesKey:
+    """A chave dos quadros de um ``CardSpec`` já projetado pela skin: só o que muda os pixels do disco. ``label_digest`` é o
+    ``sha256`` dos pixels do rótulo (``rules.card.cover_digest`` da capa ou do logo); vazio é recusado."""
+    if not label_digest:
+        raise ValueError("a chave dos quadros precisa dos pixels do rótulo")
+    return FramesKey(label_digest, spec.skin, spec.scale, spec.theme, frames, spec.render_version)
 
 
 def frames_size(value: DiscFrames) -> int:
@@ -46,7 +52,8 @@ def frames_size(value: DiscFrames) -> int:
 
 
 class FramesCache:
-    """``LRUCache`` por bytes; a expulsão é a única limpeza. Valor maior que o teto não é guardado (o render segue)."""
+    """``LRUCache`` por bytes; a expulsão é a única limpeza. Valor maior que o teto não é guardado (o render segue).
+    Sem trava: usar só no laço de eventos (antes e depois do ``RenderSlot.run``), nunca de dentro da thread do desenho."""
 
     def __init__(self, max_bytes: int = FRAMES_CACHE_BYTES) -> None:
         self._cache: LRUCache[FramesKey, DiscFrames] = LRUCache(maxsize=max_bytes, getsizeof=frames_size)
