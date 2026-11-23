@@ -210,6 +210,14 @@ def saved_player_skins(
     return skin, static
 
 
+def global_skin_changes(shown: tuple[str, str], picked: tuple[object, object]) -> dict[str, object]:
+    """O que o ``/skin`` grava no modo global: só os campos que o usuário trocou (``shown`` = o que a tela mostrou).
+
+    Salvar sem trocar mantém a ausência de escolha global; assim a skin herdada do servidor não vira escolha explícita."""
+    fields = ("player_skin", "player_skin_static")
+    return {field: new for field, old, new in zip(fields, shown, picked) if new != old}
+
+
 def disc_motion_on(value: object) -> bool:
     """A animação do disco está ligada? ``None`` (nunca escolhido) ou qualquer valor que não seja ``False`` = ligada."""
     return value is not False

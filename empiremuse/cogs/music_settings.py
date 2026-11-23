@@ -24,7 +24,7 @@ from empiremuse.rules.limits import (
 )
 from empiremuse.rules.rpc import TOKEN_LENGTH, generate_rpc_token
 from empiremuse.rules.servers import SettingError
-from empiremuse.rules.skins import jukebox_skin
+from empiremuse.rules.skins import global_skin_changes, jukebox_skin, saved_player_skins
 from empiremuse.rules.settings import add_dj_role as add_role, allowed_names
 from empiremuse.utils import branding
 from empiremuse.utils.branding import asset_url
@@ -1226,8 +1226,14 @@ class MusicSettings(commands.Cog):
         selected = jukebox_skin(guild_data["player_controller"]["skin"], bot.pool.default_skin)
         static_selected = jukebox_skin(guild_data["player_controller"]["static_skin"], bot.pool.default_static_skin)
 
-        global_selected = jukebox_skin(global_data["player_skin"], bot.pool.default_skin)
-        global_static_selected = jukebox_skin(global_data["player_skin_static"], bot.pool.default_static_skin)
+        # mesma precedência da criação do player: a escolha global, senão a do servidor, senão o padrão do pool
+        global_choice, global_static_choice = saved_player_skins(
+            guild_data["player_controller"]["skin"],
+            guild_data["player_controller"]["static_skin"],
+            {**global_data, "global_skin": True},
+        )
+        global_selected = jukebox_skin(global_choice, bot.pool.default_skin)
+        global_static_selected = jukebox_skin(global_static_choice, bot.pool.default_static_skin)
 
         skins_opts = [
             disnake.SelectOption(
@@ -1326,14 +1332,14 @@ class MusicSettings(commands.Cog):
         changed_skins_txt = ""
 
         if select_view.global_mode:
-            try:
-                global_data.update(
-                    {"player_skin": select_view.skin_selected, "player_skin_static": select_view.static_skin_selected}
+            # só o que o usuário trocou: sem troca, a ausência de escolha global fica (o player segue a do servidor)
+            global_data.update(
+                global_skin_changes(
+                    (global_selected, global_static_selected),
+                    (select_view.skin_selected, select_view.static_skin_selected),
                 )
-            except Exception:
-                pass
-            else:
-                await bot.update_global_data(inter.guild_id, global_data, db_name=DBModel.guilds)
+            )
+            await bot.update_global_data(inter.guild_id, global_data, db_name=DBModel.guilds)
 
             if global_selected != select_view.skin_selected:
                 try:

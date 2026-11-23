@@ -206,6 +206,13 @@ def load_jishaku_if_enabled(bot) -> bool:
     return True
 
 
+def _is_missing_part_of(module_name: str, missing: object) -> bool:
+    """O módulo ausente (``ModuleNotFoundError.name``) é o próprio ``module_name`` ou um pacote do caminho dele?"""
+    return (
+        isinstance(missing, str) and bool(missing) and (module_name == missing or module_name.startswith(f"{missing}."))
+    )
+
+
 class BotPool:
     public_panel_url: str = ""  # preenchida por run_app somente depois de abrir os listeners
     killing_state = False
@@ -1021,8 +1028,13 @@ class BotPool:
             try:
                 if find_spec(module_name) is None:
                     continue
-            except ModuleNotFoundError:  # o pacote das skins ainda não existe
-                continue
+            except ModuleNotFoundError as e:
+                if _is_missing_part_of(module_name, e.name):
+                    continue  # o pacote das skins ainda não existe
+                # o pacote existe, mas um import DELE falta: nenhuma skin carrega, e a falha vai ao log uma vez
+                logger.warning("Falha ao carregar o pacote das skins [muse] (%s)", type(e).__name__)
+                logger.debug("Detalhe da falha do pacote das skins", exc_info=True)
+                return
             try:
                 loaded = import_module(module_name).load()
             except Exception as e:  # inclusive um import ausente DENTRO da skin: vai ao log
