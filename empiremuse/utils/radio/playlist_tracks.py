@@ -18,6 +18,10 @@ from empiremuse.rules.radio_shuffle import Track
 logger = logging.getLogger(__name__)
 
 
+class PlaylistsUnavailable(Exception):
+    """Nenhuma playlist carregou e ao menos uma falhou: o nó (ou o provedor) está fora, não é uma estação sem faixas."""
+
+
 async def radio_playlist_tracks(
     pool: Any, bot: Any, guild: Any, channel: Any, node: Any, names: Sequence[str]
 ) -> list[Track]:
@@ -43,5 +47,5 @@ async def radio_playlist_tracks(
             if author.strip() and title.strip():
                 found.append(Track(author, title))
     if failure is not None and not loaded:
-        raise failure  # nenhuma carregou e ao menos uma falhou: é o nó fora, não uma estação sem faixas
+        raise PlaylistsUnavailable from failure  # nenhuma carregou e ao menos uma falhou: é o nó fora, não uma estação sem faixas
     return found

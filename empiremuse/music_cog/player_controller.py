@@ -216,8 +216,10 @@ class PlayerControllerMixin:
                 # estação tocando, a estação vai às favoritas do membro neste servidor (J2b). Resposta só para quem clicou
                 try:
                     toggle = jukebox.toggle_favorite if station is None else jukebox.toggle_station_favorite
+                    # confirma antes da gravação: a leitura e a escrita podem passar dos 3 s da interação
+                    await req.interaction.response.defer(ephemeral=True, with_message=True)
                     key, fields = await toggle(req.interaction, req.player)
-                    await req.interaction.send(req.player.tr(key, **fields), ephemeral=True)
+                    await req.interaction.edit_original_message(content=req.player.tr(key, **fields))
                 finally:
                     try:
                         await self.player_interaction_concurrency.release(req.interaction)

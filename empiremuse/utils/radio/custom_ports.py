@@ -31,7 +31,7 @@ from empiremuse.utils.radio.custom_source import (
 from empiremuse.utils.radio.lastfm_feed import LastFmMissing, LastFmUnavailable
 from empiremuse.utils.radio.discord_ports import DiscordRadioPorts
 from empiremuse.utils.radio.panel import CustomView
-from empiremuse.utils.radio.playlist_tracks import radio_playlist_tracks
+from empiremuse.utils.radio.playlist_tracks import PlaylistsUnavailable, radio_playlist_tracks
 
 if TYPE_CHECKING:
     from empiremuse.utils.client import BotPool
@@ -214,7 +214,7 @@ class CustomRadioPorts(DiscordRadioPorts):
             return False
         try:
             await self.prepare()
-        except EmptyStation, LastFmMissing, LastFmUnavailable:
+        except EmptyStation, LastFmMissing, LastFmUnavailable, PlaylistsUnavailable:
             self._source_broken()
             return False
         return True
@@ -245,7 +245,7 @@ class CustomRadioPorts(DiscordRadioPorts):
             await self.sleep(REBUILD_BACKOFF_S)
             try:
                 await self.prepare()
-            except (EmptyStation, LastFmMissing, LastFmUnavailable) as error:
+            except (EmptyStation, LastFmMissing, LastFmUnavailable, PlaylistsUnavailable) as error:
                 raise NoPlayableTracks from error
             if self.session is not None:
                 self.session.rebuilt = True

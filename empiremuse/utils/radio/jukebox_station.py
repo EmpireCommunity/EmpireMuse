@@ -34,7 +34,7 @@ from empiremuse.utils.radio.custom_source import (
 )
 from empiremuse.utils.radio.jukebox_errors import Refused, Reply
 from empiremuse.utils.radio.lastfm_feed import LastFmMissing, LastFmUnavailable
-from empiremuse.utils.radio.playlist_tracks import radio_playlist_tracks
+from empiremuse.utils.radio.playlist_tracks import PlaylistsUnavailable, radio_playlist_tracks
 
 if TYPE_CHECKING:
     from empiremuse.rules.radio_station import CustomStation
@@ -77,9 +77,11 @@ class ActiveStation:
     starter_id: int
     started_at: float  # relógio de parede
     session: CustomSession
-    pending: Optional[tuple[Track, Any]] = (
-        None  # a faixa sorteada que ainda não provou que toca: (do pool, o PartialTrack)
-    )
+    # a faixa sorteada que ainda não provou que toca: (do pool, o PartialTrack)
+    pending: Optional[tuple[Track, Any]] = None
+    # o encoded que o player de fato mandou ao Lavalink para ela (no caminho alternativo, o de outra plataforma)
+    pending_sent: Optional[str] = None
+    pick_dropped: bool = False  # a pendente já saiu do pool (uma falha; a nova tentativa ainda pode tocá-la)
 
 
 class StationView(NamedTuple):
@@ -176,7 +178,7 @@ class JukeboxStationMixin:
             raise Refused("jukebox.station.empty") from None
         except LastFmMissing:
             raise Refused("radio.station.ui.lastfm_missing") from None
-        except LastFmUnavailable:
+        except LastFmUnavailable, PlaylistsUnavailable:
             raise Refused("radio.owner.unavailable") from None
 
     async def _playlist_tracks(self: JukeboxRadio, player: Any, names: Sequence[str]) -> list[Track]:
@@ -217,20 +219,27 @@ class JukeboxStationMixin:
             player, station
         )  # fora do lock: o Last.fm pode demorar; só com a porta liberando
         async with player.radio_lock:
-            station = await self._station_of(
-                guild_id, station.id
-            )  # relida no efeito: apagada durante a carga não começa
+            # relida no efeito: apagada durante a carga não começa; editada (outra fonte) também não, porque o pool é da fonte aceita
+            self._same_source(station, await self._station_of(guild_id, station.id))
             name = self.station_name(player.tr, station)
-            opened, channel_id = await self._station_decision(player, member, station.id, name)
+            # dentro do lock: nada do que valia antes vale agora
+            await self._station_checks(guild_id, self._requester_channel(member, player))
+            # a porta por último: entre ela e o descarte da fila não há espera (``_start_station`` começa pelo epoch)
+            opened, _ = await self._station_decision(player, member, station.id, name)
             if opened is not None:
                 return opened
-            await self._station_checks(guild_id, channel_id)  # dentro do lock: nada do que valia antes vale agora
             now = await self._start_station(player, station, loaded, name=name, starter_id=member.id)
         if now:
             await (
                 player.process_next()
             )  # fora do lock: o sorteio e a resolução da 1ª faixa não seguram votos nem trocas
         return ("jukebox.station.started_now" if now else "jukebox.station.started_next"), {"station": name}
+
+    @staticmethod
+    def _same_source(accepted: CustomStation, current: CustomStation) -> None:
+        """O pool foi carregado da estação aceita; se ela foi editada (tipo ou fonte) durante a carga, o pedido não segue com faixas de outra."""
+        if (current.kind, current.source) != (accepted.kind, accepted.source):
+            raise Refused("jukebox.station.not_found")
 
     async def _station_decision(
         self: JukeboxRadio, player: Any, member: Any, station_id: str, name: str
@@ -273,13 +282,12 @@ class JukeboxStationMixin:
                 if player.is_closing:
                     raise Refused("jukebox.radio.player_closed")
                 if player.radio_epoch != epoch or getattr(player, "station", None) is not origin:
-                    raise Refused(
-                        "jukebox.radio.vote.expired"
-                    )  # outra transição (inclusive S → M) veio durante a carga
+                    # outra transição (inclusive S → M) veio durante a carga
+                    raise Refused("jukebox.radio.vote.expired")
                 await self._station_checks(player.guild.id, self._player_channel_id(player))
-                found = await self._station_of(player.guild.id, station.id)
-                name = self.station_name(tr, found)
-                now = await self._start_station(player, found, loaded, name=name, starter_id=vote.author_id)
+                self._same_source(station, await self._station_of(player.guild.id, station.id))
+                name = self.station_name(tr, station)
+                now = await self._start_station(player, station, loaded, name=name, starter_id=vote.author_id)
             text = jukebox_ui.vote_passed_station(tr, name, now=now)
         except Refused as refused:
             text = jukebox_ui.vote_failed(tr, tr(refused.key, **refused.fields))
@@ -296,10 +304,10 @@ class JukeboxStationMixin:
 
         if vote.message is None:
             return
-        payload = self._vote_payload(player, vote)
-        for component in payload["components"]:
-            component.disabled = True
         try:
+            payload = self._vote_payload(player, vote)
+            for component in payload["components"]:
+                component.disabled = True
             await vote.message.edit(**payload, allowed_mentions=disnake.AllowedMentions.none())
         except Exception as error:  # noqa: BLE001 - conveniência; a mensagem fecha no fim de qualquer jeito
             logger.warning("Botão da votação não desativado (%s)", type(error).__name__)
@@ -315,9 +323,8 @@ class JukeboxStationMixin:
         if from_radio:
             await self._leave(player)  # R → S: a rádio acaba agora (revoga a ficha)
         if player.is_closing:
-            raise Refused(
-                "jukebox.radio.player_closed"
-            )  # destruído durante os awaits: ``forget`` já rodou e não veria a estação nova
+            # destruído durante os awaits: ``forget`` já rodou e não veria a estação nova
+            raise Refused("jukebox.radio.player_closed")
         discarded = len(player.queue)
         player.queue.clear()
         player.queue_autoplay.clear()
@@ -386,7 +393,7 @@ class JukeboxStationMixin:
         active.session.streak += (
             1  # só o progresso real zera (``station_track_ended``); uma falha de carga tira a faixa do pool
         )
-        active.pending = (pick, partial)
+        active.pending, active.pending_sent, active.pick_dropped = (pick, partial), None, False
         return StationNext.TRACK, partial
 
     @staticmethod
@@ -404,17 +411,36 @@ class JukeboxStationMixin:
         if active is None:
             return
         if str(reason).upper() == "LOAD_FAILED":
-            self._drop_pending(active)
+            self._drop_pick(active)
             return
         active.session.streak = 0
-        active.pending = None
+        active.pending, active.pending_sent, active.pick_dropped = None, None, False
 
     def station_track_failed(self: JukeboxRadio, player: Any, track: Any) -> None:
         """A faixa da estação não carregou ou travou (exceção do Lavalink, ``LOAD_FAILED``, ``TrackStuck``): sai do pool desta estação,
         para a estação não girar para sempre. Já contou na sequência quando foi sorteada."""
         active = self._pending_station(player, track)
         if active is not None:
-            self._drop_pending(active)
+            self._drop_pick(active)
+
+    def station_track_unused(self: JukeboxRadio, player: Any, track: Any) -> None:
+        """Um pedido entrou na fila enquanto a faixa da estação era sorteada: ela não toca (o pedido vem antes) e não conta na sequência."""
+        active = getattr(player, "station", None)
+        if active is not None and active.pending is not None and active.pending[1] is track:
+            active.pending, active.pending_sent, active.pick_dropped = None, None, False
+            active.session.streak = max(0, active.session.streak - 1)
+
+    def station_track_sent(self: JukeboxRadio, player: Any, track: Any, encoded: object) -> None:
+        """A faixa pendente da estação foi mandada ao Lavalink com ``encoded``: no caminho alternativo (outra plataforma no lugar da
+        resolvida) ele difere do ``id`` dela, e é esse que volta nos eventos."""
+        active = getattr(player, "station", None)
+        if (
+            active is not None
+            and active.pending is not None
+            and active.pending[1] is track
+            and isinstance(encoded, str)
+        ):
+            active.pending_sent = encoded
 
     @staticmethod
     def _pending_station(player: Any, ended: Any) -> Optional[ActiveStation]:
@@ -422,15 +448,20 @@ class JukeboxStationMixin:
         if active is None or active.pending is None:
             return None
         partial = active.pending[1]
-        same = ended == getattr(partial, "id", None) if isinstance(ended, str) else ended is partial
+        if isinstance(ended, str):
+            same = ended in (getattr(partial, "id", None), active.pending_sent)
+        else:
+            same = ended is partial
         return active if same else None
 
     @staticmethod
-    def _drop_pending(active: ActiveStation) -> None:
-        pick = active.pending[0] if active.pending is not None else None
-        active.pending = None
-        if pick is None:
+    def _drop_pick(active: ActiveStation) -> None:
+        """A faixa pendente falhou: sai do pool desta estação (uma vez). A pendência continua: se uma nova tentativa do player a tocar até o
+        fim, a sequência zera do mesmo jeito; o próximo sorteio troca a pendência."""
+        if active.pending is None or active.pick_dropped:
             return
+        active.pick_dropped = True
+        pick = active.pending[0]
         session = active.session
         session.pool = [t for t in session.pool if track_key(t) != track_key(pick)] or session.pool
 

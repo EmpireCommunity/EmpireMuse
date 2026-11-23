@@ -399,7 +399,9 @@ async def test_the_playlist_loader_raises_only_when_nothing_loaded_and_something
     bot = NS(get_cog=lambda name: NS(get_tracks=get_tracks))
     call = radio_playlist_tracks(pool, bot, NS(id=1, me=NS()), None, None, list(results))
     if raises:
-        with pytest.raises(RuntimeError):
+        from empiremuse.utils.radio.playlist_tracks import PlaylistsUnavailable
+
+        with pytest.raises(PlaylistsUnavailable):
             await call
     else:
         assert await call == found
@@ -495,8 +497,225 @@ async def test_a_stuck_station_track_counts_and_the_replaced_end_does_not_reset(
     _, stuck = await world.radio.next_station_track(player, active)
     player.current = stuck
     await steps._he_track_stuck(player)
-    assert len(active.session.pool) == size - 1 and active.pending is None
+    # sai do pool; a pendência continua (uma nova tentativa ainda poderia tocá-la até o fim) até o próximo sorteio
+    assert len(active.session.pool) == size - 1 and active.pending[1] is stuck
     _, fresh = await world.radio.next_station_track(player, active)
     player.last_track = fresh
     await steps._he_track_end(player, end_event(stuck, "REPLACED"))
     assert active.session.streak == 2 and active.pending[1] is fresh
+
+
+# ---------------------------------------------------------------------- revisão 3 do PR 277 (T-J2B-FIX3)
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_station_track_played_through_an_alternative_is_recognized_when_it_ends(world, monkeypatch):
+    """Crivo Major A: no caminho alternativo o Lavalink toca o encoded de outra plataforma, e é ele que volta no fim da faixa."""
+    from empiremuse.utils.music.models import playback_steps
+
+    player = await started(world)
+    steps = handler_player(world, player, monkeypatch)
+    active = player.station
+    _, track = await world.radio.next_station_track(player, active)
+
+    async def play(played, start=0, temp_id=None):
+        player.current, player.current_encoded = played, temp_id or played.id
+
+    player.play = play
+    player.process_hint = lambda: None
+    player.auto_pause = False
+    player.loop = "current"  # sem o "Tocando agora" neste teste
+    player.controller_mode = True
+    req = NS(track=track, encoded_track="enc:alternativa", force_np=False, inter=None, start_position=0)
+    await playback_steps._pn_start(player, req)
+    await steps._he_track_end(
+        player, NS(node=NS(identifier="LOCAL"), track={"encoded": "enc:alternativa"}, reason="FINISHED")
+    )
+    assert active.session.streak == 0 and active.pending is None
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_the_24h_radio_treats_unavailable_playlists_as_a_broken_source():
+    """Crivo Minor B: sem isso a rádio 24 h tentava de novo a cada passo, e a reconstrução deixava o erro escapar."""
+    from unittest.mock import Mock
+
+    from empiremuse.utils.radio.custom_ports import CustomRadioPorts
+    from empiremuse.utils.radio.custom_source import NoPlayableTracks
+    from empiremuse.utils.radio.playlist_tracks import PlaylistsUnavailable
+
+    ports = NS(
+        now=lambda: 100.0,
+        retry_at=0.0,
+        prepare=AsyncMock(side_effect=PlaylistsUnavailable()),
+        _source_broken=Mock(),
+        sleep=AsyncMock(),
+        _refresh_panel=Mock(),
+        searching=False,
+        session=None,
+    )
+    assert await CustomRadioPorts._retry_broken_source(ports) is False
+    ports._source_broken.assert_called_once_with()
+    with pytest.raises(NoPlayableTracks):
+        await CustomRadioPorts._rebuild(ports)
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_unavailable_playlists_refuse_the_station_as_unavailable(world, monkeypatch):
+    from empiremuse.utils.radio import jukebox_station
+    from empiremuse.utils.radio.playlist_tracks import PlaylistsUnavailable
+
+    monkeypatch.setattr(jukebox_station, "load_pool", AsyncMock(side_effect=PlaylistsUnavailable()))
+    player = station_player(world, creator=10)
+    with pytest.raises(Refused) as refused:
+        await world.radio.request_station(world.inter(world.members[10]), ROCK)
+    assert refused.value.key == "radio.owner.unavailable" and player.station is None
+
+
+@pytest.mark.critical
+@pytest.mark.asyncio
+async def test_freezing_the_vote_button_never_raises(world, monkeypatch):
+    player = await started(world)
+    vote = NS(message=NS(edit=AsyncMock()))
+    monkeypatch.setattr(world.radio, "_vote_payload", lambda player, vote: (_ for _ in ()).throw(RuntimeError("x")))
+    await world.radio._freeze_vote_button(player, vote)  # não levanta: a mensagem do voto ainda fecha no fim
+
+
+# ---------------------------------------------------------------------- tópicos do CodeRabbit no PR 277 (T-J2B-FIX3)
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_late_failure_event_of_another_track_does_not_drop_the_pending_one(world, monkeypatch):
+    player = await started(world)
+    steps = handler_player(world, player, monkeypatch)
+    player.process_next = AsyncMock()
+    active = player.station
+    size = len(active.session.pool)
+    _, pending = await world.radio.next_station_track(player, active)
+    player.current = pending
+    stale = NS(track={"encoded": "enc:faixa-velha"})
+    await steps._he_track_stuck(player, stale)
+    assert len(active.session.pool) == size and not active.pick_dropped
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_station_track_recovered_after_a_failure_still_resets_the_streak(world):
+    player = await started(world)
+    active = player.station
+    _, track = await world.radio.next_station_track(player, active)
+    world.radio.station_track_failed(player, track)  # falhou; o player tenta de novo a mesma faixa
+    world.radio.station_track_ended(player, track.id, "FINISHED")
+    assert active.session.streak == 0 and active.pending is None
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_request_queued_during_the_station_draw_plays_first():
+    from empiremuse.utils.music.models import playback_steps
+
+    request = NS(name="pedido")
+    station_track = NS(name="da estação")
+
+    async def next_station_track(player, active):
+        player.queue.append(request)  # /play no meio do sorteio
+        return StationNext.TRACK, station_track
+
+    unused = []
+    jukebox = NS(next_station_track=next_station_track, station_track_unused=lambda p, t: unused.append(t))
+    player = NS(
+        queue=deque(),
+        radio_id=None,
+        radio_mode=None,
+        station=object(),
+        autoplay=False,
+        keep_connected=False,
+        bot=NS(pool=NS(radio=NS(jukebox=jukebox))),
+    )
+    req = NS(track=None)
+    assert await playback_steps._pn_next_track(player, req) is False
+    assert req.track is request and unused == [station_track] and not player.queue
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_foreign_song_queued_during_the_checks_is_not_discarded_without_a_vote(world):
+    world.add(member(11, world.channel))
+    world.add(member(12, world.channel))
+    player = station_player(world, creator=99)
+    calls = []
+
+    async def foreign_song_meanwhile(guild_id):
+        calls.append(guild_id)
+        if len(calls) == 2:  # a conferência de dentro do lock, antes da porta final
+            player.queue.append(song(11))
+        return object()
+
+    world.hub.premium.fresh = AsyncMock(side_effect=foreign_song_meanwhile)
+    key, _ = await world.radio.request_station(world.inter(world.members[10]), ROCK)
+    assert key == "jukebox.radio.vote.opened" and len(player.queue) == 1 and player.station is None
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_station_edited_while_its_pool_loads_does_not_start_with_the_old_tracks(world):
+    accepted = hostile_store(world)
+    player = station_player(world, creator=10)
+    original = world.hub.lastfm.recipe_tracks
+
+    async def edited_meanwhile(*args, **kwargs):
+        edited = CustomStation(
+            id=accepted.id, guild_id=1, name=accepted.name, kind="artists", source={"artists": ["Outro"]}, rev=2
+        )
+        world.hub.stations.get = AsyncMock(return_value=edited)
+        return await original(*args, **kwargs)
+
+    world.hub.lastfm.recipe_tracks = AsyncMock(side_effect=edited_meanwhile)
+    with pytest.raises(Refused) as refused:
+        await world.radio.request_station(world.inter(world.members[10]), SERVER_STATION)
+    assert refused.value.key == "jukebox.station.not_found" and player.station is None
+
+
+@pytest.mark.critical
+@pytest.mark.asyncio
+async def test_an_expired_chooser_disables_its_controls():
+    view, _ = chooser()
+    view.render()
+    view.message = NS(edit=AsyncMock())
+    await view.on_timeout()
+    assert all(item.disabled for item in view.children)
+    view.message.edit.assert_awaited_once_with(view=view)
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_two_quick_selections_each_play_their_own_station():
+    view, jukebox = chooser()
+    view.render()
+    gate, calls = asyncio.Event(), []
+
+    async def preview(click):
+        calls.append(click)
+        if len(calls) == 1:
+            await gate.wait()  # a 1ª seleção espera a prévia
+        return False, False, None
+
+    view.preview = preview
+    first = asyncio.ensure_future(view._on_select(pick("c" * 24)))
+    await settle()
+    await view._on_select(pick("b" * 24))  # a 2ª seleção troca ``chosen`` no meio
+    gate.set()
+    await first
+    assert [call.args[1] for call in jukebox.request_station.await_args_list] == ["b" * 24, "c" * 24]

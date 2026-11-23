@@ -111,6 +111,10 @@ async def _pn_next_track(self, req):
 
             outcome, track = await self.bot.pool.radio.jukebox.next_station_track(self, active)
             if outcome is StationNext.TRACK:
+                if self.queue:  # um pedido entrou durante o sorteio: ele vem antes, a faixa da estação não toca
+                    self.bot.pool.radio.jukebox.station_track_unused(self, track)
+                    req.track = self.queue.popleft()
+                    return False
                 req.track = track
                 return False
             if outcome is StationNext.SUPERSEDED:
@@ -417,6 +421,9 @@ async def _pn_start(self, req):
         )
     else:
         await self.play(track, start=start_position, temp_id=encoded_track)
+        if getattr(self, "station", None) is not None:
+            # o encoded que foi ao Lavalink (no caminho alternativo, o de outra plataforma): é ele que volta no fim da faixa da estação
+            self.bot.pool.radio.jukebox.station_track_sent(self, track, self.current_encoded)
 
     # TODO: rever essa parte caso adicione função de ativar track loops em músicas da fila
     if self.loop != "current" or force_np or (not self.controller_mode and self.current.track_loops == 0):

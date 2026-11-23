@@ -246,7 +246,7 @@ async def _he_dispatch(self, event) -> None:
                 and not _he_jukebox_radio(self, event)
                 and not await _he_custom_radio_failure(self, event)
             ):
-                await _he_track_stuck(self)
+                await _he_track_stuck(self, event)
         else:
             logger.debug("Evento Wavelink desconhecido: %s", type(event).__name__)
 
@@ -364,11 +364,10 @@ def _he_event_encoded(event) -> object:
     return track if isinstance(track, str) else None
 
 
-async def _he_track_stuck(self) -> None:
+async def _he_track_stuck(self, event=None) -> None:
     if getattr(self, "station", None) is not None:
-        self.bot.pool.radio.jukebox.station_track_failed(
-            self, self.current
-        )  # a faixa da estação travou: sai do pool dela
+        # a faixa da estação travou: sai do pool dela (identificada pelo evento, não por ``current``)
+        self.bot.pool.radio.jukebox.station_track_failed(self, _he_event_encoded(event) or self.current)
 
     _he_cancel_message_updater(self)
 
@@ -531,9 +530,8 @@ def _he_is_youtube_plugin_cause(event) -> bool:
 async def _he_track_exception(self, event) -> None:
     track = self.current or self.last_track
     if getattr(self, "station", None) is not None and event.node.identifier == self.node.identifier:
-        self.bot.pool.radio.jukebox.station_track_failed(
-            self, track
-        )  # a faixa da estação não carregou: sai do pool dela
+        # a faixa da estação não carregou: sai do pool dela (identificada pelo evento, não por ``current``)
+        self.bot.pool.radio.jukebox.station_track_failed(self, _he_event_encoded(event) or track)
     embed, error_code = _he_exception_embed(self, event, track)
     error_format = pprint.pformat(event.data)
 

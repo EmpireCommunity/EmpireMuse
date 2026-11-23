@@ -62,6 +62,7 @@ class StationChooser(disnake.ui.View):
         self.chosen: Optional[str] = None
         self.chosen_name = ""
         self._token = secrets.token_hex(6)  # o ``custom_id`` do efêmero; não autoriza nada
+        self.message: Any = None  # a mensagem efêmera, para desativar os controles quando o seletor expira
 
     # ------------------------------------------------------------------ desenho
 
@@ -133,6 +134,18 @@ class StationChooser(disnake.ui.View):
 
     # ------------------------------------------------------------------ cliques
 
+    async def on_timeout(self) -> None:
+        """Expirou: os controles ficam desativados na mensagem (nenhum clique cai num seletor que não responde mais)."""
+        for item in self.children:
+            if hasattr(item, "disabled"):
+                item.disabled = True
+        if self.message is None:
+            return
+        try:
+            await self.message.edit(view=self)
+        except Exception as error:  # noqa: BLE001 - o efêmero pode ter sido descartado; só o tipo vai ao log
+            logger.warning("Seletor de estações expirado não editado (%s)", type(error).__name__)
+
     async def interaction_check(self, interaction: disnake.MessageInteraction) -> bool:  # type: ignore[override]
         if interaction.author.id != self.author_id:
             await interaction.response.send_message(self.tr("jukebox.radio.leave.not_author"), ephemeral=True)
@@ -153,14 +166,13 @@ class StationChooser(disnake.ui.View):
             await interaction.response.edit_message(**self.render(self.tr("player.the_selected_item_was_not")))
             return
         self.chosen = value
-        self.chosen_name = self._name_of(value)
+        self.chosen_name = name = self._name_of(value)
         await interaction.response.defer()
         queued, votes, radio_name = await self.preview(interaction)
-        warning = jukebox_ui.station_warning(
-            self.tr, station_name=self.chosen_name, queued=queued, radio_name=radio_name
-        )
+        warning = jukebox_ui.station_warning(self.tr, station_name=name, queued=queued, radio_name=radio_name)
         if not warning and not votes:
-            await self._play(interaction)  # fila vazia e sem votação: escolher já toca (P5)
+            # fila vazia e sem votação: escolher já toca (P5), com a ref DESTE clique (outro clique pode ter trocado ``chosen``)
+            await self._play(interaction, value)
             return
         if votes:  # também com a estação ligada e a fila vazia: a votação nunca abre sem o aviso antes (§2.1)
             warning = "\n".join(filter(None, (warning, jukebox_ui.vote_warning(self.tr, VOTE_TTL_S))))
@@ -178,13 +190,13 @@ class StationChooser(disnake.ui.View):
 
     async def _on_confirm(self, interaction: disnake.MessageInteraction) -> None:
         await interaction.response.defer()
-        await self._play(interaction)
+        await self._play(interaction, self.chosen)
 
-    async def _play(self, interaction: disnake.MessageInteraction) -> None:
-        if self.chosen is None:
+    async def _play(self, interaction: disnake.MessageInteraction, ref: Optional[str]) -> None:
+        if ref is None:
             return
         try:
-            key, fields = await self.jukebox.request_station(interaction, self.chosen)
+            key, fields = await self.jukebox.request_station(interaction, ref)
         except Refused as refused:
             key, fields = refused.key, refused.fields  # só a chave do controlador, nunca o texto de uma exceção
         except Exception as error:  # noqa: BLE001 - o clique não fica sem resposta; só o tipo vai ao log
@@ -266,4 +278,6 @@ async def open_server_stations(bot: Any, interaction: disnake.MessageInteraction
         genre_groups=hub.stations.genre_groups(),
         preview=preview,
     )
-    await interaction.followup.send(**chooser.render(), ephemeral=True, allowed_mentions=disnake.AllowedMentions.none())
+    chooser.message = await interaction.followup.send(
+        **chooser.render(), ephemeral=True, allowed_mentions=disnake.AllowedMentions.none()
+    )
