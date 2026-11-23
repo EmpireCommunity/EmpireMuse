@@ -23,7 +23,7 @@ category_icons = {}
 PREFIX_CATALOG_IDS = {
     "adddj": "add_dj",
     "adddjrole": "add_dj_role",
-    "changeskin": "change_skin",
+    "changeskin": "skins",
     "clear": "queue.clear",
     "commandlog": "command_log",
     "customskin": "custom_skin",

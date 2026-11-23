@@ -1,0 +1,16 @@
+{% set form_id = "form-disco" %}
+{% set erros = form.erros %}
+{% set valores = form.valores %}
+<form id="form-disco" class="form-config" method="post" action="{{ form.acao }}" hx-post="{{ form.acao }}" hx-target="this" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]">
+  {% module xsrf_form_html() %}
+  <input type="hidden" name="versao" value="{{ form.versao }}">
+  <input type="hidden" name="disco" value="1">
+  <h2 class="subtitulo">Animação do disco</h2>
+  <p class="nota">Nas skins de imagem (Expandida e Slim), o disco gira enquanto a música toca. Desligada, o cartão fica parado.</p>
+  {% include "_mensagem_form.html" %}
+  <label>
+    <input type="checkbox" name="disc_motion" value="on"{% if valores.get("disc_motion") %} checked{% end %}>
+    Animar o disco
+  </label>
+  <button type="submit">Salvar</button>
+</form>

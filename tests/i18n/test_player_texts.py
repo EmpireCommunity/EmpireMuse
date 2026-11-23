@@ -36,12 +36,12 @@ class TestHints:
     def test_the_fixed_hints_follow_the_translator_of_now(self):
         player = player_with(PT)
 
-        assert "/change_skin ou !!skin" in player.initial_hints[0]
+        assert "/skins ou !!skin" in player.initial_hints[0]
         assert any("youtube, soundcloud e deezer" in hint for hint in player.initial_hints)
 
         player.tr = EN
 
-        assert "/change_skin command or !!skin" in player.initial_hints[0]
+        assert "/skins command or !!skin" in player.initial_hints[0]
         assert any("youtube, soundcloud and deezer" in hint for hint in player.initial_hints)
         assert player.initial_hints[-1] == "dica extra"
 

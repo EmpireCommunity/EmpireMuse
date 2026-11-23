@@ -1,4 +1,8 @@
-"""Categoria Aparência: skins do servidor (G-08, G-09; doc único, valem para todos os bots) e skins globais (G-10, G-11).
+"""Categoria Aparência: skins do servidor (G-08, G-09; doc único, valem para todos os bots), skins globais (G-10, G-11) e a
+animação do disco das skins de imagem (2.3, documento global ``guilds``: ``disc_motion``; ``None`` = nunca escolhido = ligada).
+
+As listas de skins vêm do que o bot carregou (o registro 2.3 entra pelo ``load_muse_skins``); os nomes das skins do EmpireMuse
+saem do catálogo (``skin.name.*``), só para exibir.
 
 As skins personalizadas do servidor não são lidas nem gravadas pelo painel: um valor atual "> custom_skin: X" só é
 exibido e mantido se o formulário reenviar exatamente esse valor.
@@ -9,11 +13,20 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from empiremuse.panel.services.base import DBModel, Args, FormContext, ParseResult, SettingsForm, first, flag
+from empiremuse.panel.services.base import (
+    DBModel,
+    Args,
+    FormContext,
+    ParseResult,
+    SettingsForm,
+    first,
+    flag,
+    panel_translator,
+)
 from empiremuse.panel.services.player import active_player, guild_players
 from empiremuse.rules import limits
 from empiremuse.rules.settings import allowed_names
-from empiremuse.rules.skins import jukebox_choice, jukebox_skin, saved_player_skins
+from empiremuse.rules.skins import JUKEBOX_SKINS, disc_motion_on, jukebox_choice, jukebox_skin, saved_player_skins
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +40,20 @@ def allowed_skins(bot: Any) -> tuple[str, ...]:
 
 def allowed_static_skins(bot: Any) -> tuple[str, ...]:
     return allowed_names(bot.player_static_skins, bot.config["IGNORE_STATIC_SKINS"])
+
+
+def skin_names(pool: Any) -> dict[str, str]:
+    """Nome de exibição das skins do EmpireMuse (``id -> nome`` no idioma do painel); as Clássicas mostram o id."""
+    tr = panel_translator(pool)
+    return {entry.id: tr(entry.name_key) for entry in JUKEBOX_SKINS}
+
+
+def _skin_extras(ctx: FormContext) -> dict[str, Any]:
+    return {
+        "skins": allowed_skins(ctx.bot),
+        "skins_estaticas": allowed_static_skins(ctx.bot),
+        "nomes_skins": skin_names(ctx.pool),
+    }
 
 
 def _pick(raw: Optional[str], allowed: tuple[str, ...], stored: Optional[str]) -> bool:
@@ -78,7 +105,7 @@ class SkinsServerForm(SettingsForm):
         }
 
     def extras(self, ctx: FormContext, current: dict[str, Any]) -> dict[str, Any]:
-        return {"skins": allowed_skins(ctx.bot), "skins_estaticas": allowed_static_skins(ctx.bot)}
+        return _skin_extras(ctx)
 
     def parse(self, ctx: FormContext, current: dict[str, Any], args: Args) -> ParseResult:
         shown = self.display(ctx, current)
@@ -120,7 +147,7 @@ class SkinsGlobalForm(SettingsForm):
         }
 
     def extras(self, ctx: FormContext, current: dict[str, Any]) -> dict[str, Any]:
-        return {"skins": allowed_skins(ctx.bot), "skins_estaticas": allowed_static_skins(ctx.bot)}
+        return _skin_extras(ctx)
 
     def parse(self, ctx: FormContext, current: dict[str, Any], args: Args) -> ParseResult:
         echo = {
@@ -165,3 +192,34 @@ class SkinsGlobalForm(SettingsForm):
             jukebox_skin(skin, ctx.pool.default_skin),
             jukebox_skin(static_skin, ctx.pool.default_static_skin),
         )
+
+
+class DiscMotionForm(SettingsForm):
+    """A animação do disco nas skins de imagem (2.3): um booleano no documento global do servidor. Desligada, o cartão sai
+    sempre parado (PNG). Os players se redesenham no próximo ciclo: o render lê o valor a cada desenho."""
+
+    key = "disco"
+    category = "aparencia"
+    scope_kind = "global"
+    fields = ("disc_motion",)
+    markers = ("disco",)  # o checkbox desmarcado não vai no POST: o formulário se identifica por um campo oculto
+
+    def extract(self, doc: dict) -> dict[str, Any]:
+        return {"disc_motion": doc.get("disc_motion")}
+
+    def apply(self, doc: dict, new: dict[str, Any]) -> None:
+        doc.update(new)
+
+    def display(self, ctx: FormContext, current: dict[str, Any]) -> dict[str, Any]:
+        return {"disc_motion": disc_motion_on(current["disc_motion"])}
+
+    def parse(self, ctx: FormContext, current: dict[str, Any], args: Args) -> ParseResult:
+        echo = {"disc_motion": flag(args, "disc_motion")}
+        if echo["disc_motion"] == self.display(ctx, current)["disc_motion"]:
+            return ParseResult({"disc_motion": current["disc_motion"]}, {}, echo)  # salvar sem trocar não vira escolha
+        return ParseResult(dict(echo), {}, echo)
+
+    async def effects(self, ctx: FormContext, current: dict[str, Any], new: dict[str, Any]) -> None:
+        for player in guild_players(ctx):
+            player.last_data = {}  # o cartão se redesenha no próximo ciclo do updater com o formato novo
+            player.update = True

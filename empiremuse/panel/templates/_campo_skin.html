@@ -1,4 +1,4 @@
-{# Seletor de skin. Variáveis: nome_campo, rotulo, opcoes, atual, erros, com_vazio, prefixo_id. #}
+{# Seletor de skin. Variáveis: nome_campo, rotulo, opcoes, atual, erros, com_vazio, prefixo_id e nomes_skins (id -> nome). #}
 {% set personalizada = str(atual or "").startswith("> custom_skin:") %}
 <label for="campo-{{ prefixo_id }}">{{ rotulo }}</label>
 <select id="campo-{{ prefixo_id }}" name="{{ nome_campo }}"{% if erros.get(nome_campo) %} aria-invalid="true" aria-describedby="erro-{{ prefixo_id }}"{% end %}>
@@ -9,7 +9,7 @@
   <option value="{{ atual }}" selected>Personalizada (gerencie no Discord)</option>
   {% end %}
   {% for opcao in opcoes %}
-  <option value="{{ opcao }}"{% if not personalizada and opcao == atual %} selected{% end %}>{% if opcao == "default" %}Padrão do bot{% else %}{{ opcao }}{% end %}</option>
+  <option value="{{ opcao }}"{% if not personalizada and opcao == atual %} selected{% end %}>{% if opcao == "default" %}Clássica padrão{% else %}{{ nomes_skins.get(opcao, opcao) }}{% end %}</option>
   {% end %}
 </select>
 {% if erros.get(nome_campo) %}<small id="erro-{{ prefixo_id }}" class="erro-campo">{{ erros[nome_campo] }}</small>{% end %}
