@@ -528,6 +528,8 @@ async def test_outside_radio_mode_the_request_goes_on_untouched():
 @pytest.mark.asyncio
 async def test_the_radio_already_off_at_the_click_lets_the_request_go_on():
     pool, player, inter, _ = confirm_world(Decision.DIRECT)
+    player.is_closing, player.guild.id = False, 1
+    player.bot = NS(music=NS(players={1: player}))  # o mesmo player, ainda vivo
     answer = click("go")
 
     async def wait_for(event, *, timeout, check):
@@ -558,7 +560,7 @@ async def test_someone_else_clicking_the_public_prefix_reply_gets_an_ephemeral_r
     radio_guard._PENDING["777"] = (10, float("inf"))
     stray = NS(data=NS(custom_id="jukebox_radio_leave:777:go"), author=NS(id=clicker), send=AsyncMock())
     try:
-        assert await radio_guard.answer_stray_click(stray, tr) is (answer is not None)
+        assert await radio_guard.answer_stray_click(stray, AsyncMock(return_value=tr)) is (answer is not None)
     finally:
         radio_guard._PENDING.pop("777", None)
     if answer is None:
@@ -570,14 +572,25 @@ async def test_someone_else_clicking_the_public_prefix_reply_gets_an_ephemeral_r
 @pytest.mark.critical
 @pytest.mark.regression
 @pytest.mark.asyncio
-async def test_a_jukebox_channel_request_in_radio_mode_stops_at_the_gate_before_searching(monkeypatch):
-    """Sentinela Minor 1: o pedido digitado no canal da Jukebox enfileirava direto, sem a porta do modo rádio."""
+async def test_a_jukebox_channel_request_in_radio_mode_stops_at_the_gate_after_the_search(monkeypatch):
+    """Sentinela Minor 1 + Alicerce N-m1: o pedido digitado no canal da Jukebox passa pela porta do modo rádio, DEPOIS da busca (a rádio só
+    para quando a faixa já foi achada) e logo antes de enfileirar."""
     voice = NS(id=5)
     guild = NS(id=1, get_channel=lambda i: voice, me=NS(voice=NS(channel=voice)))
-    player = NS(radio_mode=object())
+    player = NS(
+        radio_mode=object(), radio_epoch=3, message=NS(jump_url="https://discord.com/channels/1/2/3"), queue=deque()
+    )
+    order = []
     cog = NS(
-        bot=NS(get_guild=lambda i: guild, get_channel=lambda i: None, music=NS(players={1: player}), pool=NS()),
-        get_tracks=AsyncMock(),
+        bot=NS(
+            get_guild=lambda i: guild,
+            get_channel=lambda i: None,
+            music=NS(players={1: player}),
+            pool=NS(),
+            get_color=lambda m: 0,
+        ),
+        get_tracks=AsyncMock(side_effect=lambda *a, **k: order.append("search") or ([faixa_youtube(1)], None)),
+        check_player_queue=AsyncMock(side_effect=lambda author, bot, gid, tracks: tracks),
     )
     message = NS(guild=guild, author=NS(voice=NS(channel=voice)), channel=NS(), content="música")
     req = NS(
@@ -587,15 +600,42 @@ async def test_a_jukebox_channel_request_in_radio_mode_stops_at_the_gate_before_
         text_channel=NS(id=9),
         destroy_message=None,
         stopped=False,
+        radio_epoch=None,
     )
     monkeypatch.setattr(jukebox_steps, "can_connect", lambda **kw: None)
     monkeypatch.setattr(jukebox_steps, "check_player_perm", AsyncMock())
-    gate = AsyncMock(return_value=False)
+
+    async def gate(*args, **kwargs):
+        order.append("gate")
+        return False
+
     monkeypatch.setattr(jukebox_steps, "confirm_leave_radio", gate)
     await jukebox_steps._pr_checks(cog, req)
-    assert req.stopped is True
-    gate.assert_awaited_once_with(cog.bot.pool, cog.bot, message, player)
-    cog.get_tracks.assert_not_awaited()
+    assert order == ["search", "gate"] and req.stopped is True and not player.queue
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize("step", ["single", "playlist"])
+async def test_a_radio_transition_after_the_jukebox_gate_drops_the_song_with_the_notice(step):
+    """Alicerce N-m1 (11.4): um DJ ligou a rádio entre a porta e o enfileirar; a música não entra e quem pediu é avisado."""
+    player = NS(radio_epoch=2, queue=deque(), tr=tr)
+    track = faixa_youtube(1)
+    req = NS(
+        components=[],
+        destroy_message=False,
+        embed=NS(description=""),
+        message=NS(channel=NS(), author=NS(mention="<@10>")),
+        player=player,
+        response=None,
+        tracks=[track] if step == "single" else NS(tracks=[track]),
+        attachment=None,
+        radio_epoch=1,  # lido logo depois da porta; agora é 2
+    )
+    with pytest.raises(GenericError) as error:
+        await (jukebox_steps._pr_single if step == "single" else jukebox_steps._pr_playlist)(NS(bot=NS()), req)
+    assert error.value.text == "jukebox.radio.discarded" and not player.queue
 
 
 @pytest.mark.critical
@@ -639,23 +679,34 @@ async def test_the_vote_warning_shows_only_when_the_click_would_open_a_vote(worl
 @pytest.mark.critical
 @pytest.mark.regression
 @pytest.mark.asyncio
-@pytest.mark.parametrize("surface", ["back", "readd", "embed"])
+@pytest.mark.parametrize("surface", ["back", "readd", "embed_enqueue", "embed_forceplay", "embed_playlist"])
 async def test_back_readd_and_embed_requests_in_radio_mode_stop_at_the_gate(monkeypatch, surface):
-    """Sentinela Minor 1: ⏮, ``/readd`` e os botões do embed (tocar agora, adicionar na fila, playlist) mexiam na fila sem a porta."""
-    from empiremuse.music_cog import player_controller, queue_edit, skip
-    from empiremuse.music_cog.player_controller import PlayerControllerMixin
+    """Sentinela Minor 1 + Alicerce N-m1: ⏮, ``/readd`` e os botões do embed (adicionar, tocar agora, playlist) passam pela porta; no embed,
+    depois da busca e logo antes de enfileirar."""
+    from empiremuse.music_cog import controller_embed, queue_edit, skip
     from empiremuse.music_cog.queue_edit import QueueEditMixin
     from empiremuse.music_cog.skip import SkipMixin
     from empiremuse.utils.others import PlayerControls
 
     live = live_track()
     player = NS(
-        radio_mode=object(), current=live, queue=deque(), played=deque([faixa_youtube(1)]), failed_tracks=deque()
+        radio_mode=object(),
+        current=live,
+        queue=deque(),
+        played=deque([faixa_youtube(1)]),
+        failed_tracks=deque(),
+        tr=tr,
+        node=None,
     )
     player.seek, player.process_next = AsyncMock(), AsyncMock()
     bot = NS(music=NS(players={1: player}), pool=NS(), bot_ready=True, is_ready=lambda: True)
-    gate = AsyncMock(return_value=False)
-    inter = NS(music_bot=bot, guild_id=1, guild=NS(id=1))
+    order = []
+
+    async def gate(*args, **kwargs):
+        order.append("gate")
+        return False
+
+    inter = NS(music_bot=bot, guild_id=1, guild=NS(id=1), author=NS(id=10, mention="<@10>"))
     cog = NS(bot=bot)
     if surface == "back":
         monkeypatch.setattr(skip, "confirm_leave_radio", gate)
@@ -664,19 +715,231 @@ async def test_back_readd_and_embed_requests_in_radio_mode_stop_at_the_gate(monk
         monkeypatch.setattr(queue_edit, "confirm_leave_radio", gate)
         await QueueEditMixin.readd_songs.callback(cog, inter)
     else:
-
-        async def resolved(self, req):
-            req.player, req.bot = player, bot
-            return False
-
-        track = AsyncMock()
-        monkeypatch.setattr(player_controller, "confirm_leave_radio", gate)
-        monkeypatch.setattr(player_controller, "_pc_embed_resolve", resolved)
-        monkeypatch.setattr(player_controller, "_pc_embed_track", track)
-        cog.player_interaction_concurrency = NS(release=AsyncMock())
-        await PlayerControllerMixin.player_controller(cog, inter, PlayerControls.embed_forceplay)
-        track.assert_not_awaited()
-        cog.player_interaction_concurrency.release.assert_awaited_once()  # o limite de concorrência é liberado
-    gate.assert_awaited_once()
+        monkeypatch.setattr(controller_embed, "confirm_leave_radio", gate)
+        found = [faixa_youtube(2)] if surface != "embed_playlist" else NS(tracks=[faixa_youtube(2)])
+        cog.get_tracks = AsyncMock(side_effect=lambda *a, **k: order.append("search") or (found, None))
+        cog.check_player_queue = AsyncMock(side_effect=lambda *a, tracks=None, **k: tracks)
+        cog.check_stage_title = AsyncMock()
+        bot.pool = NS(
+            enqueue_track_embed_cooldown=NS(get_bucket=lambda i: NS(update_rate_limit=lambda: None)),
+            enqueue_playlist_embed_cooldown=NS(get_bucket=lambda i: NS(update_rate_limit=lambda: None)),
+        )
+        control = {
+            "embed_enqueue": PlayerControls.embed_enqueue_track,
+            "embed_forceplay": PlayerControls.embed_forceplay,
+            "embed_playlist": PlayerControls.embed_enqueue_playlist,
+        }[surface]
+        req = NS(
+            author=inter.author,
+            bot=bot,
+            channel=NS(guild=NS()),
+            control=control,
+            interaction=inter,
+            node=None,
+            player=player,
+            seek_status=False,
+            track=[],
+            url="https://example.com/x",
+            vc_id=5,
+        )
+        await (
+            controller_embed._pc_embed_playlist if surface == "embed_playlist" else controller_embed._pc_embed_track
+        )(cog, req)
+        assert order == ["search", "gate"]  # a porta vem depois da busca, logo antes de enfileirar
+    assert order[-1] == "gate"
     assert list(player.queue) == [] and len(player.played) == 1 and player.current is live
     player.process_next.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------- segunda rodada da revisão (T-J2A-FIX2)
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_the_confirmation_waits_on_the_client_that_received_the_request_not_on_the_player_bot():
+    """Crivo MA-N1: no pool, o bot do player não recebe o clique; esperar nele fazia o passo sempre expirar."""
+    pool, player, inter, _ = confirm_world(Decision.DIRECT)
+    receiving = NS(wait_for=AsyncMock(return_value=click("go")))
+    player_bot = NS(wait_for=AsyncMock(side_effect=AssertionError("o bot do player nunca recebe o clique")))
+    inter.bot = receiving
+    assert await radio_guard.confirm_leave_radio(pool, player_bot, inter, player) is True  # sem ``wait_for`` injetado
+    receiving.wait_for.assert_awaited_once()
+    player_bot.wait_for.assert_not_awaited()
+
+
+@pytest.mark.critical
+@pytest.mark.asyncio
+async def test_a_jukebox_channel_message_waits_on_the_cog_bot():
+    pool, player, inter, _ = confirm_world(Decision.DIRECT)  # a mensagem do canal não tem ``.bot``
+    cog_bot = NS(wait_for=AsyncMock(return_value=click("cancel")))
+    assert await radio_guard.confirm_leave_radio(pool, cog_bot, inter, player) is False
+    cog_bot.wait_for.assert_awaited_once()
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.parametrize(("resolved", "expected"), [(None, False), ("music", False), ("radio", True)])
+def test_play_defers_ephemerally_when_the_request_lands_in_radio_mode(monkeypatch, resolved, expected):
+    """Crivo MI-N1: a 1ª resposta herda a visibilidade do ``defer``; em R o ``/play`` adia efêmero e o passo sai só para o autor."""
+    from empiremuse.utils.music import checks
+
+    found = None if resolved is None else (NS(), NS(radio_mode=object() if resolved == "radio" else None))
+    monkeypatch.setattr(checks, "resolve_player", lambda pool, guild_id, member: found)
+    assert radio_guard.radio_mode_request(NS(), NS(guild_id=1, author=NS(id=10))) is expected
+
+
+@pytest.mark.critical
+@pytest.mark.asyncio
+async def test_a_closed_confirmation_is_forgotten_right_after_the_grace():
+    """Sentinela N2: o registro dos passos não cresce sem limite."""
+    clock = NS(t=100.0)
+    pool, player, inter, _ = confirm_world(Decision.DIRECT)
+    await radio_guard.confirm_leave_radio(
+        pool, None, inter, player, wait_for=answered(click("cancel")), clock=lambda: clock.t
+    )
+    assert radio_guard._PENDING["555"] == (10, 100.0 + radio_guard.CLOSED_GRACE_S)
+    assert radio_guard.pending_author("555", now=100.0 + radio_guard.CLOSED_GRACE_S + 1) is None
+    assert "555" not in radio_guard._PENDING
+
+
+@pytest.mark.critical
+@pytest.mark.asyncio
+async def test_the_radio_gone_with_the_player_destroyed_during_the_wait_does_not_let_the_request_go_on():
+    pool, player, inter, _ = confirm_world(Decision.DIRECT)
+    player.is_closing = False
+    player.bot = NS(music=NS(players={}))  # o player foi destruído e tirado do bot nos 45 s
+    player.guild.id = 1
+    answer = click("go")
+
+    async def wait_for(event, *, timeout, check):
+        player.radio_mode = None
+        return answer
+
+    assert await radio_guard.confirm_leave_radio(pool, None, inter, player, wait_for=wait_for) is False
+    assert answer.edit_original_message.await_args.kwargs["content"] == "radio.owner.unavailable"
+
+
+def real_confirm(world):
+    """O passo de confirmação com o controlador de verdade (prévia, porta e lock reais)."""
+    return NS(radio=NS(jukebox=world.radio))
+
+
+def prefix_request(world, someone, request_id=555):
+    sent = NS(edit=AsyncMock())
+    return NS(id=request_id, author=someone, message=NS(reply=AsyncMock(return_value=sent)), guild_id=world.guild.id)
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_dj_who_left_the_call_before_clicking_cannot_stop_the_radio(world):
+    """Sentinela N1 + N4: a prévia diz DIRECT; o DJ sai da call nos 45 s; o clique refaz a porta e recusa, e a rádio segue."""
+    player = await on_air(world)
+    dj = world.members[10]  # criador do player: DJ
+    answer = click("go")
+
+    async def wait_for(event, *, timeout, check):
+        dj.voice = None  # saiu da call antes de clicar
+        return answer
+
+    assert (
+        await radio_guard.confirm_leave_radio(
+            real_confirm(world), None, prefix_request(world, dj), player, wait_for=wait_for
+        )
+        is False
+    )
+    assert player.radio_mode is not None and world.relay.revoked == []
+    assert answer.edit_original_message.await_args.kwargs["content"] == "player.you_must_join_a_voice_2"
+
+
+@pytest.mark.critical
+@pytest.mark.asyncio
+async def test_a_vote_preview_that_passes_at_the_click_stops_the_radio_and_the_request_goes_on(world):
+    """N4 / Bússola §2.8: a prévia era VOTE (precisava de 2); dois saíram da call antes do clique; a porta, refeita, passa no ato."""
+    world.members.clear()
+    world.channel.members.clear()
+    for i in range(3):
+        world.add(member(10 + i, world.channel))
+    player = world.player(creator=99)
+    await world.radio.request_live(world.inter(world.members[10]), UUID)
+    request = prefix_request(world, world.members[10])
+    answer = click("vote")
+
+    async def wait_for(event, *, timeout, check):
+        for i in (11, 12):
+            world.channel.members.remove(world.members[i])
+        return answer
+
+    assert await radio_guard.confirm_leave_radio(real_confirm(world), None, request, player, wait_for=wait_for) is True
+    assert request.message.reply.await_args.kwargs["components"][0].custom_id.endswith(":vote")  # variante B
+    assert player.radio_mode is None and world.relay.revoked == ["tok1"]
+    assert answer.edit_original_message.await_args.kwargs["content"] == "jukebox.radio.leave.stopped"
+
+
+@pytest.mark.critical
+@pytest.mark.asyncio
+async def test_a_hostile_station_and_title_stay_inert_in_the_stage_topic(world):
+    """Sentinela Minor 4 / N4: o tópico de palco usa o mesmo valor guardado da faixa ao vivo."""
+    from empiremuse.utils.music.models.player_voice import PlayerVoiceMixin
+
+    world.hub.directory.fresh_for_play = AsyncMock(return_value=station(name=HOSTILE))
+    world.node.get_tracks = AsyncMock(side_effect=lambda url, **kw: [faixa_youtube(0)])
+    player = await on_air(world)
+    world.relay.on_title["tok1"](HOSTILE)
+    stage = NS(
+        current=player.radio_mode.track,
+        guild=NS(get_member=lambda i: None),
+        auto_pause=False,
+        paused=False,
+        position=0,
+        stage_title_template="{track.title} · {track.author}",
+        bot=world.bot,
+    )
+    text = PlayerVoiceMixin._voice_status_text(stage, stage=True)
+    assert "@everyone" not in text and "<@&" not in text and "](" not in text and "discord.gg/" not in text
+    assert "127.0.0.1" not in text and "/r/" not in text and "‮" not in text
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_back_in_radio_mode_with_the_gate_passing_never_requeues_the_live_track(monkeypatch):
+    """Crivo S1 (MA1 a): ⏮ com o passo passando; a faixa ao vivo atual não volta à fila, a anterior toca."""
+    from empiremuse.music_cog import skip
+    from empiremuse.music_cog.skip import SkipMixin
+
+    live, previous = live_track(), faixa_youtube(1)
+    player = NS(
+        radio_mode=None,
+        current=live,
+        queue=deque(),
+        played=deque([previous]),
+        queue_autoplay=deque(),
+        keep_connected=False,
+        autoplay=False,
+        loop=False,
+        last_track=live,
+        is_previows_music=False,
+        ignore_np_once=False,
+        track_end=AsyncMock(),
+        process_next=AsyncMock(),
+    )
+    bot = NS(music=NS(players={1: player}), pool=NS())
+    monkeypatch.setattr(skip, "confirm_leave_radio", AsyncMock(return_value=True))
+    cog = NS(bot=bot, interaction_message=AsyncMock())
+    await SkipMixin.back.callback(cog, NS(music_bot=bot, guild_id=1, author=NS(mention="<@10>")))
+    assert list(player.queue) == [previous] and not is_live(player.queue[0])
+    player.process_next.assert_awaited_once()
+
+
+@pytest.mark.critical
+@pytest.mark.asyncio
+async def test_the_rpc_is_not_sent_for_a_live_track_even_after_radio_mode_ended():
+    """Alicerce N-s4: na janela entre sair de R e o ``stop()``, a marca da faixa segura o RPC como as outras saídas."""
+    from empiremuse.utils.music.models.player_state import PlayerStateMixin
+
+    player = MagicMock()
+    player.radio_id, player.radio_mode, player.current = None, None, live_track()
+    await PlayerStateMixin.process_rpc(player)
+    player._send_rpc_data.assert_not_called()

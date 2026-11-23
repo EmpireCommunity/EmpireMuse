@@ -1374,5 +1374,6 @@
   "jukebox.station.off_log": "desligou a estação {station}.",
   "jukebox.station.off": "📻 **⠂{member} desligou a estação {station}.**",
   "jukebox.radio.vote.station_text": "✋ {member} quer ligar a estação **{station}**. Votos: {votes} de {needed} · termina {deadline}",
-  "jukebox.radio.vote.passed_station": "✅ A votação passou. A estação **{station}** foi ligada."
+  "jukebox.radio.vote.passed_station": "✅ A votação passou. A estação **{station}** foi ligada.",
+  "jukebox.radio.leave.stopped_plain": "📻 A rádio parou."
 }

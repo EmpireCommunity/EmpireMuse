@@ -10,7 +10,7 @@ import disnake
 from disnake.ext import commands
 
 from empiremuse.utils.music.guild_text import guild_text
-from empiremuse.music_cog.radio_guard import confirm_leave_radio
+from empiremuse.music_cog.radio_guard import confirm_leave_radio, enqueue_fence
 from empiremuse.utils.client import BotCore
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.jukebox_panel import fetch_panel_message
@@ -90,10 +90,6 @@ async def _pr_checks(self, req):
         player = self.bot.music.players[message.guild.id]
         await check_player_perm(message, self.bot, message.channel, guild_data=data)
         destroy_message = bool(req.destroy_message)
-        # o pedido digitado no canal da Jukebox também passa pela porta do modo rádio, antes de buscar a faixa (Sentinela Minor 1)
-        if not await confirm_leave_radio(self.bot.pool, self.bot, message, player):
-            req.stopped = True
-            return
     except KeyError:
         destroy_message = False
         player = await self.create_player(
@@ -127,6 +123,13 @@ async def _pr_checks(self, req):
     req.player = player
     req.tracks = tracks
 
+    # a porta do modo rádio (Sentinela Minor 1) vem DEPOIS da busca e do painel, logo antes de enfileirar, como no /play (Alicerce N-m1):
+    # a rádio só para quando a faixa já foi achada, e o epoch lido aqui é conferido no enfileirar (``enqueue_fence``)
+    if not await confirm_leave_radio(self.bot.pool, self.bot, message, player):
+        req.stopped = True
+        return
+    req.radio_epoch = getattr(player, "radio_epoch", None)
+
 
 async def _pr_playlist(self, req):
     """Adiciona a playlist pedida na fila e responde."""
@@ -138,6 +141,7 @@ async def _pr_playlist(self, req):
     response = req.response
     tracks = req.tracks
 
+    enqueue_fence(player, req.radio_epoch)  # sem ``await`` até o extend
     player.queue.extend(tracks.tracks)
 
     if isinstance(message.channel, disnake.Thread) and not isinstance(message.channel.parent, disnake.ForumChannel):
@@ -213,6 +217,7 @@ async def _pr_single(self, req):
 
         track.info["uri"] = ""
 
+    enqueue_fence(player, req.radio_epoch)  # sem ``await`` até o append
     player.queue.append(track)
 
     if isinstance(message.channel, disnake.Thread) and not isinstance(message.channel.parent, disnake.ForumChannel):

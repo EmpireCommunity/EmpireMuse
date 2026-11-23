@@ -1360,5 +1360,6 @@
   "jukebox.station.off_log": "turned off the station {station}.",
   "jukebox.station.off": "📻 **⠂{member} turned off the station {station}.**",
   "jukebox.radio.vote.station_text": "✋ {member} wants to turn on the station **{station}**. Votes: {votes} of {needed} · ends {deadline}",
-  "jukebox.radio.vote.passed_station": "✅ The vote passed. The station **{station}** is on."
+  "jukebox.radio.vote.passed_station": "✅ The vote passed. The station **{station}** is on.",
+  "jukebox.radio.leave.stopped_plain": "📻 The radio stopped."
 }

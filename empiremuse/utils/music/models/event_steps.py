@@ -148,7 +148,11 @@ def _he_is_live_event(mode, event) -> bool:
         sent = sent.get("encoded")
     if not isinstance(sent, str) or not sent:
         return True
-    return sent == getattr(track, "id", None)
+    if sent != getattr(track, "id", None):
+        # descartado por ser de outra faixa (o fluxo antigo, a música parada na entrada); se toda queda real cair aqui, R fica mudo (Crivo S2)
+        logger.debug("Evento de faixa descartado no modo rádio: não é a faixa ao vivo de agora")
+        return False
+    return True
 
 
 def _he_custom_ports(self):

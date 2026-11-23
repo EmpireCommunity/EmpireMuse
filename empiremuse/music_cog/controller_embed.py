@@ -22,6 +22,7 @@ from empiremuse.utils.music.errors import (
     GenericError,
 )
 from empiremuse.utils.music.guild_text import guild_text
+from empiremuse.music_cog.radio_guard import confirm_leave_radio
 from empiremuse.utils.music.user_limits import quota_for, track_fav_error_text
 from empiremuse.utils.music.interactions import (
     SelectInteraction,
@@ -136,6 +137,11 @@ async def _pc_embed_playlist(self, req):
     await self.check_player_queue(interaction.author, bot, interaction.guild_id)
     result, node = await self.get_tracks(url, interaction, author, source=False, node=player.node, bot=bot)
     result = await self.check_player_queue(interaction.author, bot, interaction.guild_id, tracks=result)
+    # a porta do modo rádio logo antes de enfileirar, depois da busca (Alicerce N-m1); sem ``await`` daqui ao extend
+    if not await confirm_leave_radio(
+        self.bot.pool, self.bot, interaction, player, stopped_key="jukebox.radio.leave.stopped_plain"
+    ):
+        return
     player.queue.extend(result.tracks)
     await interaction.send(
         player.tr(
@@ -264,6 +270,10 @@ async def _pc_embed_track(self, req):
                     inter=interaction, bot=bot, guild=channel.guild, channel=channel, node=node
                 )
             await self.check_player_queue(interaction.author, bot, interaction.guild_id)
+            if not await confirm_leave_radio(
+                self.bot.pool, self.bot, interaction, player, stopped_key="jukebox.radio.leave.stopped_plain"
+            ):
+                return  # a porta do modo rádio logo antes de enfileirar (Alicerce N-m1); sem ``await`` daqui ao append
             player.update = True
             if isinstance(track, list):
                 t = track[0]
@@ -301,6 +311,10 @@ async def _pc_embed_track(self, req):
             else:
                 await self.check_stage_title(inter=interaction, bot=bot, player=player)
 
+            if not await confirm_leave_radio(
+                self.bot.pool, self.bot, interaction, player, stopped_key="jukebox.radio.leave.stopped_plain"
+            ):
+                return  # tocar agora em R: a porta logo antes de enfileirar (Alicerce N-m1)
             if isinstance(track, list):
                 player.queue.insert(0, track[0])
             else:
