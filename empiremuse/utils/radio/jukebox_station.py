@@ -218,7 +218,7 @@ class JukeboxStationMixin:
         )  # antes do lock: o Last.fm pode demorar; nada muda até o efeito
         async with player.radio_lock:
             if player.is_closing:
-                raise Refused("radio.owner.unavailable")
+                raise Refused("jukebox.radio.player_closed")
             channel_id = self._requester_channel(member, player)
             if switch_wait(player.radio_switched_at, self.now()) > 0:
                 raise Refused("jukebox.radio.switch_wait")  # [s1]
