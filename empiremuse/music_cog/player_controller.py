@@ -218,7 +218,11 @@ class PlayerControllerMixin:
                     toggle = jukebox.toggle_favorite if station is None else jukebox.toggle_station_favorite
                     # confirma antes da gravação: a leitura e a escrita podem passar dos 3 s da interação
                     await req.interaction.response.defer(ephemeral=True, with_message=True)
-                    key, fields = await toggle(req.interaction, req.player)
+                    try:
+                        key, fields = await toggle(req.interaction, req.player)
+                    except Exception as error:  # noqa: BLE001 - banco fora, por exemplo: a resposta efêmera não fica "pensando"
+                        logger.warning("Favorita da estação não gravada (%s)", type(error).__name__)
+                        key, fields = "radio.owner.unavailable", {}
                     await req.interaction.edit_original_message(content=req.player.tr(key, **fields))
                 finally:
                     try:

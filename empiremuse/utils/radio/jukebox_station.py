@@ -224,7 +224,8 @@ class JukeboxStationMixin:
             name = self.station_name(player.tr, station)
             # dentro do lock: nada do que valia antes vale agora
             await self._station_checks(guild_id, self._requester_channel(member, player))
-            # a porta por último: entre ela e o descarte da fila não há espera (``_start_station`` começa pelo epoch)
+            # a porta por último: entre ela e o descarte da fila não há espera (``_start_station`` incrementa o epoch e descarta a fila
+            # antes do primeiro ``await``)
             opened, _ = await self._station_decision(player, member, station.id, name)
             if opened is not None:
                 return opened
@@ -318,6 +319,11 @@ class JukeboxStationMixin:
         """M → S, R → S ou S → S, já sob o lock. Descarta a fila e as sugestões (G1, só no clique que passou). ``True`` = tocar já (o player
         estava ocioso ou em R); senão a estação começa na próxima faixa (a atual termina)."""
         self._bump(player)
+        # o descarte logo depois do epoch, antes de qualquer ``await``: o que a porta viu é o que sai; um pedido que entrar durante as
+        # esperas abaixo fica na fila e toca antes da estação, como o que chega durante o sorteio
+        discarded = len(player.queue)
+        player.queue.clear()
+        player.queue_autoplay.clear()
         await self._drop_vote(player)
         from_radio = player.radio_mode is not None
         if from_radio:
@@ -325,9 +331,6 @@ class JukeboxStationMixin:
         if player.is_closing:
             # destruído durante os awaits: ``forget`` já rodou e não veria a estação nova
             raise Refused("jukebox.radio.player_closed")
-        discarded = len(player.queue)
-        player.queue.clear()
-        player.queue_autoplay.clear()
         player.station = ActiveStation(
             ref=station.id,
             name=name,

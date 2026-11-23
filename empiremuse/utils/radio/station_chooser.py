@@ -63,6 +63,7 @@ class StationChooser(disnake.ui.View):
         self.chosen_name = ""
         self._token = secrets.token_hex(6)  # o ``custom_id`` do efêmero; não autoriza nada
         self.message: Any = None  # a mensagem efêmera, para desativar os controles quando o seletor expira
+        self._confirm_ref: Optional[str] = None  # a estação da tela de confirmação, presa quando ela é desenhada
 
     # ------------------------------------------------------------------ desenho
 
@@ -107,6 +108,9 @@ class StationChooser(disnake.ui.View):
     def render(self, note: str = "", *, confirm: bool = False) -> dict[str, Any]:
         self.clear_items()
         if confirm:
+            self._confirm_ref = (
+                self.chosen
+            )  # o "Tocar estação" toca a estação DESTA tela, mesmo que outra seleção troque ``chosen``
             play = disnake.ui.Button(
                 label=fit(self.tr("jukebox.station.picker.confirm"), 80),
                 style=disnake.ButtonStyle.success,
@@ -190,7 +194,7 @@ class StationChooser(disnake.ui.View):
 
     async def _on_confirm(self, interaction: disnake.MessageInteraction) -> None:
         await interaction.response.defer()
-        await self._play(interaction, self.chosen)
+        await self._play(interaction, self._confirm_ref)
 
     async def _play(self, interaction: disnake.MessageInteraction, ref: Optional[str]) -> None:
         if ref is None:
@@ -205,7 +209,7 @@ class StationChooser(disnake.ui.View):
         if "station" in fields:
             fields = {**fields, "station": jukebox_ui.server_station_md(fields["station"])}
         if key in STAY_OPEN:
-            await self._choose_again(interaction, key, fields)
+            await self._choose_again(interaction, key, fields, ref)
             return
         self.stop()
         try:
@@ -213,10 +217,12 @@ class StationChooser(disnake.ui.View):
         except Exception as error:  # noqa: BLE001
             logger.warning("Resposta do seletor de estações não editada (%s)", type(error).__name__)
 
-    async def _choose_again(self, interaction: disnake.MessageInteraction, key: str, fields: dict[str, Any]) -> None:
-        """A recusa entra como nota no lugar do título e o select volta; a estação que sumiu sai da lista."""
+    async def _choose_again(
+        self, interaction: disnake.MessageInteraction, key: str, fields: dict[str, Any], ref: str
+    ) -> None:
+        """A recusa entra como nota no lugar do título e o select volta; a estação recusada (``ref``) sai da lista se sumiu."""
         if key == "jukebox.station.not_found":
-            self.stations = [station for station in self.stations if station.id != self.chosen]
+            self.stations = [station for station in self.stations if station.id != ref]
         self.chosen = None
         try:
             await interaction.edit_original_message(**self.render(self.tr(key, **fields)))

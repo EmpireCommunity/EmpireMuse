@@ -719,3 +719,94 @@ async def test_two_quick_selections_each_play_their_own_station():
     gate.set()
     await first
     assert [call.args[1] for call in jukebox.request_station.await_args_list] == ["b" * 24, "c" * 24]
+
+
+# ---------------------------------------------------------------------- revisão 4 do PR 277 (T-J2B-FIX4)
+
+
+def exception_handler_player(world, player, monkeypatch):
+    """O player para ``_he_track_exception``: depois do gancho da estação, o caminho para cedo (``locked``) sem relatório de verdade."""
+    from empiremuse.utils.music.models import event_steps
+
+    handler_player(world, player, monkeypatch)
+    monkeypatch.setattr(event_steps, "_he_exception_embed", lambda self, event, track: (None, "ERR-TESTE"))
+    monkeypatch.setattr(event_steps, "_he_log_retry_while_locked", lambda *args: None)
+    monkeypatch.setattr(event_steps, "_he_report_exception", AsyncMock())
+    return event_steps
+
+
+def exception_event(encoded):
+    return NS(node=NS(identifier="LOCAL"), track={"encoded": encoded}, data={}, cause="x")
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_late_exception_event_of_another_track_does_not_drop_the_pending_one(world, monkeypatch):
+    """Crivo Minor 2: a exceção é identificada pelo encoded do evento, não pelo ``current``."""
+    player = await started(world)
+    steps = exception_handler_player(world, player, monkeypatch)
+    active = player.station
+    size = len(active.session.pool)
+    _, pending = await world.radio.next_station_track(player, active)
+    player.current = pending
+    await steps._he_track_exception(player, exception_event("enc:faixa-velha"))
+    assert len(active.session.pool) == size and not active.pick_dropped
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_fast_failure_of_the_alternative_during_play_still_drops_the_track(world, monkeypatch):
+    """Crivo Minor 1: o encoded enviado é registrado ANTES do ``play``; a exceção que chega durante o ``await`` dele já o reconhece."""
+    from empiremuse.utils.music.models import playback_steps
+
+    player = await started(world)
+    steps = exception_handler_player(world, player, monkeypatch)
+    active = player.station
+    size = len(active.session.pool)
+    _, track = await world.radio.next_station_track(player, active)
+
+    async def play(played, start=0, temp_id=None):
+        player.locked = True  # o handler para logo depois do gancho da estação (que vem antes dessa checagem)
+        await steps._he_track_exception(player, exception_event("enc:alternativa"))  # o evento antes de o REST voltar
+        player.current, player.current_encoded = played, temp_id or played.id
+
+    player.play = play
+    player.process_hint = lambda: None
+    player.auto_pause = False
+    player.loop = "current"
+    player.controller_mode = True
+    req = NS(track=track, encoded_track="enc:alternativa", force_np=False, inter=None, start_position=0)
+    await playback_steps._pn_start(player, req)
+    assert len(active.session.pool) == size - 1 and active.pick_dropped
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_request_queued_while_the_station_starts_is_not_discarded(world):
+    """Sentinela Minor 1: o descarte vem logo depois do epoch; o que entra durante as esperas seguintes fica na fila."""
+    player = station_player(world, creator=10)
+    late = song(11)
+
+    async def slow_edit(**kwargs):
+        player.queue.append(late)  # /play durante a edição da mensagem do voto que cai
+        return None
+
+    player.radio_vote = NS(task=None, message=NS(edit=AsyncMock(side_effect=slow_edit)))
+    await world.radio.request_station(world.inter(world.members[10]), ROCK)
+    assert player.station is not None and list(player.queue) == [late]
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_the_confirm_button_plays_the_station_of_its_own_screen():
+    """Sentinela Sugestão 2: a ref fica presa quando a tela de confirmação é desenhada."""
+    view, jukebox = chooser(preview=(True, False, None))
+    view.render()
+    await view._on_select(pick("c" * 24))  # tela de confirmação da estação c
+    view.chosen = "b" * 24  # uma seleção atrasada troca ``chosen``
+    await view._on_confirm(pick("c" * 24))
+    assert jukebox.request_station.await_args.args[1] == "c" * 24
