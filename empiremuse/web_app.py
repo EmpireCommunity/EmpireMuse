@@ -642,7 +642,19 @@ class WSClient:
                 self.backoff *= 2.5
                 continue
 
-            message = await self.connection.receive()
+            try:
+                message = await self.connection.receive()
+            except (aiohttp.ClientError, ConnectionError) as e:
+                # O aiohttp responde o PING com PONG dentro do ``receive``; num transporte que está fechando isso levanta.
+                # Fecha e deixa o caminho de reconexão do topo do laço seguir (sem isso a tarefa do cliente RPC morre calada).
+                logger.warning(
+                    "Conexão com servidor RPC perdida (%s) - Reconectando em %s segundo(s).",
+                    type(e).__name__,
+                    int(self.backoff),
+                )
+                await self.connection.close()
+                await asyncio.sleep(self.backoff)
+                continue
 
             if message.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
                 logger.warning("RPC Websocket Closed: %s - reconectando em %ss", message.extra, self.backoff)
