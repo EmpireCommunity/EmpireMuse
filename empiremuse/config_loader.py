@@ -15,6 +15,7 @@ from empiremuse.rules.app_profile import (
     DEFAULT_RESERVE_DESCRIPTION,
     DEFAULT_TAGS,
 )
+from empiremuse.rules.cover import DEFAULT_COVER_HOSTS, normalize_cover_hosts
 from empiremuse.rules.usage import clamp_retention_days
 from empiremuse.utils import branding
 
@@ -106,6 +107,7 @@ DEFAULT_CONFIG = {
     "HINT_RATE": 4,
     "IGNORE_SKINS": "",
     "IGNORE_STATIC_SKINS": "",
+    "COVER_HOSTS": DEFAULT_COVER_HOSTS,
     "GUILD_DEAFEN_WARN": True,
     "ENABLE_DISCORD_URLS_PLAYBACK": True,
     "PLAYER_INFO_BACKUP_INTERVAL": 45,
@@ -413,6 +415,13 @@ def load_config():
     CONFIG["RPC_SERVER"] = CONFIG["RPC_SERVER"].replace("$PORT", str(resolve_port(CONFIG.get("PORT"))))
 
     CONFIG["UPDATE_PROXY_SOCKET"] = normalize_update_proxy_socket(CONFIG["UPDATE_PROXY_SOCKET"])
+
+    # Hosts de onde as skins de imagem buscam a capa da faixa (vazio = a lista padrão; ``*`` = qualquer host público).
+    # Inválido não sobe: a lista é uma barreira de segurança, nunca cai sozinha para "qualquer host".
+    try:
+        CONFIG["COVER_HOSTS"] = normalize_cover_hosts(CONFIG["COVER_HOSTS"])
+    except ValueError as e:
+        raise Exception(f"Você usou uma configuração inválida! COVER_HOSTS ({e})") from None
 
     if CONFIG["WAIT_FOR_MEMBERS_TIMEOUT"] < 60:
         CONFIG["WAIT_FOR_MEMBERS_TIMEOUT"] = 60
