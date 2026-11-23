@@ -1170,11 +1170,25 @@ async def test_a_successful_resume_cancels_the_pending_retry(world):
     retry = player.radio_mode.retry_task
     await world.radio.resume_live(player)
     await settle()
+    # Crivo S1: uma queda logo depois arma uma volta nova, não vê a cancelada "em curso"
+    assert player.radio_mode.retry_task is None
     world.sleeper.release()
     await settle()
     assert retry.cancelled()
     assert [token for _, token in world.relay.registered] == ["tok1", "tok2"]
     assert player.radio_mode.token == "tok2" and player.radio_mode.on_air
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_new_attempt_revokes_the_previous_relay_token_before_opening(world):
+    """Crivo S2 e Sentinela S2 (revisão 4 do PR 270): a nova tentativa nunca deixa dois fluxos no mesmo modo; a ficha anterior cai antes."""
+    player = await on_air(world)
+    mode = player.radio_mode
+    async with player.radio_lock:
+        assert await world.radio._reopen(player, mode)
+    assert world.relay.revoked == ["tok1"] and mode.token == "tok2"
 
 
 @pytest.mark.critical
@@ -1231,17 +1245,49 @@ async def test_a_session_saved_in_radio_mode_is_marked_and_the_mark_survives_the
 @pytest.mark.critical
 @pytest.mark.regression
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("radio_session", "autoplay_while_starting"), [(True, False), (False, True)])
-async def test_resuming_a_radio_session_never_calls_the_autoplay(radio_session, autoplay_while_starting):
-    """A retomada de uma sessão gravada em R fica ociosa (como no fim da rádio); a preferência de autoplay volta intacta."""
+@pytest.mark.parametrize(("radio_session", "while_starting"), [(True, (False, False)), (False, (True, True))])
+async def test_resuming_a_radio_session_never_calls_the_autoplay(radio_session, while_starting):
+    """A retomada de uma sessão gravada em R fica ociosa (como no fim da rádio): nem o autoplay nem o 24/7 buscam faixa (Crivo Minor 1,
+    revisão 4: ``_pn_next_track`` chama o autoqueue com ``keep_connected``). As duas preferências voltam intactas."""
     from empiremuse.cogs.player_resume import PlayerSession
 
     seen = []
-    player = NS(autoplay=True, node=NS(version=4), invoke_np=AsyncMock())
-    cog = NS(update_player=AsyncMock(side_effect=lambda **kw: seen.append(player.autoplay)))
+    player = NS(autoplay=True, keep_connected=True, node=NS(version=4), invoke_np=AsyncMock())
+    cog = NS(update_player=AsyncMock(side_effect=lambda **kw: seen.append((player.autoplay, player.keep_connected))))
     await PlayerSession._start_resumed(cog, player, NS(), False, 0, True, radio_session=radio_session)
-    assert seen == [autoplay_while_starting] and player.autoplay is True
+    assert seen == [while_starting] and (player.autoplay, player.keep_connected) == (True, True)
     player.invoke_np.assert_awaited_once()
+
+
+def resumed_player(**kwargs):
+    fields = dict(queue=deque(), played=deque(), queue_autoplay=deque(), failed_tracks=deque(), keep_connected=False)
+    return NS(**{**fields, **kwargs})
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.parametrize(("radio_session", "queue", "failed"), [(True, [], ["falhou"]), (False, ["falhou"], [])])
+def test_a_radio_session_does_not_queue_the_tracks_that_failed_before_the_radio(radio_session, queue, failed):
+    """Crivo Minor 1 (revisão 4 do PR 270): ``failed_tracks`` sempre ia para a fila, e a sessão gravada em R voltava tocando a que falhou."""
+    from empiremuse.cogs.player_resume import PlayerSession
+
+    cog = NS(bot=NS(pool=NS(process_track_cls=lambda items, playlists=None: (list(items), playlists))))
+    player = resumed_player()
+    data = {"queue": [], "played": ["tocada"], "queue_autoplay": [], "failed_tracks": ["falhou"]}
+    PlayerSession._restore_tracks(cog, player, data, radio_session=radio_session)
+    assert list(player.queue) == queue and list(player.failed_tracks) == failed and list(player.played) == ["tocada"]
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.parametrize(("radio_session", "queue"), [(True, []), (False, ["falhou"])])
+def test_a_radio_session_kept_connected_does_not_requeue_the_history(radio_session, queue):
+    """Crivo Minor 1 (revisão 4 do PR 270): no 24/7 com a fila vazia, a sessão gravada em R punha o histórico de antes da rádio na fila."""
+    from empiremuse.cogs.player_resume import PlayerSession
+
+    player = resumed_player(keep_connected=True, played=deque(["tocada"]), failed_tracks=deque(["falhou"]))
+    PlayerSession._refill_kept_connected(player, radio_session=radio_session)
+    assert list(player.queue) == queue
 
 
 @pytest.mark.critical
@@ -1347,3 +1393,18 @@ async def test_a_song_of_the_old_mode_never_plays_over_a_radio_opened_while_rele
     req = NS(track=None)
     assert await playback_steps._pn_next_track(player, req) is True
     assert req.track is None and player.radio_mode is new
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_the_jukebox_channel_hands_the_reader_bot_to_a_different_executor(monkeypatch):
+    """Crivo Minor 2 (revisão 4 do PR 270): sem ``reader`` o pedido chegava ao executor sem o bot que leu a mensagem, e a confirmação de
+    sair da rádio esperava o clique no executor, que nunca o recebe (MA-N1)."""
+    from tests.cogs.test_mensagens_sem_excecao import montar_pedido
+
+    classe, reader_cog, ctx, message, _, _ = montar_pedido(monkeypatch, None)
+    executor = NS(parse_jukebox_request=AsyncMock())  # outro bot toca: o leitor só repassa o pedido
+    reader_cog.jukebox_executor = AsyncMock(return_value=executor)
+    await classe.on_jukebox_message(reader_cog, ctx, message)
+    assert executor.parse_jukebox_request.await_args.kwargs["reader"] is reader_cog.bot
