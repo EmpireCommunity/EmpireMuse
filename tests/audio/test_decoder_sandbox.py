@@ -20,7 +20,6 @@ from empiremuse.utils.radio.logo import LogoError, decode_in_worker
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKER = ROOT / "empiremuse" / "utils" / "radio" / "logo_worker.py"
-IS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
 needs_landlock = pytest.mark.skipif(not sandbox.supported(), reason="kernel sem o sandbox completo (Landlock ABI 6)")
 
 
@@ -100,10 +99,15 @@ def test_a_sandboxed_decoder_grows_no_file(tmp_path):
 @needs_landlock
 @pytest.mark.critical
 @pytest.mark.regression
-@pytest.mark.skipif(IS_ROOT, reason="o limite de processos não vale para root; o CI roda sem root")
-def test_a_sandboxed_decoder_starts_no_process(tmp_path):
-    body = "sandbox.confine()\ntry:\n    os.fork()\n    print('forked')\nexcept OSError:\n    print('refused')\n"
-    assert run_probe(tmp_path, body) == ["refused"]
+def test_a_sandboxed_decoder_starts_no_process_or_thread_even_as_root(tmp_path):
+    body = (
+        "import threading\n"
+        "print('confined' if sandbox.confine() else 'open')\n"
+        "try:\n    os.fork()\n    print('forked')\nexcept OSError:\n    print('refused')\n"
+        "try:\n    threading.Thread(target=print).start()\n    print('thread')\nexcept RuntimeError:\n    print('refused')\n"
+        "try:\n    os.execv(sys.executable, [sys.executable, '-c', 'print(1)'])\nexcept OSError:\n    print('refused')\n"
+    )
+    assert run_probe(tmp_path, body) == ["confined", "refused", "refused", "refused"]
 
 
 @pytest.mark.critical
@@ -270,8 +274,7 @@ class _StuckProcess:
         self.ended = asyncio.Event()
 
     async def _never(self, size):
-        await self.ended.wait()
-        return b""
+        raise TimeoutError  # o prazo venceu durante a leitura: sem relógio real no teste
 
     async def wait(self):
         await self.ended.wait()
@@ -296,7 +299,6 @@ async def test_the_deadline_hands_the_worker_to_kill_worker(monkeypatch):
     monkeypatch.setattr(sandbox, "landlock_abi", lambda: sandbox.MIN_ABI)
     monkeypatch.setattr(asyncio, "create_subprocess_exec", spawn)
     monkeypatch.setattr(sandbox, "kill_worker", kill_worker)
-    monkeypatch.setattr(logo_module, "WORKER_TIMEOUT_S", 0.01)
     with pytest.raises(LogoError) as raised:
         await decode_in_worker("PNG", b"x")
     assert raised.value.code == "deadline" and killed == [stuck]
@@ -429,4 +431,11 @@ def test_the_parent_already_refuses_a_layout_that_exposes_the_app(monkeypatch):
     """O pai não busca a imagem quando o filho recusaria: um caminho permitido que contém o app (Alicerce S1, revisão 2)."""
     monkeypatch.setattr(sandbox, "landlock_abi", lambda: sandbox.MIN_ABI)
     monkeypatch.setattr(sandbox, "python_paths", lambda: [os.path.dirname(sandbox._APP_ROOT)])
+    assert sandbox.supported() is False
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+def test_without_resource_limits_the_sandbox_is_not_supported(monkeypatch):
+    monkeypatch.setattr(sandbox, "resource", None)
     assert sandbox.supported() is False

@@ -5,8 +5,8 @@ Só stdlib e ``ctypes`` (o worker o importa com ``python -I``, antes de qualquer
 - **Landlock** (Linux, ABI ``MIN_ABI`` ou mais): sistema de arquivos só de leitura e só nos caminhos da instalação do Python
   (biblioteca padrão e ``site-packages``) e nas bibliotecas do sistema que ela carrega; nenhuma escrita nem execução; sinais e
   sockets abstratos só dentro do domínio. Um caminho permitido que contenha o diretório do app recusa o sandbox.
-- **seccomp:** nenhum socket novo e nenhum anel de E/S assíncrona do kernel (essas chamadas devolvem ``EPERM``), em ``x86_64`` e
-  ``aarch64`` com Python de 64 bits; outra arquitetura recusa o sandbox.
+- **seccomp:** nenhum socket novo, nenhum anel de E/S assíncrona do kernel, nenhum processo novo e nenhum programa executado (essas
+  chamadas devolvem ``EPERM``, também para root), em ``x86_64`` e ``aarch64`` com Python de 64 bits; outra arquitetura recusa o sandbox.
 - ``RLIMIT_NPROC = 0`` (nenhum processo ou thread novo) e ``RLIMIT_FSIZE = 0`` (nenhum arquivo cresce).
 - **No pai:** ``start_new_session`` e, no prazo, o grupo inteiro morre (``kill_worker``).
 
@@ -22,13 +22,17 @@ import errno
 import logging
 import os
 import platform
-import resource
 import signal
 import struct
 import sys
 import sysconfig
 from contextlib import suppress
 from typing import Any
+
+try:
+    import resource
+except ImportError:  # outro sistema: sem os limites não há sandbox, e a política fechada recusa
+    resource = None  # type: ignore[assignment]
 
 FAIL_CLOSED = True
 MIN_ABI = 6  # o que a política precisa: escrita e truncamento (3) e sinais e sockets abstratos fora do domínio (6)
@@ -57,8 +61,12 @@ _READ_ONLY = _FS_READ_FILE | _FS_READ_DIR
 
 # seccomp (seccomp(2), filter.h): arquitetura conferida e o número de ``socket`` de cada uma
 _AUDIT_ARCH = {"x86_64": 0xC000003E, "aarch64": 0xC00000B7}
-# as chamadas negadas: ``socket`` e as três do io_uring (``io_uring_setup``, ``_enter`` e ``_register``, iguais nas duas arquiteturas)
-_DENIED_NR = {"x86_64": (41, 425, 426, 427), "aarch64": (198, 425, 426, 427)}
+# as chamadas negadas: ``socket``, as três do io_uring (iguais nas duas arquiteturas) e as que criam processo ou executam um programa
+# (``clone``, ``fork``, ``vfork``, ``clone3``, ``execve``, ``execveat``): nenhum processo novo mesmo para root, que ignora ``RLIMIT_NPROC``
+_DENIED_NR = {
+    "x86_64": (41, 425, 426, 427, 56, 57, 58, 435, 59, 322),
+    "aarch64": (198, 425, 426, 427, 220, 435, 221, 281),
+}
 _X32_SYSCALL_BIT = 0x40000000  # x32 no x86_64: outra numeração, recusada por inteiro
 _BPF_LD_W_ABS, _BPF_JEQ_K, _BPF_JGE_K, _BPF_RET_K = 0x20, 0x15, 0x35, 0x06
 _RET_ALLOW, _RET_KILL_PROCESS = 0x7FFF0000, 0x80000000
@@ -115,7 +123,7 @@ def _filterable() -> bool:
 def supported() -> bool:
     """O sandbox inteiro cabe aqui? Landlock com o ABI que a política pede, o filtro de chamadas e nenhum caminho permitido que contenha o
     app. O pai confere isto antes de buscar a imagem; o filho refaz tudo em ``confine``."""
-    return landlock_abi() >= MIN_ABI and _filterable() and not exposes_app(python_paths())
+    return resource is not None and landlock_abi() >= MIN_ABI and _filterable() and not exposes_app(python_paths())
 
 
 def python_paths() -> list[str]:
@@ -217,6 +225,8 @@ def _seccomp(machine: str) -> bool:
 
 
 def _limits() -> None:
+    if resource is None:
+        raise OSError("sem resource")
     resource.setrlimit(resource.RLIMIT_NPROC, (0, 0))
     resource.setrlimit(resource.RLIMIT_FSIZE, (0, 0))
 
