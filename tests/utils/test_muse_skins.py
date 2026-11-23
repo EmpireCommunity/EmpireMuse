@@ -14,6 +14,7 @@ import pytest
 
 from empiremuse.i18n import loader
 from empiremuse.rules.i18n import Translator
+from empiremuse.utils.music.models import np_steps
 from empiremuse.utils.music.skins.muse import _card, muse_text, muse_text_classic
 
 pytestmark = pytest.mark.critical
@@ -162,10 +163,11 @@ def test_private_call_hides_track_requester_and_queue(tr, build, static):
 @pytest.mark.parametrize("paused", [False, True])
 @pytest.mark.parametrize("build", BUILDS, ids=lambda b: b.__module__.rsplit(".", 1)[-1] + "." + b.__name__)
 def test_text_is_stable_between_two_reads(tr, build, paused):
-    """Um segundo depois (com a posição andando junto), o texto é o mesmo: o ``_np_data`` não edita só pelo relógio."""
+    """Um segundo depois (com a posição andando junto), o payload inteiro tem a mesma chave estável (embeds E componentes):
+    o ``auto_update`` de 15 s da barra em texto não edita a mensagem só pelo relógio."""
     first = build(_player(tr, paused=paused, position=72_000), NOW)
     later = build(_player(tr, paused=paused, position=72_000 if paused else 73_000), NOW + 1)
-    assert first["embeds"] == later["embeds"]
+    assert np_steps.payload_key(first) == np_steps.payload_key(later)
 
 
 def test_text_bar_moves_with_the_segment(tr):
