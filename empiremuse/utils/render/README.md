@@ -41,7 +41,8 @@ Os fatos que a imagem pode mostrar (`CardSpec`) e as regras puras (formato, anim
   o que já desenhou e voltou da vaga velho é descartado sem gravar o estado.
 - Qualquer falha do cartão (montar o `CardSpec`, ler a configuração, desenhar) cai na `muse_text`; o log leva só o id da
   skin e o tipo do erro. `forget` apaga o anexo e o GIF adiado, nunca o relógio do último GIF frio do player.
-- O logo da estação espera no máximo `COVER_WAIT_S`; depois o cartão sai com o logo do bot e o redesenho fica pedido.
+- O logo da estação espera no máximo `COVER_WAIT_S`; depois o cartão sai com o logo do bot e o redesenho fica pedido. O
+  logo da estação entra na chave do anexo (o do bot não), então o ciclo seguinte o desenha.
 - A mensagem do player compara uma chave estável do payload (`np_steps.payload_key`: embeds por `to_dict()`, componentes
   por `to_component_dict()`); a skin de imagem só redesenha com a chave, o `CardSpec` ou o GIF adiado diferentes.
 

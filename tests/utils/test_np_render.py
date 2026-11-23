@@ -428,10 +428,16 @@ async def test_the_disc_motion_is_not_read_from_the_database_on_every_update(mon
     player = Player(ImageSkin())
     player.bot.get_global_data = AsyncMock(return_value={"disc_motion": False})
 
+    now = [100.0]
+    monkeypatch.setattr(np_steps, "_clock", lambda: now[0])
+
     values = [await np_steps._disc_motion(player), await np_steps._disc_motion(player)]
     values.append(await np_steps._disc_motion(player, fresh=True))
+    reads_before_expiry = player.bot.get_global_data.await_count
+    now[0] += np_steps.DISC_MOTION_TTL_S
+    values.append(await np_steps._disc_motion(player))
 
-    assert values == [False, False, False] and player.bot.get_global_data.await_count == 2
+    assert values == [False] * 4 and (reads_before_expiry, player.bot.get_global_data.await_count) == (2, 3)
 
 
 @pytest.mark.asyncio
@@ -530,3 +536,15 @@ async def test_closing_the_player_drops_a_card_that_was_on_the_message(had_card)
 
     sent = player.message.edit.await_args.kwargs
     assert sent.get("attachments") == ([] if had_card else None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_a_busy_slot_with_no_card_on_screen_does_not_repeat_the_same_text_edit(world):
+    world.pipe.no_card = True
+
+    first, _ = await run(world.player)
+    world.player.update = False
+    again, _ = await run(world.player)
+
+    assert (first, again) == (False, True) and world.pipe.calls == 2 and world.player.update is True

@@ -38,6 +38,7 @@ FALLBACK_SKIN = "muse_text"  # a skin de texto que entra quando o cartão não s
 DISC_MOTION_TTL_S = 60.0  # a animação do disco é relida do banco no máximo a cada isto (ou num redesenho pedido)
 
 _DISC_MOTION: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()  # player -> (disc_motion, lido em)
+_clock = time.monotonic  # trocável nos testes
 
 
 async def _np_guards(self, req):
@@ -140,7 +141,7 @@ def _station_logo(self):
 
 async def _disc_motion(self, *, fresh: bool = False):
     """A animação do disco do servidor, sem uma leitura do banco a cada atualização do player (``fresh`` = reler)."""
-    now = time.monotonic()
+    now = _clock()
     cached = _DISC_MOTION.get(self)
     if cached is not None and not fresh and now - cached[1] < DISC_MOTION_TTL_S:
         return cached[0]
@@ -244,7 +245,10 @@ async def _np_render(self, req, skin, data, key):
         return True  # um pedido mais novo deste player vai editar a mensagem
     if rendered is None or rendered.key is None:
         req.data = _text_fallback(self, data, retry=rendered is not None and rendered.busy)
-        self.last_data = payload_key(req.data)
+        text_key = payload_key(req.data)
+        if text_key == self.last_data and _will_edit(self, req):
+            return True  # o mesmo texto já está na mensagem (vaga ainda ocupada): o redesenho segue pedido
+        self.last_data = text_key
         return False
     if RENDER_STATES.get(self).upgrade_due:
         self.update = True  # GIF adiado, capa a caminho ou vaga ocupada: o updater redesenha (auto_update 0 não volta)

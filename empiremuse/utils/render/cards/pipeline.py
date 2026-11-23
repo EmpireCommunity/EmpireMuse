@@ -168,6 +168,15 @@ class CardPipeline:
         pixels = cover.pixels if cover is not None else None
         return CardArt(cover=pixels, logo=logo), pending
 
+    def _art_digest(self, art: CardArt) -> Optional[str]:
+        """A identidade da imagem do rótulo na chave do anexo: a capa, ou o logo da estação; ``None`` = o logo do bot. Um
+        logo de estação que chega depois do prazo muda a chave, e o próximo ciclo o desenha."""
+        if art.cover is not None:
+            return cover_digest(art.cover)
+        if art.logo is not None and art.logo is not self._bot_logo:
+            return cover_digest(art.logo)
+        return None
+
     async def render(
         self,
         player: Any,
@@ -196,7 +205,7 @@ class CardPipeline:
             last_cold_gif_at=state.last_cold_gif_at,
         )
         upgrade_due = choice.upgrade_due or pending
-        want = RenderedKey(spec, cover_digest(art.cover), choice.fmt)
+        want = RenderedKey(spec, self._art_digest(art), choice.fmt)
         shown = state.last
         if shown is not None and (want == shown or keeps_gif(shown, want)):
             self.states.replace(player, upgrade_due=upgrade_due if want == shown else pending)
