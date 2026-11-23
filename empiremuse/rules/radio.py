@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from empiremuse.rules.errors import RuleError
+from empiremuse.rules.radio_station import valid_station_id
 from empiremuse.rules.skins import LEGACY_RADIO_SKINS, legacy_radio_skin, look_from_legacy, valid_radio_look
 
 KIND_CUSTOM = "custom"
@@ -48,7 +49,6 @@ DEFAULT_SKIN = SKINS[0]
 _SNOWFLAKE = re.compile(r"[0-9]{1,20}")
 _FILTER_ID = re.compile(r"[A-Za-z0-9_:.\-]{1,48}")
 _RADIO_ID = re.compile(r"([0-9]{1,20}):([0-9]{1,20})")
-_CUSTOM_STATION_ID = re.compile(r"(?:[0-9a-f]{24}|g:[a-z][a-z0-9_]{1,23})")
 _STATION_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 
@@ -160,7 +160,7 @@ def check_source(kind: str, raw: object) -> dict[str, Any] | RuleError:
         return {}  # configurada (canal, bot e tipo) e ainda sem estação: pode existir, não pode ligar (``source_chosen``)
     if kind == KIND_CUSTOM:
         station_id = raw.get("station")
-        if set(raw) == {"station"} and isinstance(station_id, str) and _CUSTOM_STATION_ID.fullmatch(station_id):
+        if set(raw) == {"station"} and valid_station_id(station_id):
             return {"station": station_id}  # R5: a estação do servidor (``radio_stations``)
         playlist = raw.get("playlist")  # legado da R1: vale até a migração da subida trocar por ``{station}``
         if set(raw) != {"playlist"} or not isinstance(playlist, str):
