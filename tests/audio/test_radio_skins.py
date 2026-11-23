@@ -177,3 +177,18 @@ def test_without_the_muse_package_nothing_is_registered_and_nothing_is_logged(ca
         BotPool.load_muse_skins(pool)
 
     assert pool.player_skins == {} and caplog.text == ""
+
+
+@pytest.mark.regression
+def test_a_missing_import_inside_the_muse_package_goes_to_the_log_once(tmp_path, monkeypatch, caplog):
+    package = tmp_path / "fake_muse_broken_pkg"
+    package.mkdir()
+    (package / "__init__.py").write_text("import a_dependency_that_is_missing\n")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.setattr(client_module, "MUSE_SKINS_PACKAGE", "fake_muse_broken_pkg")
+    pool = SimpleNamespace(player_skins={}, player_static_skins={})
+
+    with caplog.at_level(logging.WARNING, logger=client_module.logger.name):
+        BotPool.load_muse_skins(pool)
+
+    assert pool.player_skins == {} and len(caplog.records) == 1 and "ModuleNotFoundError" in caplog.text

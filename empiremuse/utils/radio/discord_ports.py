@@ -359,15 +359,24 @@ class DiscordRadioPorts:
         self, bot: BotCore, guild: disnake.Guild, current: Radio, tr: Any, *, now: bool = False
     ) -> dict[str, Any]:
         """O painel da rádio AO VIVO (R6/R7): o retrato imutável (``live_snapshot``) vira o PNG do visor numa thread e os controles.
-        Custa, por edição (no máximo uma a cada ``live_ports.PANEL_EDIT_INTERVAL_S``): o logo em cache, um ``by_uuids`` e duas leituras das favoritas."""
+        Custa, por edição (no máximo uma a cada ``live_ports.PANEL_EDIT_INTERVAL_S``): o logo em cache, um ``by_uuids``, duas leituras das favoritas e a do documento global do servidor (``radio_skin``)."""
         from empiremuse.utils.music.app_emojis import emoji as app_emoji  # tarde: o módulo importa o cliente
         from empiremuse.utils.radio.panel import filter_select_options, visor_payload_async
         from empiremuse.utils.radio.snapshot import live_snapshot
 
+        from empiremuse.utils.db import DBModel
+
         hub = self.pool.radio
         guild_locale = getattr(guild, "preferred_locale", None)
+        guild_data = await bot.get_global_data(guild.id, db_name=DBModel.guilds)
         snapshot = await live_snapshot(
-            hub, current, self, hub.manager.runner(current.id), locale=tr.locale, logo=await self._logo(current)
+            hub,
+            current,
+            self,
+            hub.manager.runner(current.id),
+            locale=tr.locale,
+            logo=await self._logo(current),
+            guild_radio_skin=guild_data.get("radio_skin"),
         )
         favorites = await hub.favorites.list(current.guild_id)
         options = filter_select_options(
