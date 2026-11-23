@@ -96,21 +96,25 @@ def new_boot_report():
         return None
 
 
-def harden_process() -> None:
-    """Endurece o processo (``process_hardening``) antes de tudo, inclusive de qualquer processo filho. Tolerante como os ganchos:
-    um erro de import no código recém-atualizado não pode impedir o ``boot_guard``."""
+def harden_process() -> tuple[str, str]:
+    """Endurece o processo (``process_hardening``) antes de tudo, inclusive de qualquer processo filho, e devolve o status e o
+    detalhe da etapa para o relatório de subida (o log ainda não existe aqui). Tolerante como os ganchos: um erro de import no
+    código recém-atualizado não pode impedir o ``boot_guard``; vira ``warn`` e uma linha no stderr."""
     try:
-        from empiremuse.process_hardening import mark_non_dumpable
+        from empiremuse.process_hardening import hardening_step, mark_non_dumpable
 
-        mark_non_dumpable()
+        return hardening_step(mark_non_dumpable())
     except Exception as e:
         sys.stderr.write(f"[boot] endurecimento do processo não aplicado ({type(e).__name__})\n")
+        return "warn", f"endurecimento não aplicado ({type(e).__name__})"
 
 
 def main():
-    harden_process()
+    hardening = harden_process()
     install_log_hooks()
     report = new_boot_report()
+    if report is not None:
+        report.defer("Processo", *hardening)
     enter_runtime_dir(report)
     # Antes de importar o bot: um erro de import no código recém-atualizado não pode impedir a volta ao commit anterior.
     boot_guard.run(paths.get_runtime_dir(), paths.PROJECT_DIR, time.time())

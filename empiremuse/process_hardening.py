@@ -7,16 +7,17 @@ Efeitos que valem saber na operação:
 
 - o processo do bot não gera core dump;
 - anexar um depurador ou profiler ao processo do bot passa a exigir privilégio elevado (``CAP_SYS_PTRACE``);
-- os filhos voltam ao padrão do sistema no ``exec`` (a marcação é só deste processo).
+- um filho criado por ``fork`` herda a marcação até fazer ``exec``; no ``exec`` de um programa comum o kernel a desfaz
+  (hoje todo processo filho do bot faz ``exec``).
+
+O resultado vai para o relatório de subida (etapa ``Processo``, via ``hardening_step``): ``ok`` quando a marcação valeu
+ou não se aplica, ``warn`` quando falhou no Linux.
 """
 
 from __future__ import annotations
 
 import ctypes
-import logging
 import sys
-
-logger = logging.getLogger("empiremuse.boot")
 
 PR_GET_DUMPABLE = 3
 PR_SET_DUMPABLE = 4
@@ -41,16 +42,19 @@ def is_dumpable(platform: str = sys.platform) -> bool | None:
 
 
 def mark_non_dumpable(platform: str = sys.platform) -> bool:
-    """Marca o processo como não despejável. ``True`` se a marcação valeu; registra o resultado uma vez, em debug."""
+    """Marca o processo como não despejável. ``True`` se a marcação valeu; ``False`` fora do Linux ou se a chamada falhou."""
     if not platform.startswith("linux"):
-        logger.debug("Processo: marcação não despejável não se aplica (%s)", platform)
         return False
     try:
-        done = _prctl(PR_SET_DUMPABLE, 0) == 0
+        return _prctl(PR_SET_DUMPABLE, 0) == 0
     except OSError, AttributeError:
-        done = False
+        return False
+
+
+def hardening_step(done: bool, platform: str = sys.platform) -> tuple[str, str]:
+    """O status (``ok`` ou ``warn``) e o detalhe da etapa ``Processo`` no relatório de subida."""
+    if not platform.startswith("linux"):
+        return "ok", f"marcação não despejável não se aplica ({platform})"
     if done:
-        logger.debug("Processo marcado como não despejável")
-    else:
-        logger.debug("Processo: não foi possível marcar como não despejável")
-    return done
+        return "ok", "marcado como não despejável"
+    return "warn", "não foi possível marcar como não despejável"

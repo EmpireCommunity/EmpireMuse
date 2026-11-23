@@ -13,7 +13,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - `site-data.json`: o campo opcional `supporter_limited` marca os comandos que o bot recusa num servidor sem o acesso Limitado a Apoiadores (hoje `/radio on`, `/radio setup`, `/radio station` e o prefixo `radio on`), para o site mostrar o selo em /commands. Aditivo na versão 1 do formato.
 
 ### Segurança
-- Processo do bot endurecido na subida: no Linux ele é marcado como não despejável (`prctl(PR_SET_DUMPABLE, 0)`, `empiremuse/process_hardening.py`), antes de abrir qualquer processo filho. Fora do Linux não faz nada. Na operação: o processo do bot não gera core dump, e anexar um depurador ou profiler a ele passa a exigir privilégio elevado.
+- Processo do bot endurecido na subida: no Linux ele é marcado como não despejável (`prctl(PR_SET_DUMPABLE, 0)`, `empiremuse/process_hardening.py`), antes de abrir qualquer processo filho. Fora do Linux não faz nada. O resultado sai no relatório de subida (etapa `Processo`: ok, ou aviso se a marcação falhar). Na operação: o processo do bot não gera core dump, e anexar um depurador ou profiler a ele passa a exigir privilégio elevado.
 
 ### Corrigido
 - Cliente RPC do bot: uma conexão que cai no meio de uma resposta de PING não derruba mais o cliente em silêncio; ele fecha a conexão e reconecta como nas outras quedas.

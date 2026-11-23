@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from empiremuse import __main__ as main_module
 from empiremuse import process_hardening
 
 pytestmark = [
@@ -57,6 +58,27 @@ def test_the_bot_process_is_marked_non_dumpable():
 def test_outside_linux_it_is_a_no_op():
     assert process_hardening.mark_non_dumpable(platform="darwin") is False
     assert process_hardening.is_dumpable(platform="win32") is None
+
+
+@pytest.mark.parametrize(
+    ("done", "platform", "status"),
+    [(True, "linux", "ok"), (False, "linux", "warn"), (False, "darwin", "ok")],
+)
+def test_the_boot_report_gets_ok_or_warn_for_the_marking(done, platform, status):
+    assert process_hardening.hardening_step(done, platform)[0] == status
+
+
+@pytest.mark.parametrize("failure", ["refused", "broken"])
+def test_a_failed_marking_is_never_silent(monkeypatch, capsys, failure):
+    def broken():
+        raise ImportError
+
+    monkeypatch.setattr(process_hardening, "mark_non_dumpable", (lambda: False) if failure == "refused" else broken)
+
+    status, detail = main_module.harden_process()
+
+    assert status == "warn" and detail
+    assert ("[boot]" in capsys.readouterr().err) is (failure == "broken")
 
 
 @pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0, reason="precisa de um usuário sem privilégio")
