@@ -235,10 +235,10 @@ def test_only_the_standard_library_loads_before_the_sandbox():
 def test_killing_a_worker_ends_its_whole_group():
     """Um worker que deixou outro processo para trás: ``kill_worker`` encerra o grupo inteiro, não só o worker."""
     script = (
-        "import subprocess, sys, time\n"
-        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+        "import signal, subprocess, sys\n"
+        "child = subprocess.Popen([sys.executable, '-c', 'import signal; signal.pause()'])\n"
         "print(child.pid, flush=True)\n"
-        "time.sleep(60)\n"
+        "signal.pause()\n"
     )
     worker = subprocess.Popen(
         [sys.executable, "-I", "-c", script], stdout=subprocess.PIPE, text=True, start_new_session=True
@@ -263,7 +263,7 @@ def test_killing_a_worker_ends_its_whole_group():
 
 
 class _StuckProcess:
-    """Um worker falso que nunca responde: o prazo vence e o pai tem de encerrá-lo pelo ``kill_worker``."""
+    """Um worker falso que nunca responde: só o prazo do pai o tira da espera, e o pai tem de encerrá-lo pelo ``kill_worker``."""
 
     pid = 4_000_000
     returncode = None
@@ -274,7 +274,8 @@ class _StuckProcess:
         self.ended = asyncio.Event()
 
     async def _never(self, size):
-        raise TimeoutError  # o prazo venceu durante a leitura: sem relógio real no teste
+        await self.ended.wait()  # nunca responde: só o prazo do pai interrompe a leitura
+        return b""
 
     async def wait(self):
         await self.ended.wait()
@@ -296,12 +297,20 @@ async def test_the_deadline_hands_the_worker_to_kill_worker(monkeypatch):
     async def spawn(*args, **kwargs):
         return stuck
 
+    real_timeout, deadlines = asyncio.timeout, []
+
+    def expired_timeout(delay):
+        deadlines.append(delay)
+        return real_timeout(0)  # o prazo do pai, já vencido: vale sem esperar o relógio
+
     monkeypatch.setattr(sandbox, "landlock_abi", lambda: sandbox.MIN_ABI)
     monkeypatch.setattr(asyncio, "create_subprocess_exec", spawn)
     monkeypatch.setattr(sandbox, "kill_worker", kill_worker)
+    monkeypatch.setattr(asyncio, "timeout", expired_timeout)
     with pytest.raises(LogoError) as raised:
-        await decode_in_worker("PNG", b"x")
-    assert raised.value.code == "deadline" and killed == [stuck]
+        # sem o prazo no pai, a leitura nunca termina: a rede de segurança só existe para o teste falhar em vez de travar
+        await asyncio.wait_for(decode_in_worker("PNG", b"x"), 10)
+    assert raised.value.code == "deadline" and killed == [stuck] and deadlines == [logo_module.WORKER_TIMEOUT_S]
 
 
 @pytest.mark.critical
@@ -412,11 +421,21 @@ EPERM, ALLOW, KILL = 0x00050001, 0x7FFF0000, 0x80000000
         ("x86_64", 0xC000003E, 41, EPERM),
         ("x86_64", 0xC000003E, 425, EPERM),
         ("x86_64", 0xC000003E, 427, EPERM),
+        ("x86_64", 0xC000003E, 56, EPERM),  # clone
+        ("x86_64", 0xC000003E, 57, EPERM),  # fork
+        ("x86_64", 0xC000003E, 58, EPERM),  # vfork
+        ("x86_64", 0xC000003E, 435, EPERM),  # clone3
+        ("x86_64", 0xC000003E, 59, EPERM),  # execve
+        ("x86_64", 0xC000003E, 322, EPERM),  # execveat
         ("x86_64", 0xC000003E, 0x40000000 + 41, EPERM),  # a mesma chamada pela numeração x32
         ("x86_64", 0xC000003E, 0, ALLOW),
         ("x86_64", 0x40000003, 41, KILL),  # outra arquitetura na mesma chamada
         ("aarch64", 0xC00000B7, 198, EPERM),
         ("aarch64", 0xC00000B7, 426, EPERM),
+        ("aarch64", 0xC00000B7, 220, EPERM),  # clone
+        ("aarch64", 0xC00000B7, 435, EPERM),  # clone3
+        ("aarch64", 0xC00000B7, 221, EPERM),  # execve
+        ("aarch64", 0xC00000B7, 281, EPERM),  # execveat
         ("aarch64", 0xC00000B7, 41, ALLOW),
         ("aarch64", 0xC000003E, 198, KILL),
     ],
@@ -439,3 +458,19 @@ def test_the_parent_already_refuses_a_layout_that_exposes_the_app(monkeypatch):
 def test_without_resource_limits_the_sandbox_is_not_supported(monkeypatch):
     monkeypatch.setattr(sandbox, "resource", None)
     assert sandbox.supported() is False
+
+
+@needs_landlock
+@pytest.mark.critical
+@pytest.mark.regression
+def test_a_sandboxed_decoder_keeps_no_capability(tmp_path):
+    """Como root (localmente) o worker confinado fica sem nenhuma capability; sem root o teste continua valendo (zero também)."""
+    body = (
+        "import ctypes\n"
+        "print('confined' if sandbox.confine() else 'open')\n"
+        "header = sandbox._CapHeader(sandbox._CAP_VERSION_3, 0)\n"
+        "data = (sandbox._CapData * 2)()\n"
+        "ctypes.CDLL(None, use_errno=True).capget(ctypes.byref(header), data)\n"
+        "print('none' if not any(b.effective or b.permitted or b.inheritable for b in data) else 'kept')\n"
+    )
+    assert run_probe(tmp_path, body) == ["confined", "none"]

@@ -8,6 +8,8 @@ Só stdlib e ``ctypes`` (o worker o importa com ``python -I``, antes de qualquer
 - **seccomp:** nenhum socket novo, nenhum anel de E/S assíncrona do kernel, nenhum processo novo e nenhum programa executado (essas
   chamadas devolvem ``EPERM``, também para root), em ``x86_64`` e ``aarch64`` com Python de 64 bits; outra arquitetura recusa o sandbox.
 - ``RLIMIT_NPROC = 0`` (nenhum processo ou thread novo) e ``RLIMIT_FSIZE = 0`` (nenhum arquivo cresce).
+- **Capabilities:** todas zeradas (efetivas, permitidas, herdáveis e, quando o processo pode, o conjunto limite): mesmo como root o
+  worker fica sem privilégio nenhum.
 - **No pai:** ``start_new_session`` e, no prazo, o grupo inteiro morre (``kill_worker``).
 
 Política (``FAIL_CLOSED``): sem o sandbox completo, o worker não decodifica (sai com ``SANDBOX_EXIT``) e o pai nem abre o worker
@@ -78,6 +80,11 @@ _SYSTEM_LIBRARY_DIRS = ("/lib", "/lib64", "/usr/lib", "/usr/lib64")
 _SYSTEM_LIBRARY_FILES = ("/etc/ld.so.cache",)
 _APP_ROOT = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, os.pardir))
 
+# capabilities(7): a versão 3 da interface (dois blocos de 32 bits) e o descarte do conjunto limite
+_CAP_VERSION_3 = 0x20080522
+_PR_CAPBSET_DROP = 24
+_CAP_MAX = 63
+
 _reported = False
 
 
@@ -87,6 +94,14 @@ class _RulesetAttr(ctypes.Structure):
         ("handled_access_net", ctypes.c_uint64),
         ("scoped", ctypes.c_uint64),
     ]
+
+
+class _CapHeader(ctypes.Structure):
+    _fields_ = [("version", ctypes.c_uint32), ("pid", ctypes.c_int)]
+
+
+class _CapData(ctypes.Structure):
+    _fields_ = [("effective", ctypes.c_uint32), ("permitted", ctypes.c_uint32), ("inheritable", ctypes.c_uint32)]
 
 
 class _SockFprog(ctypes.Structure):
@@ -224,6 +239,23 @@ def _seccomp(machine: str) -> bool:
     return libc.prctl(ctypes.c_int(_PR_SET_SECCOMP), mode, ctypes.byref(fprog), zero, zero) == 0
 
 
+def _drop_capabilities() -> bool:
+    """Zera as capabilities deste processo e confere com ``capget``. O conjunto limite só sai com ``CAP_SETPCAP`` (root): sem ela o
+    processo já não tem o que tirar dali, e a falha desse passo é ignorada; a do ``capset`` não."""
+    libc = _libc()
+    zero = ctypes.c_ulong(0)
+    for cap in range(_CAP_MAX + 1):
+        libc.prctl(ctypes.c_int(_PR_CAPBSET_DROP), ctypes.c_ulong(cap), zero, zero, zero)
+    header = _CapHeader(_CAP_VERSION_3, 0)
+    if libc.capset(ctypes.byref(header), (_CapData * 2)()) != 0:
+        return False
+    current = (_CapData * 2)()
+    header = _CapHeader(_CAP_VERSION_3, 0)
+    if libc.capget(ctypes.byref(header), current) != 0:
+        return False
+    return all(not (block.effective or block.permitted or block.inheritable) for block in current)
+
+
 def _limits() -> None:
     if resource is None:
         raise OSError("sem resource")
@@ -232,7 +264,8 @@ def _limits() -> None:
 
 
 def confine() -> bool:
-    """Aplica os limites, o Landlock e o filtro de chamadas a ESTE processo, sem volta. ``True`` só com tudo aplicado; nunca levanta."""
+    """Aplica os limites, o Landlock, o descarte das capabilities e o filtro de chamadas a ESTE processo, sem volta. ``True`` só com tudo
+    aplicado; nunca levanta."""
     try:
         _limits()
         abi, machine = landlock_abi(), platform.machine()
@@ -241,7 +274,7 @@ def confine() -> bool:
         paths = python_paths()
         if exposes_app(paths):
             return False
-        return _landlock(abi, paths) and _seccomp(machine)
+        return _landlock(abi, paths) and _drop_capabilities() and _seccomp(machine)
     except Exception:  # noqa: BLE001 - qualquer falha é "não confinado", e a política decide
         return False
 
