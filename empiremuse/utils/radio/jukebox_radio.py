@@ -242,7 +242,7 @@ class JukeboxRadio(JukeboxStationMixin):
         member = (guild.get_member(member.id) if guild is not None else None) or member
         async with player.radio_lock:
             if player.is_closing:
-                raise Refused("radio.owner.unavailable")
+                raise Refused("jukebox.radio.player_closed")
             # dentro do lock, de novo: quem pediu está AGORA na call deste player (Minor 3); a P12 olha essa call
             channel_id = self._requester_channel(member, player)
             if switch_wait(player.radio_switched_at, self.now()) > 0:
@@ -358,7 +358,7 @@ class JukeboxRadio(JukeboxStationMixin):
                 player
             )  # parar ANTES de trocar de nó: nada da faixa velha é reenviado ao nó local (m1)
             if player.radio_mode is not mode:
-                raise Refused("radio.owner.unavailable")  # o player foi destruído durante a espera (m5)
+                raise Refused("jukebox.radio.player_closed")  # o player foi destruído durante a espera (m5)
             await self._open(player, mode, station)
         except Refused:
             await self._abort(player, mode)
@@ -521,10 +521,11 @@ class JukeboxRadio(JukeboxStationMixin):
         Volta normalmente quando o pedido pode seguir; ``Refused`` quando não pode (o voto foi aberto, ou a recusa)."""
         member = player.guild.get_member(inter.author.id) or inter.author
         async with player.radio_lock:
+            # antes do ``radio_mode``: ``forget`` zera o modo de um player destruído na espera do lock (Crivo S-2)
+            if player.is_closing:
+                raise Refused("jukebox.radio.player_closed")
             if player.radio_mode is None:
                 return
-            if player.is_closing:
-                raise Refused("radio.owner.unavailable")
             # o clique pode vir até 45 s depois do pedido (passo de confirmação): quem pediu ainda está na call do player (Sentinela N1)
             self._requester_channel(member, player)
             decision = gate(await self._actor(member, player), self.state_of(player), Target.LEAVE)

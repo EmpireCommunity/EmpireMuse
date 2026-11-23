@@ -1355,6 +1355,7 @@
   "jukebox.radio.leave.cancelled": "Pedido cancelado. A rádio continua.",
   "jukebox.radio.leave.timeout": "O prazo para confirmar acabou. A rádio continua.",
   "jukebox.radio.leave.not_author": "Só quem fez o pedido pode responder.",
+  "jukebox.radio.player_closed": "O player da Jukebox foi encerrado, então o pedido não seguiu.",
   "jukebox.radio.other_call": "Entre na call em que a Jukebox está tocando para trocar a rádio.",
   "jukebox.radio.no_change_node": "No modo rádio a Jukebox fica no servidor de música local. Pare a rádio antes de trocar de servidor.",
   "jukebox.select.server.label": "Rádios do Servidor",
