@@ -11,7 +11,6 @@ formulário vem no ``values`` (o checkbox desmarcado é ``false``, não a ausên
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass
 from typing import Any, Mapping, NamedTuple, Optional, Sequence
 

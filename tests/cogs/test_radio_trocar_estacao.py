@@ -588,6 +588,7 @@ class TestPickerUsesTheRadioOfNow:
             raise DirectoryError("fora")
 
         w.hub.directory.by_uuid_strict = down
+        w.hub.directory.by_uuid = AsyncMock(return_value=None)  # a leitura tolerante: queda = "não existe"
         confirm = click(PANEL_MENU_ID)
 
         await view._on_confirm(confirm)
