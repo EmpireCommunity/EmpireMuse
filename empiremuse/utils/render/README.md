@@ -38,7 +38,8 @@ Os fatos que a imagem pode mostrar (`CardSpec`) e as regras puras (formato, anim
 - O teto do GIF é conferido **antes** de alocar os 30 ladrilhos (`cards/layout.gif_fits`: cartão e caixa do disco
   medidos); um GIF acima de `GIF_MAX_BYTES`, ou que falha ao montar, sai como PNG.
 - Um desenho por player: um pedido mais novo do mesmo player torna o que espera a vaga velho, e o velho sai sem desenhar;
-  o que já desenhou e voltou da vaga velho é descartado sem gravar o estado.
+  o que já desenhou e voltou da vaga velho é descartado sem gravar o estado. Um pedido que não desenha (a saída cedo
+  do `np_steps`, a troca para uma skin sem cartão) também supera os anteriores (`supersede`).
 - Qualquer falha do cartão (montar o `CardSpec`, ler a configuração, desenhar) cai na `muse_text`; o log leva só o id da
   skin e o tipo do erro. `forget` apaga o anexo e o GIF adiado, nunca o relógio do último GIF frio do player.
 - O logo da estação espera no máximo `COVER_WAIT_S`; depois o cartão sai com o logo do bot e o redesenho fica pedido. O
