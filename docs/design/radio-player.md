@@ -134,10 +134,44 @@ Sem título do fluxo, o painel mostra o nome da estação no lugar do título. L
 
 ## 5. Skins
 
-Uma skin é um módulo em `empiremuse/utils/music/skins/radio_player/` com `load()` devolvendo `RadioSkin(name, preview, tokens)`;
-`tokens` precisa ter todos os nomes de `TOKEN_NAMES` (teste em `tests/cogs/test_radio_visor.py`). `load_radio_skin(nome)` devolve
-a padrão para um nome desconhecido (o valor vem do documento do servidor). Para criar uma skin nova: copie `black.py`, troque as
-cores e a prévia, acrescente o nome em `SKIN_NAMES`. A escolha por servidor fica no documento da rádio (`skin`, padrão `black`).
+Uma skin de cores é um módulo em `empiremuse/utils/music/skins/radio_player/` com `load()` devolvendo
+`RadioSkin(name, preview, tokens)`; `tokens` precisa ter todos os nomes de `TOKEN_NAMES` (teste em
+`tests/cogs/test_radio_visor.py`). `load_radio_skin(nome)` devolve a padrão para um nome desconhecido (o valor vem do
+documento do servidor). Para criar uma paleta nova: copie `black.py`, troque as cores e a prévia, acrescente o nome em
+`SKIN_NAMES`.
+
+### 5.1 Skins 2.3 (`/skins`)
+
+- **Lista:** `rules/skins.RADIO_SKINS` é a única fonte: `portrait_black` e `portrait_white` (o Retrato, o visor na
+  vertical, com as paletas `black` e `white`) e `text` (a Rádio Texto). `black` e `white` continuam válidos como o visor
+  horizontal de antes.
+- **Skin efetiva:** `rules/skins.radio_look(look, radio_skin)`: a da própria rádio (campo `look` do documento da rádio),
+  senão a de todas as rádios do servidor (`radio_skin` no documento global `guilds`), senão `portrait_black`. O campo
+  antigo `skin` (`black`/`white`) continua gravado para um rollback.
+- **Despacho** (`utils/radio/panel.skin_payload_async`): a `text` sai em texto (`text_payload`), sem a vaga de render; as
+  de imagem saem por `visor_payload_async(..., render=...)`, com o desenho de quem chama (`render(snapshot, tr) -> PNG`; o
+  Retrato, ou o visor quando `render` falta). O anexo (`visor.png`), a vaga única e os controles são os mesmos em qualquer
+  desenho.
+- **Controles:** `visor_components` monta as duas fileiras de botões e os dois selects para todas as skins; trocar de skin
+  nunca muda um `custom_id`.
+
+### 5.2 Rádio Texto v2 (`text`)
+
+`radio_player/text.py` monta só o embed (sem imagem gerada), irmão da Jukebox Texto v2:
+
+- autor `AO VIVO · Rádio · #call` (o estado vem de `visor.live`/`visor.muted`/`visor.offline`; a personalizada diz
+  "Estação do servidor"); título = o nome da estação; a música em negrito com o artista, só ao vivo;
+- `-#` com o país e "entrou no ar <t:R>"; os chips com o emoji fora e a palavra em código (posição, taxa e codec,
+  qualidade com cor **e** palavra, volume); mudo e fora do ar viram o primeiro chip, e fora do ar ganha "nova tentativa
+  <t:R>";
+- `-#` com o filtro (ou Favoritas do servidor), a favorita e a reserva; na personalizada, o tipo no lugar da reserva;
+- `### Tocou há pouco` (até 5 títulos ICY, do mais novo ao mais antigo) e `### A seguir · n` (até 4 estações);
+- miniatura = o logo da estação (anexo `logo.png`, ou o ícone genérico); imagem = a faixa de luz `nebulosa_wave.gif` por
+  URL; rodapé `visor.footer`.
+
+O painel de texto sempre leva um anexo (o logo), então a edição troca os anexos e o `visor.png` de antes some. Texto de
+fora: na rádio ao vivo o nome, o país e os títulos ICY já vêm guardados escapados (`stored_text`); na personalizada o
+nome e a faixa chegam crus (`external_text`); nada sai com link ou menção. Textos `radio.text.*` e `visor.*` no catálogo.
 
 ## 6. Assets
 
