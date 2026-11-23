@@ -126,7 +126,8 @@ async def test_a_passing_station_vote_redoes_the_checks_then_drops_the_queue(wor
     assert key == "jukebox.radio.vote.counted"
     assert player.station.ref == ROCK and not player.queue
     closed = player.messages[0].edit.await_args.kwargs
-    assert closed["content"] == "jukebox.radio.vote.passed_station" and closed["components"] == []
+    # Bússola (T-J2B-TEXTS): com música tocando a estação começa depois dela, e o texto diz isso
+    assert closed["content"] == "jukebox.radio.vote.passed_station_next" and closed["components"] == []
 
 
 @pytest.mark.critical
@@ -422,6 +423,39 @@ async def test_a_ref_the_chooser_never_offered_is_ignored_and_another_member_can
     stranger = pick("c" * 24, author=99)
     assert await view.interaction_check(stranger) is False
     stranger.response.send_message.assert_awaited_once_with("jukebox.radio.leave.not_author", ephemeral=True)
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("key", "left"), [("jukebox.station.empty", 2), ("jukebox.station.not_found", 1)])
+async def test_a_station_that_cannot_play_becomes_a_note_and_the_chooser_stays_open(key, left):
+    """Bússola (T-J2B-TEXTS, desvio 1): a recusa de UMA estação não fecha o seletor; a que sumiu do servidor sai da lista."""
+    view, jukebox = chooser()
+    jukebox.request_station.side_effect = Refused(key)
+    view.render()
+    click = pick("c" * 24)
+    await view._on_select(click)
+    shown = click.edit_original_message.await_args.kwargs
+    assert shown["content"] == key and shown["view"] is view and not view.is_finished()
+    assert view.chosen is None and len(view.children[0].options) == left + 2  # as estações e os dois grupos de gêneros
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    ("count", "key"),
+    [
+        (0, "jukebox.select.server.description_none"),
+        (1, "jukebox.select.server.description"),
+        (3, "jukebox.select.server.description"),
+    ],
+)
+def test_the_server_entry_never_says_zero_stations(count, key):
+    """Bússola (T-J2B-TEXTS): "as 0 estações" saía num servidor só com os gêneros prontos."""
+    seen = []
+    jukebox_ui.server_description(lambda k, **fields: seen.append((k, fields)) or k, count)
+    assert seen == [(key, {} if count == 0 else {"count": count})]
 
 
 @pytest.mark.critical

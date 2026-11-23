@@ -30,6 +30,8 @@ GROUP_PREFIX = "f:"
 BACK_VALUE = "f:back"
 GROUP_EMOJI = {"international": "🌎", "brazilian": "🇧🇷"}
 NAME_LIMIT = 80
+# recusas de UMA estação (sumiu do servidor ou está sem faixas): viram nota no mesmo seletor, que segue aberto para escolher outra
+STAY_OPEN = frozenset({"jukebox.station.not_found", "jukebox.station.empty"})
 
 Preview = Callable[
     [disnake.MessageInteraction], Awaitable[tuple[bool, bool, Optional[str]]]
@@ -191,9 +193,22 @@ class StationChooser(disnake.ui.View):
             key, fields = "radio.owner.unavailable", {}
         if "station" in fields:
             fields = {**fields, "station": jukebox_ui.station_md(fields["station"])}
+        if key in STAY_OPEN:
+            await self._choose_again(interaction, key, fields)
+            return
         self.stop()
         try:
             await interaction.edit_original_message(content=self.tr(key, **fields), view=None)
+        except Exception as error:  # noqa: BLE001
+            logger.warning("Resposta do seletor de estações não editada (%s)", type(error).__name__)
+
+    async def _choose_again(self, interaction: disnake.MessageInteraction, key: str, fields: dict[str, Any]) -> None:
+        """A recusa entra como nota no lugar do título e o select volta; a estação que sumiu sai da lista."""
+        if key == "jukebox.station.not_found":
+            self.stations = [station for station in self.stations if station.id != self.chosen]
+        self.chosen = None
+        try:
+            await interaction.edit_original_message(**self.render(self.tr(key, **fields)))
         except Exception as error:  # noqa: BLE001
             logger.warning("Resposta do seletor de estações não editada (%s)", type(error).__name__)
 

@@ -24,6 +24,7 @@ from empiremuse.rules.radio_shuffle import Track
 from empiremuse.rules.radio_station import is_genre, valid_station_id
 from empiremuse.rules.text import external_text
 from empiremuse.utils.radio.custom_source import (
+    FAIL_STREAK_MAX,
     CustomSession,
     EmptyStation,
     Loaded,
@@ -335,7 +336,8 @@ class JukeboxStationMixin:
 
             try:
                 await player.text_channel.send(
-                    jukebox_ui.station_ended(player.tr, active.name), allowed_mentions=disnake.AllowedMentions.none()
+                    jukebox_ui.station_ended(player.tr, active.name, FAIL_STREAK_MAX),
+                    allowed_mentions=disnake.AllowedMentions.none(),
                 )
             except Exception as error:  # noqa: BLE001 - o aviso é conveniência; só o tipo vai ao log
                 logger.warning("Aviso de estação encerrada não enviado (%s)", type(error).__name__)

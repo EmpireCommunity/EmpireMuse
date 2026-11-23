@@ -761,9 +761,10 @@ class JukeboxRadio(JukeboxStationMixin):
                 found = await self._station_of(player.guild.id, vote.uuid)
                 loaded = await self._station_pool(player, found)
                 name = self.station_name(tr, found)
-                if await self._start_station(player, found, loaded, name=name, starter_id=vote.author_id):
+                now = await self._start_station(player, found, loaded, name=name, starter_id=vote.author_id)
+                if now:
                     self._spawn(player.process_next())  # fora do lock: o sorteio da 1ª faixa não segura o voto
-                text = jukebox_ui.vote_passed_station(tr, name)
+                text = jukebox_ui.vote_passed_station(tr, name, now=now)
             else:
                 await self._to_idle(player)
                 text = jukebox_ui.vote_passed_leave(tr, mention)

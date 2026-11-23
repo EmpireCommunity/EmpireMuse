@@ -100,8 +100,10 @@ def vote_passed_live(tr: Tr, station_name: object) -> str:
     return tr("jukebox.radio.vote.passed_live", station=station_md(station_name))
 
 
-def vote_passed_station(tr: Tr, station_name: object) -> str:
-    return tr("jukebox.radio.vote.passed_station", station=station_md(station_name))
+def vote_passed_station(tr: Tr, station_name: object, *, now: bool) -> str:
+    """Quando a estação toca (A5): já, ou só depois da música atual."""
+    key = "jukebox.radio.vote.passed_station_now" if now else "jukebox.radio.vote.passed_station_next"
+    return tr(key, station=station_md(station_name))
 
 
 def vote_passed_leave(tr: Tr, mention: str) -> str:
@@ -189,13 +191,21 @@ def server_entry(tr: Tr, count: int) -> disnake.SelectOption:
         label=fit(tr("jukebox.select.server.label"), 100),
         value=SERVER_VALUE,
         emoji="🎙️",
-        description=fit(tr("jukebox.select.server.description", count=max(0, int(count))), 100),
+        description=fit(server_description(tr, count), 100),
     )
 
 
-def station_ended(tr: Tr, station_name: object) -> str:
-    """A estação parou sozinha (5 faixas seguidas sem tocar, §2.6): uma mensagem no canal do player, sem menção."""
-    return tr("jukebox.station.ended", station=station_md(station_name))
+def server_description(tr: Tr, count: int) -> str:
+    """A descrição da entrada: sem estação própria só os gêneros prontos (a entrada aparece mesmo assim); senão o plural do catálogo."""
+    count = max(0, int(count))
+    if count == 0:
+        return tr("jukebox.select.server.description_none")
+    return tr("jukebox.select.server.description", count=count)
+
+
+def station_ended(tr: Tr, station_name: object, failures: int) -> str:
+    """A estação parou sozinha (``failures`` faixas seguidas sem tocar, §2.6): uma mensagem no canal do player, sem menção."""
+    return tr("jukebox.station.ended", station=station_md(station_name), count=failures)
 
 
 def station_warning(tr: Tr, *, station_name: object, queued: bool, radio_name: object = None) -> str:
