@@ -1,8 +1,9 @@
 """As fontes das skins de imagem: arquivos conferidos por SHA-256, fontes variáveis por eixo e reserva por caractere.
 
 - **Arquivos:** só os de ``assets/fonts/`` listados em ``MANIFEST`` (origem, commit e hash no ``assets/fonts/README.md``).
-  Cada arquivo é conferido UMA vez, na primeira carga; hash diferente ou arquivo fora da lista = ``FontIntegrityError``
-  (nunca uma fonte não conferida). Nada é baixado em runtime.
+  Cada arquivo é lido e conferido UMA vez, na primeira carga; hash diferente ou arquivo fora da lista =
+  ``FontIntegrityError`` (nunca uma fonte não conferida). Toda fonte, de qualquer peso e tamanho, sai desses bytes
+  conferidos em memória, nunca de uma nova leitura do arquivo. Nada é baixado em runtime.
 - **Pesos:** uma ``FreeTypeFont`` por ``(arquivo, peso, tamanho)``, com a variação aplicada uma vez, por NOME de eixo
   (``Weight``; os outros eixos ficam no padrão da fonte), e nunca mudada depois. O peso é limitado ao intervalo do eixo.
 - **Reserva por caractere:** a fonte da skin, depois a Noto Sans (latim estendido, grego, cirílico). Caractere sem glifo
@@ -17,6 +18,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import struct
 import unicodedata
 from collections.abc import Iterable
@@ -138,27 +140,34 @@ class FontBook:
         self.raqm = features.check("raqm") if raqm is None else raqm  # uma vez, nunca presumido
         self.layout = ImageFont.Layout.RAQM if self.raqm else ImageFont.Layout.BASIC
         self._points: dict[str, frozenset[int]] = {}
+        self._data: dict[str, bytes] = {}  # os bytes conferidos; o Pillow os usa sem copiar
         self._fonts: dict[tuple[str, int, int], ImageFont.FreeTypeFont] = {}
 
     def _verified(self, name: str) -> frozenset[int]:
         if (points := self._points.get(name)) is not None:
             return points
+        self._verified_bytes(name)
+        return self._points[name]
+
+    def _verified_bytes(self, name: str) -> bytes:
+        if (data := self._data.get(name)) is not None:
+            return data
         expected = self._manifest.get(name)
         if expected is None:
             raise FontIntegrityError(f"fonte fora da lista: {name}")
         data = (self._dir / name).read_bytes()
         if hashlib.sha256(data).hexdigest() != expected:
             raise FontIntegrityError(f"hash diferente do registrado: {name}")
-        points = self._points[name] = cmap_points(data)
-        return points
+        self._points[name] = cmap_points(data)
+        self._data[name] = data
+        return data
 
     def font(self, name: str, weight: int, size: int) -> ImageFont.FreeTypeFont:
         """A fonte ``name`` no ``weight`` (limitado ao eixo) e ``size`` px, em cache; o arquivo é conferido antes."""
         key = (name, int(weight), int(size))
         if (cached := self._fonts.get(key)) is not None:
             return cached
-        self._verified(name)
-        font = ImageFont.truetype(str(self._dir / name), key[2], layout_engine=self.layout)
+        font = ImageFont.truetype(io.BytesIO(self._verified_bytes(name)), key[2], layout_engine=self.layout)
         axes = font.get_variation_axes()
         vector = []
         for axis in axes:

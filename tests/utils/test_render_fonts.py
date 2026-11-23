@@ -14,6 +14,7 @@ from empiremuse.utils.render.fonts import (
     NOTO,
     RUNS_MAX,
     UNBOUNDED,
+    WEIGHT_AXIS,
     FontBook,
     FontIntegrityError,
     draw_runs,
@@ -28,16 +29,27 @@ def book(**kwargs):
 
 
 def owners(result):
-    return [(run.text, run.font.path.rsplit("/", 1)[-1]) for run in result.runs]
+    families = {"Figtree": FIGTREE, "Noto Sans": NOTO, "Unbounded": UNBOUNDED}
+    return [(run.text, families[run.font.getname()[0]]) for run in result.runs]
 
 
 # ---------------------------------------------------------------------- integridade
 
 
-def test_every_registered_file_loads_with_the_recorded_hash():
-    shelf = book()
-    for name in MANIFEST:
-        assert shelf.font(name, 600, 20).path.endswith(name)
+@pytest.mark.parametrize("name", list(MANIFEST))
+def test_every_registered_file_loads_with_the_recorded_hash_and_has_a_weight_axis(name):
+    font = book().font(name, 600, 20)
+
+    assert WEIGHT_AXIS in [axis["name"] for axis in font.get_variation_axes()]
+
+
+def test_a_file_swapped_after_the_first_load_never_changes_what_loads(tmp_path):
+    shutil.copy(FONTS_DIR / FIGTREE, tmp_path / FIGTREE)
+    shelf = book(directory=tmp_path)
+    shelf.font(FIGTREE, 600, 20)
+    shutil.copy(FONTS_DIR / NOTO, tmp_path / FIGTREE)  # outro conteúdo no mesmo caminho
+
+    assert shelf.font(FIGTREE, 700, 31).getname()[0] == "Figtree"  # novo peso e tamanho: ainda os bytes conferidos
 
 
 @pytest.mark.parametrize("tamper", ["byte", "unlisted"])
