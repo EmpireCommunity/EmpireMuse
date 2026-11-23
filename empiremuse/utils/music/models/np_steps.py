@@ -7,6 +7,7 @@ import asyncio
 import io
 import itertools
 import random
+import sys
 import time
 import weakref
 from itertools import cycle
@@ -232,11 +233,12 @@ async def _np_render(self, req, skin, data, key):
         RENDER_STATES.forget(self)  # mensagem nova ou redesenho pedido: o anexo antigo não vale
     shown = RENDER_STATES.get(self)
     try:
+        pipe = card_pipeline(self.bot.config["COVER_HOSTS"])
+        pipe.supersede(self)  # este pedido é o mais novo: um desenho anterior ainda na vaga não edita depois dele
         spec = await _card_spec(self, skin, fresh=redraw)
         unchanged = shown.last is not None and shown.last.spec == spec and not shown.upgrade_due
         if unchanged and self.last_data == _shown_marker(key, shown.last, spec):
             return True
-        pipe = card_pipeline(self.bot.config["COVER_HOSTS"])
         rendered = await pipe.render(self, skin.card, spec, self.tr, station_logo=_station_logo(self))
     except Exception as error:  # noqa: BLE001 - o player nunca fica sem mensagem (contrato §2.2)
         _card_failed(skin, error)
@@ -336,6 +338,9 @@ async def _np_data(self, req):
             return True
         return False
 
+    pipeline = sys.modules.get("empiremuse.utils.render.cards.pipeline")  # sem o módulo carregado, nada desenha
+    if pipeline is not None:
+        pipeline.supersede(self)  # um cartão ainda desenhando para a skin anterior não edita depois do texto
     if RENDER_STATES.get(self).last is not None:
         drop_card(self, data)  # de uma skin de imagem para uma de texto na mesma mensagem: o cartão sai
     elif key == self.last_data:

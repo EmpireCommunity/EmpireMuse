@@ -52,6 +52,9 @@ class Pipe:
         self.keep = False
         self.error = None
 
+    def supersede(self, player):
+        pass
+
     async def render(self, player, card, spec, tr, *, station_logo=None):
         self.calls += 1
         if self.error is not None:
@@ -540,11 +543,58 @@ async def test_closing_the_player_drops_a_card_that_was_on_the_message(had_card)
 
 @pytest.mark.asyncio
 @pytest.mark.regression
-async def test_a_busy_slot_with_no_card_on_screen_does_not_repeat_the_same_text_edit(world):
+@pytest.mark.parametrize("message", ["same", "new"])
+async def test_a_busy_slot_with_no_card_on_screen_does_not_repeat_the_same_text_edit(world, message):
     world.pipe.no_card = True
+    if message == "new":  # o invoke_np vai mandar outra mensagem (forçado e a do player não é a última do canal)
+        world.player.is_last_message = lambda: False
 
-    first, _ = await run(world.player)
+    async def run_once():
+        req = SimpleNamespace(interaction=None, force=message == "new", data=None)
+        return await np_steps._np_data(world.player, req)
+
+    first = await run_once()
     world.player.update = False
-    again, _ = await run(world.player)
+    again = await run_once()
 
-    assert (first, again) == (False, True) and world.pipe.calls == 2 and world.player.update is True
+    assert (first, again) == (False, message == "same") and world.pipe.calls == 2 and world.player.update is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+@pytest.mark.parametrize("newer_request", ["same_card_exits_early", "text_skin"])
+async def test_a_request_that_does_not_draw_supersedes_a_drawing_still_in_the_slot(monkeypatch, newer_request):
+    import asyncio
+
+    from tests.utils.test_card_pipeline import Covers, DrawnThenWait
+    from tests.utils.test_render_cards import RecordingBook, logo_png
+
+    slot = DrawnThenWait()
+    pipe = pipeline.CardPipeline(Covers(), slot=slot, book=RecordingBook(), clock=lambda: 100.0, bot_logo=logo_png())
+    monkeypatch.setattr(pipeline, "card_pipeline", lambda _hosts: pipe)
+    monkeypatch.setattr(pipeline, "_PIPELINE", pipe)
+    playing = base_spec(skin="muse_slim_black", motion=False)
+    spec = {"value": playing}
+
+    async def card_spec(_player, _skin, **_kw):
+        return spec["value"]
+
+    monkeypatch.setattr(np_steps, "_card_spec", card_spec)
+    player = Player(ImageSkin())
+    await run(player)
+    shown = RENDER_STATES.get(player).last
+    slot.after = asyncio.Event()
+    spec["value"] = base_spec(skin="muse_slim_black", motion=False, volume=10)  # A: pausar (desenha)
+    older = asyncio.ensure_future(run(player))
+    for _ in range(5):
+        await asyncio.sleep(0)
+    spec["value"] = playing  # B: retomar, igual ao que está na tela: sai cedo
+    if newer_request == "text_skin":  # B: a skin mudou para uma de texto
+        player.skin = "muse_text"
+
+    newer, _ = await run(player)
+    slot.after.set()
+    old, _ = await older
+
+    assert newer is (newer_request == "same_card_exits_early") and old is True and slot.runs == 2
+    assert RENDER_STATES.get(player).last == (shown if newer_request == "same_card_exits_early" else None)
