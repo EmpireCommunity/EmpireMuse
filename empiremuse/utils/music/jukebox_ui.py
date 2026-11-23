@@ -18,6 +18,7 @@ from empiremuse.rules.radio_mode import Target
 from empiremuse.rules.text import external_text, stored_text
 
 LIVE_VALUE = "jb:live"
+SERVER_VALUE = "jb:server"
 VOTE_PREFIX = "jukebox_radio_vote:"
 NAME_LIMIT = 80
 TITLE_LIMIT = 120
@@ -28,6 +29,12 @@ Tr = Callable[..., str]
 def station_md(name: object) -> str:
     """O nome da estação para um texto com markdown (embed, mensagem): escapado uma vez, sem link nem menção."""
     return stored_text(name, NAME_LIMIT) or "—"
+
+
+def server_station_md(name: object) -> str:
+    """O nome de uma estação do servidor ou de um gênero (guardado SEM escape) para um texto com markdown: escapado aqui, sem link nem menção.
+    ``station_md`` é para o nome do diretório, que já vem escapado (desfazer o escape de um nome cru perderia uma barra, como em "AC\\DC")."""
+    return external_text(name, NAME_LIMIT) or "—"
 
 
 def live_entry(tr: Tr) -> disnake.SelectOption:
@@ -68,6 +75,15 @@ def vote_payload(
     deadline = f"<t:{int(expires_at)}:R>"
     if target is Target.LEAVE:
         text = tr("jukebox.radio.vote.leave_text", member=member, votes=votes, needed=needed, deadline=deadline)
+    elif target is Target.STATION:
+        text = tr(
+            "jukebox.radio.vote.station_text",
+            member=member,
+            station=server_station_md(station_name),
+            votes=votes,
+            needed=needed,
+            deadline=deadline,
+        )
     else:
         text = tr(
             "jukebox.radio.vote.text",
@@ -88,6 +104,12 @@ def vote_payload(
 
 def vote_passed_live(tr: Tr, station_name: object) -> str:
     return tr("jukebox.radio.vote.passed_live", station=station_md(station_name))
+
+
+def vote_passed_station(tr: Tr, station_name: object, *, now: bool) -> str:
+    """Quando a estação toca (A5): já, ou só depois da música atual."""
+    key = "jukebox.radio.vote.passed_station_now" if now else "jukebox.radio.vote.passed_station_next"
+    return tr(key, station=server_station_md(station_name))
 
 
 def vote_passed_leave(tr: Tr, mention: str) -> str:
@@ -164,3 +186,53 @@ def leave_confirm(
         disabled=disabled,
     )
     return {"content": content, "components": [first, cancel]}
+
+
+# ---------------------------------------------------------------------- estação (J2b, A5)
+
+
+def server_entry(tr: Tr, count: int) -> disnake.SelectOption:
+    """A entrada fixa "📻 Rádios do Servidor" (A1/A5): as estações do servidor e os gêneros prontos."""
+    return disnake.SelectOption(
+        label=fit(tr("jukebox.select.server.label"), 100),
+        value=SERVER_VALUE,
+        emoji="🎙️",
+        description=fit(server_description(tr, count), 100),
+    )
+
+
+def server_description(tr: Tr, count: int) -> str:
+    """A descrição da entrada: sem estação própria só os gêneros prontos (a entrada aparece mesmo assim); senão o plural do catálogo."""
+    count = max(0, int(count))
+    if count == 0:
+        return tr("jukebox.select.server.description_none")
+    return tr("jukebox.select.server.description", count=count)
+
+
+def station_ended(tr: Tr, station_name: object, failures: int) -> str:
+    """A estação parou sozinha (``failures`` faixas seguidas sem tocar, §2.6): uma mensagem no canal do player, sem menção."""
+    # ``tracks``, não ``count``: com ``count`` o tradutor procura as formas de plural e o texto sairia como a chave crua
+    return tr("jukebox.station.ended", station=server_station_md(station_name), tracks=failures)
+
+
+def station_warning(tr: Tr, *, station_name: object, queued: bool, radio_name: object = None) -> str:
+    """O aviso antes de "Tocar estação" (A5), mostrado ANTES do clique; a porta é refeita no clique."""
+    if radio_name is not None:
+        return tr("jukebox.station.warn.radio", radio=station_md(radio_name), station=server_station_md(station_name))
+    if queued:
+        return tr("jukebox.station.warn.queue", station=server_station_md(station_name))
+    return ""
+
+
+def autoplay_label(player: Any) -> str:
+    """O rótulo do botão de autoplay do player: "📻 Estação: {nome}" com a estação ligada (A5), senão o de sempre. Lê só a visão (§1.5.1)."""
+    jukebox = getattr(getattr(getattr(getattr(player, "bot", None), "pool", None), "radio", None), "jukebox", None)
+    view = jukebox.station_view(player) if jukebox is not None else None
+    if view is not None:
+        return player.tr("jukebox.station.autoplay_label", station=external_text(view.name, NAME_LIMIT, markdown=False))
+    return player.tr("player.disable_autoplay.label") if player.autoplay else player.tr("player.enable_autoplay.label")
+
+
+def station_line(tr: Tr, view: Any) -> str:
+    """A linha "📻 Estação: {nome}" do Tocando agora com a estação ligada (A6). ``view`` = ``StationView``."""
+    return tr("jukebox.station.autoplay_label", station=server_station_md(view.name))

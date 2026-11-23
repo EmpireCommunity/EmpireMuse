@@ -11,12 +11,10 @@ import asyncio
 import logging
 import random
 from collections.abc import Sequence
-from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Optional
 
 import disnake
 
-from empiremuse.rules.playlists import SCOPE_RADIO
 from empiremuse.rules.radio import Radio
 from empiremuse.rules.radio_shuffle import Track
 from empiremuse.rules.radio_station import KIND_ARTISTS, KIND_GENRE, CustomStation
@@ -33,6 +31,7 @@ from empiremuse.utils.radio.custom_source import (
 from empiremuse.utils.radio.lastfm_feed import LastFmMissing, LastFmUnavailable
 from empiremuse.utils.radio.discord_ports import DiscordRadioPorts
 from empiremuse.utils.radio.panel import CustomView
+from empiremuse.utils.radio.playlist_tracks import PlaylistsUnavailable, radio_playlist_tracks
 
 if TYPE_CHECKING:
     from empiremuse.utils.client import BotPool
@@ -97,26 +96,8 @@ class CustomRadioPorts(DiscordRadioPorts):
         self.no_tracks = False
 
     async def _playlist_tracks(self, names: Sequence[str]) -> list[Track]:
-        bot, guild = self._bot(), self._guild()
-        if bot is None or guild is None:
-            return []
-        music = bot.get_cog("Music")
-        shim = SimpleNamespace(guild=guild, guild_id=guild.id, author=guild.me, bot=bot, channel=self._channel())
-        player = self._player()
-        found: list[Track] = []
-        for name in names:
-            playlist = await self.pool.servers.playlists.find(self.radio.guild_id, name, scope=SCOPE_RADIO)
-            if playlist is None:
-                continue
-            # source=False: a URL exata, sem "ytsearch:" nem Deezer/Spotify (como o controlador); no nó do player quando há
-            result, _ = await music.get_tracks(
-                playlist.url, shim, guild.me, source=False, node=getattr(player, "node", None), bot=bot
-            )
-            for track in list(getattr(result, "tracks", result) or []):
-                author, title = str(getattr(track, "author", "") or ""), str(getattr(track, "title", "") or "")
-                if author.strip() and title.strip():
-                    found.append(Track(author, title))
-        return found
+        node = getattr(self._player(), "node", None)
+        return await radio_playlist_tracks(self.pool, self._bot(), self._guild(), self._channel(), node, names)
 
     # ------------------------------------------------------------------ tocar
 
@@ -233,7 +214,7 @@ class CustomRadioPorts(DiscordRadioPorts):
             return False
         try:
             await self.prepare()
-        except EmptyStation, LastFmMissing, LastFmUnavailable:
+        except EmptyStation, LastFmMissing, LastFmUnavailable, PlaylistsUnavailable:
             self._source_broken()
             return False
         return True
@@ -264,7 +245,7 @@ class CustomRadioPorts(DiscordRadioPorts):
             await self.sleep(REBUILD_BACKOFF_S)
             try:
                 await self.prepare()
-            except (EmptyStation, LastFmMissing, LastFmUnavailable) as error:
+            except (EmptyStation, LastFmMissing, LastFmUnavailable, PlaylistsUnavailable) as error:
                 raise NoPlayableTracks from error
             if self.session is not None:
                 self.session.rebuilt = True

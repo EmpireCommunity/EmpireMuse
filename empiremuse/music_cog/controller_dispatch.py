@@ -14,7 +14,14 @@ from empiremuse.utils.music.converters import (
     time_format,
 )
 from empiremuse.utils.music.guild_pin import GUILD_PIN, GUILD_PIN_PAGE, load_guild_pin, replace_guild_pin
-from empiremuse.utils.music.jukebox_ui import LEAVE_PREFIX, LIVE_VALUE, VOTE_PREFIX, chosen_warning, vote_warning
+from empiremuse.utils.music.jukebox_ui import (
+    LEAVE_PREFIX,
+    LIVE_VALUE,
+    SERVER_VALUE,
+    VOTE_PREFIX,
+    chosen_warning,
+    vote_warning,
+)
 from empiremuse.utils.music.errors import (
     GenericError,
 )
@@ -399,6 +406,11 @@ class ControllerDispatchMixin:
         query = interaction.data.values[0]
         if query == LIVE_VALUE:
             await self.jukebox_live(interaction)
+            return
+        if query == SERVER_VALUE:
+            from empiremuse.utils.radio.station_chooser import open_server_stations
+
+            await open_server_stations(self.bot, interaction)  # 🎙️ Rádios do Servidor (J2b, A5)
             return
         if query.startswith("jb:"):
             await interaction.response.defer(with_message=False)

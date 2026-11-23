@@ -12,6 +12,7 @@ resume o que o código garante e o orçamento de memória.
 | `frames.py` | `DiscFrames` (paleta + ladrilhos `P` crus) e `FramesCache`, um LRU limitado por **bytes** e sem trava (só no laço de eventos); `frames_key` | cache por bytes |
 | `gif.py` | paleta única por faixa, quantização dos ladrilhos, GIF (`disposal=1`, `optimize=False`, 30 × 60 ms, laço infinito) e PNG (`compress_level=6`) | puro |
 | `primitives.py` | ícones, logo em círculo (só PNG), `fit` por busca binária, texto recortado na caixa | puro |
+| `fonts.py` | `FontBook`: só os arquivos de `assets/fonts/` com o SHA-256 registrado, conferidos na primeira carga; toda fonte (peso e tamanho) sai desses bytes conferidos em memória; peso pelo eixo `Weight`; reserva por caractere (a fonte da skin, depois a Noto Sans, até 32 trechos); RTL só com `raqm` | cache por `(arquivo, peso, tamanho)`; usar dentro da vaga |
 | `state.py` | estado de render por player num `WeakKeyDictionary` (último anexo, GIF adiado, último GIF frio), fora de `player.py` | memória |
 
 Os fatos que a imagem pode mostrar (`CardSpec`) e as regras puras (formato, animação, anexo, call privada) ficam em
@@ -36,6 +37,7 @@ Os fatos que a imagem pode mostrar (`CardSpec`) e as regras puras (formato, anim
 |---|---|---|
 | Cache de quadros do disco | 24 MiB (por bytes) | `budget.FRAMES_CACHE_BYTES` |
 | Cache de capas (240 × 240 RGB, cerca de 48 capas) | 8 MiB (por bytes) | módulo da capa (PR da capa) |
+| Fontes (bytes conferidos, uma cópia por arquivo, mais as instâncias por peso e tamanho) | cerca de 3 MiB | `fonts.FontBook` |
 | Desenho em andamento | 20 a 40 MB em 1×, **um de cada vez** (a vaga) | transitório |
 | Decodificador isolado da capa | um processo de cerca de 35 a 50 MB, **um de cada vez** | transitório |
 

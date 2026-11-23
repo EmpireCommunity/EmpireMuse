@@ -31,6 +31,7 @@ from cachetools import TTLCache
 
 from empiremuse.rules.playlists import is_public_address
 from empiremuse.rules.radio_stations import favicon_thumbnail, valid_uuid
+from empiremuse.utils import sandbox
 from empiremuse.utils.server_playlists_fetch import PinnedResolver
 from empiremuse.utils.url_guard import (
     system_resolve,
@@ -203,7 +204,9 @@ def _checked_png(out: bytes) -> bytes:
 
 
 async def decode_in_worker(fmt: str, data: bytes) -> bytes:
-    """Decodifica ``data`` num processo filho (``python -I``, ``env={}``, limites de memória e CPU, prazo) e devolve o PNG pequeno. ``LogoError`` em qualquer falha."""
+    """Decodifica ``data`` num processo filho (``python -I``, ``env={}``, sandbox, limites de memória e CPU, prazo) e devolve o PNG pequeno. ``LogoError`` em qualquer falha."""
+    if not sandbox.may_spawn(logger):
+        raise LogoError("sandbox")
     try:
         process = await asyncio.create_subprocess_exec(
             sys.executable,
@@ -242,14 +245,24 @@ async def decode_in_worker(fmt: str, data: bytes) -> bytes:
         raise LogoError("deadline") from error
     finally:
         if process.returncode is None:
-            process.kill()
+            sandbox.kill_worker(process)  # o grupo inteiro (``start_new_session``), não só o PID
             await process.wait()
+    if sandbox.refused(process.returncode, logger):
+        raise LogoError("sandbox")
     if process.returncode != 0:
         raise LogoError("decode")
     return _checked_png(bytes(out))
 
 
 # ---------------------------------------------------------------------- o serviço
+
+
+def _sandbox_ready() -> bool:
+    return sandbox.may_spawn(logger)
+
+
+def _always() -> bool:
+    return True
 
 
 class LogoService:
@@ -260,10 +273,13 @@ class LogoService:
         fetch: Optional[Fetch] = None,
         decode: Optional[Decode] = None,
         clock: Callable[[], float] = time.monotonic,
+        ready: Optional[Callable[[], bool]] = None,
     ) -> None:
         self._source = source
         self._fetch: Fetch = fetch or LogoFetcher()
         self._decode: Decode = decode or decode_in_worker
+        # o decodificador pode rodar aqui? Conferido ANTES de buscar a imagem de terceiros; com outro ``decode`` (testes), sempre
+        self._ready: Callable[[], bool] = ready or (_sandbox_ready if decode is None else _always)
         self._clock = clock
         self._hits: TTLCache = TTLCache(maxsize=CACHE_BYTES, ttl=CACHE_TTL_S, timer=clock, getsizeof=len)
         self._misses: TTLCache = TTLCache(maxsize=FAILURE_ENTRIES, ttl=FAILURE_TTL_S, timer=clock)
@@ -314,6 +330,9 @@ class LogoService:
         return result
 
     async def _load(self, uuid: str, configured: bool) -> LogoResult:
+        if not self._ready():
+            # sem sandbox (política fechada): nem busca a imagem, nem gasta ficha, nem entra no cache de falhas
+            return LogoResult()
         if not self._admit():
             return LogoResult(transient=True)
         self._inflight += 1
