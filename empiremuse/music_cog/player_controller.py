@@ -213,10 +213,16 @@ class PlayerControllerMixin:
                         await guild_text(self.bot, req.interaction.guild, "legacy.controller.open_interaction")
                     )
 
-            if req.control == PlayerControls.add_favorite and getattr(req.player, "radio_mode", None) is not None:
-                # modo rádio da Jukebox (T-434 §4.2): a estrela põe o ao vivo nas MINHAS favoritas (nunca grava URL); resposta só para quem clicou
+            jukebox = getattr(getattr(self.bot.pool, "radio", None), "jukebox", None)
+            station = jukebox.station_view(req.player) if jukebox is not None and req.player is not None else None
+            if req.control == PlayerControls.add_favorite and (
+                getattr(req.player, "radio_mode", None) is not None or (station is not None and station.playing)
+            ):
+                # modo rádio da Jukebox (T-434 §4.2): a estrela põe o ao vivo nas MINHAS favoritas (nunca grava URL); com uma faixa da
+                # estação tocando, a estação vai às favoritas do membro neste servidor (J2b). Resposta só para quem clicou
                 try:
-                    key, fields = await self.bot.pool.radio.jukebox.toggle_favorite(req.interaction, req.player)
+                    toggle = jukebox.toggle_favorite if station is None else jukebox.toggle_station_favorite
+                    key, fields = await toggle(req.interaction, req.player)
                     await req.interaction.send(req.player.tr(key, **fields), ephemeral=True)
                 finally:
                     try:

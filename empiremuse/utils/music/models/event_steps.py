@@ -317,6 +317,11 @@ async def _he_track_start(self, event) -> None:
 
     self.bot.dispatch("wavelink_track_start", player=self)
 
+    if getattr(self, "station", None) is not None:
+        self.bot.pool.radio.jukebox.station_track_started(
+            self
+        )  # a faixa da estação tocou: a sequência de falhas zera (§2.6)
+
     if self.text_channel and not _he_can_send_in_text_channel(self):
         self.text_channel = None
 

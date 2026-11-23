@@ -80,6 +80,7 @@ class LavalinkPlayer(
         self.dj: set = set()
         # Modo rádio da Jukebox (T-434 J2a): só memória, nunca gravado. NUNCA ``radio_id`` (esse é o player da rádio 24 h, §0.1).
         self.radio_mode: Any = None  # ``jukebox_radio.RadioMode`` enquanto toca o ao vivo
+        self.station: Any = None  # ``jukebox_station.ActiveStation`` com a estação da Jukebox ligada (J2b; nunca junto com ``radio_mode``)
         self.radio_vote: Any = None  # ``jukebox_radio.RadioVote``: uma votação aberta por player
         self.radio_lock = asyncio.Lock()  # toda transição, voto, expiração e queda rodam sob ele [m3]
         self.radio_epoch: int = 0  # muda a cada transição: voto e tentativa velhos se anulam

@@ -10,6 +10,7 @@ from itertools import cycle
 
 import disnake
 
+from empiremuse.utils.music.jukebox_ui import autoplay_label
 from empiremuse.rules.i18n import fit
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.converters import fix_characters, time_format, get_button_style
@@ -231,9 +232,7 @@ def _np_buttons_default(self, req):
                 disnake.SelectOption(
                     label=(
                         fit(
-                            self.tr("player.disable_autoplay.label")
-                            if self.autoplay
-                            else self.tr("player.enable_autoplay.label"),
+                            autoplay_label(self),
                             100,
                         )
                     ),

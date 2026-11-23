@@ -102,6 +102,12 @@ async def _pn_next_track(self, req):
             if await self.bot.pool.radio.jukebox.release(self, mode):
                 await go_idle(self)
             return True
+        if (active := getattr(self, "station", None)) is not None:
+            # estação da Jukebox (J2b, §0.3): com a fila vazia ela vem ANTES do autoplay; ``None`` = acabou ou mudou, segue o de sempre
+            track = await self.bot.pool.radio.jukebox.next_station_track(self, active)
+            if track is not None:
+                req.track = track
+                return False
         try:
             track = None
 

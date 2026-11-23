@@ -44,6 +44,9 @@ NAME_INDEX = "guild_name_norm_unique"
 NAME_INDEX_KEYS = [("guild_id", 1), ("name_norm", 1)]
 NAME_INDEX_PARTIAL = {"name_norm": {"$type": "string"}}  # estação sem ``name_norm`` (legado) fica fora do índice
 STATION_IN_USE = "station_in_use"
+COUNT_TTL_S = (
+    30.0  # a contagem "{n} estações" da entrada fixa da Jukebox (T-434 Q7): cache curto, invalidado ao criar e apagar
+)
 
 
 class StationConflict(RadioConflict):
@@ -67,9 +70,11 @@ class StationInUse(RadioInvalid):
 
 
 class StationStore:
-    def __init__(self, pool: BotPool, radios: RadioStore) -> None:
+    def __init__(self, pool: BotPool, radios: RadioStore, *, clock: Callable[[], float] = time.monotonic) -> None:
         self.pool = pool
         self.radios = radios
+        self._clock = clock
+        self._counts: dict[int, tuple[int, float]] = {}  # servidor -> (estações, quando foi contado)
         self.on_updated: Callable[[CustomStation], Awaitable[None]] | None = (
             None  # o hub liga: as rádios que tocam a estação a recarregam
         )
@@ -179,6 +184,19 @@ class StationStore:
         found = (self._station(doc, guild_id) for doc in await self._documents(guild_id))
         return sorted((s for s in found if s is not None), key=lambda s: s.name_norm)
 
+    async def count_for_guild(self, guild_id: int) -> int:
+        """Quantas estações o servidor tem, para o rótulo da entrada fixa (cache de ``COUNT_TTL_S``; ``RadioUnavailable`` sem banco)."""
+        key, now = int(guild_id), self._clock()
+        cached = self._counts.get(key)
+        if cached is not None and now - cached[1] < COUNT_TTL_S:
+            return cached[0]
+        count = len(await self.list_for_guild(key))
+        self._counts[key] = (count, now)
+        return count
+
+    def _forget_count(self, guild_id: int) -> None:
+        self._counts.pop(int(guild_id), None)
+
     @staticmethod
     def builtin(guild_id: int, ref: object) -> CustomStation | None:
         if not is_genre(ref) or not valid_station_id(ref):
@@ -233,6 +251,7 @@ class StationStore:
             )
             if not await self._save(station.id, to_document(station), None):
                 raise StationConflict
+            self._forget_count(guild_id)
             return station
 
     async def update(
@@ -305,6 +324,8 @@ class StationStore:
             except Exception as error:  # noqa: BLE001
                 logger.warning("Estação não apagada (%s)", type(error).__name__)
                 raise RadioUnavailable from error
+            finally:
+                self._forget_count(guild_id)
 
     async def set_unknown(self, guild_id: int, station_id: str, unknown: Collection[str]) -> None:
         """Grava os artistas que o Last.fm não conhece (os ⚠️ das duas telas). Só quando muda, e com CAS; perder a corrida é desistir em silêncio."""

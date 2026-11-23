@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 async def radio_entries(bot, tr: Translator, guild_id: int) -> tuple[disnake.SelectOption, ...]:
-    """As entradas fixas do topo da página 1 (T-434 §3, A1): "📻 Rádios ao Vivo" só em servidor premium. Banco fora ou rádios desligadas:
+    """As entradas fixas do topo da página 1 (T-434 §3, A1): "📻 Rádios ao Vivo" e "🎙️ Rádios do Servidor" (J2b), só em servidor premium. Banco fora ou rádios desligadas:
     nenhuma (o select não perde vagas). O clique confere o premium de novo, sem cache."""
     hub = getattr(getattr(bot, "pool", None), "radio", None)
     if hub is None:
@@ -28,7 +28,14 @@ async def radio_entries(bot, tr: Translator, guild_id: int) -> tuple[disnake.Sel
     except Exception as error:  # noqa: BLE001 - o select é desenhado sem a entrada; só o tipo vai ao log
         logger.warning("Premium não lido para o select da Jukebox (%s)", type(error).__name__)
         return ()
-    return (jukebox_ui.live_entry(tr),) if premium is not None else ()
+    if premium is None:
+        return ()
+    try:
+        count = await hub.stations.count_for_guild(guild_id)
+    except Exception as error:  # noqa: BLE001 - sem a contagem a entrada sai com 0; só o tipo vai ao log
+        logger.warning("Estações do servidor não contadas para o select da Jukebox (%s)", type(error).__name__)
+        count = 0
+    return jukebox_ui.live_entry(tr), jukebox_ui.server_entry(tr, count)
 
 
 def build_guild_pin(

@@ -102,7 +102,7 @@ async def test_navigation_clamps_and_reloads_without_playing_or_editing_other_co
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("value", ["jb:server", "jb:unknown", "jb:page:x", "jb:page:-1"])
+@pytest.mark.parametrize("value", ["jb:unknown", "jb:page:x", "jb:page:-1", "jb:server:x"])
 async def test_unknown_controls_are_refused_without_playing(value):
     handler, inter, cog = world(value)
     handler.jukebox_live = AsyncMock()
@@ -120,6 +120,20 @@ async def test_the_live_radio_entry_opens_the_radio_flow_and_never_plays_a_playl
     handler.jukebox_live = AsyncMock()
     await ControllerDispatchMixin.guild_pin(handler, inter)
     handler.jukebox_live.assert_awaited_once_with(inter)
+    handler.request_executor.assert_not_awaited()
+    cog.play.callback.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_the_server_radios_entry_opens_the_station_chooser_and_never_plays_a_playlist(monkeypatch):
+    """J2b: ``jb:server`` abre "Rádios do Servidor" (antes era recusado como controle desconhecido)."""
+    from empiremuse.utils.radio import station_chooser
+
+    opened = AsyncMock()
+    monkeypatch.setattr(station_chooser, "open_server_stations", opened)
+    handler, inter, cog = world("jb:server")
+    await ControllerDispatchMixin.guild_pin(handler, inter)
+    opened.assert_awaited_once_with(handler.bot, inter)
     handler.request_executor.assert_not_awaited()
     cog.play.callback.assert_not_awaited()
 

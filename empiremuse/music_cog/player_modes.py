@@ -4,6 +4,7 @@ import disnake
 from disnake.ext import commands
 
 from empiremuse.i18n import localized
+from empiremuse.utils.music.jukebox_ui import station_md
 from empiremuse.utils.music.checks import (
     check_voice,
     has_player,
@@ -100,6 +101,24 @@ class PlayerModesMixin:
             bot = inter.bot
 
         player: LavalinkPlayer = bot.music.players[inter.guild_id]
+
+        jukebox = getattr(getattr(self.bot.pool, "radio", None), "jukebox", None)
+        if jukebox is not None and getattr(player, "station", None) is not None:
+            # com a estação da Jukebox ligada o botão é "📻 Estação: {nome}" e desliga a estação (S → M, A5); o autoplay fica como estava
+            name = await jukebox.end_station(player)
+            if name is not None:
+                station = station_md(name)
+                await self.interaction_message(
+                    inter,
+                    [
+                        player.tr("jukebox.station.off_log", station=station),
+                        player.tr("jukebox.station.off", member=inter.author.mention, station=station),
+                    ],
+                    emoji="📻",
+                )
+                if not player.current:
+                    await player.process_next()
+                return
 
         player.autoplay = not player.autoplay
 
