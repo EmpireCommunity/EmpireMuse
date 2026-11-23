@@ -26,7 +26,13 @@ STATIONS = [st(1, KIND_ARTISTS), st(2, KIND_PLAYLISTS), st(3, KIND_ARTISTS), st(
 
 def world(filter_id=None, active=1):
     radio = SimpleNamespace(
-        id="r", guild_id=1, filter=filter_id, source={"station": STATIONS[active - 1].id}, skin="black", rev=3
+        id="r",
+        guild_id=1,
+        filter=filter_id,
+        source={"station": STATIONS[active - 1].id},
+        skin="black",
+        look=None,
+        rev=3,
     )
     calls = []
 
