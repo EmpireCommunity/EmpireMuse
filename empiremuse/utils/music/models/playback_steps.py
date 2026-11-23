@@ -13,6 +13,7 @@ from rapidfuzz import fuzz
 
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.converters import fix_characters, md_link
+from empiremuse.utils.music.live_mark import is_live
 from empiremuse.utils.music.errors import (
     error_code_text,
     log_unexpected_error,
@@ -67,8 +68,27 @@ async def _pn_pre_checks(self, req):
     return False
 
 
+async def go_idle(self) -> None:
+    """Para o player e entra no modo ocioso (o ``IDLE_TIMEOUT`` de sempre), sem pedir autoplay. Player fechado: nada (m5)."""
+    if getattr(self, "is_closing", False):
+        return
+    await self.stop()
+    if getattr(self, "radio_mode", None) is not None or getattr(self, "is_closing", False):
+        return  # uma rádio abriu (ou o player fechou) durante o ``stop``: o temporizador de ociosidade não pode derrubá-la depois
+    now = disnake.utils.utcnow()
+    self.idle_start_timestamp = int(now.timestamp())
+    self.idle_endtime = now + datetime.timedelta(seconds=self.bot.config["IDLE_TIMEOUT"])
+    self.last_track = None
+    self.idle_task = self.bot.loop.create_task(self.idling_mode())
+    self.bot.dispatch("player_queue_end", player=self)
+
+
 async def _pn_next_track(self, req):
     """Escolhe a próxima faixa: fila, autoplay ou modo ocioso."""
+    mode = getattr(self, "radio_mode", None)
+    if mode is not None and mode.track is None:
+        # modo rádio abrindo ou reconectando (rev. 3.3, achado M1): quem manda no player agora é o controlador; nada sai da fila
+        return True
     try:
         track = self.queue.popleft()
 
@@ -77,6 +97,12 @@ async def _pn_next_track(self, req):
             # Rádio (ao vivo ou personalizada) toca só o que o runner mandou: fila vazia NÃO puxa autoplay nem entra em modo ocioso (o autoplay buscaria
             # recomendações no YouTube e afins). Quem decide o que tocar de novo é o runner.
             await self.stop()
+            return True
+        if mode is not None:
+            # Modo rádio da Jukebox (T-434 §2.2): em R não há "próxima faixa". ⏭ (ou a fila que acabou) encerra o ao vivo e o player fica
+            # ocioso, sem autoplay nem sugestão. O controlador só sai se o modo ainda é o que o player viu (rev. 3.3).
+            if await self.bot.pool.radio.jukebox.release(self, mode):
+                await go_idle(self)
             return True
         try:
             track = None
@@ -93,13 +119,7 @@ async def _pn_next_track(self, req):
                     return True
 
             if not track:
-                await self.stop()
-                now = disnake.utils.utcnow()
-                self.idle_start_timestamp = int(now.timestamp())
-                self.idle_endtime = now + datetime.timedelta(seconds=self.bot.config["IDLE_TIMEOUT"])
-                self.last_track = None
-                self.idle_task = self.bot.loop.create_task(self.idling_mode())
-                self.bot.dispatch("player_queue_end", player=self)
+                await go_idle(self)
                 return True
 
         except Exception:
@@ -109,6 +129,16 @@ async def _pn_next_track(self, req):
     if not track:
         await self.process_next()
         return True
+
+    if is_live(track) and (mode is None or track is not mode.track):
+        # uma faixa ao vivo velha (a ficha dela já foi revogada) nunca toca de novo nem volta à fila [m1]
+        await self.process_next()
+        return True
+
+    if mode is not None and track is not mode.track:
+        # uma música entrou no lugar do ao vivo (⏮, pular para, pedido que passou pela porta): o modo rádio acaba aqui, sem deixar token vivo
+        if not await self.bot.pool.radio.jukebox.release(self, mode) and getattr(self, "radio_mode", None) is not None:
+            return True  # outra rádio abriu enquanto esperava o lock: a música do modo antigo não toca por cima dela
 
     req.track = track
     return False
@@ -177,6 +207,9 @@ async def _pn_native(self, req):
     """Prepara a reprodução nativa do YouTube e a busca alternativa."""
     encoded_track = req.encoded_track
     track = req.track
+
+    if is_live(track):
+        return False  # a faixa ao vivo nunca entra na chave do cache de resolução (o ``track.id`` tem a ficha do relay) [m1, S5]
 
     if not self.native_yt or not self.node.prefer_youtube_native_playback:
         cache_key = f"{track.info['sourceName']}:id:{track.identifier or track.id or track.ytid}"

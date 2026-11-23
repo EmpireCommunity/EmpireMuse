@@ -22,6 +22,7 @@ from empiremuse.utils.music.errors import (
     GenericError,
 )
 from empiremuse.utils.music.guild_text import guild_text
+from empiremuse.music_cog.radio_guard import confirm_leave_radio
 from empiremuse.utils.music.user_limits import quota_for, track_fav_error_text
 from empiremuse.utils.music.interactions import (
     SelectInteraction,
@@ -136,6 +137,11 @@ async def _pc_embed_playlist(self, req):
     await self.check_player_queue(interaction.author, bot, interaction.guild_id)
     result, node = await self.get_tracks(url, interaction, author, source=False, node=player.node, bot=bot)
     result = await self.check_player_queue(interaction.author, bot, interaction.guild_id, tracks=result)
+    # a porta do modo rádio logo antes de enfileirar, depois da busca (Alicerce N-m1); sem ``await`` daqui ao extend
+    if not await confirm_leave_radio(
+        self.bot.pool, self.bot, interaction, player, stopped_key="jukebox.radio.leave.stopped_plain"
+    ):
+        return
     player.queue.extend(result.tracks)
     await interaction.send(
         player.tr(
@@ -190,6 +196,7 @@ async def _pc_embed_find_track(self, req):
     url = req.url
 
     track = []
+    origin = None
     seek_status = False
 
     if player:
@@ -207,28 +214,24 @@ async def _pc_embed_find_track(self, req):
             seek_status = True
 
         else:
-            for t in list(player.queue):
-                if t.uri.startswith(url) or url.startswith(t.uri):
-                    track = [t]
-                    player.queue.remove(t)
+            # só procura: a faixa sai da lista em ``_take_found``, depois da porta do modo rádio. Um pedido que para na porta (cancelado,
+            # expirado, votação aberta, recusa) não muda a fila nem o histórico (Crivo MI-D1)
+            for found in (player.queue, player.played, player.failed_tracks):
+                t = next((t for t in found if t.uri.startswith(url) or url.startswith(t.uri)), None)
+                if t is not None:
+                    track, origin = [t], found
                     break
-
-            if not track:
-                for t in list(player.played):
-                    if t.uri.startswith(url) or url.startswith(t.uri):
-                        track = [t]
-                        player.played.remove(t)
-                        break
-
-                if not track:
-                    for t in list(player.failed_tracks):
-                        if t.uri.startswith(url) or url.startswith(t.uri):
-                            track = [t]
-                            player.failed_tracks.remove(t)
-                            break
 
     req.seek_status = seek_status
     req.track = track
+    req.track_origin = origin
+
+
+def _take_found(req) -> None:
+    """Tira a faixa achada da lista de onde veio, logo antes de enfileirar (sem ``await`` daqui ao ``append``/``insert``)."""
+    origin, track = req.track_origin, req.track
+    if origin is not None and isinstance(track, list) and track and track[0] in origin:
+        origin.remove(track[0])
 
 
 async def _pc_embed_track(self, req):
@@ -264,6 +267,11 @@ async def _pc_embed_track(self, req):
                     inter=interaction, bot=bot, guild=channel.guild, channel=channel, node=node
                 )
             await self.check_player_queue(interaction.author, bot, interaction.guild_id)
+            if not await confirm_leave_radio(
+                self.bot.pool, self.bot, interaction, player, stopped_key="jukebox.radio.leave.stopped_plain"
+            ):
+                return  # a porta do modo rádio logo antes de enfileirar (Alicerce N-m1); sem ``await`` daqui ao append
+            _take_found(req)
             player.update = True
             if isinstance(track, list):
                 t = track[0]
@@ -301,6 +309,11 @@ async def _pc_embed_track(self, req):
             else:
                 await self.check_stage_title(inter=interaction, bot=bot, player=player)
 
+            if not await confirm_leave_radio(
+                self.bot.pool, self.bot, interaction, player, stopped_key="jukebox.radio.leave.stopped_plain"
+            ):
+                return  # tocar agora em R: a porta logo antes de enfileirar (Alicerce N-m1)
+            _take_found(req)
             if isinstance(track, list):
                 player.queue.insert(0, track[0])
             else:

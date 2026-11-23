@@ -262,6 +262,7 @@ _SESSION = Dict(
         "paused": optional(Bool()),
         "keep_connected": optional(Bool()),
         "autoplay": optional(Bool()),
+        "radio_session": optional(Bool()),  # gravada no modo rádio da Jukebox: a retomada fica ociosa, sem autoplay
         "stage_title_event": optional(Bool()),
         "mini_queue_enabled": optional(Bool()),
         "live_lyrics_status": optional(Bool()),

@@ -7,6 +7,7 @@ import disnake
 from async_timeout import timeout
 from disnake.ext import commands
 
+from empiremuse.music_cog.radio_guard import radio_mode_request
 from empiremuse.i18n import localized
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.checks import (
@@ -272,6 +273,8 @@ class PlayCommandMixin(PlayMenusMixin, PlayResolveMixin, PlayEnqueueMixin):
                     ephemeral = await self.is_jukebox_channel(inter, data=guild_data, ignore_thread=True)
             except asyncio.TimeoutError:
                 ephemeral = True
+            if not ephemeral and radio_mode_request(self.bot.pool, inter):
+                ephemeral = True  # Jukebox no modo rádio: o passo de confirmação é a 1ª resposta e tem de ser só do autor (Bússola §2.2)
             await inter.response.defer(ephemeral=ephemeral, with_message=True)
 
         req.author = author

@@ -117,6 +117,44 @@ def _he_live_radio(self, event) -> bool:
     return True
 
 
+def _he_jukebox_radio(self, event) -> bool:
+    """Modo rádio da Jukebox (T-434 §2.4): em R, fim, exceção e travada do fluxo NUNCA seguem o caminho de música (fila, autoplay); a queda
+    (fim ``FINISHED``/``LOAD_FAILED``, exceção ou travada) vai ao controlador, que tenta em 2, 4 e 8 s. ``STOPPED``/``REPLACED`` são nossos.
+    Devolve ``True`` se o evento foi consumido aqui."""
+    mode = getattr(self, "radio_mode", None)
+    if mode is None or not isinstance(event, (wavelink.TrackEnd, wavelink.TrackException, wavelink.TrackStuck)):
+        return False
+    node = getattr(event, "node", None)
+    if node is not None and node.identifier != self.node.identifier:
+        return True  # evento atrasado de um nó antigo (a troca para o nó local): não é queda do fluxo de agora
+    if not _he_is_live_event(mode, event):
+        return (
+            True  # fim atrasado do fluxo antigo ou da música parada na entrada: nunca revoga a ficha nova (Crivo MI2)
+        )
+    lost = not isinstance(event, wavelink.TrackEnd) or str(getattr(event, "reason", "")).upper() in LIVE_LOST_REASONS
+    if lost:
+        self.bot.pool.radio.jukebox.on_stream_lost(self, mode)
+    return True
+
+
+def _he_is_live_event(mode, event) -> bool:
+    """O evento é da faixa ao vivo de AGORA (``mode.track``)? Sem faixa (abrindo ou reconectando), não. Lavalink 3 manda o codificado em
+    texto; o 4, o objeto da faixa com ``encoded``. Sem o codificado no evento não há como descartar: conta como sendo dela."""
+    track = mode.track
+    if track is None:
+        return False
+    sent = getattr(event, "track", None)
+    if isinstance(sent, dict):
+        sent = sent.get("encoded")
+    if not isinstance(sent, str) or not sent:
+        return True
+    if sent != getattr(track, "id", None):
+        # descartado por ser de outra faixa (o fluxo antigo, a música parada na entrada); se toda queda real cair aqui, R fica mudo (Crivo S2)
+        logger.debug("Evento de faixa descartado no modo rádio: não é a faixa ao vivo de agora")
+        return False
+    return True
+
+
 def _he_custom_ports(self):
     """As portas da rádio personalizada deste player, ou ``None`` (não é de rádio personalizada, ou a rádio já não roda)."""
     if not getattr(self, "radio_custom", False):
@@ -171,9 +209,11 @@ async def _he_dispatch(self, event) -> None:
             if (usage := usage_of(self.bot)) and _he_same_node(self, event):
                 usage.playback_ended(self.bot, self.guild.id, getattr(event, "reason", ""))
             _he_log_track_event(self, f"Faixa terminada ({getattr(event, 'reason', '?')})", self.last_track)
-            if not _he_live_radio(self, event) and not await _he_custom_radio_failure(
-                self, event
-            ):  # ao vivo: o fim é do runner (recuo)
+            if (
+                not _he_live_radio(self, event)
+                and not _he_jukebox_radio(self, event)
+                and not await _he_custom_radio_failure(self, event)
+            ):  # ao vivo: o fim é do runner (recuo) ou do modo rádio da Jukebox
                 await _he_track_end(self, event)
         elif isinstance(event, wavelink.TrackStart):
             if metrics:
@@ -185,7 +225,7 @@ async def _he_dispatch(self, event) -> None:
             if (ports := _he_custom_ports(self)) is not None:
                 ports.track_started()  # uma faixa da rádio começou: a sequência de falhas zera
         elif isinstance(event, wavelink.TrackException):
-            if _he_live_radio(self, event):
+            if _he_live_radio(self, event) or _he_jukebox_radio(self, event):
                 if metrics:
                     metrics.error("track_exception")
             elif not await _he_custom_radio_failure(self, event):
@@ -201,7 +241,11 @@ async def _he_dispatch(self, event) -> None:
                 _he_source(self.current),
                 time_format(getattr(self, "position", 0) or 0),
             )
-            if not _he_live_radio(self, event) and not await _he_custom_radio_failure(self, event):
+            if (
+                not _he_live_radio(self, event)
+                and not _he_jukebox_radio(self, event)
+                and not await _he_custom_radio_failure(self, event)
+            ):
                 await _he_track_stuck(self)
         else:
             logger.debug("Evento Wavelink desconhecido: %s", type(event).__name__)
