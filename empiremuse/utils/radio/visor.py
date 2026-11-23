@@ -9,8 +9,6 @@ markdown, menção nem link. Os rótulos vêm do tradutor do servidor (chaves ``
 
 from __future__ import annotations
 
-import io
-import math
 import unicodedata
 from collections.abc import Callable, Mapping
 from functools import cache
@@ -20,6 +18,8 @@ from typing import TYPE_CHECKING, Any, Literal, NamedTuple, Optional
 from PIL import Image, ImageDraw, ImageFont
 
 from empiremuse.utils.music.skins.radio_player import DEFAULT_RADIO_SKIN, RGB, load_radio_skin
+from empiremuse.utils.render.gif import encode_png
+from empiremuse.utils.render.primitives import circle_logo, fit, mono_icon
 
 if TYPE_CHECKING:
     from empiremuse.utils.radio.snapshot import RadioPanelSnapshot
@@ -137,11 +137,7 @@ class _Canvas:
         return (cx - _px(x)) / SCALE
 
     def fit(self, text: str, font: ImageFont.FreeTypeFont, max_width: float) -> str:
-        if self.width(text, font) <= max_width:
-            return text
-        while text and self.width(text + "…", font) > max_width:
-            text = text[:-1]
-        return text.rstrip() + "…"
+        return fit(text, lambda value: self.width(value, font), max_width)
 
     def icon(self, kind: str, size: float, color: RGB, xy) -> None:
         self.image.alpha_composite(_mono_icon(kind, size, color), (_px(xy[0]), _px(xy[1])))
@@ -151,78 +147,12 @@ class _Canvas:
 
 
 def _mono_icon(kind: str, size: float, color: RGB) -> Image.Image:
-    """Ícones monocromáticos do desenho (alto-falante, mudo, estrela, sinal, fone, relógio, setas, transporte, + e −)."""
-    im = Image.new("RGBA", (128, 128), (0, 0, 0, 0))
-    d = ImageDraw.Draw(im)
-    if kind in ("speaker", "speaker_mute", "speaker_low"):
-        d.rectangle((22, 50, 44, 78), fill=color)
-        d.polygon([(44, 50), (74, 26), (74, 102), (44, 78)], fill=color)
-        if kind == "speaker":
-            d.arc((60, 40, 100, 88), start=-45, end=45, fill=color, width=9)
-            d.arc((70, 24, 124, 104), start=-45, end=45, fill=color, width=9)
-        elif kind == "speaker_low":
-            d.arc((60, 40, 100, 88), start=-45, end=45, fill=color, width=9)
-        else:
-            d.line((84, 50, 112, 78), fill=color, width=9)
-            d.line((112, 50, 84, 78), fill=color, width=9)
-    elif kind == "star":
-        points = []
-        for i in range(10):
-            radius = 52 if i % 2 == 0 else 22
-            angle = -math.pi / 2 + i * math.pi / 5
-            points.append((64 + radius * math.cos(angle), 64 + radius * math.sin(angle)))
-        d.polygon(points, fill=color)
-    elif kind == "signal":
-        for i, h in enumerate((30, 50, 70, 90)):
-            d.rounded_rectangle((20 + i * 24, 108 - h, 36 + i * 24, 108), radius=4, fill=color)
-    elif kind == "list":
-        for i in range(3):
-            y = 30 + i * 34
-            d.ellipse((12, y - 7, 26, y + 7), fill=color)
-            d.rounded_rectangle((38, y - 5, 116, y + 5), radius=5, fill=color)
-    elif kind == "headphone":
-        d.arc((20, 24, 108, 112), start=180, end=360, fill=color, width=10)
-        d.rounded_rectangle((18, 66, 42, 104), radius=8, fill=color)
-        d.rounded_rectangle((86, 66, 110, 104), radius=8, fill=color)
-    elif kind == "clock":
-        d.ellipse((16, 16, 112, 112), outline=color, width=10)
-        d.line((64, 36, 64, 66, 86, 80), fill=color, width=10)
-    elif kind == "chevron_left":
-        d.line((78, 28, 46, 64, 78, 100), fill=color, width=12)
-    elif kind == "chevron_right":
-        d.line((50, 28, 82, 64, 50, 100), fill=color, width=12)
-    elif kind == "prev":
-        d.rectangle((26, 30, 40, 98), fill=color)
-        d.polygon([(100, 30), (100, 98), (44, 64)], fill=color)
-    elif kind == "next":
-        d.rectangle((88, 30, 102, 98), fill=color)
-        d.polygon([(28, 30), (28, 98), (84, 64)], fill=color)
-    elif kind == "plus":
-        d.rectangle((56, 24, 72, 104), fill=color)
-        d.rectangle((24, 56, 104, 72), fill=color)
-    elif kind == "minus":
-        d.rectangle((24, 56, 104, 72), fill=color)
-    return im.resize((_px(size), _px(size)), Image.LANCZOS)
+    return mono_icon(kind, _px(size), color)
 
 
 def _circle_logo(logo: Optional[bytes], size: float, fallback: RGB) -> Image.Image:
-    """O logo da estação recortado em círculo; sem logo (ou bytes que não são imagem), um disco na cor de reserva."""
-    side = _px(size)
-    out = Image.new("RGBA", (side, side), (0, 0, 0, 0))
-    mask = Image.new("L", (side, side), 0)
-    ImageDraw.Draw(mask).ellipse((0, 0, side - 1, side - 1), fill=255)
-    picture: Optional[Image.Image] = None
-    if logo:
-        try:
-            picture = Image.open(io.BytesIO(logo))
-            picture.load()
-            picture = picture.convert("RGBA").resize((side, side), Image.LANCZOS)
-        except Exception:  # noqa: BLE001 - logo inválido vira o disco de reserva, nunca derruba o painel
-            picture = None
-    if picture is None:
-        picture = Image.new("RGBA", (side, side), fallback + (255,))
-    out.paste(picture, (0, 0), mask)
-    return out
+    """O logo da estação (PNG do ``LogoService``) recortado em círculo; sem logo, ou bytes que não são PNG, um disco na cor de reserva."""
+    return circle_logo(logo, _px(size), fallback)
 
 
 def volume_level(volume: object) -> float:
@@ -432,9 +362,7 @@ def render_visor(data: VisorData, tr: Translator, skin: str = DEFAULT_RADIO_SKIN
     c.line(((HALF, 12), (HALF, HEIGHT - 12)), tokens["divider"], 1)
     _draw_left(c, tokens, tr, data)
     _draw_right(c, tokens, tr, data)
-    buffer = io.BytesIO()
-    c.image.convert("RGB").save(buffer, format="PNG", optimize=True)
-    return buffer.getvalue()
+    return encode_png(c.image)
 
 
 # ------------------------------------------------------------------------------------------------------ snapshot do bot

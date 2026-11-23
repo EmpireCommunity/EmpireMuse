@@ -37,6 +37,8 @@ from empiremuse.rules.radio_stations import Station, valid_uuid
 from empiremuse.rules.text import stored_text
 from empiremuse.utils.music.live_mark import mark_live
 from empiremuse.utils.radio.directory import DirectoryError
+from empiremuse.utils.radio.jukebox_errors import Refused, Reply
+from empiremuse.utils.radio.jukebox_station import JukeboxStationMixin
 from empiremuse.utils.radio.live import StationFailure
 from empiremuse.utils.radio.live_play import LOCAL_NODE, LocalNodeUnavailable, local_node, open_stream
 
@@ -47,15 +49,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 FLOW_WAIT_S = 25.0  # como a 24 h: o primeiro áudio tem de chegar ao Lavalink neste prazo
-Reply = tuple[str, dict[str, Any]]  # a chave do texto e os campos dela: quem responde traduz
-
-
-class Refused(Exception):
-    """Recusa com a chave de texto e os campos dela; a superfície traduz e responde em mensagem efêmera."""
-
-    def __init__(self, key: str, **fields: Any) -> None:
-        super().__init__(key)
-        self.key, self.fields = key, fields
 
 
 @dataclass
@@ -153,8 +146,8 @@ def _changed(player: Any) -> None:
             hook()
 
 
-class JukeboxRadio:
-    """``pool.radio.jukebox``. Relógio, parede e espera injetáveis (os testes não dormem)."""
+class JukeboxRadio(JukeboxStationMixin):
+    """``pool.radio.jukebox``: o modo rádio ao vivo (R) e, pelo mixin, a estação (S, J2b). Relógio, parede e espera injetáveis (os testes não dormem)."""
 
     def __init__(
         self,
@@ -168,6 +161,8 @@ class JukeboxRadio:
         self.pool, self.hub = pool, hub
         self.now, self.wall, self.sleep = clock, wall, sleep
         self._tasks: set[asyncio.Task] = set()
+
+    _changed = staticmethod(_changed)
 
     # ------------------------------------------------------------------ apoio
 
@@ -192,6 +187,7 @@ class JukeboxRadio:
             playing=player.current is not None,
             queued=bool(player.queue),
             radio=player.radio_mode is not None,
+            station=getattr(player, "station", None) is not None,
         )
 
     async def _actor(self, member: Any, player: Any) -> Actor:
@@ -286,8 +282,9 @@ class JukeboxRadio:
             raise Refused("radio.live.not_found")
         return station
 
-    async def _create_player(self, inter: Any, bot: Any, voice: Any) -> Any:
-        """O player novo da Jukebox já no nó local (o relay só atende o Lavalink deste host) e conectado na call de quem pediu."""
+    async def _create_player(self, inter: Any, bot: Any, voice: Any, *, local: bool = True) -> Any:
+        """O player novo da Jukebox conectado na call de quem pediu; no nó local para o ao vivo (o relay só atende o Lavalink deste host),
+        no melhor nó para a estação (``local=False``)."""
         from empiremuse.utils.db import DBModel
         from empiremuse.utils.music.checks import update_attr
 
@@ -299,7 +296,12 @@ class JukeboxRadio:
         guild_data = await bot.get_data(guild.id, db_name=DBModel.guilds)
         channel = bot.get_channel(inter.channel_id) or inter.channel
         player = await cog.create_player(
-            inter=inter, bot=bot, guild=guild, guild_data=guild_data, channel=channel, node=local_node(bot)
+            inter=inter,
+            bot=bot,
+            guild=guild,
+            guild_data=guild_data,
+            channel=channel,
+            node=local_node(bot) if local else None,
         )
         if not player.is_connected:
             await cog.do_connect(
@@ -332,6 +334,7 @@ class JukeboxRadio:
         player.queue.clear()
         player.queue_autoplay.clear()
         player.loop = False
+        player.station = None  # M/S → R: a estação desliga (R e S são exclusivos)
         mode = RadioMode(
             uuid=station.uuid,
             name=station.name,
@@ -548,6 +551,7 @@ class JukeboxRadio:
     async def forget(self, player: Any) -> None:
         """O player foi destruído (``stop``, call vazia, saída do bot): revoga o token e cancela voto e tentativas, sem tarefa solta."""
         mode, player.radio_mode = player.radio_mode, None
+        player.station = None
         self._bump(player)
         await self._drop_vote(player)
         if mode is not None:
@@ -738,11 +742,15 @@ class JukeboxRadio:
         try:
             if vote.epoch != player.radio_epoch:
                 raise Refused("jukebox.radio.vote.expired")
+            channel_id = self._player_channel_id(player)
             if vote.target is Target.LIVE and vote.uuid is not None:
-                channel = getattr(getattr(player.guild.me, "voice", None), "channel", None)
-                await self._entry_checks(player.guild.id, getattr(channel, "id", None), player.bot)
+                await self._entry_checks(player.guild.id, channel_id, player.bot)
                 station = await self._start(player, vote.uuid, starter_id=vote.author_id, place_node=vote.place_node)
                 text = jukebox_ui.vote_passed_live(tr, station.name)
+            elif vote.target is Target.STATION and vote.uuid is not None:
+                # premium, 24 h na call e a estação relida agora; o pool e o efeito saem do lock (o mixin fecha a mensagem)
+                await self._pass_station(player, vote, channel_id)
+                return
             else:
                 await self._to_idle(player)
                 text = jukebox_ui.vote_passed_leave(tr, mention)
