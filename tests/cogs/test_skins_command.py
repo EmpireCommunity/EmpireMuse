@@ -29,6 +29,7 @@ from empiremuse.utils.music.interactions.skins_draft import (
     radio_skin_value,
     target_value,
 )
+from empiremuse.utils.others import CustomContext
 from empiremuse.utils.radio.store import RadioConflict, RadioNotFound
 
 pytestmark = pytest.mark.critical
@@ -36,7 +37,7 @@ pytestmark = pytest.mark.critical
 GUILD = 4242
 BOT_A, BOT_B, STRANGER = 11, 12, 99
 TR = get_i18n().for_locale("pt-BR")
-RADIOS = (RadioRow(BOT_A, "#a · A", None, 3), RadioRow(BOT_B, "#b · B", "white", 7))
+RADIOS = (RadioRow(BOT_A, "#a · A", None, 3, "#a · A"), RadioRow(BOT_B, "#b · B", "white", 7, "#b · B"))
 CHOICES = Choices(
     normal=("muse_expanded_black", "muse_text", "default", "classic"),
     static=("muse_expanded_black", "default"),
@@ -136,13 +137,24 @@ class TestPreviewPath:
     def test_paths_outside_assets_or_missing_have_no_image(self, relative):
         assert skins_view.preview_path(relative) is None
 
+    def test_an_existing_png_outside_assets_has_no_image(self, monkeypatch, tmp_path):
+        assets = tmp_path / "assets"
+        (assets / "skins").mkdir(parents=True)
+        (assets / "skins" / "ok.png").write_bytes(b"png")
+        (tmp_path / "fora.png").write_bytes(b"png")
+        monkeypatch.setattr(skins_view, "ASSETS_DIR", assets)
+
+        assert skins_view.preview_path("skins/ok.png") == (assets / "skins" / "ok.png").resolve()
+        assert skins_view.preview_path("../fora.png") is None
+
 
 # ============================================================================ gravação
 
 
 class RadioStore:
-    def __init__(self, conflicts=()):
+    def __init__(self, conflicts=(), radios=()):
         self.conflicts = set(conflicts)
+        self.radios = list(radios)
         self.calls = []
 
     async def set_look(self, guild_id, radio_id, look, *, expected_rev, updated_by):
@@ -153,18 +165,23 @@ class RadioStore:
             raise RadioNotFound
 
     async def list_for_guild(self, guild_id):
-        return []
+        return [radio for radio in self.radios if radio.guild_id == guild_id]
+
+
+def _radio(bot_id=BOT_A, *, guild_id=GUILD, look=None, rev=3, channel_id=5):
+    return SimpleNamespace(bot_id=bot_id, guild_id=guild_id, channel_id=channel_id, look=look, rev=rev)
 
 
 class Bot:
     """O bot, o pool e o banco de mentira: ``get_global_data`` devolve a mesma referência do cache, como o banco real."""
 
-    def __init__(self, global_data, store=None):
+    def __init__(self, global_data, store=None, channels=None):
         self.global_data = {"custom_skins": {}, "custom_skins_static": {}, **global_data}  # o modelo padrão do banco
         self.global_writes = []
         self.server_writes = []
         self.settings = {"skin": "default", "static_skin": "default"}
         self.store = store or RadioStore()
+        self.channels = channels or {}
         self.music = SimpleNamespace(players={})
         self.player_skins = dict.fromkeys(CHOICES.normal)
         self.player_static_skins = dict.fromkeys(CHOICES.static)
@@ -198,7 +215,7 @@ class Bot:
         self.global_data = data
 
     def get_guild(self, guild_id):
-        return SimpleNamespace(id=guild_id, me=SimpleNamespace(), get_channel=lambda cid: None)
+        return SimpleNamespace(id=guild_id, me=SimpleNamespace(), get_channel=self.channels.get)
 
     def get_color(self, *args):
         return 0
@@ -238,18 +255,30 @@ async def _noop(*args, **kwargs):
     return None
 
 
-async def run_skins(monkeypatch, bot, *, change, result="save", saver=None, radio_allowed=True):
-    """Roda o ``MusicSettings.change_skin`` REAL; a tela devolve o rascunho que ``change(initial)`` monta."""
-    replies = []
+class Opened:
+    """O que o comando montou: a tela (``None`` se recusou antes) e as respostas."""
+
+    def __init__(self):
+        self.screen = None
+        self.replies = []
+
+
+async def run_skins(
+    monkeypatch, bot, *, change, result="save", saver=None, radio_allowed=True, opener=None, prefix=False
+) -> Opened:
+    """Roda o ``MusicSettings.change_skin`` REAL; a tela devolve o rascunho que ``change(initial)`` monta. ``prefix`` = pelo
+    comando de prefixo (um ``CustomContext``); ``opener`` = quem abre; ``saver`` = quem aperta Salvar."""
+    opened = Opened()
 
     async def edit(*args, **kwargs):
-        replies.append(kwargs)
+        opened.replies.append(kwargs)
 
     member = saver or _member()
 
     class Screen:
         def __init__(self, *, initial, choices, **kwargs):
-            self.initial, self.choices = initial, choices
+            opened.screen = self
+            self.initial, self.choices, self.kwargs = initial, choices, kwargs
             self.draft = change(initial)
             self.result, self.message = result, None
             self.interaction = SimpleNamespace(
@@ -274,15 +303,23 @@ async def run_skins(monkeypatch, bot, *, change, result="save", saver=None, radi
     monkeypatch.setattr(music_settings, "can_configure_radios", lambda member: radio_allowed)
     cog = MusicSettings.__new__(MusicSettings)
     cog.bot = bot
-    interaction = SimpleNamespace(
-        guild_id=GUILD,
-        guild=bot.get_guild(GUILD),
-        author=_member(),
-        response=SimpleNamespace(defer=_noop),
-        edit_original_message=edit,
-    )
+    author = opener or _member()
+    if prefix:
+        interaction = CustomContext.__new__(CustomContext)
+        interaction.message = SimpleNamespace(author=author, guild=bot.get_guild(GUILD))
+        interaction.guild_id, interaction.store_message = GUILD, None
+        interaction.response = SimpleNamespace(defer=_noop)
+        interaction.send = edit
+    else:
+        interaction = SimpleNamespace(
+            guild_id=GUILD,
+            guild=bot.get_guild(GUILD),
+            author=author,
+            response=SimpleNamespace(defer=_noop),
+            edit_original_message=edit,
+        )
     await MusicSettings.change_skin.callback(cog, interaction)
-    return replies
+    return opened
 
 
 def _server_skin(draft: Draft, skin: str) -> Draft:
@@ -311,7 +348,7 @@ class TestCommand:
     async def test_member_who_lost_manage_guild_before_saving_writes_nothing(self, monkeypatch):
         bot = Bot({"global_skin": False})
         lost = _member(manage_guild=False)
-        replies = await run_skins(monkeypatch, bot, change=lambda d: _server_skin(d, "muse_text"), saver=lost)
+        replies = (await run_skins(monkeypatch, bot, change=lambda d: _server_skin(d, "muse_text"), saver=lost)).replies
         assert bot.global_writes == [] and bot.server_writes == []
         assert replies[-1]["embeds"][0].description == TR("skin.no_permission")
 
@@ -319,7 +356,7 @@ class TestCommand:
     async def test_forged_value_is_refused_without_writing(self, monkeypatch):
         bot = Bot({"global_skin": False})
         forged = lambda d: _replace(_server_skin(d, "../x"), disc_motion=False)  # noqa: E731
-        replies = await run_skins(monkeypatch, bot, change=forged)
+        replies = (await run_skins(monkeypatch, bot, change=forged)).replies
         assert bot.global_writes == [] and bot.server_writes == []
         assert replies[-1]["embeds"][0].description == TR("skin.invalid")
 
@@ -336,6 +373,54 @@ class TestCommand:
         bot = Bot({"global_skin": False})
         await run_skins(monkeypatch, bot, change=lambda d: _server_skin(d, "muse_text"))
         assert bot.server_writes == [(GUILD, "settings", {"skin": "muse_text"})] and bot.global_writes == []
+
+    @pytest.mark.asyncio
+    async def test_a_member_without_manage_guild_does_not_get_the_screen(self, monkeypatch):
+        opened = await run_skins(monkeypatch, Bot({}), change=lambda d: d, opener=_member(manage_guild=False))
+        assert opened.screen is None
+        assert opened.replies[-1]["embed"].description == TR("skin.no_permission")
+
+    @pytest.mark.parametrize(("radio_allowed", "listed"), [(True, (BOT_A,)), (False, ())])
+    @pytest.mark.asyncio
+    async def test_the_radio_pair_only_shows_with_the_radio_permission(self, monkeypatch, radio_allowed, listed):
+        bot = Bot({}, store=RadioStore(radios=[_radio()]))
+        opened = await run_skins(monkeypatch, bot, change=lambda d: d, result="cancel", radio_allowed=radio_allowed)
+        assert tuple(row.bot_id for row in opened.screen.choices.radios) == listed
+
+    @pytest.mark.asyncio
+    async def test_the_prefix_command_neither_lists_nor_writes_radios(self, monkeypatch):
+        """Pelo prefixo a resposta é pública: o nome dos canais das rádios (de call privada também) não pode sair ali."""
+        store = RadioStore(radios=[_radio()])
+        bot = Bot({"global_skin": False}, store=store)
+        forged = lambda d: _replace(d, radio_all="text", radio_own=((BOT_A, "text"),))  # noqa: E731
+
+        opened = await run_skins(monkeypatch, bot, change=forged, prefix=True)
+
+        assert opened.screen.choices.radios == ()
+        assert opened.screen.kwargs["note"] == TR("skin.ui.radios_by_slash")
+        assert store.calls == [] and bot.global_writes == []
+
+    @pytest.mark.asyncio
+    async def test_a_cas_conflict_names_the_radio_that_was_not_saved(self, monkeypatch):
+        store = RadioStore(conflicts={f"{BOT_A}:{GUILD}"}, radios=[_radio()])
+        bot = Bot({"global_skin": False}, store=store)
+        change = lambda d: _replace(d, radio_own=((BOT_A, "text"),))  # noqa: E731
+
+        opened = await run_skins(monkeypatch, bot, change=change)
+
+        text = opened.replies[-1]["embeds"][0].description
+        assert TR("skin.radio.changed", radio=f"#5 · {BOT_A}") in text and TR("skin.unchanged") in text
+
+    @pytest.mark.asyncio
+    async def test_a_database_failure_on_save_still_answers(self, monkeypatch):
+        bot = Bot({"global_skin": False})
+
+        async def down(*args, **kwargs):
+            raise ConnectionError("banco fora")
+
+        bot.pool.servers.patch = down
+        opened = await run_skins(monkeypatch, bot, change=lambda d: _server_skin(d, "muse_text"))
+        assert opened.replies[-1]["embeds"][0].description == TR("skin.save_failed")
 
 
 # ============================================================================ a view
@@ -374,3 +459,41 @@ class TestView:
 
         assert rows(_view()) == [0, 1, 2, 3, 4]
         assert rows(_view(CHOICES._replace(radios=()))) == [0, 1, 4]
+
+    @pytest.mark.asyncio
+    async def test_after_the_timeout_a_custom_pick_is_refused_and_the_screen_stays_off(self):
+        view, edits, sent = _view(), [], []
+
+        async def edit(**kwargs):
+            edits.append(kwargs)
+
+        view.message = SimpleNamespace(edit=edit)
+        custom = skins_view.CustomSkinsView(view)
+        view.stop()  # o que o disnake faz antes do ``on_timeout``
+        await view.on_timeout()
+        await custom.on_timeout()
+
+        async def send(*args, **kwargs):
+            sent.append(args)
+
+        await custom._on_pick("normal")(SimpleNamespace(values=["custom:Minha"], send=send))
+        await view.refresh()  # nenhuma edição religa a tela encerrada
+
+        assert all(item.disabled for item in view.children) and all(item.disabled for item in custom.children)
+        assert view.draft == INITIAL and len(edits) == 1 and sent == [(TR("skin.invalid"),)]
+
+    @pytest.mark.asyncio
+    async def test_outside_names_are_escaped_in_embeds_and_raw_only_in_selects(self):
+        bot = Bot({}, store=RadioStore(radios=[_radio()]), channels={5: SimpleNamespace(name="**x**")})
+        (row,) = await skins_view.radio_rows(bot, bot.get_guild(GUILD))
+        assert row.label == f"#**x** · {BOT_A}" and row.text == f"#\\*\\*x\\*\\* · {BOT_A}"
+
+        plan = SavePlan({"player_skin": "> custom_skin: **c**"}, {}, (RadioLook(BOT_A, "text", 3),))
+        summary = "\n".join(skins_view.summary_lines(TR, plan, (row,)))
+        assert "\\*\\*c\\*\\*" in summary and row.text in summary and "#**x**" not in summary
+
+        view = _view(CHOICES._replace(radios=(row,)))
+        view.draft = _replace(view.draft, target=f"radio:{BOT_A}", focus="radio", radio_own=((BOT_A, None),))
+        view.rebuild()
+        assert row.text in view.payload()["embeds"][1].description
+        assert any(row.label in (item.placeholder or "") for item in view.children if hasattr(item, "placeholder"))

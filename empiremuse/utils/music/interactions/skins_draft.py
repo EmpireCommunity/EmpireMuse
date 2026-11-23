@@ -38,12 +38,14 @@ _FLAGS = ("global_skin", "disc_motion")
 
 
 class RadioRow(NamedTuple):
-    """Uma rádio do servidor da interação, como o ``/skins`` a mostra. ``label`` já vem limpo (``external_text``)."""
+    """Uma rádio do servidor da interação, como o ``/skins`` a mostra, já limpa (``external_text``): ``label`` sem markdown
+    (rótulo e placeholder de select), ``text`` com o markdown escapado (embed e conteúdo de mensagem)."""
 
     bot_id: int
     label: str
     look: str | None
     rev: int
+    text: str
 
 
 class Choices(NamedTuple):

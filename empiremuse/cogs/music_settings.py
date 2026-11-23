@@ -1048,6 +1048,7 @@ class MusicSettings(commands.Cog):
         await inter.send(f"O cargo {role.mention} foi removido da lista de DJ's.", ephemeral=True)
 
     skin_cd = commands.CooldownMapping.from_cooldown(1, 20, commands.BucketType.guild)
+    RADIO_ONLY_FIELDS = frozenset({"radio_skin"})  # campos do documento global do /skins que não mudam o player
     skin_mc = commands.MaxConcurrency(1, per=commands.BucketType.member, wait=False)
 
     @commands.has_guild_permissions(manage_guild=True)
@@ -1084,7 +1085,10 @@ class MusicSettings(commands.Cog):
         if not can_manage_skins(inter.author):  # a permissão do comando pode ser trocada pelo servidor nas integrações
             await inter.edit_original_message(embed=disnake.Embed(description=tr("skin.no_permission"), colour=colour))
             return
-        radio_allowed = can_configure_radios(inter.author)
+        # Pelo prefixo a resposta é pública (o ``CustomContext`` descarta ``ephemeral``): sem o par das rádios, que lista o nome
+        # dos canais delas, inclusive de call privada. As rádios ficam no ``/skins`` de barra.
+        via_prefix = isinstance(interaction, CustomContext)
+        radio_allowed = not via_prefix and can_configure_radios(inter.author)
         settings = await bot.pool.servers.settings(guild.id)
         global_data = await bot.get_global_data(guild.id, db_name=DBModel.guilds)
         choices = await load_choices(bot, guild, global_data, radio_allowed=radio_allowed)
@@ -1098,6 +1102,7 @@ class MusicSettings(commands.Cog):
             initial=initial_draft(bot.pool, settings, global_data, choices),
             colour=colour,
             footer=footer,
+            note=tr("skin.ui.radios_by_slash") if via_prefix else None,
         )
 
         try:
@@ -1148,11 +1153,16 @@ class MusicSettings(commands.Cog):
             await reply(tr("skin.invalid"))
             return
 
-        failed = await save_skins(bot, guild.id, plan, updated_by=str(inter.author.id))
+        try:
+            failed = await save_skins(bot, guild.id, plan, updated_by=str(inter.author.id))
+        except Exception as error:  # noqa: BLE001 - banco fora no meio do Salvar: o membro recebe a resposta; só o tipo vai ao log
+            logger.warning("Falha ao gravar o /skins (%s)", type(error).__name__)
+            await reply(tr("skin.save_failed"))
+            return
         saved_plan = plan._replace(radio_looks=tuple(i for i in plan.radio_looks if i.bot_id not in failed))
         lines = summary_lines(tr, saved_plan, view.choices.radios)
         text = "\n".join([f"**{tr('skin.saved')}**", *lines]) if lines else f"**{tr('skin.unchanged')}**"
-        labels = {row.bot_id: row.label for row in view.choices.radios}
+        labels = {row.bot_id: row.text for row in view.choices.radios}
         for bot_id in failed:
             text += "\n⚠️ " + tr("skin.radio.changed", radio=labels.get(bot_id, str(bot_id)))
 
@@ -1168,7 +1178,8 @@ class MusicSettings(commands.Cog):
         else:
             redraw_radio_panels(bot.pool, guild.id, [item.bot_id for item in saved_plan.radio_looks])
 
-        if plan.global_fields or plan.server_fields:
+        # Só a skin das rádios mudou: os players ficam como estão.
+        if set(plan.global_fields) - self.RADIO_ONLY_FIELDS or plan.server_fields:
             await self._reload_player_skins(bot, guild.id, global_data, skins, inter.author.mention, tr)
 
     async def _reload_player_skins(self, bot, guild_id: int, global_data, skins, mention: str, tr) -> None:
