@@ -96,7 +96,19 @@ def new_boot_report():
         return None
 
 
+def harden_process() -> None:
+    """Endurece o processo (``process_hardening``) antes de tudo, inclusive de qualquer processo filho. Tolerante como os ganchos:
+    um erro de import no código recém-atualizado não pode impedir o ``boot_guard``."""
+    try:
+        from empiremuse.process_hardening import mark_non_dumpable
+
+        mark_non_dumpable()
+    except Exception as e:
+        sys.stderr.write(f"[boot] endurecimento do processo não aplicado ({type(e).__name__})\n")
+
+
 def main():
+    harden_process()
     install_log_hooks()
     report = new_boot_report()
     enter_runtime_dir(report)

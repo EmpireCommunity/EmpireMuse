@@ -12,6 +12,9 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - API para painéis externos: visão de membro das rádios favoritas. Quem participa de um servidor sem gerenciá-lo vê a lista do servidor (só leitura) e mantém as próprias favoritas naquele servidor (estações do servidor e gêneros, Limitadas a Apoiadores para adicionar). Rotas novas em `/api/v1/member` e o recurso `member-favorites` em `/meta`.
 - `site-data.json`: o campo opcional `supporter_limited` marca os comandos que o bot recusa num servidor sem o acesso Limitado a Apoiadores (hoje `/radio on`, `/radio setup`, `/radio station` e o prefixo `radio on`), para o site mostrar o selo em /commands. Aditivo na versão 1 do formato.
 
+### Segurança
+- Processo do bot endurecido na subida: no Linux ele é marcado como não despejável (`prctl(PR_SET_DUMPABLE, 0)`, `empiremuse/process_hardening.py`), antes de abrir qualquer processo filho. Fora do Linux não faz nada. Na operação: o processo do bot não gera core dump, e anexar um depurador ou profiler a ele passa a exigir privilégio elevado.
+
 ### Corrigido
 - Cliente RPC do bot: uma conexão que cai no meio de uma resposta de PING não derruba mais o cliente em silêncio; ele fecha a conexão e reconecta como nas outras quedas.
 - Registro de acesso do Traefik (`deploy/traefik/accesslog-flags.txt` e `docs/runbook/log-retention.md`): o `ClientHost` sai e o `ClientAddr` entra (continuam 9 flags). O Traefik troca o `ClientHost` pelo `X-Forwarded-For` inteiro, que o visitante consegue preencher; o IP do visitante é o `request_Cf-Connecting-Ip`, e o `ClientAddr` (a borda da Cloudflare) prova que ele veio dela.
