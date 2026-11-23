@@ -19,6 +19,9 @@ from empiremuse.rules.radio_station import (
     check_station_doc,
     from_document,
     to_document,
+    valid_custom_station_id,
+    valid_genre_ref,
+    valid_station_id,
 )
 
 CATALOG_FILE = Path(__file__).parents[2] / "empiremuse" / "utils" / "radio" / "data" / "genres.json"
@@ -209,3 +212,27 @@ def test_the_names_of_a_stored_station_source_are_cleaned_too_so_it_still_finds_
     station = from_document(doc(kind, {kind: ["Rock Pop", "Jazz\ud800", " ", "rock pop"]}))
 
     assert not isinstance(station, RuleError) and station.source == {kind: ["Rock Pop", "Jazz"]}
+
+
+@pytest.mark.critical
+@pytest.mark.parametrize(
+    ("value", "custom", "genre"),
+    [
+        ("a" * 24, True, False),
+        ("g:lofi", False, True),
+        ("g:lofi_2", False, True),
+        ("A" * 24, False, False),  # só hexadecimal minúsculo
+        ("a" * 23, False, False),
+        ("g:x", False, False),  # id de gênero curto demais
+        ("g:Lofi", False, False),
+        ("g:lofi\n", False, False),
+        ("G:lofi", False, False),
+        (None, False, False),
+    ],
+)
+def test_station_ids_are_a_saved_station_or_a_genre_and_nothing_else(value, custom, genre):
+    assert (valid_custom_station_id(value), valid_genre_ref(value), valid_station_id(value)) == (
+        custom,
+        genre,
+        custom or genre,
+    )
