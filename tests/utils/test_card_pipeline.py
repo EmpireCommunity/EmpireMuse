@@ -4,7 +4,7 @@ um desenho por player e a capa que ainda chega. Capa, vaga e relógio de mentira
 import asyncio
 import pytest
 
-from empiremuse.rules.card import CardFormat, CardState
+from empiremuse.rules.card import CardFormat, CardState, cover_digest
 from empiremuse.utils.music.covers import CoverResult
 from empiremuse.utils.render.budget import GIF_MAX_BYTES
 from empiremuse.utils.render.cards import expanded, pipeline
@@ -294,3 +294,32 @@ async def test_a_station_logo_that_is_late_draws_the_bot_logo_and_asks_for_a_red
     never.set()
 
     assert done.key.fmt is CardFormat.PNG and pipe.states.get(who).upgrade_due is True
+
+
+@pytest.mark.regression
+async def test_a_station_logo_that_arrives_after_the_deadline_is_drawn_on_the_next_cycle(font_book, monkeypatch):
+    ready = asyncio.Event()
+    station = logo_png()
+
+    async def station_logo(_uuid):
+        await ready.wait()
+        return station
+
+    spec = base_spec(
+        skin="muse_radio_black",
+        state=CardState.RADIO_LIVE,
+        track=None,
+        cover=None,
+        radio=radio_facts(logo_key="u-1"),
+        motion=False,
+    )
+    pipe, who = make(font_book), Player()
+    monkeypatch.setattr(pipeline, "COVER_WAIT_S", 0)
+    late = await pipe.render(who, "visor_jukebox", spec, RecordingTr(), station_logo=station_logo)
+    ready.set()
+    monkeypatch.setattr(pipeline, "COVER_WAIT_S", 5)
+
+    drawn = await pipe.render(who, "visor_jukebox", spec, RecordingTr(), station_logo=station_logo)
+
+    assert late.key.cover_digest is None and drawn.data is not None
+    assert drawn.key.cover_digest == cover_digest(station) and pipe.states.get(who).upgrade_due is False

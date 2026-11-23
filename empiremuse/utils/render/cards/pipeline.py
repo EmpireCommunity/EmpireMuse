@@ -7,7 +7,8 @@
 - **Teto do GIF antes de alocar:** ``layout.gif_fits`` (cartão e caixa do disco medidos) decide antes de qualquer
   ladrilho; GIF acima de ``GIF_MAX_BYTES`` ou que falha ao montar vira PNG.
 - **Um desenho por player:** cada pedido leva o número do pedido mais novo do player; quem entra na vaga já velho sai
-  sem desenhar, e quem sai dela já velho descarta o desenho sem gravar o estado (``Rendered.stale``).
+  sem desenhar, e quem sai dela já velho descarta o desenho sem gravar o estado (``Rendered.stale``). Um pedido que não
+  desenha (a saída cedo do ``np_steps``, a troca para uma skin sem cartão) também supera os anteriores (``supersede``).
 - **Vaga ocupada (``RenderBusy``):** nada é desenhado; quem chamou mantém o anexo que está na mensagem (só se a call
   não mudou de privacidade; senão ``key`` = ``None`` e a mensagem sai sem imagem) e o próximo ciclo redesenha
   (``upgrade_due``).
@@ -144,6 +145,11 @@ class CardPipeline:
             self._book = FontBook()
         return self._book
 
+    def supersede(self, player: Any) -> None:
+        """Um pedido novo do player que não vai desenhar (saída cedo, skin sem cartão) supera os que estão na vaga: o
+        desenho deles é descartado ao voltar (``Rendered.stale``)."""
+        self._ticket(player)
+
     def _ticket(self, player: Any) -> tuple[_Ticket, int]:
         ticket = self._tickets.get(player)
         if ticket is None:
@@ -167,6 +173,15 @@ class CardPipeline:
                 logger.warning("Logo da estação não obtido para o cartão (%s)", safe_error(error))
         pixels = cover.pixels if cover is not None else None
         return CardArt(cover=pixels, logo=logo), pending
+
+    def _art_digest(self, art: CardArt) -> Optional[str]:
+        """A identidade da imagem do rótulo na chave do anexo: a capa, ou o logo da estação; ``None`` = o logo do bot. Um
+        logo de estação que chega depois do prazo muda a chave, e o próximo ciclo o desenha."""
+        if art.cover is not None:
+            return cover_digest(art.cover)
+        if art.logo is not None and art.logo is not self._bot_logo:
+            return cover_digest(art.logo)
+        return None
 
     async def render(
         self,
@@ -196,7 +211,7 @@ class CardPipeline:
             last_cold_gif_at=state.last_cold_gif_at,
         )
         upgrade_due = choice.upgrade_due or pending
-        want = RenderedKey(spec, cover_digest(art.cover), choice.fmt)
+        want = RenderedKey(spec, self._art_digest(art), choice.fmt)
         shown = state.last
         if shown is not None and (want == shown or keeps_gif(shown, want)):
             self.states.replace(player, upgrade_due=upgrade_due if want == shown else pending)
@@ -278,6 +293,12 @@ def card_pipeline(cover_hosts: object) -> CardPipeline:
 
         _PIPELINE = CardPipeline(CoverService.from_config(cover_hosts))
     return _PIPELINE
+
+
+def supersede(player: Any) -> None:
+    """``CardPipeline.supersede`` na instância do processo, se ela já existe (sem ela nada está desenhando)."""
+    if _PIPELINE is not None:
+        _PIPELINE.supersede(player)
 
 
 async def close_card_pipeline() -> None:

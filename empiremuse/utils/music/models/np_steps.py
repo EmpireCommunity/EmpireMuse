@@ -7,6 +7,7 @@ import asyncio
 import io
 import itertools
 import random
+import sys
 import time
 import weakref
 from itertools import cycle
@@ -38,6 +39,7 @@ FALLBACK_SKIN = "muse_text"  # a skin de texto que entra quando o cartão não s
 DISC_MOTION_TTL_S = 60.0  # a animação do disco é relida do banco no máximo a cada isto (ou num redesenho pedido)
 
 _DISC_MOTION: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()  # player -> (disc_motion, lido em)
+_clock = time.monotonic  # trocável nos testes
 
 
 async def _np_guards(self, req):
@@ -140,7 +142,7 @@ def _station_logo(self):
 
 async def _disc_motion(self, *, fresh: bool = False):
     """A animação do disco do servidor, sem uma leitura do banco a cada atualização do player (``fresh`` = reler)."""
-    now = time.monotonic()
+    now = _clock()
     cached = _DISC_MOTION.get(self)
     if cached is not None and not fresh and now - cached[1] < DISC_MOTION_TTL_S:
         return cached[0]
@@ -231,11 +233,12 @@ async def _np_render(self, req, skin, data, key):
         RENDER_STATES.forget(self)  # mensagem nova ou redesenho pedido: o anexo antigo não vale
     shown = RENDER_STATES.get(self)
     try:
+        pipe = card_pipeline(self.bot.config["COVER_HOSTS"])
+        pipe.supersede(self)  # este pedido é o mais novo: um desenho anterior ainda na vaga não edita depois dele
         spec = await _card_spec(self, skin, fresh=redraw)
         unchanged = shown.last is not None and shown.last.spec == spec and not shown.upgrade_due
         if unchanged and self.last_data == _shown_marker(key, shown.last, spec):
             return True
-        pipe = card_pipeline(self.bot.config["COVER_HOSTS"])
         rendered = await pipe.render(self, skin.card, spec, self.tr, station_logo=_station_logo(self))
     except Exception as error:  # noqa: BLE001 - o player nunca fica sem mensagem (contrato §2.2)
         _card_failed(skin, error)
@@ -244,7 +247,10 @@ async def _np_render(self, req, skin, data, key):
         return True  # um pedido mais novo deste player vai editar a mensagem
     if rendered is None or rendered.key is None:
         req.data = _text_fallback(self, data, retry=rendered is not None and rendered.busy)
-        self.last_data = payload_key(req.data)
+        text_key = payload_key(req.data)
+        if text_key == self.last_data and _will_edit(self, req):
+            return True  # o mesmo texto já está na mensagem (vaga ainda ocupada): o redesenho segue pedido
+        self.last_data = text_key
         return False
     if RENDER_STATES.get(self).upgrade_due:
         self.update = True  # GIF adiado, capa a caminho ou vaga ocupada: o updater redesenha (auto_update 0 não volta)
@@ -332,6 +338,9 @@ async def _np_data(self, req):
             return True
         return False
 
+    pipeline = sys.modules.get("empiremuse.utils.render.cards.pipeline")  # sem o módulo carregado, nada desenha
+    if pipeline is not None:
+        pipeline.supersede(self)  # um cartão ainda desenhando para a skin anterior não edita depois do texto
     if RENDER_STATES.get(self).last is not None:
         drop_card(self, data)  # de uma skin de imagem para uma de texto na mesma mensagem: o cartão sai
     elif key == self.last_data:
