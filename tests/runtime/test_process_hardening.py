@@ -1,5 +1,5 @@
-"""Endurecimento do processo na subida (``process_hardening``): a marcação vale no Linux e chega aos filhos abertos como os
-workers de decodificação (``logo_worker``/``cover_worker``). Cada caso roda num processo à parte: o do pytest não muda."""
+"""Endurecimento do processo na subida (``process_hardening``): a marcação vale no Linux, com um caso de controle sem ela.
+Cada caso roda num processo à parte: o do pytest não muda."""
 
 import os
 import subprocess
@@ -59,7 +59,7 @@ def test_outside_linux_it_is_a_no_op():
     assert process_hardening.is_dumpable(platform="win32") is None
 
 
-@pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0, reason="root lê /proc de qualquer processo")
+@pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0, reason="precisa de um usuário sem privilégio")
 @pytest.mark.parametrize(("mode", "expected"), [("mark", "denied"), ("plain", "read")])
-def test_a_child_spawned_like_the_workers_cannot_open_the_parent_process_entry(mode, expected):
+def test_a_process_of_the_same_user_cannot_inspect_the_marked_process(mode, expected):
     assert _run(PARENT, ROOT, mode) == expected
