@@ -155,6 +155,7 @@ class RadioManager:
             for runner in list(self._runners.values()):
                 runner._stopped = True
                 runner.phase = Phase.OFF
+                runner.ports.radio_stopped()  # o redesenho do painel não está em _tasks: sem isto, edita com o relay fechado
             for task in list(self._tasks):
                 task.cancel()
             await asyncio.gather(*self._tasks, return_exceptions=True)

@@ -18,6 +18,8 @@ from empiremuse.utils.music.converters import (
 from empiremuse.utils.music.models import LavalinkPlayer
 from empiremuse.utils.others import PlayerControls
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
+from empiremuse.utils.jukebox_panel import player_hides_details
+from empiremuse.utils.music.private_call import details_shown
 
 
 class MiniSkin:
@@ -68,7 +70,8 @@ class MiniSkin:
                 embed.description += player.tr("player.queue_2")
 
         if not player.current.autoplay:
-            embed.description += f" {md_bracketed(f'<@{player.current.requester}>')}"
+            if details_shown(player):  # call privada: sem quem pediu
+                embed.description += f" {md_bracketed(f'<@{player.current.requester}>')}"
         else:
             try:
                 embed.description += f" {md_bracketed(md_link(player.tr('player.recommended'), player.current.info['extra']['related']['uri']))}"
@@ -86,7 +89,9 @@ class MiniSkin:
             value=f"```ansi\n[34;1m{fix_characters(player.current.author, 18)}[0m\n```",
         )
 
-        if player.command_log:
+        if player.command_log and not player_hides_details(
+            player
+        ):  # call privada, fora do chat dela: sem a última ação
             embed.add_field(
                 name=player.tr("player.last_interaction_5", command_log_emoji=str(player.command_log_emoji)),
                 value=f"{player.command_log}",

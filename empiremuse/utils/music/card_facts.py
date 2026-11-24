@@ -3,7 +3,8 @@ acompanha a imagem (barra de texto da opção C, texto alternativo e título no 
 
 - ``build(player, settings)`` é síncrono, sem ``await`` e sem I/O: lê o player, o modo rádio pela cópia imutável
   ``JukeboxRadio.view(player)`` (nunca ``player.radio_mode``) e devolve o ``CardSpec`` já selado (``rules.card.seal``).
-- **Call privada:** um ponto só, aqui (``jukebox_panel.is_private``). Sem call conhecida, conta como privada.
+- **Call privada:** um ponto só, ``jukebox_panel.player_hides_details``: oculta numa call privada (ou sem call conhecida),
+  salvo com o player no chat de texto da própria call.
 - **Estação do servidor (S):** pela cópia ``JukeboxRadio.station_view(player)`` (J2b); a faixa que veio da estação sai
   com ``By.STATION`` (sem quem pediu).
 - **Nada que envelhece:** a posição só entra na pausa (``paused_at_s``); o tempo vivo vai ao embed como ``<t:…:R>``.
@@ -13,6 +14,7 @@ acompanha a imagem (barra de texto da opção C, texto alternativo e título no 
 from __future__ import annotations
 
 import math
+from itertools import islice
 from typing import Any, Callable, NamedTuple, Optional
 
 from empiremuse.rules.card import (
@@ -34,7 +36,7 @@ from empiremuse.rules.card import (
     seal,
 )
 from empiremuse.rules.skins import disc_motion_on
-from empiremuse.utils.jukebox_panel import is_private
+from empiremuse.utils.jukebox_panel import player_hides_details, player_voice_channel
 from empiremuse.utils.music.cover_fetch import cover_url
 
 # A sigla fixa da fonte (``sourceName`` do Lavalink); o que não está aqui vira ``WEB``.
@@ -84,10 +86,6 @@ class CardSettings(NamedTuple):
 
 
 # ---------------------------------------------------------------------- montagem
-
-
-def _voice_channel(player: Any) -> Any:
-    return getattr(getattr(getattr(getattr(player, "guild", None), "me", None), "voice", None), "channel", None)
 
 
 def _jukebox(player: Any) -> Any:
@@ -150,14 +148,18 @@ def _item(player: Any, track: Any) -> CardItem:
     )
 
 
+def _head(player: Any, tracks: Any) -> tuple[int, tuple[CardItem, ...]]:
+    """O total e só as primeiras ``QUEUE_FACTS_MAX`` faixas: a fila inteira nunca é copiada."""
+    return len(tracks), tuple(_item(player, t) for t in islice(tracks, QUEUE_FACTS_MAX))
+
+
 def _queue(player: Any) -> tuple[str, int, tuple[CardItem, ...]]:
-    queue = list(getattr(player, "queue", ()))
+    queue = getattr(player, "queue", ())
     if queue:
-        return QUEUE_KIND_QUEUE, len(queue), tuple(_item(player, t) for t in queue[:QUEUE_FACTS_MAX])
-    recommended = list(getattr(player, "queue_autoplay", ())) if getattr(player, "autoplay", False) else []
+        return QUEUE_KIND_QUEUE, *_head(player, queue)
+    recommended = getattr(player, "queue_autoplay", ()) if getattr(player, "autoplay", False) else ()
     if recommended:
-        items = tuple(_item(player, t) for t in recommended[:QUEUE_FACTS_MAX])
-        return QUEUE_KIND_RECOMMENDED, len(recommended), items
+        return QUEUE_KIND_RECOMMENDED, *_head(player, recommended)
     return QUEUE_KIND_EMPTY, 0, ()
 
 
@@ -208,7 +210,7 @@ def build(player: Any, settings: CardSettings) -> CardSpec:
     view = _radio_view(player)
     station = _station_view(player) if view is None else None
     state = _state(player, view)
-    voice = _voice_channel(player)
+    voice = player_voice_channel(player)
     current = getattr(player, "current", None) if view is None else None
     queue_kind, queue_total, queue = _queue(player)
     paused_at = _seconds(getattr(player, "position", None)) if state is CardState.PAUSED else None
@@ -219,7 +221,7 @@ def build(player: Any, settings: CardSettings) -> CardSpec:
         render_version=RENDER_VERSION,
         locale=settings.locale,
         state=state,
-        hidden=True if voice is None else is_private(voice),
+        hidden=player_hides_details(player),
         track=_track(player, current, station is not None and station.playing) if current is not None else None,
         cover=_cover(current),
         paused_at_s=paused_at if current is not None and not current.is_stream else None,

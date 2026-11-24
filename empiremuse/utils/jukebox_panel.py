@@ -52,6 +52,38 @@ def is_private(voice_channel: Any) -> bool:
     return not (perms.view_channel and perms.connect)
 
 
+def player_voice_channel(player: Any) -> Any:
+    """A call em que o bot do player está agora; ``None`` se não há call conhecida."""
+    return getattr(getattr(getattr(getattr(player, "guild", None), "me", None), "voice", None), "channel", None)
+
+
+def player_call_is_private(player: Any) -> bool:
+    """A call do player é privada? Sem call conhecida, conta como privada."""
+    voice = player_voice_channel(player)
+    return True if voice is None else is_private(voice)
+
+
+def in_call_chat(channel: Any, voice: Any) -> bool:
+    """O canal é o chat de texto da própria call? No Discord, esse chat tem o mesmo id do canal de voz."""
+    channel_id = getattr(channel, "id", None)
+    return channel_id is not None and channel_id == getattr(voice, "id", None)
+
+
+def player_hides_details(player: Any, channel: Any = None) -> bool:
+    """A skin esconde a faixa, a capa, quem pediu e a última ação? A regra de todas as skins (D10).
+
+    Esconde numa call privada (ou sem call conhecida) quando a mensagem fica fora do chat da própria call, que só quem vê a
+    call lê. ``channel`` é onde a mensagem vai; sem ele, o canal do player. Sem canal conhecido, esconde. O painel da
+    Jukebox não usa esta regra: ele esconde em toda call privada (``is_private``).
+    """
+    voice = player_voice_channel(player)
+    if voice is not None and not is_private(voice):
+        return False
+    if channel is None:
+        channel = getattr(player, "text_channel", None)
+    return not in_call_chat(channel, voice)
+
+
 def entry_for(bot: BotCore, player: LavalinkPlayer) -> Optional[PanelEntry]:
     """O bloco do painel para um player conectado; ``None`` se ele não está em call."""
     voice = getattr(getattr(player.guild.me, "voice", None), "channel", None)

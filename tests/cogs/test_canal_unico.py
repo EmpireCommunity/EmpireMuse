@@ -15,7 +15,13 @@ from empiremuse.rules.jukebox_panel import HANDOFF_RETRY_BASE_MS
 from empiremuse.utils import jukebox_panel as panel_module
 from empiremuse.utils.music.checks import pick_request_bot, resolve_player
 from empiremuse.utils.music.errors import GenericError
-from empiremuse.utils.jukebox_panel import JukeboxPanel, entry_for, is_private
+from empiremuse.utils.jukebox_panel import (
+    JukeboxPanel,
+    entry_for,
+    is_private,
+    player_call_is_private,
+    player_hides_details,
+)
 
 pytestmark = pytest.mark.critical
 
@@ -284,6 +290,55 @@ def voice_channel(*, view, connect):
 def test_a_call_that_everyone_cannot_see_or_join_is_private(view, connect, private):
     assert is_private(voice_channel(view=view, connect=connect)) is private
     assert is_private(object()) is True  # sem como saber: privada
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    "player",
+    [
+        SimpleNamespace(guild=None),
+        SimpleNamespace(guild=SimpleNamespace(me=None)),
+        SimpleNamespace(guild=SimpleNamespace(me=SimpleNamespace(voice=None))),
+        SimpleNamespace(guild=SimpleNamespace(me=SimpleNamespace(voice=SimpleNamespace(channel=None)))),
+    ],
+    ids=["sem_servidor", "sem_bot", "sem_voz", "sem_canal"],
+)
+def test_a_player_without_a_known_call_counts_as_a_private_call(player):
+    assert player_call_is_private(player) is True
+
+
+def test_a_player_in_a_public_call_is_not_private():
+    player = SimpleNamespace(
+        guild=SimpleNamespace(me=SimpleNamespace(voice=SimpleNamespace(channel=voice_channel(view=True, connect=True))))
+    )
+    assert player_call_is_private(player) is False
+
+
+CALL_ID, OTHER_CHANNEL = 700, 701
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    ("private", "call_known", "player_channel", "destination", "hides"),
+    [
+        (True, True, CALL_ID, None, False),  # call privada, player no chat da própria call: mostra
+        (True, True, OTHER_CHANNEL, None, True),  # call privada, player em outro canal (Jukebox, fórum, texto): esconde
+        (False, True, OTHER_CHANNEL, None, False),  # call pública: mostra
+        (True, False, CALL_ID, None, True),  # sem call conhecida: esconde
+        (True, True, None, None, True),  # sem canal conhecido: esconde
+        (True, True, CALL_ID, OTHER_CHANNEL, True),  # a mensagem vai para fora do chat da call: esconde
+    ],
+)
+def test_a_private_call_is_shown_only_in_the_call_own_chat(private, call_known, player_channel, destination, hides):
+    voice = voice_channel(view=not private, connect=True)
+    voice.id = CALL_ID
+    player = SimpleNamespace(
+        guild=SimpleNamespace(me=SimpleNamespace(voice=SimpleNamespace(channel=voice if call_known else None))),
+        text_channel=None if player_channel is None else SimpleNamespace(id=player_channel),
+    )
+    channel = None if destination is None else SimpleNamespace(id=destination)
+
+    assert player_hides_details(player, channel) is hides
 
 
 def test_the_panel_entry_of_a_private_call_has_no_track_link_or_requester():

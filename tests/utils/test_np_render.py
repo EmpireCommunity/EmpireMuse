@@ -96,6 +96,12 @@ def world(monkeypatch):
     return SimpleNamespace(skin=skin, pipe=pipe, spec=spec, player=Player(skin))
 
 
+def public_call_guild():
+    from tests.audio.test_invoke_np_cancelamento import public_call_guild as guild
+
+    return guild()
+
+
 def request():
     return SimpleNamespace(interaction=None, force=False, data=None)
 
@@ -128,6 +134,42 @@ async def test_a_text_skin_with_components_skips_an_edit_when_nothing_changed():
     again, _ = await run(player)
 
     assert (first, again) == (False, True)
+
+
+def call_guild(*, private: bool):
+    """O bot numa call; privada = ``@everyone`` não vê o canal."""
+    perms = SimpleNamespace(view_channel=not private, connect=True)
+    channel = SimpleNamespace(permissions_for=lambda _role: perms, guild=SimpleNamespace(default_role=None))
+    return SimpleNamespace(me=SimpleNamespace(voice=SimpleNamespace(channel=channel)))
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+@pytest.mark.critical
+@pytest.mark.parametrize("private", [False, True])
+@pytest.mark.parametrize("skin_name", ["muse_text", "default"])
+async def test_a_forum_static_player_never_puts_the_real_title_in_the_content_of_a_private_call(skin_name, private):
+    from unittest.mock import MagicMock
+
+    skin = TextSkin()
+    skin.name = skin_name
+    player = Player(skin)
+    player.bot.pool.player_skins = player.bot.pool.player_static_skins = {skin_name: skin}
+    player.bot.user = SimpleNamespace(
+        id=1, display_avatar=SimpleNamespace(replace=lambda **_kw: SimpleNamespace(url="a"))
+    )
+    player.skin, player.static, player.paused = skin_name, True, False
+    player.skin_static = skin_name
+    player.tr = lambda key, **_kw: {"jbx.hidden_track": "Faixa oculta"}.get(key, key)
+    player.queue, player.queue_autoplay, player.command_log = [], [], ""
+    player.current = SimpleNamespace(title="SEGREDO do fórum", duration=1000, is_stream=False)
+    player.text_channel = SimpleNamespace(parent=MagicMock(spec=disnake.ForumChannel))
+    player.guild = call_guild(private=private)
+
+    _, req = await run(player)
+
+    content = req.data.get("content") or ""
+    assert ("SEGREDO" in content, "Faixa oculta" in content) == (not private, private)
 
 
 # ---------------------------------------------------------------------- cartão no embed
@@ -366,6 +408,7 @@ async def test_an_old_skin_that_never_had_a_card_edits_as_before():
     player = Player(skin)
     player.bot.pool.player_skins = {"default": skin}
     player.skin = "default"
+    player.guild = public_call_guild()
 
     _, req = await run(player)
 
@@ -523,14 +566,19 @@ async def test_e2e_expanded_plays_as_gif_pauses_as_png_and_comes_back_as_gif(mon
 
 @pytest.mark.asyncio
 @pytest.mark.regression
+@pytest.mark.parametrize("screen", ["player", "lyrics"])
 @pytest.mark.parametrize("had_card", [False, True])
-async def test_closing_the_player_drops_a_card_that_was_on_the_message(had_card):
+async def test_closing_the_player_drops_a_card_that_was_on_the_message(monkeypatch, had_card, screen):
     from unittest.mock import AsyncMock
 
     from empiremuse.utils.music.models import state_steps
 
     player = Player(ImageSkin())
-    player.lyric_embed, player.message = None, SimpleNamespace(edit=AsyncMock())
+    player.lyric_embed, player.command_log = None, "Bia parou o player."
+    player.message = SimpleNamespace(edit=AsyncMock(), components=[object()])
+    if screen == "lyrics":  # a tela de letra encerra com o embed dela
+        player.lyric_embed = disnake.Embed(description="letra")
+        monkeypatch.setattr(state_steps, "_cu_disabled_view_children", lambda _self: [])
     player.get_skin = lambda disable=False: TextSkin().load(player)
     if had_card:
         RENDER_STATES.replace(player, last=RenderedKey(base_spec(), None, CardFormat.PNG))
@@ -539,6 +587,7 @@ async def test_closing_the_player_drops_a_card_that_was_on_the_message(had_card)
 
     sent = player.message.edit.await_args.kwargs
     assert sent.get("attachments") == ([] if had_card else None)
+    assert ("embed" in sent) is (screen == "lyrics")
 
 
 @pytest.mark.asyncio
@@ -558,6 +607,40 @@ async def test_a_busy_slot_with_no_card_on_screen_does_not_repeat_the_same_text_
     again = await run_once()
 
     assert (first, again) == (False, message == "same") and world.pipe.calls == 2 and world.player.update is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_closing_the_player_drops_a_drawing_still_in_the_slot(monkeypatch):
+    import asyncio
+
+    from empiremuse.utils.music.models import state_steps
+    from tests.utils.test_card_pipeline import Covers, DrawnThenWait
+    from tests.utils.test_render_cards import RecordingBook, logo_png
+
+    slot = DrawnThenWait()
+    pipe = pipeline.CardPipeline(Covers(), slot=slot, book=RecordingBook(), clock=lambda: 100.0, bot_logo=logo_png())
+    monkeypatch.setattr(pipeline, "card_pipeline", lambda _hosts: pipe)
+    monkeypatch.setattr(pipeline, "_PIPELINE", pipe)
+    spec = {"value": base_spec(skin="muse_slim_black", motion=False)}
+
+    async def card_spec(_player, _skin, **_kw):
+        return spec["value"]
+
+    monkeypatch.setattr(np_steps, "_card_spec", card_spec)
+    player = Player(ImageSkin())
+    await run(player)
+    slot.after = asyncio.Event()
+    spec["value"] = base_spec(skin="muse_slim_black", motion=False, volume=10)
+    arrived = slot.reached(2)  # o 1º desenho já passou pela vaga; o 2º é o que fica nela
+    drawing = asyncio.ensure_future(run(player))
+    await arrived.wait()
+
+    state_steps._cu_cancel_tasks(player)  # o player encerra com o desenho ainda na vaga
+    slot.after.set()
+    skipped, req = await drawing
+
+    assert skipped is True and req.data is None and slot.runs == 2
 
 
 @pytest.mark.asyncio
@@ -598,3 +681,69 @@ async def test_a_request_that_does_not_draw_supersedes_a_drawing_still_in_the_sl
 
     assert newer is (newer_request == "same_card_exits_early") and old is True and slot.runs == 2
     assert RENDER_STATES.get(player).last == (shown if newer_request == "same_card_exits_early" else None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+@pytest.mark.critical
+@pytest.mark.parametrize("private", [False, True])
+@pytest.mark.parametrize("path", ["interaction", "thread", "idle", "lyrics"])
+async def test_the_end_and_idle_embeds_hide_the_last_action_in_a_private_call(monkeypatch, path, private):
+    from unittest.mock import AsyncMock
+
+    from empiremuse.utils.music.models import state_steps
+
+    action = "<@42> parou o player"
+    perms = SimpleNamespace(view_channel=not private, connect=True)
+    voice = SimpleNamespace(
+        channel=SimpleNamespace(permissions_for=lambda _role: perms, guild=SimpleNamespace(default_role=0))
+    )
+    player = Player(ImageSkin())
+    player.guild = SimpleNamespace(me=SimpleNamespace(voice=voice))
+    player.bot.get_color = lambda _me: 0
+    player.lyric_embed, player.command_log, player.static = None, action, path == "thread"
+    player.message = SimpleNamespace(id=1, edit=AsyncMock(), components=[])
+    player.channel_cleanup, player.allowed_mentions = AsyncMock(), None
+    idle = AsyncMock()
+    monkeypatch.setattr(state_steps, "send_idle_embed", idle)
+    monkeypatch.setattr(state_steps, "_cu_archive_jukebox_thread", AsyncMock())
+    if path == "lyrics":  # a tela de letra aberta na mensagem: o encerramento edita o embed dela
+        player.lyric_embed, player.message.components = disnake.Embed(description="letra"), [object()]
+        monkeypatch.setattr(state_steps, "_cu_disabled_view_children", lambda _self: [])
+
+    if path == "interaction":
+        await state_steps._cu_close_message_from_interaction(player, SimpleNamespace(message=SimpleNamespace(id=2)))
+    elif path == "thread":
+        await state_steps._cu_close_thread_message(player)
+    elif path == "lyrics":
+        await state_steps._cu_close_controller_message(player)
+    else:
+        await state_steps._cu_static_session(player)
+
+    shown = idle.await_args.args[1] if path == "idle" else player.message.edit.await_args.kwargs["embed"].description
+    assert (action in shown) is not private
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+@pytest.mark.parametrize(("destination", "shown"), [(700, True), (701, False)])
+async def test_the_idle_embed_of_a_private_call_shows_the_last_action_only_in_the_call_own_chat(
+    monkeypatch, destination, shown
+):
+    from unittest.mock import AsyncMock
+
+    from empiremuse.utils.music.models import state_steps
+
+    action = "<@42> parou o player"
+    perms = SimpleNamespace(view_channel=False, connect=True)
+    call = SimpleNamespace(id=700, permissions_for=lambda _role: perms, guild=SimpleNamespace(default_role=0))
+    player = Player(ImageSkin())
+    player.guild = SimpleNamespace(me=SimpleNamespace(voice=SimpleNamespace(channel=call)))
+    player.text_channel, player.command_log = SimpleNamespace(id=700), action  # o player no chat da própria call
+    player.channel_cleanup = AsyncMock()
+    idle = AsyncMock()
+    monkeypatch.setattr(state_steps, "send_idle_embed", idle)
+
+    await state_steps._cu_static_session(player, SimpleNamespace(channel=SimpleNamespace(id=destination)))
+
+    assert (action in idle.await_args.args[1]) is shown

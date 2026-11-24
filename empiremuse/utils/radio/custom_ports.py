@@ -77,7 +77,6 @@ class CustomRadioPorts(DiscordRadioPorts):
         self._wake = (
             asyncio.Event()
         )  # editar ou trocar a estação acorda a espera de uma fonte quebrada (10 min) ou do recuo (20 s)
-        self._panel_task: Optional[asyncio.Task] = None
         self._panel_dirty = False  # um pedido de redesenho chegou durante a edição em curso
         self._panel_edited_at: Optional[float] = None  # a última edição do painel (relógio das portas)
         self.panel_sleep = (
@@ -395,16 +394,12 @@ class CustomRadioPorts(DiscordRadioPorts):
         """Refaz o painel (faixa no ar, sem faixas) em segundo plano; no máximo uma edição por vez e uma por
         ``PANEL_EDIT_INTERVAL_S``: os pedidos da janela se juntam numa edição. O pedido que chega durante a edição em curso
         não se perde: ela edita de novo ao terminar."""
+        if self._panel_closed:
+            return
         self._panel_dirty = True
         if self._panel_task is not None and not self._panel_task.done():
             return
         self._panel_task = asyncio.get_running_loop().create_task(self._edit_panel_until_clean())
-
-    def cancel_panel_task(self) -> None:
-        """O runner parou: some a edição agendada (e o pedido pendente) junto com as portas."""
-        self._panel_dirty = False
-        if self._panel_task is not None and not self._panel_task.done():
-            self._panel_task.cancel()
 
     async def _edit_panel_until_clean(self) -> None:
         """Edita enquanto houver pedido. Com a vaga de render ocupada, tenta de novo depois de ``PANEL_BUSY_RETRY_S``, até

@@ -1188,6 +1188,52 @@ class TestLivePanel:
         assert len(tries) == 2 * edits_after_retries
 
     @pytest.mark.asyncio
+    async def test_stopping_the_radio_cancels_the_edit_waiting_for_its_window(self):
+        """A edição que espera a janela do painel não sai depois que a rádio parou de verdade."""
+        from unittest.mock import AsyncMock
+
+        from empiremuse.utils.radio.live_ports import LiveRadioPorts
+        from empiremuse.utils.radio.panel import LiveView
+        from tests.cogs.test_radio_portas import BOT_ID, build as build_ports
+
+        w = build_ports()
+        radio = check_radio(
+            {
+                "_id": radio_id(BOT_ID, GUILD),
+                "channel_id": str(CHANNEL),
+                "kind": "live",
+                "source": {"station": MAIN, "reserve": None},
+            }
+        )
+        ports = LiveRadioPorts(w.ports.pool, radio)
+        edits: list = []
+        gate = asyncio.Event()
+
+        async def fake_edit(view):
+            edits.append(view)
+
+        async def held(seconds):
+            await gate.wait()
+
+        ports._edit_panel = fake_edit  # type: ignore[method-assign]
+        ports.now = lambda: 1000.0  # type: ignore[method-assign]
+        ports.sleep = held  # type: ignore[method-assign]
+        ports._last_edit = 1000.0  # a última edição acabou de sair: a próxima espera a janela
+        w.hub.store.get = AsyncMock(return_value=None)
+
+        ports.update_panel(LiveView(title="faixa"))
+        task = ports._panel_task
+        await asyncio.sleep(0)
+        ports.radio_stopped()
+        gate.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert edits == [] and ports._panel_task is None
+
+        ports.update_panel(LiveView(title="outra"))  # um redesenho pedido depois da parada não cria edição nova
+        assert ports._panel_task is None
+
+    @pytest.mark.asyncio
     async def test_the_edit_uses_no_mentions_and_the_clean_text(self):
         from unittest.mock import AsyncMock, MagicMock
 

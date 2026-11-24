@@ -12,6 +12,8 @@ from empiremuse.utils.music.converters import time_format, get_button_style, mus
 from empiremuse.utils.music.models import LavalinkPlayer
 from empiremuse.utils.others import ProgressBar, PlayerControls
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
+from empiremuse.utils.jukebox_panel import player_hides_details
+from empiremuse.utils.music.private_call import details_shown
 
 
 class DefaultProgressbarSkin:
@@ -64,7 +66,8 @@ class DefaultProgressbarSkin:
         )
 
         if not player.current.autoplay:
-            txt += f"\n> -# {app_emoji(player.bot, 'user')} **⠂** <@{player.current.requester}>"
+            if details_shown(player):  # call privada: sem quem pediu
+                txt += f"\n> -# {app_emoji(player.bot, 'user')} **⠂** <@{player.current.requester}>"
         else:
             try:
                 mode = f" {md_link(player.tr('player.recommended'), player.current.info['extra']['related']['uri'])}"
@@ -101,7 +104,9 @@ class DefaultProgressbarSkin:
 
         txt += f"{vc_txt}\n"
 
-        if player.command_log:
+        if player.command_log and not player_hides_details(
+            player
+        ):  # call privada, fora do chat dela: sem a última ação
             txt += player.tr(
                 "player.last_interaction_2",
                 command_log_emoji=str(player.command_log_emoji),

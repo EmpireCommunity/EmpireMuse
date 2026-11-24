@@ -49,15 +49,17 @@ def test_outside_text_gets_one_escape_and_no_link_or_mention(custom, name, shown
     snap = snapshot(
         look="text",
         station_name=name,
-        now_title=HOSTILE,
+        now_title=f"{HOSTILE} {name}",
         now_artist=HOSTILE,
         filter_path=(HOSTILE,),
-        stations=tuple(StationOption(i, f"id{i}", HOSTILE, 64, "mp3", "good") for i in range(1, 6)),
-        recent_titles=((1_700_000_000.0, HOSTILE),),
+        stations=tuple(StationOption(i, f"id{i}", f"{HOSTILE} {name}", 64, "mp3", "good") for i in range(1, 6)),
+        recent_titles=() if custom else ((1_700_000_000.0, f"{HOSTILE} {name}"),),  # o histórico só existe na ao vivo
     )
     text = text_of(text_payload(PT, snap, filter_options=[], custom=custom, channel=HOSTILE, at=0))
 
-    assert shown in text and "\\\\" not in text
+    assert shown in text and "\\\\" not in text  # título, faixa, histórico e estações: nenhum escape duplo
+    if not custom:
+        assert PT("radio.text.history") in text
     for alive in ("@everyone", "<@123>", "https://", "](http"):
         assert alive not in text
 

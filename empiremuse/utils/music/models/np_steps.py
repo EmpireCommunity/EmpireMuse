@@ -30,7 +30,10 @@ from empiremuse.utils.music.models.helpers import (
 )
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
 from empiremuse.utils.music import card_facts
+from empiremuse.utils import jukebox_panel
 from empiremuse.rules.skins import JUKEBOX_IDS
+from empiremuse.utils.music.private_call import skin_view
+from empiremuse.utils.jukebox_panel import player_hides_details
 from empiremuse.utils.render.state import RENDER_STATES
 from empiremuse.utils.safe_error import safe_error
 
@@ -111,12 +114,13 @@ def _skin_object(self):
 def _load_skin(self):
     """O payload da skin e o objeto dela (``None`` para skin personalizada)."""
     skin = _skin_object(self)
+    view = skin_view(self)  # call privada: Clássicas e personalizadas veem a faixa mascarada
     if skin is not None:
-        return skin.load(self), skin
+        return skin.load(view), skin
     if self.static:
-        data = skin_converter(self.custom_skin_static_data[self.skin_static[15:]], player=self, guild=self.guild)
+        data = skin_converter(self.custom_skin_static_data[self.skin_static[15:]], player=view, guild=self.guild)
     else:
-        data = skin_converter(self.custom_skin_data[self.skin[15:]], player=self, guild=self.guild)
+        data = skin_converter(self.custom_skin_data[self.skin[15:]], player=view, guild=self.guild)
     return data, None
 
 
@@ -352,9 +356,11 @@ async def _np_data(self, req):
     if not data.get("flags"):
         try:
             if self.static and isinstance(self.text_channel.parent, disnake.ForumChannel):
-                data["content"] = (
-                    f"`{'▶️' if not self.paused else '⏸️'} {fix_characters(self.current.title, 50)}` |\n\n"
-                    + (data.get("content") or "")
+                # call privada: o título real nunca vai ao conteúdo, em nenhuma skin (D10)
+                private = jukebox_panel.player_hides_details(self)
+                title = self.tr("jbx.hidden_track") if private else self.current.title
+                data["content"] = f"`{'▶️' if not self.paused else '⏸️'} {fix_characters(title, 50)}` |\n\n" + (
+                    data.get("content") or ""
                 )
         except Exception:
             pass
@@ -533,7 +539,9 @@ def _np_buttons_extra(self, req):
     """Acrescenta ao menu padrão as opções que dependem do estado do player."""
     data = req.data
 
-    if self.static:
+    private = player_hides_details(self)  # call privada, fora do chat dela: sem o select da fila nem a letra (D10)
+
+    if self.static and not private:
         if queue := self.queue or self.queue_autoplay:
             data["components"].append(
                 disnake.ui.Select(
@@ -556,7 +564,7 @@ def _np_buttons_extra(self, req):
                 )
             )
 
-    if self.current.ytid and self.node.lyric_support:
+    if self.current.ytid and self.node.lyric_support and not private:
         data["components"][5].options.append(
             disnake.SelectOption(
                 label="Visualizar letras",

@@ -29,6 +29,7 @@ def ports_with(payloads):
     ports._channel = lambda: channel
     ports._panel_task = None
     ports._panel_dirty = False
+    ports._panel_closed = False
     ports._panel_edited_at = None
     clock = [0.0]
     ports.now = lambda: clock[0]
@@ -108,6 +109,26 @@ async def test_redraws_asked_inside_the_window_become_one_edit():
 
 
 @pytest.mark.asyncio
+async def test_stopping_the_radio_cancels_the_pending_panel_retry():
+    """A nova tentativa do painel (vaga de render ocupada) não edita depois que a rádio parou de verdade."""
+    gate = asyncio.Event()
+    ports, message, _ = ports_with([RenderBusy(), {"file": "visor"}])
+
+    async def held(seconds):
+        await gate.wait()
+
+    ports.panel_sleep = held
+    ports.refresh_panel()
+    task = ports._panel_task
+    await asyncio.sleep(0)  # a primeira tentativa achou a vaga ocupada e espera
+    ports.radio_stopped()
+    gate.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert message.edit.await_count == 0
+
+
+@pytest.mark.asyncio
 @pytest.mark.regression
 async def test_a_stopped_runner_does_not_edit_the_panel_after_the_window(monkeypatch):
     """O pedido que esperava a janela de 15 s não edita o painel quando a rádio desliga e volta antes dela."""
@@ -123,6 +144,7 @@ async def test_a_stopped_runner_does_not_edit_the_panel_after_the_window(monkeyp
 
     ports.panel_sleep = hold
     ports.refresh_panel()
+    task = ports._panel_task
     await asyncio.sleep(0)  # a tarefa chega à espera da janela
     runner = RadioRunner.__new__(RadioRunner)
     runner.ports, runner._stopped = ports, False
@@ -130,6 +152,18 @@ async def test_a_stopped_runner_does_not_edit_the_panel_after_the_window(monkeyp
     ports.stop_stream = AsyncMock()
     await runner.stop()
     release.set()
-    await asyncio.gather(ports._panel_task, return_exceptions=True)
+    await asyncio.gather(task, return_exceptions=True)
 
     assert message.edit.await_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_a_redraw_asked_after_the_radio_stopped_creates_no_edit():
+    """O ``_rebuild`` cancelado pela parada pede o redesenho no ``finally``; ele chega depois do ``radio_stopped``."""
+    ports, message, _ = ports_with([{"file": "a"}])
+    ports.radio_stopped()
+
+    ports.refresh_panel()
+
+    assert ports._panel_task is None and message.edit.await_count == 0

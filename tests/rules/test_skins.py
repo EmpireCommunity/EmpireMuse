@@ -151,7 +151,7 @@ def test_disc_motion_is_on_unless_turned_off(value, on):
 @pytest.mark.parametrize(
     ("q1", "saved", "choice"),
     [
-        (True, "default", "default"),  # Q1 = sim: quem salvou a Clássica padrão a mantém
+        (True, "default", "default"),  # Q1 = sim: quem salvou a Clássica `default` a mantém
         (False, "default", None),  # Q1 = não: o "default" gravado é lido como nunca escolhido
         (True, None, None),
         (False, None, None),

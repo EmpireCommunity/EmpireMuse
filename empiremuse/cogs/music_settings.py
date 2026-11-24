@@ -37,14 +37,12 @@ from empiremuse.utils.music.guild_text import guild_text
 from empiremuse.utils.music.interactions import SkinEditorMenu, EmbedPaginatorInteraction, ButtonInteraction
 from empiremuse.utils.music.interactions.i18n_views import guild_translator
 from empiremuse.utils.music.interactions.skins_draft import plan_is_valid, plan_save
+from empiremuse.utils.music.interactions.skins_store import load_choices, redraw_radio_panels, save_skins
 from empiremuse.utils.music.interactions.skins_view import (
     SkinsView,
     can_configure_radios,
     can_manage_skins,
     initial_draft,
-    load_choices,
-    redraw_radio_panels,
-    save_skins,
     summary_lines,
 )
 from empiremuse.utils.music.skin_store import load_custom_skins
@@ -1161,8 +1159,10 @@ class MusicSettings(commands.Cog):
             failed = await save_skins(bot, guild.id, plan, updated_by=str(inter.author.id))
         except Exception as error:  # noqa: BLE001 - banco fora (ou bug) no meio do Salvar: o membro recebe a resposta
             logger.warning("Falha ao gravar o /skins (%s)", type(error).__name__, exc_info=True)
-            await reply(tr("skin.save_failed"))
-            await self._reconcile_players(bot, guild.id, plan, tr, inter.author.mention)  # um escopo pode ter gravado
+            try:
+                await reply(tr("skin.save_failed"))
+            finally:  # a resposta pode falhar (token vencido): o que gravou chega aos players e às rádios mesmo assim
+                await self._refresh_after_partial_save(bot, guild.id, plan, current.radios, inter.author.mention, tr)
             return
         saved_plan = plan._replace(radio_looks=tuple(i for i in plan.radio_looks if i.bot_id not in failed))
         lines = summary_lines(tr, saved_plan, view.choices.radios)
@@ -1180,26 +1180,33 @@ class MusicSettings(commands.Cog):
 
         await reply(text)
 
+        redraw_radio_panels(bot.pool, guild.id, self._radio_panels(plan, current.radios, saved_plan.radio_looks))
+        if self._touches_players(plan):
+            await self._reload_player_skins(bot, guild.id, global_data, skins, inter.author.mention, tr)
+
+    def _touches_players(self, plan) -> bool:
+        """Só a skin das rádios mudou: os players ficam como estão."""
+        return bool(set(plan.global_fields) - self.RADIO_ONLY_FIELDS or plan.server_fields)
+
+    @staticmethod
+    def _radio_panels(plan, radios, looks) -> list[int]:
+        """As rádios cujo painel muda: todas, se a skin das rádios do servidor mudou; senão só as do plano."""
         if "radio_skin" in plan.global_fields:
-            redraw_radio_panels(bot.pool, guild.id, [row.bot_id for row in current.radios])  # a lista de agora
-        else:
-            redraw_radio_panels(bot.pool, guild.id, [item.bot_id for item in saved_plan.radio_looks])
+            return [row.bot_id for row in radios]
+        return [item.bot_id for item in looks]
 
-        await self._reconcile_players(bot, guild.id, plan, tr, inter.author.mention, global_data, skins)
-
-    async def _reconcile_players(
-        self, bot, guild_id: int, plan, tr, mention: str, global_data=None, skins=None
-    ) -> None:
-        """Aplica aos players o que ficou gravado. Só a skin das rádios mudou: os players ficam como estão."""
-        if not (set(plan.global_fields) - self.RADIO_ONLY_FIELDS or plan.server_fields):
+    async def _refresh_after_partial_save(self, bot, guild_id: int, plan, radios, mention: str, tr) -> None:
+        """O Salvar caiu no meio: a parte que gravou antes (o documento global, o servidor, algumas rádios) já vale. Os
+        players e os painéis se refazem relendo o banco, então mostram o que ficou gravado, nem mais nem menos."""
+        redraw_radio_panels(bot.pool, guild_id, self._radio_panels(plan, radios, plan.radio_looks))
+        if not self._touches_players(plan):
             return
         try:
-            if global_data is None:
-                global_data = await bot.get_global_data(guild_id, db_name=DBModel.guilds)
-                skins = await load_custom_skins(bot, guild_id, global_data)
+            global_data = await bot.get_global_data(guild_id, db_name=DBModel.guilds)
+            skins = await load_custom_skins(bot, guild_id, global_data)
             await self._reload_player_skins(bot, guild_id, global_data, skins, mention, tr)
-        except Exception:
-            logger.exception("Falha ao aplicar o /skins aos players")
+        except Exception as error:  # noqa: BLE001 - o banco segue fora: os players ficam como estão até o próximo /skins
+            logger.warning("Falha ao recarregar os players depois do /skins (%s)", type(error).__name__, exc_info=True)
 
     async def _reload_player_skins(self, bot, guild_id: int, global_data, skins, mention: str, tr) -> None:
         """Recarrega os players ativos com a skin efetiva (mesma precedência da criação do player). A animação do disco mudou:

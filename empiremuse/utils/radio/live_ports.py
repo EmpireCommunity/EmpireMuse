@@ -54,7 +54,6 @@ class LiveRadioPorts(DiscordRadioPorts):
         self._view: LiveView = LiveView()  # o que o painel deve mostrar (o último pedido)
         self._shown: Optional[LiveView] = None  # o que o painel mostra de fato
         self._last_edit: Optional[float] = None
-        self._panel_task: Optional[asyncio.Task] = None
 
     # ------------------------------------------------------------------ estado da fonte
 
@@ -231,14 +230,13 @@ class LiveRadioPorts(DiscordRadioPorts):
         que edita uma vez com o valor mais recente (título a cada 100 ms = 1 edição por 15 s)."""
         self._view = view
         self._announce(view.title)
-        if self._merged(view) == self._shown or (self._panel_task is not None and not self._panel_task.done()):
+        if (
+            self._panel_closed
+            or self._merged(view) == self._shown
+            or (self._panel_task is not None and not self._panel_task.done())
+        ):
             return
         self._panel_task = asyncio.get_running_loop().create_task(self._edit_when_due())
-
-    def cancel_panel_task(self) -> None:
-        """O runner parou: a edição agendada não pode editar o painel do runner seguinte."""
-        if self._panel_task is not None and not self._panel_task.done():
-            self._panel_task.cancel()
 
     async def _edit_when_due(self) -> None:
         """Uma edição por janela. Se a edição não sai, ``_shown`` volta a ``None`` (o painel mostra o que já mostrava): a

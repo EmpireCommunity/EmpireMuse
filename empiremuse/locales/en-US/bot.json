@@ -860,6 +860,7 @@
   "views.queue.closed": "Queue closed",
   "views.queue.only_member": "Only the member {mention} can interact here.",
   "views.queue.player_gone": "The player has been finished...",
+  "player.closed_private": "The player was closed.",
   "views.only_user": "Only {mention} can interact here.",
   "views.close.label": "Close",
   "views.cancel.label": "Cancel",

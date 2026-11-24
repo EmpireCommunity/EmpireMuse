@@ -16,7 +16,8 @@ import pytest
 from empiremuse.cogs import music_settings
 from empiremuse.cogs.music_settings import MusicSettings
 from empiremuse.i18n import get_i18n
-from empiremuse.utils.music.interactions import skins_view
+from empiremuse.rules.skins import CLASSIC_NORMAL, CLASSIC_STATIC, player_preview
+from empiremuse.utils.music.interactions import skins_store, skins_view
 from empiremuse.utils.music.interactions.skins_draft import (
     INVALID,
     Choices,
@@ -148,6 +149,13 @@ class TestPreviewPath:
         assert skins_view.preview_path("skins/ok.png") == (assets / "skins" / "ok.png").resolve()
         assert skins_view.preview_path("../fora.png") is None
 
+    def test_every_classic_has_a_real_preview_in_each_mode_from_the_registry(self):
+        """O registro é a fonte única da prévia: antes ele apontava as Clássicas para um arquivo que não existe."""
+        pairs = [(skin, False) for skin in CLASSIC_NORMAL] + [(skin, True) for skin in CLASSIC_STATIC]
+        missing = [pair for pair in pairs if skins_view.preview_path(player_preview(pair[0], static=pair[1])) is None]
+        assert missing == []
+        assert all(player_preview(skin, static=True) != player_preview(skin) for skin in CLASSIC_STATIC)  # uma por modo
+
 
 # ============================================================================ gravação
 
@@ -229,7 +237,7 @@ class TestSaveSkins:
         bot = Bot({"global_skin": False, "custom_skins": {"X": {}}}, store=store)
         plan = SavePlan({"radio_skin": "text"}, {}, (RadioLook(BOT_A, "text", 3), RadioLook(BOT_B, None, 7)))
 
-        failed = await skins_view.save_skins(bot, GUILD, plan, updated_by="900")
+        failed = await skins_store.save_skins(bot, GUILD, plan, updated_by="900")
 
         assert failed == (BOT_A,)
         assert [call[1] for call in store.calls] == [f"{BOT_A}:{GUILD}", f"{BOT_B}:{GUILD}"]
@@ -240,7 +248,7 @@ class TestSaveSkins:
     async def test_the_radio_id_is_always_built_with_the_interactions_guild(self):
         store = RadioStore()
         plan = SavePlan({}, {}, (RadioLook(BOT_B, "text", 7),))
-        await skins_view.save_skins(Bot({}, store=store), GUILD, plan, updated_by="9")
+        await skins_store.save_skins(Bot({}, store=store), GUILD, plan, updated_by="9")
         assert store.calls == [(GUILD, f"{BOT_B}:{GUILD}", "text", 7)]
 
     def test_the_radio_panels_of_this_guild_are_asked_to_redraw(self):
@@ -249,7 +257,7 @@ class TestSaveSkins:
         runner = lambda rid: SimpleNamespace(ports=ports[rid]) if rid in ports else None  # noqa: E731
         pool = SimpleNamespace(radio=SimpleNamespace(manager=SimpleNamespace(runner=runner)))
 
-        skins_view.redraw_radio_panels(pool, GUILD, [BOT_A, BOT_B])
+        skins_store.redraw_radio_panels(pool, GUILD, [BOT_A, BOT_B])
 
         assert redrawn == [BOT_A]
 
@@ -266,11 +274,53 @@ async def test_a_classic_default_saved_in_skins_survives_a_reopen_and_the_new_pl
     scope = "glob" if global_mode else "server"
     draft = _replace(initial, **{scope: ("default", "default")})
 
-    await skins_view.save_skins(bot, GUILD, plan_save(initial, draft, RADIOS, radio_allowed=False), updated_by="9")
+    await skins_store.save_skins(bot, GUILD, plan_save(initial, draft, RADIOS, radio_allowed=False), updated_by="9")
     reopened = skins_view.initial_draft(bot.pool, bot.settings, bot.global_data, CHOICES)
 
     assert getattr(reopened, scope) == ("default", "default")  # a Clássica escolhida, não o padrão Texto
     assert saved_player_skins(bot.settings, bot.global_data) == ("default", "default")  # a leitura da criação do player
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+@pytest.mark.parametrize("global_mode", [False, True])
+@pytest.mark.parametrize("static", [False, True], ids=["player_normal", "player_fixo"])
+async def test_a_classic_default_saved_in_skins_reloads_a_live_player_to_default_not_the_text_skin(
+    monkeypatch, global_mode, static
+):
+    """O Salvar do ``/skins`` recarrega o player vivo pela mesma leitura da criação: a Clássica ``default`` escolhida (com a
+    marca gravada) fica, em vez de virar o padrão Texto. Sem a marca na leitura, o ``default`` gravado cairia no padrão."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    async def no_wait(_seconds):  # relógio falso: nenhuma espera real entre os players
+        return None
+
+    monkeypatch.setattr(music_settings.asyncio, "sleep", no_wait)
+    bot = Bot({"global_skin": global_mode})
+    bot.settings = {"skin": "mini", "static_skin": "mini"}
+    initial = skins_view.initial_draft(bot.pool, bot.settings, bot.global_data, CHOICES)
+    draft = _replace(initial, **{"glob" if global_mode else "server": ("default", "default")})
+    await skins_store.save_skins(bot, GUILD, plan_save(initial, draft, RADIOS, radio_allowed=False), updated_by="9")
+    player = SimpleNamespace(
+        static=static,
+        skin="muse_text",
+        skin_static="muse_text",
+        controller_mode=False,
+        destroy_message=AsyncMock(),
+        setup_features=MagicMock(),
+        setup_hints=MagicMock(),
+        process_hint=MagicMock(),
+        set_command_log=MagicMock(),
+        invoke_np=AsyncMock(),
+    )
+    bot.music.players[GUILD] = player
+    cog = SimpleNamespace(bot=bot)
+    skins = SimpleNamespace(normal={}, static={})
+
+    await MusicSettings._reload_player_skins(cog, bot, GUILD, bot.global_data, skins, "<@9>", TR)
+
+    assert (player.skin_static if static else player.skin) == "default"  # a Clássica escolhida, não o padrão Texto
+    player.invoke_np.assert_awaited_once()  # o player foi recarregado (a skin mudou), não só redesenhado
 
 
 # ============================================================================ o comando de ponta a ponta (tela de mentira)
@@ -303,14 +353,18 @@ async def run_skins(
     radio_allowed=True,
     opener=None,
     prefix=False,
+    failing_reply=None,
     reply_error=None,
 ) -> Opened:
     """Roda o ``MusicSettings.change_skin`` REAL; a tela devolve o rascunho que ``change(initial)`` monta. ``prefix`` = pelo
-    comando de prefixo (um ``CustomContext``); ``opener`` = quem abre; ``saver`` = quem aperta Salvar."""
+    comando de prefixo (um ``CustomContext``); ``opener`` = quem abre; ``saver`` = quem aperta Salvar; ``failing_reply`` = a
+    resposta com esse texto falha depois de registrada."""
     opened = Opened()
 
     async def edit(*args, **kwargs):
         opened.replies.append(kwargs)
+        if failing_reply is not None and any(e.description == failing_reply for e in kwargs.get("embeds") or ()):
+            raise ConnectionError("token vencido")
         if reply_error is not None and len(opened.replies) > 1:  # a primeira edição é a da tela; a seguinte, a resposta
             raise reply_error
 
@@ -493,6 +547,43 @@ class TestCommand:
         opened = await run_skins(monkeypatch, bot, change=lambda d: _server_skin(d, "muse_expanded_black"))
         assert opened.replies[-1]["embeds"][0].description == TR("skin.save_failed")
 
+    @pytest.mark.regression
+    @pytest.mark.parametrize("reply_fails", [False, True], ids=["respondeu", "resposta-falhou"])
+    @pytest.mark.asyncio
+    async def test_a_save_that_fails_halfway_reloads_the_players_and_radios_with_what_was_saved(
+        self, monkeypatch, reply_fails
+    ):
+        """Bug do S6: o documento global gravava, o ``patch`` do servidor caía e os players e os painéis das rádios ficavam
+        com a skin velha. Vale também quando a própria resposta falha (token vencido)."""
+        bot = Bot({"global_skin": False}, store=RadioStore(radios=[_radio()]))
+        reloads, redraws = [], []
+
+        async def down(*args, **kwargs):
+            raise ConnectionError("banco fora")
+
+        async def reload(self, bot_, guild_id, global_data, *args):
+            reloads.append((guild_id, global_data.get("disc_motion")))
+
+        bot.pool.servers.patch = down
+        monkeypatch.setattr(MusicSettings, "_reload_player_skins", reload)
+        monkeypatch.setattr(
+            music_settings, "redraw_radio_panels", lambda pool, guild_id, ids: redraws.append(list(ids))
+        )
+        # valores diferentes do padrão (Jukebox Texto e Rádio Texto): o padrão não grava nada, e o `patch` que cai nunca rodaria
+        change = lambda d: _replace(  # noqa: E731
+            _server_skin(d, "muse_expanded_black"), disc_motion=False, radio_all="portrait_white"
+        )
+
+        if reply_fails:
+            with pytest.raises(ConnectionError):
+                await run_skins(monkeypatch, bot, change=change, failing_reply=TR("skin.save_failed"))
+        else:
+            opened = await run_skins(monkeypatch, bot, change=change)
+            assert opened.replies[-1]["embeds"][0].description == TR("skin.save_failed")
+
+        assert bot.global_writes[-1][1]["radio_skin"] == "portrait_white"  # a parte gravada (global)...
+        assert reloads == [(GUILD, False)] and redraws == [[BOT_A]]  # ...chega aos players e aos painéis das rádios
+
     @pytest.mark.asyncio
     @pytest.mark.regression
     @pytest.mark.parametrize("global_mode", [False, True])
@@ -585,7 +676,7 @@ class TestCommand:
     async def test_a_custom_skin_in_the_legacy_text_format_is_not_listed(self):
         bot = Bot({"custom_skins": {"Velha": "texto antigo"}, "custom_skins_static": {}})
 
-        choices = await skins_view.load_choices(bot, bot.get_guild(GUILD), bot.global_data, radio_allowed=False)
+        choices = await skins_store.load_choices(bot, bot.get_guild(GUILD), bot.global_data, radio_allowed=False)
 
         assert choices.custom_normal == () and choices.custom_static == ()
 
@@ -724,7 +815,7 @@ class TestView:
     @pytest.mark.asyncio
     async def test_outside_names_are_escaped_in_embeds_and_raw_only_in_selects(self):
         bot = Bot({}, store=RadioStore(radios=[_radio()]), channels={5: SimpleNamespace(name="**x**")})
-        (row,) = await skins_view.radio_rows(bot, bot.get_guild(GUILD))
+        (row,) = await skins_store.radio_rows(bot, bot.get_guild(GUILD))
         assert row.label == f"#**x** · {BOT_A}" and row.text == f"#\\*\\*x\\*\\* · {BOT_A}"
 
         plan = SavePlan({"player_skin": "> custom_skin: **c**"}, {}, (RadioLook(BOT_A, "text", 3),))

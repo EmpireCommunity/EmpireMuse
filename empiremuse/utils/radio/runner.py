@@ -82,6 +82,7 @@ class RadioPorts(Protocol):
     async def skip_track(self) -> None: ...
     async def ensure_panel(self) -> None: ...
     async def stop_stream(self) -> None: ...
+    def radio_stopped(self) -> None: ...
     def listeners(self) -> int: ...
     def paused_all(self) -> bool: ...
     async def turn_off(self, reason: Allowed) -> None: ...
@@ -209,21 +210,19 @@ class RadioRunner:
     async def stop(self) -> None:
         """Desligada por quem manda (comando, painel): para o fluxo e esquece o estado. O contador é da store. Nada mais religa este runner."""
         self._stopped = True
-        self._cancel_panel_task()
-        await self.ports.stop_stream()
+        try:
+            await self.ports.stop_stream()
+        finally:
+            self.ports.radio_stopped()  # mesmo que fechar o fluxo falhe, o redesenho pendente não segue
         self._set(Phase.OFF)
-
-    def _cancel_panel_task(self) -> None:
-        """Runner parado: a edição de painel que ficou esperando a janela não pode editar o painel do runner seguinte."""
-        cancel = getattr(self.ports, "cancel_panel_task", None)  # portas sem a tarefa (dublês) não têm o que cancelar
-        if cancel is not None:
-            cancel()
 
     async def _shutdown(self, reason: Allowed) -> None:
         logger.warning("Rádio desligada (%s)", reason.value)  # sem IDs, sem nomes (R-12)
         self._stopped = True
-        self._cancel_panel_task()
-        await self.ports.stop_stream()
+        try:
+            await self.ports.stop_stream()
+        finally:
+            self.ports.radio_stopped()  # mesmo que fechar o fluxo falhe, o redesenho pendente não segue
         self._set(Phase.OFF)
         await self.ports.turn_off(reason)
 

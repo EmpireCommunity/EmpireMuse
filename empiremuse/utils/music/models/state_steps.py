@@ -5,16 +5,23 @@ from __future__ import annotations
 
 import logging
 import datetime
+import sys
 
 import disnake
 
 from empiremuse.utils.others import send_idle_embed
 from empiremuse.utils.music.models.np_steps import without_card
+from empiremuse.utils.music.private_call import closing_log
 
 logger = logging.getLogger("empiremuse.player")
 
 # Sessões mais novas que isso (segundos) encerram com um embed simples em vez do skin desativado.
 SKIN_KEEP_MIN_SESSION_SECONDS = 15
+
+
+def _closing_text(self) -> str:
+    """A última ação no embed de encerramento; numa call privada, só o aviso de que o player foi encerrado (D10)."""
+    return closing_log(self) or self.tr("player.closed_private")
 
 
 def _cu_cancel_task_quietly(self, attr: str) -> None:
@@ -36,6 +43,10 @@ def _cu_cancel_tasks(self) -> None:
     for attr in ("message_updater_task", "_new_node_task", "idle_task"):
         _cu_cancel_task_quietly(self, attr)
         setattr(self, attr, None)
+
+    pipeline = sys.modules.get("empiremuse.utils.render.cards.pipeline")  # sem o módulo carregado, nada desenha
+    if pipeline is not None:
+        pipeline.supersede(self)  # um cartão ainda desenhando não edita a mensagem depois do encerramento
 
 
 def _cu_voice_channel(self):
@@ -65,7 +76,7 @@ async def _cu_static_session(self, inter: disnake.MessageInteraction = None) -> 
         return
 
     try:
-        await send_idle_embed(inter or self.message, self.command_log, bot=self.bot)
+        await send_idle_embed(inter or self.message, closing_log(self, inter or self.message), bot=self.bot)
     except Exception:
         logger.exception("Falha em _cu_static_session")
 
@@ -120,7 +131,7 @@ async def _cu_close_thread_message(self, inter: disnake.MessageInteraction = Non
                 self,
                 self.get_skin(disable=True)
                 if (not self.static and _cu_session_older_than_skin_grace(self))
-                else {"embed": disnake.Embed(description=self.command_log, color=self.bot.get_color(self.guild.me))},
+                else {"embed": disnake.Embed(description=_closing_text(self), color=self.bot.get_color(self.guild.me))},
             ),
         )
         await _cu_archive_jukebox_thread(self)
@@ -156,7 +167,7 @@ def _cu_lyric_closing_kwargs(self, disabled_components) -> dict:
     if not (self.lyric_embed and self.message and self.message.components):
         return {}
 
-    self.lyric_embed.description += f"\n🛑 ⠂{self.command_log}"
+    self.lyric_embed.description += f"\n🛑 ⠂{_closing_text(self)}"
     return {"embed": self.lyric_embed, "components": disabled_components()}
 
 
@@ -205,7 +216,9 @@ async def _cu_close_message_from_interaction(self, inter: disnake.MessageInterac
     if func:
         if not kw:
             kw = {
-                "embed": disnake.Embed(description=f"🛑 ⠂{self.command_log}", color=self.bot.get_color(self.guild.me)),
+                "embed": disnake.Embed(
+                    description=f"🛑 ⠂{_closing_text(self)}", color=self.bot.get_color(self.guild.me)
+                ),
                 "view": None,
             }
 

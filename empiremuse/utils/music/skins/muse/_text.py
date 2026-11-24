@@ -3,8 +3,9 @@
 - **Texto de fora** (faixa, artista, álbum, playlist, nome de membro, estação): sai por ``external_text`` (markdown escapado,
   sem link nem menção); o nome e o título ICY da rádio já vêm guardados escapados e saem por ``stored_text`` (via
   ``jukebox_ui``). A única menção é a de quem pediu, ``<@id>`` montado aqui de um id numérico.
-- **Call privada:** o mesmo predicado do painel (``jukebox_panel.is_private``); sem call conhecida, conta como privada (como o
-  ``card_facts``). Oculta faixa, capa, call, quem pediu, títulos da fila e a rádio.
+- **Call privada:** a regra de todas as skins (``jukebox_panel.player_hides_details``, como o ``card_facts``): numa call
+  privada, ou sem call conhecida, oculta faixa, capa, call, quem pediu, títulos da fila e a rádio, salvo com o player no
+  chat de texto da própria call.
 - **Nada que muda sozinho entre duas leituras:** todo horário ``<t:…>`` sai arredondado em ``TIME_QUANTUM_S``, para o
   ``payload_key`` do ``_np_data`` não editar a mensagem só pelo relógio (a barra em texto anda a cada 15 s).
 """
@@ -16,7 +17,7 @@ from typing import Any, Callable, NamedTuple, Optional
 
 from empiremuse.rules.jukebox_panel import last_action_of
 from empiremuse.rules.text import external_text
-from empiremuse.utils.jukebox_panel import is_private
+from empiremuse.utils.jukebox_panel import player_hides_details, player_voice_channel
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
 from empiremuse.utils.music.converters import md_url, time_format
 from empiremuse.utils.music.jukebox_ui import server_station_md, station_md
@@ -52,12 +53,11 @@ def _jukebox(player: Any) -> Any:
 
 
 def voice_channel(player: Any) -> Any:
-    return getattr(getattr(getattr(getattr(player, "guild", None), "me", None), "voice", None), "channel", None)
+    return player_voice_channel(player)
 
 
 def is_hidden(player: Any) -> bool:
-    voice = voice_channel(player)
-    return True if voice is None else is_private(voice)
+    return player_hides_details(player)
 
 
 def context(player: Any, now: float) -> Context:
