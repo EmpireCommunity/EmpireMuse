@@ -15,7 +15,7 @@ from empiremuse.rules.jukebox_panel import HANDOFF_RETRY_BASE_MS
 from empiremuse.utils import jukebox_panel as panel_module
 from empiremuse.utils.music.checks import pick_request_bot, resolve_player
 from empiremuse.utils.music.errors import GenericError
-from empiremuse.utils.jukebox_panel import JukeboxPanel, entry_for, is_private
+from empiremuse.utils.jukebox_panel import JukeboxPanel, entry_for, is_private, player_call_is_private
 
 pytestmark = pytest.mark.critical
 
@@ -284,6 +284,28 @@ def voice_channel(*, view, connect):
 def test_a_call_that_everyone_cannot_see_or_join_is_private(view, connect, private):
     assert is_private(voice_channel(view=view, connect=connect)) is private
     assert is_private(object()) is True  # sem como saber: privada
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    "player",
+    [
+        SimpleNamespace(guild=None),
+        SimpleNamespace(guild=SimpleNamespace(me=None)),
+        SimpleNamespace(guild=SimpleNamespace(me=SimpleNamespace(voice=None))),
+        SimpleNamespace(guild=SimpleNamespace(me=SimpleNamespace(voice=SimpleNamespace(channel=None)))),
+    ],
+    ids=["sem_servidor", "sem_bot", "sem_voz", "sem_canal"],
+)
+def test_a_player_without_a_known_call_counts_as_a_private_call(player):
+    assert player_call_is_private(player) is True
+
+
+def test_a_player_in_a_public_call_is_not_private():
+    player = SimpleNamespace(
+        guild=SimpleNamespace(me=SimpleNamespace(voice=SimpleNamespace(channel=voice_channel(view=True, connect=True))))
+    )
+    assert player_call_is_private(player) is False
 
 
 def test_the_panel_entry_of_a_private_call_has_no_track_link_or_requester():

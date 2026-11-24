@@ -136,6 +136,42 @@ async def test_a_text_skin_with_components_skips_an_edit_when_nothing_changed():
     assert (first, again) == (False, True)
 
 
+def call_guild(*, private: bool):
+    """O bot numa call; privada = ``@everyone`` não vê o canal."""
+    perms = SimpleNamespace(view_channel=not private, connect=True)
+    channel = SimpleNamespace(permissions_for=lambda _role: perms, guild=SimpleNamespace(default_role=None))
+    return SimpleNamespace(me=SimpleNamespace(voice=SimpleNamespace(channel=channel)))
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+@pytest.mark.critical
+@pytest.mark.parametrize("private", [False, True])
+@pytest.mark.parametrize("skin_name", ["muse_text", "default"])
+async def test_a_forum_static_player_never_puts_the_real_title_in_the_content_of_a_private_call(skin_name, private):
+    from unittest.mock import MagicMock
+
+    skin = TextSkin()
+    skin.name = skin_name
+    player = Player(skin)
+    player.bot.pool.player_skins = player.bot.pool.player_static_skins = {skin_name: skin}
+    player.bot.user = SimpleNamespace(
+        id=1, display_avatar=SimpleNamespace(replace=lambda **_kw: SimpleNamespace(url="a"))
+    )
+    player.skin, player.static, player.paused = skin_name, True, False
+    player.skin_static = skin_name
+    player.tr = lambda key, **_kw: {"jbx.hidden_track": "Faixa oculta"}.get(key, key)
+    player.queue, player.queue_autoplay, player.command_log = [], [], ""
+    player.current = SimpleNamespace(title="SEGREDO do fórum", duration=1000, is_stream=False)
+    player.text_channel = SimpleNamespace(parent=MagicMock(spec=disnake.ForumChannel))
+    player.guild = call_guild(private=private)
+
+    _, req = await run(player)
+
+    content = req.data.get("content") or ""
+    assert ("SEGREDO" in content, "Faixa oculta" in content) == (not private, private)
+
+
 # ---------------------------------------------------------------------- cartão no embed
 
 
@@ -651,7 +687,7 @@ async def test_a_request_that_does_not_draw_supersedes_a_drawing_still_in_the_sl
 @pytest.mark.regression
 @pytest.mark.critical
 @pytest.mark.parametrize("private", [False, True])
-@pytest.mark.parametrize("path", ["interaction", "thread", "idle"])
+@pytest.mark.parametrize("path", ["interaction", "thread", "idle", "lyrics"])
 async def test_the_end_and_idle_embeds_hide_the_last_action_in_a_private_call(monkeypatch, path, private):
     from unittest.mock import AsyncMock
 
@@ -671,11 +707,16 @@ async def test_the_end_and_idle_embeds_hide_the_last_action_in_a_private_call(mo
     idle = AsyncMock()
     monkeypatch.setattr(state_steps, "send_idle_embed", idle)
     monkeypatch.setattr(state_steps, "_cu_archive_jukebox_thread", AsyncMock())
+    if path == "lyrics":  # a tela de letra aberta na mensagem: o encerramento edita o embed dela
+        player.lyric_embed, player.message.components = disnake.Embed(description="letra"), [object()]
+        monkeypatch.setattr(state_steps, "_cu_disabled_view_children", lambda _self: [])
 
     if path == "interaction":
         await state_steps._cu_close_message_from_interaction(player, SimpleNamespace(message=SimpleNamespace(id=2)))
     elif path == "thread":
         await state_steps._cu_close_thread_message(player)
+    elif path == "lyrics":
+        await state_steps._cu_close_controller_message(player)
     else:
         await state_steps._cu_static_session(player)
 

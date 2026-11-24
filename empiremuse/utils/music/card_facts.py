@@ -3,7 +3,7 @@ acompanha a imagem (barra de texto da opção C, texto alternativo e título no 
 
 - ``build(player, settings)`` é síncrono, sem ``await`` e sem I/O: lê o player, o modo rádio pela cópia imutável
   ``JukeboxRadio.view(player)`` (nunca ``player.radio_mode``) e devolve o ``CardSpec`` já selado (``rules.card.seal``).
-- **Call privada:** um ponto só, aqui (``jukebox_panel.is_private``). Sem call conhecida, conta como privada.
+- **Call privada:** um ponto só, ``jukebox_panel.player_call_is_private``. Sem call conhecida, conta como privada.
 - **Estação do servidor (S):** pela cópia ``JukeboxRadio.station_view(player)`` (J2b); a faixa que veio da estação sai
   com ``By.STATION`` (sem quem pediu).
 - **Nada que envelhece:** a posição só entra na pausa (``paused_at_s``); o tempo vivo vai ao embed como ``<t:…:R>``.
@@ -35,7 +35,7 @@ from empiremuse.rules.card import (
     seal,
 )
 from empiremuse.rules.skins import disc_motion_on
-from empiremuse.utils.jukebox_panel import is_private
+from empiremuse.utils.jukebox_panel import player_call_is_private, player_voice_channel
 from empiremuse.utils.music.cover_fetch import cover_url
 
 # A sigla fixa da fonte (``sourceName`` do Lavalink); o que não está aqui vira ``WEB``.
@@ -85,10 +85,6 @@ class CardSettings(NamedTuple):
 
 
 # ---------------------------------------------------------------------- montagem
-
-
-def _voice_channel(player: Any) -> Any:
-    return getattr(getattr(getattr(getattr(player, "guild", None), "me", None), "voice", None), "channel", None)
 
 
 def _jukebox(player: Any) -> Any:
@@ -213,7 +209,7 @@ def build(player: Any, settings: CardSettings) -> CardSpec:
     view = _radio_view(player)
     station = _station_view(player) if view is None else None
     state = _state(player, view)
-    voice = _voice_channel(player)
+    voice = player_voice_channel(player)
     current = getattr(player, "current", None) if view is None else None
     queue_kind, queue_total, queue = _queue(player)
     paused_at = _seconds(getattr(player, "position", None)) if state is CardState.PAUSED else None
@@ -224,7 +220,7 @@ def build(player: Any, settings: CardSettings) -> CardSpec:
         render_version=RENDER_VERSION,
         locale=settings.locale,
         state=state,
-        hidden=True if voice is None else is_private(voice),
+        hidden=player_call_is_private(player),
         track=_track(player, current, station is not None and station.playing) if current is not None else None,
         cover=_cover(current),
         paused_at_s=paused_at if current is not None and not current.is_stream else None,

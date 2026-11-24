@@ -265,3 +265,15 @@ def test_the_last_action_never_shows_in_a_private_call(tr, build, private):
     text = _texts(build(player, NOW))
 
     assert ("Faixa Secreta" in text) is not private
+
+
+@pytest.mark.parametrize("private", [False, True])
+def test_the_text_author_names_the_call_only_when_it_is_public(tr, private):
+    from empiremuse.utils.music.skins.muse import _text
+
+    player = _player(tr, private=private)
+    player.guild.me.voice.channel.name = "Lounge da Call"
+
+    author = _text.author_text(player, _text.context(player, NOW), tr)
+
+    assert ("Lounge da Call" in author) is not private

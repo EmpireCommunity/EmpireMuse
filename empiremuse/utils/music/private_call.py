@@ -10,20 +10,50 @@ Clássicas recebem uma visão do player em que a faixa atual e a fila são másc
 - **Quem pediu:** o próprio bot, como reserva; as Clássicas nem desenham a linha nem o select da fila (``details_shown``).
 - **Última ação:** vazia.
 
-O resto passa direto ao player de verdade (duração, volume, botões, contagem da fila), então o visual da skin não muda (D3).
-Os campos da máscara são uma lista fechada: um atributo novo lido por uma skin falha no teste em vez de vazar.
+Do resto do player, só a lista fechada ``PASS_THROUGH`` passa ao player de verdade (volume, estado, botões, servidor), então o
+visual da skin não muda (D3). A máscara da faixa também é lista fechada. Um atributo fora das listas (``played``,
+``last_track``, ``command_log_list``...) levanta ``AttributeError``: uma skin nova que o leia falha no teste em vez de vazar.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator
-from itertools import islice
 from typing import Any
 
 from empiremuse.rules.skins import JUKEBOX_IDS
 from empiremuse.utils.jukebox_panel import player_call_is_private
 
 NO_ARTIST = "—"
+
+# O que as Clássicas e a ``skin_converter`` leem do player, fora a faixa, a fila e a última ação (mascaradas). Nada aqui
+# carrega faixa, capa nem quem pediu.
+PASS_THROUGH = frozenset(
+    {
+        "auto_update",
+        "autoplay",
+        "bot",
+        "command_log_emoji",
+        "controller_link",
+        "controller_mode",
+        "current_hint",
+        "guild",
+        "has_thread",
+        "hint_rate",
+        "keep_connected",
+        "last_channel",
+        "loop",
+        "mini_queue_enabled",
+        "mini_queue_feature",
+        "nightcore",
+        "node",
+        "paused",
+        "position",
+        "restrict_mode",
+        "static",
+        "tr",
+        "volume",
+    }
+)
 
 
 def _bot_avatar(player: Any) -> str:
@@ -52,7 +82,7 @@ class HiddenTrack:
 
 
 class HiddenTracks:
-    """A fila com o mesmo tamanho, cada faixa mascarada só quando a skin a lê."""
+    """A fila com o mesmo tamanho, cada faixa mascarada só quando a skin a lê. Sem índice: nenhuma skin indexa a fila."""
 
     def __init__(self, tracks: Any, mask: Any) -> None:
         self._tracks = tracks
@@ -67,14 +97,9 @@ class HiddenTracks:
     def __iter__(self) -> Iterator[HiddenTrack]:
         return (self._mask(track) for track in self._tracks)
 
-    def __getitem__(self, index: Any) -> Any:
-        if isinstance(index, slice):
-            return [self._mask(track) for track in islice(self._tracks, *index.indices(len(self._tracks)))]
-        return self._mask(self._tracks[index])
-
 
 class PrivateCallView:
-    """O player numa call privada: faixa, fila e última ação mascaradas; todo o resto é o player de verdade."""
+    """O player numa call privada: faixa, fila e última ação mascaradas; do resto, só ``PASS_THROUGH``."""
 
     def __init__(self, player: Any) -> None:
         title, thumb, bot_id = player.tr("jbx.hidden_track"), _bot_avatar(player), player.bot.user.id
@@ -94,7 +119,9 @@ class PrivateCallView:
             object.__setattr__(self, name, value)
 
     def __getattr__(self, name: str) -> Any:
-        return getattr(self._player, name)
+        if name in PASS_THROUGH:
+            return getattr(self._player, name)
+        raise AttributeError(f"{name!r} não passa pela visão da call privada (PASS_THROUGH)")
 
     def __setattr__(self, name: str, value: Any) -> None:
         setattr(self._player, name, value)  # setup das skins (``mini_queue_feature`` e afins) vale no player
