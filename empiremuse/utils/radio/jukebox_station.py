@@ -225,8 +225,13 @@ class JukeboxStationMixin:
             player.radio_switched_at = self.now()
             raise
         async with player.radio_lock:
-            # relida no efeito: apagada durante a carga não começa; editada (outra fonte) também não, porque o pool é da fonte aceita
-            self._same_source(station, await self._station_of(guild_id, station.id))
+            # relida no efeito: apagada durante a carga não começa; editada (outra fonte) também não, porque o pool é da fonte aceita.
+            # A carga já foi gasta: essa recusa também conta como troca para a espera curta [s1]
+            try:
+                self._same_source(station, await self._station_of(guild_id, station.id))
+            except Refused:
+                player.radio_switched_at = self.now()
+                raise
             name = self.station_name(player.tr, station)
             # dentro do lock: nada do que valia antes vale agora
             await self._station_checks(guild_id, self._requester_channel(member, player))

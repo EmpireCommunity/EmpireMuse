@@ -685,6 +685,10 @@ async def test_a_station_edited_while_its_pool_loads_does_not_start_with_the_old
     with pytest.raises(Refused) as refused:
         await world.radio.request_station(world.inter(world.members[10]), SERVER_STATION)
     assert refused.value.key == "jukebox.station.not_found" and player.station is None
+    # revisão do PR 282: a carga foi gasta, então a recusa também vale a espera curta
+    with pytest.raises(Refused) as again:
+        await world.radio.request_station(world.inter(world.members[10]), SERVER_STATION)
+    assert again.value.key == "jukebox.radio.switch_wait" and world.hub.lastfm.recipe_tracks.await_count == 1
 
 
 @pytest.mark.critical
@@ -864,6 +868,48 @@ async def test_a_transition_during_the_autoplay_search_takes_the_player(transiti
     req = NS(track=None)
     assert await playback_steps._pn_next_track(player, req) is (plays is None)
     assert getattr(req.track, "name", req.track) == plays and not player.queue_autoplay and not idle.await_count
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("station", "waits"), [(True, []), (False, [60])])
+async def test_a_failed_autoplay_search_waits_only_without_a_station(station, waits, monkeypatch):
+    """Revisão do PR 282: a busca que falhava com uma estação aberta no meio esperava 60 s antes de a estação tocar; sem
+    estação, o recuo do autoplay continua."""
+    from empiremuse.utils.music.models import playback_steps
+    from empiremuse.utils.radio.jukebox_station import StationNext
+
+    slept = []
+
+    async def sleep(seconds):
+        slept.append(seconds)
+
+    monkeypatch.setattr(playback_steps, "asyncio", NS(sleep=sleep))
+    jukebox = NS(next_station_track=AsyncMock(return_value=(StationNext.TRACK, "faixa da estação")))
+    player = NS(
+        queue=deque(),
+        queue_autoplay=deque(),
+        radio_id=None,
+        radio_mode=None,
+        station=None,
+        autoplay=True,
+        keep_connected=False,
+        locked=False,
+        is_closing=False,
+        current="tocando",
+        bot=NS(pool=NS(radio=NS(jukebox=jukebox))),
+    )
+
+    async def autoqueue():
+        if station:
+            player.station = NS(ref="g:rock")
+        raise RuntimeError("busca falhou")
+
+    player.get_autoqueue_tracks = autoqueue
+    req = NS(track=None)
+    await playback_steps._pn_next_track(player, req)
+    assert slept == waits and req.track == ("faixa da estação" if station else None)
 
 
 @pytest.mark.critical

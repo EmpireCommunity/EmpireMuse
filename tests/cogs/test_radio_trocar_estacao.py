@@ -577,6 +577,25 @@ class TestPickerUsesTheRadioOfNow:
         current = await w.hub.store.get(w.radio.id)
         assert current.source["station"] == THIRD and current.rev > bumped.rev - 1
 
+    @pytest.mark.asyncio
+    @pytest.mark.regression
+    @pytest.mark.parametrize("mode", ["fav", "mine"])
+    async def test_a_directory_outage_when_playing_a_favorite_says_try_again_not_station_not_found(self, mode):
+        w, view = await self.opened()
+        view.list_mode = mode
+
+        async def down(uuid, **kwargs):
+            raise DirectoryError("fora")
+
+        w.hub.directory.by_uuid_strict = down
+        w.hub.directory.by_uuid = AsyncMock(return_value=None)  # a leitura tolerante: queda = "não existe"
+        confirm = click(PANEL_MENU_ID)
+
+        await view._on_confirm(confirm)
+
+        assert "tente de novo" in said(confirm).casefold() and "não encontrad" not in said(confirm).casefold()
+        assert (await w.hub.store.get(w.radio.id)).source["station"] == MAIN
+
 
 class TestPersonalFavoritesJ3:
     @pytest.mark.asyncio
