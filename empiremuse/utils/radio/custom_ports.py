@@ -400,6 +400,12 @@ class CustomRadioPorts(DiscordRadioPorts):
             return
         self._panel_task = asyncio.get_running_loop().create_task(self._edit_panel_until_clean())
 
+    def cancel_panel_task(self) -> None:
+        """O runner parou: some a edição agendada (e o pedido pendente) junto com as portas."""
+        self._panel_dirty = False
+        if self._panel_task is not None and not self._panel_task.done():
+            self._panel_task.cancel()
+
     async def _edit_panel_until_clean(self) -> None:
         """Edita enquanto houver pedido. Com a vaga de render ocupada, tenta de novo depois de ``PANEL_BUSY_RETRY_S``, até
         ``PANEL_BUSY_RETRIES`` vezes: o painel que nasceu sem o visor não espera a próxima faixa para ganhá-lo."""

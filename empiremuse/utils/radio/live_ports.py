@@ -235,6 +235,11 @@ class LiveRadioPorts(DiscordRadioPorts):
             return
         self._panel_task = asyncio.get_running_loop().create_task(self._edit_when_due())
 
+    def cancel_panel_task(self) -> None:
+        """O runner parou: a edição agendada não pode editar o painel do runner seguinte."""
+        if self._panel_task is not None and not self._panel_task.done():
+            self._panel_task.cancel()
+
     async def _edit_when_due(self) -> None:
         """Uma edição por janela. Se a edição não sai, ``_shown`` volta a ``None`` (o painel mostra o que já mostrava): a
         próxima ``update_panel`` refaz a edição mesmo com a mesma visão. Com a vaga de render ocupada, tenta de novo na
