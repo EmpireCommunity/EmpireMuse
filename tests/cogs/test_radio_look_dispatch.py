@@ -50,8 +50,8 @@ def drawn(monkeypatch):
     [
         ("white", "portrait_white", ("visor", "white")),  # a da rádio vence a de todas as rádios
         (None, "portrait_white", ("portrait", "portrait_white")),
-        (None, None, ("portrait", "portrait_black")),  # nunca escolhida: o padrão
-        (None, RuntimeError("banco fora"), ("portrait", "portrait_black")),
+        (None, None, None),  # nunca escolhida: o padrão é a Rádio Texto, que sai sem desenho
+        (None, RuntimeError("banco fora"), None),  # banco fora: o mesmo padrão
         ("portrait_white", RuntimeError("banco fora"), ("portrait", "portrait_white")),
     ],
 )
@@ -71,7 +71,10 @@ async def test_the_radio_panel_draws_the_effective_skin(own, guild, expected, dr
     )
     tr = await get_i18n().for_guild(None)
     payload = await DiscordRadioPorts._custom_visor_payload(ports, bot_with(guild), SimpleNamespace(me=None), radio, tr)
-    assert drawn == [expected] and payload["file"].filename.endswith(".png")
+    if expected is None:
+        assert drawn == [] and payload["embeds"]  # Rádio Texto: embed e logo, nenhum desenho
+    else:
+        assert drawn == [expected] and payload["file"].filename.endswith(".png")
 
 
 @pytest.mark.asyncio

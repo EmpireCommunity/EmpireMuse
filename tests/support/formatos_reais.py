@@ -236,6 +236,8 @@ def cog_de_sessoes(*, mongo: MongoEmMemoria | None = None, **config) -> PlayerSe
         config=configuracao,
         pool=SimpleNamespace(
             mongo_database=mongo,
+            default_skin="muse_text",  # a retomada recua para o padrão quando a skin gravada é o "default" antigo (Q1)
+            default_static_skin="muse_text",
             process_track_cls=lambda *args, **kwargs: BotPool.process_track_cls(None, *args, **kwargs),
         ),
     )

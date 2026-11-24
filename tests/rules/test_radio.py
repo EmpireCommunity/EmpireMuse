@@ -6,6 +6,7 @@ import dataclasses
 import pytest
 
 from empiremuse.rules.errors import RuleError
+from empiremuse.rules.skins import DEFAULT_RADIO_LOOK, radio_look
 from empiremuse.rules.radio import (
     ABSENCE_PAUSE_S,
     CHAT_LIMITS,
@@ -49,6 +50,26 @@ def doc(**over):
         "rev": 3,
     }
     return {**base, **over}
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    ("raw_skin", "effective"),
+    [
+        ("black", DEFAULT_RADIO_LOOK),
+        ("white", "white"),
+        (None, DEFAULT_RADIO_LOOK),
+    ],  # sem a chave `skin` vale o padrão antigo
+)
+def test_an_old_radio_without_look_follows_the_default_look_and_a_white_one_stays_white(raw_skin, effective):
+    """O preto era o padrão de criação: sem `look`, segue o padrão atual (Rádio Texto); o branco foi escolha e continua."""
+    extra = {} if raw_skin is None else {"skin": raw_skin}
+    radio = check_radio(doc(**extra))
+
+    assert isinstance(radio, Radio) and radio.look == (
+        "white" if raw_skin == "white" else None
+    )  # o preto não grava escolha
+    assert radio_look(radio.look, None) == effective
 
 
 class TestCheckRadio:
