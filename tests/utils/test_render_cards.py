@@ -279,6 +279,17 @@ def test_radio_live_draws_the_icy_title_and_station_with_on_air_instead_of_the_q
     assert "jbx.up_next" not in tr.keys
 
 
+@pytest.mark.regression
+@pytest.mark.parametrize("family", ["expanded", "slim"])
+def test_the_on_air_card_shows_no_quality_bitrate_or_codec(family, book):
+    tr = RecordingTr()
+
+    FAMILIES[family].draw(STATES["radio_live"](), CardArt(cover_bytes(), logo_png()), tr, book)
+
+    assert not any("kbps" in text or text.lower() == "mp3" for text in book.texts)
+    assert not [key for key in tr.keys if key.startswith("visor.quality")]
+
+
 @pytest.mark.parametrize("family", ["expanded", "slim"])
 def test_radio_never_uses_the_cover_on_the_label(family):
     spec = FAMILIES[family].project(STATES["radio_live"]()._replace(cover="https://covers.example/x.jpg"))
@@ -307,11 +318,8 @@ def test_station_mode_draws_the_station_line(family, book):
 def test_the_radio_visor_in_r_is_the_station_visor(book):
     view = visor_jukebox.visor_view(STATES["radio_live"](), CardArt(None, logo_png()), RecordingTr(), book)
 
-    assert (view.data.station_name, view.data.now_title, view.data.bitrate_kbps) == (
-        "Rádio Aurora FM",
-        "Céu de Neon",
-        128,
-    )
+    assert (view.data.station_name, view.data.now_title) == ("Rádio Aurora FM", "Céu de Neon")
+    assert (view.data.codec, view.data.bitrate_kbps) == ("", 0)  # nada técnico no cartão da rádio ao vivo
 
 
 def test_the_radio_visor_in_m_shows_the_track_cover_and_session(book):

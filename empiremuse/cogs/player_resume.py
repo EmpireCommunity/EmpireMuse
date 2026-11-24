@@ -698,7 +698,6 @@ class PlayerSession(commands.Cog):
                         logger.exception("Falha ao ler o status permanente do canal", extra=guild_extra(guild.id))
                     else:
                         if getattr(player, "voice_status_generation", 0) == generation_before_read:
-                            player.voice_status_saved_default = global_data.get("voice_status_permanent") is None
                             schedule_permanent_voice_status(player, resolve_voice_status(global_data), jitter=True)
                 player.listen_along_invite = data.pop("listen_along_invite", "")
                 player.command_log_list.extend(data.pop("command_log_list", []))

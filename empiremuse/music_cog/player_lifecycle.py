@@ -246,7 +246,6 @@ class PlayerLifecycleMixin:
 
         # O status do canal vale por padrão em todo servidor (2.1.2): com o bot já no canal, aplica o permanente uma vez, antes
         # do 1º ``update_stage_topic`` do ``_he_track_start``; fora do canal quem aplica é o ``player_vc_disconnect`` ao entrar.
-        player.voice_status_saved_default = global_data.get("voice_status_permanent") is None
         if guild.me and guild.me.voice:
             await player.apply_permanent_voice_status(voice_status)
 
