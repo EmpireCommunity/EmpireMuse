@@ -16,13 +16,14 @@ from typing import Any
 import disnake
 
 from empiremuse.rules.usage import escape_markdown
+from empiremuse.utils.music.converters import md_url
 
 logger = logging.getLogger(__name__)
 
 MAX_COMPONENTS = 40
 MAX_TEXT = 4000  # a soma dos TextDisplay de uma mensagem V2
 ROW_BUTTONS = 5
-_LABEL_SAFE = str.maketrans(
+LABEL_SAFE = str.maketrans(
     {"[": "(", "]": ")", "\\": "/", "*": "∗", "_": "＿", "~": "∼", "|": "∣", "`": "ˋ"}
 )  # rótulo de link sem markdown nem quebra
 ROW_LIMIT = 5  # linhas de controle de uma mensagem
@@ -57,9 +58,10 @@ def _embed_texts(embed: disnake.Embed) -> list[str]:
             f"-# {escape_markdown(embed.author.name)}"
         )  # no embed o autor é texto puro: no ``-#`` não vira markdown
     if embed.title:
+        link = md_url(embed.url) if embed.url else None  # a URL crua com um ``)`` abriria um segundo link
         texts.append(
-            f"## [{str(embed.title).translate(_LABEL_SAFE)}]({embed.url})"  # em rótulo de link a barra de escape aparece
-            if embed.url
+            f"## [{str(embed.title).translate(LABEL_SAFE)}]({link})"  # em rótulo de link a barra de escape aparece
+            if link
             else f"## {escape_markdown(str(embed.title))}"
         )
     if embed.description:

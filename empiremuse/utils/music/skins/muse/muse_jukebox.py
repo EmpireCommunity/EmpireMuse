@@ -22,6 +22,7 @@ from empiremuse.rules.i18n import fit
 from empiremuse.rules.jukebox_panel import last_action_of
 from empiremuse.rules.text import external_text
 from empiremuse.utils.branding import asset_url
+from empiremuse.utils.music.v2 import LABEL_SAFE
 from empiremuse.utils.music.skins.muse import _text as tx
 from empiremuse.utils.music.skins.muse._base import base_features, playing_on_bot, preview_url
 from empiremuse.utils.music.skins.muse._controls import components
@@ -51,11 +52,6 @@ class Thumb(NamedTuple):
 
     media: str
     alt: str
-
-
-_LABEL_SAFE = str.maketrans(
-    {"[": "(", "]": ")", "\\": "/", "*": "∗", "_": "＿", "~": "∼", "|": "∣", "`": "ˋ"}
-)  # sem quebrar o link nem virar negrito, spoiler ou código
 
 
 def fallback_thumb(player: Any) -> Thumb:
@@ -97,7 +93,7 @@ def header(player: Any, ctx: tx.Context, tr: tx.Tr) -> str:
 def link_label(text: str) -> str:
     """Rótulo de link mascarado: o Discord NÃO desfaz ``\\(`` dentro de ``[..](..)`` (a barra aparecia), então aqui nada de escape;
     ``[``, ``]`` e a barra, que quebrariam o link, viram parecidos inofensivos."""
-    return text.translate(_LABEL_SAFE)
+    return text.translate(LABEL_SAFE)
 
 
 def _title_text(track: Any, tr: tx.Tr) -> str:

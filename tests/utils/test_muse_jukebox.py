@@ -787,3 +787,12 @@ def test_the_embed_title_is_not_markdown_in_the_v2_conversion():
     assert "](" not in shown_text(v2.legacy_to_v2({"embed": plain})).replace("\\]", "")
     text = shown_text(v2.legacy_to_v2({"embed": linked}))
     assert text.startswith("## [") and not any(mark in text.split("](")[0] for mark in "*|\\")
+
+
+@pytest.mark.regression
+def test_an_embed_url_with_a_closing_paren_never_opens_a_second_link_in_the_conversion():
+    embed = disnake.Embed(title="t", url="https://exemplo.invalid/a)[x](https://mau.invalid")
+    text = shown_text(v2.legacy_to_v2({"embed": embed}))
+    heading = next(line for line in text.splitlines() if line.startswith("## "))
+    assert heading.count("](") == 1 and heading.endswith(")") and ")[" not in heading
+    assert shown_text(v2.legacy_to_v2({"embed": disnake.Embed(title="t", url="ftp://x")})).startswith("## t")
