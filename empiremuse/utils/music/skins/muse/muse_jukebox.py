@@ -335,6 +335,14 @@ def idle_payload(tr: tx.Tr, components: Any, *, off: Optional[int] = None, lead:
     return {"content": None, "embeds": [], "components": [tree], "attachments": []}
 
 
+def _hidden_or_unknown(player: Any) -> bool:
+    """Esconde se a regra diz que sim e também se ela falha (privacidade desconhecida fecha)."""
+    try:
+        return bool(tx.is_hidden(player))
+    except Exception:  # noqa: BLE001
+        return True
+
+
 def idle(player: Any, kwargs: dict) -> dict:
     """O ocioso do player: ``idle_payload`` com o timer de desligar (só sem ``keep_connected``)."""
     from empiremuse.utils.others import PlayerControls
@@ -342,7 +350,9 @@ def idle(player: Any, kwargs: dict) -> dict:
     off = None if player.keep_connected else int(time.time()) + int(player.bot.config["IDLE_TIMEOUT"])
     out = {name: value for name, value in kwargs.items() if name not in ("embed", "content", "components")}
     components = kwargs.get("components")
-    if tx.is_hidden(player):  # call privada: as opções "voltar" e "relacionadas" não levam o título da última faixa
+    if _hidden_or_unknown(
+        player
+    ):  # call privada: as opções "voltar" e "relacionadas" não levam o título da última faixa
         for item in components or ():
             for option in getattr(item, "options", ()):
                 if option.value in (PlayerControls.back, PlayerControls.autoplay):

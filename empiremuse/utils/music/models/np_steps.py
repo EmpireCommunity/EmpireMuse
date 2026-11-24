@@ -654,7 +654,9 @@ async def _np_interaction_edit(self, req):
     except KeyError:
         pass
 
-    data = v2.adapt_for(interaction.message, data, where="np_interaction")
+    data = v2.adapt_for(
+        interaction.message, data, where="np_interaction", expected=_in_thread(self, interaction.message)
+    )
     try:
         if interaction.response.is_done():
             await interaction.message.edit(allowed_mentions=self.allowed_mentions, **data)
@@ -683,7 +685,8 @@ async def _np_message_edit(self, req):
                 data["content"] = None
                 data["embed"] = None
             await self.message.edit(
-                allowed_mentions=self.allowed_mentions, **v2.adapt_for(self.message, data, where="np_edit")
+                allowed_mentions=self.allowed_mentions,
+                **v2.adapt_for(self.message, data, where="np_edit", expected=_in_thread(self, self.message)),
             )
             req.published = True
             await asyncio.sleep(0.5)
@@ -728,7 +731,8 @@ async def _np_message_edit(self, req):
 
                 _refresh_file(data)  # a edição que falhou já leu o anexo até o fim
                 await self.message.edit(
-                    allowed_mentions=self.allowed_mentions, **v2.adapt_for(self.message, data, where="np_edit")
+                    allowed_mentions=self.allowed_mentions,
+                    **v2.adapt_for(self.message, data, where="np_edit", expected=_in_thread(self, self.message)),
                 )
                 req.published = True
                 await asyncio.sleep(0.5)
@@ -763,10 +767,15 @@ async def _np_message_edit(self, req):
 
 def needs_replacement(self, req) -> bool:
     """V2 -> V1: a mensagem do player é V2 e o payload é de embed. A flag V2 não desliga, então só uma mensagem nova serve."""
-    if getattr(self, "has_thread", False):
-        return False  # apagar a mensagem-mãe de um tópico ou post de fórum o deixaria órfão: a edição converte para V2
     message = req.interaction.message if req.interaction else self.message
+    if _in_thread(self, message):
+        return False  # apagar a mensagem-mãe de um tópico ou a inicial de um post de fórum o deixaria órfão: a edição converte para V2
     return v2.is_v2(message) and not np_v2.is_v2_payload(req.data)
+
+
+def _in_thread(self, message) -> bool:
+    """A mensagem é a mãe de um tópico de pedidos (``has_thread``) ou está dentro de um tópico, inclusive um post de fórum."""
+    return bool(getattr(self, "has_thread", False)) or isinstance(getattr(message, "channel", None), disnake.Thread)
 
 
 async def _np_replace(self, req):

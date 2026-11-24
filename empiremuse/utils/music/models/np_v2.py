@@ -41,6 +41,7 @@ ALT_TITLE_MAX = 80
 ANIMATED_STATES = frozenset({CardState.PLAYING, CardState.STREAM})
 
 _SENT: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()  # player -> o nome do anexo que a mensagem tem
+UNKNOWN = "?"  # o anexo da mensagem é incerto (a edição falhou): nenhum nome o iguala, então o próximo desenho limpa e reenvia
 _LOGOS: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()  # player -> (nome, bytes) do logo da estação em uso
 
 
@@ -51,6 +52,7 @@ def sent_name(player: Any) -> Optional[str]:
 def forget(player: Any) -> None:
     """A mensagem do player é outra (nova, ou a skin mudou): o anexo antigo não vale."""
     _SENT.pop(player, None)
+    _LOGOS.pop(player, None)
 
 
 def is_v2_payload(data: Any) -> bool:
@@ -75,9 +77,13 @@ def confirm(player: Any, req: Any) -> None:
     if not getattr(req, "v2", False):
         return
     name = getattr(req, "disc", None)
-    if req.published and name is not None:
+    if not req.published:
+        _SENT[player] = (
+            UNKNOWN  # a edição falhou: o que a mensagem tem de anexo é incerto, e a próxima o troca e o reenvia
+        )
+    elif name is not None:
         _SENT[player] = name
-    else:  # edição que falhou, ou mensagem sem anexo de imagem (o ``attachments=[]`` tirou o antigo)
+    else:  # sem anexo de imagem neste estado (o ``attachments=[]`` tirou o antigo)
         _SENT.pop(player, None)
 
 
@@ -240,9 +246,11 @@ def _fail_closed(player: Any, skin: Any) -> Optional[tuple[Picked, dict]]:
     thumb = fallback_thumb(player)
     try:
         data = skin.build(player, time.time(), thumb)
-    except Exception:  # noqa: BLE001 - o ocioso não mostra faixa nenhuma
+    except Exception:  # noqa: BLE001 - o último recurso não lê a regra de privacidade (que pode ser a que está falhando)
         try:
-            data = skin.idle(player, {})
+            from empiremuse.utils.music.skins.muse.muse_jukebox import idle_payload
+
+            data = idle_payload(player.tr, None)  # só o texto de ocioso, sem timer de desligar nem controles
         except Exception as error:  # noqa: BLE001
             logger.warning("Jukebox V2 sem payload escondido (%s)", safe_error(error))
             return None

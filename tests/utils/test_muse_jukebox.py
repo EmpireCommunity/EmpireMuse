@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import disnake
 import pytest
@@ -210,7 +211,7 @@ def test_an_edit_that_failed_does_not_mark_the_disc_as_sent():
     player = WeakNamespace()
     req = SimpleNamespace(disc="disc-1", published=False, v2=True, interaction=None)
     np_v2.confirm(player, req)
-    assert np_v2.sent_name(player) is None
+    assert np_v2.sent_name(player) == np_v2.UNKNOWN  # incerto: a próxima edição limpa o anexo e reenvia o disco
     req.published = True
     np_v2.confirm(player, req)
     assert np_v2.sent_name(player) == "disc-1"
@@ -655,3 +656,87 @@ def test_the_title_label_has_no_markdown_and_a_legacy_author_is_not_turned_into_
     embed.set_author(name="[x](https://exemplo.invalid)")
     data = v2.legacy_to_v2({"embed": embed})
     assert "](" not in shown_text(data)
+
+
+# ---------------------------------------------------------------------- segunda rodada da revisão (objetos reais)
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_when_the_privacy_rule_itself_raises_the_last_resort_still_publishes_a_payload_without_secrets(
+    tr, monkeypatch
+):
+    import empiremuse.utils.jukebox_panel as panel
+    from empiremuse.utils.music.skins.muse import _text
+
+    secret = secret_player(tr, private=True, in_call_chat=False, static=True)
+    player = WeakNamespace(**secret.__dict__)
+    player.bot.config["COVER_HOSTS"] = ""
+    player.keep_connected = False
+    player.update, player.last_data = False, {}
+
+    def broken(*_a, **_k):
+        raise RuntimeError("regra quebrada")
+
+    for module in (panel, _text):
+        monkeypatch.setattr(module, "player_hides_details", broken)
+    monkeypatch.setattr(np_v2.card_facts, "build", broken)
+
+    async def motion(*_a, **_k):
+        return True
+
+    async def defer(_i):
+        return None
+
+    req = SimpleNamespace(interaction=None, superseded=False, published=False, disc=None, disc_key=None, v2=False)
+    done = await np_v2.render(
+        player,
+        req,
+        muse_jukebox.load(),
+        redraw=False,
+        new_message=False,
+        key_of=str,
+        defer=defer,
+        disc_motion=motion,
+        station_logo=None,
+    )
+    assert done is False and req.v2 is True and req.superseded is False
+    text = dump(req.data)
+    assert "Faixa Secreta" not in text and "Artista Secreto" not in text and "Call Secreta" not in text
+    assert "<t:" not in shown_text(req.data)  # sem a linha falsa de "desliga" enquanto toca
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_after_a_failed_edit_the_retry_clears_the_old_attachment_and_resends_the_disc(tr, monkeypatch):
+    player = _render_player(tr, hidden=True)
+    np_v2._SENT[player] = "disc-public"
+    failed = SimpleNamespace(disc=None, published=False, v2=True, interaction=None)
+    np_v2.confirm(player, failed)  # a primeira edição (ex.: limite de taxa) não saiu
+    skin = SimpleNamespace(name="muse_jukebox", build=lambda *a: {"components": ["x"]}, idle=None)
+    done, req = await _render(player, skin, monkeypatch, hidden=True, spec_values=["s", "s"])
+    assert done is False and req.data["attachments"] == []
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize("where", ["thread", "forum-post", "plain-channel"])
+def test_a_swap_to_v1_never_deletes_a_message_inside_a_thread_or_forum_post(where):
+    channel = (
+        MagicMock(spec=disnake.TextChannel)
+        if where == "plain-channel"
+        else MagicMock(
+            spec=disnake.Thread,
+            parent=MagicMock(spec=disnake.ForumChannel if where == "forum-post" else disnake.TextChannel),
+        )
+    )
+    message = fake_message(is_v2=True, edits=[])
+    message.channel = channel
+    player = SimpleNamespace(message=message, has_thread=None)  # num post de fórum o player devolve None
+    req = SimpleNamespace(interaction=None, data={"embeds": [disnake.Embed(description="x")], "components": []})
+    assert np_steps.needs_replacement(player, req) is (where == "plain-channel")
+
+
+@pytest.mark.regression
+def test_the_logo_bytes_are_forgotten_with_the_message():
+    player = WeakNamespace()
+    np_v2._LOGOS[player] = ("logo-1", b"png")
+    np_v2.forget(player)
+    assert player not in np_v2._LOGOS
