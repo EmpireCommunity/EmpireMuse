@@ -17,6 +17,7 @@ import pytest
 
 import empiremuse.utils.music.skins.normal_player as normal_pkg
 import empiremuse.utils.music.skins.static_player as static_pkg
+from tests.support.call_chat import CALL_CHAT_CASES, CALL_CHAT_IDS
 
 EMBED_TOTAL_LIMIT = 6000
 EMBED_DESCRIPTION_LIMIT = 4096
@@ -320,11 +321,16 @@ def test_both_load_paths_hand_the_masked_view_only_to_a_classic_skin_in_a_privat
 
 
 @pytest.mark.regression
-@pytest.mark.parametrize("private", [False, True])
-def test_the_default_extra_menu_has_no_queue_select_nor_lyrics_in_a_private_call(private):
+@pytest.mark.parametrize(("private", "in_call_chat", "hides"), CALL_CHAT_CASES, ids=CALL_CHAT_IDS)
+def test_the_default_extra_menu_has_no_queue_select_nor_lyrics_in_a_private_call_outside_its_chat(
+    private, in_call_chat, hides
+):
+    """Opção C (D10): o menu extra mostra a fila e a letra no chat da própria call e as esconde em outro canal."""
     from empiremuse.utils.music.models import np_steps
 
-    player, _ = _secret_player(private=private, static=True, mini_queue_feature=False, has_thread=False)
+    player, _ = _secret_player(
+        private=private, in_call_chat=in_call_chat, static=True, mini_queue_feature=False, has_thread=False
+    )
     player.node.lyric_support = True
     menu = SimpleNamespace(options=[])
     req = SimpleNamespace(data={"components": [None] * 5 + [menu]})
@@ -332,7 +338,7 @@ def test_the_default_extra_menu_has_no_queue_select_nor_lyrics_in_a_private_call
     np_steps._np_buttons_extra(player, req)
 
     shown = _everything_shown({"components": req.data["components"][6:]}) + str([o.value for o in menu.options])
-    assert (SECRET in shown, "musicplayer_lyrics" in shown) == (not private, not private)
+    assert (SECRET in shown, "musicplayer_lyrics" in shown) == (not hides, not hides)
 
 
 # ---------------------------------------------------------------------- fake estrito (não MagicMock)

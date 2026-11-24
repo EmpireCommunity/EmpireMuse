@@ -16,6 +16,7 @@ from empiremuse.i18n import loader
 from empiremuse.rules.i18n import Translator
 from empiremuse.utils.music.models import np_steps
 from empiremuse.utils.music.skins.muse import _card, muse_text
+from tests.support.call_chat import CALL_CHAT_CASES, CALL_CHAT_IDS
 
 pytestmark = pytest.mark.critical
 
@@ -63,8 +64,17 @@ class _FakePlayer(SimpleNamespace):
         return "LOCAL (v4)"
 
 
-def _player(tr, *, private: bool = False, static: bool = False, paused: bool = False, position: int = 72_000):
+def _player(
+    tr,
+    *,
+    private: bool = False,
+    static: bool = False,
+    paused: bool = False,
+    position: int = 72_000,
+    in_call_chat: bool = False,
+):
     voice = _voice(private=private)
+    voice.id = 700
     member = SimpleNamespace(display_name=HOSTILE)
     me = SimpleNamespace(display_name="Muse 2", voice=SimpleNamespace(channel=voice))
     avatar = SimpleNamespace(replace=lambda **kw: SimpleNamespace(url="https://cdn.discordapp.com/avatar.png"))
@@ -95,6 +105,7 @@ def _player(tr, *, private: bool = False, static: bool = False, paused: bool = F
         mini_queue_feature=True,
         has_thread=False,
         last_channel=None,
+        text_channel=SimpleNamespace(id=700 if in_call_chat else 701),
         node=SimpleNamespace(lyric_support=True),
         command_log="",
         command_log_emoji="",
@@ -265,6 +276,27 @@ def test_the_last_action_never_shows_in_a_private_call(tr, build, private):
     text = _texts(build(player, NOW))
 
     assert ("Faixa Secreta" in text) is not private
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(("private", "in_call_chat", "hides"), CALL_CHAT_CASES, ids=CALL_CHAT_IDS)
+@pytest.mark.parametrize("build", BUILDS, ids=lambda b: b.__module__.rsplit(".", 1)[-1] + "." + b.__name__)
+def test_option_c_a_private_call_shows_the_track_only_in_the_call_own_chat(tr, build, private, in_call_chat, hides):
+    """Opção C (D10) na skin padrão (``muse_text``) e nas de imagem: o chat da própria call mostra, outro canal esconde."""
+    player = _player(tr, private=private, in_call_chat=in_call_chat)
+    player.command_log = "Tocando música obtida via metadados: [Faixa Secreta](https://www.youtube.com/watch?v=abc)"
+
+    assert ("Faixa Secreta" in _texts(build(player, NOW))) is not hides
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(("private", "in_call_chat", "hides"), CALL_CHAT_CASES, ids=CALL_CHAT_IDS)
+def test_option_c_the_text_skin_context_hides_by_the_same_rule(tr, private, in_call_chat, hides):
+    from empiremuse.utils.music.skins.muse import _text
+
+    player = _player(tr, private=private, in_call_chat=in_call_chat)
+
+    assert _text.context(player, NOW).hidden is hides
 
 
 @pytest.mark.parametrize("private", [False, True])
