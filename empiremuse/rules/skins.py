@@ -28,6 +28,7 @@ class Surface(StrEnum):
 class Kind(StrEnum):
     TEXT = "text"
     IMAGE = "image"
+    NATIVE = "native"  # Components V2 do próprio Discord (``muse_jukebox``)
 
 
 FAMILY_MUSE = "muse"
@@ -110,6 +111,7 @@ def _classic(skin_id: str) -> SkinEntry:
 
 
 JUKEBOX_SKINS: tuple[SkinEntry, ...] = (
+    _muse("muse_jukebox", Kind.NATIVE, None, "muse_jukebox"),
     _muse("muse_expanded_black", Kind.IMAGE, "black", "muse_expanded"),
     _muse("muse_expanded_white", Kind.IMAGE, "white", "muse_expanded"),
     _muse("muse_slim_black", Kind.IMAGE, "black", "muse_slim"),

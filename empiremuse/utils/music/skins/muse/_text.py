@@ -19,7 +19,7 @@ from empiremuse.rules.jukebox_panel import last_action_of
 from empiremuse.rules.text import external_text
 from empiremuse.utils.jukebox_panel import player_hides_details, player_voice_channel
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
-from empiremuse.utils.music.converters import md_url, time_format
+from empiremuse.utils.music.converters import md_url
 from empiremuse.utils.music.jukebox_ui import server_station_md, station_md
 
 TIME_QUANTUM_S = 5
@@ -69,6 +69,20 @@ def context(player: Any, now: float) -> Context:
     read_station = getattr(jukebox, "station_view", None)
     station = read_station(player) if radio is None and read_station is not None else None
     return Context(hidden, radio, station, now)
+
+
+def clock(milliseconds: float) -> str:
+    """O tempo como se lê num player: ``m:ss`` e, a partir de 1 hora, ``h:mm:ss`` (nunca ``03:29``)."""
+    minutes, seconds = divmod(max(0, int(milliseconds / 1000)), 60)
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes}:{seconds:02d}"
+
+
+def elapsed_ms(player: Any) -> int:
+    """O decorrido arredondado para baixo em ``TIME_QUANTUM_S``: duas leituras no mesmo passo dão o mesmo texto (o
+    ``payload_key`` do ``_np_data`` não edita a mensagem só pelo relógio)."""
+    step = TIME_QUANTUM_S * 1000
+    return int(player.position // step * step)
 
 
 def stamp(seconds: float) -> int:
@@ -254,7 +268,7 @@ def queue_items(player: Any) -> tuple[str, list[Any]]:
 
 
 def queue_item_line(player: Any, n: int, track: Any, start: Optional[float]) -> str:
-    length = "🔴" if track.is_stream else time_format(track.duration)
+    length = "🔴" if track.is_stream else clock(track.duration)
     parts = [f"**{external_text(track.single_title, QUEUE_TITLE_MAX) or '—'}**"]
     if artist := external_text(track.authors_string, QUEUE_ARTIST_MAX):
         parts.append(artist)

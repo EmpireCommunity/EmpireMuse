@@ -355,10 +355,13 @@ class JukeboxPanel:
         except RuntimeError:
             return
 
-    async def resend(self, guild_id: int, *, replace_message_id: Optional[int] = None) -> Optional[disnake.Message]:
+    async def resend(
+        self, guild_id: int, *, replace_message_id: Optional[int] = None, force: bool = False
+    ) -> Optional[disnake.Message]:
         """O BOT DO PAINEL envia um painel novo no canal da Jukebox e grava o id (a mensagem anterior sumiu ou era de outro bot).
 
         ``replace_message_id``: a mensagem antiga (do bot que saiu); o novo painel tenta apagá-la, sem insistir se não puder.
+        ``force``: manda um painel novo mesmo que o atual já seja do bot do painel (a skin trocou de V2 para V1, e a flag V2 não desliga).
         """
         from empiremuse.utils.others import send_idle_embed  # tarde: utils.others importa muita coisa
 
@@ -382,7 +385,7 @@ class JukeboxPanel:
                         config.message_id
                     )  # não deu para ver a mensagem: o painel novo tenta apagar a gravada
                 if existing is not None:
-                    if existing.author.id == bot.user.id:
+                    if existing.author.id == bot.user.id and not force:
                         return existing  # já é do bot do painel: nada a reenviar
                     replace_message_id = existing.id  # é de outro bot (o painel anterior): o novo o substitui
             channel = bot.get_channel(config.channel) or await bot.fetch_channel(config.channel)

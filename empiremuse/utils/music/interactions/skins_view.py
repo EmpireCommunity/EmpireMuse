@@ -172,7 +172,7 @@ def summary_lines(tr: Translator, plan: SavePlan, radios: Sequence[RadioRow]) ->
 
 
 def _kind_emoji(bot: Any, entry: SkinEntry | None) -> str:
-    return app_emoji(bot, "disc" if entry is not None and entry.kind == Kind.IMAGE else "comment")
+    return app_emoji(bot, "disc" if entry is not None and entry.kind in (Kind.IMAGE, Kind.NATIVE) else "comment")
 
 
 def _player_description(tr: Translator, value: str, default: str) -> str:

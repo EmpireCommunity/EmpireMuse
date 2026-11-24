@@ -16,7 +16,7 @@ import disnake
 
 from empiremuse.rules.i18n import fit
 from empiremuse.utils.branding import asset_url
-from empiremuse.utils.music.converters import music_source_image, time_format
+from empiremuse.utils.music.converters import music_source_image
 from empiremuse.utils.music.skins.muse import _text as tx
 from empiremuse.utils.music.skins.muse._base import base_features, playing_on_bot, preview_url
 from empiremuse.utils.music.skins.muse._controls import components
@@ -39,12 +39,12 @@ def timeline(player: Any, ctx: tx.Context, tr: tx.Tr) -> list[str]:
     current = player.current
     if current.is_stream:
         return [f"🔴 {tr('jbx.state.radio')}"]
-    total = f"`{time_format(current.duration)}`"
+    total = f"`{tx.clock(current.duration)}`"
     bar = tx.text_bar(tx.bar_segment(player))
     if player.paused:
-        return [f"`{time_format(player.position)}` {bar} {total}", f"-# {tr('jbx.paused_word')}"]
+        return [f"`{tx.clock(player.position)}` {bar} {total}", f"-# {tr('jbx.paused_word')}"]
     end = tx.track_end(player, ctx.now)
-    return [f"{bar} {total}", f"-# {tr('jbx.text.ends', t=tx.relative(end))}"]
+    return [f"`{tx.clock(tx.elapsed_ms(player))}` {bar} {total}", f"-# {tr('jbx.text.ends', t=tx.relative(end))}"]
 
 
 def track_lines(player: Any, ctx: tx.Context, tr: tx.Tr) -> list[str]:

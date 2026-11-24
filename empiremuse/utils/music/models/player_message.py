@@ -29,8 +29,11 @@ from empiremuse.utils.music.models.np_steps import (
     _np_buttons_extra,
     _np_interaction_edit,
     _np_message_edit,
+    _np_replace,
     _np_send_new,
+    needs_replacement,
 )
+from empiremuse.utils.music.models import np_v2
 from empiremuse.utils.music.models.step_state import NpState
 
 
@@ -41,6 +44,7 @@ def _confirm_rendered(player, req, hidden: bool) -> None:
     concluir que "nada mudou" e confirmar o registro sem editar.
     """
     req.settled = True
+    np_v2.confirm(player, req)
     if req.published:
         player.details_hidden_rendered = hidden
     else:
@@ -94,6 +98,14 @@ class PlayerMessageMixin:
         if (
             self.is_closing
         ):  # o player encerrou durante o desenho ou o RPC: não edita nem manda a mensagem de um player fechado
+            return
+
+        if self.controller_mode and needs_replacement(self, req):
+            self.updating = True
+            await _np_replace(self, req)
+            self.start_message_updater_task()
+            _confirm_rendered(self, req, hidden)
+            self.updating = False
             return
 
         if not self.controller_mode:

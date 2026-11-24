@@ -20,6 +20,7 @@ from empiremuse.utils.music.errors import (
 )
 from empiremuse.utils.others import PlayerControls, string_to_file
 from empiremuse.utils.music.guild_pin import load_guild_pin
+from empiremuse.utils.music.models import np_v2
 from empiremuse.utils.music.models.np_steps import _card_for_new_message, _send_kwargs, idle_payload
 from empiremuse.wavelink import TrackStart, TrackEnd
 
@@ -223,8 +224,8 @@ class PlayerPlaybackMixin:
                     disnake.SelectOption(
                         emoji=app_emoji(self.bot, "backward"),
                         value=PlayerControls.back,
-                        label="Voltar",
-                        description=f"Ouvir novamente: {play_txt[:31]}",
+                        label=fit(self.tr("player.idle.back.label"), 100),
+                        description=fit(self.tr("player.idle.back.description", titulo=play_txt[:31]), 100),
                     ),
                     disnake.SelectOption(
                         label=fit(self.tr("player.enable_autoplay.label"), 100),
@@ -249,7 +250,7 @@ class PlayerPlaybackMixin:
             disnake.SelectOption(
                 emoji=app_emoji(self.bot, "stop"),
                 value=PlayerControls.stop,
-                label="Finalizar",
+                label=fit(self.tr("player.idle.finish.label"), 100),
                 description=fit(self.tr("player.finish_the_player_and_disconnect.description"), 100),
             ),
         )
@@ -305,6 +306,8 @@ class PlayerPlaybackMixin:
             if self.has_thread or self.static or self.text_channel.last_message_id == self.message.id:
                 try:
                     await self.message.edit(**v2.adapt_for(self.message, kwargs, where="ocioso"))
+                    if np_v2.is_v2_payload(kwargs):
+                        np_v2.mark_v2(self.message)  # uma V1 editada com payload V2 virou V2
                 except Exception:
                     logger.exception("Falha em process_idle_message")
                     if self.text_channel and not self.static:

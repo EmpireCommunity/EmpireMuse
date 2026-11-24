@@ -6,12 +6,15 @@ class NpState:
 
     __slots__ = (
         "data",
+        "disc",
         "force",
         "interaction",
         "published",
+        "replace",
         "rpc_update",
         "settled",
         "superseded",
+        "v2",
     )
 
     def __init__(self, *, force, interaction, rpc_update):
@@ -24,6 +27,9 @@ class NpState:
         self.interaction = interaction
         self.rpc_update = rpc_update
         self.data = None
+        self.v2 = False  # o payload deste pedido é Components V2 (a mensagem vira V2 depois que a edição sai)
+        self.replace = False  # V2 -> V1: a mensagem nova vai antes de a velha sair (a flag V2 não desliga)
+        self.disc = None  # o nome do anexo do disco (ou do logo) que este pedido manda, para a skin em V2
 
 
 class AutoqueueState:
