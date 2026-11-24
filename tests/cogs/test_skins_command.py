@@ -10,6 +10,7 @@ from __future__ import annotations
 import copy
 from types import SimpleNamespace
 
+import disnake
 import pytest
 
 from empiremuse.cogs import music_settings
@@ -283,7 +284,16 @@ class Opened:
 
 
 async def run_skins(
-    monkeypatch, bot, *, change, result="save", saver=None, radio_allowed=True, opener=None, prefix=False
+    monkeypatch,
+    bot,
+    *,
+    change,
+    result="save",
+    saver=None,
+    radio_allowed=True,
+    opener=None,
+    prefix=False,
+    reply_error=None,
 ) -> Opened:
     """Roda o ``MusicSettings.change_skin`` REAL; a tela devolve o rascunho que ``change(initial)`` monta. ``prefix`` = pelo
     comando de prefixo (um ``CustomContext``); ``opener`` = quem abre; ``saver`` = quem aperta Salvar."""
@@ -291,6 +301,8 @@ async def run_skins(
 
     async def edit(*args, **kwargs):
         opened.replies.append(kwargs)
+        if reply_error is not None and len(opened.replies) > 1:  # a primeira edição é a da tela; a seguinte, a resposta
+            raise reply_error
 
     member = saver or _member()
 
@@ -492,6 +504,101 @@ class TestCommand:
         assert screen.payload()["embeds"]
         assert bot.global_writes == [] and bot.server_writes == []
 
+    @pytest.mark.asyncio
+    @pytest.mark.regression
+    async def test_a_reply_that_fails_after_saving_still_reloads_the_players(self, monkeypatch):
+        calls = []
+
+        async def reload(self, *args, **kwargs):
+            calls.append(args)
+
+        monkeypatch.setattr(MusicSettings, "_reload_player_skins", reload)
+        bot = Bot({"global_skin": False})
+        error = disnake.HTTPException(SimpleNamespace(status=500, reason="x"), "boom")
+
+        await run_skins(monkeypatch, bot, change=lambda d: _replace(d, disc_motion=False), reply_error=error)
+
+        assert bot.global_writes and len(calls) == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.regression
+    async def test_a_failure_after_the_global_write_still_reconciles_the_players_with_what_was_saved(self, monkeypatch):
+        calls = []
+
+        async def reload(self, *args, **kwargs):
+            calls.append(args)
+
+        async def down(*args, **kwargs):
+            raise ConnectionError("banco fora")
+
+        monkeypatch.setattr(MusicSettings, "_reload_player_skins", reload)
+        bot = Bot({"global_skin": True})
+        bot.pool.servers.patch = down
+
+        def change(draft):
+            return _server_skin(_replace(draft, global_mode=False), "muse_expanded_black")
+
+        opened = await run_skins(monkeypatch, bot, change=change)
+
+        assert bot.global_writes and bot.global_writes[-1][1]["global_skin"] is False
+        assert opened.replies[-1]["embeds"][0].description == TR("skin.save_failed") and len(calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_losing_the_radio_permission_before_saving_says_the_radio_edit_was_dropped(self, monkeypatch):
+        bot = Bot({"global_skin": False}, store=RadioStore(radios=[_radio()]))
+
+        def change(draft):
+            monkeypatch.setattr(music_settings, "can_configure_radios", lambda member: False)
+            return _replace(draft, radio_all="portrait_black")
+
+        opened = await run_skins(monkeypatch, bot, change=change)
+
+        text = opened.replies[-1]["embeds"][0].description
+        assert bot.global_writes == [] and TR("skin.no_permission") in text and TR("skin.unchanged") in text
+
+    @pytest.mark.asyncio
+    async def test_the_global_radio_skin_redraws_the_radios_listed_at_save_time(self, monkeypatch):
+        redrawn = []
+        monkeypatch.setattr(music_settings, "redraw_radio_panels", lambda pool, gid, ids: redrawn.append(list(ids)))
+        store = RadioStore(radios=[_radio()])
+        bot = Bot({"global_skin": False}, store=store)
+
+        def change(draft):
+            store.radios.append(_radio(BOT_B, channel_id=6))  # criada depois de abrir o /skins
+            return _replace(draft, radio_all="portrait_black")
+
+        await run_skins(monkeypatch, bot, change=change)
+
+        assert redrawn == [[BOT_A, BOT_B]]
+
+    @pytest.mark.asyncio
+    async def test_a_custom_skin_in_the_legacy_text_format_is_not_listed(self):
+        bot = Bot({"custom_skins": {"Velha": "texto antigo"}, "custom_skins_static": {}})
+
+        choices = await skins_view.load_choices(bot, bot.get_guild(GUILD), bot.global_data, radio_allowed=False)
+
+        assert choices.custom_normal == () and choices.custom_static == ()
+
+    @pytest.mark.asyncio
+    @pytest.mark.regression
+    @pytest.mark.parametrize("static", [False, True])
+    async def test_a_reload_that_keeps_the_active_skin_still_stores_the_other_mode_too(self, static):
+        player = SimpleNamespace(
+            static=static, skin="muse_text", skin_static="muse_text", custom_skin_data={}, custom_skin_static_data={}
+        )
+        bot = Bot({"global_skin": False})
+        changed = "skin" if static else "static_skin"  # o campo do modo que NÃO está ativo
+        bot.settings = {"skin": "muse_text", "static_skin": "muse_text", changed: "muse_expanded_black"}
+        bot.settings[f"{changed}_chosen"] = True
+        bot.pool.get_all_bots = lambda: [SimpleNamespace(music=SimpleNamespace(players={GUILD: player}))]
+        cog = SimpleNamespace(bot=bot)
+        skins = SimpleNamespace(normal={"n": 1}, static={"s": 2})
+
+        await MusicSettings._reload_player_skins(cog, bot, GUILD, bot.global_data, skins, "<@9>", TR)
+
+        assert getattr(player, "skin" if static else "skin_static") == "muse_expanded_black"
+        assert player.custom_skin_static_data == {"s": 2}
+
 
 # ============================================================================ os padrões (Jukebox Texto e Rádio Texto)
 
@@ -574,6 +681,35 @@ class TestView:
 
         assert all(item.disabled for item in view.children) and all(item.disabled for item in custom.children)
         assert view.draft == INITIAL and len(edits) == 1 and sent == [(TR("skin.invalid"),)]
+
+    @pytest.mark.asyncio
+    async def test_after_the_custom_screens_own_timeout_a_pick_is_refused_with_the_main_screen_open(self):
+        view, sent = _view(), []
+        custom = skins_view.CustomSkinsView(view)
+        custom.stop()  # só a efêmera acabou: o clique já agendado ainda chega ao callback
+
+        async def send(*args, **kwargs):
+            sent.append(args)
+
+        await custom._on_pick("normal")(SimpleNamespace(values=["custom:Minha"], send=send))
+
+        assert not view.is_finished() and view.draft == INITIAL and sent == [(TR("skin.invalid"),)]
+
+    @pytest.mark.asyncio
+    @pytest.mark.regression
+    @pytest.mark.parametrize("first, second", [("_on_cancel", "_on_save"), ("_on_save", "_on_cancel")])
+    async def test_a_second_click_already_scheduled_does_not_overwrite_the_result(self, first, second):
+        view, sent = _view(), []
+
+        async def send(*args, **kwargs):
+            sent.append(args)
+
+        inter = SimpleNamespace(send=send)
+        await getattr(view, first)(inter)
+        kept = view.result
+        await getattr(view, second)(inter)
+
+        assert view.result == kept and sent == [(TR("skin.invalid"),)]
 
     @pytest.mark.asyncio
     async def test_outside_names_are_escaped_in_embeds_and_raw_only_in_selects(self):

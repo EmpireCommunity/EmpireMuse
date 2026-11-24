@@ -64,6 +64,7 @@ from empiremuse.utils.music.interactions.skins_draft import (
     stored_custom_name,
     target_value,
 )
+from empiremuse.utils.music.skin_store import load_custom_skins
 from empiremuse.utils.radio.premium import RadioUnavailable
 from empiremuse.utils.radio.store import RadioConflict, RadioInvalid, RadioNotFound
 
@@ -176,11 +177,12 @@ async def load_choices(bot: Any, guild: Any, global_data: Mapping[str, Any], *, 
     """As listas do momento: skins carregadas (menos as ignoradas), personalizadas do servidor e, com a permissão, as rádios."""
     normal = ordered_ids(allowed_names(bot.player_skins, bot.config["IGNORE_SKINS"]), CLASSIC_NORMAL)
     static = ordered_ids(allowed_names(bot.player_static_skins, bot.config["IGNORE_STATIC_SKINS"]), CLASSIC_STATIC)
+    customs = await load_custom_skins(bot, guild.id, global_data)  # só as que o player carrega
     return Choices(
         normal,
         static,
-        tuple(global_data.get("custom_skins") or {}),
-        tuple(global_data.get("custom_skins_static") or {}),
+        tuple(customs.normal),
+        tuple(customs.static),
         await radio_rows(bot, guild) if radio_allowed else (),
     )
 
@@ -588,10 +590,14 @@ class SkinsView(disnake.ui.View):
         view.interaction = inter  # a efêmera só se edita pela interação que a abriu (``on_timeout``)
 
     async def _on_save(self, inter: disnake.MessageInteraction) -> None:
+        if self.is_finished():  # clique já agendado antes do Cancelar ou do tempo
+            return await self._refuse(inter)
         self.result, self.interaction = "save", inter
         self.stop()
 
     async def _on_cancel(self, inter: disnake.MessageInteraction) -> None:
+        if self.is_finished():
+            return await self._refuse(inter)
         self.result, self.interaction = "cancel", inter
         self.stop()
 
@@ -679,7 +685,9 @@ class CustomSkinsView(disnake.ui.View):
                 self.rebuild()
                 return await inter.response.edit_message(content=self.text(), view=self)
             value = player_value(raw, (), self.parent.choices.customs(mode))
-            if value is None or self.parent.is_finished():  # Salvar, Cancelar ou o tempo da tela principal
+            if (
+                value is None or self.is_finished() or self.parent.is_finished()
+            ):  # tempo desta tela, Salvar, Cancelar ou o da principal
                 return await self.parent._refuse(inter)
             self.parent.draft = self.parent.draft.with_player(mode, value)
             self.picked = skin_name(self.parent.tr, value)
