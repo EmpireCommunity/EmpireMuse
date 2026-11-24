@@ -403,13 +403,35 @@ class TestCommand:
     @pytest.mark.asyncio
     async def test_a_cas_conflict_names_the_radio_that_was_not_saved(self, monkeypatch):
         store = RadioStore(conflicts={f"{BOT_A}:{GUILD}"}, radios=[_radio()])
-        bot = Bot({"global_skin": False}, store=store)
+        bot = Bot({"global_skin": False}, store=store, channels={5: SimpleNamespace(name="**x**")})
         change = lambda d: _replace(d, radio_own=((BOT_A, "text"),))  # noqa: E731
 
         opened = await run_skins(monkeypatch, bot, change=change)
 
         text = opened.replies[-1]["embeds"][0].description
-        assert TR("skin.radio.changed", radio=f"#5 · {BOT_A}") in text and TR("skin.unchanged") in text
+        assert TR("skin.radio.changed", radio=f"#\\*\\*x\\*\\* · {BOT_A}") in text and TR("skin.unchanged") in text
+        assert "#**x**" not in text  # o nome do canal sai escapado no embed
+
+    @pytest.mark.parametrize(
+        ("change", "reloaded"),
+        [
+            (lambda d: _replace(d, radio_all="text"), False),  # só a skin das rádios: os players ficam como estão
+            (lambda d: _replace(d, disc_motion=False), True),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_only_the_radio_skin_changing_does_not_reload_the_players(self, monkeypatch, change, reloaded):
+        calls = []
+
+        async def reload(self, *args, **kwargs):
+            calls.append(args)
+
+        monkeypatch.setattr(MusicSettings, "_reload_player_skins", reload)
+        bot = Bot({"global_skin": False}, store=RadioStore(radios=[_radio()]))
+
+        await run_skins(monkeypatch, bot, change=change)
+
+        assert bot.global_writes and bool(calls) is reloaded
 
     @pytest.mark.asyncio
     async def test_a_database_failure_on_save_still_answers(self, monkeypatch):
