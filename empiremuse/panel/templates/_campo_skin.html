@@ -9,7 +9,7 @@
   <option value="{{ atual }}" selected>Personalizada (gerencie no Discord)</option>
   {% end %}
   {% for opcao in opcoes %}
-  <option value="{{ opcao }}"{% if not personalizada and opcao == atual %} selected{% end %}>{% if opcao == "default" %}Clássica padrão{% else %}{{ nomes_skins.get(opcao, opcao) }}{% end %}</option>
+  <option value="{{ opcao }}"{% if not personalizada and opcao == atual %} selected{% end %}>{{ nomes_skins.get(opcao, opcao) }}</option>
   {% end %}
 </select>
 {% if erros.get(nome_campo) %}<small id="erro-{{ prefixo_id }}" class="erro-campo">{{ erros[nome_campo] }}</small>{% end %}

@@ -194,7 +194,7 @@ def jukebox_choice(saved: object) -> object:
     """O valor gravado da skin da Jukebox que conta como escolha; ``None`` = nunca escolhido (cai no padrão do registro).
 
     Q1 (decidida: não): sem ``SAVED_DEFAULT_IS_A_CHOICE`` o ``"default"`` gravado é lido como ``None`` e cai no padrão novo;
-    com ele, ficaria (quem salvou a Clássica padrão a manteria). Qualquer outro valor passa como está (o ``check_skin`` decide).
+    com ele, ficaria (quem salvou a Clássica `default` a manteria). Qualquer outro valor passa como está (o ``check_skin`` decide).
     """
     if saved == LEGACY_SKIN_DEFAULT and not SAVED_DEFAULT_IS_A_CHOICE:
         return None
