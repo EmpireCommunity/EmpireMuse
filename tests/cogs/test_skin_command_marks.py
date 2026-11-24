@@ -108,6 +108,16 @@ async def test_the_server_skin_command_writes_the_choice_mark_with_the_classic_d
 
 @pytest.mark.asyncio
 @pytest.mark.regression
+async def test_the_server_skin_command_opens_and_saves_unchanged_with_the_saved_skin_ignored(monkeypatch):
+    world = World(controller={"skin": "neon", "static_skin": "neon"}, global_data={"global_skin": False}, ignore="neon")
+
+    await world.run(monkeypatch)  # antes: IndexError ao abrir, sem opção marcada
+
+    assert world.patched == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
 async def test_the_global_skin_command_saved_unchanged_writes_no_choice_with_the_server_skin_ignored(monkeypatch):
     world = World(controller={"skin": "neon", "static_skin": "neon"}, global_data={"global_skin": True}, ignore="neon")
 
