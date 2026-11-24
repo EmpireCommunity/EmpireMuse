@@ -418,14 +418,13 @@ jobs:
           DOCKER_GID: "999"
           PANEL_BASE_URL: https://painel.exemplo.invalid
           RPC_PUBLIC_URL: wss://painel.exemplo.invalid/ws
-          UPDATER_PROJECT_DIR: /docker/empiremuse
         run: |
           # Valores falsos só para as variáveis obrigatórias; os arquivos .env ficam vazios.
           : > .env
           : > .env.mongo
           for file in deploy/docker-compose*.yml; do
             case "$file" in
-              *.traefik.yml) continue ;; # só valem combinados com o base (pares abaixo)
+              *.traefik.yml) continue ;; # só vale combinado com o base (par abaixo)
             esac
             echo "::group::$file"
             docker compose -f "$file" config -q
@@ -440,7 +439,6 @@ jobs:
           DOCKER_GID: "999"
           PANEL_BASE_URL: https://painel.exemplo.invalid
           RPC_PUBLIC_URL: wss://painel.exemplo.invalid/ws
-          UPDATER_PROJECT_DIR: /docker/empiremuse
         run: |
           : > .env
           : > .env.mongo
