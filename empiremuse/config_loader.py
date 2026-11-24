@@ -46,6 +46,7 @@ bools = {"true": True, "false": False}
 
 DEFAULT_CONFIG = {
     "DEFAULT_PREFIX": "!!",
+    "V2SPIKE_CHANNEL_ID": "",  # TEMPORÁRIO (spike V2 da Jukebox C): canal onde o spike roda sozinho; vazio = desligado
     "AUTO_SYNC_COMMANDS": True,
     "OWNER_IDS": "",
     "COMMAND_LOG": False,
