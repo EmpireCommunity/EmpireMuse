@@ -81,7 +81,6 @@ from empiremuse.utils.jukebox_panel import JukeboxPanel
 from empiremuse.utils.servers import ServerStore
 from empiremuse.rules.usage import KIND_PREFIX, KIND_SLASH
 from empiremuse.utils.usage import UsageRecorder, usage_of
-from empiremuse.utils.music import skin_trace
 from empiremuse.utils.music.audio_sources.deezer import DeezerClient
 from empiremuse.utils.music.audio_sources.spotify import SpotifyClient
 from empiremuse.utils.music.checks import check_pool_bots
@@ -1050,12 +1049,6 @@ class BotPool:
                 continue
             self.player_skins[skin] = loaded
             self.player_static_skins[skin] = loaded
-        if loaded_ids := [s for s in JUKEBOX_IDS if s in self.player_skins]:
-            skin_trace.trace(
-                "pool",
-                muse=loaded_ids,
-                default=(getattr(self, "default_skin", None), getattr(self, "default_static_skin", None)),
-            )
 
     def check_skin(self, skin: str):
         if skin is None:
