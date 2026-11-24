@@ -11,6 +11,7 @@ from typing import Any, NamedTuple, Optional
 
 from empiremuse.rules.radio import Radio
 from empiremuse.rules.radio_quality import station_quality
+from empiremuse.rules.skins import DEFAULT_RADIO_LOOK, radio_look
 from empiremuse.utils.radio.favorites import MAX_FAVORITES
 from empiremuse.utils.radio.panel import split_stream_title
 from empiremuse.utils.radio.picker import FAVORITES_ID
@@ -56,6 +57,9 @@ class RadioPanelSnapshot(NamedTuple):
     favorite: bool  # a estação no ar está nas favoritas do servidor
     favorites_full: bool
     retry_seconds: Optional[int]  # fora do ar: segundos para a próxima tentativa
+    # A skin efetiva (2.3, ``rules/skins.radio_look``): a da rádio, senão a de todas as rádios, senão o padrão. O ``skin``
+    # acima continua o visual de antes (``black``/``white``) até o despacho por skin (S7).
+    look: str = DEFAULT_RADIO_LOOK
     # "Tocou há pouco": (hora de parede, título), do mais antigo ao mais novo. O título JÁ vem escapado pelo ``clean_title``:
     # o destino usa ``stored_text``, nunca ``external_text`` de novo.
     recent_titles: tuple[tuple[float, str], ...] = ()
@@ -77,9 +81,18 @@ def _state(view: Any) -> str:
 
 
 async def live_snapshot(
-    hub: Any, radio: Radio, ports: Any, runner: Any, *, locale: str, logo: Optional[bytes] = None
+    hub: Any,
+    radio: Radio,
+    ports: Any,
+    runner: Any,
+    *,
+    locale: str,
+    logo: Optional[bytes] = None,
+    guild_radio_skin: object = None,
 ) -> RadioPanelSnapshot:
-    """Monta o retrato da rádio AO VIVO ``radio`` a partir das portas e do runner dela. Falha do diretório não derruba: o painel mostra o que tem."""
+    """Monta o retrato da rádio AO VIVO ``radio`` a partir das portas e do runner dela. Falha do diretório não derruba: o painel mostra o que tem.
+
+    ``guild_radio_skin`` é o ``radio_skin`` do servidor (documento global ``guilds``); entra só na skin efetiva (``look``)."""
     active = ports.active
     ids = list(ports.station_list)
     position, window_ids = _window(ids, active)
@@ -115,6 +128,7 @@ async def live_snapshot(
     return RadioPanelSnapshot(
         radio_id=radio.id,
         skin=radio.skin,
+        look=radio_look(radio.look, guild_radio_skin),
         station_name=station.name if station else ports._names.get(active, "—"),
         country=station.country if station else "",
         codec=station.codec if station else "",

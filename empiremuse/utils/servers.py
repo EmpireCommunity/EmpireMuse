@@ -37,6 +37,7 @@ from empiremuse.rules.servers import (
     new_doc,
     normalize_role_ids,
     settings_from_legacy,
+    with_default_settings,
     to_legacy,
     validate_changes,
 )
@@ -176,7 +177,7 @@ class ServerStore:
             logger.warning("Documento do servidor [%s] não lido (%s)", gid, type(exc).__name__)
             raise ServerConfigUnavailable from exc
         if doc is not None:
-            self._docs[gid] = doc
+            doc = self._docs[gid] = with_default_settings(doc)
         return doc
 
     async def _transact(self, gid: str, plan: Plan) -> dict:

@@ -17,6 +17,7 @@ from functools import partial
 from configparser import ConfigParser
 from copy import deepcopy
 from importlib import import_module
+from importlib.util import find_spec
 from pathlib import Path
 from subprocess import check_output
 from typing import Any, Optional, Union, List, Dict
@@ -57,6 +58,7 @@ from empiremuse.rules.erasure import tombstone_seconds
 from empiremuse.rules.git_remote import parse_remote_web_url, sanitized_repo_url
 from empiremuse.rules.owner_shell import collect_secret_values
 from empiremuse.rules.servers import is_main_identifier
+from empiremuse.rules.skins import JUKEBOX_IDS
 from empiremuse.updater.notice import on_pool_ready
 from empiremuse.updater.state import read_pending
 from empiremuse.i18n import get_i18n
@@ -103,6 +105,7 @@ from empiremuse.utils.owner_panel import PanelView
 from empiremuse.web_app import WSClient, start
 
 logger = logging.getLogger(__name__)
+MUSE_SKINS_PACKAGE = "empiremuse.utils.music.skins.muse"  # as skins do EmpireMuse (2.3), só por id do registro
 
 MAIN_PREFIX_WAIT = (
     5.0  # s que a reserva espera o principal assumir o comando de prefixo antes de ignorá-lo (ele pode ir ao banco)
@@ -201,6 +204,13 @@ def load_jishaku_if_enabled(bot) -> bool:
     os.environ["JISHAKU_OWNER_IDS"] = ",".join(str(i) for i in owner_ids)
     bot.load_extension("jishaku")
     return True
+
+
+def _is_missing_part_of(module_name: str, missing: object) -> bool:
+    """O módulo ausente (``ModuleNotFoundError.name``) é o próprio ``module_name`` ou um pacote do caminho dele?"""
+    return (
+        isinstance(missing, str) and bool(missing) and (module_name == missing or module_name.startswith(f"{missing}."))
+    )
 
 
 class BotPool:
@@ -978,9 +988,6 @@ class BotPool:
                 logger.warning("Falha ao carregar skin [normal_player] %s (%s)", skin, type(e).__name__)
                 logger.debug("Detalhe da falha da skin %s", skin, exc_info=True)
 
-        if self.default_skin not in self.player_skins:
-            self.default_skin = "default"
-
         for skin in os.listdir(skins_dir / "static_player"):
             if not skin.endswith(".py"):
                 continue
@@ -1000,8 +1007,42 @@ class BotPool:
             except Exception as e:
                 logger.warning("Falha ao carregar skin [static_player] %s (%s)", skin, type(e).__name__)
                 logger.debug("Detalhe da falha da skin %s", skin, exc_info=True)
+
+        self.load_muse_skins()
+
+        if self.default_skin not in self.player_skins:
+            self.default_skin = "default"
         if self.default_static_skin not in self.player_static_skins:
             self.default_static_skin = "default"
+
+    def load_muse_skins(self) -> None:
+        """As skins do EmpireMuse (2.3): cada id de ``rules/skins.JUKEBOX_IDS`` vale nos DOIS modos (``player_skins`` e
+        ``player_static_skins``), então ``check_skin``, o painel e a API as aceitam sem ramo novo.
+
+        Só importa ids do registro (nunca um valor do banco). Cada módulo de ``utils/music/skins/muse/`` tem ``load()``, que
+        devolve a skin (o mesmo formato das Clássicas: ``name``, ``preview``, ``setup_features`` e ``load(player)``). Módulo
+        que ainda não existe é pulado sem aviso; módulo que falha ao carregar vai ao log, como as Clássicas.
+        """
+        for skin in JUKEBOX_IDS:
+            module_name = f"{MUSE_SKINS_PACKAGE}.{skin}"
+            try:
+                if find_spec(module_name) is None:
+                    continue
+            except ModuleNotFoundError as e:
+                if _is_missing_part_of(module_name, e.name):
+                    continue  # o pacote das skins ainda não existe
+                # o pacote existe, mas um import DELE falta: nenhuma skin carrega, e a falha vai ao log uma vez
+                logger.warning("Falha ao carregar o pacote das skins [muse] (%s)", type(e).__name__)
+                logger.debug("Detalhe da falha do pacote das skins", exc_info=True)
+                return
+            try:
+                loaded = import_module(module_name).load()
+            except Exception as e:  # inclusive um import ausente DENTRO da skin: vai ao log
+                logger.warning("Falha ao carregar skin [muse] %s (%s)", skin, type(e).__name__)
+                logger.debug("Detalhe da falha da skin %s", skin, exc_info=True)
+                continue
+            self.player_skins[skin] = loaded
+            self.player_static_skins[skin] = loaded
 
     def check_skin(self, skin: str):
         if skin is None:
