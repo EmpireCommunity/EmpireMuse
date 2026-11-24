@@ -213,3 +213,79 @@ async def test_painel_assumindo_o_player_confirma_depois_de_refazer_o_painel():
     await player_message.PlayerMessageMixin.invoke_np(player)
     refresh.assert_awaited_once_with(42)
     assert player.details_hidden_rendered is True
+
+
+# ------------------------------------------------------------------------------ exceção, tópico, superado
+
+
+@pytest.mark.asyncio
+async def test_excecao_depois_do_np_data_nao_deixa_o_last_data_avancado():
+    """Modo sem botões: o envio não tem ``try``. Uma exceção deixava o ``last_data`` avançado e a 2ª chamada confirmava sem enviar."""
+    send = AsyncMock(side_effect=[RuntimeError("boom"), SimpleNamespace(id=5)])
+    player = jogador(
+        send=send,
+        privada=False,
+        details_hidden_rendered=True,
+        controller_mode=False,
+        keep_connected=False,
+        message_updater_task=MagicMock(),
+    )
+    with pytest.raises(RuntimeError):
+        await player_message.PlayerMessageMixin.invoke_np(player)
+    assert player.last_data == {} and player.details_hidden_rendered is True
+    await player_message.PlayerMessageMixin.invoke_np(player)
+    assert send.await_count == 2
+    assert player.details_hidden_rendered is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("segunda_falha", [False, True], ids=["reedicao-ok", "reedicao-falha"])
+async def test_message_edit_no_topico_marca_published_so_com_a_reedicao_que_saiu(segunda_falha):
+    topico = MagicMock(spec=disnake.Thread)
+    topico.id = 88
+    topico.locked = False
+    topico.archived = False
+    topico.parent.permissions_for.return_value = SimpleNamespace(send_messages_in_threads=True)
+    topico.permissions_for.return_value = SimpleNamespace(read_messages=True)
+    edit = AsyncMock(side_effect=[erro_http(), erro_http() if segunda_falha else None])
+    player = jogador(edit=edit, text_channel=topico)
+    player.bot.get_channel = lambda _id: topico
+    req = requisicao()
+    await np_steps._np_message_edit(player, req)
+    assert edit.await_count == 2
+    assert req.published is (not segunda_falha)
+
+
+@pytest.mark.asyncio
+async def test_cartao_superado_marca_superseded(monkeypatch):
+    pipeline = SimpleNamespace(supersede=lambda _p: None, render=AsyncMock(return_value=SimpleNamespace(stale=True)))
+    monkeypatch.setattr("empiremuse.utils.render.cards.pipeline.card_pipeline", lambda _hosts: pipeline)
+    monkeypatch.setattr(np_steps, "_card_spec", AsyncMock(return_value="spec"))
+    player = jogador(last_data={})
+    player.bot.config = {"COVER_HOSTS": ""}
+    req = requisicao()
+    assert await np_steps._np_render(player, req, SimpleNamespace(card=object()), dict(DATA), "chave") is True
+    assert req.superseded is True and req.published is False
+
+
+@pytest.mark.asyncio
+async def test_troca_de_faixa_por_overflow_marca_superseded(monkeypatch):
+    def estoura(_player):
+        raise OverflowError
+
+    monkeypatch.setattr(np_steps, "_load_skin", estoura)
+    player = jogador(process_next=AsyncMock())
+    req = requisicao()
+    assert await np_steps._np_data(player, req) is True
+    player.process_next.assert_awaited_once()
+    assert req.superseded is True
+
+
+@pytest.mark.asyncio
+async def test_mesmo_payload_duas_vezes_edita_uma_vez_so():
+    """O ``finally`` só zera o ``last_data`` de quem não terminou bem: "nada a trocar" não vira edição a cada ciclo."""
+    edit = AsyncMock()
+    player = jogador(edit=edit, privada=False, details_hidden_rendered=False)
+    for _ in range(3):  # o "nada a trocar" da 2ª não pode zerar o ``last_data`` e fazer a 3ª editar
+        await player_message.PlayerMessageMixin.invoke_np(player)
+    assert edit.await_count == 1

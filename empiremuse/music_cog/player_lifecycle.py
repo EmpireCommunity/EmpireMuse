@@ -76,6 +76,8 @@ class PlayerLifecycleMixin:
                 "Falha ao redesenhar o player depois da mudança da call",
                 extra=guild_extra(getattr(player, "guild_id", None)),
             )
+            if not player.is_closing and self._privacy_flipped(player):
+                player.update = True  # a virada segue pendente: o atualizador da mensagem refaz
 
     @commands.Cog.listener("on_guild_channel_update")
     async def privacy_channel_update(self, before: disnake.abc.GuildChannel, after: disnake.abc.GuildChannel) -> None:

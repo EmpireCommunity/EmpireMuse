@@ -40,6 +40,7 @@ def _confirm_rendered(player, req, hidden: bool) -> None:
     Sem publicação, o ``last_data`` (gravado antes de publicar) é zerado: a próxima chamada refaz o desenho em vez de
     concluir que "nada mudou" e confirmar o registro sem editar.
     """
+    req.settled = True
     if req.published:
         player.details_hidden_rendered = hidden
     else:
@@ -72,9 +73,22 @@ class PlayerMessageMixin:
         # desenho, o gatilho de privacidade vê a diferença; se o desenho falhar, o registro anterior fica e o redesenho tenta de novo)
         hidden = player_hides_details(self)
 
+        try:
+            # chamada pela classe: os dublês dos testes não herdam o mixin
+            await PlayerMessageMixin._invoke_np_render(self, req, hidden)
+        finally:
+            if not req.settled:
+                # uma exceção (ou o encerramento) depois do ``_np_data``, que já avançou o ``last_data``: sem zerar, a
+                # próxima chamada concluiria que "nada mudou" e confirmaria o registro sem editar
+                self.last_data = {}
+                # a exceção saiu com ``updating`` travado em True e a nova tentativa seria descartada pela guarda
+                self.updating = False
+
+    async def _invoke_np_render(self, req, hidden: bool) -> None:
         if await _np_data(self, req):
+            req.settled = True  # nada a trocar (a mensagem já mostra este payload) ou o pedido foi superado
             if not req.superseded:
-                self.details_hidden_rendered = hidden  # nada a trocar: a mensagem já mostra este payload
+                self.details_hidden_rendered = hidden
             return
 
         if (

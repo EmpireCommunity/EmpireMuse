@@ -253,3 +253,15 @@ async def test_canal_de_outro_servidor_ou_de_outra_call_nao_compara_overwrites()
     mesmo_servidor.guild, mesmo_servidor.id = voz.guild, 123456  # outro canal do servidor
     await cog.privacy_channel_update(mesmo_servidor, mesmo_servidor)
     assert jogador.privacy_rerender_task is None
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_excecao_no_redesenho_com_virada_pendente_pede_o_atualizador(espera):
+    cog, jogador, voz = montar(publica=True, desenhado=False)
+    jogador.update = False
+    voz.permissions_for.return_value = PRIVADA
+    jogador.invoke_np = AsyncMock(side_effect=RuntimeError("boom"))
+    await cog.privacy_channel_update(*mudou(voz))
+    await rodar(jogador, espera)
+    assert jogador.update is True
