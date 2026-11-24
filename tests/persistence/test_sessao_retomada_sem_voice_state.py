@@ -206,7 +206,6 @@ class JogadorDeTeste(LavalinkPlayer):
     async def process_next(self, start_position=0):
         self.registros.append(("process_next", start_position))
 
-
     @pytest.mark.regression
     @pytest.mark.asyncio
     @pytest.mark.parametrize("versao", [3, 4])
