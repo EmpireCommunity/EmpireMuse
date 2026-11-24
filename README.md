@@ -41,7 +41,7 @@ Participe do nosso servidor oficial [Discord EmpireHUB](https://empirecommunity.
 
 ## Recursos Principais
 
-- 🎵 **Player Interativo e Rico**: Controles multimídia completos via botões, menus de seleção e modais, com 15 skins visuais intercambiáveis (10 dinâmicas e 5 estáticas).
+- 🎵 **Player Interativo e Rico**: Controles multimídia completos via botões, menus de seleção e modais, com skins intercambiáveis: a Jukebox (padrão, Components V2 com disco girando), a Jukebox Texto e as Clássicas. As skins de imagem antigas da Jukebox viram apelidos da nova.
 - 📻 **Arquitetura Multi-instância (`BotPool`)**: Gerenciamento integrado de múltiplos bots no mesmo processo para balanceamento de canais de voz simultâneos.
 - 🌐 **Painel Web Integrado (`panel/`)**: Interface web moderna orientada a hipertexto (Tornado + htmx + Pico CSS) com autenticação Discord OAuth2 e PKCE para gerenciamento de configurações de servidores e preferências pessoais.
 - 🎧 **Múltiplas Fontes de Áudio**: Suporte a YouTube (com cliente TV, cifra remota e autenticação OAuth opcional contra bloqueios anti-bot), Spotify, Deezer e servidores Lavalink locais ou remotos.

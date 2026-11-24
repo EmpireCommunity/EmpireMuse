@@ -14,6 +14,7 @@ resume o que o código garante e o orçamento de memória.
 | `primitives.py` | ícones, logo em círculo (só PNG), `fit` por busca binária, texto recortado na caixa | puro |
 | `fonts.py` | `FontBook`: só os arquivos de `assets/fonts/` com o SHA-256 registrado, conferidos na primeira carga; toda fonte (peso e tamanho) sai desses bytes conferidos em memória; peso pelo eixo `Weight`; reserva por caractere (a fonte da skin, depois a Noto Sans, até 32 trechos); RTL só com `raqm` | cache por `(arquivo, peso, tamanho)`; usar dentro da vaga |
 | `state.py` | estado de render por player num `WeakKeyDictionary` (último anexo, GIF adiado, último GIF frio), fora de `player.py` | memória |
+| `disc_only.py` | o disco sozinho da Jukebox C (`muse_jukebox`): 128 px, 24 quadros de 80 ms, GIF até 256 KiB, PNG parado = quadro 0; rótulo da capa ou degradê "sem capa"; `DiscService.disc(cover, plain=)` com cache LRU por bytes (chave: sha256 do rótulo + versões) e a vaga de desenho; vaga ocupada = o plano B (a URL da capa) | um serviço por processo (`disc_service()`) |
 | `cards/` | os renderizadores (`expanded`, `slim`, `visor_jukebox` e `radio_portrait`, o Retrato, que também desenha a rádio 24 h: `project`, `disc_box`, `draw`, `disc_tiles`) e o `pipeline.py`: capa e formato fora da vaga; desenho, ladrilhos e codificação dentro dela; um desenho por player; `RenderBusy` mantém o anexo | uma instância do pipeline por processo (`card_pipeline()`) |
 
 Os fatos que a imagem pode mostrar (`CardSpec`) e as regras puras (formato, animação, anexo, call privada) ficam em
