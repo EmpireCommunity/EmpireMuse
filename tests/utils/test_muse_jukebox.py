@@ -525,7 +525,7 @@ def _render_player(tr, *, hidden):
     return player
 
 
-async def _render(player, skin, monkeypatch, *, hidden, spec_values):
+async def _render(player, skin, monkeypatch, *, hidden, spec_values, pick_fn=None):
     values = iter(spec_values)
 
     def build(*_):
@@ -541,7 +541,7 @@ async def _render(player, skin, monkeypatch, *, hidden, spec_values):
     async def pick(*_a, **_k):
         return np_v2.Picked(muse_jukebox.Thumb("attachment://disc-n.png", "alt"), [], "disc-n", False)
 
-    monkeypatch.setattr(np_v2, "pick", pick)
+    monkeypatch.setattr(np_v2, "pick", pick_fn or pick)
 
     async def motion(*_a, **_k):
         return True
@@ -611,9 +611,12 @@ async def test_a_state_without_a_disc_sends_no_attachments_to_drop_the_old_one(t
     player = _render_player(tr, hidden=True)
     np_v2._SENT[player] = "disc-old"
     skin = SimpleNamespace(name="muse_jukebox", build=lambda *a: {"components": ["x"]}, idle=None)
-    done, req = await _render(player, skin, monkeypatch, hidden=True, spec_values=["s", "s"])
-    # o pick de mentira devolve o disco "disc-n" (nome diferente do enviado) sem arquivo: o anexo antigo sai
-    assert done is False and req.data["attachments"] == []
+
+    async def no_disc(*_a, **_k):  # o estado novo termina sem imagem anexada (R escondido / plano B)
+        return np_v2.Picked(muse_jukebox.Thumb("https://exemplo.invalid/global.png", "alt"), [], None, False)
+
+    done, req = await _render(player, skin, monkeypatch, hidden=True, spec_values=["s", "s"], pick_fn=no_disc)
+    assert done is False and req.data["attachments"] == [] and req.disc is None and "files" not in req.data
 
 
 @pytest.mark.regression
@@ -712,8 +715,37 @@ async def test_after_a_failed_edit_the_retry_clears_the_old_attachment_and_resen
     failed = SimpleNamespace(disc=None, published=False, v2=True, interaction=None)
     np_v2.confirm(player, failed)  # a primeira edição (ex.: limite de taxa) não saiu
     skin = SimpleNamespace(name="muse_jukebox", build=lambda *a: {"components": ["x"]}, idle=None)
-    done, req = await _render(player, skin, monkeypatch, hidden=True, spec_values=["s", "s"])
+
+    async def same_disc(
+        _player, _spec, _logo, _hosts, shown
+    ):  # como o real: sem arquivo só se a mensagem já tem esse disco
+        files = [] if shown == "disc-same" else [np_v2._file(b"png", "disc-same.png", "alt")]
+        return np_v2.Picked(muse_jukebox.Thumb("attachment://disc-same.png", "alt"), files, "disc-same", False)
+
+    done, req = await _render(player, skin, monkeypatch, hidden=True, spec_values=["s", "s"], pick_fn=same_disc)
     assert done is False and req.data["attachments"] == []
+    assert [file.filename for file in req.data["files"]] == ["disc-same.png"]  # o disco é reenviado
+
+
+@pytest.mark.regression
+def test_the_idle_never_changes_the_options_the_caller_passed(tr):
+    from empiremuse.utils.others import PlayerControls
+
+    player = secret_player(tr, private=True, in_call_chat=False, static=True)
+    player.keep_connected = True
+    option = disnake.SelectOption(label="v", value=PlayerControls.back, description="Faixa Secreta")
+    select = disnake.ui.Select(custom_id="musicplayer_dropdown_idle", options=[option])
+    data = muse_jukebox.idle(player, {"components": [select]})
+    assert option.description == "Faixa Secreta" and "Faixa Secreta" not in dump(data)
+
+
+@pytest.mark.regression
+def test_a_resumed_custom_skin_takes_only_the_current_format_definition_from_the_global():
+    from empiremuse.cogs.player_resume import _custom_definition
+
+    choice = "> custom_skin: X"
+    assert _custom_definition({}, {"X": "texto antigo"}, choice) == {}
+    assert _custom_definition({}, {"X": {"a": 1}}, choice) == {"X": {"a": 1}}
 
 
 @pytest.mark.regression

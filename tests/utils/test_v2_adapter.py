@@ -107,3 +107,15 @@ def test_two_embeds_with_many_fields_stay_inside_the_forty_components():
             embed.add_field(name=f"f{n}", value="v")
     data = v2.legacy_to_v2({"embeds": embeds, "components": []})
     assert sum(v2.count_components(item) for item in data["components"]) <= v2.MAX_COMPONENTS
+
+
+@pytest.mark.regression
+def test_many_embeds_with_images_and_many_controls_still_end_inside_the_forty_components():
+    embeds = []
+    for n in range(10):
+        embed = disnake.Embed(description=f"d{n}")
+        embed.set_image(url="https://exemplo.invalid/i.png")
+        embeds.append(embed)
+    buttons = [disnake.ui.Button(label=str(n), custom_id=f"b{n}") for n in range(25)]
+    data = v2.legacy_to_v2({"embeds": embeds, "components": buttons})
+    assert sum(v2.count_components(item) for item in data["components"]) <= v2.MAX_COMPONENTS

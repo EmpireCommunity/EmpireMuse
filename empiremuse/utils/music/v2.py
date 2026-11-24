@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 MAX_COMPONENTS = 40
 MAX_TEXT = 4000  # a soma dos TextDisplay de uma mensagem V2
 ROW_BUTTONS = 5
+ROW_LIMIT = 5  # linhas de controle de uma mensagem
 TEXT_BLOCKS = 10  # blocos de texto por embed convertido, até o teto de componentes pedir menos
 LEGACY_KEYS = ("content", "embed", "embeds", "view")
 _ELLIPSIS = "…"
@@ -178,8 +179,25 @@ def legacy_to_v2(kwargs: Mapping[str, Any]) -> dict[str, Any]:
                 layout.append(disnake.ui.Container(*children, *(controls if last else ()), accent_colour=colour))
         if sum(count_components(item) for item in layout) <= MAX_COMPONENTS:
             break
+    else:
+        layout = [
+            *head,
+            *_merged(embeds, budget, controls),
+        ]  # último recurso: um só bloco, sem imagem, controles de até 5 linhas
     out.update(content=None, embeds=[], components=layout)
     return out
+
+
+def _merged(embeds: Sequence[Any], budget: int, controls: list[Any]) -> list[Any]:
+    """Todos os embeds num ``Container`` com um ``TextDisplay`` só (sem imagem): com os controles (no máximo 5 linhas, o limite
+    de uma mensagem V1) são no máximo 32 componentes."""
+    texts: list[str] = []
+    colour = None
+    for embed in embeds:
+        texts.extend(_embed_texts(embed))
+        colour = colour or (embed.colour if isinstance(embed.colour, disnake.Colour) else None)
+    children: list[Any] = [disnake.ui.TextDisplay(_clip("\n\n".join(texts), budget))] if texts else []
+    return [disnake.ui.Container(*children, *controls[:ROW_LIMIT], accent_colour=colour)]
 
 
 def adapt_for(message: Any, kwargs: Mapping[str, Any], *, where: str = "", expected: bool = False) -> dict[str, Any]:

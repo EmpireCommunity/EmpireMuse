@@ -12,6 +12,7 @@ com o disco "sem capa" por URL, só para quem lê a skin fora do ``invoke_np``.
 
 from __future__ import annotations
 
+import copy
 import time
 from typing import Any, NamedTuple, Optional
 
@@ -335,6 +336,25 @@ def idle_payload(tr: tx.Tr, components: Any, *, off: Optional[int] = None, lead:
     return {"content": None, "embeds": [], "components": [tree], "attachments": []}
 
 
+def _masked(item: Any, text: str, controls: Any) -> Any:
+    """Uma cópia do select com a descrição de "voltar" e "relacionadas" trocada por ``text`` (as opções do chamador não mudam)."""
+    options = getattr(item, "options", None)
+    if not options:
+        return item
+    clone = copy.copy(item)
+    clone.options = [
+        disnake.SelectOption(
+            label=option.label,
+            value=option.value,
+            description=text if option.value in (controls.back, controls.autoplay) else option.description,
+            emoji=option.emoji,
+            default=option.default,
+        )
+        for option in options
+    ]
+    return clone
+
+
 def _hidden_or_unknown(player: Any) -> bool:
     """Esconde se a regra diz que sim e também se ela falha (privacidade desconhecida fecha)."""
     try:
@@ -350,13 +370,8 @@ def idle(player: Any, kwargs: dict) -> dict:
     off = None if player.keep_connected else int(time.time()) + int(player.bot.config["IDLE_TIMEOUT"])
     out = {name: value for name, value in kwargs.items() if name not in ("embed", "content", "components")}
     components = kwargs.get("components")
-    if _hidden_or_unknown(
-        player
-    ):  # call privada: as opções "voltar" e "relacionadas" não levam o título da última faixa
-        for item in components or ():
-            for option in getattr(item, "options", ()):
-                if option.value in (PlayerControls.back, PlayerControls.autoplay):
-                    option.description = player.tr("jbx.hidden_track")
+    if _hidden_or_unknown(player):  # call privada: "voltar" e "relacionadas" não levam o título da última faixa
+        components = [_masked(item, player.tr("jbx.hidden_track"), PlayerControls) for item in components or ()]
     out.update(idle_payload(player.tr, components, off=off, lead=kwargs.get("content") or ""))
     return out
 

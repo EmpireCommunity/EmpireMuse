@@ -39,8 +39,8 @@ def _custom_definition(session_data: object, saved: object, choice: object) -> d
     data = dict(session_data) if isinstance(session_data, dict) else {}
     if isinstance(choice, str) and choice.startswith("> custom_skin: "):
         name = choice[15:]
-        if name not in data and isinstance(saved, dict) and name in saved:
-            data[name] = saved[name]
+        if name not in data and isinstance(saved, dict) and isinstance(saved.get(name), dict):
+            data[name] = saved[name]  # só o formato atual (um texto do formato antigo não vira skin)
     return data
 
 

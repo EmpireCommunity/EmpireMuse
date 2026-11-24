@@ -688,7 +688,8 @@ class TestCommand:
 
         choices = await skins_store.load_choices(bot, bot.get_guild(GUILD), bot.global_data, radio_allowed=False)
 
-        assert "muse_jukebox" in choices.normal and not set(SKIN_ALIASES) & {*choices.normal, *choices.static}
+        assert "muse_jukebox" in choices.normal and "muse_jukebox" in choices.static
+        assert not set(SKIN_ALIASES) & {*choices.normal, *choices.static}
 
     @pytest.mark.asyncio
     @pytest.mark.regression

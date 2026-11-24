@@ -228,4 +228,10 @@ async def test_os_eventos_de_voz_do_connect_chegam_ao_player_real_sem_levantar()
 @pytest.mark.parametrize("versao", [3, 4])
 async def test_a_retomada_nao_sobrescreve_o_estado_de_voz_do_construtor(versao):
     jogador, _ = await retomar(versao, await sessao_gravada())
-    assert getattr(jogador, "_voice_state", {}) is not None
+    assert "_voice_state" not in vars(
+        jogador
+    )  # a retomada não grava o campo: vale o que o construtor do player real põe
+    real = __import__("empiremuse.wavelink", fromlist=["Player"]).Player(
+        SimpleNamespace(), 1, SimpleNamespace(version=4)
+    )
+    assert real._voice_state == {}
