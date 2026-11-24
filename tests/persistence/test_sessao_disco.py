@@ -154,3 +154,17 @@ class TestRemocao:
         assert restantes == sorted(
             [f"{OUTRO}.json", f"{OUTRO}.json.bak", f"{SERVIDOR}.pkl", f"{SERVIDOR}.bak", f"{OUTRO}.pkl", f"{OUTRO}.bak"]
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_the_classic_default_of_a_session_survives_save_encode_and_decode():
+    from empiremuse.rules.skins import is_chosen, jukebox_choice
+    from empiremuse.serialization import session
+    from tests.support.formato_sessao import gravar
+
+    data = await gravar(cog_de_sessoes(), jogador_completo(skin="default", skin_static="default"))
+    back = session.decode_session(session.encode_session(data))
+
+    assert jukebox_choice(back["skin"], is_chosen(back, "skin")) == "default"
+    assert jukebox_choice(back["skin_static"], is_chosen(back, "skin_static")) == "default"

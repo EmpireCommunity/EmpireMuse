@@ -36,9 +36,11 @@ from empiremuse.rules.skins import (
     Kind,
     SkinEntry,
     disc_motion_on,
+    is_chosen,
     jukebox_skin,
     radio_look,
     saved_player_skins,
+    with_choice_marks,
 )
 from empiremuse.rules.text import external_text
 from empiremuse.utils.db import DBModel
@@ -186,11 +188,13 @@ async def load_choices(bot: Any, guild: Any, global_data: Mapping[str, Any], *, 
 def initial_draft(pool: Any, settings: Mapping[str, Any], global_data: Mapping[str, Any], choices: Choices) -> Draft:
     """O que a tela abre mostrando, com a mesma leitura do player (``saved_player_skins``/``jukebox_skin``, Q1 incluído)."""
     defaults = (pool.default_skin, pool.default_static_skin)
-    server = (jukebox_skin(settings.get("skin"), defaults[0]), jukebox_skin(settings.get("static_skin"), defaults[1]))
-    glob_choice = saved_player_skins(
-        settings.get("skin"), settings.get("static_skin"), {**global_data, "global_skin": True}
+    server = (
+        jukebox_skin(settings.get("skin"), defaults[0], is_chosen(settings, "skin")),
+        jukebox_skin(settings.get("static_skin"), defaults[1], is_chosen(settings, "static_skin")),
     )
-    glob = (jukebox_skin(glob_choice[0], defaults[0]), jukebox_skin(glob_choice[1], defaults[1]))
+    glob_choice = saved_player_skins(settings, {**global_data, "global_skin": True})
+    # ``saved_player_skins`` já aplicou o Q1 em cada nível: o que sobra é escolha
+    glob = (jukebox_skin(glob_choice[0], defaults[0], True), jukebox_skin(glob_choice[1], defaults[1], True))
     return Draft(
         global_mode=bool(global_data.get("global_skin")),
         server=server,
@@ -210,9 +214,12 @@ async def save_skins(bot: Any, guild_id: int, plan: SavePlan, *, updated_by: str
     gravaram (mudaram, sumiram ou não são deste servidor); as outras ficam gravadas."""
     if plan.global_fields:
         fresh = await bot.get_global_data(guild_id, db_name=DBModel.guilds)
-        await bot.update_global_data(guild_id, {**fresh, **plan.global_fields}, db_name=DBModel.guilds)
+        # a marca de escolha do 2.3 (``rules/skins.is_chosen``): a Clássica ``default`` escolhida aqui fica
+        await bot.update_global_data(
+            guild_id, {**fresh, **with_choice_marks(plan.global_fields)}, db_name=DBModel.guilds
+        )
     if plan.server_fields:
-        await bot.pool.servers.patch(guild_id, "settings", dict(plan.server_fields))
+        await bot.pool.servers.patch(guild_id, "settings", with_choice_marks(plan.server_fields))
     failed = []
     for item in plan.radio_looks:
         try:

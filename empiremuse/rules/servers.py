@@ -34,6 +34,8 @@ SETTINGS_FIELDS = (
     "check_other_bots_in_vc",
     "skin",
     "static_skin",
+    "skin_chosen",  # 2.3: o valor de ``skin`` foi gravado como escolha (``rules/skins.is_chosen``)
+    "static_skin_chosen",
     "language",
     "jukebox_auto_delete",
     "jukebox_text_requests",
@@ -48,11 +50,18 @@ FLAG_FIELDS = (
     "check_other_bots_in_vc",
     "jukebox_auto_delete",
     "jukebox_text_requests",
+    "skin_chosen",
+    "static_skin_chosen",
 )
 SKIN_MAX_LENGTH = 100
 
 _ROLE_ID = re.compile(r"[0-9]{1,20}")
-_LEGACY_CONTROLLER_KEYS = {"skin": "skin", "static_skin": "static_skin"}
+_LEGACY_CONTROLLER_KEYS = {
+    "skin": "skin",
+    "static_skin": "static_skin",
+    "skin_chosen": "skin_chosen",
+    "static_skin_chosen": "static_skin_chosen",
+}
 
 
 class SettingError(ValueError):
@@ -81,10 +90,26 @@ def default_settings() -> dict[str, Any]:
         "check_other_bots_in_vc": False,
         "skin": None,
         "static_skin": None,
+        "skin_chosen": False,
+        "static_skin_chosen": False,
         "language": None,  # ``None`` = automático (o idioma do Discord do servidor)
         "jukebox_auto_delete": False,
         "jukebox_text_requests": True,
     }
+
+
+def with_default_settings(doc: dict[str, Any]) -> dict[str, Any]:
+    """O documento lido do banco com os campos da visão antiga (``LEGACY_FIELDS``) completos: campo que o documento gravado ainda
+    não tem (de uma versão anterior, como as marcas de escolha de skin do 2.3) entra com o padrão. Assim a visão antiga e o
+    ``seen`` dos escritores antigos enxergam todos os campos. Os só do documento único (como ``language``) ficam como estão: a
+    migração deles na subida depende de saber que faltam."""
+    settings = doc.get(SECTION_SETTINGS)
+    if not isinstance(settings, Mapping):
+        return doc
+    missing = {
+        name: value for name, value in default_settings().items() if name in LEGACY_FIELDS and name not in settings
+    }
+    return {**doc, SECTION_SETTINGS: {**settings, **missing}} if missing else doc
 
 
 def jukebox_auto_delete(settings: Mapping[str, Any]) -> bool:

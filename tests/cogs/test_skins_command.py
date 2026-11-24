@@ -243,6 +243,25 @@ class TestSaveSkins:
         assert store.calls == [(GUILD, f"{BOT_B}:{GUILD}", "text", 7)]
 
 
+@pytest.mark.asyncio
+@pytest.mark.regression
+@pytest.mark.parametrize("global_mode", [False, True])
+async def test_a_classic_default_saved_in_skins_survives_a_reopen_and_the_new_player(global_mode):
+    from empiremuse.rules.skins import saved_player_skins
+
+    bot = Bot({"global_skin": global_mode})
+    bot.settings = {"skin": "mini", "static_skin": "mini"}
+    initial = skins_view.initial_draft(bot.pool, bot.settings, bot.global_data, CHOICES)
+    scope = "glob" if global_mode else "server"
+    draft = _replace(initial, **{scope: ("default", "default")})
+
+    await skins_view.save_skins(bot, GUILD, plan_save(initial, draft, RADIOS, radio_allowed=False), updated_by="9")
+    reopened = skins_view.initial_draft(bot.pool, bot.settings, bot.global_data, CHOICES)
+
+    assert getattr(reopened, scope) == ("default", "default")  # a Clássica escolhida, não o padrão Texto
+    assert saved_player_skins(bot.settings, bot.global_data) == ("default", "default")  # a leitura da criação do player
+
+
 # ============================================================================ o comando de ponta a ponta (tela de mentira)
 
 
@@ -374,7 +393,10 @@ class TestCommand:
     async def test_server_skin_change_writes_only_the_server_settings(self, monkeypatch):
         bot = Bot({"global_skin": False})
         await run_skins(monkeypatch, bot, change=lambda d: _server_skin(d, "muse_expanded_black"))
-        assert bot.server_writes == [(GUILD, "settings", {"skin": "muse_expanded_black"})] and bot.global_writes == []
+        assert (
+            bot.server_writes == [(GUILD, "settings", {"skin": "muse_expanded_black", "skin_chosen": True})]
+            and bot.global_writes == []
+        )
 
     @pytest.mark.asyncio
     async def test_a_member_without_manage_guild_does_not_get_the_screen(self, monkeypatch):

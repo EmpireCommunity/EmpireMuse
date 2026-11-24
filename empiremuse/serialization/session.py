@@ -247,6 +247,9 @@ _SESSION = Dict(
         "volume": _Defaulted(Int(0, 1000), 100),
         "skin": _Defaulted(Str(256, allow_format=True), "default"),
         "skin_static": _Defaulted(Str(256, allow_format=True), "default"),
+        # 2.3: a skin da sessão é escolha (``rules/skins.is_chosen``); a versão antiga ignora as duas chaves
+        "skin_chosen": optional(Bool()),
+        "skin_static_chosen": optional(Bool()),
         "loop": _Defaulted(_Loop(), False),
         "dj": _Defaulted(_Dj(), []),
         "custom_skin_data": _Defaulted(_SkinMap(), {}),
