@@ -350,3 +350,13 @@ def test_the_text_skin_shows_the_elapsed_time_in_m_ss_and_it_is_stable_inside_a_
     player.position = 73_900  # o mesmo passo de 5 s: o texto não muda
     assert muse_text.timeline(player, ctx, tr) == first
     assert first[0].startswith("`1:10` ") and first[0].endswith("`3:29`") and "03:" not in first[0]
+
+
+@pytest.mark.regression
+def test_no_hint_line_in_the_text_skin_nor_in_the_jukebox(tr):
+    from empiremuse.utils.music.skins.muse import muse_text
+
+    player = _player(tr)
+    player.current_hint = "Dê uma nova cara para o player com /custom_skin"
+    assert muse_text.build(player, NOW)["embeds"][0].footer.text is None
+    assert "custom_skin" not in dump(build(player))

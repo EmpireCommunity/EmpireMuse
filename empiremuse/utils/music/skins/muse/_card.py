@@ -125,7 +125,6 @@ class ImageSkin:
         embed = disnake.Embed(color=player.bot.get_color(player.guild.me))
         set_author_link(embed, player, ctx)
         embed.description = fit("\n".join(body(player, ctx, tr, bar=text_bar_on(self.card))), DESCRIPTION_MAX) or None
-        tx.set_footer(embed, player, tr)
         return {"content": None, "embeds": [embed], "components": components(player, hidden=ctx.hidden)}
 
     def load(self, player: Any) -> dict:

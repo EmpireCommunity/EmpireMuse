@@ -105,7 +105,6 @@ def build(player: Any, now: float, *, image: str = WAVE_ASSET) -> dict:
     if thumb := thumbnail_of(player, ctx):
         embed.set_thumbnail(url=thumb)
     embed.set_image(url=asset_url(image))
-    tx.set_footer(embed, player, tr)
     return {"content": None, "embeds": [embed], "components": components(player, hidden=ctx.hidden)}
 
 
