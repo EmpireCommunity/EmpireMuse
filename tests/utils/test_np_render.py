@@ -136,6 +136,42 @@ async def test_a_text_skin_with_components_skips_an_edit_when_nothing_changed():
     assert (first, again) == (False, True)
 
 
+def call_guild(*, private: bool):
+    """O bot numa call; privada = ``@everyone`` não vê o canal."""
+    perms = SimpleNamespace(view_channel=not private, connect=True)
+    channel = SimpleNamespace(permissions_for=lambda _role: perms, guild=SimpleNamespace(default_role=None))
+    return SimpleNamespace(me=SimpleNamespace(voice=SimpleNamespace(channel=channel)))
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+@pytest.mark.critical
+@pytest.mark.parametrize("private", [False, True])
+@pytest.mark.parametrize("skin_name", ["muse_text", "default"])
+async def test_a_forum_static_player_never_puts_the_real_title_in_the_content_of_a_private_call(skin_name, private):
+    from unittest.mock import MagicMock
+
+    skin = TextSkin()
+    skin.name = skin_name
+    player = Player(skin)
+    player.bot.pool.player_skins = player.bot.pool.player_static_skins = {skin_name: skin}
+    player.bot.user = SimpleNamespace(
+        id=1, display_avatar=SimpleNamespace(replace=lambda **_kw: SimpleNamespace(url="a"))
+    )
+    player.skin, player.static, player.paused = skin_name, True, False
+    player.skin_static = skin_name
+    player.tr = lambda key, **_kw: {"jbx.hidden_track": "Faixa oculta"}.get(key, key)
+    player.queue, player.queue_autoplay, player.command_log = [], [], ""
+    player.current = SimpleNamespace(title="SEGREDO do fórum", duration=1000, is_stream=False)
+    player.text_channel = SimpleNamespace(parent=MagicMock(spec=disnake.ForumChannel))
+    player.guild = call_guild(private=private)
+
+    _, req = await run(player)
+
+    content = req.data.get("content") or ""
+    assert ("SEGREDO" in content, "Faixa oculta" in content) == (not private, private)
+
+
 # ---------------------------------------------------------------------- cartão no embed
 
 
