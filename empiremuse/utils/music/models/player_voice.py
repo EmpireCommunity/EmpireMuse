@@ -383,8 +383,6 @@ class PlayerVoiceMixin:
     _voice_status_last_put: float | None = None
     voice_status_apply: asyncio.Task | None = None  # a aplicação agendada por quem chama (retomada, modal, painel)
     voice_status_generation = 0  # quantos agendamentos já houve; ``_cancel_voice_status_tasks`` não mexe nela
-    voice_status_saved_default = False  # o permanente salvo nunca foi escolhido (``None``): vale o padrão ligado
-    _voice_status_default_noticed = False
     _voice_status_permission_noticed = False
 
     def _voice_status_channel(self):
@@ -504,21 +502,8 @@ class PlayerVoiceMixin:
             self._notify_missing_voice_status_permission()
             return
         self.stage_title_event = True
-        self._notify_voice_status_default()
         await self.update_stage_topic(force=True)
         self._ensure_voice_status_reapply()
-
-    def _notify_voice_status_default(self) -> None:
-        """I-S3: com o permanente nunca escolhido, a 1ª aplicação da sessão avisa UMA vez que o status está ligado por padrão."""
-        if not self.voice_status_saved_default or self._voice_status_default_noticed:
-            return
-        self._voice_status_default_noticed = True
-        self.set_command_log(
-            emoji="ℹ️",
-            text=self.tr("player.channel_status_is_on_by"),
-            controller=True,
-        )
-        self.update = True
 
     def _voice_status_text(self, *, stage: bool) -> str | None:
         """O texto do status da faixa atual (``None`` sem faixa): os valores externos entram numa passada só e já inertes."""

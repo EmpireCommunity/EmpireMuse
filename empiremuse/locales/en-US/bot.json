@@ -51,7 +51,6 @@
   "player.automatic_song_playback_system_when.description": "Automatic song playback system when the queue is empty.",
   "player.automatic_status.label": "Automatic status",
   "player.channel": "\n**Channel:** {md_code}\n",
-  "player.channel_status_is_on_by": "Channel status is on by default; to turn it off use /setvoicestatus › permanent or the panel › General.",
   "player.clicking_this_emoji_in_the": "Clicking this emoji 🎛️ in the messages of some commands will take you to the player controller.",
   "player.command_not_found_implemented": "command not found/implemented.",
   "player.cooldown.favorite_one": "**You will have to wait {count} second to add a new favorite.**",

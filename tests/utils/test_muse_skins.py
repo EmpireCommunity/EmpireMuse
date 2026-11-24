@@ -321,6 +321,15 @@ def test_the_autoplay_option_never_names_the_server_station_in_a_private_call(tr
     assert "Estacao Secreta" not in _texts(build(player, NOW))
 
 
+@pytest.mark.regression
+@pytest.mark.parametrize("build", BUILDS, ids=lambda b: b.__module__.rsplit(".", 1)[-1] + "." + b.__name__)
+def test_the_player_message_has_no_music_server_footer(tr, build):
+    payload = build(_player(tr), NOW)
+
+    assert "LOCAL (v4)" not in _texts(payload)
+    assert all("footer" not in embed.to_dict() for embed in payload["embeds"])
+
+
 def _queue_player(tr, *, loop=False, track_loops=0, stream_in_queue=False):
     from empiremuse.utils.music.skins.muse import _text
 

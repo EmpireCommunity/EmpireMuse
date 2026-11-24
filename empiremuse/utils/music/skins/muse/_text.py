@@ -312,8 +312,6 @@ def last_action(player: Any, ctx: Context) -> str:
 
 
 def set_footer(embed: Any, player: Any, tr: Tr) -> None:
-    """A dica, ou o servidor de música e a versão (como hoje)."""
+    """Só a dica; sem dica, sem rodapé (o servidor de música e a versão não dizem nada a quem ouve)."""
     if player.current_hint:
         embed.set_footer(text=tr("player.tip", current_hint=str(player.current_hint)))
-    else:
-        embed.set_footer(text=str(player))

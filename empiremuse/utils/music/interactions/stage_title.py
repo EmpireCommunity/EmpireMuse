@@ -277,7 +277,6 @@ class SetStageTitle(disnake.ui.View):
             else:
                 p.set_command_log(text=tr(log_key, mention=str(inter.author.mention)), emoji="📢")
             p.update = True
-            p.voice_status_saved_default = False  # agora há uma escolha salva: o aviso de padrão não vale mais
 
             schedule_permanent_voice_status(p, cfg)  # tarefa por player: o envio nunca espera a aplicação
 

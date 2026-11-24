@@ -19,7 +19,6 @@ from typing import NamedTuple
 from PIL import Image, ImageDraw
 
 from empiremuse.rules.card import By, CardItem, CardRadio, CardSpec, CardState
-from empiremuse.rules.radio_quality import station_quality
 from empiremuse.utils.render import primitives
 from empiremuse.utils.render.cards import disc
 from empiremuse.utils.render.cards.layout import (
@@ -97,7 +96,6 @@ from empiremuse.utils.render.cards.layout import (
     VOLUME_VALUE_W,
     INFO_TEXT_MAX,
     LIVE_LABEL_MAX,
-    QUALITY_DOT,
     QUEUE_KIND_EMPTY,
     QUEUE_KIND_RECOMMENDED,
     TIME_TEXT_W,
@@ -650,19 +648,10 @@ def _note_row(ctx: Ctx, index: int, text: str) -> None:
     put_text(ctx, text, font, (layout.x0 + ROW_NUMBER_W, _row_y(layout, index)), ctx.theme.muted, layout.x1 - layout.x0)
 
 
-def paint_on_air(ctx: Ctx, radio: CardRadio | None) -> None:
-    """R: "NO AR" no lugar de "A seguir", com a qualidade e o codec (``128 kbps · MP3``)."""
+def paint_on_air(ctx: Ctx) -> None:
+    """R: "NO AR" no lugar de "A seguir", só o título: a qualidade, o bitrate e o codec não dizem nada a quem ouve."""
     layout, theme = ctx.layout, ctx.theme
     put_text(ctx, ctx.tr("jbx.on_air").upper(), HEADING_FONT, (layout.x0, sum(layout.upnext) / 2), theme.muted, 200)
-    if radio is None:
-        return
-    quality = station_quality(radio.bitrate, check_ok=None, unavailable=False)
-    color = {"good": theme.ok, "ok": theme.text_2, "weak": theme.warn}.get(quality, theme.error)
-    cy, half = _row_y(layout, 0), QUALITY_DOT / 2
-    ctx.draw.ellipse((layout.x0, cy - half, layout.x0 + QUALITY_DOT, cy + half), fill=color)
-    rate = f"{radio.bitrate} kbps" if radio.bitrate else ""
-    line = " · ".join(part for part in (ctx.tr(f"visor.quality.{quality}"), rate, radio.codec) if part)
-    put_text(ctx, line, FontSpec(INFO_FONT.name, ROW_WEIGHT, layout.row_size), (layout.x0 + 16, cy), theme.text, 360)
 
 
 def paint_queue(ctx: Ctx, spec: CardSpec) -> None:
@@ -671,7 +660,7 @@ def paint_queue(ctx: Ctx, spec: CardSpec) -> None:
     if spec.state is CardState.IDLE:
         return
     if spec.state in RADIO_STATES:
-        paint_on_air(ctx, spec.radio)
+        paint_on_air(ctx)
         return
     recommended = spec.queue_kind == QUEUE_KIND_RECOMMENDED and not spec.hidden
     heading = tr("jbx.recommended_list") if recommended else tr("jbx.up_next", n=spec.queue_total)

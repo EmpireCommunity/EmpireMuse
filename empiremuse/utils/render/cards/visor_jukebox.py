@@ -125,8 +125,8 @@ def _radio_view(spec: CardSpec, art: CardArt, tr: Translate) -> VisorView:
     quality = station_quality(radio.bitrate, check_ok=None, unavailable=False)
     data = VisorData(
         station_name=_drawn(radio.name),
-        codec=_drawn(radio.codec),
-        bitrate_kbps=radio.bitrate,
+        codec="",  # nada técnico no cartão da rádio ao vivo
+        bitrate_kbps=0,
         logo=art.logo,
         state="offline" if retry else "live",
         position=0,

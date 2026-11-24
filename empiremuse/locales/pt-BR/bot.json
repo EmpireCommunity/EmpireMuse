@@ -52,7 +52,6 @@
   "player.automatic_song_playback_system_when.description": "Sistema de reprodução de música automática quando a fila estiver vazia.",
   "player.automatic_status.label": "Status automático",
   "player.channel": "\n**Canal:** {md_code}\n",
-  "player.channel_status_is_on_by": "Status do canal ligado por padrão; para desligar use /setvoicestatus › permanente ou o painel › Geral.",
   "player.clicking_this_emoji_in_the": "Ao clicar nesse emoji 🎛️ das mensagens de alguns comandos você será redirecionado para o player-controller.",
   "player.command_not_found_implemented": "comando não encontrado/implementado.",
   "player.cooldown.favorite_many": "**Você terá que aguardar {count} segundos para adicionar um novo favorito.**",
