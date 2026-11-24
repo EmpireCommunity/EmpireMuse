@@ -12,7 +12,6 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from empiremuse.cogs.player_resume import PlayerSession
-from empiremuse.rules.skins import DEFAULT_JUKEBOX_SKIN
 from empiremuse.utils.client import BotPool
 from empiremuse.utils.music.models import LavalinkPlaylist, LavalinkTrack, PartialTrack
 
@@ -237,9 +236,9 @@ def cog_de_sessoes(*, mongo: MongoEmMemoria | None = None, **config) -> PlayerSe
         config=configuracao,
         pool=SimpleNamespace(
             mongo_database=mongo,
+            default_skin="muse_text",  # a retomada recua para o padrão quando a skin gravada é o "default" antigo (Q1)
+            default_static_skin="muse_text",
             process_track_cls=lambda *args, **kwargs: BotPool.process_track_cls(None, *args, **kwargs),
-            default_skin=DEFAULT_JUKEBOX_SKIN,  # o "default" gravado pelo /skin antigo cai no padrão do pool (Q1)
-            default_static_skin=DEFAULT_JUKEBOX_SKIN,
         ),
     )
     return cog
