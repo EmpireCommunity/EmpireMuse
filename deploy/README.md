@@ -17,7 +17,7 @@ Qual arquivo usar para cada tipo de implantação. Os guias em [`docs/guides/`](
 | Na Discloud | [`discloud.config`](../discloud.config) (na raiz) | Envie o projeto pelo painel da Discloud | Não (modo `manual`) | [`discloud.md`](../docs/guides/discloud.md) |
 | Com nós Lavalink externos | [`lavalink.ini.example`](lavalink.ini.example) | Renomeie para `lavalink.ini` | — | [`development.md`](../docs/development.md) |
 
-Quem hospeda por conta própria com o compose base e quer o `/update` copia o bloco `updater-proxy` (e os volumes `updater-sock` e `updater-proxy-data`) de [`docker-compose.hostinger.yml`](docker-compose.hostinger.yml), liga o bot ao socket (`UPDATE_PROXY_SOCKET` e o volume `updater-sock`) e define `DOCKER_GID` e `UPDATER_PROJECT_DIR` no `.env`. Veja [`auto-update.md`](../docs/guides/auto-update.md).
+O `/update` só funciona com o proxy e um único `docker-compose.yml` na pasta do projeto, com a linha da imagem do bot fixa (`    image: empirecommunity/empiremuse:X.Y.Z@sha256:…`). O `docker-compose.yml` base não atende (a imagem vem de `${EMPIREMUSE_IMAGE:-…}`) e não há complemento por `-f` nem `include:`. Quem quer o `/update` parte de [`docker-compose.hostinger.yml`](docker-compose.hostinger.yml) ou [`docker-compose.hostinger-sem-traefik.yml`](docker-compose.hostinger-sem-traefik.yml) e segue [`auto-update.md`](../docs/guides/auto-update.md).
 
 ## Retenção de logs (183 dias)
 
