@@ -98,6 +98,20 @@ def default_settings() -> dict[str, Any]:
     }
 
 
+def with_default_settings(doc: dict[str, Any]) -> dict[str, Any]:
+    """O documento lido do banco com os campos da visão antiga (``LEGACY_FIELDS``) completos: campo que o documento gravado ainda
+    não tem (de uma versão anterior, como as marcas de escolha de skin do 2.3) entra com o padrão. Assim a visão antiga e o
+    ``seen`` dos escritores antigos enxergam todos os campos. Os só do documento único (como ``language``) ficam como estão: a
+    migração deles na subida depende de saber que faltam."""
+    settings = doc.get(SECTION_SETTINGS)
+    if not isinstance(settings, Mapping):
+        return doc
+    missing = {
+        name: value for name, value in default_settings().items() if name in LEGACY_FIELDS and name not in settings
+    }
+    return {**doc, SECTION_SETTINGS: {**settings, **missing}} if missing else doc
+
+
 def jukebox_auto_delete(settings: Mapping[str, Any]) -> bool:
     """A Jukebox apaga automaticamente as mensagens do canal? Documento antigo sem a chave fica com ``False``."""
     return settings.get("jukebox_auto_delete") is True
