@@ -1155,8 +1155,12 @@ class MusicSettings(commands.Cog):
             failed = await save_skins(bot, guild.id, plan, updated_by=str(inter.author.id))
         except Exception as error:  # noqa: BLE001 - banco fora (ou bug) no meio do Salvar: o membro recebe a resposta
             logger.warning("Falha ao gravar o /skins (%s)", type(error).__name__, exc_info=True)
-            await reply(tr("skin.save_failed"))
-            await self._refresh_after_partial_save(bot, guild.id, plan, view.choices.radios, inter.author.mention, tr)
+            try:
+                await reply(tr("skin.save_failed"))
+            finally:  # a resposta pode falhar (token vencido): o que gravou chega aos players e às rádios mesmo assim
+                await self._refresh_after_partial_save(
+                    bot, guild.id, plan, view.choices.radios, inter.author.mention, tr
+                )
             return
         saved_plan = plan._replace(radio_looks=tuple(i for i in plan.radio_looks if i.bot_id not in failed))
         lines = summary_lines(tr, saved_plan, view.choices.radios)

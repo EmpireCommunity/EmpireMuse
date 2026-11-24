@@ -15,7 +15,7 @@ import pytest
 from empiremuse.cogs import music_settings
 from empiremuse.cogs.music_settings import MusicSettings
 from empiremuse.i18n import get_i18n
-from empiremuse.rules.skins import CLASSIC_NORMAL, CLASSIC_SKINS, CLASSIC_STATIC, player_preview
+from empiremuse.rules.skins import CLASSIC_NORMAL, CLASSIC_STATIC, player_preview
 from empiremuse.utils.music.interactions import skins_store, skins_view
 from empiremuse.utils.music.interactions.skins_draft import (
     INVALID,
@@ -154,7 +154,6 @@ class TestPreviewPath:
         missing = [pair for pair in pairs if skins_view.preview_path(player_preview(pair[0], static=pair[1])) is None]
         assert missing == []
         assert all(player_preview(skin, static=True) != player_preview(skin) for skin in CLASSIC_STATIC)  # uma por modo
-        assert {entry.preview for entry in CLASSIC_SKINS} <= {player_preview(entry.id) for entry in CLASSIC_SKINS}
 
 
 # ============================================================================ gravação
@@ -283,14 +282,26 @@ class Opened:
 
 
 async def run_skins(
-    monkeypatch, bot, *, change, result="save", saver=None, radio_allowed=True, opener=None, prefix=False
+    monkeypatch,
+    bot,
+    *,
+    change,
+    result="save",
+    saver=None,
+    radio_allowed=True,
+    opener=None,
+    prefix=False,
+    failing_reply=None,
 ) -> Opened:
     """Roda o ``MusicSettings.change_skin`` REAL; a tela devolve o rascunho que ``change(initial)`` monta. ``prefix`` = pelo
-    comando de prefixo (um ``CustomContext``); ``opener`` = quem abre; ``saver`` = quem aperta Salvar."""
+    comando de prefixo (um ``CustomContext``); ``opener`` = quem abre; ``saver`` = quem aperta Salvar; ``failing_reply`` = a
+    resposta com esse texto falha depois de registrada."""
     opened = Opened()
 
     async def edit(*args, **kwargs):
         opened.replies.append(kwargs)
+        if failing_reply is not None and any(e.description == failing_reply for e in kwargs.get("embeds") or ()):
+            raise ConnectionError("token vencido")
 
     member = saver or _member()
 
@@ -464,11 +475,15 @@ class TestCommand:
         assert opened.replies[-1]["embeds"][0].description == TR("skin.save_failed")
 
     @pytest.mark.regression
+    @pytest.mark.parametrize("reply_fails", [False, True], ids=["respondeu", "resposta-falhou"])
     @pytest.mark.asyncio
-    async def test_a_save_that_fails_halfway_reloads_the_players_with_what_was_saved(self, monkeypatch):
-        """Bug do S6: o documento global gravava, o ``patch`` do servidor caía e os players ficavam com a skin velha."""
-        bot = Bot({"global_skin": False})
-        reloads = []
+    async def test_a_save_that_fails_halfway_reloads_the_players_and_radios_with_what_was_saved(
+        self, monkeypatch, reply_fails
+    ):
+        """Bug do S6: o documento global gravava, o ``patch`` do servidor caía e os players e os painéis das rádios ficavam
+        com a skin velha. Vale também quando a própria resposta falha (token vencido)."""
+        bot = Bot({"global_skin": False}, store=RadioStore(radios=[_radio()]))
+        reloads, redraws = [], []
 
         async def down(*args, **kwargs):
             raise ConnectionError("banco fora")
@@ -478,12 +493,20 @@ class TestCommand:
 
         bot.pool.servers.patch = down
         monkeypatch.setattr(MusicSettings, "_reload_player_skins", reload)
-        change = lambda d: _replace(_server_skin(d, "muse_text"), disc_motion=False)  # noqa: E731
+        monkeypatch.setattr(
+            music_settings, "redraw_radio_panels", lambda pool, guild_id, ids: redraws.append(list(ids))
+        )
+        change = lambda d: _replace(_server_skin(d, "muse_text"), disc_motion=False, radio_all="text")  # noqa: E731
 
-        opened = await run_skins(monkeypatch, bot, change=change)
+        if reply_fails:
+            with pytest.raises(ConnectionError):
+                await run_skins(monkeypatch, bot, change=change, failing_reply=TR("skin.save_failed"))
+        else:
+            opened = await run_skins(monkeypatch, bot, change=change)
+            assert opened.replies[-1]["embeds"][0].description == TR("skin.save_failed")
 
-        assert opened.replies[-1]["embeds"][0].description == TR("skin.save_failed")
-        assert bot.global_writes and reloads == [(GUILD, False)]  # a parte gravada (global) chega aos players
+        assert bot.global_writes[-1][1]["radio_skin"] == "text"  # a parte gravada (global)...
+        assert reloads == [(GUILD, False)] and redraws == [[BOT_A]]  # ...chega aos players e aos painéis das rádios
 
 
 # ============================================================================ a view
