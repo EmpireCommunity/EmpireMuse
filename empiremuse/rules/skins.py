@@ -165,13 +165,33 @@ def player_preview(skin_id: str, *, static: bool = False) -> str | None:
 # ---------------------------------------------------------------------- rádio 24 h
 
 
+# Apelidos de leitura (nada é reescrito no banco): as skins de imagem que saem valem como a Jukebox em V2 e, na rádio 24 h,
+# o Retrato vale como o visor do mesmo tema. Um apelido conta como ESCOLHA (a marca ``*_chosen`` segue valendo).
+SKIN_ALIASES: Mapping[str, str] = {
+    f"muse_{family}_{theme}": "muse_jukebox"
+    for family in ("expanded", "slim", "radio", "radio_portrait")
+    for theme in ("black", "white")
+}
+RADIO_LOOK_ALIASES: Mapping[str, str] = {"portrait_black": "black", "portrait_white": "white"}
+
+
+def resolve_skin_alias(value: object) -> object:
+    """O id gravado de uma skin de imagem que saiu vale como ``muse_jukebox``; qualquer outro valor passa como está."""
+    return SKIN_ALIASES.get(value, value) if isinstance(value, str) else value
+
+
+def resolve_radio_alias(value: object) -> object:
+    """``portrait_black``/``portrait_white`` gravados valem como ``black``/``white``; o resto passa como está."""
+    return RADIO_LOOK_ALIASES.get(value, value) if isinstance(value, str) else value
+
+
 def valid_radio_look(value: object) -> bool:
     return isinstance(value, str) and value in _RADIO_BY_ID
 
 
 def radio_look(look: object, guild_radio_skin: object) -> str:
     """A skin efetiva de uma rádio: a própria, senão a de todas as rádios do servidor, senão ``DEFAULT_RADIO_LOOK``."""
-    for candidate in (look, guild_radio_skin):
+    for candidate in (resolve_radio_alias(look), resolve_radio_alias(guild_radio_skin)):
         if valid_radio_look(candidate):
             return str(candidate)
     return DEFAULT_RADIO_LOOK
@@ -218,7 +238,7 @@ def jukebox_choice(saved: object, chosen: bool = False) -> object:
     """
     if saved == LEGACY_SKIN_DEFAULT and not chosen and not SAVED_DEFAULT_IS_A_CHOICE:
         return None
-    return saved
+    return resolve_skin_alias(saved)
 
 
 def jukebox_skin(saved: object, default: str, chosen: bool = False) -> str:

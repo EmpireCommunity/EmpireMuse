@@ -69,7 +69,7 @@ def test_the_registry_has_unique_ids_per_surface_and_the_defaults_are_in_it():
     ("look", "guild", "expected"),
     [
         ("text", "portrait_white", "text"),  # a própria vence
-        (None, "portrait_white", "portrait_white"),  # sem a própria, a de todas as rádios
+        (None, "portrait_white", "white"),  # sem a própria, a de todas as rádios (o Retrato vale como o visor)
         (None, None, DEFAULT_RADIO_LOOK),
         ("../x", "white", "white"),  # desconhecida cai no próximo nível
         ("neon", "neon", DEFAULT_RADIO_LOOK),
@@ -171,7 +171,11 @@ def test_what_counts_as_a_saved_jukebox_choice(monkeypatch, q1, saved, choice):
         (None, True, DEFAULT_JUKEBOX_SKIN),  # nunca escolhido: o padrão novo
         ("default", True, DEFAULT_JUKEBOX_SKIN),  # Q1 = não: o "default" do /skin antigo também cai no padrão novo
         ("mini", True, "mini"),  # uma Clássica escolhida fica
-        ("muse_slim_white", True, "muse_slim_white"),
+        (
+            "muse_slim_white",
+            True,
+            "muse_jukebox",
+        ),  # uma skin de imagem que saiu vale como a Jukebox (apelido de leitura)
         ("sumiu", True, DEFAULT_JUKEBOX_SKIN),  # id desconhecido: o padrão
         ("> custom_skin: minha", True, "> custom_skin: minha"),  # personalizada mantida
         (DEFAULT_JUKEBOX_SKIN, False, "default"),  # rollback: o rc.4 não conhece a skin nova e cai no padrão dele
@@ -352,3 +356,71 @@ def test_the_panel_shows_the_skin_the_player_gets_when_the_saved_one_is_not_load
     )
 
     assert shown == {"skin": DEFAULT_JUKEBOX_SKIN, "static_skin": "mini"}
+
+
+# ---------------------------------------------------------------------- apelidos de leitura (as skins de imagem que saem)
+
+DROPPED_PLAYER_SKINS = [
+    f"muse_{family}_{theme}"
+    for family in ("expanded", "slim", "radio", "radio_portrait")
+    for theme in ("black", "white")
+]
+
+
+@pytest.mark.parametrize("saved", DROPPED_PLAYER_SKINS)
+@pytest.mark.parametrize("chosen", [False, True])
+def test_a_dropped_image_skin_reads_as_the_jukebox_and_still_counts_as_a_choice(saved, chosen):
+    assert skins.jukebox_choice(saved, chosen) == "muse_jukebox"
+    assert skins.jukebox_skin(saved, "muse_text", chosen) == "muse_jukebox"  # não volta ao padrão: é a escolha dele
+
+
+@pytest.mark.parametrize("kept", ["muse_text", "muse_jukebox", "classic", "mini", "default", None, "", 7])
+def test_the_alias_never_touches_a_skin_that_stays(kept):
+    assert skins.resolve_skin_alias(kept) == kept
+
+
+def test_the_player_gets_the_jukebox_from_every_saved_level_even_in_global_mode():
+    server = {
+        "skin": "muse_slim_white",
+        "skin_chosen": True,
+        "static_skin": "muse_radio_black",
+        "static_skin_chosen": True,
+    }
+    glob = {
+        "global_skin": True,
+        "player_skin": "muse_expanded_black",
+        "player_skin_chosen": True,
+        "player_skin_static": "muse_expanded_black",
+        "player_skin_static_chosen": True,
+    }
+    assert skins.saved_player_skins(server, {}) == ("muse_jukebox", "muse_jukebox")
+    assert skins.saved_player_skins(server, glob) == ("muse_jukebox", "muse_jukebox")
+
+
+def test_the_alias_is_read_only_the_saved_document_is_not_rewritten():
+    doc = {"player_skin": "muse_expanded_black", "player_skin_chosen": True}
+    before = copy.deepcopy(doc)
+    skins.saved_player_skins({}, {**doc, "global_skin": True})
+    assert doc == before
+
+
+@pytest.mark.parametrize(
+    ("look", "guild", "expected"),
+    [
+        ("portrait_black", None, "black"),
+        ("portrait_white", None, "white"),
+        (None, "portrait_black", "black"),
+        (None, "portrait_white", "white"),
+        ("white", "portrait_black", "white"),
+        ("text", "portrait_black", "text"),
+        (None, None, "text"),
+    ],
+)
+def test_the_24h_radio_portrait_reads_as_the_visor_of_the_same_theme(look, guild, expected):
+    assert skins.radio_look(look, guild) == expected
+
+
+def test_every_dropped_id_resolves_to_a_skin_that_stays():
+    assert set(skins.SKIN_ALIASES.values()) == {"muse_jukebox"} and "muse_jukebox" in skins.JUKEBOX_IDS
+    assert set(skins.SKIN_ALIASES) == set(DROPPED_PLAYER_SKINS)
+    assert all(target in skins.RADIO_LOOKS for target in skins.RADIO_LOOK_ALIASES.values())

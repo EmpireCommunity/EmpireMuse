@@ -689,7 +689,7 @@ class TestCommand:
         )
         bot = Bot({"global_skin": False})
         changed = "skin" if static else "static_skin"  # o campo do modo que NÃO está ativo
-        bot.settings = {"skin": "muse_text", "static_skin": "muse_text", changed: "muse_expanded_black"}
+        bot.settings = {"skin": "muse_text", "static_skin": "muse_text", changed: "default"}
         bot.settings[f"{changed}_chosen"] = True
         bot.pool.get_all_bots = lambda: [SimpleNamespace(music=SimpleNamespace(players={GUILD: player}))]
         cog = SimpleNamespace(bot=bot)
@@ -697,7 +697,7 @@ class TestCommand:
 
         await MusicSettings._reload_player_skins(cog, bot, GUILD, bot.global_data, skins, "<@9>", TR)
 
-        assert getattr(player, "skin" if static else "skin_static") == "muse_expanded_black"
+        assert getattr(player, "skin" if static else "skin_static") == "default"
         assert player.custom_skin_static_data == {"s": 2}
 
 

@@ -36,6 +36,7 @@ from empiremuse.rules.skins import (
     jukebox_skin,
     player_preview,
     radio_look,
+    resolve_radio_alias,
     saved_player_skins,
 )
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
@@ -140,7 +141,7 @@ def initial_draft(pool: Any, settings: Mapping[str, Any], global_data: Mapping[s
         glob=glob,
         disc_motion=disc_motion_on(global_data.get("disc_motion")),
         radio_all=radio_look(None, global_data.get("radio_skin")),
-        radio_own=tuple((row.bot_id, row.look) for row in choices.radios),
+        radio_own=tuple((row.bot_id, resolve_radio_alias(row.look)) for row in choices.radios),
     )
 
 
