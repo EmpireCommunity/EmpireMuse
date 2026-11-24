@@ -1140,7 +1140,10 @@ class MusicSettings(commands.Cog):
             embed = disnake.Embed(description=text, colour=colour).set_footer(
                 text=f"{bot.user} - [{bot.user.id}]", icon_url=bot.user.display_avatar.with_format("png").url
             )
-            await inter.edit_original_message(embeds=[embed], view=None, attachments=[])
+            try:
+                await inter.edit_original_message(embeds=[embed], view=None, attachments=[])
+            except disnake.HTTPException:  # o que já foi gravado ainda precisa chegar aos players e painéis
+                logger.warning("Falha ao responder o /skins", exc_info=True)
 
         if not can_manage_skins(inter.author):
             await reply(tr("skin.no_permission"))
@@ -1149,7 +1152,8 @@ class MusicSettings(commands.Cog):
         radio_allowed = radio_allowed and can_configure_radios(inter.author)
         plan = plan_save(view.initial, view.draft, view.choices.radios, radio_allowed=radio_allowed)
         fresh = await bot.get_global_data(guild.id, db_name=DBModel.guilds)
-        if not plan_is_valid(plan, await load_choices(bot, guild, fresh, radio_allowed=radio_allowed)):
+        current = await load_choices(bot, guild, fresh, radio_allowed=radio_allowed)
+        if not plan_is_valid(plan, current):
             await reply(tr("skin.invalid"))
             return
 
@@ -1158,6 +1162,7 @@ class MusicSettings(commands.Cog):
         except Exception as error:  # noqa: BLE001 - banco fora (ou bug) no meio do Salvar: o membro recebe a resposta
             logger.warning("Falha ao gravar o /skins (%s)", type(error).__name__, exc_info=True)
             await reply(tr("skin.save_failed"))
+            await self._reconcile_players(bot, guild.id, plan, tr, inter.author.mention)  # um escopo pode ter gravado
             return
         saved_plan = plan._replace(radio_looks=tuple(i for i in plan.radio_looks if i.bot_id not in failed))
         lines = summary_lines(tr, saved_plan, view.choices.radios)
@@ -1165,6 +1170,8 @@ class MusicSettings(commands.Cog):
         labels = {row.bot_id: row.text for row in view.choices.radios}
         for bot_id in failed:
             text += "\n⚠️ " + tr("skin.radio.changed", radio=labels.get(bot_id, str(bot_id)))
+        if not radio_allowed and plan_save(view.initial, view.draft, view.choices.radios, radio_allowed=True) != plan:
+            text += "\n⚠️ " + tr("skin.no_permission")  # a edição das rádios foi descartada, a escrita fica bloqueada
 
         global_data = await bot.get_global_data(guild.id, db_name=DBModel.guilds)
         skins = await load_custom_skins(bot, guild.id, global_data)
@@ -1174,13 +1181,25 @@ class MusicSettings(commands.Cog):
         await reply(text)
 
         if "radio_skin" in plan.global_fields:
-            redraw_radio_panels(bot.pool, guild.id, [row.bot_id for row in view.choices.radios])
+            redraw_radio_panels(bot.pool, guild.id, [row.bot_id for row in current.radios])  # a lista de agora
         else:
             redraw_radio_panels(bot.pool, guild.id, [item.bot_id for item in saved_plan.radio_looks])
 
-        # Só a skin das rádios mudou: os players ficam como estão.
-        if set(plan.global_fields) - self.RADIO_ONLY_FIELDS or plan.server_fields:
-            await self._reload_player_skins(bot, guild.id, global_data, skins, inter.author.mention, tr)
+        await self._reconcile_players(bot, guild.id, plan, tr, inter.author.mention, global_data, skins)
+
+    async def _reconcile_players(
+        self, bot, guild_id: int, plan, tr, mention: str, global_data=None, skins=None
+    ) -> None:
+        """Aplica aos players o que ficou gravado. Só a skin das rádios mudou: os players ficam como estão."""
+        if not (set(plan.global_fields) - self.RADIO_ONLY_FIELDS or plan.server_fields):
+            return
+        try:
+            if global_data is None:
+                global_data = await bot.get_global_data(guild_id, db_name=DBModel.guilds)
+                skins = await load_custom_skins(bot, guild_id, global_data)
+            await self._reload_player_skins(bot, guild_id, global_data, skins, mention, tr)
+        except Exception:
+            logger.exception("Falha ao aplicar o /skins aos players")
 
     async def _reload_player_skins(self, bot, guild_id: int, global_data, skins, mention: str, tr) -> None:
         """Recarrega os players ativos com a skin efetiva (mesma precedência da criação do player). A animação do disco mudou:
@@ -1197,6 +1216,10 @@ class MusicSettings(commands.Cog):
                 continue
 
             if (static if player.static else skin) == str(player.skin_static if player.static else player.skin):
+                player.skin = skin  # o modo inativo também mudou: o player guarda as duas
+                player.skin_static = static
+                player.custom_skin_data = skins.normal
+                player.custom_skin_static_data = skins.static
                 player.last_data = {}
                 player.update = True
                 continue

@@ -1495,8 +1495,8 @@
   "skin.saved": "As skins foram salvas.",
   "skin.save_failed": "Não deu para salvar tudo agora. Abra o /skins de novo para conferir o que ficou gravado.",
   "skin.unchanged": "Não houve alterações nas skins.",
-  "skin.custom_rejected_one": "{count} skin personalizada do servidor está num formato incompatível e foi ignorada (o player usa a skin padrão no lugar).",
-  "skin.custom_rejected_other": "{count} skins personalizadas do servidor estão num formato incompatível e foram ignoradas (o player usa a skin padrão no lugar).",
-  "skin.custom_rejected_many": "{count} skins personalizadas do servidor estão num formato incompatível e foram ignoradas (o player usa a skin padrão no lugar).",
+  "skin.custom_rejected_one": "{count} skin personalizada do servidor está num formato incompatível e foi ignorada.",
+  "skin.custom_rejected_other": "{count} skins personalizadas do servidor estão num formato incompatível e foram ignoradas.",
+  "skin.custom_rejected_many": "{count} skins personalizadas do servidor estão num formato incompatível e foram ignoradas.",
   "skin.command_log": "{mention} alterou a skin do player."
 }
