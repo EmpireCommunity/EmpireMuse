@@ -25,6 +25,7 @@ import disnake
 
 from empiremuse.rules.limits import FORUM_POST_TITLE_MAX_LENGTH
 from empiremuse.utils.db import DBModel
+from empiremuse.utils.music import v2
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.music.models import LavalinkPlayer
 from empiremuse.utils.music.converters import perms_translations
@@ -472,7 +473,9 @@ async def _archive_previous_message(original_message, target, actor, embed_archi
             logger.exception("Falha ao remover tópico anterior da Jukebox")
             return None
         try:
-            await original_message.edit(content=None, embed=embed_archived, components=None)
+            await v2.edit_message(
+                original_message, where="arquivada", expected=True, content=None, embed=embed_archived, components=None
+            )
         except Exception:
             pass
         if original_message.thread:

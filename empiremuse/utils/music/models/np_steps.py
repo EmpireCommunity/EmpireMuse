@@ -29,7 +29,8 @@ from empiremuse.utils.music.models.helpers import (
     logger,
 )
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
-from empiremuse.utils.music import card_facts
+from empiremuse.utils.music import card_facts, v2
+from empiremuse.utils.music.models import np_v2
 from empiremuse.utils import jukebox_panel
 from empiremuse.rules.skins import JUKEBOX_IDS
 from empiremuse.utils.music.private_call import skin_view
@@ -270,6 +271,8 @@ async def _np_render(self, req, skin, data, key):
 
 def _refresh_file(data) -> bool:
     """Remonta o ``File`` do cartão dos mesmos bytes (um envio anterior o deixa no fim do buffer). ``False`` = sem ``File``."""
+    if data.get("files"):
+        return np_v2.refresh_files(data)  # o disco da skin V2: o GIF e o PNG
     file = data.get("file")
     read = getattr(getattr(file, "fp", None), "getvalue", None)
     if not callable(read):
@@ -300,6 +303,10 @@ async def idle_payload(self, kwargs):
     título ``jbx.idle.title`` no autor. Skins de imagem: o cartão no estado ocioso (logo no rótulo, sem miniatura) com o
     texto e os componentes de ocioso de sempre; sem cartão, o ocioso em texto."""
     skin = _skin_object(self)
+    if getattr(skin, "v2", False):  # Jukebox em V2: o ocioso também é V2 (nunca um embed numa mensagem que pode ser V2)
+        np_v2.forget(self)  # o disco sai da mensagem (``attachments=[]``) e o próximo desenho o manda de novo
+        RENDER_STATES.forget(self)
+        return skin.idle(self, kwargs)
     if getattr(skin, "name", None) not in JUKEBOX_IDS:
         return without_card(self, kwargs)  # a skin mudou de uma de imagem para uma antiga: o cartão sai da mensagem
     embed = kwargs["embed"]
@@ -325,9 +332,33 @@ async def idle_payload(self, kwargs):
     return data
 
 
+async def _np_v2(self, req, skin):
+    """A skin em Components V2 (``muse_jukebox``): o disco e o payload V2 vêm do ``np_v2``; o cartão de imagem antigo sai."""
+    redraw = not self.last_data
+    new_message = redraw or not _will_edit(self, req)
+    RENDER_STATES.forget(self)  # um cartão de embed que estava na mensagem sai com ``attachments=[]``
+    pipeline = sys.modules.get("empiremuse.utils.render.cards.pipeline")
+    if pipeline is not None:
+        pipeline.supersede(self)  # um cartão ainda desenhando para a skin anterior não edita depois do V2
+    return await np_v2.render(
+        self,
+        req,
+        skin,
+        redraw=redraw,
+        new_message=new_message,
+        key_of=payload_key,
+        defer=_defer,
+        disc_motion=_disc_motion,
+        station_logo=_station_logo(self),
+    )
+
+
 async def _np_data(self, req):
     """Carrega os dados da skin e confere se a mensagem mudou (pela chave estável ``payload_key``)."""
     interaction = req.interaction
+
+    if getattr(_skin_object(self), "v2", False):
+        return await _np_v2(self, req, _skin_object(self))
 
     try:
         data, skin = _load_skin(self)
@@ -403,7 +434,9 @@ async def _np_plain(self, req):
                 self.message = None
             else:
                 try:
-                    await self.message.edit(allowed_mentions=self.allowed_mentions, **data)
+                    await self.message.edit(
+                        allowed_mentions=self.allowed_mentions, **v2.adapt_for(self.message, data, where="np_plain")
+                    )
                 except disnake.Forbidden:
                     self.message = None
                     self.text_channel = None
@@ -621,6 +654,9 @@ async def _np_interaction_edit(self, req):
     except KeyError:
         pass
 
+    data = v2.adapt_for(
+        interaction.message, data, where="np_interaction", expected=_in_thread(self, interaction.message)
+    )
     try:
         if interaction.response.is_done():
             await interaction.message.edit(allowed_mentions=self.allowed_mentions, **data)
@@ -648,7 +684,10 @@ async def _np_message_edit(self, req):
             if data.get("flags"):
                 data["content"] = None
                 data["embed"] = None
-            await self.message.edit(allowed_mentions=self.allowed_mentions, **data)
+            await self.message.edit(
+                allowed_mentions=self.allowed_mentions,
+                **v2.adapt_for(self.message, data, where="np_edit", expected=_in_thread(self, self.message)),
+            )
             req.published = True
             await asyncio.sleep(0.5)
         except asyncio.CancelledError:
@@ -691,7 +730,10 @@ async def _np_message_edit(self, req):
                         await self.text_channel.send(self.tr("player.unarchiving_the_thread"), delete_after=2)
 
                 _refresh_file(data)  # a edição que falhou já leu o anexo até o fim
-                await self.message.edit(allowed_mentions=self.allowed_mentions, **data)
+                await self.message.edit(
+                    allowed_mentions=self.allowed_mentions,
+                    **v2.adapt_for(self.message, data, where="np_edit", expected=_in_thread(self, self.message)),
+                )
                 req.published = True
                 await asyncio.sleep(0.5)
 
@@ -723,20 +765,73 @@ async def _np_message_edit(self, req):
     return False
 
 
+def needs_replacement(self, req) -> bool:
+    """V2 -> V1: a mensagem do player é V2 e o payload é de embed. A flag V2 não desliga, então só uma mensagem nova serve."""
+    message = req.interaction.message if req.interaction else self.message
+    if _in_thread(self, message):
+        return False  # apagar a mensagem-mãe de um tópico ou a inicial de um post de fórum o deixaria órfão: a edição converte para V2
+    return v2.is_v2(message) and not np_v2.is_v2_payload(req.data)
+
+
+def _in_thread(self, message) -> bool:
+    """A mensagem é a mãe de um tópico de pedidos ou a inicial de um post de fórum: apagá-la deixaria o tópico órfão."""
+    if getattr(self, "has_thread", False) or getattr(message, "thread", None) is not None:
+        return True  # a mensagem-mãe de um tópico de pedidos
+    channel = getattr(message, "channel", None)
+    # a mensagem inicial de um post de fórum (tem o id do próprio post); as outras mensagens de um tópico podem ser trocadas
+    return isinstance(channel, disnake.Thread) and getattr(message, "id", None) == getattr(channel, "id", object())
+
+
+async def _np_replace(self, req):
+    """A mensagem nova vai ANTES de a velha ser apagada (estático: o painel reenvia e apaga a antiga). Se o envio falha, a
+    velha continua no lugar e o updater tenta de novo."""
+    old = self.message
+    if req.interaction is not None:
+        await _defer(req.interaction)
+        old = old or req.interaction.message
+        req.interaction = None
+    req.replace = True
+    np_v2.forget(self)
+    self.message = None
+    await _np_send_new(self, req)
+    if self.message is None:
+        self.message = old
+        self.last_data = {}
+        return
+    if not self.static and old is not None:
+        try:
+            await old.delete()
+        except disnake.HTTPException:
+            pass  # já tinha sumido
+
+
 async def _np_send_new(self, req):
     """Envia uma mensagem nova do player e atualiza o canal da Jukebox."""
     data = req.data
     _card_for_new_message(self, data)
+    np_v2.ensure_files(self, req, data)  # a Thumbnail V2 de uma mensagem nova leva o disco junto
 
     panel = getattr(self.bot.pool, "jukebox_panel", None)
     if not self.message and self.static and panel is not None:
         # canal da Jukebox único: a mensagem é do bot do painel (o autor); quem manda uma nova é ele, nunca o bot deste player
         try:
-            message = await panel.resend(self.guild_id)
+            message = await panel.resend(
+                self.guild_id, **({"force": True, "as_v2": False} if getattr(req, "replace", False) else {})
+            )
             if message is not None:
-                # a mensagem do painel pode ser uma que já existia: só fica o anexo que este payload manda
-                await message.edit(allowed_mentions=self.allowed_mentions, **{**data, "attachments": []})
+                # o player já é dono da mensagem (``resend(force=True)`` apagou a velha): se a edição falhar, a próxima tentativa
+                # edita ESTA, nunca restaura a referência apagada
                 self.message = message
+                try:
+                    # a mensagem do painel pode ser uma que já existia: só fica o anexo que este payload manda
+                    await message.edit(
+                        allowed_mentions=self.allowed_mentions,
+                        **v2.adapt_for(message, {**data, "attachments": []}, where="np_painel"),
+                    )
+                except Exception:
+                    self.last_data = {}
+                    self.update = True
+                    raise
                 await self.channel_cleanup()
                 req.published = True
         except Exception:

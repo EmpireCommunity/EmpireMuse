@@ -6,7 +6,7 @@ A etapa 5 deixa de persistir ``voice_state`` (evento de voz do Discord, efêmero
 REAL:
 
 * sem ``voice_state`` (ausente, ``None`` ou ``{}``) o ``resume_player`` reconecta por ``player.connect(voice_channel.id)``,
-  no nó v3 e no v4, e o player nasce com ``_voice_state`` ``None``: a reconexão nunca dependeu do campo gravado;
+  no nó v3 e no v4, e o player nasce com ``_voice_state`` vazio: a reconexão nunca dependeu do campo gravado;
 * com ``voice_state`` ou ``extra_info`` na entrada (a etapa 5 não os grava nem lê) o resultado é o mesmo e o player nasce sem eles;
 * o código de hoje já descarta o ``voice_state`` quando o canal de voz muda;
 * ``_wait_for_new_node`` com ``_voice_state`` falso troca de nó (``change_node``) e, fora da voz, conecta
@@ -167,7 +167,7 @@ async def retomar(versao_do_no, dados, *, canais=None):
 
 class TestVoiceStateNaEntradaEIgnorado:
     """Desde a etapa 5 a sessão não leva ``voice_state`` (não é gravado nem lido); se um dicionário o trouxer mesmo assim, o
-    ``resume_player`` o ignora: o player nasce com ``_voice_state`` ``None`` e a reconexão é por ``connect``."""
+    ``resume_player`` o ignora: o player nasce com ``_voice_state`` vazio e a reconexão é por ``connect``."""
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("versao", [3, 4])
@@ -178,7 +178,7 @@ class TestVoiceStateNaEntradaEIgnorado:
             "event": {"token": "t", "endpoint": "voz.exemplo.invalid"},
         }
         jogador, _ = await retomar(versao, dados)
-        assert jogador._voice_state is None
+        assert not getattr(jogador, "_voice_state", None)  # o do arquivo não foi copiado
         assert jogador.conexoes == [CANAL_DE_VOZ]
 
 
@@ -205,3 +205,33 @@ class JogadorDeTeste(LavalinkPlayer):
 
     async def process_next(self, start_position=0):
         self.registros.append(("process_next", start_position))
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_os_eventos_de_voz_do_connect_chegam_ao_player_real_sem_levantar():
+    """O player REAL nasce com ``_voice_state`` vazio e a retomada não o sobrescreve: o estado e o servidor de voz que o ``connect``
+    recebe são gravados (com ``None`` os dois handlers levantavam ``AttributeError`` e a faixa ficava parada em 0:00)."""
+    from unittest.mock import AsyncMock
+
+    import empiremuse.wavelink as wl
+
+    real = wl.Player(SimpleNamespace(), 1, SimpleNamespace(version=4))
+    real._dispatch_voice_update = AsyncMock()
+    await wl.Player._voice_server_update(real, {"token": "t", "endpoint": "e"})
+    await wl.Player._voice_state_update(real, {"session_id": "s", "channel_id": str(CANAL_DE_VOZ)})
+    assert real._voice_state == {"event": {"token": "t", "endpoint": "e"}, "sessionId": "s"}
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize("versao", [3, 4])
+async def test_a_retomada_nao_sobrescreve_o_estado_de_voz_do_construtor(versao):
+    jogador, _ = await retomar(versao, await sessao_gravada())
+    assert "_voice_state" not in vars(
+        jogador
+    )  # a retomada não grava o campo: vale o que o construtor do player real põe
+    real = __import__("empiremuse.wavelink", fromlist=["Player"]).Player(
+        SimpleNamespace(), 1, SimpleNamespace(version=4)
+    )
+    assert real._voice_state == {}

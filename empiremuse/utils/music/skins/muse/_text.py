@@ -19,7 +19,7 @@ from empiremuse.rules.jukebox_panel import last_action_of
 from empiremuse.rules.text import external_text
 from empiremuse.utils.jukebox_panel import player_hides_details, player_voice_channel
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
-from empiremuse.utils.music.converters import md_url, time_format
+from empiremuse.utils.music.converters import md_url
 from empiremuse.utils.music.jukebox_ui import server_station_md, station_md
 
 TIME_QUANTUM_S = 5
@@ -71,6 +71,20 @@ def context(player: Any, now: float) -> Context:
     return Context(hidden, radio, station, now)
 
 
+def clock(milliseconds: float) -> str:
+    """O tempo como se lê num player: ``m:ss`` e, a partir de 1 hora, ``h:mm:ss`` (nunca ``03:29``)."""
+    minutes, seconds = divmod(max(0, int(milliseconds / 1000)), 60)
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes}:{seconds:02d}"
+
+
+def elapsed_ms(player: Any) -> int:
+    """O decorrido arredondado para baixo em ``TIME_QUANTUM_S``: duas leituras no mesmo passo dão o mesmo texto (o
+    ``payload_key`` do ``_np_data`` não edita a mensagem só pelo relógio)."""
+    step = TIME_QUANTUM_S * 1000
+    return int(player.position // step * step)
+
+
 def stamp(seconds: float) -> int:
     """Um horário para ``<t:…>``, arredondado: duas leituras seguidas dão o mesmo texto."""
     return int(round(seconds / TIME_QUANTUM_S) * TIME_QUANTUM_S)
@@ -112,6 +126,17 @@ def member_name(player: Any, member_id: object) -> str:
     return external_text(member.display_name, NAME_MAX) if member is not None else ""
 
 
+def by_bot(player: Any, track: Any) -> bool:
+    """Faixa posta pelo próprio bot (autoplay, Last.fm): não tem "pedida por @bot", é recomendação."""
+    if getattr(track, "autoplay", False):
+        return True
+    who = str(getattr(track, "requester", ""))
+    if not who.isdigit():
+        return False
+    member = player.guild.get_member(int(who))
+    return bool(member is not None and getattr(member, "bot", False))
+
+
 def mention(member_id: object) -> str:
     return f"<@{int(str(member_id))}>" if str(member_id).isdigit() else ""
 
@@ -143,7 +168,7 @@ def requested_line(player: Any, ctx: Context, tr: Tr) -> str:
         return ""
     if from_station(ctx):
         return tr("jbx.from_station", nome=server_station_md(ctx.station.name))
-    if current.autoplay:
+    if by_bot(player, current):
         return tr("jbx.recommended")
     who = mention(current.requester)
     return tr("jbx.text.requested", mention=who) if who else ""
@@ -254,12 +279,12 @@ def queue_items(player: Any) -> tuple[str, list[Any]]:
 
 
 def queue_item_line(player: Any, n: int, track: Any, start: Optional[float]) -> str:
-    length = "🔴" if track.is_stream else time_format(track.duration)
+    length = "🔴" if track.is_stream else clock(track.duration)
     parts = [f"**{external_text(track.single_title, QUEUE_TITLE_MAX) or '—'}**"]
     if artist := external_text(track.authors_string, QUEUE_ARTIST_MAX):
         parts.append(artist)
     parts.append(length)
-    if not track.autoplay and (who := member_name(player, track.requester)):
+    if not by_bot(player, track) and (who := member_name(player, track.requester)):
         parts.append(who)
     if start is not None:
         parts.append(relative(start))
@@ -309,9 +334,3 @@ def last_action(player: Any, ctx: Context) -> str:
     if not text:
         return ""
     return f"> {player.command_log_emoji} {text}".rstrip()
-
-
-def set_footer(embed: Any, player: Any, tr: Tr) -> None:
-    """Só a dica; sem dica, sem rodapé (o servidor de música e a versão não dizem nada a quem ouve)."""
-    if player.current_hint:
-        embed.set_footer(text=tr("player.tip", current_hint=str(player.current_hint)))

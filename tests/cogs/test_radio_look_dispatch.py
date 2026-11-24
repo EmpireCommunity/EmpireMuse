@@ -49,10 +49,10 @@ def drawn(monkeypatch):
     ("own", "guild", "expected"),
     [
         ("white", "portrait_white", ("visor", "white")),  # a da rádio vence a de todas as rádios
-        (None, "portrait_white", ("portrait", "portrait_white")),
+        (None, "portrait_white", ("visor", "white")),
         (None, None, None),  # nunca escolhida: o padrão é a Rádio Texto, que sai sem desenho
         (None, RuntimeError("banco fora"), None),  # banco fora: o mesmo padrão
-        ("portrait_white", RuntimeError("banco fora"), ("portrait", "portrait_white")),
+        ("portrait_white", RuntimeError("banco fora"), ("visor", "white")),
     ],
 )
 async def test_the_radio_panel_draws_the_effective_skin(own, guild, expected, drawn):

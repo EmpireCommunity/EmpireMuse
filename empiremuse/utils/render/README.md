@@ -14,6 +14,7 @@ resume o que o código garante e o orçamento de memória.
 | `primitives.py` | ícones, logo em círculo (só PNG), `fit` por busca binária, texto recortado na caixa | puro |
 | `fonts.py` | `FontBook`: só os arquivos de `assets/fonts/` com o SHA-256 registrado, conferidos na primeira carga; toda fonte (peso e tamanho) sai desses bytes conferidos em memória; peso pelo eixo `Weight`; reserva por caractere (a fonte da skin, depois a Noto Sans, até 32 trechos); RTL só com `raqm` | cache por `(arquivo, peso, tamanho)`; usar dentro da vaga |
 | `state.py` | estado de render por player num `WeakKeyDictionary` (último anexo, GIF adiado, último GIF frio), fora de `player.py` | memória |
+| `disc_only.py` | o disco sozinho da Jukebox C (`muse_jukebox`): 128 px, 24 quadros de 80 ms, GIF até 256 KiB, PNG parado = quadro 0; rótulo da capa ou degradê "sem capa"; `DiscService.disc(cover, plain=)` com cache LRU por bytes (chave: sha256 do rótulo + versões) e a vaga de desenho; vaga ocupada = o plano B (a URL da capa) | um serviço por processo (`disc_service()`) |
 | `cards/` | os renderizadores (`expanded`, `slim`, `visor_jukebox` e `radio_portrait`, o Retrato, que também desenha a rádio 24 h: `project`, `disc_box`, `draw`, `disc_tiles`) e o `pipeline.py`: capa e formato fora da vaga; desenho, ladrilhos e codificação dentro dela; um desenho por player; `RenderBusy` mantém o anexo | uma instância do pipeline por processo (`card_pipeline()`) |
 
 Os fatos que a imagem pode mostrar (`CardSpec`) e as regras puras (formato, animação, anexo, call privada) ficam em
@@ -52,6 +53,7 @@ Os fatos que a imagem pode mostrar (`CardSpec`) e as regras puras (formato, anim
 | Item | Teto | Onde |
 |---|---|---|
 | Cache de quadros do disco | 24 MiB (por bytes) | `budget.FRAMES_CACHE_BYTES` |
+| Cache dos discos da Jukebox C (GIF + PNG por rótulo, LRU) | 16 MiB (por bytes) | `disc_only.CACHE_BYTES` |
 | Cache de capas (240 × 240 RGB, cerca de 48 capas) | 8 MiB (por bytes) | módulo da capa (PR da capa) |
 | Fontes (bytes conferidos, uma cópia por arquivo, mais as instâncias por peso e tamanho) | cerca de 3 MiB | `fonts.FontBook` |
 | Desenho em andamento | 20 a 40 MB em 1×, **um de cada vez** (a vaga) | transitório |
@@ -59,7 +61,7 @@ Os fatos que a imagem pode mostrar (`CardSpec`) e as regras puras (formato, anim
 | Decodificador isolado do logo da estação | um processo como o da capa; os dois podem existir ao mesmo tempo (travas separadas, `RLIMIT_AS` de 768 MiB cada) | transitório |
 | Bytes do anexo esperando o envio | até `GIF_MAX_BYTES` (1,5 MiB) por player editando | transitório, por player |
 
-Pior caso acima da base do processo: **cerca de 32 MiB de cache residente mais até cerca de 140 MB transitórios**
-(um desenho e os dois decodificadores ao mesmo tempo), perto de 170 MB no pico, mais 1,5 MiB por player com um anexo
+Pior caso acima da base do processo: **cerca de 48 MiB de cache residente mais até cerca de 140 MB transitórios**
+(um desenho e os dois decodificadores ao mesmo tempo), perto de 190 MB no pico, mais 1,5 MiB por player com um anexo
 esperando o envio. Medidas da bancada (Pillow 13.0.0, host de
 produção): Expandida 480 × 840 com GIF frio em 140 ms e 0,79 MB, com cache em 35 ms; PNG em 40 ms e 124 KiB.

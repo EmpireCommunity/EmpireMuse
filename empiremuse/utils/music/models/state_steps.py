@@ -9,6 +9,7 @@ import sys
 
 import disnake
 
+from empiremuse.utils.music import v2
 from empiremuse.utils.others import send_idle_embed
 from empiremuse.utils.music.models.np_steps import without_card
 from empiremuse.utils.music.private_call import closing_log
@@ -125,14 +126,15 @@ async def _cu_close_thread_message(self, inter: disnake.MessageInteraction = Non
         return
 
     try:
+        data = without_card(
+            self,
+            self.get_skin(disable=True)
+            if (not self.static and _cu_session_older_than_skin_grace(self))
+            else {"embed": disnake.Embed(description=_closing_text(self), color=self.bot.get_color(self.guild.me))},
+        )
         await func(
             allowed_mentions=self.allowed_mentions,
-            **without_card(
-                self,
-                self.get_skin(disable=True)
-                if (not self.static and _cu_session_older_than_skin_grace(self))
-                else {"embed": disnake.Embed(description=_closing_text(self), color=self.bot.get_color(self.guild.me))},
-            ),
+            **v2.adapt_for(self.message, data, where="encerramento", expected=True),
         )
         await _cu_archive_jukebox_thread(self)
     except Exception:
@@ -222,10 +224,12 @@ async def _cu_close_message_from_interaction(self, inter: disnake.MessageInterac
                 "view": None,
             }
 
-        await func(**without_card(self, kw))  # um cartão que estava na mensagem não fica solto nela
+        # um cartão que estava na mensagem não fica solto nela; numa mensagem V2 o payload de embed vira Container
+        await func(**v2.adapt_for(self.message, without_card(self, kw), where="encerramento", expected=True))
 
 
 async def _cu_close_controller_message(self) -> None:
     kw = _cu_lyric_closing_kwargs(self, lambda: _cu_disabled_view_children(self))
 
-    await self.message.edit(**without_card(self, kw or self.get_skin(disable=True)))
+    data = without_card(self, kw or self.get_skin(disable=True))
+    await self.message.edit(**v2.adapt_for(self.message, data, where="encerramento", expected=True))

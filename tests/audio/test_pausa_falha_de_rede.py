@@ -196,3 +196,40 @@ async def test_a_skip_while_the_resume_waits_for_a_node_starts_the_next_track_fr
     await PlayerVoiceMixin._wait_for_new_node(player)
 
     player.process_next.assert_awaited_once_with(start_position=0)
+
+
+@pytest.mark.regression
+async def test_pausing_freezes_the_real_position_instead_of_the_stale_last_update(monkeypatch):
+    """O nó só manda ``playerUpdate`` de tempos em tempos: pausar lia ``last_position`` velha (0:00 no player); agora congela a real."""
+    import empiremuse.wavelink as wl
+    from empiremuse.utils.music.models import player as player_module
+
+    class Real(LavalinkPlayer):
+        is_playing = True  # sem nó nem voz: só a conta da posição importa
+
+    async def node_pause(self, pause):
+        self.paused = pause
+
+    monkeypatch.setattr(wl.Player, "set_pause", node_pause)
+    monkeypatch.setattr(player_module, "usage_of", lambda bot: None)
+    clock = {"now": 100_000.0}
+    monkeypatch.setattr(player_module, "time", lambda: clock["now"] / 1000)
+    p = Real.__new__(Real)
+    p.__dict__.update(
+        current=SimpleNamespace(duration=200_000),
+        paused=False,
+        auto_pause=False,
+        last_position=0,
+        last_update=clock["now"] - 60_000,  # tocando há 1:00 sem nenhum playerUpdate
+        bot=SimpleNamespace(dispatch=lambda *a, **k: None),
+        guild=SimpleNamespace(id=1),
+        network_paused=False,
+    )
+
+    await p.set_pause(True)
+    assert p.paused and p.position == 60_000
+    clock["now"] += 30_000  # 30 s pausada: a posição não anda
+    assert p.position == 60_000
+    await p.set_pause(False)
+    clock["now"] += 5_000
+    assert p.position == 65_000  # retoma de onde parou, sem somar o tempo pausado

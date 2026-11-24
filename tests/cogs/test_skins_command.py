@@ -41,8 +41,8 @@ BOT_A, BOT_B, STRANGER = 11, 12, 99
 TR = get_i18n().for_locale("pt-BR")
 RADIOS = (RadioRow(BOT_A, "#a · A", None, 3, "#a · A"), RadioRow(BOT_B, "#b · B", "white", 7, "#b · B"))
 CHOICES = Choices(
-    normal=("muse_expanded_black", "muse_text", "default", "classic"),
-    static=("muse_expanded_black", "default"),
+    normal=("classic", "muse_text", "default"),
+    static=("muse_text", "default"),
     custom_normal=("Minha",),
     custom_static=(),
     radios=RADIOS,
@@ -443,9 +443,7 @@ class TestCommand:
     async def test_member_who_lost_manage_guild_before_saving_writes_nothing(self, monkeypatch):
         bot = Bot({"global_skin": False})
         lost = _member(manage_guild=False)
-        replies = (
-            await run_skins(monkeypatch, bot, change=lambda d: _server_skin(d, "muse_expanded_black"), saver=lost)
-        ).replies
+        replies = (await run_skins(monkeypatch, bot, change=lambda d: _server_skin(d, "classic"), saver=lost)).replies
         assert bot.global_writes == [] and bot.server_writes == []
         assert replies[-1]["embeds"][0].description == TR("skin.no_permission")
 
@@ -468,9 +466,9 @@ class TestCommand:
     @pytest.mark.asyncio
     async def test_server_skin_change_writes_only_the_server_settings(self, monkeypatch):
         bot = Bot({"global_skin": False})
-        await run_skins(monkeypatch, bot, change=lambda d: _server_skin(d, "muse_expanded_black"))
+        await run_skins(monkeypatch, bot, change=lambda d: _server_skin(d, "classic"))
         assert (
-            bot.server_writes == [(GUILD, "settings", {"skin": "muse_expanded_black", "skin_chosen": True})]
+            bot.server_writes == [(GUILD, "settings", {"skin": "classic", "skin_chosen": True})]
             and bot.global_writes == []
         )
 
@@ -544,7 +542,7 @@ class TestCommand:
             raise ConnectionError("banco fora")
 
         bot.pool.servers.patch = down
-        opened = await run_skins(monkeypatch, bot, change=lambda d: _server_skin(d, "muse_expanded_black"))
+        opened = await run_skins(monkeypatch, bot, change=lambda d: _server_skin(d, "classic"))
         assert opened.replies[-1]["embeds"][0].description == TR("skin.save_failed")
 
     @pytest.mark.regression
@@ -571,7 +569,7 @@ class TestCommand:
         )
         # valores diferentes do padrão (Jukebox Texto e Rádio Texto): o padrão não grava nada, e o `patch` que cai nunca rodaria
         change = lambda d: _replace(  # noqa: E731
-            _server_skin(d, "muse_expanded_black"), disc_motion=False, radio_all="portrait_white"
+            _server_skin(d, "classic"), disc_motion=False, radio_all="portrait_white"
         )
 
         if reply_fails:
@@ -637,7 +635,7 @@ class TestCommand:
         bot.pool.servers.patch = down
 
         def change(draft):
-            return _server_skin(_replace(draft, global_mode=False), "muse_expanded_black")
+            return _server_skin(_replace(draft, global_mode=False), "classic")
 
         opened = await run_skins(monkeypatch, bot, change=change)
 
@@ -682,6 +680,19 @@ class TestCommand:
 
     @pytest.mark.asyncio
     @pytest.mark.regression
+    async def test_the_skins_that_became_aliases_are_not_offered_as_a_choice(self):
+        from empiremuse.rules.skins import SKIN_ALIASES
+
+        bot = Bot({})
+        bot.player_skins = bot.player_static_skins = dict.fromkeys(["muse_jukebox", "muse_text", *SKIN_ALIASES])
+
+        choices = await skins_store.load_choices(bot, bot.get_guild(GUILD), bot.global_data, radio_allowed=False)
+
+        assert "muse_jukebox" in choices.normal and "muse_jukebox" in choices.static
+        assert not set(SKIN_ALIASES) & {*choices.normal, *choices.static}
+
+    @pytest.mark.asyncio
+    @pytest.mark.regression
     @pytest.mark.parametrize("static", [False, True])
     async def test_a_reload_that_keeps_the_active_skin_still_stores_the_other_mode_too(self, static):
         player = SimpleNamespace(
@@ -689,7 +700,7 @@ class TestCommand:
         )
         bot = Bot({"global_skin": False})
         changed = "skin" if static else "static_skin"  # o campo do modo que NÃO está ativo
-        bot.settings = {"skin": "muse_text", "static_skin": "muse_text", changed: "muse_expanded_black"}
+        bot.settings = {"skin": "muse_text", "static_skin": "muse_text", changed: "default"}
         bot.settings[f"{changed}_chosen"] = True
         bot.pool.get_all_bots = lambda: [SimpleNamespace(music=SimpleNamespace(players={GUILD: player}))]
         cog = SimpleNamespace(bot=bot)
@@ -697,7 +708,7 @@ class TestCommand:
 
         await MusicSettings._reload_player_skins(cog, bot, GUILD, bot.global_data, skins, "<@9>", TR)
 
-        assert getattr(player, "skin" if static else "skin_static") == "muse_expanded_black"
+        assert getattr(player, "skin" if static else "skin_static") == "default"
         assert player.custom_skin_static_data == {"s": 2}
 
 

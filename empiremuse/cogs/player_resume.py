@@ -14,7 +14,7 @@ from empiremuse.utils.owner_gate import admin_owner_only
 from empiremuse.logs.context import guild_extra
 from empiremuse.rules.bot_tokens import is_radio_only_identifier
 from empiremuse.rules.radio import radio_id
-from empiremuse.rules.skins import is_chosen, jukebox_choice
+from empiremuse.rules.skins import is_chosen, resumed_skin, saved_player_skins
 from empiremuse.rules.voice_status import resolve_voice_status
 from empiremuse.serialization.schema import SchemaError
 from empiremuse.utils.client import BotCore
@@ -31,6 +31,17 @@ from empiremuse.utils.others import send_idle_embed, CustomContext
 
 
 logger = logging.getLogger("empiremuse.player")
+
+
+def _custom_definition(session_data: object, saved: object, choice: object) -> dict:
+    """As definições de skin personalizada da retomada: as da sessão e, se o servidor escolheu hoje outra personalizada, a definição
+    dela (do global); sem a definição ``check_skins`` trocaria a escolha pela padrão."""
+    data = dict(session_data) if isinstance(session_data, dict) else {}
+    if isinstance(choice, str) and choice.startswith("> custom_skin: "):
+        name = choice[15:]
+        if name not in data and isinstance(saved, dict) and isinstance(saved.get(name), dict):
+            data[name] = saved[name]  # só o formato atual (um texto do formato antigo não vira skin)
+    return data
 
 
 class PlayerSession(commands.Cog):
@@ -637,6 +648,18 @@ class PlayerSession(commands.Cog):
                     break
 
                 try:
+                    try:
+                        global_skins = await self.bot.get_global_data(guild.id, db_name=DBModel.guilds)
+                    except Exception:  # noqa: BLE001 - sem o global, vale a skin do servidor/sessão: a retomada não para
+                        logger.exception("Falha ao ler as skins globais na retomada", extra={"guild": guild.id})
+                        global_skins = {}
+                    current_skin, current_static = saved_player_skins(controller, global_skins)
+                    custom_data = _custom_definition(
+                        data.get("custom_skin_data"), global_skins.get("custom_skins"), current_skin
+                    )
+                    custom_static_data = _custom_definition(
+                        data.get("custom_skin_static_data"), global_skins.get("custom_skins_static"), current_static
+                    )
                     player: LavalinkPlayer = self.bot.music.get_player(
                         node_id=node.identifier,
                         guild_id=guild.id,
@@ -647,13 +670,13 @@ class PlayerSession(commands.Cog):
                         last_message_id=data["message_id"],
                         # Q1: a skin salva na sessão passa pela mesma regra (``rules/skins.jukebox_choice``); ``None`` = o
                         # padrão, que o próprio player aplica
-                        skin=jukebox_choice(data["skin"], is_chosen(data, "skin")),
-                        skin_static=jukebox_choice(data["skin_static"], is_chosen(data, "skin_static")),
+                        skin=resumed_skin(data["skin"], is_chosen(data, "skin"), current_skin),
+                        skin_static=resumed_skin(data["skin_static"], is_chosen(data, "skin_static"), current_static),
                         player_creator=data["player_creator"],
                         autoplay=data.get("autoplay", False),
                         static=data["static"],
-                        custom_skin_data=data.get("custom_skin_data", {}),
-                        custom_skin_static_data=data.get("custom_skin_static_data", {}),
+                        custom_skin_data=custom_data,
+                        custom_skin_static_data=custom_static_data,
                         extra_hints=hints,
                         uptime=data.get("uptime"),
                         stage_title_template=data.get("stage_title_template"),
@@ -674,7 +697,8 @@ class PlayerSession(commands.Cog):
                     return
 
                 player.extra_info = {}
-                player._voice_state = None
+                # (``_voice_state`` fica como o construtor do player o deixa, um dicionário vazio: o evento de voz do connect
+                # chama ``.update`` nele, e um ``None`` aqui deixava a faixa retomada parada em 0:00)
                 player.current_encoded = data.get("current_encoded")
                 player.live_lyrics_enabled = data.get("live_lyrics_status", False)
                 player.mini_queue_enabled = data.get("mini_queue_enabled")

@@ -246,7 +246,8 @@ def build(player: Any, settings: CardSettings) -> CardSpec:
 
 def text_bar_segment(position_ms: object, duration_ms: object) -> Optional[int]:
     """Quantos dos ``TEXT_BAR_SEGMENTS`` segmentos estão cheios (0 a 12). ``None`` = sem barra (transmissão ou duração
-    desconhecida). O ``_np_data`` só edita quando este número muda: no máximo 12 edições por faixa."""
+    desconhecida). É só a posição da barra: as skins em texto mostram também o decorrido em ``m:ss`` (arredondado a cada 5 s: é a precisão
+    do texto, não a frequência), então editam a cada ciclo do atualizador (``text_bar_interval_s``), não só quando este número muda."""
     position, duration = _seconds(position_ms), _seconds(duration_ms)
     if position is None or not duration:
         return None

@@ -15,7 +15,7 @@ from typing import Any
 
 from empiremuse.rules.radio import radio_id
 from empiremuse.rules.settings import allowed_names
-from empiremuse.rules.skins import CLASSIC_NORMAL, CLASSIC_STATIC, with_choice_marks
+from empiremuse.rules.skins import CLASSIC_NORMAL, CLASSIC_STATIC, SKIN_ALIASES, with_choice_marks
 from empiremuse.rules.text import external_text
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.interactions.skins_draft import Choices, RadioRow, SavePlan, ordered_ids
@@ -63,8 +63,15 @@ async def radio_rows(bot: Any, guild: Any) -> tuple[RadioRow, ...]:
 
 async def load_choices(bot: Any, guild: Any, global_data: Mapping[str, Any], *, radio_allowed: bool) -> Choices:
     """As listas do momento: skins carregadas (menos as ignoradas), personalizadas do servidor e, com a permissão, as rádios."""
-    normal = ordered_ids(allowed_names(bot.player_skins, bot.config["IGNORE_SKINS"]), CLASSIC_NORMAL)
-    static = ordered_ids(allowed_names(bot.player_static_skins, bot.config["IGNORE_STATIC_SKINS"]), CLASSIC_STATIC)
+    # os ids que viraram apelido (``SKIN_ALIASES``) não são escolha: gravar um seria "escolher" uma skin que o player lê como outra
+    normal = ordered_ids(
+        [n for n in allowed_names(bot.player_skins, bot.config["IGNORE_SKINS"]) if n not in SKIN_ALIASES],
+        CLASSIC_NORMAL,
+    )
+    static = ordered_ids(
+        [n for n in allowed_names(bot.player_static_skins, bot.config["IGNORE_STATIC_SKINS"]) if n not in SKIN_ALIASES],
+        CLASSIC_STATIC,
+    )
     customs = await load_custom_skins(bot, guild.id, global_data)  # só as que o player carrega
     return Choices(
         normal,

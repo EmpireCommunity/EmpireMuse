@@ -14,6 +14,7 @@ import empiremuse.wavelink as wavelink
 from empiremuse.i18n.payload import fit_payload
 from empiremuse.logs.webhook import minimal_embed, minimal_report_text
 from empiremuse.rules.voice_status import DEFAULT_VOICE_TEMPLATE
+from empiremuse.utils.music import v2
 from empiremuse.utils.music.converters import time_format, md_link
 from empiremuse.utils.music.live_mark import is_live
 from empiremuse.utils.music.skin_utils import skin_converter
@@ -356,6 +357,11 @@ class LavalinkPlayer(
             # pausa por falha de rede (V-142-2): não há faixa no nó para despausar, a que esperava volta a tocar pela fila
             self.bot.dispatch("player_resume", player=self)
             return
+        if not self.auto_pause and self.current and self.paused != pause:
+            # congela a posição REAL: ``position`` pausada devolve ``last_position``, que só anda a cada ``playerUpdate`` do nó
+            # (sem ele a pausa mostrava 0:00); ao retomar, o relógio recomeça de agora (não soma o tempo pausado)
+            self.last_position = self.position
+            self.last_update = time() * 1000
         await super().set_pause(pause)
         if usage := usage_of(self.bot):
             usage.playback_paused(self.bot, self.guild.id, pause)
@@ -390,7 +396,7 @@ class LavalinkPlayer(
             components = []
 
             for c in data.get("components", []):
-                c.disabled = True
+                v2.disable_all(c)
                 components.append(c)
 
             data["components"] = components

@@ -9,7 +9,7 @@ from itertools import cycle
 import disnake
 
 from empiremuse.utils.db import DBModel
-from empiremuse.utils.jukebox_panel import player_hides_details
+from empiremuse.utils.jukebox_panel import player_hides_or_unknown
 from empiremuse.utils.music.converters import fix_characters, time_format, get_button_style
 from empiremuse.utils.music.errors import (
     code_suffix,
@@ -29,8 +29,11 @@ from empiremuse.utils.music.models.np_steps import (
     _np_buttons_extra,
     _np_interaction_edit,
     _np_message_edit,
+    _np_replace,
     _np_send_new,
+    needs_replacement,
 )
+from empiremuse.utils.music.models import np_v2
 from empiremuse.utils.music.models.step_state import NpState
 
 
@@ -41,6 +44,7 @@ def _confirm_rendered(player, req, hidden: bool) -> None:
     concluir que "nada mudou" e confirmar o registro sem editar.
     """
     req.settled = True
+    np_v2.confirm(player, req)
     if req.published:
         player.details_hidden_rendered = hidden
     else:
@@ -50,7 +54,7 @@ def _confirm_rendered(player, req, hidden: bool) -> None:
 class PlayerMessageMixin:
     async def invoke_np(self, force=False, interaction=None, rpc_update=False, panel_render=False):
         if self.static and not panel_render:
-            hidden = player_hides_details(self)
+            hidden = player_hides_or_unknown(self)
             if await self._panel_takes_over(interaction):
                 self.details_hidden_rendered = hidden  # o painel em lista se refez (uma edição do painel por virada)
                 return
@@ -71,7 +75,7 @@ class PlayerMessageMixin:
 
         # a regra vista ANTES do desenho: só vale como "desenhado" depois que a mensagem saiu (se a call mudar durante o
         # desenho, o gatilho de privacidade vê a diferença; se o desenho falhar, o registro anterior fica e o redesenho tenta de novo)
-        hidden = player_hides_details(self)
+        hidden = player_hides_or_unknown(self)
 
         try:
             # chamada pela classe: os dublês dos testes não herdam o mixin
@@ -94,6 +98,19 @@ class PlayerMessageMixin:
         if (
             self.is_closing
         ):  # o player encerrou durante o desenho ou o RPC: não edita nem manda a mensagem de um player fechado
+            return
+
+        if self.controller_mode and req.data.get("components") is None:
+            # skin V1 sem controles próprios: os botões padrão entram ANTES da troca de mensagem (a nova sai com eles)
+            _np_buttons_default(self, req)
+            _np_buttons_extra(self, req)
+
+        if self.controller_mode and needs_replacement(self, req):
+            self.updating = True
+            await _np_replace(self, req)
+            self.start_message_updater_task()
+            _confirm_rendered(self, req, hidden)
+            self.updating = False
             return
 
         if not self.controller_mode:

@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import disnake
 
+from empiremuse.utils.music import v2
 from empiremuse.rules.jukebox_panel import (
     MAX_GENRE_OPTIONS,
     PANEL_TICK_MS,
@@ -82,6 +83,15 @@ def player_hides_details(player: Any, channel: Any = None) -> bool:
     if channel is None:
         channel = getattr(player, "text_channel", None)
     return not in_call_chat(channel, voice)
+
+
+def player_hides_or_unknown(player: Any, channel: Any = None) -> bool:
+    """``player_hides_details`` que fecha quando a própria regra falha: privacidade desconhecida esconde."""
+    try:
+        return player_hides_details(player, channel)
+    except Exception:  # noqa: BLE001 - sem saber, esconde
+        logger.debug("Regra de privacidade falhou: escondendo", exc_info=True)
+        return True
 
 
 def entry_for(bot: BotCore, player: LavalinkPlayer) -> Optional[PanelEntry]:
@@ -250,7 +260,9 @@ class JukeboxPanel:
                 genres=genres_of(playlists)[:MAX_GENRE_OPTIONS],
                 fixed_entries=await radio_entries(panel_bot, tr, guild_id),
             )
-            await message.edit(allowed_mentions=NO_MENTIONS, attachments=[], **payload)  # o painel nunca leva anexo
+            await v2.edit_message(
+                message, where="painel", expected=True, allowed_mentions=NO_MENTIONS, attachments=[], **payload
+            )  # o painel nunca leva anexo
             if any(e.state == PLAYING and e.duration_ms for e in entries):
                 self._schedule_tick(
                     guild_id
@@ -352,10 +364,19 @@ class JukeboxPanel:
         except RuntimeError:
             return
 
-    async def resend(self, guild_id: int, *, replace_message_id: Optional[int] = None) -> Optional[disnake.Message]:
+    async def resend(
+        self,
+        guild_id: int,
+        *,
+        replace_message_id: Optional[int] = None,
+        force: bool = False,
+        as_v2: Optional[bool] = None,
+    ) -> Optional[disnake.Message]:
         """O BOT DO PAINEL envia um painel novo no canal da Jukebox e grava o id (a mensagem anterior sumiu ou era de outro bot).
 
         ``replace_message_id``: a mensagem antiga (do bot que saiu); o novo painel tenta apagá-la, sem insistir se não puder.
+        ``force``: manda um painel novo mesmo que o atual já seja do bot do painel (a skin trocou de V2 para V1, e a flag V2 não desliga).
+        ``as_v2``: ``False`` = a mensagem nova nasce V1 qualquer que seja a skin gravada (a troca V2 para V1 é por causa do player).
         """
         from empiremuse.utils.others import send_idle_embed  # tarde: utils.others importa muita coisa
 
@@ -379,11 +400,11 @@ class JukeboxPanel:
                         config.message_id
                     )  # não deu para ver a mensagem: o painel novo tenta apagar a gravada
                 if existing is not None:
-                    if existing.author.id == bot.user.id:
+                    if existing.author.id == bot.user.id and not force:
                         return existing  # já é do bot do painel: nada a reenviar
                     replace_message_id = existing.id  # é de outro bot (o painel anterior): o novo o substitui
             channel = bot.get_channel(config.channel) or await bot.fetch_channel(config.channel)
-            message = await send_idle_embed(channel, bot=bot, force=True)
+            message = await send_idle_embed(channel, bot=bot, force=True, **({} if as_v2 is None else {"as_v2": as_v2}))
             try:
                 await jukebox.set(guild_id, config.channel, message.id, expected=config.current)
             except Exception:

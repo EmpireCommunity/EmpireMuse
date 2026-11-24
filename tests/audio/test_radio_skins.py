@@ -120,7 +120,7 @@ async def test_set_look_losing_the_compare_and_set_race_is_a_conflict(monkeypatc
     ("own", "guild_radio_skin", "look", "skin"),
     [
         ("white", "portrait_black", "white", "white"),  # a própria vence a de todas as rádios
-        (None, "portrait_white", "portrait_white", "black"),  # sem a própria, a de todas as rádios
+        (None, "portrait_white", "white", "black"),  # sem a própria, a de todas as rádios (o Retrato vale como o visor)
         (None, None, DEFAULT_RADIO_LOOK, "black"),
     ],
 )
