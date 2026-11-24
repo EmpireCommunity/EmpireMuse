@@ -178,7 +178,7 @@ class TestVoiceStateNaEntradaEIgnorado:
             "event": {"token": "t", "endpoint": "voz.exemplo.invalid"},
         }
         jogador, _ = await retomar(versao, dados)
-        assert jogador._voice_state == {}
+        assert not getattr(jogador, "_voice_state", None)  # o do arquivo não foi copiado
         assert jogador.conexoes == [CANAL_DE_VOZ]
 
 
@@ -209,16 +209,23 @@ class JogadorDeTeste(LavalinkPlayer):
 
 @pytest.mark.regression
 @pytest.mark.asyncio
-@pytest.mark.parametrize("versao", [3, 4])
-async def test_os_eventos_de_voz_do_connect_chegam_ao_player_retomado(versao):
-    """Depois do restart, o ``connect`` do player retomado recebe o estado e o servidor de voz do Discord: com ``_voice_state``
-    ``None`` os dois handlers levantavam ``AttributeError`` e a faixa ficava parada em 0:00 (nó sem canal de voz)."""
+async def test_os_eventos_de_voz_do_connect_chegam_ao_player_real_sem_levantar():
+    """O player REAL nasce com ``_voice_state`` vazio e a retomada não o sobrescreve: o estado e o servidor de voz que o ``connect``
+    recebe são gravados (com ``None`` os dois handlers levantavam ``AttributeError`` e a faixa ficava parada em 0:00)."""
     from unittest.mock import AsyncMock
 
     import empiremuse.wavelink as wl
 
+    real = wl.Player(SimpleNamespace(), 1, SimpleNamespace(version=4))
+    real._dispatch_voice_update = AsyncMock()
+    await wl.Player._voice_server_update(real, {"token": "t", "endpoint": "e"})
+    await wl.Player._voice_state_update(real, {"session_id": "s", "channel_id": str(CANAL_DE_VOZ)})
+    assert real._voice_state == {"event": {"token": "t", "endpoint": "e"}, "sessionId": "s"}
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize("versao", [3, 4])
+async def test_a_retomada_nao_sobrescreve_o_estado_de_voz_do_construtor(versao):
     jogador, _ = await retomar(versao, await sessao_gravada())
-    falso = SimpleNamespace(_voice_state=jogador._voice_state, channel_id=None, _dispatch_voice_update=AsyncMock())
-    await wl.Player._voice_server_update(falso, {"token": "t", "endpoint": "e"})
-    await wl.Player._voice_state_update(falso, {"session_id": "s", "channel_id": str(CANAL_DE_VOZ)})
-    assert falso._voice_state == {"event": {"token": "t", "endpoint": "e"}, "sessionId": "s"}
+    assert getattr(jogador, "_voice_state", {}) is not None

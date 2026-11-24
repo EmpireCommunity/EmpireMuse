@@ -305,7 +305,7 @@ class PlayerPlaybackMixin:
         try:
             if self.has_thread or self.static or self.text_channel.last_message_id == self.message.id:
                 try:
-                    await self.message.edit(**v2.adapt_for(self.message, kwargs, where="ocioso"))
+                    await self.message.edit(**v2.adapt_for(self.message, kwargs, where="ocioso", expected=True))
                     if np_v2.is_v2_payload(kwargs):
                         np_v2.mark_v2(self.message)  # uma V1 editada com payload V2 virou V2
                 except Exception:

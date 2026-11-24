@@ -52,7 +52,9 @@ class Thumb(NamedTuple):
     alt: str
 
 
-_LABEL_SAFE = str.maketrans({"[": "(", "]": ")", "\\": "/"})
+_LABEL_SAFE = str.maketrans(
+    {"[": "(", "]": ")", "\\": "/", "*": "∗", "_": "＿", "~": "∼", "|": "∣", "`": "ˋ"}
+)  # sem quebrar o link nem virar negrito, spoiler ou código
 
 
 def fallback_thumb(player: Any) -> Thumb:

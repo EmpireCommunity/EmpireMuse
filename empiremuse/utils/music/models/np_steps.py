@@ -763,6 +763,8 @@ async def _np_message_edit(self, req):
 
 def needs_replacement(self, req) -> bool:
     """V2 -> V1: a mensagem do player é V2 e o payload é de embed. A flag V2 não desliga, então só uma mensagem nova serve."""
+    if getattr(self, "has_thread", False):
+        return False  # apagar a mensagem-mãe de um tópico ou post de fórum o deixaria órfão: a edição converte para V2
     message = req.interaction.message if req.interaction else self.message
     return v2.is_v2(message) and not np_v2.is_v2_payload(req.data)
 
@@ -800,7 +802,9 @@ async def _np_send_new(self, req):
     if not self.message and self.static and panel is not None:
         # canal da Jukebox único: a mensagem é do bot do painel (o autor); quem manda uma nova é ele, nunca o bot deste player
         try:
-            message = await panel.resend(self.guild_id, **({"force": True} if getattr(req, "replace", False) else {}))
+            message = await panel.resend(
+                self.guild_id, **({"force": True, "as_v2": False} if getattr(req, "replace", False) else {})
+            )
             if message is not None:
                 # o player já é dono da mensagem (``resend(force=True)`` apagou a velha): se a edição falhar, a próxima tentativa
                 # edita ESTA, nunca restaura a referência apagada

@@ -207,8 +207,8 @@ async def test_a_private_call_asks_for_the_plain_disc_so_no_cover_is_ever_fetche
 
 
 def test_an_edit_that_failed_does_not_mark_the_disc_as_sent():
-    player = type("P", (), {})()
-    req = SimpleNamespace(disc="disc-1", published=False)
+    player = WeakNamespace()
+    req = SimpleNamespace(disc="disc-1", published=False, v2=True, interaction=None)
     np_v2.confirm(player, req)
     assert np_v2.sent_name(player) is None
     req.published = True
@@ -223,6 +223,7 @@ class WeakNamespace(SimpleNamespace):
     """Um ``SimpleNamespace`` que aceita referência fraca (os registros por player são ``WeakKeyDictionary``)."""
 
     __slots__ = ("__weakref__",)
+    __hash__ = object.__hash__  # o ``SimpleNamespace`` compara por valor e por isso não é chave de dicionário
 
 
 def fake_message(*, is_v2: bool, edits: list):
@@ -307,14 +308,12 @@ async def test_if_the_new_message_fails_the_old_one_stays_and_the_updater_retrie
 
 def test_a_v1_message_edited_with_a_v2_payload_becomes_v2_for_the_adapter():
     message = fake_message(is_v2=False, edits=[])
-    player = SimpleNamespace(message=message)
+    player = WeakNamespace(message=message)
     req = SimpleNamespace(published=True, v2=True, interaction=None, disc=None)
     np_v2.confirm(player, req)
     assert v2.is_v2(message) is True
     other = fake_message(is_v2=False, edits=[])
-    np_v2.confirm(
-        SimpleNamespace(message=other), SimpleNamespace(published=False, v2=True, interaction=None, disc=None)
-    )
+    np_v2.confirm(WeakNamespace(message=other), SimpleNamespace(published=False, v2=True, interaction=None, disc=None))
     assert v2.is_v2(other) is False
 
 
@@ -500,3 +499,159 @@ async def test_the_track_changing_while_the_disc_is_drawn_never_publishes_the_ne
         station_logo=None,
     )
     assert done is True and player.update is True
+
+
+# ---------------------------------------------------------------------- correções da revisão (PR 289)
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_busy_slot_never_shows_a_cover_the_cover_service_did_not_return(tr, service):
+    service.service = Service(Disc("disc-x", None, busy=True, plain=True))  # capa recusada ou ainda sem pixels
+    picked = await np_v2.pick(_player(tr), spec(), None, (), None)
+    assert COVER not in picked.thumb.media and picked.files == []
+
+
+@pytest.mark.regression
+def test_leaving_a_public_disc_for_a_state_without_one_drops_the_old_attachment_and_the_record(tr):
+    player = WeakNamespace()
+    np_v2._SENT[player] = "disc-old"
+    req = SimpleNamespace(disc=None, published=True, v2=True, interaction=None)
+    np_v2.confirm(player, req)
+    assert np_v2.sent_name(player) is None
+
+
+def _render_player(tr, *, hidden):
+    player = WeakNamespace(tr=tr, bot=SimpleNamespace(config={"COVER_HOSTS": ""}), last_data={}, update=False)
+    return player
+
+
+async def _render(player, skin, monkeypatch, *, hidden, spec_values):
+    values = iter(spec_values)
+
+    def build(*_):
+        value = next(values)
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    monkeypatch.setattr(np_v2.card_facts, "build", build)
+    monkeypatch.setattr(np_v2.card_facts, "CardSettings", lambda **_: None)
+    monkeypatch.setattr(np_v2, "_hides_details", lambda _p: hidden)
+
+    async def pick(*_a, **_k):
+        return np_v2.Picked(muse_jukebox.Thumb("attachment://disc-n.png", "alt"), [], "disc-n", False)
+
+    monkeypatch.setattr(np_v2, "pick", pick)
+
+    async def motion(*_a, **_k):
+        return True
+
+    async def defer(_i):
+        return None
+
+    req = SimpleNamespace(interaction=None, superseded=False, published=False, disc=None, disc_key=None, v2=False)
+    done = await np_v2.render(
+        player,
+        req,
+        skin,
+        redraw=False,
+        new_message=False,
+        key_of=str,
+        defer=defer,
+        disc_motion=motion,
+        station_logo=None,
+    )
+    return done, req
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["raises", "stale"])
+async def test_a_render_that_publishes_nothing_is_marked_superseded_so_privacy_is_not_recorded(
+    tr, monkeypatch, failure
+):
+    player = _render_player(tr, hidden=False)
+    values = [RuntimeError("x")] if failure == "raises" else ["a", "b"]
+    skin = SimpleNamespace(name="muse_jukebox", build=lambda *a: pytest.fail("não monta"), idle=None)
+    done, req = await _render(player, skin, monkeypatch, hidden=False, spec_values=values)
+    assert done is True and req.superseded is True and player.update is True
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize("second_build_fails", [False, True], ids=["fallback-thumb", "idle"])
+async def test_a_build_that_fails_while_details_are_hidden_still_publishes_a_payload_without_secrets(
+    tr, monkeypatch, second_build_fails
+):
+    player = _player(tr, private=True, in_call_chat=False, static=True)
+    secret = secret_player(tr, private=True, in_call_chat=False, static=True)
+    player = WeakNamespace(**secret.__dict__)
+    player.bot.config["COVER_HOSTS"] = ""
+    player.keep_connected = True
+    player.update = False
+    player.last_data = {}
+    calls = []
+
+    def build(plyr, now, thumb):
+        calls.append(thumb)
+        if second_build_fails:
+            raise RuntimeError("de novo")
+        return muse_jukebox.build(plyr, now, thumb)
+
+    skin = SimpleNamespace(name="muse_jukebox", build=build, idle=lambda plyr, kw: muse_jukebox.idle(plyr, kw))
+    done, req = await _render(player, skin, monkeypatch, hidden=True, spec_values=[RuntimeError("disco")])
+    assert done is False and req.superseded is False and req.v2 is True
+    assert "Faixa Secreta" not in dump(req.data) and "Artista Secreto" not in dump(req.data)
+    assert player.update is True  # o updater tenta o desenho normal depois
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_state_without_a_disc_sends_no_attachments_to_drop_the_old_one(tr, monkeypatch):
+    player = _render_player(tr, hidden=True)
+    np_v2._SENT[player] = "disc-old"
+    skin = SimpleNamespace(name="muse_jukebox", build=lambda *a: {"components": ["x"]}, idle=None)
+    done, req = await _render(player, skin, monkeypatch, hidden=True, spec_values=["s", "s"])
+    # o pick de mentira devolve o disco "disc-n" (nome diferente do enviado) sem arquivo: o anexo antigo sai
+    assert done is False and req.data["attachments"] == []
+
+
+@pytest.mark.regression
+def test_the_disc_cache_is_keyed_by_the_full_digest_not_by_the_short_attachment_name():
+    from empiremuse.utils.render import disc_only
+
+    digest_a, digest_b = disc_only.label_digest(b"a"), disc_only.label_digest(b"b")
+    assert len(disc_only.disc_key(digest_a)) == 64 and disc_only.disc_key(digest_a) != disc_only.disc_key(digest_b)
+    assert disc_only.disc_name(digest_a) == f"disc-{disc_only.disc_key(digest_a)[:8]}"
+    cache = disc_only.DiscCache()
+    cache.put(disc_only.disc_key(digest_a), IMAGES)
+    assert cache.get(disc_only.disc_key(digest_a)) is IMAGES and cache.get(disc_only.disc_name(digest_a)) is None
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize("expected", [True, False])
+def test_the_adapter_warns_only_for_the_path_that_forgot_the_v2_payload(caplog, expected):
+    message = fake_message(is_v2=True, edits=[])
+    with caplog.at_level("WARNING"):
+        data = v2.adapt_for(message, {"embed": disnake.Embed(description="x")}, where="x", expected=expected)
+    assert data["embeds"] == [] and bool(caplog.records) is (not expected)
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(("has_thread", "expected"), [(False, True), (True, False)], ids=["channel", "thread-or-forum"])
+def test_a_swap_to_v1_never_deletes_the_parent_message_of_a_thread(tr, has_thread, expected):
+    player = SimpleNamespace(message=fake_message(is_v2=True, edits=[]), has_thread=has_thread)
+    req = SimpleNamespace(interaction=None, data={"embeds": [disnake.Embed(description="x")], "components": []})
+    assert np_steps.needs_replacement(player, req) is expected
+
+
+@pytest.mark.regression
+def test_the_title_label_has_no_markdown_and_a_legacy_author_is_not_turned_into_markdown(tr):
+    player = _player(tr, static=True)
+    player.current.single_title = "**b** ||sp|| `c` _i_ ~~s~~"
+    heading = next(line for line in shown_text(build(player)).splitlines() if line.startswith("## "))
+    label = heading[4 : heading.index("](")]
+    assert not any(mark in label for mark in "*_~|`\\")
+    embed = disnake.Embed(description="x")
+    embed.set_author(name="[x](https://exemplo.invalid)")
+    data = v2.legacy_to_v2({"embed": embed})
+    assert "](" not in shown_text(data)

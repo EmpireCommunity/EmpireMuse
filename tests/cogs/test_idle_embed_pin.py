@@ -146,3 +146,23 @@ async def test_the_pin_notice_is_deleted_right_after_pinning():
     mensagem.pin.assert_awaited_once()
     aviso.delete.assert_awaited_once()
     outro.delete.assert_not_awaited()
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize("as_v2", [False, None])
+async def test_a_player_swap_to_v1_asks_for_a_v1_idle_whatever_the_stored_skin_is(as_v2):
+    canal = MagicMock(spec=disnake.TextChannel)
+    canal.id = CANAL
+    canal.guild = SimpleNamespace(me=MagicMock(), id=1)
+    canal.guild.me.display_avatar.replace.return_value.url = "https://cdn.exemplo/avatar.png"
+    canal.send = AsyncMock(return_value=MagicMock(spec=disnake.Message, pinned=True, channel=canal))
+    bot = bot_falso()
+    bot.get_channel = lambda _id: canal
+    bot.config = {"DEFAULT_STATIC_SKIN": "muse_jukebox"}  # a skin gravada é a C
+    dados = {"player_controller": {"channel": str(CANAL), "fav_links": {}}}
+
+    await send_idle_embed(canal, bot=bot, guild_data=dados, as_v2=as_v2)
+
+    enviado = canal.send.await_args.kwargs
+    assert ("embed" in enviado) is (as_v2 is False)
+    assert as_v2 is False or isinstance(enviado["components"][0], disnake.ui.Container)

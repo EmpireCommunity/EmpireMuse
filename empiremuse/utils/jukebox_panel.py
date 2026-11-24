@@ -252,7 +252,7 @@ class JukeboxPanel:
                 fixed_entries=await radio_entries(panel_bot, tr, guild_id),
             )
             await v2.edit_message(
-                message, where="painel", allowed_mentions=NO_MENTIONS, attachments=[], **payload
+                message, where="painel", expected=True, allowed_mentions=NO_MENTIONS, attachments=[], **payload
             )  # o painel nunca leva anexo
             if any(e.state == PLAYING and e.duration_ms for e in entries):
                 self._schedule_tick(
@@ -356,12 +356,18 @@ class JukeboxPanel:
             return
 
     async def resend(
-        self, guild_id: int, *, replace_message_id: Optional[int] = None, force: bool = False
+        self,
+        guild_id: int,
+        *,
+        replace_message_id: Optional[int] = None,
+        force: bool = False,
+        as_v2: Optional[bool] = None,
     ) -> Optional[disnake.Message]:
         """O BOT DO PAINEL envia um painel novo no canal da Jukebox e grava o id (a mensagem anterior sumiu ou era de outro bot).
 
         ``replace_message_id``: a mensagem antiga (do bot que saiu); o novo painel tenta apagá-la, sem insistir se não puder.
         ``force``: manda um painel novo mesmo que o atual já seja do bot do painel (a skin trocou de V2 para V1, e a flag V2 não desliga).
+        ``as_v2``: ``False`` = a mensagem nova nasce V1 qualquer que seja a skin gravada (a troca V2 para V1 é por causa do player).
         """
         from empiremuse.utils.others import send_idle_embed  # tarde: utils.others importa muita coisa
 
@@ -389,7 +395,7 @@ class JukeboxPanel:
                         return existing  # já é do bot do painel: nada a reenviar
                     replace_message_id = existing.id  # é de outro bot (o painel anterior): o novo o substitui
             channel = bot.get_channel(config.channel) or await bot.fetch_channel(config.channel)
-            message = await send_idle_embed(channel, bot=bot, force=True)
+            message = await send_idle_embed(channel, bot=bot, force=True, **({} if as_v2 is None else {"as_v2": as_v2}))
             try:
                 await jukebox.set(guild_id, config.channel, message.id, expected=config.current)
             except Exception:

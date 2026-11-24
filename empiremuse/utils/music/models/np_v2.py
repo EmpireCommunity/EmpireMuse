@@ -41,6 +41,7 @@ ALT_TITLE_MAX = 80
 ANIMATED_STATES = frozenset({CardState.PLAYING, CardState.STREAM})
 
 _SENT: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()  # player -> o nome do anexo que a mensagem tem
+_LOGOS: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()  # player -> (nome, bytes) do logo da estação em uso
 
 
 def sent_name(player: Any) -> Optional[str]:
@@ -71,12 +72,12 @@ def confirm(player: Any, req: Any) -> None:
         for message in (getattr(req.interaction, "message", None), getattr(player, "message", None)):
             if message is not None:
                 mark_v2(message)
-    name = getattr(req, "disc", None)
-    if name is None:
+    if not getattr(req, "v2", False):
         return
-    if req.published:
+    name = getattr(req, "disc", None)
+    if req.published and name is not None:
         _SENT[player] = name
-    else:
+    else:  # edição que falhou, ou mensagem sem anexo de imagem (o ``attachments=[]`` tirou o antigo)
         _SENT.pop(player, None)
 
 
@@ -125,10 +126,12 @@ async def _radio_logo(
 class Picked:
     """O que o passo escolheu para a imagem: a ``Thumb``, os arquivos novos (ou vazio), o nome a gravar e se redesenha."""
 
-    __slots__ = ("thumb", "files", "name", "again")
+    __slots__ = ("thumb", "files", "name", "again", "key")
 
-    def __init__(self, thumb: Thumb, files: list[disnake.File], name: Optional[str], again: bool) -> None:
-        self.thumb, self.files, self.name, self.again = thumb, files, name, again
+    def __init__(
+        self, thumb: Thumb, files: list[disnake.File], name: Optional[str], again: bool, key: Optional[str] = None
+    ) -> None:
+        self.thumb, self.files, self.name, self.again, self.key = thumb, files, name, again, key
 
 
 async def pick(player: Any, spec: Any, station_logo: Any, cover_hosts: object, shown: Optional[str]) -> Picked:
@@ -143,15 +146,18 @@ async def pick(player: Any, spec: Any, station_logo: Any, cover_hosts: object, s
         name = f"{LOGO_NAME}-{hashlib.sha256(png).hexdigest()[:8]}"
         alt = player.tr("jbx.station_logo_alt", nome=external_text(spec.radio.name, ALT_TITLE_MAX, markdown=False))
         files = [] if shown == name else [_file(png, f"{name}.png", alt)]
+        _LOGOS[player] = (name, png)
         return Picked(Thumb(f"{ATTACHMENT_PREFIX}{name}.png", alt), files, name, pending)
     plain = spec.hidden or spec.track is None
     disc = await disc_service(cover_hosts).disc(spec.cover, plain=plain)
     alt = _alt(player, spec, plain=plain or disc.plain)
-    if disc.images is None:  # vaga ocupada: o plano B, a capa por URL (ou o "sem capa" fixo)
-        media = spec.cover if (spec.cover and not plain) else asset_url(NO_COVER_ASSET)
+    if (
+        disc.images is None
+    ):  # vaga ocupada: o plano B. A capa por URL só se o CoverService já devolveu os pixels (não é "sem capa")
+        media = spec.cover if (spec.cover and not plain and not disc.plain) else asset_url(NO_COVER_ASSET)
         return Picked(Thumb(media, alt), [], None, True)
     files = [] if shown == disc.name else disc_files(disc.name, disc.images, alt)
-    return Picked(Thumb(_disc_media(disc, spec), alt), files, disc.name, disc.pending)
+    return Picked(Thumb(_disc_media(disc, spec), alt), files, disc.name, disc.pending, disc.key)
 
 
 async def render(
@@ -183,47 +189,99 @@ async def render(
         if card_facts.build(self, settings) != spec:
             # a faixa mudou enquanto o disco era feito: o texto novo com o disco velho nunca sai; o updater redesenha
             self.update = True
+            req.superseded = True  # nada foi publicado: o registro de privacidade não vale como renderizado
             return True
         data = skin.build(self, time.time(), picked.thumb)
-    except Exception as error:  # noqa: BLE001 - o player nunca fica sem mensagem, e a C nunca cai em V1: não edita
+    except Exception as error:  # noqa: BLE001 - o player nunca fica sem mensagem, e a C nunca cai em V1
         logger.warning("Jukebox V2 não montou (%s)", safe_error(error))
         self.update = True  # sem isto uma transmissão (sem ciclo periódico) ficaria sem mensagem até outro evento
-        await defer(req.interaction)
-        return True
+        fallback = _fail_closed(self, skin) if _hides_details(self) else None
+        if fallback is None:
+            req.superseded = True  # nada sai: o registro de privacidade não vale como renderizado
+            await defer(req.interaction)
+            return True
+        picked, data = fallback  # escondido e a montagem falhou: sai o payload mínimo, nunca a mensagem antiga
     key = key_of(data)
     if picked.again:
         self.update = True  # capa a caminho, logo adiado ou vaga ocupada: o updater redesenha
-    if key == self.last_data and not picked.files and not new_message:
+    shown = sent_name(self)
+    clear = (
+        not picked.files and shown is not None and picked.name != shown
+    )  # o anexo antigo (com título) sai da mensagem
+    if key == self.last_data and not picked.files and not clear and not new_message:
         await defer(req.interaction)
         return True
     self.last_data = key
     req.disc = picked.name
+    req.disc_key = picked.key
     req.v2 = True
+    if picked.files or clear:
+        data["attachments"] = []
     if picked.files:
         data["files"] = picked.files
-        data["attachments"] = []
     req.data = data
     return False
 
 
-def disc_cached(name: str) -> Optional[DiscImages]:
+def _hides_details(player: Any) -> bool:
+    """O player esconde os detalhes (call privada)? Sem conseguir saber, esconde (falha fechada)."""
+    try:
+        from empiremuse.utils.jukebox_panel import player_hides_details
+
+        return bool(player_hides_details(player))
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def _fail_closed(player: Any, skin: Any) -> Optional[tuple[Picked, dict]]:
+    """A montagem falhou com os detalhes escondidos: tenta de novo sem o disco (a parte com I/O); se também falhar, o ocioso V2."""
+    from empiremuse.utils.music.skins.muse.muse_jukebox import fallback_thumb
+
+    thumb = fallback_thumb(player)
+    try:
+        data = skin.build(player, time.time(), thumb)
+    except Exception:  # noqa: BLE001 - o ocioso não mostra faixa nenhuma
+        try:
+            data = skin.idle(player, {})
+        except Exception as error:  # noqa: BLE001
+            logger.warning("Jukebox V2 sem payload escondido (%s)", safe_error(error))
+            return None
+    return Picked(thumb, [], None, True), data
+
+
+def disc_cached(key: Optional[str]) -> Optional[DiscImages]:
     service = disc_only._SERVICE
-    return service.cache.get(name) if service is not None else None
+    return service.cache.get(key) if service is not None and key else None
+
+
+def _thumb_alt(data: dict) -> str:
+    """O texto alternativo da Thumbnail do payload (o que a mensagem nova precisa manter no arquivo refeito)."""
+    for item in data.get("components") or ():
+        for child in getattr(item, "children", None) or ():
+            thumb = getattr(child, "accessory", None)
+            if isinstance(thumb, disnake.ui.Thumbnail):
+                return thumb.description or ""
+    return ""
 
 
 def ensure_files(player: Any, req: Any, data: dict) -> None:
-    """Uma mensagem NOVA com a Thumbnail num anexo que só a mensagem antiga tinha: refaz os arquivos do cache do disco (o
-    envio não herda anexo). Sem os arquivos no cache, o disco é pedido de novo no próximo ciclo."""
+    """Uma mensagem NOVA com a Thumbnail num anexo que só a mensagem antiga tinha: refaz os arquivos (do cache do disco ou dos bytes
+    do logo). Sem eles, o desenho é pedido de novo no próximo ciclo."""
     name = getattr(req, "disc", None)
     if name is None or data.get("files"):
         return
-    images = disc_cached(name)
+    alt = _thumb_alt(data)
+    logo = _LOGOS.get(player)
+    if logo is not None and logo[0] == name:
+        data["files"] = [_file(logo[1], f"{name}.png", alt)]
+        return
+    images = disc_cached(getattr(req, "disc_key", None))
     if images is None:
         player.last_data = {}
         player.update = True
         forget(player)
         return
-    data["files"] = disc_files(name, images, "")
+    data["files"] = disc_files(name, images, alt)
 
 
 def refresh_files(data: dict) -> bool:

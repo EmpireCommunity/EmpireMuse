@@ -66,6 +66,7 @@ class Disc(NamedTuple):
     busy: bool = False
     pending: bool = False
     plain: bool = False  # o rótulo é o "sem capa"
+    key: str = ""  # a chave inteira do cache (o ``name`` é só um nome de anexo curto)
 
 
 def label_digest(cover: Optional[bytes]) -> str:
@@ -73,10 +74,14 @@ def label_digest(cover: Optional[bytes]) -> str:
     return hashlib.sha256(cover).hexdigest() if cover is not None else NO_COVER
 
 
+def disc_key(digest: str) -> str:
+    """A chave do cache: o digest inteiro do rótulo e as versões (o cache é de todos os servidores)."""
+    return hashlib.sha256(f"{digest}:{DISC_VERSION}:{RENDER_VERSION}".encode()).hexdigest()
+
+
 def disc_name(digest: str) -> str:
-    """O nome do anexo: só o hash do rótulo e as versões, nunca a faixa, a call ou o servidor."""
-    raw = f"{digest}:{DISC_VERSION}:{RENDER_VERSION}".encode()
-    return f"disc-{hashlib.sha256(raw).hexdigest()[:8]}"
+    """O nome do anexo: um pedaço curto da chave, nunca a faixa, a call ou o servidor. NÃO serve de chave de cache."""
+    return f"disc-{disc_key(digest)[:8]}"
 
 
 # ---------------------------------------------------------------------- desenho (síncrono, na thread da vaga)
@@ -234,25 +239,26 @@ class DiscService:
         if cover is not None and not plain:
             result = await self.covers.pixels(cover)
             pixels, pending = result.pixels, bool(result.pending)
-        name = disc_name(label_digest(pixels))
+        digest = label_digest(pixels)
+        name, key = disc_name(digest), disc_key(digest)
         no_cover = pixels is None
-        cached = self.cache.get(name)
+        cached = self.cache.get(key)
         if cached is not None:
-            return Disc(name, cached, pending=pending, plain=no_cover)
+            return Disc(name, cached, pending=pending, plain=no_cover, key=key)
         if self.slot.pressure() >= DEGRADE_AT:
-            return Disc(name, None, busy=True, pending=pending, plain=no_cover)
+            return Disc(name, None, busy=True, pending=pending, plain=no_cover, key=key)
         try:
             images: DiscImages = await self.slot.run(draw_disc, pixels, label="disc")
         except RenderBusy:
-            return Disc(name, None, busy=True, pending=pending, plain=no_cover)
+            return Disc(name, None, busy=True, pending=pending, plain=no_cover, key=key)
         except Exception as error:  # noqa: BLE001 - sem disco, o plano B; só o tipo vai ao log
             logger.warning("Disco não saiu (%s)", type(error).__name__)
-            return Disc(name, None, busy=True, pending=pending, plain=no_cover)
+            return Disc(name, None, busy=True, pending=pending, plain=no_cover, key=key)
         if len(images.gif) > GIF_MAX_BYTES:
             logger.warning("GIF do disco acima do teto (%d bytes): fica o PNG parado", len(images.gif))
             images = DiscImages(images.png, images.png)
-        self.cache.put(name, images)
-        return Disc(name, images, pending=pending, plain=no_cover)
+        self.cache.put(key, images)
+        return Disc(name, images, pending=pending, plain=no_cover, key=key)
 
 
 _SERVICE: Optional[DiscService] = None

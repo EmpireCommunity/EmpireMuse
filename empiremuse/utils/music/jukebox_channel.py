@@ -474,7 +474,7 @@ async def _archive_previous_message(original_message, target, actor, embed_archi
             return None
         try:
             await v2.edit_message(
-                original_message, where="arquivada", content=None, embed=embed_archived, components=None
+                original_message, where="arquivada", expected=True, content=None, embed=embed_archived, components=None
             )
         except Exception:
             pass

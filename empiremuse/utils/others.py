@@ -388,7 +388,9 @@ async def send_idle_embed(
     bot: BotCore,
     force=False,
     guild_data: dict = None,
+    as_v2: Optional[bool] = None,
 ):
+    """``as_v2=False`` força o ocioso V1 (a troca V2 para V1 de um player); ``None`` decide pela mensagem e pela skin gravada."""
     if not target:
         return
 
@@ -460,7 +462,7 @@ async def send_idle_embed(
     else:
         content = None
 
-    if await _idle_in_v2(bot, guild_id, guild_data, target):
+    if as_v2 is not False and await _idle_in_v2(bot, guild_id, guild_data, target):
         # a Jukebox V2: o ocioso também é V2 (spec §4), sem o texto antigo e sem "última ação"; sem player não há timer de desligar
         from empiremuse.utils.music.skins.muse import muse_jukebox
 
@@ -470,7 +472,7 @@ async def send_idle_embed(
     send_body = {name: value for name, value in body.items() if name != "attachments"}
 
     if isinstance(target, disnake.MessageInteraction):
-        await v2.edit_from_interaction(target, where="send_idle_embed", **body)
+        await v2.edit_from_interaction(target, where="send_idle_embed", expected=True, **body)
         message = target.message
 
     elif isinstance(target, disnake.Message):
@@ -479,7 +481,7 @@ async def send_idle_embed(
 
         if target.author == target.guild.me:
             # attachments=[]: um cartão de player que estava nesta mensagem sai junto
-            await v2.edit_message(target, where="send_idle_embed", **body)
+            await v2.edit_message(target, where="send_idle_embed", expected=True, **body)
             message = target
         else:
             message = await target.channel.send(**send_body)
@@ -531,7 +533,7 @@ async def send_idle_embed(
                                 break
             else:
                 # ``attachments=[]``: o cartão de imagem do player sai junto (o embed ocioso não tem anexo)
-                await v2.edit_message(message, where="send_idle_embed", **body)
+                await v2.edit_message(message, where="send_idle_embed", expected=True, **body)
         else:
             message = await channel.send(**send_body)
 

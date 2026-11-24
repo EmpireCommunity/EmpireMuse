@@ -7,6 +7,7 @@ class NpState:
     __slots__ = (
         "data",
         "disc",
+        "disc_key",
         "force",
         "interaction",
         "published",
@@ -30,6 +31,7 @@ class NpState:
         self.v2 = False  # o payload deste pedido é Components V2 (a mensagem vira V2 depois que a edição sai)
         self.replace = False  # V2 -> V1: a mensagem nova vai antes de a velha sair (a flag V2 não desliga)
         self.disc = None  # o nome do anexo do disco (ou do logo) que este pedido manda, para a skin em V2
+        self.disc_key = None  # a chave inteira do disco no cache (o nome é curto e não serve de chave)
 
 
 class AutoqueueState:

@@ -15,6 +15,8 @@ from typing import Any
 
 import disnake
 
+from empiremuse.rules.usage import escape_markdown
+
 logger = logging.getLogger(__name__)
 
 MAX_COMPONENTS = 40
@@ -47,14 +49,16 @@ def _embed_texts(embed: disnake.Embed) -> list[str]:
     """Os blocos de texto do embed na ordem em que ele os mostra (autor, título, descrição, campos, rodapé)."""
     texts: list[str] = []
     if embed.author and embed.author.name:
-        texts.append(f"-# {embed.author.name}")
+        texts.append(
+            f"-# {escape_markdown(embed.author.name)}"
+        )  # no embed o autor é texto puro: no ``-#`` não vira markdown
     if embed.title:
         texts.append(f"## [{embed.title}]({embed.url})" if embed.url else f"## {embed.title}")
     if embed.description:
         texts.append(str(embed.description))
     texts.extend(f"**{field.name}**\n{field.value}" for field in embed.fields)
     if embed.footer and embed.footer.text:
-        texts.append(f"-# {embed.footer.text}")
+        texts.append(f"-# {escape_markdown(embed.footer.text)}")
     return texts
 
 
@@ -178,24 +182,26 @@ def legacy_to_v2(kwargs: Mapping[str, Any]) -> dict[str, Any]:
     return out
 
 
-def adapt_for(message: Any, kwargs: Mapping[str, Any], *, where: str = "") -> dict[str, Any]:
-    """Os ``kwargs`` certos para editar ``message``: iguais numa V1; convertidos numa V2 que recebeu um payload de embed
-    (rede de segurança: avisa no log, para o caminho ganhar o adaptador de verdade)."""
+def adapt_for(message: Any, kwargs: Mapping[str, Any], *, where: str = "", expected: bool = False) -> dict[str, Any]:
+    """Os ``kwargs`` certos para editar ``message``: iguais numa V1; convertidos numa V2 que recebeu um payload de embed.
+    ``expected`` = o caminho foi feito para converter (painel em lista, ocioso, encerramento): converte sem aviso. Sem ele, o
+    aviso é a rede de segurança de um caminho que esqueceu o payload V2."""
     if is_v2(message) and has_legacy_fields(kwargs):
-        logger.warning("Mensagem V2 recebeu um payload de embed (%s): convertido", where or "?")
+        if not expected:
+            logger.warning("Mensagem V2 recebeu um payload de embed (%s): convertido", where or "?")
         return legacy_to_v2(kwargs)
     return dict(kwargs)
 
 
-async def edit_message(message: Any, *, where: str = "", **kwargs: Any) -> Any:
+async def edit_message(message: Any, *, where: str = "", expected: bool = False, **kwargs: Any) -> Any:
     """``message.edit`` que nunca manda embed numa mensagem V2."""
-    return await message.edit(**adapt_for(message, kwargs, where=where))
+    return await message.edit(**adapt_for(message, kwargs, where=where, expected=expected))
 
 
-async def edit_from_interaction(interaction: Any, *, where: str = "", **kwargs: Any) -> Any:
+async def edit_from_interaction(interaction: Any, *, where: str = "", expected: bool = False, **kwargs: Any) -> Any:
     """``interaction.response.edit_message`` (ou ``message.edit`` se a interação já foi respondida), com a mesma regra."""
     message = getattr(interaction, "message", None)
-    data = adapt_for(message, kwargs, where=where)
+    data = adapt_for(message, kwargs, where=where, expected=expected)
     if interaction.response.is_done():
         return await message.edit(**data)
     return await interaction.response.edit_message(**data)
