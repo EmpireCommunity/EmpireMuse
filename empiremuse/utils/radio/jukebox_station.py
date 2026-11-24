@@ -215,12 +215,23 @@ class JukeboxStationMixin:
             opened, _ = await self._station_decision(player, member, station.id, self.station_name(player.tr, station))
             if opened is not None:
                 return opened
-        loaded = await self._station_pool(
-            player, station
-        )  # fora do lock: o Last.fm pode demorar; só com a porta liberando
+        try:
+            # fora do lock: o Last.fm pode demorar; só com a porta liberando
+            loaded = await self._station_pool(player, station)
+        except Exception:
+            # a carga já foi gasta: a recusa conta como troca para a espera curta [s1], e outro clique logo em seguida não carrega de novo.
+            # Fora do lock de propósito: esta escrita só pode adiantar o carimbo de uma troca concorrente (estender a espera curta), nunca abrir
+            # uma troca que a espera barraria
+            player.radio_switched_at = self.now()
+            raise
         async with player.radio_lock:
-            # relida no efeito: apagada durante a carga não começa; editada (outra fonte) também não, porque o pool é da fonte aceita
-            self._same_source(station, await self._station_of(guild_id, station.id))
+            # relida no efeito: apagada durante a carga não começa; editada (outra fonte) também não, porque o pool é da fonte aceita.
+            # A carga já foi gasta: essa recusa também conta como troca para a espera curta [s1]
+            try:
+                self._same_source(station, await self._station_of(guild_id, station.id))
+            except Refused:
+                player.radio_switched_at = self.now()
+                raise
             name = self.station_name(player.tr, station)
             # dentro do lock: nada do que valia antes vale agora
             await self._station_checks(guild_id, self._requester_channel(member, player))

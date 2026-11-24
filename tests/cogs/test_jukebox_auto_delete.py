@@ -273,6 +273,21 @@ def painel_na_subida(monkeypatch, *, busca, eh_bot_do_painel=True):
 
 
 class TestConferenciaNaSubida:
+    @pytest.mark.regression
+    @pytest.mark.asyncio
+    async def test_the_boot_check_spaces_out_the_panels_it_touches(self, monkeypatch):
+        """Sentinela S4 (J2a): sem rajada de edições na subida; um servidor sem painel deste bot não conta."""
+        gone = AsyncMock(side_effect=disnake.NotFound(MagicMock(status=404), "gone"))
+        panel, bot = painel_na_subida(monkeypatch, busca=gone)
+        bot.guilds = [SimpleNamespace(id=g) for g in (GID, GID + 1, GID + 2, GID + 3)]
+        panel.pool.servers.jukebox.is_panel_bot = AsyncMock(side_effect=lambda gid, b: gid != GID + 2)
+        panel._sleep = AsyncMock()
+
+        await panel.verify_on_boot(bot)
+
+        assert panel.handoff.await_count == 3
+        assert [call.args for call in panel._sleep.await_args_list] == [(panel_module.BOOT_STAGGER_S,)] * 2
+
     @pytest.mark.asyncio
     async def test_a_missing_panel_message_is_resent_when_this_bot_is_the_panel_bot(self, monkeypatch):
         gone = AsyncMock(side_effect=disnake.NotFound(MagicMock(status=404), "gone"))
