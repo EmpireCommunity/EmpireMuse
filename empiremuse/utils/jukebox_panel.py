@@ -13,7 +13,7 @@ import asyncio
 import logging
 import time
 import weakref
-from collections.abc import Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from typing import TYPE_CHECKING, Any, Optional
 
 import disnake
@@ -38,6 +38,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 NO_MENTIONS = disnake.AllowedMentions.none()
+BOOT_STAGGER_S = (
+    0.5  # na subida, entre um painel redesenhado (ou reenviado) e o próximo: sem rajada de edições ao Discord
+)
 
 
 def is_private(voice_channel: Any) -> bool:
@@ -102,8 +105,9 @@ async def fetch_panel_message(pool: BotPool, guild_id: int) -> Optional[disnake.
 
 
 class JukeboxPanel:
-    def __init__(self, pool: BotPool) -> None:
+    def __init__(self, pool: BotPool, *, sleep: Callable[[float], Awaitable[Any]] = asyncio.sleep) -> None:
         self.pool = pool
+        self._sleep = sleep  # injetável: os testes não esperam o relógio
         self._last: dict[int, int] = {}
         self._pending: dict[int, asyncio.Task] = {}
         self._ticks: dict[int, asyncio.Task] = {}
@@ -292,7 +296,9 @@ class JukeboxPanel:
 
     async def verify_on_boot(self, bot: BotCore) -> None:
         """Na subida do ``bot``: nos servidores em que ele é o bot do painel, confere que a mensagem do painel existe e é dele (senão,
-        a passagem manda um painel novo) e, se existe, a redesenha uma vez. Falha de um servidor não impede os outros."""
+        a passagem manda um painel novo) e, se existe, a redesenha uma vez. Falha de um servidor não impede os outros. Entre um painel
+        tocado e o próximo espera ``BOOT_STAGGER_S`` (sem rajada de edições na subida de um bot em muitos servidores)."""
+        touched = False
         for guild in list(bot.guilds):
             try:
                 config = await self.pool.servers.jukebox.get(guild.id)
@@ -302,6 +308,9 @@ class JukeboxPanel:
                     message = await fetch_panel_message(self.pool, guild.id)
                 except disnake.NotFound:
                     message = None  # só "não existe" conta; 403/5xx caem no aviso abaixo (reenviar sem poder apagar duplicaria o painel)
+                if touched:
+                    await self._sleep(BOOT_STAGGER_S)
+                touched = True
                 if message is None or message.author.id != bot.user.id:
                     await self.handoff(guild.id)
                 else:

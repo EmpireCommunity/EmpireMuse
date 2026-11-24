@@ -90,11 +90,22 @@ def normalize_name(name: str) -> str:
     return " ".join(unicodedata.normalize("NFKC", name).split()).casefold()
 
 
-def valid_station_id(value: object) -> bool:
-    return isinstance(value, str) and re.fullmatch(r"(?:[0-9a-f]{24}|g:[a-z][a-z0-9_]{1,23})", value) is not None
-
-
 GENRE_PREFIX = "g:"  # o id de um gênero pronto (estação virtual, sem documento): ``g:`` + o id do catálogo
+_CUSTOM_STATION_ID = re.compile(r"[0-9a-f]{24}", re.ASCII)  # o ``_id`` de uma estação gravada do servidor
+_GENRE_REF = re.compile(re.escape(GENRE_PREFIX) + r"[a-z][a-z0-9_]{1,23}", re.ASCII)
+
+
+def valid_custom_station_id(value: object) -> bool:
+    return isinstance(value, str) and _CUSTOM_STATION_ID.fullmatch(value) is not None
+
+
+def valid_genre_ref(value: object) -> bool:
+    return isinstance(value, str) and _GENRE_REF.fullmatch(value) is not None
+
+
+def valid_station_id(value: object) -> bool:
+    """Uma estação gravada do servidor ou um gênero pronto (``g:…``)."""
+    return valid_custom_station_id(value) or valid_genre_ref(value)
 
 
 def is_genre(ref: object) -> bool:

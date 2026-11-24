@@ -27,7 +27,7 @@ from empiremuse.rules.radio_quality import quality_dot, station_quality
 from empiremuse.rules.text import external_text, stored_text
 from empiremuse.utils.music.errors import GenericError
 from empiremuse.utils.radio.custom_favorites import Toggled
-from empiremuse.utils.radio.directory import REASON_LIMITED, REASON_UNAVAILABLE, Hit
+from empiremuse.utils.radio.directory import REASON_LIMITED, REASON_UNAVAILABLE, DirectoryError, Hit
 from empiremuse.utils.radio.favorites import (
     MAX_FAVORITES,
     AddResult,
@@ -554,8 +554,12 @@ class RadioPicker(disnake.ui.View):
         await interaction.response.defer()
         try:
             if self.list_mode in (LIST_FAV, LIST_MINE):
-                # a favorita só guarda uuid e nome: a estação de verdade vem do diretório, que a confere de novo
-                station = await self.hub.directory.by_uuid(station.uuid)
+                # a favorita só guarda uuid e nome: a estação de verdade vem do diretório, que a confere de novo. Leitura ESTRITA:
+                # falha do diretório é "indisponível, tente de novo", nunca "estação não encontrada"
+                try:
+                    station = await self.hub.directory.by_uuid_strict(station.uuid)
+                except DirectoryError as error:
+                    raise RadioUnavailable from error
                 if station is None:
                     raise GenericError(self.tr("radio.live.not_found"))
             station_list = tuple(h.station.uuid for h in self.hits)[:LIST_MAX] if len(self.hits) >= 2 else ()
