@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 MAX_COMPONENTS = 40
 MAX_TEXT = 4000  # a soma dos TextDisplay de uma mensagem V2
 ROW_BUTTONS = 5
+TEXT_BLOCKS = 10  # blocos de texto por embed convertido, até o teto de componentes pedir menos
 LEGACY_KEYS = ("content", "embed", "embeds", "view")
 _ELLIPSIS = "…"
 
@@ -57,7 +58,7 @@ def _embed_texts(embed: disnake.Embed) -> list[str]:
     return texts
 
 
-def _embed_children(embed: disnake.Embed, budget: int) -> tuple[list[Any], int]:
+def _embed_children(embed: disnake.Embed, budget: int, blocks: int = TEXT_BLOCKS) -> tuple[list[Any], int]:
     """Os filhos do ``Container`` de um embed e o que sobra do teto de texto. A miniatura vira o acessório da 1ª seção."""
     used = 0
     kept: list[str] = []
@@ -66,6 +67,10 @@ def _embed_children(embed: disnake.Embed, budget: int) -> tuple[list[Any], int]:
         if text:
             kept.append(text)
             used += len(text)
+    if len(kept) > blocks:  # os blocos que passam do limite viram um só (o Discord aceita 40 componentes na mensagem)
+        merged = _clip("\n\n".join(kept[blocks - 1 :]), budget - sum(len(t) for t in kept[: blocks - 1]))
+        used -= sum(len(t) for t in kept[blocks - 1 :]) - len(merged)
+        kept = [*kept[: blocks - 1], merged]
     children: list[Any] = []
     thumb = embed.thumbnail.url if embed.thumbnail else None
     if kept and thumb:
@@ -78,11 +83,32 @@ def _embed_children(embed: disnake.Embed, budget: int) -> tuple[list[Any], int]:
     return children, budget - used
 
 
-def embed_children(embed: disnake.Embed, budget: int = MAX_TEXT) -> tuple[list[Any], disnake.Colour | None, int]:
+def embed_children(
+    embed: disnake.Embed, budget: int = MAX_TEXT, blocks: int = TEXT_BLOCKS
+) -> tuple[list[Any], disnake.Colour | None, int]:
     """Os filhos do ``Container`` de um embed, a cor dele e o que sobrou do teto de texto."""
-    children, left = _embed_children(embed, budget)
+    children, left = _embed_children(embed, budget, blocks)
     colour = embed.colour if isinstance(embed.colour, disnake.Colour) else None
     return children, colour, left
+
+
+def count_components(item: Any) -> int:
+    """Quantos componentes o Discord conta nesta árvore (ela mesma, os filhos e o acessório)."""
+    children = list(getattr(item, "children", None) or ())
+    accessory = getattr(item, "accessory", None)
+    return 1 + sum(count_components(child) for child in children) + (count_components(accessory) if accessory else 0)
+
+
+def disable_all(item: Any) -> None:
+    """Desativa botões e selects da árvore (o ``Container`` V2 não propaga ``disabled`` aos filhos). Nó sem o campo é pulado."""
+    for child in list(getattr(item, "children", None) or ()):
+        disable_all(child)
+    if (accessory := getattr(item, "accessory", None)) is not None:
+        disable_all(accessory)
+    try:
+        item.disabled = True
+    except AttributeError:
+        pass
 
 
 def _is_layout(item: Any) -> bool:
@@ -128,20 +154,26 @@ def legacy_to_v2(kwargs: Mapping[str, Any]) -> dict[str, Any]:
     embeds = list(kwargs.get("embeds") or [])
     if kwargs.get("embed") is not None:
         embeds.insert(0, kwargs["embed"])
-    parts: list[tuple[list[Any], disnake.Colour | None]] = []
-    for embed in embeds:
-        children, colour, budget = embed_children(embed, budget)
-        parts.append((children, colour))
     controls = components_to_rows(kwargs.get("components"))
     view = kwargs.get("view")
     if view is not None and getattr(view, "children", None):
         controls.extend(components_to_rows(list(view.children)))
-    if not parts:
-        layout.extend(controls)
-    else:
-        for index, (children, colour) in enumerate(parts):
-            last = index == len(parts) - 1
-            layout.append(disnake.ui.Container(*children, *(controls if last else ()), accent_colour=colour))
+    head = list(layout)
+    for blocks in (TEXT_BLOCKS, 4, 1):  # menos blocos por embed até caber nos 40 componentes
+        layout = list(head)
+        left = budget
+        parts: list[tuple[list[Any], disnake.Colour | None]] = []
+        for embed in embeds:
+            children, colour, left = embed_children(embed, left, blocks)
+            parts.append((children, colour))
+        if not parts:
+            layout.extend(controls)
+        else:
+            for index, (children, colour) in enumerate(parts):
+                last = index == len(parts) - 1
+                layout.append(disnake.ui.Container(*children, *(controls if last else ()), accent_colour=colour))
+        if sum(count_components(item) for item in layout) <= MAX_COMPONENTS:
+            break
     out.update(content=None, embeds=[], components=layout)
     return out
 

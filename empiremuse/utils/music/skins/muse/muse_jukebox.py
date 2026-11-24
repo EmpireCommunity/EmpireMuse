@@ -105,7 +105,7 @@ def _title_text(track: Any, tr: tx.Tr) -> str:
     if track.is_stream and (not title or title == raw_url):
         title = tr("jbx.stream.untitled")
     title = title or "—"
-    return f"## [{title}]({url})" if url else f"## {title}"
+    return f"## [{title}]({url})" if url and len(url) <= URL_MAX else f"## {title}"  # URL enorme comeria o teto de 4000
 
 
 def _track_lines(player: Any, ctx: tx.Context, tr: tx.Tr) -> list[str]:
@@ -156,7 +156,7 @@ def section_texts(player: Any, ctx: tx.Context, tr: tx.Tr) -> list[str]:
 def timeline(player: Any, ctx: tx.Context, tr: tx.Tr) -> str:
     """``1:12 ▰▰▰▰●▱▱▱▱▱▱▱ 3:29 · termina <t:R>``; pausada, sem o ``<t:R>``; ao vivo, sem barra; em R, nenhuma."""
     current = player.current
-    if ctx.radio is not None:
+    if ctx.radio is not None or ctx.hidden:  # call privada: nem a duração da faixa
         return ""
     if current.is_stream:
         return f"{ICON_LIVE} {tr('jbx.state.radio')}"
@@ -175,6 +175,7 @@ TIME_WIDTH = 14  # "em 25 segundos"
 ROW_MIN_TITLE = 24
 ROW_ARTIST_MAX = 24
 ROW_NAME_MAX = 14
+URL_MAX = 400
 
 
 def _visible(text: str) -> int:
@@ -334,9 +335,17 @@ def idle_payload(tr: tx.Tr, components: Any, *, off: Optional[int] = None, lead:
 
 def idle(player: Any, kwargs: dict) -> dict:
     """O ocioso do player: ``idle_payload`` com o timer de desligar (só sem ``keep_connected``)."""
+    from empiremuse.utils.others import PlayerControls
+
     off = None if player.keep_connected else int(time.time()) + int(player.bot.config["IDLE_TIMEOUT"])
     out = {name: value for name, value in kwargs.items() if name not in ("embed", "content", "components")}
-    out.update(idle_payload(player.tr, kwargs.get("components"), off=off))
+    components = kwargs.get("components")
+    if tx.is_hidden(player):  # call privada: as opções "voltar" e "relacionadas" não levam o título da última faixa
+        for item in components or ():
+            for option in getattr(item, "options", ()):
+                if option.value in (PlayerControls.back, PlayerControls.autoplay):
+                    option.description = player.tr("jbx.hidden_track")
+    out.update(idle_payload(player.tr, components, off=off, lead=kwargs.get("content") or ""))
     return out
 
 

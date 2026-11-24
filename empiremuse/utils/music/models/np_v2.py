@@ -169,6 +169,8 @@ async def render(
     """``True`` = nada a editar. Senão ``req.data`` fica pronto (payload V2, e os arquivos se o disco mudou)."""
     if new_message:
         forget(self)
+    if req.interaction is not None:
+        await defer(req.interaction)  # antes do primeiro I/O (leitura do banco, disco): o prazo da interação é de 3 s
     try:
         settings = card_facts.CardSettings(
             skin=skin.name,
@@ -178,9 +180,14 @@ async def render(
         )
         spec = card_facts.build(self, settings)
         picked = await pick(self, spec, station_logo, self.bot.config["COVER_HOSTS"], sent_name(self))
+        if card_facts.build(self, settings) != spec:
+            # a faixa mudou enquanto o disco era feito: o texto novo com o disco velho nunca sai; o updater redesenha
+            self.update = True
+            return True
         data = skin.build(self, time.time(), picked.thumb)
     except Exception as error:  # noqa: BLE001 - o player nunca fica sem mensagem, e a C nunca cai em V1: não edita
         logger.warning("Jukebox V2 não montou (%s)", safe_error(error))
+        self.update = True  # sem isto uma transmissão (sem ciclo periódico) ficaria sem mensagem até outro evento
         await defer(req.interaction)
         return True
     key = key_of(data)

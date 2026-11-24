@@ -100,6 +100,11 @@ class PlayerMessageMixin:
         ):  # o player encerrou durante o desenho ou o RPC: não edita nem manda a mensagem de um player fechado
             return
 
+        if self.controller_mode and req.data.get("components") is None:
+            # skin V1 sem controles próprios: os botões padrão entram ANTES da troca de mensagem (a nova sai com eles)
+            _np_buttons_default(self, req)
+            _np_buttons_extra(self, req)
+
         if self.controller_mode and needs_replacement(self, req):
             self.updating = True
             await _np_replace(self, req)

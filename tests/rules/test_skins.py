@@ -398,9 +398,9 @@ def test_the_player_gets_the_jukebox_from_every_saved_level_even_in_global_mode(
 
 
 def test_the_alias_is_read_only_the_saved_document_is_not_rewritten():
-    doc = {"player_skin": "muse_expanded_black", "player_skin_chosen": True}
+    doc = {"player_skin": "muse_expanded_black", "player_skin_chosen": True, "global_skin": True}
     before = copy.deepcopy(doc)
-    skins.saved_player_skins({}, {**doc, "global_skin": True})
+    skins.saved_player_skins({}, doc)
     assert doc == before
 
 

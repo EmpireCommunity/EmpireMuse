@@ -1422,7 +1422,7 @@
   "jbx.radio.live_line": "Rádio ao vivo",
   "jbx.radio.since_short": "entrou no ar {t}",
   "jbx.hidden_note": "A música aparece só no chat da própria call.",
-  "jbx.idle.body": "Peça uma música no menu abaixo ou com `/play`.",
+  "jbx.idle.body": "Peça uma música pelos controles abaixo ou com `/play`.",
   "jbx.idle.off": "A Jukebox desliga {t} se ninguém pedir nada.",
   "jbx.disc_alt": "Disco com a capa de {titulo}",
   "jbx.disc_alt_plain": "Disco do EmpireMuse",

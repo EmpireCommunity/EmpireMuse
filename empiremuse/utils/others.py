@@ -546,6 +546,9 @@ async def send_idle_embed(
     return message
 
 
+PIN_NOTICE_SCAN = 8  # as mensagens mais recentes do canal (de novas para velhas): o aviso é a última coisa postada
+
+
 async def pin_quietly(message: disnake.Message, *, reason: str) -> None:
     """Fixa a mensagem e apaga o aviso de sistema "fixou uma mensagem" que o Discord posta no canal (a troca de player
     V1/V2 cria uma mensagem nova e, sem isto, deixava um aviso por troca). Sem ``Manage Messages`` o aviso fica."""
@@ -556,7 +559,7 @@ async def pin_quietly(message: disnake.Message, *, reason: str) -> None:
     if not (perms.manage_messages and perms.read_message_history):
         return
     try:
-        async for item in channel.history(limit=5, after=message):
+        async for item in channel.history(limit=PIN_NOTICE_SCAN):
             reference = getattr(item, "reference", None)
             if (
                 item.type is disnake.MessageType.pins_add

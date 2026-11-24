@@ -16,6 +16,7 @@ from empiremuse.rules.i18n import Translator
 from empiremuse.utils.music import v2
 from empiremuse.utils.music.models import np_steps, np_v2
 from empiremuse.utils.music.skins.muse import muse_jukebox
+from empiremuse.utils.others import PlayerControls
 from empiremuse.utils.render.disc_only import Disc, DiscImages
 from tests.support.call_chat import CALL_CHAT_CASES, CALL_CHAT_IDS
 from tests.utils.test_muse_skins import HOSTILE, NOW, _player, _track
@@ -90,8 +91,8 @@ def test_the_payload_is_pure_v2_with_one_violet_container_and_the_same_custom_id
     (container,) = data["components"]
     assert isinstance(container, disnake.ui.Container) and container.accent_colour == muse_jukebox.VIOLET
     text = dump(data)
-    for custom_id in ("musicplayer_dropdown_inter", "musicplayer_queue_dropdown", "musicplayer_pause_resume"):
-        assert custom_id in text or custom_id == "musicplayer_pause_resume"
+    for custom_id in ("musicplayer_dropdown_inter", "musicplayer_queue_dropdown", PlayerControls.pause_resume):
+        assert custom_id in text
 
 
 @pytest.mark.regression
@@ -256,18 +257,19 @@ async def test_an_embed_payload_on_a_v2_player_message_is_edited_as_a_container(
 # ---------------------------------------------------------------------- V2 -> V1 troca a mensagem; o ocioso é V2
 
 
-def test_only_a_v2_message_with_an_embed_payload_needs_a_new_message(tr):
-    embed_data = {"embeds": [disnake.Embed(description="x")], "components": []}
-    v2_data = {"embeds": [], "components": [build(_player(tr))["components"][0]]}
-    for is_v2, data, expected in (
-        (True, embed_data, True),
-        (True, v2_data, False),
-        (False, embed_data, False),
-        (False, v2_data, False),
-    ):
-        player = SimpleNamespace(message=fake_message(is_v2=is_v2, edits=[]))
-        req = SimpleNamespace(interaction=None, data=data)
-        assert np_steps.needs_replacement(player, req) is expected
+@pytest.mark.parametrize(
+    ("is_v2", "payload", "expected"),
+    [(True, "embed", True), (True, "v2", False), (False, "embed", False), (False, "v2", False)],
+    ids=["v2+embed", "v2+v2", "v1+embed", "v1+v2"],
+)
+def test_only_a_v2_message_with_an_embed_payload_needs_a_new_message(tr, is_v2, payload, expected):
+    data = (
+        {"embeds": [disnake.Embed(description="x")], "components": []}
+        if payload == "embed"
+        else {"embeds": [], "components": [build(_player(tr))["components"][0]]}
+    )
+    player = SimpleNamespace(message=fake_message(is_v2=is_v2, edits=[]))
+    assert np_steps.needs_replacement(player, SimpleNamespace(interaction=None, data=data)) is expected
 
 
 @pytest.mark.asyncio
@@ -417,3 +419,84 @@ def test_a_queue_row_fits_one_line_and_drops_the_artist_the_title_already_has(tr
     visible = visible.replace(f"<t:{muse_jukebox.tx.stamp(NOW + 25)}:R>", "x" * muse_jukebox.TIME_WIDTH)
     assert len(visible.replace("**", "")) <= muse_jukebox.ROW_WIDTH + 4
     assert "· Maroon Five" in muse_jukebox.queue_row(player, 2, other, None)  # artista diferente do título: fica
+
+
+@pytest.mark.regression
+def test_a_private_call_has_no_timeline_and_the_idle_options_carry_no_track_title(tr):
+    from empiremuse.utils.others import PlayerControls
+
+    player = secret_player(tr, private=True, in_call_chat=False, static=True)
+    assert "3:29" not in shown_text(build(player))  # nem a duração da faixa
+    player.keep_connected = True
+    options = [
+        disnake.SelectOption(label="v", value=PlayerControls.back, description="Faixa Secreta"),
+        disnake.SelectOption(label="r", value=PlayerControls.autoplay, description="Faixa Secreta"),
+    ]
+    select = disnake.ui.Select(custom_id="musicplayer_dropdown_idle", options=options)
+    data = muse_jukebox.idle(player, {"components": [select], "content": "post do fórum"})
+    assert "Faixa Secreta" not in dump(data) and "post do fórum" in shown_text(data)
+
+
+@pytest.mark.regression
+def test_a_huge_url_never_eats_the_text_limit_and_short_links_stay(tr):
+    player = _player(tr, static=True)
+    player.current.uri = "https://www.youtube.com/watch?v=" + "a" * 4000
+    data = build(player)
+    assert total_text(data) <= v2.MAX_TEXT and "](" not in shown_text(data).split("\n")[1]
+    assert "](https://www.youtube.com/watch?v=abc)" in shown_text(build(_player(tr, static=True)))
+
+
+@pytest.mark.regression
+def test_closing_disables_every_button_and_select_inside_the_container(tr):
+    (tree,) = build(_player(tr, static=True))["components"]
+    v2.disable_all(tree)
+
+    def interactive(node):
+        out = []
+        for child in getattr(node, "children", None) or ():
+            out += interactive(child)
+        if isinstance(node, (disnake.ui.Button, disnake.ui.BaseSelect)):
+            out.append(node)
+        return out
+
+    found = interactive(tree)
+    assert found and all(item.disabled for item in found)
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_the_track_changing_while_the_disc_is_drawn_never_publishes_the_new_text_with_the_old_disc(
+    tr, monkeypatch
+):
+    player = WeakNamespace(
+        tr=tr, bot=SimpleNamespace(config={"COVER_HOSTS": ""}), last_data={}, update=False, message=None, static=True
+    )
+    seen = iter(["a", "b"])  # o spec antes do disco e o de depois são diferentes
+    monkeypatch.setattr(np_v2.card_facts, "build", lambda *_: next(seen))
+    monkeypatch.setattr(np_v2.card_facts, "CardSettings", lambda **_: None)
+
+    async def pick(*_a, **_k):
+        return np_v2.Picked(None, [], None, False)
+
+    monkeypatch.setattr(np_v2, "pick", pick)
+
+    async def motion(*_a, **_k):
+        return True
+
+    async def defer(_i):
+        return None
+
+    skin = SimpleNamespace(name="muse_jukebox", build=lambda *a: pytest.fail("não monta com o estado novo"))
+    req = SimpleNamespace(interaction=None)
+    done = await np_v2.render(
+        player,
+        req,
+        skin,
+        redraw=False,
+        new_message=False,
+        key_of=str,
+        defer=defer,
+        disc_motion=motion,
+        station_logo=None,
+    )
+    assert done is True and player.update is True

@@ -802,12 +802,19 @@ async def _np_send_new(self, req):
         try:
             message = await panel.resend(self.guild_id, **({"force": True} if getattr(req, "replace", False) else {}))
             if message is not None:
-                # a mensagem do painel pode ser uma que já existia: só fica o anexo que este payload manda
-                await message.edit(
-                    allowed_mentions=self.allowed_mentions,
-                    **v2.adapt_for(message, {**data, "attachments": []}, where="np_painel"),
-                )
+                # o player já é dono da mensagem (``resend(force=True)`` apagou a velha): se a edição falhar, a próxima tentativa
+                # edita ESTA, nunca restaura a referência apagada
                 self.message = message
+                try:
+                    # a mensagem do painel pode ser uma que já existia: só fica o anexo que este payload manda
+                    await message.edit(
+                        allowed_mentions=self.allowed_mentions,
+                        **v2.adapt_for(message, {**data, "attachments": []}, where="np_painel"),
+                    )
+                except Exception:
+                    self.last_data = {}
+                    self.update = True
+                    raise
                 await self.channel_cleanup()
                 req.published = True
         except Exception:

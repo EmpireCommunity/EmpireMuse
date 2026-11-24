@@ -97,3 +97,13 @@ async def test_an_interaction_on_a_v2_message_edits_with_a_container():
     await v2.edit_from_interaction(interaction, embed=disnake.Embed(description="ocioso"), content=None)
     assert sent[0]["embeds"] == [] and sent[0]["content"] is None
     assert sent[0]["components"][0].to_component_dict()["type"] == 17
+
+
+@pytest.mark.regression
+def test_two_embeds_with_many_fields_stay_inside_the_forty_components():
+    embeds = [disnake.Embed(description="d") for _ in range(2)]
+    for embed in embeds:
+        for n in range(20):
+            embed.add_field(name=f"f{n}", value="v")
+    data = v2.legacy_to_v2({"embeds": embeds, "components": []})
+    assert sum(v2.count_components(item) for item in data["components"]) <= v2.MAX_COMPONENTS

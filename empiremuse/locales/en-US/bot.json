@@ -1406,7 +1406,7 @@
   "jbx.radio.live_line": "Live radio",
   "jbx.radio.since_short": "went on air {t}",
   "jbx.hidden_note": "The song shows only in the call's own chat.",
-  "jbx.idle.body": "Request a song in the menu below or with `/play`.",
+  "jbx.idle.body": "Request a song with the controls below or with `/play`.",
   "jbx.idle.off": "The Jukebox turns off {t} if nobody requests anything.",
   "jbx.disc_alt": "Record with the cover of {titulo}",
   "jbx.disc_alt_plain": "EmpireMuse record",

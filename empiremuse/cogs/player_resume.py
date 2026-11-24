@@ -33,6 +33,17 @@ from empiremuse.utils.others import send_idle_embed, CustomContext
 logger = logging.getLogger("empiremuse.player")
 
 
+def _custom_definition(session_data: object, saved: object, choice: object) -> dict:
+    """As definições de skin personalizada da retomada: as da sessão e, se o servidor escolheu hoje outra personalizada, a definição
+    dela (do global); sem a definição ``check_skins`` trocaria a escolha pela padrão."""
+    data = dict(session_data) if isinstance(session_data, dict) else {}
+    if isinstance(choice, str) and choice.startswith("> custom_skin: "):
+        name = choice[15:]
+        if name not in data and isinstance(saved, dict) and name in saved:
+            data[name] = saved[name]
+    return data
+
+
 class PlayerSession(commands.Cog):
     def __init__(self, bot: BotCore):
         self.bot = bot
@@ -637,8 +648,18 @@ class PlayerSession(commands.Cog):
                     break
 
                 try:
-                    global_skins = await self.bot.get_global_data(guild.id, db_name=DBModel.guilds)
+                    try:
+                        global_skins = await self.bot.get_global_data(guild.id, db_name=DBModel.guilds)
+                    except Exception:  # noqa: BLE001 - sem o global, vale a skin do servidor/sessão: a retomada não para
+                        logger.exception("Falha ao ler as skins globais na retomada", extra={"guild": guild.id})
+                        global_skins = {}
                     current_skin, current_static = saved_player_skins(controller, global_skins)
+                    custom_data = _custom_definition(
+                        data.get("custom_skin_data"), global_skins.get("custom_skins"), current_skin
+                    )
+                    custom_static_data = _custom_definition(
+                        data.get("custom_skin_static_data"), global_skins.get("custom_skins_static"), current_static
+                    )
                     player: LavalinkPlayer = self.bot.music.get_player(
                         node_id=node.identifier,
                         guild_id=guild.id,
@@ -654,8 +675,8 @@ class PlayerSession(commands.Cog):
                         player_creator=data["player_creator"],
                         autoplay=data.get("autoplay", False),
                         static=data["static"],
-                        custom_skin_data=data.get("custom_skin_data", {}),
-                        custom_skin_static_data=data.get("custom_skin_static_data", {}),
+                        custom_skin_data=custom_data,
+                        custom_skin_static_data=custom_static_data,
                         extra_hints=hints,
                         uptime=data.get("uptime"),
                         stage_title_template=data.get("stage_title_template"),

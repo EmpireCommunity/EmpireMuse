@@ -14,6 +14,7 @@ import empiremuse.wavelink as wavelink
 from empiremuse.i18n.payload import fit_payload
 from empiremuse.logs.webhook import minimal_embed, minimal_report_text
 from empiremuse.rules.voice_status import DEFAULT_VOICE_TEMPLATE
+from empiremuse.utils.music import v2
 from empiremuse.utils.music.converters import time_format, md_link
 from empiremuse.utils.music.live_mark import is_live
 from empiremuse.utils.music.skin_utils import skin_converter
@@ -395,7 +396,7 @@ class LavalinkPlayer(
             components = []
 
             for c in data.get("components", []):
-                c.disabled = True
+                v2.disable_all(c)
                 components.append(c)
 
             data["components"] = components

@@ -206,18 +206,19 @@ class JogadorDeTeste(LavalinkPlayer):
     async def process_next(self, start_position=0):
         self.registros.append(("process_next", start_position))
 
-    @pytest.mark.regression
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("versao", [3, 4])
-    async def test_os_eventos_de_voz_do_connect_chegam_ao_player_retomado(self, versao):
-        """Depois do restart, o ``connect`` do player retomado recebe o estado e o servidor de voz do Discord: com ``_voice_state``
-        ``None`` os dois handlers levantavam ``AttributeError`` e a faixa ficava parada em 0:00 (nó sem canal de voz)."""
-        from unittest.mock import AsyncMock
 
-        import empiremuse.wavelink as wl
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize("versao", [3, 4])
+async def test_os_eventos_de_voz_do_connect_chegam_ao_player_retomado(versao):
+    """Depois do restart, o ``connect`` do player retomado recebe o estado e o servidor de voz do Discord: com ``_voice_state``
+    ``None`` os dois handlers levantavam ``AttributeError`` e a faixa ficava parada em 0:00 (nó sem canal de voz)."""
+    from unittest.mock import AsyncMock
 
-        jogador, _ = await retomar(versao, await sessao_gravada())
-        falso = SimpleNamespace(_voice_state=jogador._voice_state, channel_id=None, _dispatch_voice_update=AsyncMock())
-        await wl.Player._voice_server_update(falso, {"token": "t", "endpoint": "e"})
-        await wl.Player._voice_state_update(falso, {"session_id": "s", "channel_id": str(CANAL_DE_VOZ)})
-        assert falso._voice_state == {"event": {"token": "t", "endpoint": "e"}, "sessionId": "s"}
+    import empiremuse.wavelink as wl
+
+    jogador, _ = await retomar(versao, await sessao_gravada())
+    falso = SimpleNamespace(_voice_state=jogador._voice_state, channel_id=None, _dispatch_voice_update=AsyncMock())
+    await wl.Player._voice_server_update(falso, {"token": "t", "endpoint": "e"})
+    await wl.Player._voice_state_update(falso, {"session_id": "s", "channel_id": str(CANAL_DE_VOZ)})
+    assert falso._voice_state == {"event": {"token": "t", "endpoint": "e"}, "sessionId": "s"}
