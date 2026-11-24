@@ -90,6 +90,11 @@ def _radio(skin_id: str, kind: Kind, theme: str | None, desc: str, *, concept: b
     )
 
 
+def _classic_preview(skin_id: str, *, static: bool = False) -> str:
+    """As prévias das Clássicas são as de antes, uma por modo (``skin_normal_*`` e ``skin_static_*``)."""
+    return _preview("static" if static else "normal", skin_id)
+
+
 def _classic(skin_id: str) -> SkinEntry:
     return SkinEntry(
         skin_id,
@@ -99,7 +104,7 @@ def _classic(skin_id: str) -> SkinEntry:
         None,
         "",
         "skin.classic",
-        _preview(FAMILY_CLASSIC, skin_id),
+        _classic_preview(skin_id),
         False,
     )
 
@@ -144,6 +149,15 @@ REGISTRY: tuple[SkinEntry, ...] = JUKEBOX_SKINS + CLASSIC_SKINS + RADIO_SKINS
 JUKEBOX_IDS: tuple[str, ...] = tuple(entry.id for entry in JUKEBOX_SKINS)
 RADIO_LOOKS: tuple[str, ...] = tuple(entry.id for entry in RADIO_SKINS)
 _RADIO_BY_ID = {entry.id: entry for entry in RADIO_SKINS}
+_PLAYER_BY_ID = {entry.id: entry for entry in JUKEBOX_SKINS + CLASSIC_SKINS}
+
+
+def player_preview(skin_id: str, *, static: bool = False) -> str | None:
+    """O asset da prévia de uma skin do player (a fonte única: o ``/skins`` lê daqui); ``None`` fora do registro."""
+    entry = _PLAYER_BY_ID.get(skin_id)
+    if entry is None:
+        return None
+    return _classic_preview(skin_id, static=static) if entry.family == FAMILY_CLASSIC else entry.preview
 
 
 # ---------------------------------------------------------------------- rádio 24 h
