@@ -671,6 +671,19 @@ class PlayerSession(commands.Cog):
                             static=player.static,
                             session=(data["skin"], data["skin_static"]),
                             server_now=(current_skin, current_static),
+                            controller=(
+                                controller.get("skin"),
+                                controller.get("static_skin"),
+                                controller.get("skin_chosen"),
+                                controller.get("static_skin_chosen"),
+                            ),
+                            global_mode=global_skins.get("global_skin"),
+                            global_saved=(
+                                global_skins.get("player_skin"),
+                                global_skins.get("player_skin_static"),
+                                global_skins.get("player_skin_chosen"),
+                                global_skins.get("player_skin_static_chosen"),
+                            ),
                             pool_default=(self.bot.pool.default_skin, self.bot.pool.default_static_skin),
                             final=(player.skin, player.skin_static),
                         )
