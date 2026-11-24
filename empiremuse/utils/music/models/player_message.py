@@ -9,6 +9,7 @@ from itertools import cycle
 import disnake
 
 from empiremuse.utils.db import DBModel
+from empiremuse.utils.jukebox_panel import player_hides_details
 from empiremuse.utils.music.converters import fix_characters, time_format, get_button_style
 from empiremuse.utils.music.errors import (
     code_suffix,
@@ -33,10 +34,26 @@ from empiremuse.utils.music.models.np_steps import (
 from empiremuse.utils.music.models.step_state import NpState
 
 
+def _confirm_rendered(player, req, hidden: bool) -> None:
+    """D10: a regra de privacidade só vale como desenhada depois que a edição ou o envio da mensagem saiu sem falha.
+
+    Sem publicação, o ``last_data`` (gravado antes de publicar) é zerado: a próxima chamada refaz o desenho em vez de
+    concluir que "nada mudou" e confirmar o registro sem editar.
+    """
+    req.settled = True
+    if req.published:
+        player.details_hidden_rendered = hidden
+    else:
+        player.last_data = {}
+
+
 class PlayerMessageMixin:
     async def invoke_np(self, force=False, interaction=None, rpc_update=False, panel_render=False):
-        if self.static and not panel_render and await self._panel_takes_over(interaction):
-            return
+        if self.static and not panel_render:
+            hidden = player_hides_details(self)
+            if await self._panel_takes_over(interaction):
+                self.details_hidden_rendered = hidden  # o painel em lista se refez (uma edição do painel por virada)
+                return
 
         req = NpState(force=force, interaction=interaction, rpc_update=rpc_update)
         if await _np_guards(self, req):
@@ -52,7 +69,26 @@ class PlayerMessageMixin:
             self.setup_hints()
             self.retry_setup_hints = False
 
+        # a regra vista ANTES do desenho: só vale como "desenhado" depois que a mensagem saiu (se a call mudar durante o
+        # desenho, o gatilho de privacidade vê a diferença; se o desenho falhar, o registro anterior fica e o redesenho tenta de novo)
+        hidden = player_hides_details(self)
+
+        try:
+            # chamada pela classe: os dublês dos testes não herdam o mixin
+            await PlayerMessageMixin._invoke_np_render(self, req, hidden)
+        finally:
+            if not req.settled:
+                # uma exceção (ou o encerramento) depois do ``_np_data``, que já avançou o ``last_data``: sem zerar, a
+                # próxima chamada concluiria que "nada mudou" e confirmaria o registro sem editar
+                self.last_data = {}
+                # a exceção saiu com ``updating`` travado em True e a nova tentativa seria descartada pela guarda
+                self.updating = False
+
+    async def _invoke_np_render(self, req, hidden: bool) -> None:
         if await _np_data(self, req):
+            req.settled = True  # nada a trocar (a mensagem já mostra este payload) ou o pedido foi superado
+            if not req.superseded:
+                self.details_hidden_rendered = hidden
             return
 
         if (
@@ -78,6 +114,7 @@ class PlayerMessageMixin:
 
             if req.interaction:
                 if await _np_interaction_edit(self, req):
+                    _confirm_rendered(self, req, hidden)
                     return
 
             else:
@@ -85,6 +122,7 @@ class PlayerMessageMixin:
                     self.ignore_np_once or self.has_thread or self.static or not req.force or self.is_last_message()
                 ):
                     if await _np_message_edit(self, req):
+                        _confirm_rendered(self, req, hidden)
                         return
 
             await self.destroy_message()
@@ -93,6 +131,7 @@ class PlayerMessageMixin:
 
             self.start_message_updater_task()
 
+        _confirm_rendered(self, req, hidden)
         self.updating = False
 
     async def _panel_takes_over(self, interaction=None) -> bool:
