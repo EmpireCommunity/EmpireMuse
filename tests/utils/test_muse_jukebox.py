@@ -4,6 +4,7 @@ que nunca recebe embed. Fakes do player com o ``Translator`` real; disco e vaga 
 
 from __future__ import annotations
 
+import asyncio
 import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -796,3 +797,36 @@ def test_an_embed_url_with_a_closing_paren_never_opens_a_second_link_in_the_conv
     heading = next(line for line in text.splitlines() if line.startswith("## "))
     assert heading.count("](") == 1 and heading.endswith(")") and ")[" not in heading
     assert shown_text(v2.legacy_to_v2({"embed": disnake.Embed(title="t", url="ftp://x")})).startswith("## t")
+
+
+# ---------------------------------------------------------------------- ocioso das skins antigas e regra que falha
+@pytest.mark.regression
+@pytest.mark.parametrize(("private", "in_call_chat", "hides"), CALL_CHAT_CASES, ids=CALL_CHAT_IDS)
+def test_the_idle_track_title_of_every_skin_follows_the_real_privacy_rule(tr, private, in_call_chat, hides):
+    from empiremuse.utils.music.models.player_playback import idle_track_title
+
+    player = secret_player(tr, private=private, in_call_chat=in_call_chat, static=True)
+    player.played = [SimpleNamespace(title="Faixa Secreta")]
+    assert (idle_track_title(player) == tr("jbx.hidden_track")) is hides
+    assert (idle_track_title(player) == "Faixa Secreta") is not hides
+
+
+@pytest.mark.regression
+def test_a_privacy_rule_that_raises_counts_as_hidden_in_the_idle_and_in_invoke_np(tr, monkeypatch):
+    import empiremuse.utils.jukebox_panel as panel
+    from empiremuse.utils.music.models import player_message
+    from empiremuse.utils.music.models.player_playback import idle_track_title
+
+    def broken(*_a, **_k):
+        raise RuntimeError("regra quebrada")
+
+    monkeypatch.setattr(panel, "player_hides_details", broken)
+    player = secret_player(tr, private=False, in_call_chat=False, static=True)
+    player.played = [SimpleNamespace(title="Faixa Secreta")]
+    assert idle_track_title(player) == tr("jbx.hidden_track")
+    # o invoke_np REAL no ramo do painel em lista: com a regra quebrada o registro de privacidade vira "escondido", sem levantar
+    from unittest.mock import AsyncMock
+
+    fake = SimpleNamespace(static=True, _panel_takes_over=AsyncMock(return_value=True), details_hidden_rendered=None)
+    asyncio.run(player_message.PlayerMessageMixin.invoke_np(fake))
+    assert fake.details_hidden_rendered is True

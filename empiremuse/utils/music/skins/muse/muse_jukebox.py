@@ -353,10 +353,9 @@ def _masked(item: Any, text: str, controls: Any) -> Any:
 
 def _hidden_or_unknown(player: Any) -> bool:
     """Esconde se a regra diz que sim e também se ela falha (privacidade desconhecida fecha)."""
-    try:
-        return bool(tx.is_hidden(player))
-    except Exception:  # noqa: BLE001
-        return True
+    from empiremuse.utils.jukebox_panel import player_hides_or_unknown
+
+    return player_hides_or_unknown(player)
 
 
 def idle(player: Any, kwargs: dict) -> dict:

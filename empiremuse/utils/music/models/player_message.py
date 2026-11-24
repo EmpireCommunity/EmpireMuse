@@ -9,7 +9,7 @@ from itertools import cycle
 import disnake
 
 from empiremuse.utils.db import DBModel
-from empiremuse.utils.jukebox_panel import player_hides_details
+from empiremuse.utils.jukebox_panel import player_hides_or_unknown
 from empiremuse.utils.music.converters import fix_characters, time_format, get_button_style
 from empiremuse.utils.music.errors import (
     code_suffix,
@@ -54,7 +54,7 @@ def _confirm_rendered(player, req, hidden: bool) -> None:
 class PlayerMessageMixin:
     async def invoke_np(self, force=False, interaction=None, rpc_update=False, panel_render=False):
         if self.static and not panel_render:
-            hidden = player_hides_details(self)
+            hidden = player_hides_or_unknown(self)
             if await self._panel_takes_over(interaction):
                 self.details_hidden_rendered = hidden  # o painel em lista se refez (uma edição do painel por virada)
                 return
@@ -75,7 +75,7 @@ class PlayerMessageMixin:
 
         # a regra vista ANTES do desenho: só vale como "desenhado" depois que a mensagem saiu (se a call mudar durante o
         # desenho, o gatilho de privacidade vê a diferença; se o desenho falhar, o registro anterior fica e o redesenho tenta de novo)
-        hidden = player_hides_details(self)
+        hidden = player_hides_or_unknown(self)
 
         try:
             # chamada pela classe: os dublês dos testes não herdam o mixin

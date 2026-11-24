@@ -12,6 +12,7 @@ from rapidfuzz import fuzz
 from empiremuse.logs.webhook import minimal_embed, minimal_report_text
 from empiremuse.rules.i18n import fit
 from empiremuse.utils.db import DBModel
+from empiremuse.utils.jukebox_panel import player_hides_or_unknown
 from empiremuse.utils.music import v2
 from empiremuse.utils.music.converters import md_link
 from empiremuse.utils.music.errors import (
@@ -47,6 +48,15 @@ from empiremuse.utils.music.models.playback_steps import (
 )
 from empiremuse.utils.music.models.step_state import ProcessNextState
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
+
+
+def idle_track_title(player) -> str:
+    """O título da última faixa para as opções "voltar" e "relacionadas" do ocioso; em call privada (ou sem saber), "Faixa oculta"."""
+    try:
+        title = player.played[-1].title
+    except Exception:
+        title = player.last_track.title
+    return player.tr("jbx.hidden_track") if player_hides_or_unknown(player) else title
 
 
 class PlayerPlaybackMixin:
@@ -214,10 +224,7 @@ class PlayerPlaybackMixin:
         ]
 
         if (played := len(self.played)) or self.last_track:
-            try:
-                play_txt = self.played[-1].title
-            except Exception:
-                play_txt = self.last_track.title
+            play_txt = idle_track_title(self)
 
             controller_opts.extend(
                 [

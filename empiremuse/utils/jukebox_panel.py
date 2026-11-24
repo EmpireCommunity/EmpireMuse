@@ -85,6 +85,15 @@ def player_hides_details(player: Any, channel: Any = None) -> bool:
     return not in_call_chat(channel, voice)
 
 
+def player_hides_or_unknown(player: Any, channel: Any = None) -> bool:
+    """``player_hides_details`` que fecha quando a própria regra falha: privacidade desconhecida esconde."""
+    try:
+        return player_hides_details(player, channel)
+    except Exception:  # noqa: BLE001 - sem saber, esconde
+        logger.debug("Regra de privacidade falhou: escondendo", exc_info=True)
+        return True
+
+
 def entry_for(bot: BotCore, player: LavalinkPlayer) -> Optional[PanelEntry]:
     """O bloco do painel para um player conectado; ``None`` se ele não está em call."""
     voice = getattr(getattr(player.guild.me, "voice", None), "channel", None)

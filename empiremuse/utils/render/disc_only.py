@@ -34,10 +34,10 @@ from empiremuse.utils.render.slot import RenderBusy, RenderSlot, shared_slot
 
 logger = logging.getLogger(__name__)
 
-DISC_VERSION = 1  # sobe quando o desenho do disco muda (invalida o cache num deploy)
+DISC_VERSION = 2  # sobe quando o desenho do disco muda (invalida o cache num deploy)
 DISC_SIDE = 128
 DISC_MARGIN = 5
-LABEL_SIDE = 58
+LABEL_SIDE = 77  # 60% do lado do disco (128 px); o furo e os sulcos acompanham (``record_image``)
 FRAMES = 24
 FRAME_MS = 80  # o GIF mede em centésimos: 75 ms vira 70; 24 × 80 ms = 1,92 s por volta
 GIF_MAX_BYTES = 256 * 1024
