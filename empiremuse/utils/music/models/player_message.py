@@ -9,6 +9,7 @@ from itertools import cycle
 import disnake
 
 from empiremuse.utils.db import DBModel
+from empiremuse.utils.jukebox_panel import player_hides_details
 from empiremuse.utils.music.converters import fix_characters, time_format, get_button_style
 from empiremuse.utils.music.errors import (
     code_suffix,
@@ -51,6 +52,9 @@ class PlayerMessageMixin:
         if self.retry_setup_hints:
             self.setup_hints()
             self.retry_setup_hints = False
+
+        # antes do desenho: se a call mudar durante ele, o gatilho de privacidade vê a diferença e redesenha
+        self.details_hidden_rendered = player_hides_details(self)
 
         if await _np_data(self, req):
             return
