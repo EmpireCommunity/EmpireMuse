@@ -255,7 +255,7 @@ class TestForbiddenEmTempoDeExecucao:
 @pytest.mark.regression
 @pytest.mark.asyncio
 async def test_turning_the_channel_status_on_by_default_adds_no_notice_to_the_player():
-    jogador = JogadorDeStatus(canal_de_voz(ID_DO_CANAL), SimpleNamespace())
+    jogador = JogadorDeStatus(canal_de_voz(ID_DO_CANAL), SimpleNamespace(), evento=False)
     jogador.update_stage_topic = AsyncMock()
     jogador._ensure_voice_status_reapply = MagicMock()
     jogador.voice_status_saved_default = True  # o antigo "ligado por padrão" que avisava no player
