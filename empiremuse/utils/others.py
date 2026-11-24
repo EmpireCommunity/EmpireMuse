@@ -5,10 +5,11 @@ import argparse
 import asyncio
 import datetime
 import json
+import logging
 import re
 from inspect import iscoroutinefunction
 from io import BytesIO
-from typing import TYPE_CHECKING, Union, Optional
+from typing import TYPE_CHECKING, Any, Union, Optional
 
 import disnake
 from disnake.ext import commands
@@ -25,6 +26,9 @@ from empiremuse.utils.music.guild_pin import load_guild_pin
 if TYPE_CHECKING:
     from empiremuse.utils.client import BotCore
     from empiremuse.utils.music.models import LavalinkPlayer
+
+
+logger = logging.getLogger(__name__)
 
 
 class Test:
@@ -456,10 +460,17 @@ async def send_idle_embed(
     else:
         content = None
 
+    if await _idle_in_v2(bot, guild_id, guild_data, target):
+        # a Jukebox V2: o ocioso também é V2 (spec §4), sem o texto antigo e sem "última ação"; sem player não há timer de desligar
+        from empiremuse.utils.music.skins.muse import muse_jukebox
+
+        body = muse_jukebox.idle_payload(tr, components, lead=content or "")
+    else:
+        body = {"embed": embed, "components": components, "content": content, "attachments": []}
+    send_body = {name: value for name, value in body.items() if name != "attachments"}
+
     if isinstance(target, disnake.MessageInteraction):
-        await v2.edit_from_interaction(
-            target, where="send_idle_embed", embed=embed, components=components, content=content, attachments=[]
-        )
+        await v2.edit_from_interaction(target, where="send_idle_embed", **body)
         message = target.message
 
     elif isinstance(target, disnake.Message):
@@ -468,12 +479,10 @@ async def send_idle_embed(
 
         if target.author == target.guild.me:
             # attachments=[]: um cartão de player que estava nesta mensagem sai junto
-            await v2.edit_message(
-                target, where="send_idle_embed", embed=embed, content=content, components=components, attachments=[]
-            )
+            await v2.edit_message(target, where="send_idle_embed", **body)
             message = target
         else:
-            message = await target.channel.send(embed=embed, components=components, content=content)
+            message = await target.channel.send(**send_body)
     else:
         channel = bot.get_channel(target.id)
 
@@ -522,16 +531,9 @@ async def send_idle_embed(
                                 break
             else:
                 # ``attachments=[]``: o cartão de imagem do player sai junto (o embed ocioso não tem anexo)
-                await v2.edit_message(
-                    message,
-                    where="send_idle_embed",
-                    embed=embed,
-                    content=content,
-                    components=components,
-                    attachments=[],
-                )
+                await v2.edit_message(message, where="send_idle_embed", **body)
         else:
-            message = await channel.send(embed=embed, components=components, content=content)
+            message = await channel.send(**send_body)
 
     if (
         isinstance(message.channel, (disnake.Thread, disnake.TextChannel))
@@ -539,9 +541,47 @@ async def send_idle_embed(
         and not is_forum
         and message.channel.permissions_for(target.guild.me).pin_messages
     ):
-        await message.pin(reason="Player controller")
+        await pin_quietly(message, reason="Player controller")
 
     return message
+
+
+async def pin_quietly(message: disnake.Message, *, reason: str) -> None:
+    """Fixa a mensagem e apaga o aviso de sistema "fixou uma mensagem" que o Discord posta no canal (a troca de player
+    V1/V2 cria uma mensagem nova e, sem isto, deixava um aviso por troca). Sem ``Manage Messages`` o aviso fica."""
+    await message.pin(reason=reason)
+    channel = message.channel
+    me = message.guild.me
+    perms = channel.permissions_for(me)
+    if not (perms.manage_messages and perms.read_message_history):
+        return
+    try:
+        async for item in channel.history(limit=5, after=message):
+            reference = getattr(item, "reference", None)
+            if (
+                item.type is disnake.MessageType.pins_add
+                and item.author.id == me.id
+                and getattr(reference, "message_id", None) == message.id
+            ):
+                await item.delete()
+                return
+    except disnake.HTTPException:
+        logger.debug("Aviso de fixação não apagado", exc_info=True)
+
+
+async def _idle_in_v2(bot: BotCore, guild_id: int, guild_data: dict, target: Any) -> bool:
+    """O ocioso do canal da Jukebox sai em V2 se a mensagem já é V2 ou se a skin do canal é a Jukebox V2."""
+    message = target if isinstance(target, disnake.Message) else getattr(target, "message", None)
+    if message is not None and v2.is_v2(message):
+        return True
+    from empiremuse.rules.skins import DEFAULT_JUKEBOX_SKIN, saved_player_skins
+
+    try:
+        global_data = await bot.get_global_data(guild_id, db_name=DBModel.guilds)
+        static = saved_player_skins(guild_data["player_controller"], global_data)[1]
+    except KeyError, TypeError:
+        static = None
+    return (static or bot.config.get("DEFAULT_STATIC_SKIN") or DEFAULT_JUKEBOX_SKIN) == "muse_jukebox"
 
 
 def string_to_file(txt, filename="result.txt"):

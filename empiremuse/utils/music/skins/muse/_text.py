@@ -126,6 +126,17 @@ def member_name(player: Any, member_id: object) -> str:
     return external_text(member.display_name, NAME_MAX) if member is not None else ""
 
 
+def by_bot(player: Any, track: Any) -> bool:
+    """Faixa posta pelo próprio bot (autoplay, Last.fm): não tem "pedida por @bot", é recomendação."""
+    if getattr(track, "autoplay", False):
+        return True
+    who = str(getattr(track, "requester", ""))
+    if not who.isdigit():
+        return False
+    member = player.guild.get_member(int(who))
+    return bool(member is not None and getattr(member, "bot", False))
+
+
 def mention(member_id: object) -> str:
     return f"<@{int(str(member_id))}>" if str(member_id).isdigit() else ""
 
@@ -157,7 +168,7 @@ def requested_line(player: Any, ctx: Context, tr: Tr) -> str:
         return ""
     if from_station(ctx):
         return tr("jbx.from_station", nome=server_station_md(ctx.station.name))
-    if current.autoplay:
+    if by_bot(player, current):
         return tr("jbx.recommended")
     who = mention(current.requester)
     return tr("jbx.text.requested", mention=who) if who else ""
@@ -273,7 +284,7 @@ def queue_item_line(player: Any, n: int, track: Any, start: Optional[float]) -> 
     if artist := external_text(track.authors_string, QUEUE_ARTIST_MAX):
         parts.append(artist)
     parts.append(length)
-    if not track.autoplay and (who := member_name(player, track.requester)):
+    if not by_bot(player, track) and (who := member_name(player, track.requester)):
         parts.append(who)
     if start is not None:
         parts.append(relative(start))

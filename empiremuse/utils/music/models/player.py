@@ -356,6 +356,11 @@ class LavalinkPlayer(
             # pausa por falha de rede (V-142-2): não há faixa no nó para despausar, a que esperava volta a tocar pela fila
             self.bot.dispatch("player_resume", player=self)
             return
+        if not self.auto_pause and self.current and self.paused != pause:
+            # congela a posição REAL: ``position`` pausada devolve ``last_position``, que só anda a cada ``playerUpdate`` do nó
+            # (sem ele a pausa mostrava 0:00); ao retomar, o relógio recomeça de agora (não soma o tempo pausado)
+            self.last_position = self.position
+            self.last_update = time() * 1000
         await super().set_pause(pause)
         if usage := usage_of(self.bot):
             usage.playback_paused(self.bot, self.guild.id, pause)

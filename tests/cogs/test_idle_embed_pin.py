@@ -49,8 +49,14 @@ async def sem_playlists(gid, scope="jukebox"):
     return ()
 
 
+async def sem_global(*_a, **_k):
+    return {}
+
+
 def bot_falso():
     return SimpleNamespace(
+        config={"DEFAULT_STATIC_SKIN": "muse_text"},
+        get_global_data=sem_global,
         pool=SimpleNamespace(servers=SimpleNamespace(playlists=SimpleNamespace(list=sem_playlists)), i18n=get_i18n()),
         music=SimpleNamespace(nodes={}),
         get_color=lambda *a: 0,
@@ -101,3 +107,42 @@ async def test_the_idle_embed_on_the_thread_start_message_drops_the_card_attachm
     )
 
     assert mensagem.edit.await_args.kwargs["attachments"] == []
+
+
+@pytest.mark.regression
+async def test_the_idle_of_a_v2_jukebox_message_is_a_container_never_an_embed():
+    mensagem = alvo(disnake.Permissions(pin_messages=True))
+    mensagem.flags = SimpleNamespace(is_components_v2=True)
+    dados = {"player_controller": {"channel": str(CANAL), "fav_links": {}}}
+
+    await send_idle_embed(mensagem, "ultima", bot=bot_falso(), guild_data=dados)
+
+    enviado = mensagem.edit.await_args.kwargs
+    assert enviado["embeds"] == [] and enviado["content"] is None and "embed" not in enviado
+    assert isinstance(enviado["components"][0], disnake.ui.Container)
+
+
+@pytest.mark.regression
+async def test_the_pin_notice_is_deleted_right_after_pinning():
+    from empiremuse.utils.others import pin_quietly
+
+    mensagem = alvo(disnake.Permissions.all())
+    aviso = SimpleNamespace(
+        type=disnake.MessageType.pins_add,
+        author=SimpleNamespace(id=mensagem.guild.me.id),
+        reference=SimpleNamespace(message_id=mensagem.id),
+        delete=AsyncMock(),
+    )
+    outro = SimpleNamespace(type=disnake.MessageType.default, author=aviso.author, reference=None, delete=AsyncMock())
+
+    async def historico(**_):
+        for item in (outro, aviso):
+            yield item
+
+    mensagem.channel.history = historico
+
+    await pin_quietly(mensagem, reason="x")
+
+    mensagem.pin.assert_awaited_once()
+    aviso.delete.assert_awaited_once()
+    outro.delete.assert_not_awaited()

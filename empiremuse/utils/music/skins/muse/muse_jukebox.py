@@ -52,6 +52,9 @@ class Thumb(NamedTuple):
     alt: str
 
 
+_LABEL_SAFE = str.maketrans({"[": "(", "]": ")", "\\": "/"})
+
+
 def fallback_thumb(player: Any) -> Thumb:
     """Sem passo de disco (``load`` solto): o "sem capa" fixo por URL, com o texto alternativo simples."""
     return Thumb(asset_url(NO_COVER_ASSET), player.tr("jbx.disc_alt_plain"))
@@ -88,11 +91,17 @@ def header(player: Any, ctx: tx.Context, tr: tx.Tr) -> str:
     return "-# " + " · ".join(p for p in parts if p)
 
 
+def link_label(text: str) -> str:
+    """Rótulo de link mascarado: o Discord NÃO desfaz ``\\(`` dentro de ``[..](..)`` (a barra aparecia), então aqui nada de escape;
+    ``[``, ``]`` e a barra, que quebrariam o link, viram parecidos inofensivos."""
+    return text.translate(_LABEL_SAFE)
+
+
 def _title_text(track: Any, tr: tx.Tr) -> str:
     """O título da faixa em ``##`` com o link; transmissão sem título (vazio ou igual à URL) = ``jbx.stream.untitled``."""
     url = tx.track_url(track)
-    title = external_text(track.single_title, TITLE_MAX)
-    raw_url = external_text(str(track.uri or track.search_uri or ""), TITLE_MAX)
+    title = link_label(external_text(track.single_title, TITLE_MAX, markdown=False))
+    raw_url = external_text(str(track.uri or track.search_uri or ""), TITLE_MAX, markdown=False)
     if track.is_stream and (not title or title == raw_url):
         title = tr("jbx.stream.untitled")
     title = title or "—"
@@ -269,24 +278,30 @@ def build(player: Any, now: float, thumb: Optional[Thumb] = None) -> dict:
     return {"content": None, "embeds": [], "components": [tree]}
 
 
-def idle(player: Any, kwargs: dict) -> dict:
-    """O ocioso (spec §4): sem Section nem os 5 botões; título, texto e quando desliga, o select de pedir música e o das
-    playlists e rádios (os componentes que o ``process_idle_message`` já montou, sem mudar nenhum valor)."""
+def idle_payload(tr: tx.Tr, components: Any, *, off: Optional[int] = None, lead: str = "") -> dict:
+    """O ocioso (spec §4) como payload V2: título, texto e (só com timer de desligar, ``off`` em epoch) quando desliga; os selects
+    de pedir música e de playlists e rádios (``components``) sem mudar valor. ``lead`` = linha antes do título (post de fórum)."""
     from empiremuse.utils.music.v2 import components_to_rows
 
-    tr = player.tr
     lines = [f"## {tr('jbx.idle.title')}", tr("jbx.idle.body")]
-    if not player.keep_connected:
-        off = int(time.time()) + int(player.bot.config["IDLE_TIMEOUT"])
+    if off is not None:
         lines.append("-# " + tr("jbx.idle.off", t=f"<t:{off // tx.TIME_QUANTUM_S * tx.TIME_QUANTUM_S}:R>"))
+    if lead:
+        lines.insert(0, lead)
     tree = disnake.ui.Container(
         _text("\n".join(lines)),
         disnake.ui.Separator(divider=True, spacing=disnake.SeparatorSpacing.small),
-        *components_to_rows(kwargs.get("components")),
+        *components_to_rows(components),
         accent_colour=GRAY,
     )
+    return {"content": None, "embeds": [], "components": [tree], "attachments": []}
+
+
+def idle(player: Any, kwargs: dict) -> dict:
+    """O ocioso do player: ``idle_payload`` com o timer de desligar (só sem ``keep_connected``)."""
+    off = None if player.keep_connected else int(time.time()) + int(player.bot.config["IDLE_TIMEOUT"])
     out = {name: value for name, value in kwargs.items() if name not in ("embed", "content", "components")}
-    out.update(content=None, embeds=[], components=[tree], attachments=[])
+    out.update(idle_payload(player.tr, kwargs.get("components"), off=off))
     return out
 
 

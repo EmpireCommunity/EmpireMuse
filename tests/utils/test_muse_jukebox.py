@@ -360,3 +360,45 @@ def test_no_hint_line_in_the_text_skin_nor_in_the_jukebox(tr):
     player.current_hint = "Dê uma nova cara para o player com /custom_skin"
     assert muse_text.build(player, NOW)["embeds"][0].footer.text is None
     assert "custom_skin" not in dump(build(player))
+
+
+# ---------------------------------------------------------------------- correções da verificação ao vivo
+@pytest.mark.regression
+def test_the_title_link_label_shows_no_backslash_before_parentheses(tr):
+    player = _player(tr, static=True)
+    player.current.single_title = "Blinding Lights (Official Audio) [HD]"
+    shown = shown_text(build(player))
+    heading = next(line for line in shown.splitlines() if line.startswith("## "))
+    assert heading == "## [Blinding Lights (Official Audio) (HD)](https://www.youtube.com/watch?v=abc)"
+
+
+@pytest.mark.regression
+def test_the_bot_as_requester_is_a_recommendation_in_the_header_and_never_a_row_name(tr):
+    player = _player(tr, static=True)
+    bot_member = SimpleNamespace(display_name="EmpireMuse", bot=True)
+    player.guild.get_member = lambda _id: bot_member
+    player.current.autoplay = False  # o Last.fm e o autoplay antigo põem o id do bot como pedinte, sem a marca
+    player.queue = []
+    player.autoplay = True
+    player.queue_autoplay = [_track(f"Rec {n}") for n in range(3)]
+    shown = shown_text(build(player))
+    assert tr("jbx.recommended") in shown and "EmpireMuse" not in shown and "<@42>" not in shown
+    assert "<@" in shown_text(build(_player(tr, static=True)))  # quem é gente continua aparecendo
+
+
+@pytest.mark.regression
+def test_the_empty_queue_line_points_to_a_real_control_not_to_a_select(tr):
+    player = _player(tr, static=True)
+    player.queue = []
+    player.queue_autoplay = []
+    text = shown_text(build(player))
+    assert "select" not in text.lower() and "/play" in text
+
+
+@pytest.mark.regression
+def test_the_idle_of_a_channel_without_a_player_is_v2_without_the_shutdown_line(tr):
+    select = disnake.ui.Select(custom_id="x", options=[disnake.SelectOption(label="a", value="a")])
+    data = muse_jukebox.idle_payload(tr, [select], lead="abra um post")
+    text = shown_text(data)
+    assert data["embeds"] == [] and data["content"] is None and "<t:" not in text
+    assert tr("jbx.idle.title") in text and tr("jbx.idle.body") in text and "abra um post" in text

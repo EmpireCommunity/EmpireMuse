@@ -1406,7 +1406,7 @@
   "jbx.recommended_list": "Recomendadas",
   "jbx.and_more": "e mais {n}",
   "jbx.then_station": "Depois: estação {nome}",
-  "jbx.queue.empty": "A fila está vazia. Peça uma música no select abaixo.",
+  "jbx.queue.empty": "A fila está vazia. Use Mais opções › Adicionar música ou /play.",
   "jbx.idle.title": "Nada tocando",
   "jbx.idle.hint": "Peça uma música para começar",
   "jbx.hidden_track": "Faixa oculta (call privada)",

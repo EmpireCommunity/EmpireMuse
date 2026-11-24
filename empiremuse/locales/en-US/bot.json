@@ -1391,7 +1391,7 @@
   "jbx.recommended_list": "Recommended",
   "jbx.and_more": "and {n} more",
   "jbx.then_station": "Then: station {nome}",
-  "jbx.queue.empty": "The queue is empty. Request a song in the menu below.",
+  "jbx.queue.empty": "The queue is empty. Use More options › Add song or /play.",
   "jbx.idle.title": "Nothing playing",
   "jbx.idle.hint": "Request a song to start",
   "jbx.hidden_track": "Hidden track (private call)",
