@@ -24,7 +24,7 @@ from empiremuse.rules.limits import (
 )
 from empiremuse.rules.rpc import TOKEN_LENGTH, generate_rpc_token
 from empiremuse.rules.servers import SettingError
-from empiremuse.rules.skins import global_skin_changes, jukebox_skin, saved_player_skins
+from empiremuse.rules.skins import global_skin_changes, is_chosen, jukebox_skin, saved_player_skins, with_choice_marks
 from empiremuse.rules.settings import add_dj_role as add_role, allowed_names
 from empiremuse.utils import branding
 from empiremuse.utils.branding import asset_url
@@ -101,6 +101,11 @@ if TYPE_CHECKING:
     from empiremuse.utils.client import BotCore
 
 
+def opened_skin(options, fallback: str) -> str:
+    """A skin que o seletor abre marcada: a opção padrão; sem ela (skin em IGNORE_SKINS ou não carregada), ``fallback``."""
+    return next((option.value for option in options or () if option.default), fallback)
+
+
 class SkinSelector(disnake.ui.View):
     def __init__(
         self,
@@ -128,14 +133,8 @@ class SkinSelector(disnake.ui.View):
             self.skin_selected = [s.value for s in select_opts if s.default][0]
             self.static_skin_selected = [s.value for s in static_select_opts if s.default][0]
         else:
-            try:
-                self.skin_selected = [s.value for s in global_select_opts if s.default][0]
-            except IndexError:
-                self.skin_selected = self.ctx.bot.pool.default_skin
-            try:
-                self.static_skin_selected = [s.value for s in global_static_select_opts if s.default][0]
-            except IndexError:
-                self.static_skin_selected = self.ctx.bot.pool.default_static_skin
+            self.skin_selected = opened_skin(global_select_opts, self.ctx.bot.pool.default_skin)
+            self.static_skin_selected = opened_skin(global_static_select_opts, self.ctx.bot.pool.default_static_skin)
 
         self.rebuild_selects()
 
@@ -1223,17 +1222,17 @@ class MusicSettings(commands.Cog):
 
         global_mode = global_data["global_skin"]
 
-        selected = jukebox_skin(guild_data["player_controller"]["skin"], bot.pool.default_skin)
-        static_selected = jukebox_skin(guild_data["player_controller"]["static_skin"], bot.pool.default_static_skin)
+        controller = guild_data["player_controller"]
+        selected = jukebox_skin(controller["skin"], bot.pool.default_skin, is_chosen(controller, "skin"))
+        static_selected = jukebox_skin(
+            controller["static_skin"], bot.pool.default_static_skin, is_chosen(controller, "static_skin")
+        )
 
         # mesma precedência da criação do player: a escolha global, senão a do servidor, senão o padrão do pool
-        global_choice, global_static_choice = saved_player_skins(
-            guild_data["player_controller"]["skin"],
-            guild_data["player_controller"]["static_skin"],
-            {**global_data, "global_skin": True},
-        )
-        global_selected = jukebox_skin(global_choice, bot.pool.default_skin)
-        global_static_selected = jukebox_skin(global_static_choice, bot.pool.default_static_skin)
+        global_choice, global_static_choice = saved_player_skins(controller, {**global_data, "global_skin": True})
+        # ``saved_player_skins`` já aplicou o Q1 em cada nível: o que sobra é escolha
+        global_selected = jukebox_skin(global_choice, bot.pool.default_skin, True)
+        global_static_selected = jukebox_skin(global_static_choice, bot.pool.default_static_skin, True)
 
         skins_opts = [
             disnake.SelectOption(
@@ -1289,6 +1288,12 @@ class MusicSettings(commands.Cog):
         select_view = SkinSelector(
             inter, embed, skins_opts, static_skins_opts, global_skins_opts, global_static_skins_opts, global_mode
         )
+        # o que a tela abre marcado no modo global (o mesmo ``opened_skin`` do seletor): com a skin em IGNORE_SKINS ela não está
+        # nas opções e o seletor abre no padrão, então salvar sem trocar não grava escolha global
+        global_shown = (
+            opened_skin(global_skins_opts, bot.pool.default_skin),
+            opened_skin(global_static_skins_opts, bot.pool.default_static_skin),
+        )
 
         try:
             func = inter.store_message.edit
@@ -1334,14 +1339,13 @@ class MusicSettings(commands.Cog):
         if select_view.global_mode:
             # só o que o usuário trocou: sem troca, a ausência de escolha global fica (o player segue a do servidor)
             global_data.update(
-                global_skin_changes(
-                    (global_selected, global_static_selected),
-                    (select_view.skin_selected, select_view.static_skin_selected),
+                with_choice_marks(
+                    global_skin_changes(global_shown, (select_view.skin_selected, select_view.static_skin_selected))
                 )
             )
             await bot.update_global_data(inter.guild_id, global_data, db_name=DBModel.guilds)
 
-            if global_selected != select_view.skin_selected:
+            if global_shown[0] != select_view.skin_selected:
                 try:
                     changed_skins_txt += (
                         f"Global - Modo Normal: {skin_link(self.bot.player_skins, select_view.skin_selected)}\n"
@@ -1349,7 +1353,7 @@ class MusicSettings(commands.Cog):
                 except Exception:
                     changed_skins_txt += f"Global - Modo Normal: `{select_view.skin_selected.replace(CUSTOM_SKIN_PREFIX, '[custom skin]: ')}`\n"
 
-            if global_static_selected != select_view.static_skin_selected:
+            if global_shown[1] != select_view.static_skin_selected:
                 try:
                     changed_skins_txt += f"Global - Jukebox: {skin_link(self.bot.player_static_skins, select_view.static_skin_selected)}\n"
                 except Exception:
@@ -1363,7 +1367,7 @@ class MusicSettings(commands.Cog):
             if static_selected != select_view.static_skin_selected:
                 skin_changes["static_skin"] = select_view.static_skin_selected
             if skin_changes:
-                await bot.pool.servers.patch(inter.guild_id, "settings", skin_changes)
+                await bot.pool.servers.patch(inter.guild_id, "settings", with_choice_marks(skin_changes))
 
             if selected != select_view.skin_selected:
                 try:

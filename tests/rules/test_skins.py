@@ -19,9 +19,11 @@ from empiremuse.rules.skins import (
     Surface,
     disc_motion_on,
     global_skin_changes,
+    is_chosen,
     jukebox_choice,
     jukebox_skin,
     saved_player_skins,
+    with_choice_marks,
     legacy_radio_skin,
     radio_look,
 )
@@ -248,14 +250,14 @@ def test_the_new_player_skin_applies_q1_at_each_level_before_falling_back(
     monkeypatch.setattr(skins, "SAVED_DEFAULT_IS_A_CHOICE", q1)
     global_data = {"global_skin": global_mode, "player_skin": global_skin, "player_skin_static": global_skin}
 
-    assert saved_player_skins("mini", "classic", global_data) == expected
+    assert saved_player_skins({"skin": "mini", "static_skin": "classic"}, global_data) == expected
 
 
 @pytest.mark.parametrize(("q1", "expected"), [(False, (None, None)), (True, ("default", "default"))])
 def test_a_never_chosen_server_skin_falls_to_the_registry_default(monkeypatch, q1, expected):
     monkeypatch.setattr(skins, "SAVED_DEFAULT_IS_A_CHOICE", q1)
 
-    assert saved_player_skins("default", "default", {"global_skin": False}) == expected
+    assert saved_player_skins({"skin": "default", "static_skin": "default"}, {"global_skin": False}) == expected
 
 
 @pytest.mark.asyncio
@@ -264,7 +266,7 @@ def test_a_never_chosen_server_skin_falls_to_the_registry_default(monkeypatch, q
     ("global_mode", "global_skin", "applied"),
     [
         (True, None, ("mini", "classic")),  # sem escolha global, o painel aplica a do servidor (como a criação)
-        (True, "default", ("mini", "classic")),  # Q1 = não: o "default" global também cai na do servidor
+        (True, "default", ("default", "default")),  # o "default" escolhido agora no painel é escolha e fica
         (True, "slim", ("slim", "slim")),
         (False, "slim", ("mini", "classic")),
     ],
@@ -297,3 +299,70 @@ async def test_the_panel_applies_skins_with_the_same_precedence_as_a_new_player(
 )
 def test_the_global_skin_command_writes_only_what_was_changed(shown, picked, written):
     assert global_skin_changes(shown, picked) == written
+
+
+# ---------------------------------------------------------------------- escolha explícita do "default" (Q1) e o painel
+
+
+def _panel_pool(loaded=None):
+    def check(skin):
+        return skin if loaded is None or skin in loaded else DEFAULT_JUKEBOX_SKIN
+
+    return SimpleNamespace(
+        default_skin=DEFAULT_JUKEBOX_SKIN,
+        default_static_skin=DEFAULT_JUKEBOX_SKIN,
+        check_skin=check,
+        check_static_skin=check,
+    )
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(("saved_by", "expected"), [("old_skin_command", None), ("skin_23", "default")])
+def test_the_classic_default_picked_now_is_kept_but_the_legacy_one_is_not(saved_by, expected):
+    doc = {"skin": "default", "static_skin": None}
+    if saved_by == "skin_23":
+        doc |= with_choice_marks({"skin": "default"})
+
+    assert saved_player_skins(doc, {"global_skin": False})[0] == expected
+    assert jukebox_skin(doc["skin"], DEFAULT_JUKEBOX_SKIN, is_chosen(doc, "skin")) == (expected or DEFAULT_JUKEBOX_SKIN)
+
+
+@pytest.mark.regression
+def test_the_panel_reopens_on_the_classic_default_it_saved():
+    from empiremuse.panel.services.appearance import SkinsServerForm
+
+    form, ctx = SkinsServerForm.__new__(SkinsServerForm), SimpleNamespace(pool=_panel_pool())
+    doc = {"skin": "default", "static_skin": "default"}  # gravado pelo /skin antigo
+
+    def shown():
+        return form.display(ctx, {**form.extract(doc), **form.aux(ctx, doc)})
+
+    assert shown() == {"skin": DEFAULT_JUKEBOX_SKIN, "static_skin": DEFAULT_JUKEBOX_SKIN}
+    form.apply(doc, {"skin": "default", "static_skin": "default"})
+    assert shown() == {"skin": "default", "static_skin": "default"}
+
+
+@pytest.mark.regression
+def test_the_panel_shows_the_skin_the_player_gets_when_the_saved_one_is_not_loaded():
+    from empiremuse.panel.services.appearance import SkinsServerForm
+
+    ctx = SimpleNamespace(pool=_panel_pool(loaded={"mini"}))
+    shown = SkinsServerForm.display(
+        SkinsServerForm.__new__(SkinsServerForm), ctx, {"skin": "sumiu", "static_skin": "mini"}
+    )
+
+    assert shown == {"skin": DEFAULT_JUKEBOX_SKIN, "static_skin": "mini"}
+
+
+@pytest.mark.regression
+def test_the_global_selector_saved_unchanged_writes_nothing_when_the_server_skin_is_ignored():
+    import disnake
+
+    from empiremuse.cogs.music_settings import opened_skin
+
+    options = [disnake.SelectOption(label="a", value="mini"), disnake.SelectOption(label="b", value="classic")]
+    shown = opened_skin(options, DEFAULT_JUKEBOX_SKIN)  # a skin do servidor está em IGNORE_SKINS: nenhuma opção marcada
+
+    assert shown == DEFAULT_JUKEBOX_SKIN and global_skin_changes((shown, shown), (shown, shown)) == {}
+    options[1].default = True
+    assert opened_skin(options, DEFAULT_JUKEBOX_SKIN) == "classic"

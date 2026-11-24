@@ -13,7 +13,14 @@ from empiremuse.panel.services.base import DBModel, Args, FormContext, ParseResu
 from empiremuse.panel.services.player import active_player, guild_players
 from empiremuse.rules import limits
 from empiremuse.rules.settings import allowed_names
-from empiremuse.rules.skins import jukebox_choice, jukebox_skin, saved_player_skins
+from empiremuse.rules.skins import (
+    chosen_key,
+    is_chosen,
+    jukebox_choice,
+    jukebox_skin,
+    saved_player_skins,
+    with_choice_marks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +65,16 @@ async def reload_skin(player: Any, skin: str, static_skin: str, text: str) -> No
         logger.warning("Falha ao recarregar a skin do player (%s)", type(exc).__name__)
 
 
+def _marks(doc: dict, fields: tuple[str, ...]) -> dict[str, bool]:
+    """As marcas de escolha do 2.3 ao lado dos campos de skin (``rules/skins.is_chosen``)."""
+    return {chosen_key(name): is_chosen(doc, name) for name in fields}
+
+
+def _loaded(check: Any, skin: str) -> str:
+    """A skin que o player usa de fato: uma que não está carregada cai no padrão (``check_skin`` do pool)."""
+    return check(skin) if callable(check) else skin
+
+
 class SkinsServerForm(SettingsForm):
     key = "skin_servidor"
     category = "aparencia"
@@ -68,13 +85,23 @@ class SkinsServerForm(SettingsForm):
     def extract(self, doc: dict) -> dict[str, Any]:
         return {"skin": doc["skin"], "static_skin": doc["static_skin"]}
 
+    def aux(self, ctx: FormContext, doc: dict) -> dict[str, Any]:
+        return _marks(doc, self.fields)  # só para exibir: a marca não entra nos valores nem na versão do formulário
+
     def apply(self, doc: dict, new: dict[str, Any]) -> None:
-        doc.update(new)
+        doc.update(with_choice_marks(new))
 
     def display(self, ctx: FormContext, current: dict[str, Any]) -> dict[str, Any]:
+        # o que o player usa: a escolha (com a marca do 2.3), senão o padrão; uma skin que não está carregada cai no padrão
         return {
-            "skin": jukebox_skin(current["skin"], ctx.pool.default_skin),
-            "static_skin": jukebox_skin(current["static_skin"], ctx.pool.default_static_skin),
+            "skin": _loaded(
+                getattr(ctx.pool, "check_skin", None),
+                jukebox_skin(current["skin"], ctx.pool.default_skin, is_chosen(current, "skin")),
+            ),
+            "static_skin": _loaded(
+                getattr(ctx.pool, "check_static_skin", None),
+                jukebox_skin(current["static_skin"], ctx.pool.default_static_skin, is_chosen(current, "static_skin")),
+            ),
         }
 
     def extras(self, ctx: FormContext, current: dict[str, Any]) -> dict[str, Any]:
@@ -109,14 +136,19 @@ class SkinsGlobalForm(SettingsForm):
             "player_skin_static": doc["player_skin_static"],
         }
 
+    def aux(self, ctx: FormContext, doc: dict) -> dict[str, Any]:
+        return _marks(doc, ("player_skin", "player_skin_static"))
+
     def apply(self, doc: dict, new: dict[str, Any]) -> None:
-        doc.update(new)
+        doc.update(with_choice_marks(new))
 
     def display(self, ctx: FormContext, current: dict[str, Any]) -> dict[str, Any]:
         return {
             "global_skin": current["global_skin"],
-            "player_skin": jukebox_choice(current["player_skin"]) or "",
-            "player_skin_static": jukebox_choice(current["player_skin_static"]) or "",
+            "player_skin": jukebox_choice(current["player_skin"], is_chosen(current, "player_skin")) or "",
+            "player_skin_static": (
+                jukebox_choice(current["player_skin_static"], is_chosen(current, "player_skin_static")) or ""
+            ),
         }
 
     def extras(self, ctx: FormContext, current: dict[str, Any]) -> dict[str, Any]:
@@ -160,8 +192,11 @@ class SkinsGlobalForm(SettingsForm):
         """Skins que os players devem usar, com a mesma precedência da criação do player (``saved_player_skins``): no modo
         global, a escolha global; sem ela, a do servidor; por fim o padrão do pool."""
         own = await ctx.pool.servers.settings(ctx.guild_id)
-        skin, static_skin = saved_player_skins(own["skin"], own["static_skin"], new)
+        skin, static_skin = saved_player_skins(own, with_choice_marks(new))
         return (
-            jukebox_skin(skin, ctx.pool.default_skin),
-            jukebox_skin(static_skin, ctx.pool.default_static_skin),
+            _loaded(getattr(ctx.pool, "check_skin", None), jukebox_skin(skin, ctx.pool.default_skin, True)),
+            _loaded(
+                getattr(ctx.pool, "check_static_skin", None),
+                jukebox_skin(static_skin, ctx.pool.default_static_skin, True),
+            ),
         )
