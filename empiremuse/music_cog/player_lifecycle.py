@@ -9,6 +9,7 @@ from disnake.ext import commands
 
 import empiremuse.wavelink as wavelink
 from empiremuse.logs.context import guild_extra
+from empiremuse.utils.music import skin_trace
 from empiremuse.rules.skins import saved_player_skins
 from empiremuse.rules.voice_status import resolve_voice_status
 from empiremuse.utils.client import BotCore
@@ -314,6 +315,20 @@ class PlayerLifecycleMixin:
             prefix=global_data["prefix"] or bot.default_prefix,
             stage_title_template=voice_status.template,
         )
+        try:
+            skin_trace.trace(
+                "create",
+                guild=guild_id,
+                static=player.static,
+                server=(static_player.get("skin"), static_player.get("static_skin")),
+                global_mode=global_data.get("global_skin"),
+                global_saved=(global_data.get("player_skin"), global_data.get("player_skin_static")),
+                read=(skin, static_skin),
+                pool_default=(bot.pool.default_skin, bot.pool.default_static_skin),
+                final=(player.skin, player.skin_static),
+            )
+        except Exception:  # noqa: BLE001 - o trace nunca atrapalha o player
+            pass
         player.tr = await bot.pool.i18n.for_guild(guild)
         player.setup_hints()
         player.process_hint()

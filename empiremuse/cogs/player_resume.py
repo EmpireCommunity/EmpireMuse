@@ -19,6 +19,7 @@ from empiremuse.rules.voice_status import resolve_voice_status
 from empiremuse.serialization.schema import SchemaError
 from empiremuse.utils.client import BotCore
 from empiremuse.utils.db import DBModel
+from empiremuse.utils.music import skin_trace
 from empiremuse.utils.jukebox_panel import fetch_panel_message
 from empiremuse.utils.music.live_mark import is_live, without_live
 from empiremuse.utils.music.checks import can_connect, can_send_message
@@ -663,6 +664,18 @@ class PlayerSession(commands.Cog):
                         prefix=data["prefix_info"],
                         session_resuming=True,
                     )
+                    try:
+                        skin_trace.trace(
+                            "resume",
+                            guild=guild.id,
+                            static=player.static,
+                            session=(data["skin"], data["skin_static"]),
+                            server_now=(current_skin, current_static),
+                            pool_default=(self.bot.pool.default_skin, self.bot.pool.default_static_skin),
+                            final=(player.skin, player.skin_static),
+                        )
+                    except Exception:  # noqa: BLE001 - o trace nunca atrapalha o player
+                        pass
                     player.tr = await self.bot.pool.i18n.for_guild(guild)
                     player.setup_hints()
                     player.process_hint()

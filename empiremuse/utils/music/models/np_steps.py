@@ -29,7 +29,7 @@ from empiremuse.utils.music.models.helpers import (
     logger,
 )
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
-from empiremuse.utils.music import card_facts, v2
+from empiremuse.utils.music import card_facts, skin_trace, v2
 from empiremuse.utils.music.models import np_v2
 from empiremuse.utils import jukebox_panel
 from empiremuse.rules.skins import JUKEBOX_IDS
@@ -356,6 +356,11 @@ async def _np_v2(self, req, skin):
 async def _np_data(self, req):
     """Carrega os dados da skin e confere se a mensagem mudou (pela chave estável ``payload_key``)."""
     interaction = req.interaction
+
+    try:
+        skin_trace.trace_render(self, "np", _skin_object(self))
+    except Exception:  # noqa: BLE001 - o trace nunca atrapalha o player
+        pass
 
     if getattr(_skin_object(self), "v2", False):
         return await _np_v2(self, req, _skin_object(self))
