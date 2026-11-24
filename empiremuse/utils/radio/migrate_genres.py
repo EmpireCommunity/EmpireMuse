@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from empiremuse.rules.radio import KIND_CUSTOM
-from empiremuse.rules.radio_station import genre_ref, valid_station_id
+from empiremuse.rules.radio_station import genre_ref, valid_custom_station_id, valid_station_id
 from empiremuse.utils.radio.custom_favorites import CUSTOM_FAVORITES_DB, MAX_CUSTOM_FAVORITES
 from empiremuse.utils.radio.premium import GLOBAL_DB
 from empiremuse.utils.radio.stations import STATIONS_DB, StationStore
@@ -49,7 +49,7 @@ def _identity(doc: Any) -> tuple[int, str] | None:
     if not isinstance(doc, dict) or doc.get("kind") != "genre":
         return None
     sid, gid = doc.get("_id"), guild_id(doc.get("guild_id"))
-    if not isinstance(sid, str) or re.fullmatch(r"[0-9a-f]{24}", sid) is None or gid is None:
+    if not valid_custom_station_id(sid) or gid is None:
         return None
     return gid, sid
 

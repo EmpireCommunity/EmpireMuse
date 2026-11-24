@@ -124,7 +124,7 @@ class PlayerLifecycleMixin:
         except AttributeError:
             vc = None
 
-        # Q1 (2.3) em cada nível antes do recuo: ``None`` = nunca escolhido = o padrão do registro (Expandida escura, D2).
+        # Q1 (2.3) em cada nível antes do recuo: ``None`` = nunca escolhido = o padrão do registro (a Jukebox Texto).
         skin, static_skin = saved_player_skins(skin, static_skin, global_data)
 
         try:

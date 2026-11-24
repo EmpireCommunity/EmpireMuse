@@ -307,9 +307,13 @@ async def test_a_station_replaced_meanwhile_gives_no_track(world):
 async def test_the_station_comes_before_the_autoplay_in_the_next_track_hook(outcome, monkeypatch):
     """Alicerce m1 (T-J2B-FIX): SUPERSEDED (R abrindo ou outra estação no meio) não cai no autoplay nem no ocioso."""
     partial = NS(name="da estação")
-    jukebox = NS(
-        next_station_track=AsyncMock(return_value=(outcome, partial if outcome is StationNext.TRACK else None))
-    )
+
+    async def next_station_track(player, active):
+        if outcome is StationNext.ENDED:
+            player.station = None  # S → M: a estação já saiu quando o gancho devolve ENDED
+        return outcome, partial if outcome is StationNext.TRACK else None
+
+    jukebox = NS(next_station_track=AsyncMock(side_effect=next_station_track))
     idle = AsyncMock()
     monkeypatch.setattr(playback_steps, "go_idle", idle)
     active = object()
