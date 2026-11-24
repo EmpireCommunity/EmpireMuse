@@ -46,6 +46,8 @@ def montar(*, publica: bool, desenhado: bool | None):
         privacy_rerender_task=None,
         invoke_np=AsyncMock(),
     )
+    # o invoke_np real confirma o que desenhou
+    jogador.invoke_np.side_effect = lambda: setattr(jogador, "details_hidden_rendered", player_hides_details(jogador))
     cog = _Ciclo()
     cog.bot = SimpleNamespace(music=SimpleNamespace(players={42: jogador}))
     return cog, jogador, voz
@@ -168,3 +170,41 @@ async def test_invoke_np_registra_o_que_desenhou(monkeypatch):
     monkeypatch.setattr(player_message, "_np_data", AsyncMock(return_value=True))
     await player_message.PlayerMessageMixin.invoke_np(jogador)
     assert jogador.details_hidden_rendered is True
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_virada_durante_o_redesenho_nao_se_perde(espera):
+    """Um gatilho que chega com o redesenho em andamento é descartado pelo guarda; o laço confere de novo no fim."""
+    cog, jogador, voz = montar(publica=True, desenhado=False)
+    voz.permissions_for.return_value = PRIVADA
+    chamadas = []
+
+    async def invoke():
+        chamadas.append(player_hides_details(jogador))
+        if len(chamadas) == 1:
+            voz.permissions_for.return_value = PUBLICA  # a call volta a ser pública durante a edição
+            jogador.details_hidden_rendered = True  # a edição saiu escondendo
+        else:
+            jogador.details_hidden_rendered = False
+
+    jogador.invoke_np = invoke
+    await cog.privacy_channel_update(*mudou(voz))
+    await rodar(jogador, espera)
+    assert chamadas == [True, False]
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_desenho_que_falhou_nao_confirma_o_registro(monkeypatch):
+    from empiremuse.utils.music.models import player_message
+
+    _, jogador, _ = montar(publica=False, desenhado=False)
+    jogador.static = False
+    jogador.retry_setup_hints = False
+    jogador.controller_mode = False
+    monkeypatch.setattr(player_message, "_np_guards", AsyncMock(return_value=False))
+    monkeypatch.setattr(player_message, "_np_data", AsyncMock(return_value=False))
+    monkeypatch.setattr(player_message, "_np_plain", AsyncMock())  # não marca ``published``: a mensagem não saiu
+    await player_message.PlayerMessageMixin.invoke_np(jogador)
+    assert jogador.details_hidden_rendered is False

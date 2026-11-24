@@ -8,10 +8,12 @@ class NpState:
         "data",
         "force",
         "interaction",
+        "published",
         "rpc_update",
     )
 
     def __init__(self, *, force, interaction, rpc_update):
+        self.published = False  # a edição ou o envio da mensagem terminou sem falha (D10: o que foi desenhado vale)
         self.force = force
         self.interaction = interaction
         self.rpc_update = rpc_update

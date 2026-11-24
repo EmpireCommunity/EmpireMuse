@@ -28,6 +28,9 @@ logger = logging.getLogger("empiremuse.player")
 PRIVACY_RERENDER_DEBOUNCE_S = 1.5  # várias mudanças de permissão seguidas viram um redesenho só
 
 
+PRIVACY_RERENDER_ATTEMPTS = 3  # uma virada que ainda não saiu na mensagem tenta de novo, com espera, até aqui
+
+
 async def _privacy_wait() -> None:
     """A espera do redesenho: os testes a trocam por um evento, sem relógio."""
     await asyncio.sleep(PRIVACY_RERENDER_DEBOUNCE_S)
@@ -53,11 +56,14 @@ class PlayerLifecycleMixin:
         return rendered is not None and rendered != player_hides_details(player)
 
     async def _privacy_rerender(self, player: LavalinkPlayer) -> None:
+        """Espera o debounce e redesenha; depois do desenho confere de novo (a call pode ter mudado de novo ou o desenho
+        pode não ter saído) e repete, sempre depois de nova espera e no máximo ``PRIVACY_RERENDER_ATTEMPTS`` vezes."""
         try:
-            await _privacy_wait()
-            if player.is_closing or not self._privacy_flipped(player):
-                return
-            await player.invoke_np()
+            for _ in range(PRIVACY_RERENDER_ATTEMPTS):
+                await _privacy_wait()
+                if player.is_closing or not self._privacy_flipped(player):
+                    return
+                await player.invoke_np()
         except Exception:
             logger.exception(
                 "Falha ao redesenhar o player depois da mudança da call",

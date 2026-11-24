@@ -34,6 +34,12 @@ from empiremuse.utils.music.models.np_steps import (
 from empiremuse.utils.music.models.step_state import NpState
 
 
+def _confirm_rendered(player, req, hidden: bool) -> None:
+    """D10: a regra de privacidade só vale como desenhada depois que a edição ou o envio da mensagem saiu sem falha."""
+    if req.published:
+        player.details_hidden_rendered = hidden
+
+
 class PlayerMessageMixin:
     async def invoke_np(self, force=False, interaction=None, rpc_update=False, panel_render=False):
         if self.static and not panel_render and await self._panel_takes_over(interaction):
@@ -53,10 +59,12 @@ class PlayerMessageMixin:
             self.setup_hints()
             self.retry_setup_hints = False
 
-        # antes do desenho: se a call mudar durante ele, o gatilho de privacidade vê a diferença e redesenha
-        self.details_hidden_rendered = player_hides_details(self)
+        # a regra vista ANTES do desenho: só vale como "desenhado" depois que a mensagem saiu (se a call mudar durante o
+        # desenho, o gatilho de privacidade vê a diferença; se o desenho falhar, o registro anterior fica e o redesenho tenta de novo)
+        hidden = player_hides_details(self)
 
         if await _np_data(self, req):
+            self.details_hidden_rendered = hidden  # nada a trocar na mensagem ou o cartão é redesenhado pelo pipeline
             return
 
         if (
@@ -82,6 +90,7 @@ class PlayerMessageMixin:
 
             if req.interaction:
                 if await _np_interaction_edit(self, req):
+                    _confirm_rendered(self, req, hidden)
                     return
 
             else:
@@ -89,6 +98,7 @@ class PlayerMessageMixin:
                     self.ignore_np_once or self.has_thread or self.static or not req.force or self.is_last_message()
                 ):
                     if await _np_message_edit(self, req):
+                        _confirm_rendered(self, req, hidden)
                         return
 
             await self.destroy_message()
@@ -97,6 +107,7 @@ class PlayerMessageMixin:
 
             self.start_message_updater_task()
 
+        _confirm_rendered(self, req, hidden)
         self.updating = False
 
     async def _panel_takes_over(self, interaction=None) -> bool:
