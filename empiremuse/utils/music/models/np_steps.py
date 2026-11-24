@@ -248,6 +248,7 @@ async def _np_render(self, req, skin, data, key):
         _card_failed(skin, error)
         rendered = None
     if rendered is not None and rendered.stale:
+        req.superseded = True  # nada foi publicado e nada vale como desenhado: o pedido mais novo registra o dele
         return True  # um pedido mais novo deste player vai editar a mensagem
     if rendered is None or rendered.key is None:
         req.data = _text_fallback(self, data, retry=rendered is not None and rendered.busy)
@@ -331,6 +332,7 @@ async def _np_data(self, req):
     try:
         data, skin = _load_skin(self)
     except OverflowError:
+        req.superseded = True
         await self.process_next()
         return True
 
@@ -409,6 +411,9 @@ async def _np_plain(self, req):
                     self.message = await self.text_channel.send(
                         allowed_mentions=self.allowed_mentions, **_send_kwargs(data)
                     )
+                    req.published = True
+                else:
+                    req.published = True
 
     else:
         try:
@@ -416,8 +421,8 @@ async def _np_plain(self, req):
         except Exception:
             pass
         self.message = await self.text_channel.send(allowed_mentions=self.allowed_mentions, **_send_kwargs(data))
+        req.published = True
 
-    req.published = True
     self.updating = False
 
 
@@ -644,6 +649,7 @@ async def _np_message_edit(self, req):
                 data["content"] = None
                 data["embed"] = None
             await self.message.edit(allowed_mentions=self.allowed_mentions, **data)
+            req.published = True
             await asyncio.sleep(0.5)
         except asyncio.CancelledError:
             self.updating = False
@@ -686,6 +692,7 @@ async def _np_message_edit(self, req):
 
                 _refresh_file(data)  # a edição que falhou já leu o anexo até o fim
                 await self.message.edit(allowed_mentions=self.allowed_mentions, **data)
+                req.published = True
                 await asyncio.sleep(0.5)
 
                 # elif ((
@@ -699,7 +706,6 @@ async def _np_message_edit(self, req):
             ):
                 return True
 
-        req.published = True
         self.start_message_updater_task()
         self.updating = False
         return True

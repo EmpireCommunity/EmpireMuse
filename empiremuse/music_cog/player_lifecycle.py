@@ -56,14 +56,21 @@ class PlayerLifecycleMixin:
         return rendered is not None and rendered != player_hides_details(player)
 
     async def _privacy_rerender(self, player: LavalinkPlayer) -> None:
-        """Espera o debounce e redesenha; depois do desenho confere de novo (a call pode ter mudado de novo ou o desenho
-        pode não ter saído) e repete, sempre depois de nova espera e no máximo ``PRIVACY_RERENDER_ATTEMPTS`` vezes."""
+        """Espera o debounce e redesenha; depois de cada desenho confere de novo (a call pode ter mudado outra vez, ou o
+        desenho não saiu) e repete, sempre depois de nova espera e no máximo ``PRIVACY_RERENDER_ATTEMPTS`` vezes.
+
+        Esgotadas as tentativas com a virada ainda por sair (inclusive uma que chegou durante a última, quando os gatilhos
+        são descartados porque esta tarefa ainda vive), ``player.update`` pede o redesenho ao atualizador da mensagem. A
+        conferência final não tem ``await`` antes de a tarefa terminar, então nenhum gatilho cai entre ela e o fim.
+        """
         try:
             for _ in range(PRIVACY_RERENDER_ATTEMPTS):
                 await _privacy_wait()
                 if player.is_closing or not self._privacy_flipped(player):
                     return
                 await player.invoke_np()
+            if not player.is_closing and self._privacy_flipped(player):
+                player.update = True
         except Exception:
             logger.exception(
                 "Falha ao redesenhar o player depois da mudança da call",
@@ -72,13 +79,16 @@ class PlayerLifecycleMixin:
 
     @commands.Cog.listener("on_guild_channel_update")
     async def privacy_channel_update(self, before: disnake.abc.GuildChannel, after: disnake.abc.GuildChannel) -> None:
-        """As permissões do canal de voz do player mudaram: a call pode ter ficado privada (ou pública)."""
-        if before.overwrites == after.overwrites:
-            return
+        """As permissões do canal de voz do player mudaram: a call pode ter ficado privada (ou pública).
+
+        Do mais barato ao mais caro: o evento chega por qualquer canal de qualquer servidor, então primeiro o player do
+        servidor, depois o id da call e só no fim a comparação dos ``overwrites``.
+        """
         player = self.bot.music.players.get(after.guild.id)
         voice = player_voice_channel(player) if player else None
-        if voice is not None and voice.id == after.id:
-            self._schedule_privacy_rerender(player)
+        if voice is None or voice.id != after.id or before.overwrites == after.overwrites:
+            return
+        self._schedule_privacy_rerender(player)
 
     @commands.Cog.listener("on_guild_role_update")
     async def privacy_role_update(self, before: disnake.Role, after: disnake.Role) -> None:

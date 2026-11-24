@@ -208,3 +208,48 @@ async def test_desenho_que_falhou_nao_confirma_o_registro(monkeypatch):
     monkeypatch.setattr(player_message, "_np_plain", AsyncMock())  # não marca ``published``: a mensagem não saiu
     await player_message.PlayerMessageMixin.invoke_np(jogador)
     assert jogador.details_hidden_rendered is False
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_virada_ainda_por_sair_depois_das_tentativas_pede_o_atualizador(espera):
+    """Os desenhos não saem (ou a call vira durante o último): sobra ``player.update`` para o atualizador da mensagem."""
+    cog, jogador, voz = montar(publica=True, desenhado=False)
+    jogador.update = False
+    voz.permissions_for.return_value = PRIVADA
+    jogador.invoke_np = AsyncMock()  # nenhum desenho confirma o registro
+    await cog.privacy_channel_update(*mudou(voz))
+    await rodar(jogador, espera)
+    assert jogador.invoke_np.await_count == player_lifecycle.PRIVACY_RERENDER_ATTEMPTS
+    assert jogador.update is True
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_player_fechado_durante_a_espera_nao_redesenha(espera):
+    cog, jogador, voz = montar(publica=True, desenhado=False)
+    voz.permissions_for.return_value = PRIVADA
+    await cog.privacy_channel_update(*mudou(voz))
+    jogador.is_closing = True
+    await rodar(jogador, espera)
+    jogador.invoke_np.assert_not_awaited()
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_canal_de_outro_servidor_ou_de_outra_call_nao_compara_overwrites():
+    """O evento chega por qualquer canal: sem player ou com outra call, nem os ``overwrites`` são montados."""
+    cog, jogador, voz = montar(publica=True, desenhado=False)
+
+    class Explosivo:
+        @property
+        def overwrites(self):
+            raise AssertionError("os overwrites foram lidos")
+
+    outro = Explosivo()
+    outro.guild, outro.id = SimpleNamespace(id=99), voz.id  # servidor sem player
+    await cog.privacy_channel_update(outro, outro)
+    mesmo_servidor = Explosivo()
+    mesmo_servidor.guild, mesmo_servidor.id = voz.guild, 123456  # outro canal do servidor
+    await cog.privacy_channel_update(mesmo_servidor, mesmo_servidor)
+    assert jogador.privacy_rerender_task is None

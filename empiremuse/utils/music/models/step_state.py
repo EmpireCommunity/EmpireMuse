@@ -10,9 +10,11 @@ class NpState:
         "interaction",
         "published",
         "rpc_update",
+        "superseded",
     )
 
     def __init__(self, *, force, interaction, rpc_update):
+        self.superseded = False  # o pedido saiu sem publicar por ser superado (cartão antigo) ou por trocar de faixa
         self.published = False  # a edição ou o envio da mensagem terminou sem falha (D10: o que foi desenhado vale)
         self.force = force
         self.interaction = interaction

@@ -35,15 +35,24 @@ from empiremuse.utils.music.models.step_state import NpState
 
 
 def _confirm_rendered(player, req, hidden: bool) -> None:
-    """D10: a regra de privacidade só vale como desenhada depois que a edição ou o envio da mensagem saiu sem falha."""
+    """D10: a regra de privacidade só vale como desenhada depois que a edição ou o envio da mensagem saiu sem falha.
+
+    Sem publicação, o ``last_data`` (gravado antes de publicar) é zerado: a próxima chamada refaz o desenho em vez de
+    concluir que "nada mudou" e confirmar o registro sem editar.
+    """
     if req.published:
         player.details_hidden_rendered = hidden
+    else:
+        player.last_data = {}
 
 
 class PlayerMessageMixin:
     async def invoke_np(self, force=False, interaction=None, rpc_update=False, panel_render=False):
-        if self.static and not panel_render and await self._panel_takes_over(interaction):
-            return
+        if self.static and not panel_render:
+            hidden = player_hides_details(self)
+            if await self._panel_takes_over(interaction):
+                self.details_hidden_rendered = hidden  # o painel em lista se refez (uma edição do painel por virada)
+                return
 
         req = NpState(force=force, interaction=interaction, rpc_update=rpc_update)
         if await _np_guards(self, req):
@@ -64,7 +73,8 @@ class PlayerMessageMixin:
         hidden = player_hides_details(self)
 
         if await _np_data(self, req):
-            self.details_hidden_rendered = hidden  # nada a trocar na mensagem ou o cartão é redesenhado pelo pipeline
+            if not req.superseded:
+                self.details_hidden_rendered = hidden  # nada a trocar: a mensagem já mostra este payload
             return
 
         if (
