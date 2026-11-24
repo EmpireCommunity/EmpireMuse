@@ -280,6 +280,48 @@ async def test_a_classic_default_saved_in_skins_survives_a_reopen_and_the_new_pl
     assert saved_player_skins(bot.settings, bot.global_data) == ("default", "default")  # a leitura da criação do player
 
 
+@pytest.mark.asyncio
+@pytest.mark.regression
+@pytest.mark.parametrize("global_mode", [False, True])
+@pytest.mark.parametrize("static", [False, True], ids=["player_normal", "player_fixo"])
+async def test_a_classic_default_saved_in_skins_reloads_a_live_player_to_default_not_the_text_skin(
+    monkeypatch, global_mode, static
+):
+    """O Salvar do ``/skins`` recarrega o player vivo pela mesma leitura da criação: a Clássica ``default`` escolhida (com a
+    marca gravada) fica, em vez de virar o padrão Texto. Sem a marca na leitura, o ``default`` gravado cairia no padrão."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    async def no_wait(_seconds):  # relógio falso: nenhuma espera real entre os players
+        return None
+
+    monkeypatch.setattr(music_settings.asyncio, "sleep", no_wait)
+    bot = Bot({"global_skin": global_mode})
+    bot.settings = {"skin": "mini", "static_skin": "mini"}
+    initial = skins_view.initial_draft(bot.pool, bot.settings, bot.global_data, CHOICES)
+    draft = _replace(initial, **{"glob" if global_mode else "server": ("default", "default")})
+    await skins_store.save_skins(bot, GUILD, plan_save(initial, draft, RADIOS, radio_allowed=False), updated_by="9")
+    player = SimpleNamespace(
+        static=static,
+        skin="muse_text",
+        skin_static="muse_text",
+        controller_mode=False,
+        destroy_message=AsyncMock(),
+        setup_features=MagicMock(),
+        setup_hints=MagicMock(),
+        process_hint=MagicMock(),
+        set_command_log=MagicMock(),
+        invoke_np=AsyncMock(),
+    )
+    bot.music.players[GUILD] = player
+    cog = SimpleNamespace(bot=bot)
+    skins = SimpleNamespace(normal={}, static={})
+
+    await MusicSettings._reload_player_skins(cog, bot, GUILD, bot.global_data, skins, "<@9>", TR)
+
+    assert (player.skin_static if static else player.skin) == "default"  # a Clássica escolhida, não o padrão Texto
+    player.invoke_np.assert_awaited_once()  # o player foi recarregado (a skin mudou), não só redesenhado
+
+
 # ============================================================================ o comando de ponta a ponta (tela de mentira)
 
 
