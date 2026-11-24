@@ -341,7 +341,7 @@ def _masked(item: Any, text: str, controls: Any) -> Any:
     options = getattr(item, "options", None)
     if not options:
         return item
-    clone = copy.copy(item)
+    clone = copy.deepcopy(item)  # o ``options`` do disnake escreve no estado interno, que uma cópia rasa compartilha
     clone.options = [
         disnake.SelectOption(
             label=option.label,

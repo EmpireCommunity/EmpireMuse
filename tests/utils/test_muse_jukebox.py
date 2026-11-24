@@ -736,6 +736,7 @@ def test_the_idle_never_changes_the_options_the_caller_passed(tr):
     option = disnake.SelectOption(label="v", value=PlayerControls.back, description="Faixa Secreta")
     select = disnake.ui.Select(custom_id="musicplayer_dropdown_idle", options=[option])
     data = muse_jukebox.idle(player, {"components": [select]})
+    assert select.options[0].description == "Faixa Secreta"  # o select ORIGINAL do chamador não mudou
     assert option.description == "Faixa Secreta" and "Faixa Secreta" not in dump(data)
 
 
@@ -749,21 +750,26 @@ def test_a_resumed_custom_skin_takes_only_the_current_format_definition_from_the
 
 
 @pytest.mark.regression
-@pytest.mark.parametrize("where", ["thread", "forum-post", "plain-channel"])
-def test_a_swap_to_v1_never_deletes_a_message_inside_a_thread_or_forum_post(where):
-    channel = (
-        MagicMock(spec=disnake.TextChannel)
-        if where == "plain-channel"
-        else MagicMock(
-            spec=disnake.Thread,
-            parent=MagicMock(spec=disnake.ForumChannel if where == "forum-post" else disnake.TextChannel),
-        )
-    )
+@pytest.mark.parametrize(
+    ("where", "replaced"),
+    [("parent-of-a-thread", False), ("forum-starter", False), ("inside-a-thread", True), ("plain-channel", True)],
+)
+def test_a_swap_to_v1_never_deletes_the_parent_of_a_thread_or_a_forum_starter_message(where, replaced):
     message = fake_message(is_v2=True, edits=[])
-    message.channel = channel
+    message.id = 77
+    message.thread = None
+    if where == "plain-channel":
+        message.channel = MagicMock(spec=disnake.TextChannel)
+    elif where == "parent-of-a-thread":
+        message.channel = MagicMock(spec=disnake.TextChannel)
+        message.thread = MagicMock(spec=disnake.Thread)
+    else:
+        thread = MagicMock(spec=disnake.Thread, parent=MagicMock(spec=disnake.ForumChannel))
+        thread.id = 77 if where == "forum-starter" else 5
+        message.channel = thread
     player = SimpleNamespace(message=message, has_thread=None)  # num post de fórum o player devolve None
     req = SimpleNamespace(interaction=None, data={"embeds": [disnake.Embed(description="x")], "components": []})
-    assert np_steps.needs_replacement(player, req) is (where == "plain-channel")
+    assert np_steps.needs_replacement(player, req) is replaced
 
 
 @pytest.mark.regression
@@ -772,3 +778,12 @@ def test_the_logo_bytes_are_forgotten_with_the_message():
     np_v2._LOGOS[player] = ("logo-1", b"png")
     np_v2.forget(player)
     assert player not in np_v2._LOGOS
+
+
+@pytest.mark.regression
+def test_the_embed_title_is_not_markdown_in_the_v2_conversion():
+    plain = disnake.Embed(title="**b** [x](https://exemplo.invalid)")
+    linked = disnake.Embed(title="**b** ||s||", url="https://exemplo.invalid/p")
+    assert "](" not in shown_text(v2.legacy_to_v2({"embed": plain})).replace("\\]", "")
+    text = shown_text(v2.legacy_to_v2({"embed": linked}))
+    assert text.startswith("## [") and not any(mark in text.split("](")[0] for mark in "*|\\")

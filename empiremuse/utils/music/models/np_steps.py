@@ -774,8 +774,12 @@ def needs_replacement(self, req) -> bool:
 
 
 def _in_thread(self, message) -> bool:
-    """A mensagem é a mãe de um tópico de pedidos (``has_thread``) ou está dentro de um tópico, inclusive um post de fórum."""
-    return bool(getattr(self, "has_thread", False)) or isinstance(getattr(message, "channel", None), disnake.Thread)
+    """A mensagem é a mãe de um tópico de pedidos ou a inicial de um post de fórum: apagá-la deixaria o tópico órfão."""
+    if getattr(self, "has_thread", False) or getattr(message, "thread", None) is not None:
+        return True  # a mensagem-mãe de um tópico de pedidos
+    channel = getattr(message, "channel", None)
+    # a mensagem inicial de um post de fórum (tem o id do próprio post); as outras mensagens de um tópico podem ser trocadas
+    return isinstance(channel, disnake.Thread) and getattr(message, "id", None) == getattr(channel, "id", object())
 
 
 async def _np_replace(self, req):

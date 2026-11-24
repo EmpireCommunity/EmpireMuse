@@ -22,6 +22,9 @@ logger = logging.getLogger(__name__)
 MAX_COMPONENTS = 40
 MAX_TEXT = 4000  # a soma dos TextDisplay de uma mensagem V2
 ROW_BUTTONS = 5
+_LABEL_SAFE = str.maketrans(
+    {"[": "(", "]": ")", "\\": "/", "*": "∗", "_": "＿", "~": "∼", "|": "∣", "`": "ˋ"}
+)  # rótulo de link sem markdown nem quebra
 ROW_LIMIT = 5  # linhas de controle de uma mensagem
 TEXT_BLOCKS = 10  # blocos de texto por embed convertido, até o teto de componentes pedir menos
 LEGACY_KEYS = ("content", "embed", "embeds", "view")
@@ -54,7 +57,11 @@ def _embed_texts(embed: disnake.Embed) -> list[str]:
             f"-# {escape_markdown(embed.author.name)}"
         )  # no embed o autor é texto puro: no ``-#`` não vira markdown
     if embed.title:
-        texts.append(f"## [{embed.title}]({embed.url})" if embed.url else f"## {embed.title}")
+        texts.append(
+            f"## [{str(embed.title).translate(_LABEL_SAFE)}]({embed.url})"  # em rótulo de link a barra de escape aparece
+            if embed.url
+            else f"## {escape_markdown(str(embed.title))}"
+        )
     if embed.description:
         texts.append(str(embed.description))
     texts.extend(f"**{field.name}**\n{field.value}" for field in embed.fields)
