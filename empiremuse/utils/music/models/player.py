@@ -179,6 +179,9 @@ class LavalinkPlayer(
         self.hints: cycle = []
         self.current_hint: str = ""
         self.last_data: dict = {}
+        # D10: se a última mensagem foi desenhada sem faixa, capa, quem pediu e última ação (``None`` = ainda não desenhada)
+        self.details_hidden_rendered: Optional[bool] = None
+        self.privacy_rerender_task: Optional[asyncio.Task] = None
         self.lyric_embed: Optional[disnake.Embed] = None
         self.event_queue_task = self.bot.loop.create_task(self.hook_events())
         self.check_skins()

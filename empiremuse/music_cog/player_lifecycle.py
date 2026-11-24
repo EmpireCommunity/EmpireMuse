@@ -13,7 +13,7 @@ from empiremuse.rules.skins import saved_player_skins
 from empiremuse.rules.voice_status import resolve_voice_status
 from empiremuse.utils.client import BotCore
 from empiremuse.utils.db import DBModel
-from empiremuse.utils.jukebox_panel import fetch_panel_message
+from empiremuse.utils.jukebox_panel import fetch_panel_message, player_hides_details, player_voice_channel
 from empiremuse.utils.user_docs import change_user_doc
 from empiremuse.utils.music.skin_store import load_custom_skins
 from empiremuse.utils.music.models import (
@@ -25,8 +25,82 @@ from empiremuse.utils.others import (
 
 logger = logging.getLogger("empiremuse.player")
 
+PRIVACY_RERENDER_DEBOUNCE_S = 1.5  # várias mudanças de permissão seguidas viram um redesenho só
+
+
+PRIVACY_RERENDER_ATTEMPTS = 3  # uma virada que ainda não saiu na mensagem tenta de novo, com espera, até aqui
+
+
+async def _privacy_wait() -> None:
+    """A espera do redesenho: os testes a trocam por um evento, sem relógio."""
+    await asyncio.sleep(PRIVACY_RERENDER_DEBOUNCE_S)
+
 
 class PlayerLifecycleMixin:
+    def _schedule_privacy_rerender(self, player: LavalinkPlayer) -> None:
+        """O player refresca a mensagem quando a visibilidade da call muda (D10).
+
+        Só age se a regra ``player_hides_details`` virou desde o último desenho; um redesenho já agendado vale por todos
+        os gatilhos seguintes (um por player) e o resultado é conferido de novo no fim da espera.
+        """
+        if player.is_closing or not self._privacy_flipped(player):
+            return
+        task = getattr(player, "privacy_rerender_task", None)
+        if task is not None and not task.done():
+            return
+        player.privacy_rerender_task = asyncio.get_running_loop().create_task(self._privacy_rerender(player))
+
+    @staticmethod
+    def _privacy_flipped(player: LavalinkPlayer) -> bool:
+        rendered = getattr(player, "details_hidden_rendered", None)
+        return rendered is not None and rendered != player_hides_details(player)
+
+    async def _privacy_rerender(self, player: LavalinkPlayer) -> None:
+        """Espera o debounce e redesenha; depois de cada desenho confere de novo (a call pode ter mudado outra vez, ou o
+        desenho não saiu) e repete, sempre depois de nova espera e no máximo ``PRIVACY_RERENDER_ATTEMPTS`` vezes.
+
+        Esgotadas as tentativas com a virada ainda por sair (inclusive uma que chegou durante a última, quando os gatilhos
+        são descartados porque esta tarefa ainda vive), ``player.update`` pede o redesenho ao atualizador da mensagem. A
+        conferência final não tem ``await`` antes de a tarefa terminar, então nenhum gatilho cai entre ela e o fim.
+        """
+        try:
+            for _ in range(PRIVACY_RERENDER_ATTEMPTS):
+                await _privacy_wait()
+                if player.is_closing or not self._privacy_flipped(player):
+                    return
+                await player.invoke_np()
+            if not player.is_closing and self._privacy_flipped(player):
+                player.update = True
+        except Exception:
+            logger.exception(
+                "Falha ao redesenhar o player depois da mudança da call",
+                extra=guild_extra(getattr(player, "guild_id", None)),
+            )
+            if not player.is_closing and self._privacy_flipped(player):
+                player.update = True  # a virada segue pendente: o atualizador da mensagem refaz
+
+    @commands.Cog.listener("on_guild_channel_update")
+    async def privacy_channel_update(self, before: disnake.abc.GuildChannel, after: disnake.abc.GuildChannel) -> None:
+        """As permissões do canal de voz do player mudaram: a call pode ter ficado privada (ou pública).
+
+        Do mais barato ao mais caro: o evento chega por qualquer canal de qualquer servidor, então primeiro o player do
+        servidor, depois o id da call e só no fim a comparação dos ``overwrites``.
+        """
+        player = self.bot.music.players.get(after.guild.id)
+        voice = player_voice_channel(player) if player else None
+        if voice is None or voice.id != after.id or before.overwrites == after.overwrites:
+            return
+        self._schedule_privacy_rerender(player)
+
+    @commands.Cog.listener("on_guild_role_update")
+    async def privacy_role_update(self, before: disnake.Role, after: disnake.Role) -> None:
+        """As permissões do ``@everyone`` mudaram: vale para a call de que o player participa."""
+        if not after.is_default() or before.permissions == after.permissions:
+            return
+        player = self.bot.music.players.get(after.guild.id)
+        if player:
+            self._schedule_privacy_rerender(player)
+
     async def process_music(
         self,
         inter: Union[
@@ -332,6 +406,8 @@ class PlayerLifecycleMixin:
                     player._last_channel = after.channel
                     player._last_channel_id = after.channel.id
                 await self._voice_status_follow_move(player, before, after)
+                if before.channel != after.channel:
+                    self._schedule_privacy_rerender(player)  # o bot foi movido para outra call
 
             if player.bot.user.id == member.id and not after.channel:
                 await asyncio.sleep(3)
