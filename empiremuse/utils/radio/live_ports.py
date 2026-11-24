@@ -54,7 +54,6 @@ class LiveRadioPorts(DiscordRadioPorts):
         self._view: LiveView = LiveView()  # o que o painel deve mostrar (o último pedido)
         self._shown: Optional[LiveView] = None  # o que o painel mostra de fato
         self._last_edit: Optional[float] = None
-        self._panel_task: Optional[asyncio.Task] = None
 
     # ------------------------------------------------------------------ estado da fonte
 

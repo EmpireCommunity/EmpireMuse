@@ -28,6 +28,7 @@ class FakePorts:
         self.played: list[tuple[int, int]] = []
         self.stops = 0
         self.stopped_for_good = 0  # paradas de verdade (desligada), não as de pausa ou reconexão
+        self.stop_error: Exception | None = None  # fechar o fluxo falha (o _release da ao vivo revoga o token)
         self.offs: list[Allowed] = []
         self.durations = list(durations)
         self.in_flight = 0
@@ -103,6 +104,8 @@ class FakePorts:
 
     async def stop_stream(self):
         self.stops += 1
+        if self.stop_error is not None:
+            raise self.stop_error
 
     def radio_stopped(self):
         self.stopped_for_good += 1
@@ -153,6 +156,18 @@ class TestStart:
         await runner.stop()
 
         assert runner.phase is Phase.OFF and states[-1] is None and ports.stops == 1 and ports.stopped_for_good == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("way", ["stop", "shutdown"])
+    async def test_a_failing_stream_close_still_cancels_the_pending_redraw(self, way):
+        runner, ports, _ = make()
+        await runner.start()
+        ports.stop_error = RuntimeError("relay")
+
+        with pytest.raises(RuntimeError):
+            await (runner.stop() if way == "stop" else runner._shutdown(Allowed.NO_PREMIUM))
+
+        assert ports.stopped_for_good == 1
 
 
 class TestReconnectNow:
@@ -410,6 +425,7 @@ class TestRevocationAndLostPermissions:
             await runner.on_disconnect()
 
         assert runner.phase is Phase.OFF and ports.offs == [reason] and states[-1] is None
+        assert ports.stopped_for_good == 1  # perder o direito é parar de verdade: o redesenho pendente sai
         assert ports.connects == 1  # nunca tentou voltar
         assert [r.getMessage() for r in caplog.records] == [f"Rádio desligada ({reason.value})"]
 
