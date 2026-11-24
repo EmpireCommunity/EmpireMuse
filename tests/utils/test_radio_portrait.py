@@ -191,20 +191,6 @@ def test_a_character_inter_lacks_is_never_drawn(drawn):
     assert decoded(png).size == (960, 1680)
 
 
-def _jukebox_texts(drawn):
-    from empiremuse.rules.card import By
-    from empiremuse.utils.render.cards.layout import CardArt
-    from empiremuse.utils.render.fonts import FontBook
-    from tests.utils.test_render_cards import base_spec, make_track
-
-    track = make_track(title="Back in Black", artists="AC\\DC", origin="", duration_s=255, requester="Ana\\Bia")
-    spec = base_spec(skin="muse_radio_portrait_black", track=track._replace(by=By.MEMBER), cover=None)
-    radio_portrait.draw(
-        spec, CardArt(None, None), lambda key, **values: " ".join([key, *map(str, values.values())]), FontBook()
-    )
-    return drawn
-
-
 HOSTILE_TITLE = "Nitro discord.gg/x"
 HOSTILE_ARTIST = "@everyone A" + "\u0301" * 300  # menção em massa e marcas combinantes empilhadas
 
@@ -225,7 +211,6 @@ def _radio_texts(drawn, *, custom, hostile=False):
 @pytest.mark.parametrize(
     ("source", "expected", "absent"),
     [
-        ("jukebox", ("AC\\DC", "Ana\\Bia"), ()),
         ("custom", ("AC\\DC",), ()),
         ("live", ("Rock_FM",), ("\\",)),
         ("custom_hostile", ("discord\u2024gg", "@\u2024everyone"), ("discord.gg", "@everyone", "\u0301" * 5)),
@@ -233,10 +218,7 @@ def _radio_texts(drawn, *, custom, hostile=False):
 )
 def test_only_text_stored_escaped_loses_the_backslash(drawn, source, expected, absent):
     """O escape sai só onde a origem guarda escapado; o texto cru da personalizada ainda passa pela neutralização."""
-    if source == "jukebox":
-        texts = _jukebox_texts(drawn)
-    else:
-        texts = _radio_texts(drawn, custom=source.startswith("custom"), hostile=source == "custom_hostile")
+    texts = _radio_texts(drawn, custom=source.startswith("custom"), hostile=source == "custom_hostile")
     joined = "\n".join(texts)
     assert all(part in joined for part in expected) and not any(part in joined for part in absent)
 

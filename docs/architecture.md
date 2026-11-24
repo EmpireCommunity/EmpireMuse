@@ -219,7 +219,7 @@ Os métodos mais longos do player (KI-29b) seguem o mesmo padrão do `/play`: `i
   (`ytsearch`, `scsearch`, `dzsearch`, …) e filtra por duração/título (`LavalinkPlayer._process_next` em `empiremuse/utils/music/models/player_playback.py` e `LavalinkPlayer.resolve_track` em `empiremuse/utils/music/models/player_autoqueue.py`).
 - **Skins** são módulos com função `load()`: as 15 Clássicas (10 em `empiremuse/utils/music/skins/normal_player/` e 5 em
   `static_player/`), carregadas do diretório por `BotPool.load_skins` em `empiremuse/utils/client.py`, e as skins do
-  EmpireMuse (2.3) em `skins/muse/`, carregadas só pelos ids do registro (ver "Skins do EmpireMuse e o cartão de imagem"
+  EmpireMuse (2.3) em `skins/muse/`, carregadas só pelos ids do registro (ver "Skins do EmpireMuse"
   abaixo). Skins personalizadas por servidor são guardadas no banco (ver seção 8).
 - **UI**: views, botões e modais em `empiremuse/utils/music/interactions/` (pacote desde a KI-29; o `__init__.py` reexporta os nomes
   públicos): `player_views.py` (volume, fila, paginador, botões, seletores), `stage_title.py` (`SetStageTitle`), `fav_menu.py`
@@ -233,7 +233,7 @@ Os métodos mais longos do player (KI-29b) seguem o mesmo padrão do `/play`: `i
 - **Rich Presence**: `LavalinkPlayer.process_rpc` monta o payload e `LavalinkPlayer._send_rpc_data` o envia por `ws_client`
   (`empiremuse/utils/music/models/player_state.py`).
 
-### Skins do EmpireMuse e o cartão de imagem (2.3)
+### Skins do EmpireMuse (2.3)
 
 - **Registro:** `empiremuse/rules/skins.py` lista toda skin de fábrica na ordem do `/skins` (`REGISTRY`: as do EmpireMuse,
   as Clássicas e as da rádio 24 h) e decide qual vale (`jukebox_skin`, `saved_player_skins`, `radio_look`,
@@ -243,7 +243,7 @@ Os métodos mais longos do player (KI-29b) seguem o mesmo padrão do `/play`: `i
 - **Módulos** (`utils/music/skins/muse/`): `load()` devolve a skin com `name`, `preview`, `setup_features` e `load(player)`,
   como as Clássicas. Há duas: a Jukebox Texto (`muse_text`, só texto) e a Jukebox C (`muse_jukebox`, Components V2 nativo
   com o disco girando na miniatura). As oito skins de imagem antigas (`muse_expanded_*`, `muse_slim_*`, `muse_radio_*`,
-  `muse_radio_portrait_*`) não têm mais módulo nem renderizador: valem como apelidos de leitura da C
+  `muse_radio_portrait_*`) não têm mais módulo: valem como apelidos de leitura da C
   (`rules/skins.SKIN_ALIASES`; `BotPool.load_muse_skins` registra cada apelido apontando para o mesmo objeto da C, e nada é
   regravado no banco). O `load(player)` é síncrono e sem I/O e os componentes são os de sempre, com os mesmos `custom_id`
   das Clássicas. Os textos vêm do catálogo (`jbx.*`, `skin.*`). Em call privada, fora do chat de texto da própria call,
@@ -259,8 +259,8 @@ Os métodos mais longos do player (KI-29b) seguem o mesmo padrão do `/play`: `i
   (`payload_key`: embeds por `to_dict()`, componentes por `to_component_dict()`), então uma releitura igual não edita. A C
   passa por `np_v2.render`, que escolhe o disco, o anexo e a Thumbnail; toda edição de uma mensagem V2 passa pelo adaptador
   `utils/music/v2.py`. Uma mensagem nova nunca reaproveita o anexo de outra. O ocioso sai por `idle_payload`.
-- **Cadência:** a C redesenha por evento; a Jukebox Texto usa `auto_update` de 15 s ou mais
-  (`card_facts.text_bar_interval_s`), e a chave estável impede a edição enquanto o segmento da barra não muda.
+- **Cadência:** além dos eventos, a C e a Jukebox Texto usam `auto_update` de 15 s ou mais
+  (`card_facts.text_bar_interval_s`); a chave estável impede a edição enquanto nada mudou.
 - **Configuração:** a skin da Jukebox segue os campos de sempre (do servidor e globais); a animação do disco
   (`disc_motion`) e a skin de todas as rádios (`radio_skin`) ficam no documento global do servidor, e a skin própria de
   uma rádio no campo `look` do documento dela (seção 8).

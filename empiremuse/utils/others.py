@@ -480,7 +480,7 @@ async def send_idle_embed(
             return target
 
         if target.author == target.guild.me:
-            # attachments=[]: um cartão de player que estava nesta mensagem sai junto
+            # attachments=[]: um anexo de player que estava nesta mensagem sai junto
             await v2.edit_message(target, where="send_idle_embed", expected=True, **body)
             message = target
         else:
@@ -532,7 +532,7 @@ async def send_idle_embed(
                                     await thread.edit(**thread_kw)
                                 break
             else:
-                # ``attachments=[]``: o cartão de imagem do player sai junto (o embed ocioso não tem anexo)
+                # ``attachments=[]``: o anexo do player sai junto (o embed ocioso não tem anexo)
                 await v2.edit_message(message, where="send_idle_embed", expected=True, **body)
         else:
             message = await channel.send(**send_body)
@@ -579,14 +579,15 @@ async def _idle_in_v2(bot: BotCore, guild_id: int, guild_data: dict, target: Any
     message = target if isinstance(target, disnake.Message) else getattr(target, "message", None)
     if message is not None and v2.is_v2(message):
         return True
-    from empiremuse.rules.skins import DEFAULT_JUKEBOX_SKIN, saved_player_skins
+    from empiremuse.rules.skins import DEFAULT_JUKEBOX_SKIN, resolve_skin_alias, saved_player_skins
 
     try:
         global_data = await bot.get_global_data(guild_id, db_name=DBModel.guilds)
         static = saved_player_skins(guild_data["player_controller"], global_data)[1]
     except KeyError, TypeError:
         static = None
-    return (static or bot.config.get("DEFAULT_STATIC_SKIN") or DEFAULT_JUKEBOX_SKIN) == "muse_jukebox"
+    effective = static or bot.config.get("DEFAULT_STATIC_SKIN") or DEFAULT_JUKEBOX_SKIN
+    return resolve_skin_alias(effective) == "muse_jukebox"  # um padrão com id antigo desenha a C, e o ocioso também
 
 
 def string_to_file(txt, filename="result.txt"):

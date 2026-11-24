@@ -4,13 +4,9 @@
 from __future__ import annotations
 
 import asyncio
-import io
 import itertools
-import random
-import sys
 import time
 import weakref
-from itertools import cycle
 
 import disnake
 
@@ -178,7 +174,7 @@ async def idle_payload(self, kwargs):
 
 
 async def _np_v2(self, req, skin):
-    """A skin em Components V2 (``muse_jukebox``): o disco e o payload V2 vêm do ``np_v2``; o cartão de imagem antigo sai."""
+    """A skin em Components V2 (``muse_jukebox``): o disco e o payload V2 vêm do ``np_v2``"""
     redraw = not self.last_data
     new_message = redraw or not _will_edit(self, req)
     return await np_v2.render(

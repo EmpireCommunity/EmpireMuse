@@ -11,9 +11,9 @@ contrato de implementação é privado; este README resume o que o código garan
 | `budget.py` | os tetos nomeados (os de regra pura vêm de `rules/card.py` e são reexportados) | constantes |
 | `gif.py` | `encode_png` (`compress_level=6`) | puro |
 | `primitives.py` | ícones, logo em círculo (só PNG), `fit` por busca binária, texto recortado na caixa | puro |
-| `fonts.py` | `FontBook`: só os arquivos de `assets/fonts/` com o SHA-256 registrado, conferidos na primeira carga; toda fonte (peso e tamanho) sai desses bytes conferidos em memória; peso pelo eixo `Weight`; reserva por caractere (a fonte da skin, depois a Noto Sans, até 32 trechos); RTL só com `raqm` | cache por `(arquivo, peso, tamanho)`; usar dentro da vaga |
+| `fonts.py` | `cmap_points` (os caracteres que a fonte do visor desenha) e os caminhos das fontes; o `FontBook` (arquivos com SHA-256 conferido, reserva por caractere) não tem chamador de produção desde que os cartões saíram | puro |
 | `disc_only.py` | o disco sozinho da Jukebox C: 128 px, 24 quadros de 80 ms, GIF até 256 KiB, PNG parado = quadro 0; rótulo da capa ou degradê "sem capa"; `DiscService.disc(cover, plain=)` com cache LRU por bytes (chave: sha256 do rótulo + versões) e a vaga de desenho; vaga ocupada = o plano B (a URL da capa). A capa vem da `CoverService` do processo (`utils/music/covers.cover_service()`, fechada no encerramento do pool) | um serviço por processo (`disc_service()`) |
-| `cards/` | o Retrato da rádio 24 h (`radio_portrait`, sobre o desenho do visor em `visor_jukebox`), o disco do `disc_only` (`disc.record_image`) e as medidas e cores compartilhadas (`layout`) | puro |
+| `cards/` | o Retrato da rádio 24 h (`radio_portrait`, com os tokens, estados e rótulos de `utils/radio/visor.py`), o disco usado pelo `disc_only` (`disc.record_image`) e as medidas e cores dele (`layout`) | puro |
 
 Os fatos que a imagem pode mostrar (`CardSpec`) e as regras puras (call privada, animação) ficam em
 `empiremuse/rules/card.py`.
@@ -30,8 +30,8 @@ Os fatos que a imagem pode mostrar (`CardSpec`) e as regras puras (call privada,
 - A chave do disco é o `sha256` dos pixels do rótulo (capa reduzida, nunca um "sem capa" genérico) mais as versões; nunca
   a URL, a faixa, o servidor ou o membro. Um disco maior que o teto do cache não é guardado e o render segue.
 - Vaga sob pressão (`DEGRADE_AT` esperando) ou ocupada: o disco não é desenhado e a mensagem sai com o plano B.
-- O logo da estação (rádio ao vivo na Jukebox) e a capa esperam no máximo `COVER_WAIT_S`; depois sai o logo do bot e o
-  redesenho fica pedido.
+- A capa e o logo da estação (rádio ao vivo na Jukebox) esperam no máximo `COVER_WAIT_S`; depois a capa sai como o
+  degradê com a nota (nunca o avatar do bot) e o logo como a imagem padrão por URL, com o redesenho pedido.
 
 ## Orçamento de memória (para conferir com a RAM do host)
 
@@ -39,10 +39,9 @@ Os fatos que a imagem pode mostrar (`CardSpec`) e as regras puras (call privada,
 |---|---|---|
 | Cache dos discos da Jukebox C (GIF + PNG por rótulo, LRU) | 16 MiB (por bytes) | `disc_only.CACHE_BYTES` |
 | Cache de capas (240 × 240 RGB, cerca de 48 capas) | 8 MiB (por bytes) | `utils/music/covers.py` |
-| Fontes (bytes conferidos, uma cópia por arquivo, mais as instâncias por peso e tamanho) | cerca de 3 MiB | `fonts.FontBook` |
 | Desenho em andamento | 20 a 40 MB, **um de cada vez** (a vaga) | transitório |
 | Decodificador isolado da capa | um processo de cerca de 35 a 50 MB, **um de cada vez** | transitório |
 | Decodificador isolado do logo da estação | um processo como o da capa; os dois podem existir ao mesmo tempo (travas separadas, `RLIMIT_AS` de 768 MiB cada) | transitório |
 
-Pior caso acima da base do processo: **cerca de 27 MiB de cache residente mais até cerca de 140 MB transitórios** (um
+Pior caso acima da base do processo: **cerca de 24 MiB de cache residente mais até cerca de 140 MB transitórios** (um
 desenho e os dois decodificadores ao mesmo tempo).

@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import logging
 import datetime
-import sys
 
 import disnake
 
@@ -218,7 +217,7 @@ async def _cu_close_message_from_interaction(self, inter: disnake.MessageInterac
                 "view": None,
             }
 
-        # um cartão que estava na mensagem não fica solto nela; numa mensagem V2 o payload de embed vira Container
+        # numa mensagem V2 o payload de embed vira Container
         await func(**v2.adapt_for(self.message, kw, where="encerramento", expected=True))
 
 

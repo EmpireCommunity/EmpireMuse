@@ -739,3 +739,29 @@ async def test_a_server_that_stalls_after_the_headers_ends_by_the_deadline(monke
             assert await svc.pixels(COVER) == CoverResult()
 
     assert [r.getMessage() for r in caplog.records] == ["Capa sem imagem (deadline)"]
+
+
+@pytest.mark.asyncio
+async def test_the_process_cover_service_is_single_and_closing_it_cancels_the_flights(monkeypatch):
+    from empiremuse.utils.music import covers
+
+    gate = asyncio.Event()
+    created = []
+
+    def from_config(cls, _value, **_kw):
+        created.append(service(Fetch(gate=gate)))
+        return created[-1]
+
+    monkeypatch.setattr(covers, "_SERVICE", None)
+    monkeypatch.setattr(covers.CoverService, "from_config", classmethod(from_config))
+
+    first = covers.cover_service("")
+    assert covers.cover_service("") is first and len(created) == 1
+    waiter = asyncio.create_task(first.pixels(COVER, wait_s=60))
+    await settle()
+    (flight,) = first._flights.values()
+
+    await covers.close_cover_service()
+
+    assert flight.cancelled() and await waiter == CoverResult()
+    assert covers.cover_service("") is not first and len(created) == 2

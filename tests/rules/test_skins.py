@@ -424,3 +424,16 @@ def test_every_dropped_id_resolves_to_a_skin_that_stays():
     assert set(skins.SKIN_ALIASES.values()) == {"muse_jukebox"} and "muse_jukebox" in skins.JUKEBOX_IDS
     assert set(skins.SKIN_ALIASES) == set(DROPPED_PLAYER_SKINS)
     assert all(target in skins.RADIO_LOOKS for target in skins.RADIO_LOOK_ALIASES.values())
+
+
+@pytest.mark.regression
+def test_the_panel_never_offers_a_retired_skin_id():
+    from empiremuse.panel.services.appearance import allowed_skins, allowed_static_skins
+
+    loaded = dict.fromkeys(["default", "muse_jukebox", *skins.SKIN_ALIASES])
+    bot = SimpleNamespace(
+        player_skins=loaded, player_static_skins=loaded, config={"IGNORE_SKINS": "", "IGNORE_STATIC_SKINS": ""}
+    )
+
+    for offered in (allowed_skins(bot), allowed_static_skins(bot)):
+        assert "muse_jukebox" in offered and not set(offered) & set(skins.SKIN_ALIASES)

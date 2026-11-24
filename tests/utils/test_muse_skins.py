@@ -315,24 +315,3 @@ def test_no_start_time_is_predicted_while_the_current_track_repeats(tr, loop, tr
     items = [line for line in _text.queue_block(player, ctx, tr, limit=3) if line.startswith("`")]
 
     assert items and all(("<t:" in line) is timed for line in items)
-
-
-@pytest.mark.asyncio
-@pytest.mark.regression
-async def test_the_text_skin_idle_clears_the_attachment_and_names_the_idle_title(tr):
-    """O ocioso da Jukebox Texto sai como embed, sem anexo velho (``attachments=[]``) e com o título de ocioso no autor."""
-    from empiremuse.utils.music.models import np_steps
-
-    skin = muse_text.load()
-    player = SimpleNamespace(
-        static=False,
-        skin="muse_text",
-        tr=tr,
-        bot=SimpleNamespace(pool=SimpleNamespace(player_skins={"muse_text": skin})),
-    )
-    embed = disnake.Embed(description="x")
-
-    data = await np_steps.idle_payload(player, {"embed": embed, "components": []})
-
-    assert data["attachments"] == [] and data["embeds"] == [embed] and "embed" not in data
-    assert embed.author.name == tr("jbx.idle.title")

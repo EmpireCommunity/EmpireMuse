@@ -58,7 +58,7 @@ from empiremuse.rules.erasure import tombstone_seconds
 from empiremuse.rules.git_remote import parse_remote_web_url, sanitized_repo_url
 from empiremuse.rules.owner_shell import collect_secret_values
 from empiremuse.rules.servers import is_main_identifier
-from empiremuse.rules.skins import JUKEBOX_IDS, SKIN_ALIASES
+from empiremuse.rules.skins import JUKEBOX_IDS, SKIN_ALIASES, resolve_skin_alias
 from empiremuse.updater.notice import on_pool_ready
 from empiremuse.updater.state import read_pending
 from empiremuse.i18n import get_i18n
@@ -1015,6 +1015,10 @@ class BotPool:
                 logger.debug("Detalhe da falha da skin %s", skin, exc_info=True)
 
         self.load_muse_skins()
+
+        # um padrão do ``.env`` com id antigo vale como o apelido: quem compara o padrão vê a skin que o player desenha
+        self.default_skin = resolve_skin_alias(self.default_skin)
+        self.default_static_skin = resolve_skin_alias(self.default_static_skin)
 
         if self.default_skin not in self.player_skins:
             self.default_skin = "default"

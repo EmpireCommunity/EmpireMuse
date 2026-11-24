@@ -1,4 +1,4 @@
-"""Os fatos do cartão de uma skin de imagem (``CardSpec``, contrato §1) lidos do player, mais as regras puras do texto que
+"""Os fatos que o disco da Jukebox C usa (``CardSpec``, contrato §1) lidos do player, mais as regras puras do texto que
 acompanha a imagem (barra de texto da opção C, texto alternativo e título no autor do embed).
 
 - ``build(player, settings)`` é síncrono, sem ``await`` e sem I/O: lê o player, o modo rádio pela cópia imutável
@@ -27,7 +27,6 @@ from empiremuse.rules.card import (
     CardSpec,
     CardState,
     CardTrack,
-    card_text,
     make_item,
     make_radio,
     make_station,

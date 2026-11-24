@@ -6,7 +6,7 @@
   <input type="hidden" name="versao" value="{{ form.versao }}">
   <input type="hidden" name="disco" value="1">
   <h2 class="subtitulo">Animação do disco</h2>
-  <p class="nota">Nas skins de imagem (Expandida e Slim), o disco gira enquanto a música toca. Desligada, o cartão fica parado.</p>
+  <p class="nota">Na skin Jukebox, o disco gira enquanto a música toca. Desligada, o disco fica parado.</p>
   {% include "_mensagem_form.html" %}
   <label>
     <input type="checkbox" name="disc_motion" value="on"{% if valores.get("disc_motion") %} checked{% end %}>

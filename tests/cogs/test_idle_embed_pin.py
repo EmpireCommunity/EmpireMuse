@@ -110,6 +110,25 @@ async def test_the_idle_embed_on_the_thread_start_message_drops_the_card_attachm
 
 
 @pytest.mark.regression
+@pytest.mark.parametrize("default", ["muse_jukebox", "muse_expanded_black", "muse_radio_portrait_white"])
+async def test_an_old_skin_id_as_the_configured_default_gets_the_v2_idle(default):
+    canal = MagicMock(spec=disnake.TextChannel)
+    canal.id = CANAL
+    canal.guild = SimpleNamespace(me=MagicMock(), id=1)
+    canal.guild.me.display_avatar.replace.return_value.url = "https://cdn.exemplo/avatar.png"
+    canal.send = AsyncMock(return_value=MagicMock(spec=disnake.Message, pinned=True, channel=canal))
+    bot = bot_falso()
+    bot.get_channel = lambda _id: canal
+    bot.config = {"DEFAULT_STATIC_SKIN": default}
+    dados = {"player_controller": {"channel": str(CANAL), "fav_links": {}}}
+
+    await send_idle_embed(canal, bot=bot, guild_data=dados)
+
+    enviado = canal.send.await_args.kwargs
+    assert "embed" not in enviado and isinstance(enviado["components"][0], disnake.ui.Container)
+
+
+@pytest.mark.regression
 async def test_the_idle_of_a_v2_jukebox_message_is_a_container_never_an_embed():
     mensagem = alvo(disnake.Permissions(pin_messages=True))
     mensagem.flags = SimpleNamespace(is_components_v2=True)
