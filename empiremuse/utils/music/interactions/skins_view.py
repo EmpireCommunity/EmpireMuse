@@ -32,6 +32,7 @@ from empiremuse.rules.skins import (
     Kind,
     SkinEntry,
     disc_motion_on,
+    is_chosen,
     jukebox_skin,
     player_preview,
     radio_look,
@@ -126,11 +127,13 @@ def preview_path(relative: str | None) -> Path | None:
 def initial_draft(pool: Any, settings: Mapping[str, Any], global_data: Mapping[str, Any], choices: Choices) -> Draft:
     """O que a tela abre mostrando, com a mesma leitura do player (``saved_player_skins``/``jukebox_skin``, Q1 incluído)."""
     defaults = (pool.default_skin, pool.default_static_skin)
-    server = (jukebox_skin(settings.get("skin"), defaults[0]), jukebox_skin(settings.get("static_skin"), defaults[1]))
-    glob_choice = saved_player_skins(
-        settings.get("skin"), settings.get("static_skin"), {**global_data, "global_skin": True}
+    server = (
+        jukebox_skin(settings.get("skin"), defaults[0], is_chosen(settings, "skin")),
+        jukebox_skin(settings.get("static_skin"), defaults[1], is_chosen(settings, "static_skin")),
     )
-    glob = (jukebox_skin(glob_choice[0], defaults[0]), jukebox_skin(glob_choice[1], defaults[1]))
+    glob_choice = saved_player_skins(settings, {**global_data, "global_skin": True})
+    # ``saved_player_skins`` já aplicou o Q1 em cada nível: o que sobra é escolha
+    glob = (jukebox_skin(glob_choice[0], defaults[0], True), jukebox_skin(glob_choice[1], defaults[1], True))
     return Draft(
         global_mode=bool(global_data.get("global_skin")),
         server=server,

@@ -15,7 +15,7 @@ from typing import Any
 
 from empiremuse.rules.radio import radio_id
 from empiremuse.rules.settings import allowed_names
-from empiremuse.rules.skins import CLASSIC_NORMAL, CLASSIC_STATIC
+from empiremuse.rules.skins import CLASSIC_NORMAL, CLASSIC_STATIC, with_choice_marks
 from empiremuse.rules.text import external_text
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.interactions.skins_draft import Choices, RadioRow, SavePlan, ordered_ids
@@ -82,9 +82,12 @@ async def save_skins(bot: Any, guild_id: int, plan: SavePlan, *, updated_by: str
     gravaram (mudaram, sumiram ou não são deste servidor); as outras ficam gravadas."""
     if plan.global_fields:
         fresh = await bot.get_global_data(guild_id, db_name=DBModel.guilds)
-        await bot.update_global_data(guild_id, {**fresh, **plan.global_fields}, db_name=DBModel.guilds)
+        # a marca de escolha do 2.3 (``rules/skins.is_chosen``): a Clássica ``default`` escolhida aqui fica
+        await bot.update_global_data(
+            guild_id, {**fresh, **with_choice_marks(plan.global_fields)}, db_name=DBModel.guilds
+        )
     if plan.server_fields:
-        await bot.pool.servers.patch(guild_id, "settings", dict(plan.server_fields))
+        await bot.pool.servers.patch(guild_id, "settings", with_choice_marks(plan.server_fields))
     failed = []
     for item in plan.radio_looks:
         try:

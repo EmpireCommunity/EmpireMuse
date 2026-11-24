@@ -37,7 +37,12 @@ class AppearanceServerWriteTest(HttpBase):
         )
         response = self.save(browser, 100, "aparencia", "skin", skin="neon", static_skin="green")
         assert response.code == 200, f"status {response.code}"
-        assert self.world.server_settings(100) == before | {"skin": "neon", "static_skin": "green"}
+        assert self.world.server_settings(100) == before | {
+            "skin": "neon",
+            "static_skin": "green",
+            "skin_chosen": True,  # a marca de escolha do 2.3 (``rules/skins.is_chosen``)
+            "static_skin_chosen": True,
+        }
         assert self.db.doc("1", 100) == bot_before and self.db.doc("global", 100) == global_before
         assert self.db.writes == [("servidor", 100)]
 

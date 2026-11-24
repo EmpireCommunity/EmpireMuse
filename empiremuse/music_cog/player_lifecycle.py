@@ -109,8 +109,6 @@ class PlayerLifecycleMixin:
         if not guild_data:
             guild_data = await bot.get_data(inter.guild_id, db_name=DBModel.guilds)
 
-        skin = guild_data["player_controller"]["skin"]
-        static_skin = guild_data["player_controller"]["static_skin"]
         static_player = guild_data["player_controller"]
 
         if not node:
@@ -125,7 +123,7 @@ class PlayerLifecycleMixin:
             vc = None
 
         # Q1 (2.3) em cada nível antes do recuo: ``None`` = nunca escolhido = o padrão do registro (a Jukebox Texto).
-        skin, static_skin = saved_player_skins(skin, static_skin, global_data)
+        skin, static_skin = saved_player_skins(static_player, global_data)
 
         try:
             invite = global_data["listen_along_invites"][str(vc.id)]

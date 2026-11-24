@@ -190,37 +190,57 @@ def look_from_legacy(skin: object) -> str | None:
 # ---------------------------------------------------------------------- Jukebox e disco
 
 
-def jukebox_choice(saved: object) -> object:
+SKIN_FIELDS = ("skin", "static_skin", "player_skin", "player_skin_static", "skin_static")
+
+
+def chosen_key(field: str) -> str:
+    """A marca gravada ao lado de um campo de skin pelo ``/skin``, pelo painel e pela sessão do 2.3 (o formato antigo não a tem)."""
+    return f"{field}_chosen"
+
+
+def is_chosen(doc: object, field: str) -> bool:
+    """O valor do campo foi gravado como escolha pelo 2.3? Sem a marca (formato antigo), não."""
+    return isinstance(doc, Mapping) and doc.get(chosen_key(field)) is True
+
+
+def with_choice_marks(changes: Mapping[str, object]) -> dict[str, object]:
+    """As alterações com a marca de escolha em cada campo de skin gravado: um ``"default"`` gravado assim é escolha."""
+    return {**changes, **{chosen_key(field): True for field in changes if field in SKIN_FIELDS}}
+
+
+def jukebox_choice(saved: object, chosen: bool = False) -> object:
     """O valor gravado da skin da Jukebox que conta como escolha; ``None`` = nunca escolhido (cai no padrão do registro).
 
-    Q1 (decidida: não): sem ``SAVED_DEFAULT_IS_A_CHOICE`` o ``"default"`` gravado é lido como ``None`` e cai no padrão novo;
-    com ele, ficaria (quem salvou a Clássica `default` a manteria). Qualquer outro valor passa como está (o ``check_skin`` decide).
+    Q1 (decidida: não): sem ``SAVED_DEFAULT_IS_A_CHOICE`` o ``"default"`` gravado pelo ``/skin`` antigo é lido como ``None`` e
+    cai no padrão novo. Com a marca de escolha (``chosen``, ver ``is_chosen``) o ``"default"`` é a Clássica escolhida e fica. Qualquer outro valor passa como está (o ``check_skin`` decide).
     """
-    if saved == LEGACY_SKIN_DEFAULT and not SAVED_DEFAULT_IS_A_CHOICE:
+    if saved == LEGACY_SKIN_DEFAULT and not chosen and not SAVED_DEFAULT_IS_A_CHOICE:
         return None
     return saved
 
 
-def jukebox_skin(saved: object, default: str) -> str:
+def jukebox_skin(saved: object, default: str, chosen: bool = False) -> str:
     """A skin que um leitor usa ou mostra para o valor gravado: a escolha (``jukebox_choice``, Q1), senão ``default``.
 
     Todo leitor da skin gravada da Jukebox passa por aqui ou por ``jukebox_choice`` (criação do player, ``/skin``, painel,
     sessão retomada); assim o Q1 muda só em ``SAVED_DEFAULT_IS_A_CHOICE``."""
-    choice = jukebox_choice(saved)
+    choice = jukebox_choice(saved, chosen)
     return choice if isinstance(choice, str) and choice else default
 
 
-def saved_player_skins(
-    server_skin: object, server_static: object, global_data: Mapping[str, Any]
-) -> tuple[object, object]:
+def saved_player_skins(server: Mapping[str, Any], global_data: Mapping[str, Any]) -> tuple[object, object]:
     """As skins gravadas que o player novo usa (antes do ``check_skin``), com o Q1 aplicado em CADA nível antes do recuo.
 
     No modo global, a skin global vale se for uma escolha; senão a do servidor. Assim, com o Q1 = não, um ``"default"``
-    global gravado não esconde a skin escolhida no servidor."""
-    skin, static = jukebox_choice(server_skin), jukebox_choice(server_static)
+    global gravado não esconde a skin escolhida no servidor. ``server`` tem ``skin`` e ``static_skin`` (e as marcas de escolha)."""
+    skin = jukebox_choice(server.get("skin"), is_chosen(server, "skin"))
+    static = jukebox_choice(server.get("static_skin"), is_chosen(server, "static_skin"))
     if global_data.get("global_skin"):
-        skin = jukebox_choice(global_data.get("player_skin")) or skin
-        static = jukebox_choice(global_data.get("player_skin_static")) or static
+        skin = jukebox_choice(global_data.get("player_skin"), is_chosen(global_data, "player_skin")) or skin
+        static = (
+            jukebox_choice(global_data.get("player_skin_static"), is_chosen(global_data, "player_skin_static"))
+            or static
+        )
     return skin, static
 
 

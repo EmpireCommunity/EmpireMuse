@@ -354,3 +354,20 @@ def test_migration_gives_up_if_the_guild_becomes_unavailable_while_the_old_docum
     for bot in world.bots:
         bot.get_guild = loaded
     assert run(world.store.settings(GID))["djroles"] == ["10"]
+
+
+@pytest.mark.regression
+@pytest.mark.critical
+def test_a_document_stored_before_the_skin_marks_reads_and_saves_through_the_legacy_view(world):
+    from empiremuse.rules.servers import default_settings, new_doc
+
+    doc = new_doc()
+    doc["settings"] = {k: v for k, v in default_settings().items() if k not in ("skin_chosen", "static_skin_chosen")}
+    doc["settings"]["skin"] = "default"  # o "default" gravado antes do 2.3
+    doc["migrated"] |= {"settings": True, "jukebox": True}
+    world.banco.put(*SERVERS, GID, doc)
+
+    legacy = asyncio.run(world.store.legacy_doc(world.bots[0], GID))
+    assert legacy["player_controller"]["skin"] == "default" and legacy["player_controller"]["skin_chosen"] is False
+    legacy["player_controller"]["channel"] = "77"
+    asyncio.run(world.store.save_legacy(world.bots[0], GID, legacy))  # um escritor antigo que só muda o canal

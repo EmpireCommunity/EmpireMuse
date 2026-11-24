@@ -14,7 +14,7 @@ from empiremuse.utils.owner_gate import admin_owner_only
 from empiremuse.logs.context import guild_extra
 from empiremuse.rules.bot_tokens import is_radio_only_identifier
 from empiremuse.rules.radio import radio_id
-from empiremuse.rules.skins import jukebox_choice
+from empiremuse.rules.skins import is_chosen, jukebox_choice
 from empiremuse.rules.voice_status import resolve_voice_status
 from empiremuse.serialization.schema import SchemaError
 from empiremuse.utils.client import BotCore
@@ -186,6 +186,8 @@ class PlayerSession(commands.Cog):
             "stage_title_template": player.stage_title_template,
             "skin": player.skin,
             "skin_static": player.skin_static,
+            "skin_chosen": True,  # 2.3: a skin da sessão é a que o player usava (``rules/skins.is_chosen``)
+            "skin_static_chosen": True,
             "custom_skin_data": {},
             "custom_skin_static_data": {},
             "uptime": player.uptime,
@@ -643,9 +645,10 @@ class PlayerSession(commands.Cog):
                         channel=text_channel,
                         message=message or message_without_thread,
                         last_message_id=data["message_id"],
-                        # Q1: a skin salva na sessão passa pela mesma regra (``rules/skins.jukebox_choice``)
-                        skin=jukebox_choice(data["skin"]) or self.bot.pool.default_skin,
-                        skin_static=jukebox_choice(data["skin_static"]) or self.bot.pool.default_static_skin,
+                        # Q1: a skin salva na sessão passa pela mesma regra (``rules/skins.jukebox_choice``); ``None`` = o
+                        # padrão, que o próprio player aplica
+                        skin=jukebox_choice(data["skin"], is_chosen(data, "skin")),
+                        skin_static=jukebox_choice(data["skin_static"], is_chosen(data, "skin_static")),
                         player_creator=data["player_creator"],
                         autoplay=data.get("autoplay", False),
                         static=data["static"],

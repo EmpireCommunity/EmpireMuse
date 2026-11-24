@@ -99,3 +99,16 @@ class TestCreatePlayer:
         recebidos = await chamar_create_player(dados, [])
         assert recebidos["custom_skin_data"] == {"N": skin_realista(content="n")}
         assert recebidos["custom_skin_static_data"] == {}  # skin vazia vale como sem skin: o player nem a recebe
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    ("marks", "skin"), [({"skin_chosen": True, "static_skin_chosen": True}, "default"), ({}, None)]
+)
+async def test_create_player_keeps_the_classic_default_only_when_it_was_chosen_in_2_3(marks, skin):
+    recebidos = await chamar_create_player(documento(), [], controller=marks)
+
+    assert (
+        recebidos["skin"] == skin and recebidos["skin_static"] == skin
+    )  # ``None`` = o padrão novo, aplicado pelo player

@@ -189,6 +189,24 @@ class TestCanalDeOutroServidor:
 # ============================================================================ time: as contas de 48 h continuam (caracterização)
 
 
+@pytest.mark.asyncio
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    ("marks", "skin"), [({}, None), ({"skin_chosen": True, "skin_static_chosen": True}, "default")]
+)
+async def test_a_resumed_session_reads_the_choice_mark_and_never_the_pool_default(marks, skin):
+    """Sessão de antes das marcas: o ``default`` vira ``None`` (o padrão novo, que o próprio player aplica); com a marca, fica."""
+    dados = {k: v for k, v in (await sessao()).items() if k not in ("skin_chosen", "skin_static_chosen")} | marks
+    cog, _, criados = montar(canais={CANAL_DE_VOZ: proprio(CANAL_DE_VOZ), CANAL_DE_TEXTO: proprio(CANAL_DE_TEXTO)})
+    if (pool := getattr(cog.bot, "pool", None)) is not None:
+        for name in ("default_skin", "default_static_skin"):  # sem o padrão no pool: a retomada não pode lê-lo
+            vars(pool).pop(name, None)
+
+    await retomar(cog, dados)
+
+    assert len(criados) == 1 and criados[0].kwargs["skin"] == skin and criados[0].kwargs["skin_static"] == skin
+
+
 class TestIdadeDaSessao:
     @pytest.mark.asyncio
     async def test_servidor_inexistente_e_sessao_com_mais_de_48_horas_e_apagada(self):
