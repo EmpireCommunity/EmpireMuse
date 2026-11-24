@@ -210,15 +210,19 @@ class RadioRunner:
     async def stop(self) -> None:
         """Desligada por quem manda (comando, painel): para o fluxo e esquece o estado. O contador é da store. Nada mais religa este runner."""
         self._stopped = True
-        await self.ports.stop_stream()
-        self.ports.radio_stopped()
+        try:
+            await self.ports.stop_stream()
+        finally:
+            self.ports.radio_stopped()  # mesmo que fechar o fluxo falhe, o redesenho pendente não segue
         self._set(Phase.OFF)
 
     async def _shutdown(self, reason: Allowed) -> None:
         logger.warning("Rádio desligada (%s)", reason.value)  # sem IDs, sem nomes (R-12)
         self._stopped = True
-        await self.ports.stop_stream()
-        self.ports.radio_stopped()
+        try:
+            await self.ports.stop_stream()
+        finally:
+            self.ports.radio_stopped()  # mesmo que fechar o fluxo falhe, o redesenho pendente não segue
         self._set(Phase.OFF)
         await self.ports.turn_off(reason)
 

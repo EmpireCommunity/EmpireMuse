@@ -77,7 +77,6 @@ class CustomRadioPorts(DiscordRadioPorts):
         self._wake = (
             asyncio.Event()
         )  # editar ou trocar a estação acorda a espera de uma fonte quebrada (10 min) ou do recuo (20 s)
-        self._panel_task: Optional[asyncio.Task] = None
         self._panel_dirty = False  # um pedido de redesenho chegou durante a edição em curso
         self._panel_edited_at: Optional[float] = None  # a última edição do painel (relógio das portas)
         self.panel_sleep = (

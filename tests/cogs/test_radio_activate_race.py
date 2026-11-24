@@ -95,3 +95,20 @@ async def test_a_radio_turned_off_while_activating_gets_no_runner(monkeypatch):
         assert not manager.is_running(radio.id)
     finally:
         await manager.close()
+
+
+@pytest.mark.regression
+async def test_closing_the_manager_cancels_each_radio_pending_panel_redraw():
+    """T-BACKLOG-REV m1: o redesenho do painel não está em ``_tasks``; o ``close`` o cancela antes de fechar o relay."""
+    w = await world()
+    radio = await configure(w.hub, guild_id=GUILD, channel_id=CHANNEL, bot_id=2, source={"playlist": "p"})
+    radio = await w.hub.store.set_enabled(radio.id, True)
+    manager = w.hub.manager
+    ports = FakePorts()
+    manager.ports_factory = lambda value: ports
+    await manager.activate(radio)
+    assert manager.is_running(radio.id) and ports.stopped_for_good == 0
+
+    await manager.close()
+
+    assert ports.stopped_for_good == 1 and not manager.is_running(radio.id)
