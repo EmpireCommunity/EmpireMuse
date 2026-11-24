@@ -702,7 +702,9 @@ class PlayerSession(commands.Cog):
                     return
 
                 player.extra_info = {}
-                player._voice_state = None
+                # vazio, NUNCA ``None``: o evento de voz do connect chama ``.update`` nele; com ``None`` os dois handlers do disnake
+                # falhavam, o nó não recebia o canal e a faixa retomada ficava parada em 0:00 até algo reconectar
+                player._voice_state = {}
                 player.current_encoded = data.get("current_encoded")
                 player.live_lyrics_enabled = data.get("live_lyrics_status", False)
                 player.mini_queue_enabled = data.get("mini_queue_enabled")
