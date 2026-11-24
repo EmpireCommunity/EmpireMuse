@@ -1186,9 +1186,9 @@ class MusicSettings(commands.Cog):
         """Recarrega os players ativos com a skin efetiva (mesma precedência da criação do player). A animação do disco mudou:
         o cartão se redesenha no próximo ciclo, mesmo sem troca de skin."""
         settings = await bot.pool.servers.settings(guild_id)
-        skin, static = saved_player_skins(settings.get("skin"), settings.get("static_skin"), global_data)
-        skin = jukebox_skin(skin, bot.pool.default_skin)
-        static = jukebox_skin(static, bot.pool.default_static_skin)
+        skin, static = saved_player_skins(settings, global_data)
+        skin = jukebox_skin(skin, bot.pool.default_skin, True)  # o Q1 já foi aplicado em cada nível
+        static = jukebox_skin(static, bot.pool.default_static_skin, True)
 
         for b in self.bot.pool.get_all_bots():
             try:

@@ -225,7 +225,7 @@ class Parou(Exception):
         self.argumentos = argumentos
 
 
-async def chamar_create_player(global_data, escritas: list | None = None) -> dict:
+async def chamar_create_player(global_data, escritas: list | None = None, controller: dict | None = None) -> dict:
     """Roda o ``Music.create_player`` REAL até o ``get_player`` e devolve o que ele recebeu.
 
     ``escritas`` (opcional) recebe ``(id_, cópia do documento, db_name)`` de cada ``update_global_data``.
@@ -235,7 +235,13 @@ async def chamar_create_player(global_data, escritas: list | None = None) -> dic
         raise Parou(kwargs)
 
     guild_data = {
-        "player_controller": {"skin": "default", "static_skin": "default", "channel": None, "message_id": None},
+        "player_controller": {
+            "skin": "default",
+            "static_skin": "default",
+            "channel": None,
+            "message_id": None,
+            **(controller or {}),
+        },
         "enable_restrict_mode": False,
         "autoplay": False,
         "default_player_volume": 100,

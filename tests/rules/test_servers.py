@@ -103,7 +103,7 @@ def test_valid_main_document_is_copied_field_by_field():
     )  # fmt: skip
     assert migrate_settings(old, ALLOWED) == {
         "djroles": ["10", "20"], "default_player_volume": 40, "autoplay": True, "enable_restrict_mode": True,
-        "check_other_bots_in_vc": True, "skin": "default", "static_skin": "static", "language": "pt-BR",
+        "check_other_bots_in_vc": True, "skin": "default", "static_skin": "static", "skin_chosen": False, "static_skin_chosen": False, "language": "pt-BR",
         "jukebox_auto_delete": False,
         "jukebox_text_requests": True,
     }  # fmt: skip
@@ -151,7 +151,14 @@ def test_legacy_view_round_trips_and_detects_a_writer_that_changed_settings():
     base = {"_id": "1", "player_controller": {"channel": "5", "message_id": "6", "skin": "velha"}}
     settings = default_settings() | {"skin": "default", "autoplay": True, "djroles": ["10"]}
     flat = to_legacy(base, settings)
-    assert flat["player_controller"] == {"channel": "5", "message_id": "6", "skin": "default", "static_skin": None}
+    assert flat["player_controller"] == {
+        "channel": "5",
+        "message_id": "6",
+        "skin": "default",
+        "static_skin": None,
+        "skin_chosen": False,
+        "static_skin_chosen": False,
+    }
     assert settings_from_legacy(flat) == settings
     assert changed_settings(flat, settings) == {}
     flat["autoplay"], flat["player_controller"]["skin"] = False, "outra"
