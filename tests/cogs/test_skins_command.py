@@ -15,7 +15,8 @@ import pytest
 from empiremuse.cogs import music_settings
 from empiremuse.cogs.music_settings import MusicSettings
 from empiremuse.i18n import get_i18n
-from empiremuse.utils.music.interactions import skins_view
+from empiremuse.rules.skins import CLASSIC_NORMAL, CLASSIC_SKINS, CLASSIC_STATIC, player_preview
+from empiremuse.utils.music.interactions import skins_store, skins_view
 from empiremuse.utils.music.interactions.skins_draft import (
     INVALID,
     Choices,
@@ -147,6 +148,14 @@ class TestPreviewPath:
         assert skins_view.preview_path("skins/ok.png") == (assets / "skins" / "ok.png").resolve()
         assert skins_view.preview_path("../fora.png") is None
 
+    def test_every_classic_has_a_real_preview_in_each_mode_from_the_registry(self):
+        """O registro é a fonte única da prévia: antes ele apontava as Clássicas para um arquivo que não existe."""
+        pairs = [(skin, False) for skin in CLASSIC_NORMAL] + [(skin, True) for skin in CLASSIC_STATIC]
+        missing = [pair for pair in pairs if skins_view.preview_path(player_preview(pair[0], static=pair[1])) is None]
+        assert missing == []
+        assert all(player_preview(skin, static=True) != player_preview(skin) for skin in CLASSIC_STATIC)  # uma por modo
+        assert {entry.preview for entry in CLASSIC_SKINS} <= {player_preview(entry.id) for entry in CLASSIC_SKINS}
+
 
 # ============================================================================ gravação
 
@@ -228,7 +237,7 @@ class TestSaveSkins:
         bot = Bot({"global_skin": False, "custom_skins": {"X": {}}}, store=store)
         plan = SavePlan({"radio_skin": "text"}, {}, (RadioLook(BOT_A, "text", 3), RadioLook(BOT_B, None, 7)))
 
-        failed = await skins_view.save_skins(bot, GUILD, plan, updated_by="900")
+        failed = await skins_store.save_skins(bot, GUILD, plan, updated_by="900")
 
         assert failed == (BOT_A,)
         assert [call[1] for call in store.calls] == [f"{BOT_A}:{GUILD}", f"{BOT_B}:{GUILD}"]
@@ -239,7 +248,7 @@ class TestSaveSkins:
     async def test_the_radio_id_is_always_built_with_the_interactions_guild(self):
         store = RadioStore()
         plan = SavePlan({}, {}, (RadioLook(BOT_B, "text", 7),))
-        await skins_view.save_skins(Bot({}, store=store), GUILD, plan, updated_by="9")
+        await skins_store.save_skins(Bot({}, store=store), GUILD, plan, updated_by="9")
         assert store.calls == [(GUILD, f"{BOT_B}:{GUILD}", "text", 7)]
 
     def test_the_radio_panels_of_this_guild_are_asked_to_redraw(self):
@@ -248,7 +257,7 @@ class TestSaveSkins:
         runner = lambda rid: SimpleNamespace(ports=ports[rid]) if rid in ports else None  # noqa: E731
         pool = SimpleNamespace(radio=SimpleNamespace(manager=SimpleNamespace(runner=runner)))
 
-        skins_view.redraw_radio_panels(pool, GUILD, [BOT_A, BOT_B])
+        skins_store.redraw_radio_panels(pool, GUILD, [BOT_A, BOT_B])
 
         assert redrawn == [BOT_A]
 
@@ -454,6 +463,28 @@ class TestCommand:
         opened = await run_skins(monkeypatch, bot, change=lambda d: _server_skin(d, "muse_text"))
         assert opened.replies[-1]["embeds"][0].description == TR("skin.save_failed")
 
+    @pytest.mark.regression
+    @pytest.mark.asyncio
+    async def test_a_save_that_fails_halfway_reloads_the_players_with_what_was_saved(self, monkeypatch):
+        """Bug do S6: o documento global gravava, o ``patch`` do servidor caía e os players ficavam com a skin velha."""
+        bot = Bot({"global_skin": False})
+        reloads = []
+
+        async def down(*args, **kwargs):
+            raise ConnectionError("banco fora")
+
+        async def reload(self, bot_, guild_id, global_data, *args):
+            reloads.append((guild_id, global_data.get("disc_motion")))
+
+        bot.pool.servers.patch = down
+        monkeypatch.setattr(MusicSettings, "_reload_player_skins", reload)
+        change = lambda d: _replace(_server_skin(d, "muse_text"), disc_motion=False)  # noqa: E731
+
+        opened = await run_skins(monkeypatch, bot, change=change)
+
+        assert opened.replies[-1]["embeds"][0].description == TR("skin.save_failed")
+        assert bot.global_writes and reloads == [(GUILD, False)]  # a parte gravada (global) chega aos players
+
 
 # ============================================================================ a view
 
@@ -517,7 +548,7 @@ class TestView:
     @pytest.mark.asyncio
     async def test_outside_names_are_escaped_in_embeds_and_raw_only_in_selects(self):
         bot = Bot({}, store=RadioStore(radios=[_radio()]), channels={5: SimpleNamespace(name="**x**")})
-        (row,) = await skins_view.radio_rows(bot, bot.get_guild(GUILD))
+        (row,) = await skins_store.radio_rows(bot, bot.get_guild(GUILD))
         assert row.label == f"#**x** · {BOT_A}" and row.text == f"#\\*\\*x\\*\\* · {BOT_A}"
 
         plan = SavePlan({"player_skin": "> custom_skin: **c**"}, {}, (RadioLook(BOT_A, "text", 3),))

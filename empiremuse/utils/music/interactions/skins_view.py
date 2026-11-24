@@ -2,13 +2,13 @@
 
 - **Rascunho por invocação** (``skins_draft.Draft``): nada é gravado até o Salvar; Cancelar descarta; depois de
   ``VIEW_TIMEOUT_S`` os componentes desligam.
-- **Servidor sempre o da interação:** as rádios listadas são as de ``list_for_guild(guild_id)``; o ``radio_id`` é montado
-  com o ``bot_id`` do valor e o ``guild_id`` da interação, e o ``set_look`` relê a rádio e confere o servidor (F-7).
+- **Leitura e gravação** (as rádios do servidor, as listas, o Salvar e o redesenho das rádios) ficam em ``skins_store.py``.
 - **Permissão:** Gerenciar Servidor para tudo (conferida de novo no Salvar); o par das rádios só aparece, e só grava, com
   a permissão de quem configura rádio (``can_configure_radios``, a mesma do ``/radio``).
 - **Prévia:** o asset ``preview`` do registro, anexado (PNG até 400 KiB, GIF até 2 MiB), com o rodapé ``skin.concept``
   enquanto a prévia for a imagem conceitual. Caminho fora de ``assets/``, arquivo ausente ou grande demais: sem imagem.
-- **Rótulos com texto de fora** (nome de canal, de bot, de personalizada) passam por ``external_text(markdown=False)``.
+- **Rótulos com texto de fora** (nome de canal, de bot, de personalizada) passam por ``label_text`` (sem markdown) e, em
+  embed, por ``embed_text`` (escapado).
 """
 
 from __future__ import annotations
@@ -24,12 +24,8 @@ import disnake
 from empiremuse.paths import PROJECT_DIR
 from empiremuse.rules.i18n import Translator, fit
 from empiremuse.rules.jukebox_select import plan as page_plan
-from empiremuse.rules.radio import radio_id
-from empiremuse.rules.settings import allowed_names
 from empiremuse.rules.skins import (
-    CLASSIC_NORMAL,
     CLASSIC_SKINS,
-    CLASSIC_STATIC,
     FAMILY_CLASSIC,
     JUKEBOX_SKINS,
     RADIO_SKINS,
@@ -37,11 +33,10 @@ from empiremuse.rules.skins import (
     SkinEntry,
     disc_motion_on,
     jukebox_skin,
+    player_preview,
     radio_look,
     saved_player_skins,
 )
-from empiremuse.rules.text import external_text
-from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
 from empiremuse.utils.music.interactions.skins_draft import (
     FOCUS_RADIO,
@@ -56,14 +51,12 @@ from empiremuse.utils.music.interactions.skins_draft import (
     RadioRow,
     SavePlan,
     custom_value,
-    ordered_ids,
     player_value,
     radio_skin_value,
     stored_custom_name,
     target_value,
 )
-from empiremuse.utils.radio.premium import RadioUnavailable
-from empiremuse.utils.radio.store import RadioConflict, RadioInvalid, RadioNotFound
+from empiremuse.utils.music.interactions.skins_store import embed_text, label_text
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +64,6 @@ VIEW_TIMEOUT_S = 180
 SELECT_MAX = 25
 LABEL_MAX = 100
 DESCRIPTION_MAX = 100
-NAME_MAX = 60  # nomes de canal, bot e personalizada nos rótulos (unidades do ``external_text``)
 ALT_MAX = 1024
 PREVIEW_MAX_BYTES = {".png": 400 * 1024, ".gif": 2 * 1024 * 1024}
 PAGE_VALUE = "page:"
@@ -101,22 +93,12 @@ def can_configure_radios(member: Any) -> bool:
 # ---------------------------------------------------------------------- nomes e prévias
 
 
-def _label(value: object) -> str:
-    """Texto de fora para rótulo e placeholder de select (não renderizam markdown)."""
-    return external_text(value, NAME_MAX, markdown=False)
-
-
-def _text(value: object) -> str:
-    """Texto de fora para embed e conteúdo de mensagem: o markdown escapado."""
-    return external_text(value, NAME_MAX)
-
-
 def skin_name(tr: Translator, value: str, *, markdown: bool = True) -> str:
     """Nome de uma skin do player para mostrar: o do catálogo, o id (Clássicas) ou o nome da personalizada (escapado para
     embed e conteúdo; ``markdown=False`` só em select)."""
     custom = stored_custom_name(value)
     if custom is not None:
-        return _text(custom) if markdown else _label(custom)
+        return embed_text(custom) if markdown else label_text(custom)
     entry = _PLAYER_ENTRIES.get(value)
     return tr(entry.name_key) if entry is not None and entry.name_key else value
 
@@ -124,15 +106,6 @@ def skin_name(tr: Translator, value: str, *, markdown: bool = True) -> str:
 def radio_skin_name(tr: Translator, look: str) -> str:
     entry = _RADIO_ENTRIES.get(look)
     return tr(entry.name_key) if entry is not None else look
-
-
-def _player_preview(value: str, mode: str) -> str | None:
-    entry = _PLAYER_ENTRIES.get(value)
-    if entry is None:
-        return None
-    if entry.family == FAMILY_CLASSIC:  # as prévias das Clássicas são as de antes, uma por modo
-        return f"skins/skin_{'static' if mode == MODE_STATIC else 'normal'}_{value}_preview.png"
-    return entry.preview
 
 
 def preview_path(relative: str | None) -> Path | None:
@@ -147,40 +120,7 @@ def preview_path(relative: str | None) -> Path | None:
     return path if path.stat().st_size <= limit else None
 
 
-# ---------------------------------------------------------------------- leitura
-
-
-async def radio_rows(bot: Any, guild: Any) -> tuple[RadioRow, ...]:
-    """As rádios do servidor da interação, na ordem do ``/radio``. Rádio indisponível no processo = nenhuma."""
-    try:
-        radios = await bot.pool.radio.store.list_for_guild(guild.id)
-    except RadioUnavailable, AttributeError:
-        return ()
-    names = {b.user.id: b.user.display_name for b in bot.pool.get_all_bots() if getattr(b, "user", None) is not None}
-    rows = []
-    for radio in radios:
-        if radio.guild_id != guild.id:
-            continue
-        channel = guild.get_channel(radio.channel_id)
-        channel_name = channel.name if channel is not None else str(radio.channel_id)
-        bot_name = names.get(radio.bot_id, radio.bot_id)
-        label = f"#{_label(channel_name)} · {_label(bot_name)}"
-        text = f"#{_text(channel_name)} · {_text(bot_name)}"
-        rows.append(RadioRow(radio.bot_id, label, radio.look, radio.rev, text))
-    return tuple(rows)
-
-
-async def load_choices(bot: Any, guild: Any, global_data: Mapping[str, Any], *, radio_allowed: bool) -> Choices:
-    """As listas do momento: skins carregadas (menos as ignoradas), personalizadas do servidor e, com a permissão, as rádios."""
-    normal = ordered_ids(allowed_names(bot.player_skins, bot.config["IGNORE_SKINS"]), CLASSIC_NORMAL)
-    static = ordered_ids(allowed_names(bot.player_static_skins, bot.config["IGNORE_STATIC_SKINS"]), CLASSIC_STATIC)
-    return Choices(
-        normal,
-        static,
-        tuple(global_data.get("custom_skins") or {}),
-        tuple(global_data.get("custom_skins_static") or {}),
-        await radio_rows(bot, guild) if radio_allowed else (),
-    )
+# ---------------------------------------------------------------------- rascunho inicial
 
 
 def initial_draft(pool: Any, settings: Mapping[str, Any], global_data: Mapping[str, Any], choices: Choices) -> Draft:
@@ -199,46 +139,6 @@ def initial_draft(pool: Any, settings: Mapping[str, Any], global_data: Mapping[s
         radio_all=radio_look(None, global_data.get("radio_skin")),
         radio_own=tuple((row.bot_id, row.look) for row in choices.radios),
     )
-
-
-# ---------------------------------------------------------------------- gravação
-
-
-async def save_skins(bot: Any, guild_id: int, plan: SavePlan, *, updated_by: str) -> tuple[int, ...]:
-    """Grava o plano: uma escrita do documento global (relido agora, só os campos do plano), um ``patch`` do servidor e um
-    ``set_look`` por rádio alterada (compare-and-set no ``rev`` que a tela leu). Devolve os ``bot_id`` das rádios que não
-    gravaram (mudaram, sumiram ou não são deste servidor); as outras ficam gravadas."""
-    if plan.global_fields:
-        fresh = await bot.get_global_data(guild_id, db_name=DBModel.guilds)
-        await bot.update_global_data(guild_id, {**fresh, **plan.global_fields}, db_name=DBModel.guilds)
-    if plan.server_fields:
-        await bot.pool.servers.patch(guild_id, "settings", dict(plan.server_fields))
-    failed = []
-    for item in plan.radio_looks:
-        try:
-            await bot.pool.radio.store.set_look(
-                guild_id, radio_id(item.bot_id, guild_id), item.look, expected_rev=item.rev, updated_by=updated_by
-            )
-        except (RadioConflict, RadioNotFound, RadioInvalid, RadioUnavailable) as error:
-            logger.info("Skin da rádio não gravada (%s)", type(error).__name__)
-            failed.append(item.bot_id)
-    return tuple(failed)
-
-
-def redraw_radio_panels(pool: Any, guild_id: int, bot_ids: Sequence[int]) -> None:
-    """Marca para redesenho o painel das rádios afetadas que rodam neste processo (a próxima janela de edição o refaz)."""
-    manager = getattr(getattr(pool, "radio", None), "manager", None)
-    if manager is None:
-        return
-    for bot_id in bot_ids:
-        ports = getattr(manager.runner(radio_id(bot_id, guild_id)), "ports", None)
-        redraw = getattr(ports, "refresh_panel", None)  # público nas duas portas (S7)
-        if redraw is None:
-            continue
-        try:
-            redraw()
-        except Exception as error:  # noqa: BLE001 - o dado já foi gravado; o painel se refaz no próximo evento
-            logger.warning("Falha ao marcar o painel da rádio (%s)", type(error).__name__)
 
 
 def summary_lines(tr: Translator, plan: SavePlan, radios: Sequence[RadioRow]) -> list[str]:
@@ -292,7 +192,7 @@ def player_options(
     if custom is not None:
         options.append(
             disnake.SelectOption(
-                label=fit(_label(custom), LABEL_MAX),
+                label=fit(label_text(custom), LABEL_MAX),
                 value=custom_value(custom),
                 description=fit(tr("skin.custom.desc"), DESCRIPTION_MAX),
                 emoji=CUSTOM_EMOJI,
@@ -493,7 +393,7 @@ class SkinsView(disnake.ui.View):
             tr("skin.custom.desc") if stored_custom_name(value) is not None else _player_description(tr, value, default)
         )
         concept = bool(entry and entry.concept)
-        return skin_name(tr, value), f"{scope}\n{desc}", _player_preview(value, mode), concept
+        return skin_name(tr, value), f"{scope}\n{desc}", player_preview(value, static=mode == MODE_STATIC), concept
 
     def payload(self) -> dict[str, Any]:
         """Os embeds (o seletor e a prévia), a view e o anexo da prévia, se houver."""
@@ -636,7 +536,7 @@ class CustomSkinsView(disnake.ui.View):
             for name in names[page.start : page.stop]:
                 options.append(
                     disnake.SelectOption(
-                        label=fit(_label(name), LABEL_MAX), value=custom_value(name), emoji=CUSTOM_EMOJI
+                        label=fit(label_text(name), LABEL_MAX), value=custom_value(name), emoji=CUSTOM_EMOJI
                     )
                 )
             if page.next is not None:
