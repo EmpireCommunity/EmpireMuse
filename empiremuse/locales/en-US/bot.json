@@ -1401,7 +1401,6 @@
   "jbx.vote": "Vote · {votos} of {quorum}",
   "skin.name.muse_jukebox": "Jukebox",
   "skin.desc.muse_jukebox": "Discord's own layout, with a spinning record.",
-  "skin.preview_soon": "Preview coming soon",
   "jbx.state.loading": "Loading",
   "jbx.stream.untitled": "Live stream",
   "jbx.radio.live_line": "Live radio",

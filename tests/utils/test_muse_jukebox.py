@@ -402,3 +402,18 @@ def test_the_idle_of_a_channel_without_a_player_is_v2_without_the_shutdown_line(
     text = shown_text(data)
     assert data["embeds"] == [] and data["content"] is None and "<t:" not in text
     assert tr("jbx.idle.title") in text and tr("jbx.idle.body") in text and "abra um post" in text
+
+
+@pytest.mark.regression
+def test_a_queue_row_fits_one_line_and_drops_the_artist_the_title_already_has(tr):
+    player = _player(tr, static=True)
+    long = _track("Justin Timberlake - CAN'T STOP THE FEELING! (from DreamWorks Animation's TROLLS)")
+    long.authors_string = "Justin Timberlake"
+    other = _track("Sia - Cheap Thrills (Performance Edit)")
+    other.authors_string = "Maroon Five"
+    row = muse_jukebox.queue_row(player, 1, long, NOW + 25)
+    assert "· Justin Timberlake" not in row and row.endswith(f"· <t:{muse_jukebox.tx.stamp(NOW + 25)}:R>")
+    visible = row.replace("\\", "")
+    visible = visible.replace(f"<t:{muse_jukebox.tx.stamp(NOW + 25)}:R>", "x" * muse_jukebox.TIME_WIDTH)
+    assert len(visible.replace("**", "")) <= muse_jukebox.ROW_WIDTH + 4
+    assert "· Maroon Five" in muse_jukebox.queue_row(player, 2, other, None)  # artista diferente do título: fica

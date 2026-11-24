@@ -168,6 +168,41 @@ def timeline(player: Any, ctx: tx.Context, tr: tx.Tr) -> str:
     return f"`{tx.clock(tx.elapsed_ms(player))}` {bar} {total} · {tr('jbx.text.ends', t=tx.relative(end))}"
 
 
+ROW_WIDTH = (
+    76  # caracteres visíveis de uma linha da fila no contêiner de 600 px do desktop (o ``<t:R>`` conta TIME_WIDTH)
+)
+TIME_WIDTH = 14  # "em 25 segundos"
+ROW_MIN_TITLE = 24
+ROW_ARTIST_MAX = 24
+ROW_NAME_MAX = 14
+
+
+def _visible(text: str) -> int:
+    return len(text.replace("\\", ""))
+
+
+def queue_row(player: Any, n: int, track: Any, start: Optional[float]) -> str:
+    """Uma linha da fila numa linha só no desktop: o artista sai quando o título já começa com ele ("Dua Lipa - Levitating") e o
+    título é cortado para o que sobra; o horário relativo fica na mesma linha."""
+    length = "🔴" if track.is_stream else tx.clock(track.duration)
+    tail = []
+    artist = external_text(track.authors_string, ROW_ARTIST_MAX)
+    plain_title = external_text(track.single_title, TITLE_MAX, markdown=False).casefold()
+    plain_artist = external_text(track.authors_string, TITLE_MAX, markdown=False).casefold()
+    if artist and not (plain_artist and plain_title.startswith(plain_artist)):
+        tail.append(artist)
+    tail.append(length)
+    if not tx.by_bot(player, track) and (who := tx.member_name(player, track.requester)):
+        tail.append(who if _visible(who) <= ROW_NAME_MAX else who[: ROW_NAME_MAX - 1].rstrip("\\") + "…")
+    if start is not None:
+        tail.append("x" * TIME_WIDTH)  # só a largura: o ``<t:R>`` entra abaixo
+    room = max(ROW_MIN_TITLE, ROW_WIDTH - 3 - sum(_visible(part) + 3 for part in tail))
+    title = external_text(track.single_title, room) or "—"
+    if start is not None:
+        tail[-1] = tx.relative(start)
+    return f"`{n:02d}` " + " · ".join([f"**{title}**", *tail])
+
+
 def _queue_tail(player: Any, ctx: tx.Context, tr: tx.Tr, shown: int, total: int) -> str:
     tail = []
     if total > shown:
@@ -200,7 +235,7 @@ def queue_text(player: Any, ctx: tx.Context, tr: tx.Tr) -> str:
     start = tx.track_end(player, ctx.now) if player.static and not repeating else None
     lines = [f"### {head}"]
     for n, track in enumerate(tracks[:limit], start=1):
-        lines.append(tx.queue_item_line(player, n, track, start))
+        lines.append(queue_row(player, n, track, start))
         if start is not None:
             start = None if track.is_stream else start + track.duration / 1000
     if tail := _queue_tail(player, ctx, tr, min(limit, len(tracks)), len(tracks)):
