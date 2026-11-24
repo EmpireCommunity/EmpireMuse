@@ -456,7 +456,7 @@ async def send_idle_embed(
         content = None
 
     if isinstance(target, disnake.MessageInteraction):
-        await target.response.edit_message(embed=embed, components=components, content=content)
+        await target.response.edit_message(embed=embed, components=components, content=content, attachments=[])
         message = target.message
 
     elif isinstance(target, disnake.Message):
@@ -464,7 +464,8 @@ async def send_idle_embed(
             return target
 
         if target.author == target.guild.me:
-            await target.edit(embed=embed, content=content, components=components)
+            # attachments=[]: um cartão de player que estava nesta mensagem sai junto
+            await target.edit(embed=embed, content=content, components=components, attachments=[])
             message = target
         else:
             message = await target.channel.send(embed=embed, components=components, content=content)
@@ -515,7 +516,8 @@ async def send_idle_embed(
                                     await thread.edit(**thread_kw)
                                 break
             else:
-                await message.edit(embed=embed, content=content, components=components)
+                # ``attachments=[]``: o cartão de imagem do player sai junto (o embed ocioso não tem anexo)
+                await message.edit(embed=embed, content=content, components=components, attachments=[])
         else:
             message = await channel.send(embed=embed, components=components, content=content)
 

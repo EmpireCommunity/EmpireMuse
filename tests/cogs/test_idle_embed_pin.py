@@ -77,3 +77,27 @@ class TestFixarMensagens:
         mensagem = await rodar(disnake.Permissions(pin_messages=False, manage_messages=True))
 
         mensagem.pin.assert_not_awaited()
+
+
+@pytest.mark.regression
+async def test_the_idle_embed_edit_drops_any_old_card_attachment():
+    mensagem = await rodar(disnake.Permissions(pin_messages=True))
+
+    assert mensagem.edit.await_args.kwargs["attachments"] == []
+
+
+@pytest.mark.regression
+async def test_the_idle_embed_on_the_thread_start_message_drops_the_card_attachment():
+    mensagem = alvo(disnake.Permissions(pin_messages=True))
+    thread = MagicMock(spec=disnake.Thread)
+    thread.id, thread.guild_id, thread.guild = CANAL, 1, mensagem.guild
+    thread.parent = MagicMock(spec=disnake.TextChannel)
+    thread.parent.fetch_message = AsyncMock(return_value=mensagem)
+    bot = bot_falso()
+    bot.get_channel = lambda _id: thread
+
+    await send_idle_embed(
+        thread, "", bot=bot, guild_data={"player_controller": {"channel": str(CANAL), "fav_links": {}}}
+    )
+
+    assert mensagem.edit.await_args.kwargs["attachments"] == []

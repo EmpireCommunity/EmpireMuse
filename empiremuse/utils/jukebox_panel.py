@@ -218,7 +218,7 @@ class JukeboxPanel:
                 genres=genres_of(playlists)[:MAX_GENRE_OPTIONS],
                 fixed_entries=await radio_entries(panel_bot, tr, guild_id),
             )
-            await message.edit(allowed_mentions=NO_MENTIONS, **payload)
+            await message.edit(allowed_mentions=NO_MENTIONS, attachments=[], **payload)  # o painel nunca leva anexo
             if any(e.state == PLAYING and e.duration_ms for e in entries):
                 self._schedule_tick(
                     guild_id

@@ -170,7 +170,8 @@ def test_the_loader_registers_each_muse_skin_in_both_modes_and_only_registry_ids
     assert "fake_muse_pkg.not_in_the_registry" not in sys.modules
 
 
-def test_without_the_muse_package_nothing_is_registered_and_nothing_is_logged(caplog):
+def test_without_the_muse_package_nothing_is_registered_and_nothing_is_logged(monkeypatch, caplog):
+    monkeypatch.setattr(client_module, "MUSE_SKINS_PACKAGE", "fake_muse_absent_pkg")
     pool = SimpleNamespace(player_skins={}, player_static_skins={})
 
     with caplog.at_level(logging.WARNING, logger=client_module.logger.name):
