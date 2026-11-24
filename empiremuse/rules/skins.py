@@ -48,7 +48,7 @@ class SkinEntry(NamedTuple):
     concept: bool  # True = a prévia é a imagem conceitual (rodapé "Imagem conceitual")
 
 
-DEFAULT_JUKEBOX_SKIN = "muse_text"  # a Jukebox Texto, nos dois modos do player
+DEFAULT_JUKEBOX_SKIN = "muse_jukebox"  # a Jukebox em Components V2, nos dois modos do player
 DEFAULT_RADIO_LOOK = "text"  # a Rádio Texto, nas rádios 24 h
 LEGACY_SKIN_DEFAULT = "default"  # o padrão de antes do 2.3, gravado pelo /skin antigo ao salvar os dois modos
 LEGACY_RADIO_SKINS = ("black", "white")  # o que o código anterior aceita no campo ``skin`` da rádio
