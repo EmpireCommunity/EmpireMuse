@@ -12,6 +12,7 @@ from empiremuse.utils.music.converters import time_format, fix_characters, get_b
 from empiremuse.utils.music.models import LavalinkPlayer
 from empiremuse.utils.others import PlayerControls
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
+from empiremuse.utils.jukebox_panel import player_call_is_private
 
 
 class EmbedLinkStaticSkin:
@@ -109,7 +110,7 @@ class EmbedLinkStaticSkin:
 
         txt += vc_txt
 
-        if player.command_log:
+        if player.command_log and not player_call_is_private(player):  # call privada: sem a última ação
             txt += player.tr(
                 "player.last_interaction_2",
                 command_log_emoji=str(player.command_log_emoji),

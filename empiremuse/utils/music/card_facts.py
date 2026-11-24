@@ -13,6 +13,7 @@ acompanha a imagem (barra de texto da opção C, texto alternativo e título no 
 from __future__ import annotations
 
 import math
+from itertools import islice
 from typing import Any, Callable, NamedTuple, Optional
 
 from empiremuse.rules.card import (
@@ -150,14 +151,18 @@ def _item(player: Any, track: Any) -> CardItem:
     )
 
 
+def _head(player: Any, tracks: Any) -> tuple[int, tuple[CardItem, ...]]:
+    """O total e só as primeiras ``QUEUE_FACTS_MAX`` faixas: a fila inteira nunca é copiada."""
+    return len(tracks), tuple(_item(player, t) for t in islice(tracks, QUEUE_FACTS_MAX))
+
+
 def _queue(player: Any) -> tuple[str, int, tuple[CardItem, ...]]:
-    queue = list(getattr(player, "queue", ()))
+    queue = getattr(player, "queue", ())
     if queue:
-        return QUEUE_KIND_QUEUE, len(queue), tuple(_item(player, t) for t in queue[:QUEUE_FACTS_MAX])
-    recommended = list(getattr(player, "queue_autoplay", ())) if getattr(player, "autoplay", False) else []
+        return QUEUE_KIND_QUEUE, *_head(player, queue)
+    recommended = getattr(player, "queue_autoplay", ()) if getattr(player, "autoplay", False) else ()
     if recommended:
-        items = tuple(_item(player, t) for t in recommended[:QUEUE_FACTS_MAX])
-        return QUEUE_KIND_RECOMMENDED, len(recommended), items
+        return QUEUE_KIND_RECOMMENDED, *_head(player, recommended)
     return QUEUE_KIND_EMPTY, 0, ()
 
 

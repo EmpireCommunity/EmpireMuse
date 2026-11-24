@@ -16,7 +16,7 @@ from typing import Any, Callable, NamedTuple, Optional
 
 from empiremuse.rules.jukebox_panel import last_action_of
 from empiremuse.rules.text import external_text
-from empiremuse.utils.jukebox_panel import is_private
+from empiremuse.utils.jukebox_panel import player_call_is_private
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
 from empiremuse.utils.music.converters import md_url, time_format
 from empiremuse.utils.music.jukebox_ui import server_station_md, station_md
@@ -56,8 +56,7 @@ def voice_channel(player: Any) -> Any:
 
 
 def is_hidden(player: Any) -> bool:
-    voice = voice_channel(player)
-    return True if voice is None else is_private(voice)
+    return player_call_is_private(player)
 
 
 def context(player: Any, now: float) -> Context:

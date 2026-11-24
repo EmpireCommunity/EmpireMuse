@@ -7,7 +7,9 @@ liga o modo certo (controlador/estático) no player.
 """
 
 import importlib
+import json
 import pkgutil
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import disnake
@@ -162,3 +164,27 @@ def test_static_skins_turn_on_static_mode(skin_cls):
     player = make_player(static=False)
     skin_cls().setup_features(player)
     assert player.static is True
+
+
+def _shown_text(data) -> str:
+    embeds = " ".join(json.dumps(e.to_dict(), ensure_ascii=False) for e in data.get("embeds") or [])
+    return f"{data.get('content') or ''} {embeds}"
+
+
+def _call(player, *, private: bool):
+    perms = SimpleNamespace(view_channel=not private, connect=True)
+    player.guild.me.voice.channel.permissions_for.return_value = perms
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize("skin_cls", NORMAL + STATIC)
+def test_no_classic_skin_shows_the_last_action_in_a_private_call(skin_cls):
+    action = "Bia pulou a música."
+    shown = {}
+    for private in (False, True):
+        player = make_player(command_log=action)
+        player.tr = lambda key, **values: " ".join([key, *map(str, values.values())])
+        _call(player, private=private)
+        shown[private] = action in _shown_text(skin_cls().load(player))
+
+    assert shown[True] is False

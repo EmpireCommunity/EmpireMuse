@@ -523,14 +523,19 @@ async def test_e2e_expanded_plays_as_gif_pauses_as_png_and_comes_back_as_gif(mon
 
 @pytest.mark.asyncio
 @pytest.mark.regression
+@pytest.mark.parametrize("screen", ["player", "lyrics"])
 @pytest.mark.parametrize("had_card", [False, True])
-async def test_closing_the_player_drops_a_card_that_was_on_the_message(had_card):
+async def test_closing_the_player_drops_a_card_that_was_on_the_message(monkeypatch, had_card, screen):
     from unittest.mock import AsyncMock
 
     from empiremuse.utils.music.models import state_steps
 
     player = Player(ImageSkin())
-    player.lyric_embed, player.message = None, SimpleNamespace(edit=AsyncMock())
+    player.lyric_embed, player.command_log = None, "Bia parou o player."
+    player.message = SimpleNamespace(edit=AsyncMock(), components=[object()])
+    if screen == "lyrics":  # a tela de letra encerra com o embed dela
+        player.lyric_embed = disnake.Embed(description="letra")
+        monkeypatch.setattr(state_steps, "_cu_disabled_view_children", lambda _self: [])
     player.get_skin = lambda disable=False: TextSkin().load(player)
     if had_card:
         RENDER_STATES.replace(player, last=RenderedKey(base_spec(), None, CardFormat.PNG))
@@ -539,6 +544,7 @@ async def test_closing_the_player_drops_a_card_that_was_on_the_message(had_card)
 
     sent = player.message.edit.await_args.kwargs
     assert sent.get("attachments") == ([] if had_card else None)
+    assert ("embed" in sent) is (screen == "lyrics")
 
 
 @pytest.mark.asyncio
@@ -558,6 +564,40 @@ async def test_a_busy_slot_with_no_card_on_screen_does_not_repeat_the_same_text_
     again = await run_once()
 
     assert (first, again) == (False, message == "same") and world.pipe.calls == 2 and world.player.update is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_closing_the_player_drops_a_drawing_still_in_the_slot(monkeypatch):
+    import asyncio
+
+    from empiremuse.utils.music.models import state_steps
+    from tests.utils.test_card_pipeline import Covers, DrawnThenWait
+    from tests.utils.test_render_cards import RecordingBook, logo_png
+
+    slot = DrawnThenWait()
+    pipe = pipeline.CardPipeline(Covers(), slot=slot, book=RecordingBook(), clock=lambda: 100.0, bot_logo=logo_png())
+    monkeypatch.setattr(pipeline, "card_pipeline", lambda _hosts: pipe)
+    monkeypatch.setattr(pipeline, "_PIPELINE", pipe)
+    spec = {"value": base_spec(skin="muse_slim_black", motion=False)}
+
+    async def card_spec(_player, _skin, **_kw):
+        return spec["value"]
+
+    monkeypatch.setattr(np_steps, "_card_spec", card_spec)
+    player = Player(ImageSkin())
+    await run(player)
+    slot.after = asyncio.Event()
+    spec["value"] = base_spec(skin="muse_slim_black", motion=False, volume=10)
+    drawing = asyncio.ensure_future(run(player))
+    for _ in range(5):
+        await asyncio.sleep(0)
+
+    state_steps._cu_cancel_tasks(player)  # o player encerra com o desenho ainda na vaga
+    slot.after.set()
+    skipped, req = await drawing
+
+    assert skipped is True and req.data is None and slot.runs == 2
 
 
 @pytest.mark.asyncio

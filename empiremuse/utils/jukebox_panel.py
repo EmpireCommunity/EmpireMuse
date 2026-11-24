@@ -49,6 +49,12 @@ def is_private(voice_channel: Any) -> bool:
     return not (perms.view_channel and perms.connect)
 
 
+def player_call_is_private(player: Any) -> bool:
+    """A call do player é privada? Sem call conhecida, conta como privada (a regra de todas as skins)."""
+    voice = getattr(getattr(getattr(getattr(player, "guild", None), "me", None), "voice", None), "channel", None)
+    return True if voice is None else is_private(voice)
+
+
 def entry_for(bot: BotCore, player: LavalinkPlayer) -> Optional[PanelEntry]:
     """O bloco do painel para um player conectado; ``None`` se ele não está em call."""
     voice = getattr(getattr(player.guild.me, "voice", None), "channel", None)

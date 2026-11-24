@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 import datetime
+import sys
 
 import disnake
 
@@ -36,6 +37,10 @@ def _cu_cancel_tasks(self) -> None:
     for attr in ("message_updater_task", "_new_node_task", "idle_task"):
         _cu_cancel_task_quietly(self, attr)
         setattr(self, attr, None)
+
+    pipeline = sys.modules.get("empiremuse.utils.render.cards.pipeline")  # sem o módulo carregado, nada desenha
+    if pipeline is not None:
+        pipeline.supersede(self)  # um cartão ainda desenhando não edita a mensagem depois do encerramento
 
 
 def _cu_voice_channel(self):

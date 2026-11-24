@@ -176,6 +176,28 @@ def test_the_queue_is_capped_and_named_and_recommended_tracks_have_no_requester(
     assert (empty.queue_kind, empty.queue_total) == ("empty", 0)
 
 
+class CountingQueue(deque):
+    """Uma fila enorme que conta quantas faixas foram lidas dela."""
+
+    def __init__(self, tracks):
+        super().__init__(tracks)
+        self.read = 0
+
+    def __iter__(self):
+        for track in super().__iter__():
+            self.read += 1
+            yield track
+
+
+@pytest.mark.regression
+def test_a_huge_queue_is_read_only_up_to_the_card_cap():
+    queue = CountingQueue(Track(f"t{n}", requester=8) for n in range(5_000))
+
+    spec = build(player(current=Track(), queue=queue), SETTINGS)
+
+    assert (spec.queue_total, len(spec.queue)) == (5_000, QUEUE_FACTS_MAX) and queue.read <= QUEUE_FACTS_MAX
+
+
 @pytest.mark.parametrize(
     ("source", "code", "autoplay", "requester", "by"),
     [

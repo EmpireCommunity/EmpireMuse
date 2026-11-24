@@ -5,6 +5,9 @@ Confere tamanho e modo da imagem, quais chaves do catálogo são pedidas (tradut
 ladrilhos do disco. Usa as fontes do repositório; sem rede, sem relógio.
 """
 
+import sys
+import unicodedata
+
 import pytest
 from PIL import Image
 
@@ -18,10 +21,11 @@ from empiremuse.rules.card import (
     make_radio,
     make_station,
     make_track,
+    card_text,
     seal,
 )
 from empiremuse.utils.music import card_facts
-from empiremuse.utils.radio.visor import inter_points
+from empiremuse.utils.radio.visor import inter_points, inter_text
 from empiremuse.utils.render.cards import disc, expanded, radio_portrait, slim, visor_jukebox
 from empiremuse.utils.render.cards.layout import (
     COVER_SIDE,
@@ -34,7 +38,7 @@ from empiremuse.utils.render.cards.layout import (
     theme_for,
 )
 from empiremuse.rules.i18n import Translator
-from empiremuse.utils.render.fonts import FIGTREE, FontBook
+from empiremuse.utils.render.fonts import FIGTREE, MANIFEST, FontBook
 from empiremuse.utils.render.gif import encode_png
 
 pytestmark = pytest.mark.critical
@@ -553,6 +557,7 @@ def _visor_texts(view) -> list[str]:
         data.station_name,
         data.now_title,
         data.now_artist,
+        data.codec,
         *data.filter_path,
         *(s.name for s in data.next_stations),
     ]
@@ -566,7 +571,9 @@ def test_the_radio_visor_never_draws_a_character_inter_lacks(book, state):
     spec = (
         base_spec(track=track, queue=items, queue_total=3)
         if state == "playing"
-        else STATES["radio_live"]()._replace(radio=radio_facts(name=GLYPHLESS, title=GLYPHLESS, place=GLYPHLESS))
+        else STATES["radio_live"]()._replace(
+            radio=radio_facts(name=GLYPHLESS, title=GLYPHLESS, place=GLYPHLESS, codec="🎵夜A")
+        )
     )
 
     view = visor_jukebox.visor_view(spec, CardArt(cover_bytes(), logo_png()), RecordingTr(), book)
@@ -577,6 +584,24 @@ def test_the_radio_visor_never_draws_a_character_inter_lacks(book, state):
     assert any("Canção" in text for text in texts)
     if state == "playing":
         assert view.data.station_name == "T:jbx.title_in_text"  # o título real vai no autor do embed
+
+
+RIGHT_TO_LEFT = frozenset({"R", "AL", "AN", "RLE", "RLO", "RLI", "LRE", "LRO", "LRI", "FSI", "PDF", "PDI"})
+
+
+@pytest.mark.critical
+def test_no_right_to_left_character_reaches_a_drawing():
+    """Rótulos com um nome de fora (``jbx.requested_by``, ``jbx.from_station``) saem num só ``draw.text``. Com ``raqm`` um nome
+    da direita para a esquerda inverteria o rótulo, então isso só é seguro enquanto nenhum caractere assim chega ao desenho:
+    nenhuma fonte do repositório tem o glifo e o texto do cartão tira os controles. Uma fonte nova com RTL pede o nome à parte."""
+    fonts = FontBook()
+    rtl = tuple(chr(c) for c in range(sys.maxunicode + 1) if unicodedata.bidirectional(chr(c)) in RIGHT_TO_LEFT)
+
+    kept = {d for c in rtl for d in card_text(c, 8) if unicodedata.bidirectional(d) in RIGHT_TO_LEFT}  # depois do NFKC
+    cards = sorted(d for d in kept if any(fonts.has_glyph(name, d) for name in MANIFEST))
+    visor = sorted(d for d in kept if inter_text(d)[0])  # o visor escreve só em Inter
+
+    assert (cards, visor) == ([], [])
 
 
 # ---------------------------------------------------------------------- Retrato da Jukebox (D14): o renderizador do Retrato

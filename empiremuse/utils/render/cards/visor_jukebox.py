@@ -125,7 +125,7 @@ def _radio_view(spec: CardSpec, art: CardArt, tr: Translate) -> VisorView:
     quality = station_quality(radio.bitrate, check_ok=None, unavailable=False)
     data = VisorData(
         station_name=_drawn(radio.name),
-        codec=radio.codec,
+        codec=_drawn(radio.codec),
         bitrate_kbps=radio.bitrate,
         logo=art.logo,
         state="offline" if retry else "live",
@@ -220,7 +220,7 @@ def _music_view(spec: CardSpec, art: CardArt, tr: Translate, book: FontBook) -> 
     pills = tuple(NextStation(position + i + 1, _drawn(item.title), 0, "good") for i, item in enumerate(spec.queue))
     data = VisorData(
         station_name=_title(spec, tr, book),
-        codec=spec.track.source if spec.track is not None else "",
+        codec=_drawn(spec.track.source) if spec.track is not None else "",
         logo=_logo(spec, art),
         state="offline" if spec.state is CardState.IDLE else "live",
         position=0 if spec.state is CardState.IDLE else position,

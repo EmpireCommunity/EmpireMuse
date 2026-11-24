@@ -12,6 +12,7 @@ from empiremuse.utils.music.converters import time_format, get_button_style, mus
 from empiremuse.utils.music.models import LavalinkPlayer
 from empiremuse.utils.others import ProgressBar, PlayerControls
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
+from empiremuse.utils.jukebox_panel import player_call_is_private
 
 
 class DefaultProgressbarSkin:
@@ -101,7 +102,7 @@ class DefaultProgressbarSkin:
 
         txt += f"{vc_txt}\n"
 
-        if player.command_log:
+        if player.command_log and not player_call_is_private(player):  # call privada: sem a última ação
             txt += player.tr(
                 "player.last_interaction_2",
                 command_log_emoji=str(player.command_log_emoji),

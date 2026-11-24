@@ -12,6 +12,7 @@ from empiremuse.utils.music.converters import time_format, get_button_style, md_
 from empiremuse.utils.music.models import LavalinkPlayer
 from empiremuse.utils.others import PlayerControls
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
+from empiremuse.utils.jukebox_panel import player_call_is_private
 
 
 class EmbedLinkSkin:
@@ -88,7 +89,7 @@ class EmbedLinkSkin:
             except Exception:
                 txt += player.tr("player.recommended_song")
 
-        if player.command_log:
+        if player.command_log and not player_call_is_private(player):  # call privada: sem a última ação
             log = re.sub(
                 r"\[(.+)]\(.+\)", r"\1", player.command_log.replace("`", "")
             )  # remover links do command_log p/ evitar gerar mais de uma preview.

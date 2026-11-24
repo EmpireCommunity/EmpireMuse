@@ -18,6 +18,7 @@ from empiremuse.utils.music.converters import (
 from empiremuse.utils.music.models import LavalinkPlayer
 from empiremuse.utils.others import PlayerControls
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
+from empiremuse.utils.jukebox_panel import player_call_is_private
 
 
 class MiniSkin:
@@ -86,7 +87,7 @@ class MiniSkin:
             value=f"```ansi\n[34;1m{fix_characters(player.current.author, 18)}[0m\n```",
         )
 
-        if player.command_log:
+        if player.command_log and not player_call_is_private(player):  # call privada: sem a última ação
             embed.add_field(
                 name=player.tr("player.last_interaction_5", command_log_emoji=str(player.command_log_emoji)),
                 value=f"{player.command_log}",
