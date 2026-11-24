@@ -687,7 +687,7 @@ async def test_a_request_that_does_not_draw_supersedes_a_drawing_still_in_the_sl
 @pytest.mark.regression
 @pytest.mark.critical
 @pytest.mark.parametrize("private", [False, True])
-@pytest.mark.parametrize("path", ["interaction", "thread", "idle"])
+@pytest.mark.parametrize("path", ["interaction", "thread", "idle", "lyrics"])
 async def test_the_end_and_idle_embeds_hide_the_last_action_in_a_private_call(monkeypatch, path, private):
     from unittest.mock import AsyncMock
 
@@ -707,11 +707,16 @@ async def test_the_end_and_idle_embeds_hide_the_last_action_in_a_private_call(mo
     idle = AsyncMock()
     monkeypatch.setattr(state_steps, "send_idle_embed", idle)
     monkeypatch.setattr(state_steps, "_cu_archive_jukebox_thread", AsyncMock())
+    if path == "lyrics":  # a tela de letra aberta na mensagem: o encerramento edita o embed dela
+        player.lyric_embed, player.message.components = disnake.Embed(description="letra"), [object()]
+        monkeypatch.setattr(state_steps, "_cu_disabled_view_children", lambda _self: [])
 
     if path == "interaction":
         await state_steps._cu_close_message_from_interaction(player, SimpleNamespace(message=SimpleNamespace(id=2)))
     elif path == "thread":
         await state_steps._cu_close_thread_message(player)
+    elif path == "lyrics":
+        await state_steps._cu_close_controller_message(player)
     else:
         await state_steps._cu_static_session(player)
 

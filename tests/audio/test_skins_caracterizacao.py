@@ -321,3 +321,137 @@ def test_the_default_extra_menu_has_no_queue_select_nor_lyrics_in_a_private_call
 
     shown = _everything_shown({"components": req.data["components"][6:]}) + str([o.value for o in menu.options])
     assert (SECRET in shown, "musicplayer_lyrics" in shown) == (not private, not private)
+
+
+# ---------------------------------------------------------------------- fake estrito (não MagicMock)
+
+SENSITIVE = ("played", "last_track", "failed_tracks", "command_log_list", "last_stage_title", "np_original_data")
+
+
+class StrictPlayer:
+    """Um player de verdade em miniatura: só os atributos dados existem, e um atributo que falta levanta ``AttributeError``
+    (o ``MagicMock`` inventaria um). Os campos sensíveis fora da máscara carregam o segredo."""
+
+    def __init__(self, *, private: bool, **overrides):
+        guild = MagicMock()
+        guild.me.voice.channel.permissions_for.return_value = SimpleNamespace(view_channel=not private, connect=True)
+        guild.get_member.return_value = None
+        bot = MagicMock()
+        bot.get_color.return_value = 0x5865F2
+        bot.config = {"HINT_RATE": 3}
+        bot.user.id = BOT_ID
+        secret_track = _secret_track(7)
+        values = dict(
+            bot=bot,
+            guild=guild,
+            tr=lambda key, **values: (
+                HIDDEN if key == "jbx.hidden_track" else " ".join([key, *map(str, values.values())])
+            ),
+            current=_secret_track(),
+            queue=[_secret_track(n) for n in range(1, 6)],
+            queue_autoplay=[_secret_track(9, autoplay=True)],
+            paused=False,
+            position=1000,
+            volume=100,
+            loop=False,
+            command_log=f"<@{SECRET_ID}> pulou {SECRET}",
+            command_log_emoji="🔹",
+            current_hint="Use /ajuda",
+            mini_queue_enabled=True,
+            mini_queue_feature=True,
+            nightcore=False,
+            autoplay=False,
+            restrict_mode=False,
+            keep_connected=False,
+            has_thread=False,
+            static=False,
+            controller_mode=True,
+            controller_link="https://discord.com/channels/1/2/3",
+            auto_update=0,
+            hint_rate=3,
+            last_channel=MagicMock(),
+            node=SimpleNamespace(lyric_support=True),
+            skin="default",
+            skin_static="default",
+            custom_skin_data={},
+            custom_skin_static_data={},
+            played=[secret_track],
+            last_track=secret_track,
+            failed_tracks=[secret_track],
+            command_log_list=[{"emoji": "🔹", "text": f"{SECRET} log", "timestamp": 0}],
+            last_stage_title=f"{SECRET} palco",
+            np_original_data={"content": SECRET},
+        )
+        for name, value in (values | overrides).items():
+            setattr(self, name, value)
+
+    def __str__(self) -> str:
+        return "player"
+
+
+@pytest.mark.regression
+@pytest.mark.critical
+@pytest.mark.parametrize("name", SENSITIVE)
+def test_the_private_view_refuses_every_player_attribute_outside_its_list(name):
+    from empiremuse.utils.music.private_call import PrivateCallView
+
+    view = PrivateCallView(StrictPlayer(private=True))
+
+    with pytest.raises(AttributeError):
+        getattr(view, name)
+
+
+@pytest.mark.regression
+@pytest.mark.critical
+@pytest.mark.parametrize("skin_cls", NORMAL + STATIC)
+def test_every_classic_skin_renders_from_the_strict_player_in_a_private_call_without_secrets(skin_cls):
+    from empiremuse.utils.music.private_call import skin_view
+
+    player = StrictPlayer(private=True, static=skin_cls in [p.values[0] for p in STATIC])
+    shown = _everything_shown(skin_cls().load(skin_view(player)))
+
+    assert SECRET not in shown and SECRET.lower() not in shown and str(SECRET_ID) not in shown
+
+
+CUSTOM_TEMPLATE = (
+    "{track.title} {track.url} {track.author} {track.thumb} {playlist.name} {playlist.url} {requester.mention} "
+    "{requester.display_name} {requester.global_name} {requester.avatar} {player.log.text} {queue_format}"
+)
+
+
+def _custom_skin():
+    return {
+        "content": CUSTOM_TEMPLATE,
+        "queue_format": "{track.number} {track.title} {track.url} {track.author}",
+        "queue_max_entries": 5,
+        "embeds": [
+            {
+                "description": CUSTOM_TEMPLATE,
+                "footer": {"text": "{player.log.text} {track.title}"},
+                "author": {"name": "{track.title}", "url": "{track.url}", "icon_url": "{track.thumb}"},
+                "image": {"url": "{track.thumb}"},
+                "thumbnail": {"url": "{requester.avatar}"},
+            }
+        ],
+    }
+
+
+@pytest.mark.regression
+@pytest.mark.critical
+@pytest.mark.parametrize("private", [False, True])
+@pytest.mark.parametrize("static", [False, True], ids=["normal", "fixo"])
+@pytest.mark.parametrize("path", ["load_skin", "get_skin"])
+def test_a_custom_skin_in_a_private_call_shows_no_track_cover_requester_queue_nor_last_action(path, static, private):
+    from empiremuse.utils.music.models import np_steps
+    from empiremuse.utils.music.models.player import LavalinkPlayer
+
+    name = "> custom_skin: minha"
+    player = StrictPlayer(private=private, static=static, skin=name, skin_static=name)
+    player.custom_skin_data = player.custom_skin_static_data = {"minha": _custom_skin()}
+
+    data = np_steps._load_skin(player)[0] if path == "load_skin" else LavalinkPlayer.get_skin(player)
+    shown = _everything_shown(data)
+
+    assert (SECRET in shown) is not private
+    if private:
+        assert SECRET.lower() not in shown and str(SECRET_ID) not in shown and HIDDEN in shown
