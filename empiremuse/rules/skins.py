@@ -250,6 +250,13 @@ def jukebox_skin(saved: object, default: str, chosen: bool = False) -> str:
     return choice if isinstance(choice, str) and choice else default
 
 
+def resumed_skin(session: object, session_chosen: bool, current: object) -> object:
+    """A skin de um player retomado de uma sessão: a escolha ATUAL do servidor (``current``, de ``saved_player_skins``, já com os
+    apelidos) vence; sem escolha, vale a da sessão. A sessão grava a skin que o player usava, que pode ser só o padrão de antes de
+    um deploy (``muse_text``) marcada como escolha: segui-la deixaria o servidor sem a skin que ele escolheu."""
+    return current if current is not None else jukebox_choice(session, session_chosen)
+
+
 def saved_player_skins(server: Mapping[str, Any], global_data: Mapping[str, Any]) -> tuple[object, object]:
     """As skins gravadas que o player novo usa (antes do ``check_skin``), com o Q1 aplicado em CADA nível antes do recuo.
 

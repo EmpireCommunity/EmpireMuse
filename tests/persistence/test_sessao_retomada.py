@@ -207,6 +207,49 @@ async def test_a_resumed_session_reads_the_choice_mark_and_never_the_pool_defaul
     assert len(criados) == 1 and criados[0].kwargs["skin"] == skin and criados[0].kwargs["skin_static"] == skin
 
 
+@pytest.mark.asyncio
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    ("global_doc", "expected"),
+    [
+        # o servidor escolheu a Expandida (global): a sessão com o padrão antigo marcado como escolha não a esconde
+        (
+            {
+                "global_skin": True,
+                "player_skin": "muse_expanded_black",
+                "player_skin_chosen": True,
+                "player_skin_static": "muse_expanded_black",
+                "player_skin_static_chosen": True,
+            },
+            "muse_jukebox",
+        ),
+        ({}, "muse_text"),  # sem escolha do servidor, vale a da sessão
+        (
+            {"global_skin": True, "player_skin": "mini", "player_skin_chosen": True},
+            "mini",
+        ),  # uma Clássica escolhida fica
+    ],
+)
+async def test_a_resumed_session_follows_the_current_server_choice_before_its_own_skin(global_doc, expected):
+    """Achado ao vivo: a sessão gravada antes do deploy trazia ``muse_text`` (o padrão de então) marcada como escolha e a
+    retomada a seguia, escondendo a skin que o servidor tinha escolhido (e o apelido que a leva à Jukebox)."""
+    dados = await sessao()
+    dados["skin"] = dados["skin_static"] = "muse_text"
+    dados["skin_chosen"] = dados["skin_static_chosen"] = True
+    cog, _, criados = montar(canais={CANAL_DE_VOZ: proprio(CANAL_DE_VOZ), CANAL_DE_TEXTO: proprio(CANAL_DE_TEXTO)})
+
+    async def get_global_data(*args, **kwargs):
+        return dict(global_doc)
+
+    cog.bot.get_global_data = get_global_data
+
+    await retomar(cog, dados)
+
+    assert len(criados) == 1 and criados[0].kwargs["skin"] == expected
+    if global_doc.get("player_skin_static"):
+        assert criados[0].kwargs["skin_static"] == expected
+
+
 class TestIdadeDaSessao:
     @pytest.mark.asyncio
     async def test_servidor_inexistente_e_sessao_com_mais_de_48_horas_e_apagada(self):
