@@ -11,6 +11,7 @@ Só o dono (``admin_owner_only``) roda ``v2spike``; nada aqui toca o player nem 
 
 from __future__ import annotations
 
+import asyncio
 import io
 import logging
 from typing import TYPE_CHECKING, Any
@@ -28,6 +29,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 SIDE, FRAMES, FRAME_MS = 128, 24, 75
+AUTORUN_DELAY_S = 5
 _AUTORAN = False  # o disparo automático roda uma vez por processo
 VIOLET = disnake.Colour(0x8B5CF6)
 
@@ -165,21 +167,39 @@ class V2Spike(commands.Cog):
     def __init__(self, bot: BotCore):
         self.bot = bot
 
-    @commands.Cog.listener("on_ready")
+    async def cog_load(self) -> None:
+        self._task = self.bot.loop.create_task(self.autorun())
+
+    def cog_unload(self) -> None:
+        task = getattr(self, "_task", None)
+        if task is not None:
+            task.cancel()
+
     async def autorun(self) -> None:
-        """Com ``V2SPIKE_CHANNEL_ID`` na config, roda os passos uma vez por processo no canal (sem a chave, não faz nada)."""
+        """Com ``V2SPIKE_CHANNEL_ID`` na config, espera o bot ficar pronto e roda os passos uma vez por processo no canal
+        (sem a chave, não faz nada). Só o bot que enxerga o canal roda."""
         global _AUTORAN
         raw = str(self.bot.config.get("V2SPIKE_CHANNEL_ID") or "").strip()
-        if _AUTORAN or not raw.isdigit():
+        if not raw.isdigit():
             return
-        channel = self.bot.get_channel(int(raw))
-        if channel is None:
-            return  # outro bot do pool enxerga o canal: ele roda
-        _AUTORAN = True
         try:
+            await self.bot.wait_until_ready()
+            await asyncio.sleep(AUTORUN_DELAY_S)
+            if _AUTORAN:
+                logger.info("v2spike autorun: skip(já rodou)")
+                return
+            channel = self.bot.get_channel(int(raw))
+            if channel is None:
+                logger.info("v2spike autorun: skip(canal não visível a este bot)")
+                return
+            _AUTORAN = True
+            logger.info("v2spike autorun: start")
             await self.run(channel)
-        except Exception:
-            logger.exception("v2spike autorun falhou")
+            logger.info("v2spike autorun: done")
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:  # noqa: BLE001 - o spike só relata
+            logger.warning("v2spike autorun: falhou (%s)", type(error).__name__)
 
     @admin_owner_only()
     @commands.max_concurrency(1, commands.BucketType.default)
