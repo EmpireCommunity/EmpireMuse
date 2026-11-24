@@ -207,6 +207,30 @@ class PlayerControllerMixin:
                         await guild_text(self.bot, req.interaction.guild, "legacy.controller.open_interaction")
                     )
 
+            jukebox = getattr(getattr(self.bot.pool, "radio", None), "jukebox", None)
+            station = jukebox.station_view(req.player) if jukebox is not None and req.player is not None else None
+            if req.control == PlayerControls.add_favorite and (
+                getattr(req.player, "radio_mode", None) is not None or (station is not None and station.playing)
+            ):
+                # modo rádio da Jukebox (T-434 §4.2): a estrela põe o ao vivo nas MINHAS favoritas (nunca grava URL); com uma faixa da
+                # estação tocando, a estação vai às favoritas do membro neste servidor (J2b). Resposta só para quem clicou
+                try:
+                    toggle = jukebox.toggle_favorite if station is None else jukebox.toggle_station_favorite
+                    # confirma antes da gravação: a leitura e a escrita podem passar dos 3 s da interação
+                    await req.interaction.response.defer(ephemeral=True, with_message=True)
+                    try:
+                        key, fields = await toggle(req.interaction, req.player)
+                    except Exception as error:  # noqa: BLE001 - banco fora, por exemplo: a resposta efêmera não fica "pensando"
+                        logger.warning("Favorita da estação não gravada (%s)", type(error).__name__)
+                        key, fields = "radio.owner.unavailable", {}
+                    await req.interaction.edit_original_message(content=req.player.tr(key, **fields))
+                finally:
+                    try:
+                        await self.player_interaction_concurrency.release(req.interaction)
+                    except Exception:
+                        pass
+                return
+
             if req.control == PlayerControls.add_favorite:
                 if await _pc_favorite_choices(self, req):
                     return

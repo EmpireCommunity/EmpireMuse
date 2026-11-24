@@ -1,5 +1,6 @@
 """Construtor único do select de playlists da Jukebox, público e efêmero."""
 
+import logging
 from collections.abc import Sequence
 
 import disnake
@@ -7,10 +8,43 @@ import disnake
 from empiremuse.rules.i18n import Translator, fit
 from empiremuse.rules.jukebox_select import SELECT_CAPACITY, plan
 from empiremuse.rules.playlists import Playlist
+from empiremuse.utils.music import jukebox_ui
 from empiremuse.utils.server_playlists import safe_list, select_options
 
 GUILD_PIN = "player_guild_pin"
 GUILD_PIN_PAGE = "player_guild_pin_page"
+
+logger = logging.getLogger(__name__)
+
+RADIO_SLOTS = 2  # "📻 Rádios ao Vivo" e "🎙️ Rádios do Servidor": as vagas que a página 1 reserva quando o bot tem rádios
+
+
+async def radio_entries(bot, tr: Translator, guild_id: int) -> tuple[disnake.SelectOption, ...]:
+    """As entradas fixas do topo da página 1 (T-434 §3, A1): "📻 Rádios ao Vivo" e "🎙️ Rádios do Servidor" (J2b), só em servidor premium. Banco fora ou rádios desligadas:
+    nenhuma (o select não perde vagas). O clique confere o premium de novo, sem cache."""
+    hub = getattr(getattr(bot, "pool", None), "radio", None)
+    if hub is None:
+        return ()
+    try:
+        premium = await hub.premium.get(guild_id)
+    except Exception as error:  # noqa: BLE001 - o select é desenhado sem a entrada; só o tipo vai ao log
+        logger.warning("Premium não lido para o select da Jukebox (%s)", type(error).__name__)
+        return ()
+    if premium is None:
+        return ()
+    try:
+        count = await hub.stations.count_for_guild(guild_id)
+    except Exception as error:  # noqa: BLE001 - sem a contagem a entrada sai com 0; só o tipo vai ao log
+        logger.warning("Estações do servidor não contadas para o select da Jukebox (%s)", type(error).__name__)
+        count = 0
+    return jukebox_ui.live_entry(tr), jukebox_ui.server_entry(tr, count)
+
+
+def pin_reserved(bot) -> int:
+    """As vagas da página 1 que entram na divisão de TODA página: ``RADIO_SLOTS`` sempre que o bot tem rádios, mesmo sem premium ou com o
+    banco fora nesse desenho. Uma regra só para o painel de 2+ players, o select do player e o efêmero de página: a divisão nunca muda
+    de um para o outro, e a navegação nunca pula nem repete uma playlist."""
+    return RADIO_SLOTS if getattr(getattr(bot, "pool", None), "radio", None) is not None else 0
 
 
 def build_guild_pin(
@@ -21,11 +55,14 @@ def build_guild_pin(
     fixed_entries: Sequence[disnake.SelectOption] = (),
     *,
     placeholder_key: str = "player.idle.server_songs_placeholder",
+    show_fixed: bool = True,
 ) -> disnake.ui.Select | None:
-    if not playlists and not fixed_entries:
+    """A divisão reserva ``pin_reserved(bot)`` vagas (ou as ``fixed_entries``, se forem mais) em toda página. ``show_fixed`` só decide se
+    as entradas aparecem."""
+    if not playlists and not (fixed_entries and show_fixed):
         return None
-    layout = plan(len(playlists), len(fixed_entries), page)
-    options = list(fixed_entries) if layout.page == 1 else []
+    layout = plan(len(playlists), max(pin_reserved(bot), len(fixed_entries)), page)
+    options = list(fixed_entries) if layout.page == 1 and show_fixed else []
     if layout.previous:
         options.append(
             disnake.SelectOption(label=tr("jukebox.select.previous.label"), value=f"jb:page:{layout.previous}")
@@ -55,12 +92,15 @@ async def load_guild_pin(
     tr: Translator,
     guild_id: int,
     page: int = 1,
-    fixed_entries: Sequence[disnake.SelectOption] = (),
     *,
+    radio: bool = True,
     placeholder_key: str = "player.idle.server_songs_placeholder",
 ) -> disnake.ui.Select | None:
+    """O select do canal com as playlists do servidor; ``radio`` mostra as entradas fixas (só a página 1 as mostra; o efêmero de página não).
+    A divisão das páginas vem de ``pin_reserved``."""
+    fixed = await radio_entries(bot, tr, guild_id)
     return build_guild_pin(
-        bot, tr, await safe_list(bot, guild_id), page, fixed_entries, placeholder_key=placeholder_key
+        bot, tr, await safe_list(bot, guild_id), page, fixed, placeholder_key=placeholder_key, show_fixed=radio
     )
 
 

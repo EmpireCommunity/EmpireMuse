@@ -20,6 +20,7 @@ from empiremuse.utils.radio.health import (
     StationHealth,
 )
 from empiremuse.utils.radio.live import LiveRadioRunner, StationFailure
+from empiremuse.utils.radio.live_ports import PANEL_BUSY_RETRIES
 from empiremuse.utils.radio.runner import Phase, ProcessLimits
 from empiremuse.utils.radio.service import RadioState
 from tests.cogs.radio_config import configure
@@ -1142,6 +1143,49 @@ class TestLivePanel:
             await asyncio.sleep(0)
 
         assert len(edits) == 2 and edits[1].title == "faixa 149"  # uma edição só, com o título mais recente
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(("failure", "edits_after_retries"), [("busy", 1 + PANEL_BUSY_RETRIES), ("other", 1)])
+    async def test_an_edit_that_did_not_go_out_is_redone(self, failure, edits_after_retries):
+        from unittest.mock import AsyncMock
+
+        from empiremuse.utils.radio.live_ports import LiveRadioPorts
+        from empiremuse.utils.radio.panel import LiveView
+        from empiremuse.utils.render.slot import RenderBusy
+        from tests.cogs.test_radio_portas import BOT_ID, build as build_ports
+
+        w = build_ports()
+        radio = check_radio(
+            {
+                "_id": radio_id(BOT_ID, GUILD),
+                "channel_id": str(CHANNEL),
+                "kind": "live",
+                "source": {"station": MAIN, "reserve": None},
+            }
+        )
+        ports = LiveRadioPorts(w.ports.pool, radio)
+        tries: list = []
+        clock = {"t": 1000.0}
+
+        async def failing_edit(view):
+            tries.append(view)
+            raise RenderBusy if failure == "busy" else RuntimeError
+
+        async def fake_sleep(seconds):
+            clock["t"] += seconds
+
+        ports._edit_panel = failing_edit  # type: ignore[method-assign]
+        ports.now = lambda: clock["t"]  # type: ignore[method-assign]
+        ports.sleep = fake_sleep  # type: ignore[method-assign]
+        w.hub.store.get = AsyncMock(return_value=None)
+
+        ports.update_panel(LiveView(title="faixa"))
+        await ports._panel_task
+        assert len(tries) == edits_after_retries and ports._shown is None  # nada saiu: o painel não conta como mostrado
+
+        ports.update_panel(LiveView(title="faixa"))  # a mesma visão refaz a edição
+        await ports._panel_task
+        assert len(tries) == 2 * edits_after_retries
 
     @pytest.mark.asyncio
     async def test_the_edit_uses_no_mentions_and_the_clean_text(self):

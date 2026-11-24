@@ -41,6 +41,11 @@ trocados) não vêm desse kit e não fazem parte dessa licença.
 - **Inter** (`assets/fonts/Inter-{Regular,Medium,SemiBold,Bold}.ttf`), de The Inter Project Authors, sob a SIL Open Font License 1.1
   (`assets/fonts/LICENSE-Inter.txt`): a tipografia do visor do painel de rádio (imagem gerada pelo bot). A fonte não é vendida
   sozinha nem renomeada, como a licença exige.
+- **Unbounded** (`assets/fonts/Unbounded[wght].ttf`), de The Unbounded Project Authors; **Figtree** (`assets/fonts/Figtree[wght].ttf`),
+  de The Figtree Project Authors; e **Noto Sans** (`assets/fonts/NotoSans[wdth,wght].ttf`), de The Noto Project Authors: as três
+  sob a SIL Open Font License 1.1 (`assets/fonts/LICENSE-{Unbounded,Figtree,NotoSans}.txt`), do repositório `google/fonts` num commit
+  fixo (origem e SHA-256 em `assets/fonts/README.md`). A tipografia das skins de imagem (a Noto Sans é a reserva para caracteres que
+  as outras não têm). As fontes não são vendidas sozinhas nem renomeadas, como a licença exige.
 
 ## Dados geográficos
 

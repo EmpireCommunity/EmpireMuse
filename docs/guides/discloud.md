@@ -7,6 +7,8 @@ Guia técnico para hospedagem e execução do **EmpireMuse** na plataforma **Dis
 > [!NOTE]
 > **Testado na Discloud em 2026-10-24 (plano Gold 1 GB): 335 MB parado, 383 MB tocando, Lavalink local v4 ok.**
 > 
+> Não foi testado de novo desde 2026-10-24: versões mais novas podem usar mais memória. Confira o consumo depois de atualizar.
+> 
 > **Requisito de Plano Pago**: O plano gratuito da Discloud (100 MB de RAM) **NÃO roda o bot**. O EmpireMuse requer **plano pago com no mínimo 1 GB (1024 MB) de RAM e 1 vCPU** (plano Gold ou superior), dimensão definida no parâmetro `RAM=1024` do `discloud.config`. Planos inferiores a 1 GB não possuem memória suficiente para acomodar o bot e o servidor de áudio integrado.
 
 ---
@@ -78,6 +80,9 @@ Para economizar memória RAM e ciclos de CPU, desative explicitamente o servidor
 RUN_RPC_SERVER=false
 PANEL_ENABLED=false
 ```
+
+> [!NOTE]
+> O decodificador de imagens roda em sandbox e exige suporte do kernel do host (Landlock, kernel 6.12 ou mais novo). Sem ele, logos e capas ficam no ícone padrão e o log mostra `SANDBOX-OFF` uma vez.
 
 ### 3.2 Variáveis Essenciais
 ```env

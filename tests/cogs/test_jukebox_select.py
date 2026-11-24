@@ -61,6 +61,7 @@ async def test_100_playlists_never_build_an_over_25_select_in_any_server_menu():
     bot.app_emojis = {}
     bot.pool.emoji_data = {}
     guild.me.display_avatar.replace.return_value.url = "https://example.com/avatar"
+    bot.pool.radio = None  # bot sem rádios: nenhuma vaga reservada
     payload = render_panel(bot, guild, [], tr=tr, playlists=items)
     select = payload["components"][-1].children[0]
     assert len(select.options) == 25 and select.options[-1].value == "jb:page:2"
@@ -102,12 +103,40 @@ async def test_navigation_clamps_and_reloads_without_playing_or_editing_other_co
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("value", ["jb:live", "jb:unknown", "jb:page:x", "jb:page:-1"])
+@pytest.mark.parametrize("value", ["jb:unknown", "jb:page:x", "jb:page:-1", "jb:server:x"])
 async def test_unknown_controls_are_refused_without_playing(value):
     handler, inter, cog = world(value)
+    handler.jukebox_live = AsyncMock()
     await ControllerDispatchMixin.guild_pin(handler, inter)
     inter.send.assert_awaited_once()
     handler.request_executor.assert_not_awaited()
+    handler.jukebox_live.assert_not_awaited()
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_the_live_radio_entry_opens_the_radio_flow_and_never_plays_a_playlist():
+    """T-JB-BUG: o rc.4 recusava ``jb:live`` como item desconhecido; agora ele abre o seletor do modo rádio."""
+    handler, inter, cog = world("jb:live")
+    handler.jukebox_live = AsyncMock()
+    await ControllerDispatchMixin.guild_pin(handler, inter)
+    handler.jukebox_live.assert_awaited_once_with(inter)
+    handler.request_executor.assert_not_awaited()
+    cog.play.callback.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_the_server_radios_entry_opens_the_station_chooser_and_never_plays_a_playlist(monkeypatch):
+    """J2b: ``jb:server`` abre "Rádios do Servidor" (antes era recusado como controle desconhecido)."""
+    from empiremuse.utils.radio import station_chooser
+
+    opened = AsyncMock()
+    monkeypatch.setattr(station_chooser, "open_server_stations", opened)
+    handler, inter, cog = world("jb:server")
+    await ControllerDispatchMixin.guild_pin(handler, inter)
+    opened.assert_awaited_once_with(handler.bot, inter)
+    handler.request_executor.assert_not_awaited()
+    cog.play.callback.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -181,3 +210,74 @@ async def test_pagination_failures_reach_the_interaction_error_handler(monkeypat
     await ControllerDispatchMixin.guild_pin(handler, inter)
     handler.bot.dispatch.assert_called_once_with("interaction_player_error", inter, error)
     cog.play.callback.assert_not_awaited()
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_the_ephemeral_pages_keep_the_split_of_the_first_page_with_the_live_entry():
+    """CodeRabbit (PR 270): com o premium, a página 1 reserva a vaga da rádio; as páginas efêmeras recalculavam sem ela e pulavam a playlist 23."""
+    from empiremuse.utils.music.guild_pin import load_guild_pin
+
+    handler, _, _ = world("jb:page:2")
+    handler.bot.pool.radio = NS(premium=NS(get=AsyncMock(return_value=object())))
+    seen, page = [], 1
+    while page:
+        select = await load_guild_pin(handler.bot, tr, 1, page, radio=page == 1)
+        values = [o.value for o in select.options]
+        assert ("jb:live" in values) is (page == 1)
+        seen += [v for v in values if v.startswith("pl:")]
+        page = next((int(v.removeprefix("jb:page:")) for v in values if v == f"jb:page:{page + 1}"), None)
+    assert seen == [f"pl:Lista {i}" for i in range(100)]
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize("later", ["no_premium", "db_down"])
+async def test_the_page_split_holds_when_premium_changes_between_pages(later):
+    """Alicerce S3 (J2a): o premium (ou o banco) muda entre uma página e outra; nenhuma playlist é pulada nem repetida."""
+    from empiremuse.utils.music.guild_pin import load_guild_pin
+
+    handler, _, _ = world("jb:page:2")
+    calls = []
+
+    async def premium(guild_id):
+        calls.append(guild_id)
+        if len(calls) == 1:
+            return object()  # a página 1 com premium
+        if later == "db_down":
+            raise RuntimeError("banco fora")
+        return None
+
+    handler.bot.pool.radio = NS(premium=NS(get=premium), stations=NS(count_for_guild=AsyncMock(return_value=0)))
+    seen, page = [], 1
+    while page:
+        select = await load_guild_pin(handler.bot, tr, 1, page, radio=page == 1)
+        values = [o.value for o in select.options]
+        seen += [v for v in values if v.startswith("pl:")]
+        page = next((int(v.removeprefix("jb:page:")) for v in values if v == f"jb:page:{page + 1}"), None)
+    assert seen == [f"pl:Lista {i}" for i in range(100)]
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_the_multi_player_panel_page_and_the_next_pages_share_one_split():
+    """Revisão do PR 282: o painel de 2+ players dividia a página 1 sem as vagas reservadas, e a página 2 repetia duas playlists."""
+    from empiremuse.utils.music.guild_pin import load_guild_pin
+
+    items = playlists()
+    bot, guild = MagicMock(), MagicMock()
+    bot.get_color.return_value = 0
+    bot.app_emojis = {}
+    bot.pool.emoji_data = {}
+    bot.pool.radio = NS(premium=NS(get=AsyncMock(return_value=None)))  # bot com rádios, servidor sem Apoiadores
+    bot.pool.servers.playlists.list = AsyncMock(return_value=items)
+    guild.me.display_avatar.replace.return_value.url = "https://example.com/avatar"
+    select = render_panel(bot, guild, [], tr=tr, playlists=items)["components"][-1].children[0]
+    values = [o.value for o in select.options]
+    seen, page = [], 1
+    while page:
+        seen += [v for v in values if v.startswith("pl:")]
+        page = next((int(v.removeprefix("jb:page:")) for v in values if v == f"jb:page:{page + 1}"), None)
+        if page:
+            values = [o.value for o in (await load_guild_pin(bot, tr, 1, page, radio=False)).options]
+    assert seen == [f"pl:Lista {i}" for i in range(100)]

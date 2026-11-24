@@ -13,7 +13,7 @@ import asyncio
 import logging
 import time
 import weakref
-from collections.abc import Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from typing import TYPE_CHECKING, Any, Optional
 
 import disnake
@@ -38,6 +38,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 NO_MENTIONS = disnake.AllowedMentions.none()
+BOOT_STAGGER_S = (
+    0.5  # na subida, entre um painel redesenhado (ou reenviado) e o próximo: sem rajada de edições ao Discord
+)
 
 
 def is_private(voice_channel: Any) -> bool:
@@ -96,8 +99,9 @@ async def fetch_panel_message(pool: BotPool, guild_id: int) -> Optional[disnake.
 
 
 class JukeboxPanel:
-    def __init__(self, pool: BotPool) -> None:
+    def __init__(self, pool: BotPool, *, sleep: Callable[[float], Awaitable[Any]] = asyncio.sleep) -> None:
         self.pool = pool
+        self._sleep = sleep  # injetável: os testes não esperam o relógio
         self._last: dict[int, int] = {}
         self._pending: dict[int, asyncio.Task] = {}
         self._ticks: dict[int, asyncio.Task] = {}
@@ -186,6 +190,7 @@ class JukeboxPanel:
         from empiremuse.utils.music.interactions.jukebox_panel import render_panel
         from empiremuse.rules.playlists import genres_of
         from empiremuse.utils.server_playlists import safe_list
+        from empiremuse.utils.music.guild_pin import radio_entries
 
         panel_bot = await self.pool.servers.jukebox.panel_bot(guild_id)
         message = await fetch_panel_message(self.pool, guild_id)
@@ -202,14 +207,16 @@ class JukeboxPanel:
             pairs = [(e, player) for bot, player in players if (e := entry_for(bot, player)) is not None]
             entries = [e for e, _ in pairs]
             playlists = await safe_list(panel_bot, guild_id)
+            tr = await self.pool.i18n.for_guild(message.guild)
             payload = render_panel(
                 panel_bot,
                 message.guild,
                 entries,
-                tr=await self.pool.i18n.for_guild(message.guild),
+                tr=tr,
                 playlists=playlists,
                 last_action=self._last_action(message.guild, pairs),
                 genres=genres_of(playlists)[:MAX_GENRE_OPTIONS],
+                fixed_entries=await radio_entries(panel_bot, tr, guild_id),
             )
             await message.edit(allowed_mentions=NO_MENTIONS, **payload)
             if any(e.state == PLAYING and e.duration_ms for e in entries):
@@ -283,7 +290,9 @@ class JukeboxPanel:
 
     async def verify_on_boot(self, bot: BotCore) -> None:
         """Na subida do ``bot``: nos servidores em que ele é o bot do painel, confere que a mensagem do painel existe e é dele (senão,
-        a passagem manda um painel novo). Falha de um servidor não impede os outros."""
+        a passagem manda um painel novo) e, se existe, a redesenha uma vez. Falha de um servidor não impede os outros. Entre um painel
+        tocado e o próximo espera ``BOOT_STAGGER_S`` (sem rajada de edições na subida de um bot em muitos servidores)."""
+        touched = False
         for guild in list(bot.guilds):
             try:
                 config = await self.pool.servers.jukebox.get(guild.id)
@@ -293,8 +302,15 @@ class JukeboxPanel:
                     message = await fetch_panel_message(self.pool, guild.id)
                 except disnake.NotFound:
                     message = None  # só "não existe" conta; 403/5xx caem no aviso abaixo (reenviar sem poder apagar duplicaria o painel)
+                if touched:
+                    await self._sleep(BOOT_STAGGER_S)
+                touched = True
                 if message is None or message.author.id != bot.user.id:
                     await self.handoff(guild.id)
+                else:
+                    # a mensagem fixada antes de uma atualização guarda os componentes velhos: redesenhada já na subida, ela ganha os
+                    # novos (as entradas de rádio do select) sem esperar o primeiro evento (T-JB-BUG, correção B)
+                    await self.refresh(guild.id, now=True)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Conferência do painel na subida falhou [%s] (%s)", guild.id, type(exc).__name__)
 

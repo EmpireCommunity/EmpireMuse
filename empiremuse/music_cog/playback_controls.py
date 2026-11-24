@@ -202,6 +202,10 @@ class PlaybackControlsMixin:
             raise GenericError(tr("playback.resume.not_paused"))
 
         await player.set_pause(False)
+        if getattr(player, "radio_mode", None) is not None:
+            await self.bot.pool.radio.jukebox.resume_live(
+                player
+            )  # A6: ao retomar, toca o ao vivo DE AGORA, não o que ficou no buffer
 
         txt = [tr("playback.resume.log"), tr("playback.resume.done", mention=inter.author.mention)]
         await self.interaction_message(inter, txt, rpc_update=True, emoji="▶️")
@@ -433,6 +437,9 @@ class PlaybackControlsMixin:
             bot = inter.bot
 
         player: LavalinkPlayer = bot.music.players[inter.guild_id]
+
+        if getattr(player, "radio_mode", None) is not None:
+            raise GenericError(player.tr("jukebox.radio.loop_refused"))  # o ao vivo não tem fim (A6)
         tr = await self.bot.pool.i18n.for_guild(inter.guild)
 
         if mode == player.loop:
@@ -489,6 +496,9 @@ class PlaybackControlsMixin:
             bot = inter.bot
 
         player: LavalinkPlayer = bot.music.players[inter.guild_id]
+
+        if getattr(player, "radio_mode", None) is not None:
+            raise GenericError(player.tr("jukebox.radio.loop_refused"))  # o ao vivo não tem fim (A6)
         tr = await self.bot.pool.i18n.for_guild(inter.guild)
 
         player.current.info["extra"]["track_loops"] = value

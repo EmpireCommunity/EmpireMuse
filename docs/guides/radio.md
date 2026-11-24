@@ -65,6 +65,28 @@ Bots só-rádio são definidos por `TOKEN_RADIO_<NOME>` no ambiente, sem configu
 - **Teste de saúde:** a cada 10 min o bot reexamina só as estações indisponíveis que alguma rádio **ligada** usa (até 20 por ciclo), sem contar clique no diretório.
 - **Estação e reserva fora:** a rádio fica na call em silêncio e o painel mostra "fora do ar".
 
+## Rádio ao vivo pela Jukebox (modo rádio)
+
+Em servidor com o acesso Limitado a Apoiadores, o select da Jukebox ganha no topo da primeira página a entrada **📻 Rádios ao Vivo**. Qualquer membro numa call pode usá-la, sem Gerenciar Servidor e sem canal de rádio: o seletor abre só para quem clicou, com 🔎 **Buscar por nome**, ⭐ **Minhas favoritas**, ⭐ **Favoritas do servidor**, 📌 **Meus filtros** e os locais. Escolhida a estação, **Tocar na minha call** liga o modo rádio no bot de música que a Jukebox escolhe (o que já está na sua call, senão o primeiro livre; nunca um bot só de rádio nem um que toca rádio 24 h).
+
+- **Quem decide:** com o player ocioso e a fila vazia, toca na hora. Com música tocando, fila ou outra rádio, DJ e quem gerencia o servidor tocam direto; os demais abrem uma votação no canal do player (60 s, metade de quem está na call com o áudio ligado, até 3 votos; sozinho, passa no ato). No modo restrito, só DJ. Ao passar, a fila é limpa e a música atual para.
+- **Pedir música no modo rádio** (`/play`, comando de prefixo, mensagem no canal da Jukebox, favoritas, "Adicionar na fila", ⏮ e `/readd`): antes de qualquer efeito, quem pediu recebe um aviso com dois botões, por 45 s, e só essa pessoa pode responder. O DJ (ou quem está sozinho na call) vê **Parar a rádio e tocar**; o membro vê **Abrir votação**, e se ela passar a rádio para e ele pede a música de novo. **Cancelar** deixa a rádio tocando. No modo restrito, com uma votação já aberta ou logo depois de uma votação sua expirar, a recusa vem direto, sem aviso. Na barra e nos botões o aviso é efêmero (só você vê); no prefixo e no canal da Jukebox ele responde à sua mensagem, então quem está no canal pode ler, mas só você pode clicar.
+- **Não toca:** em call que já tem uma rádio 24 h, sem o acesso do servidor, ou num bot sem o Lavalink local.
+- **No modo rádio:** não há fila nem repetir; ⏭ para a rádio e deixa o player ocioso; retomar depois de pausar toca o ao vivo de agora; a estrela do player guarda a estação nas suas favoritas. Trocar de rádio de novo espera 5 s. O `/change_node` é recusado (a rádio ao vivo só toca no Lavalink local); se o player perder o nó local, a rádio tenta voltar a ele como numa queda. Para ligar a rádio num bot que já está numa call, entre nessa call.
+- **Queda:** o bot tenta de novo após 2, 4 e 8 s. Sem volta, avisa no canal do player e fica ocioso.
+- **Suas favoritas:** o `/fav_manager`, modo **Rádios favoritas**, ganha **Tocar** (na sua call, com as mesmas regras).
+
+## Estações na Jukebox (Rádios do Servidor)
+
+Com o acesso Limitado a Apoiadores, a primeira página do select da Jukebox também traz **🎙️ Rádios do Servidor**. O seletor abre só para quem clicou, com as estações do servidor (as suas ⭐ primeiro) e os gêneros prontos, internacionais e brasileiros.
+
+- **Como o autoplay:** a estação começa depois da música atual (ou na hora, com o player parado ou no modo rádio ao vivo). Uma música pedida toca antes, e a estação volta depois dela.
+- **Quem decide:** com a fila vazia ou só com as suas músicas, toca direto; com músicas de outras pessoas na fila, DJ e quem gerencia o servidor tocam direto e os demais abrem uma votação. A fila é limpa quando a estação começa. No modo restrito, com músicas de outras pessoas na fila ou com uma rádio ou estação já ligada, só DJ.
+- **Desligar:** o botão de autoplay do player mostra "📻 Estação: {nome}"; desligá-lo encerra a estação.
+- **Sem faixas:** se 5 faixas seguidas não tocarem, a estação para e avisa no canal do player. "Repetir fila" repete só as músicas pedidas.
+- **Estrela:** com uma faixa da estação tocando, a estrela do player guarda a estação nas suas favoritas deste servidor.
+- **Não toca:** em call que já tem uma rádio 24 h ou sem o acesso do servidor.
+
 ## Estações personalizadas
 
 Os **33 gêneros prontos** são virtuais, disponíveis com premium em **Gêneros internacionais** (21) e **Gêneros brasileiros** (12) no seletor da rádio 24 h. A página de estações do painel permite consultá-los; eles não podem ser criados, editados ou apagados. Anterior/Próxima e a escolha aleatória continuam somente nas estações do servidor; os gêneros são escolhidos pelo seletor.

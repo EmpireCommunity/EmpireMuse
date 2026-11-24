@@ -1,6 +1,7 @@
 """O processo filho que decodifica o logo de uma estação (item 8, logo do painel). Não é importado por ninguém: o ``logo.py`` o abre com ``python -I``.
 
-Roda SEM segredos (``env={}``) e com limites de memória e de CPU definidos ANTES de importar o Pillow. Lê o corpo da imagem na entrada padrão (até 256 KiB) e o
+Roda SEM segredos (``env={}``), dentro do sandbox dos decodificadores (``utils/sandbox.py``) e com limites de memória e de CPU, tudo
+ANTES de importar o Pillow. Lê o corpo da imagem na entrada padrão (até 256 KiB) e o
 formato já detectado pelo pai no argumento; devolve na saída padrão um PNG RGBA de até 128 px, sem metadados. Qualquer defeito é saída com código diferente de
 zero e nada na saída: o pai trata como "sem logo".
 
@@ -10,6 +11,12 @@ quadro 0; nenhuma tolerância a arquivo truncado.
 
 import resource
 import sys
+from pathlib import Path
+
+# o módulo do sandbox pelo caminho do próprio pacote (``-I`` não põe nada no ``sys.path``); só stdlib, antes de qualquer outra coisa.
+# No fim do ``sys.path``: a biblioteca padrão e o ``site-packages`` continuam na frente.
+sys.path.append(str(Path(__file__).resolve().parents[3]))
+from empiremuse.utils.sandbox import enter_sandbox  # noqa: E402
 
 MAX_INPUT = 256 * 1024
 MAX_PIXELS = 1 << 20
@@ -27,6 +34,7 @@ def _limit() -> None:
 
 
 def main() -> int:
+    enter_sandbox()  # primeiro: sem sandbox (política fechada) o processo sai aqui, antes de ler a entrada
     _limit()  # antes de importar o Pillow (o decodificador é a parte arriscada)
     if len(sys.argv) != 2 or sys.argv[1] not in FORMATS:
         return 2

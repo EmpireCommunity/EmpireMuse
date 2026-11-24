@@ -13,6 +13,7 @@ from rapidfuzz import fuzz
 
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.converters import fix_characters, md_link
+from empiremuse.utils.music.live_mark import is_live
 from empiremuse.utils.music.errors import (
     error_code_text,
     log_unexpected_error,
@@ -67,8 +68,47 @@ async def _pn_pre_checks(self, req):
     return False
 
 
+async def go_idle(self) -> None:
+    """Para o player e entra no modo ocioso (o ``IDLE_TIMEOUT`` de sempre), sem pedir autoplay. Player fechado: nada (m5)."""
+    if getattr(self, "is_closing", False):
+        return
+    await self.stop()
+    if getattr(self, "radio_mode", None) is not None or getattr(self, "is_closing", False):
+        return  # uma rádio abriu (ou o player fechou) durante o ``stop``: o temporizador de ociosidade não pode derrubá-la depois
+    now = disnake.utils.utcnow()
+    self.idle_start_timestamp = int(now.timestamp())
+    self.idle_endtime = now + datetime.timedelta(seconds=self.bot.config["IDLE_TIMEOUT"])
+    self.last_track = None
+    self.idle_task = self.bot.loop.create_task(self.idling_mode())
+    self.bot.dispatch("player_queue_end", player=self)
+
+
+AUTOQUEUE_FAILURE_WAIT_S = 60  # recuo do autoplay depois de uma busca de recomendações que falhou
+
+
+def _taken_over(self) -> bool:
+    """O player fechou, ou o modo rádio ou uma estação começou durante a busca de recomendações."""
+    return (
+        getattr(self, "is_closing", False)
+        or getattr(self, "radio_mode", None) is not None
+        or getattr(self, "station", None) is not None
+    )
+
+
+async def _pn_restart_after_takeover(self, req) -> bool:
+    """A recomendação não toca por cima, e as sugestões que a busca guardou depois do descarte da transição também saem (G1). A
+    busca segurava ``locked``, então o ``process_next`` da transição se perdeu: a escolha recomeça aqui (estação: sorteia; ao vivo
+    na fila: toca; abrindo: espera)."""
+    self.queue_autoplay.clear()
+    return True if getattr(self, "is_closing", False) else await _pn_next_track(self, req)
+
+
 async def _pn_next_track(self, req):
     """Escolhe a próxima faixa: fila, autoplay ou modo ocioso."""
+    mode = getattr(self, "radio_mode", None)
+    if mode is not None and mode.track is None:
+        # modo rádio abrindo ou reconectando (rev. 3.3, achado M1): quem manda no player agora é o controlador; nada sai da fila
+        return True
     try:
         track = self.queue.popleft()
 
@@ -78,37 +118,71 @@ async def _pn_next_track(self, req):
             # recomendações no YouTube e afins). Quem decide o que tocar de novo é o runner.
             await self.stop()
             return True
-        try:
-            track = None
+        if mode is not None:
+            # Modo rádio da Jukebox (T-434 §2.2): em R não há "próxima faixa". ⏭ (ou a fila que acabou) encerra o ao vivo e o player fica
+            # ocioso, sem autoplay nem sugestão. O controlador só sai se o modo ainda é o que o player viu (rev. 3.3).
+            if await self.bot.pool.radio.jukebox.release(self, mode):
+                await go_idle(self)
+            return True
+        drawn = None
+        if (active := getattr(self, "station", None)) is not None:
+            # estação da Jukebox (J2b, §0.3): com a fila vazia ela vem ANTES do autoplay. Acabou (S → M): segue o de sempre. Outra transição
+            # tomou o player no meio (R abrindo, outra estação): nada segue daqui, quem manda é ela (a cerca de epoch da J2a)
+            from empiremuse.utils.radio.jukebox_station import StationNext
 
-            if self.autoplay or self.keep_connected:
-                try:
-                    track = await self.get_autoqueue_tracks()
-                except Exception:
-                    logger.exception("Falha em _pn_next_track")
-                    self.locked = False
-                    await asyncio.sleep(60)
-                    if not self.current and (self.autoplay or self.keep_connected):
-                        await self.process_next()
+            outcome, station_track = await self.bot.pool.radio.jukebox.next_station_track(self, active)
+            if outcome is StationNext.TRACK:
+                if not self.queue:
+                    req.track = station_track
+                    return False
+                # um pedido entrou durante o sorteio: ele vem antes (e passa pelas guardas comuns abaixo); a faixa da estação não toca
+                self.bot.pool.radio.jukebox.station_track_unused(self, station_track)
+                drawn = self.queue.popleft()
+            elif outcome is StationNext.SUPERSEDED:
+                return True
+        if drawn is not None:
+            track = drawn
+        else:
+            try:
+                track = None
+
+                if self.autoplay or self.keep_connected:
+                    try:
+                        track = await self.get_autoqueue_tracks()
+                    except Exception:
+                        logger.exception("Falha em _pn_next_track")
+                        if _taken_over(self):
+                            # a busca falhou, mas uma transição tomou o player no meio: ela não espera o recuo de 60 s do autoplay
+                            return await _pn_restart_after_takeover(self, req)
+                        self.locked = False
+                        await asyncio.sleep(AUTOQUEUE_FAILURE_WAIT_S)
+                        if not self.current and (self.autoplay or self.keep_connected):
+                            await self.process_next()
+                        return True
+                    if _taken_over(self):
+                        return await _pn_restart_after_takeover(self, req)
+
+                if not track:
+                    await go_idle(self)
                     return True
 
-            if not track:
-                await self.stop()
-                now = disnake.utils.utcnow()
-                self.idle_start_timestamp = int(now.timestamp())
-                self.idle_endtime = now + datetime.timedelta(seconds=self.bot.config["IDLE_TIMEOUT"])
-                self.last_track = None
-                self.idle_task = self.bot.loop.create_task(self.idling_mode())
-                self.bot.dispatch("player_queue_end", player=self)
-                return True
-
-        except Exception:
-            logger.exception("Falha em _pn_next_track")
-            track = None
+            except Exception:
+                logger.exception("Falha em _pn_next_track")
+                track = None
 
     if not track:
         await self.process_next()
         return True
+
+    if is_live(track) and (mode is None or track is not mode.track):
+        # uma faixa ao vivo velha (a ficha dela já foi revogada) nunca toca de novo nem volta à fila [m1]
+        await self.process_next()
+        return True
+
+    if mode is not None and track is not mode.track:
+        # uma música entrou no lugar do ao vivo (⏮, pular para, pedido que passou pela porta): o modo rádio acaba aqui, sem deixar token vivo
+        if not await self.bot.pool.radio.jukebox.release(self, mode) and getattr(self, "radio_mode", None) is not None:
+            return True  # outra rádio abriu enquanto esperava o lock: a música do modo antigo não toca por cima dela
 
     req.track = track
     return False
@@ -177,6 +251,9 @@ async def _pn_native(self, req):
     """Prepara a reprodução nativa do YouTube e a busca alternativa."""
     encoded_track = req.encoded_track
     track = req.track
+
+    if is_live(track):
+        return False  # a faixa ao vivo nunca entra na chave do cache de resolução (o ``track.id`` tem a ficha do relay) [m1, S5]
 
     if not self.native_yt or not self.node.prefer_youtube_native_playback:
         cache_key = f"{track.info['sourceName']}:id:{track.identifier or track.id or track.ytid}"
@@ -372,6 +449,10 @@ async def _pn_start(self, req):
             controller=True,
         )
     else:
+        if getattr(self, "station", None) is not None:
+            # ANTES do envio: um evento de falha rápida pode chegar durante o ``await`` do ``play``. É o encoded que vai ao Lavalink (no
+            # caminho alternativo, o de outra plataforma), o mesmo que ``play`` calcula: é ele que volta nos eventos da faixa da estação
+            self.bot.pool.radio.jukebox.station_track_sent(self, track, encoded_track or track.id)
         await self.play(track, start=start_position, temp_id=encoded_track)
 
     # TODO: rever essa parte caso adicione função de ativar track loops em músicas da fila

@@ -8,7 +8,6 @@ Qual arquivo usar para cada tipo de implantação. Os guias em [`docs/guides/`](
 | :--- | :--- | :--- | :--- | :--- |
 | Em qualquer máquina com Docker | [`docker-compose.yml`](docker-compose.yml) | `docker compose -f deploy/docker-compose.yml --env-file .env up -d` | Não (modo `panel`) | [`docker.md`](../docs/guides/docker.md) |
 | Em servidor com Traefik, via `-f` | `docker-compose.yml` + [`docker-compose.traefik.yml`](docker-compose.traefik.yml) | `docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.traefik.yml --env-file .env up -d` | Não (modo `panel`) | [`docker.md`](../docs/guides/docker.md) (seção 3.5) |
-| Auto-update (`/update`) no compose base, via `-f` | `docker-compose.yml` + [`docker-compose.updater.yml`](docker-compose.updater.yml) | `docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.updater.yml --env-file .env up -d` (precisa de `DOCKER_GID` e `UPDATER_PROJECT_DIR` no `.env`; nunca suba o complemento sozinho) | Sim (leia o cabeçalho do arquivo) | [`auto-update.md`](../docs/guides/auto-update.md) |
 | Em gerenciador de VPS de arquivo único, com Traefik | [`docker-compose.hostinger.yml`](docker-compose.hostinger.yml) + [`env.example.hostinger`](env.example.hostinger) | Copie como `docker-compose.yml`; o exemplo vira o `.env` | Sim | [`docker.md`](../docs/guides/docker.md) (seção 3.6), [`auto-update.md`](../docs/guides/auto-update.md) |
 | Em gerenciador de VPS de arquivo único, sem Traefik | [`docker-compose.hostinger-sem-traefik.yml`](docker-compose.hostinger-sem-traefik.yml) + `env.example.hostinger` | Igual ao anterior; o painel fica em `127.0.0.1:6000` | Sim | [`docker.md`](../docs/guides/docker.md) (seção 3.6), [`auto-update.md`](../docs/guides/auto-update.md) |
 | No Pterodactyl ou Pelican | [`pterodactyl/egg-empiremuse.json`](pterodactyl/egg-empiremuse.json) | Importe o egg no painel | Não (modo `panel`) | [`pterodactyl.md`](../docs/guides/pterodactyl.md) |
@@ -17,6 +16,8 @@ Qual arquivo usar para cada tipo de implantação. Os guias em [`docs/guides/`](
 | Sem container (não recomendado) | [`local/run.sh`](local/run.sh) ou [`local/run.bat`](local/run.bat) | `sh deploy/local/run.sh` (Linux e macOS) ou `deploy\local\run.bat` (Windows) | Só no modo `git`, se rodar de um clone | [`development.md`](../docs/development.md) |
 | Na Discloud | [`discloud.config`](../discloud.config) (na raiz) | Envie o projeto pelo painel da Discloud | Não (modo `manual`) | [`discloud.md`](../docs/guides/discloud.md) |
 | Com nós Lavalink externos | [`lavalink.ini.example`](lavalink.ini.example) | Renomeie para `lavalink.ini` | — | [`development.md`](../docs/development.md) |
+
+Quem hospeda por conta própria com o compose base e quer o `/update` copia o bloco `updater-proxy` (e os volumes `updater-sock` e `updater-proxy-data`) de [`docker-compose.hostinger.yml`](docker-compose.hostinger.yml), liga o bot ao socket (`UPDATE_PROXY_SOCKET` e o volume `updater-sock`) e define `DOCKER_GID` e `UPDATER_PROJECT_DIR` no `.env`. Veja [`auto-update.md`](../docs/guides/auto-update.md).
 
 ## Retenção de logs (183 dias)
 
