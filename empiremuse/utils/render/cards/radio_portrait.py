@@ -133,19 +133,7 @@ def from_radio_snapshot(snapshot: Any, *, custom: bool = False) -> VisorData:
     """Os fatos do visor para o retrato: o mesmo ``from_snapshot``, com até ``NEXT_MAX`` estações em "A seguir". Na rádio ao
     vivo, o texto guardado escapado (nomes do diretório, título e artista ICY) perde esse escape aqui; o da personalizada
     chega cru e fica como está."""
-    data = from_snapshot(snapshot, custom=custom)
-    stations = tuple(getattr(snapshot, "stations", ()) or ())
-    index = getattr(snapshot, "current_index", None)
-    if index is not None and 0 <= int(index) < len(stations):
-        following = stations[int(index) + 1 :]
-    elif data.position >= 1:
-        following = tuple(s for s in stations if int(s.position) > data.position)
-    else:
-        following = ()
-    next_stations = tuple(
-        NextStation(int(s.position), str(s.name), int(s.bitrate_kbps or 0), s.quality) for s in following[:NEXT_MAX]
-    )
-    data = data._replace(next_stations=next_stations)
+    data = from_snapshot(snapshot, custom=custom, next_max=NEXT_MAX)
     return data if custom else _unescaped(data)
 
 

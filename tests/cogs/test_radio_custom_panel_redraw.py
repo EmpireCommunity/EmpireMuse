@@ -102,3 +102,23 @@ async def test_redraws_asked_inside_the_window_become_one_edit():
         ports.refresh_panel()
     await ports._panel_task
     assert message.edit.await_count == 2 and waits == [custom_ports.PANEL_EDIT_INTERVAL_S - 1.0]
+
+
+@pytest.mark.asyncio
+async def test_stopping_the_radio_cancels_the_pending_panel_retry():
+    """A nova tentativa do painel (vaga de render ocupada) não edita depois que a rádio parou de verdade."""
+    gate = asyncio.Event()
+    ports, message, _ = ports_with([RenderBusy(), {"file": "visor"}])
+
+    async def held(seconds):
+        await gate.wait()
+
+    ports.panel_sleep = held
+    ports.refresh_panel()
+    task = ports._panel_task
+    await asyncio.sleep(0)  # a primeira tentativa achou a vaga ocupada e espera
+    ports.radio_stopped()
+    gate.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert message.edit.await_count == 0
