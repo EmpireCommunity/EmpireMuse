@@ -29,9 +29,6 @@
   "cmd.change_node.name": "change_node",
   "cmd.change_node.opt.server.description": "Music server",
   "cmd.change_node.opt.server.name": "server",
-  "cmd.change_skin.aliases": "skin, skins",
-  "cmd.change_skin.description": "Change the player's look/skin.",
-  "cmd.change_skin.name": "change_skin",
   "cmd.command_log.aliases": "cmdlog, cl",
   "cmd.command_log.description": "See the command usage log.",
   "cmd.command_log.name": "command_log",
@@ -484,5 +481,8 @@
   "cmd.radio.reset.opt.channel.description": "Channel of the radio to reset (only channels with a radio). No channel/bot: all.",
   "cmd.radio.reset.opt.channel.name": "channel",
   "cmd.delete_my_data.description": "Delete your personal data stored by the bot, with confirmation.",
-  "cmd.delete_my_data.name": "delete_my_data"
+  "cmd.delete_my_data.name": "delete_my_data",
+  "cmd.skins.aliases": "skin, skins",
+  "cmd.skins.description": "Choose the player and radio skins.",
+  "cmd.skins.name": "skins"
 }

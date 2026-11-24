@@ -283,9 +283,9 @@ async def chamar_change_skin(monkeypatch, global_data, *, nova_skin, skin_atual=
 
     async def registrar(conteudo=None, **kwargs):
         mensagens.append(str(conteudo or ""))
-        embed = kwargs.get("embed")
-        if embed is not None:
-            mensagens.append(str(embed.description or ""))
+        for embed in [kwargs.get("embed"), *(kwargs.get("embeds") or [])]:
+            if embed is not None:
+                mensagens.append(str(embed.description or ""))
 
     bot = BotDeSkins(global_data, [jogador])
     jogador.bot = bot
@@ -304,21 +304,29 @@ async def chamar_change_skin(monkeypatch, global_data, *, nova_skin, skin_atual=
         return {}
 
     bot.get_data, bot.update_data = get_data, update_data
-    bot.pool.servers = SimpleNamespace(patch=patch)
+
+    async def settings(*args, **kwargs):
+        return guild_data["player_controller"]
+
+    bot.pool.servers = SimpleNamespace(patch=patch, settings=settings)
     bot.get_guild = lambda guild_id: SimpleNamespace(id=guild_id, me=SimpleNamespace())
+    gerente = SimpleNamespace(manage_guild=True, administrator=False)
 
     class TelaDeEscolha:
-        def __init__(self, *args, **kwargs):
-            self.skin_selected, self.static_skin_selected = nova_skin, "default"
-            self.global_mode = False
+        def __init__(self, *, initial, choices, **kwargs):
+            self.initial, self.choices = initial, choices
+            self.draft = initial.with_player("normal", nova_skin)
+            self.result, self.message = "save", None
             self.interaction = SimpleNamespace(
                 guild_id=SERVIDOR,
                 response=SimpleNamespace(defer=_aguardar, is_done=lambda: True),
-                author=SimpleNamespace(mention="<@900>"),
+                author=SimpleNamespace(id=900, mention="<@900>", guild_permissions=gerente),
                 edit_original_message=registrar,
                 send=registrar,
             )
-            self.children = []
+
+        def payload(self):
+            return {}
 
         async def wait(self):
             return None
@@ -326,7 +334,7 @@ async def chamar_change_skin(monkeypatch, global_data, *, nova_skin, skin_atual=
     async def selecionar_bot(interaction, return_new=False):
         return interaction, bot
 
-    monkeypatch.setattr(music_settings, "SkinSelector", TelaDeEscolha)
+    monkeypatch.setattr(music_settings, "SkinsView", TelaDeEscolha)
     monkeypatch.setattr(music_settings, "select_bot_pool", selecionar_bot)
     monkeypatch.setattr(music_settings, "update_inter", lambda *args, **kwargs: None)
     monkeypatch.setattr(music_settings, "asyncio", SimpleNamespace(sleep=_aguardar))
@@ -335,7 +343,7 @@ async def chamar_change_skin(monkeypatch, global_data, *, nova_skin, skin_atual=
     interaction = SimpleNamespace(
         guild_id=SERVIDOR,
         guild=SimpleNamespace(id=SERVIDOR),
-        author=SimpleNamespace(mention="<@900>"),
+        author=SimpleNamespace(id=900, mention="<@900>", guild_permissions=gerente),
         response=SimpleNamespace(defer=_aguardar, is_done=lambda: True),
         edit_original_message=registrar,
         send=registrar,

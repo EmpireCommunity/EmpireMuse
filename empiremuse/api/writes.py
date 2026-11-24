@@ -223,6 +223,7 @@ GUILD_FORM_SPECS: Mapping[str, Spec] = {
         "player_skin": required(TEXT_OR_NULL),
         "player_skin_static": required(TEXT_OR_NULL),
     },
+    "disco": {"disc_motion": required(BOOL)},
 }
 LISTEN_ALONG_SPEC: Spec = {"canal": required(TEXT)}
 

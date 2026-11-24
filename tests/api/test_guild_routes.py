@@ -126,7 +126,7 @@ class SettingsReadTest(DataApiCase):
         expected = {
             "player": ["player"],
             "dj": ["dj"],
-            "appearance": ["skin_servidor", "skin_global"],
+            "appearance": ["skin_servidor", "skin_global", "disco"],
             "links": ["links"],
             "general": ["prefixo", "status_voz", "idioma", "ouvir_junto"],
         }
@@ -295,6 +295,19 @@ class SettingsWriteTest(DataApiCase):
         assert self.world.server_settings(100)["djroles"] == ["5002", "5003"]
         assert self.world.server_settings(100)["skin"] == "neon"
         assert body_of(glob)["values"]["player_skin"] == ""
+
+    def test_animacao_do_disco_so_aceita_booleano(self):
+        appearance = "/guilds/100/settings/appearance"
+        version = self.version_of(appearance, "disco")
+        bad = self.call(
+            "PUT", appearance, {"form": "disco", "expected_version": version, "values": {"disc_motion": "false"}}
+        )
+        off = self.call(
+            "PUT", appearance, {"form": "disco", "expected_version": version, "values": {"disc_motion": False}}
+        )
+
+        assert (bad.code, body_of(bad)["error"]["fields"]) == (400, ["disc_motion"])
+        assert off.code == 200 and body_of(off)["values"] == {"disc_motion": False}
 
     def test_remover_convite_de_ouvir_junto_exige_gerenciar_canais(self):
         general = "/guilds/800/settings/general"

@@ -352,17 +352,3 @@ def test_the_panel_shows_the_skin_the_player_gets_when_the_saved_one_is_not_load
     )
 
     assert shown == {"skin": DEFAULT_JUKEBOX_SKIN, "static_skin": "mini"}
-
-
-@pytest.mark.regression
-def test_the_global_selector_saved_unchanged_writes_nothing_when_the_server_skin_is_ignored():
-    import disnake
-
-    from empiremuse.cogs.music_settings import opened_skin
-
-    options = [disnake.SelectOption(label="a", value="mini"), disnake.SelectOption(label="b", value="classic")]
-    shown = opened_skin(options, DEFAULT_JUKEBOX_SKIN)  # a skin do servidor está em IGNORE_SKINS: nenhuma opção marcada
-
-    assert shown == DEFAULT_JUKEBOX_SKIN and global_skin_changes((shown, shown), (shown, shown)) == {}
-    options[1].default = True
-    assert opened_skin(options, DEFAULT_JUKEBOX_SKIN) == "classic"
