@@ -130,8 +130,8 @@ class SkinSelector(disnake.ui.View):
         self.embed = embed
 
         if not global_mode:
-            self.skin_selected = [s.value for s in select_opts if s.default][0]
-            self.static_skin_selected = [s.value for s in static_select_opts if s.default][0]
+            self.skin_selected = opened_skin(select_opts, self.ctx.bot.pool.default_skin)
+            self.static_skin_selected = opened_skin(static_select_opts, self.ctx.bot.pool.default_static_skin)
         else:
             self.skin_selected = opened_skin(global_select_opts, self.ctx.bot.pool.default_skin)
             self.static_skin_selected = opened_skin(global_static_select_opts, self.ctx.bot.pool.default_static_skin)
@@ -1290,6 +1290,11 @@ class MusicSettings(commands.Cog):
         )
         # o que a tela abre marcado no modo global (o mesmo ``opened_skin`` do seletor): com a skin em IGNORE_SKINS ela não está
         # nas opções e o seletor abre no padrão, então salvar sem trocar não grava escolha global
+        # o mesmo no modo do servidor: a skin em IGNORE_SKINS não está nas opções, e salvar sem trocar não grava nada
+        server_shown = (
+            opened_skin(skins_opts, bot.pool.default_skin),
+            opened_skin(static_skins_opts, bot.pool.default_static_skin),
+        )
         global_shown = (
             opened_skin(global_skins_opts, bot.pool.default_skin),
             opened_skin(global_static_skins_opts, bot.pool.default_static_skin),
@@ -1362,14 +1367,14 @@ class MusicSettings(commands.Cog):
         else:
             # só o que o usuário trocou: o outro campo pode ter sido alterado por outro admin enquanto a tela estava aberta
             skin_changes = {}
-            if selected != select_view.skin_selected:
+            if server_shown[0] != select_view.skin_selected:
                 skin_changes["skin"] = select_view.skin_selected
-            if static_selected != select_view.static_skin_selected:
+            if server_shown[1] != select_view.static_skin_selected:
                 skin_changes["static_skin"] = select_view.static_skin_selected
             if skin_changes:
                 await bot.pool.servers.patch(inter.guild_id, "settings", with_choice_marks(skin_changes))
 
-            if selected != select_view.skin_selected:
+            if server_shown[0] != select_view.skin_selected:
                 try:
                     changed_skins_txt += f"Modo Normal: {skin_link(self.bot.player_skins, select_view.skin_selected)}\n"
                 except Exception:
@@ -1377,7 +1382,7 @@ class MusicSettings(commands.Cog):
                         f"Modo Normal: `{select_view.skin_selected.replace(CUSTOM_SKIN_PREFIX, '[custom skin]: ')}`\n"
                     )
 
-            if static_selected != select_view.static_skin_selected:
+            if server_shown[1] != select_view.static_skin_selected:
                 try:
                     changed_skins_txt += (
                         f"Jukebox: {skin_link(self.bot.player_static_skins, select_view.static_skin_selected)}\n"
