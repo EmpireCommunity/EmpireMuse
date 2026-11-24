@@ -64,6 +64,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - Textos: nomes de permissões em Title Case, aviso de nome inválido de `TOKEN_RESERVE_`/`TOKEN_RADIO_` com o formato esperado e mensagem mais curta quando falta Gerenciar Tópicos no `/jukebox setup`.
 - Deploy: a presença padrão dos composes Hostinger e do egg do Pterodactyl usa `{prefix}` no lugar de `!play`.
 - Documentação: README (tokens dos bots e gêneros de rádio) e guia de rádio (bots só-rádio) com as seções movidas para o lugar certo.
+- OpenAPI (`docs/api/openapi.yaml`): o `name` de `MemberCatalogStation` documenta que vem como texto limpo, até 100 caracteres, e `null` quando fica vazio.
 
 ### Adicionado
 - API para painéis externos (aditivo na v1): a tarefa da Jukebox que termina em `erro` traz `reason` (`timeout`, `interrupted`, `missing_permissions`, `channel_unavailable`, `category_unavailable`, `refused` ou `unexpected`), sem texto de usuário final; o passo 1 da confirmação da Jukebox traz `expires_in` (60 s); a busca de estações e a cascata de locais trazem `reason` (`limited` ou `unavailable`) quando a lista vem vazia porque o diretório não foi consultado de fato (uma resposta do diretório fora do formato também é `unavailable` e não fica no cache). O contrato documenta que um `confirm_token` enviado num plano que não limpa canal é ignorado, que um `404` ao acompanhar uma tarefa depois de um reinício é resultado desconhecido e que o `409` das favoritas de rádio é só a `Idempotency-Key` reusada.

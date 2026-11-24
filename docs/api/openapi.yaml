@@ -5353,6 +5353,7 @@ components:
           pattern: "^[0-9a-f]{24}$"
         name:
           type: [string, "null"]
+          description: "Nome da estação do servidor como texto limpo: sem menção nem link vivos e sem escape de markdown, até 100 caracteres. `null` se o nome ficou vazio depois da limpeza."
     MemberCatalog:
       type: object
       additionalProperties: false
