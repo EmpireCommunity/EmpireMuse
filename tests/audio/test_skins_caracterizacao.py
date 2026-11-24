@@ -7,7 +7,9 @@ liga o modo certo (controlador/estático) no player.
 """
 
 import importlib
+import json
 import pkgutil
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import disnake
@@ -162,3 +164,144 @@ def test_static_skins_turn_on_static_mode(skin_cls):
     player = make_player(static=False)
     skin_cls().setup_features(player)
     assert player.static is True
+
+
+def _shown_text(data) -> str:
+    embeds = " ".join(json.dumps(e.to_dict(), ensure_ascii=False) for e in data.get("embeds") or [])
+    return f"{data.get('content') or ''} {embeds}"
+
+
+def _call(player, *, private: bool):
+    perms = SimpleNamespace(view_channel=not private, connect=True)
+    player.guild.me.voice.channel.permissions_for.return_value = perms
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize("skin_cls", NORMAL + STATIC)
+def test_no_classic_skin_shows_the_last_action_in_a_private_call(skin_cls):
+    action = "Bia pulou a música."
+    shown = {}
+    for private in (False, True):
+        player = make_player(command_log=action)
+        player.tr = lambda key, **values: " ".join([key, *map(str, values.values())])
+        _call(player, private=private)
+        shown[private] = action in _shown_text(skin_cls().load(player))
+
+    assert shown[True] is False
+
+
+SECRET = "SEGREDO"
+SECRET_ID = 987654321
+BOT_ID = 111
+HIDDEN = "Faixa oculta"
+
+
+def _secret_track(n=0, **overrides):
+    values = dict(
+        title=f"{SECRET} faixa {n}",
+        single_title=f"{SECRET} faixa {n}",
+        uri=f"https://{SECRET.lower()}.test/{n}",
+        search_uri=f"https://{SECRET.lower()}.test/s{n}",
+        thumb=f"https://{SECRET.lower()}.test/capa{n}.png",
+        author=f"{SECRET} artista",
+        authors_string=f"{SECRET} artista",
+        authors_md=f"[{SECRET} artista](https://{SECRET.lower()}.test/a)",
+        requester=SECRET_ID,
+        playlist_name=f"{SECRET} lista",
+        playlist_url=f"https://{SECRET.lower()}.test/p",
+        album_name=f"{SECRET} album",
+        album_url=f"https://{SECRET.lower()}.test/al",
+        info={"sourceName": "youtube", "extra": {"related": {"uri": f"https://{SECRET.lower()}.test/r"}}},
+    )
+    return make_track(**(values | overrides))
+
+
+def _everything_shown(data) -> str:
+    parts = [_shown_text(data)]
+    for component in data.get("components") or []:
+        for item in component if isinstance(component, (list, tuple)) else [component]:
+            to_dict = getattr(item, "to_component_dict", None)
+            parts.append(json.dumps(to_dict() if callable(to_dict) else str(item), ensure_ascii=False, default=str))
+    return " ".join(parts)
+
+
+def _secret_player(*, private: bool, **overrides):
+    from empiremuse.utils.music.private_call import skin_view
+
+    values = dict(
+        current=_secret_track(),
+        queue=[_secret_track(n) for n in range(1, 6)],
+        queue_autoplay=[_secret_track(9, autoplay=True)],
+        command_log=f"<@{SECRET_ID}> pulou {SECRET}",
+        static=False,
+        skin="default",
+    )
+    player = make_player(**(values | overrides))
+    player.tr = lambda key, **values: (
+        HIDDEN if key == "jbx.hidden_track" else " ".join([key, *map(str, values.values())])
+    )
+    player.bot.user.id = BOT_ID
+    _call(player, private=private)
+    return player, skin_view(player)
+
+
+@pytest.mark.regression
+@pytest.mark.critical
+@pytest.mark.parametrize("state", ["tocando", "recomendada", "mini_fila_desligada"])
+@pytest.mark.parametrize("skin_cls", NORMAL + STATIC)
+def test_no_classic_skin_shows_the_track_cover_or_requester_in_a_private_call(skin_cls, state):
+    extra = {
+        "recomendada": {"current": _secret_track(autoplay=True)},
+        "mini_fila_desligada": {"mini_queue_enabled": False},
+    }
+    _player, view = _secret_player(private=True, **extra.get(state, {}))
+    public, _ = _secret_player(private=False, **extra.get(state, {}))
+
+    shown = _everything_shown(skin_cls().load(view))
+    title_on_public = f"{SECRET} faixa 0" in _everything_shown(skin_cls().load(public))
+
+    assert SECRET not in shown and SECRET.lower() not in shown and str(SECRET_ID) not in shown
+    assert f"<@{BOT_ID}>" not in shown  # ninguém no lugar de quem pediu
+    assert "musicplayer_queue_dropdown" not in shown  # nem o select da fila, como nas skins do EmpireMuse
+    assert (HIDDEN in shown) is title_on_public  # onde a skin mostra o título, mostra o título oculto
+
+
+@pytest.mark.parametrize("skin_cls", NORMAL + STATIC)
+def test_a_classic_skin_in_a_public_call_is_unchanged(skin_cls):
+    player, view = _secret_player(private=False)
+
+    assert view is player and SECRET in _everything_shown(skin_cls().load(view))
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize("skin", ["default", "muse_text"])
+def test_both_load_paths_hand_the_masked_view_only_to_a_classic_skin_in_a_private_call(skin):
+    from empiremuse.utils.music.models import np_steps
+    from empiremuse.utils.music.models.player import LavalinkPlayer
+    from empiremuse.utils.music.private_call import PrivateCallView
+
+    seen = []
+    loaded = SimpleNamespace(load=lambda p: seen.append(p) or {"embeds": [disnake.Embed(description="x")]})
+    player, _ = _secret_player(private=True, skin=skin)
+    player.bot.pool.player_skins = {skin: loaded}
+
+    np_steps._load_skin(player)
+    LavalinkPlayer.get_skin(player)
+
+    assert [isinstance(p, PrivateCallView) for p in seen] == [skin == "default"] * 2
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize("private", [False, True])
+def test_the_default_extra_menu_has_no_queue_select_nor_lyrics_in_a_private_call(private):
+    from empiremuse.utils.music.models import np_steps
+
+    player, _ = _secret_player(private=private, static=True, mini_queue_feature=False, has_thread=False)
+    player.node.lyric_support = True
+    menu = SimpleNamespace(options=[])
+    req = SimpleNamespace(data={"components": [None] * 5 + [menu]})
+
+    np_steps._np_buttons_extra(player, req)
+
+    shown = _everything_shown({"components": req.data["components"][6:]}) + str([o.value for o in menu.options])
+    assert (SECRET in shown, "musicplayer_lyrics" in shown) == (not private, not private)

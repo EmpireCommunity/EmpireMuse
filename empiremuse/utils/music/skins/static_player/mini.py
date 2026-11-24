@@ -19,6 +19,8 @@ from empiremuse.utils.music.converters import (
 from empiremuse.utils.music.models import LavalinkPlayer
 from empiremuse.utils.others import PlayerControls
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
+from empiremuse.utils.jukebox_panel import player_call_is_private
+from empiremuse.utils.music.private_call import details_shown
 
 
 class MiniStaticSkin:
@@ -69,7 +71,8 @@ class MiniStaticSkin:
                 embed.description += player.tr("player.queue_2")
 
         if not player.current.autoplay:
-            embed.description += f" {md_bracketed(f'<@{player.current.requester}>')}"
+            if details_shown(player):  # call privada: sem quem pediu
+                embed.description += f" {md_bracketed(f'<@{player.current.requester}>')}"
         else:
             try:
                 embed.description += f" {md_bracketed(md_link(player.tr('player.recommended'), player.current.info['extra']['related']['uri']))}"
@@ -87,7 +90,7 @@ class MiniStaticSkin:
             value=f"```ansi\n[34;1m{fix_characters(player.current.author, 18)}[0m\n```",
         )
 
-        if player.command_log:
+        if player.command_log and not player_call_is_private(player):  # call privada: sem a última ação
             embed.add_field(
                 name=player.tr("player.last_interaction_5", command_log_emoji=str(player.command_log_emoji)),
                 value=f"{player.command_log}",
@@ -128,7 +131,8 @@ class MiniStaticSkin:
                         f"`┌ {n + 1})` {md_link(t.title, t.uri, limit=34)}\n"
                         f"`└` {app_emoji(player.bot, 'history')} `{duration}`"
                         + (player.tr("player.repeats", track_loops=str(t.track_loops)) if t.track_loops else "")
-                        + f" **|** {app_emoji(player.bot, 'user')} <@{t.requester}>\n"
+                        + (f" **|** {app_emoji(player.bot, 'user')} <@{t.requester}>" if details_shown(player) else "")
+                        + "\n"
                     )
 
                 else:
@@ -140,7 +144,8 @@ class MiniStaticSkin:
                         f"-# `┌ {n + 1})` {md_link(t.title, t.uri, limit=34)}\n"
                         f"-# `└` {app_emoji(player.bot, 'history')} {duration}"
                         + (player.tr("player.repeats", track_loops=str(t.track_loops)) if t.track_loops else "")
-                        + f" **|** {app_emoji(player.bot, 'user')} <@{t.requester}>\n"
+                        + (f" **|** {app_emoji(player.bot, 'user')} <@{t.requester}>" if details_shown(player) else "")
+                        + "\n"
                     )
 
             embed_queue = disnake.Embed(
@@ -336,7 +341,9 @@ class MiniStaticSkin:
             ),
         ]
 
-        if queue := player.queue or player.queue_autoplay:
+        if details_shown(player) and (
+            queue := player.queue or player.queue_autoplay
+        ):  # call privada: sem o select da fila
             data["components"].append(
                 disnake.ui.Select(
                     placeholder=fit(player.tr("player.next_songs.placeholder"), 150),

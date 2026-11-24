@@ -34,6 +34,7 @@ from empiremuse.utils.music.models.player_voice import PlayerVoiceMixin
 from empiremuse.utils.music.models.player_events import PlayerEventsMixin
 from empiremuse.utils.music.models.player_autoqueue import PlayerAutoqueueMixin
 from empiremuse.utils.music.models.player_playback import PlayerPlaybackMixin
+from empiremuse.utils.music.private_call import skin_view
 
 
 class LavalinkPlayer(
@@ -362,19 +363,21 @@ class LavalinkPlayer(
         if not self.current:
             return
 
+        view = skin_view(self)  # call privada: Clássicas e personalizadas veem a faixa mascarada
+
         if self.static:
             if self.skin_static.startswith("> custom_skin: "):
                 data = skin_converter(
-                    self.custom_skin_static_data[self.skin_static[15:]], player=self, guild=self.guild
+                    self.custom_skin_static_data[self.skin_static[15:]], player=view, guild=self.guild
                 )
             else:
-                data = self.bot.pool.player_static_skins[self.skin_static].load(self)
+                data = self.bot.pool.player_static_skins[self.skin_static].load(view)
 
         else:
             if self.skin.startswith("> custom_skin: "):
-                data = skin_converter(self.custom_skin_data[self.skin[15:]], player=self, guild=self.guild)
+                data = skin_converter(self.custom_skin_data[self.skin[15:]], player=view, guild=self.guild)
             else:
-                data = self.bot.pool.player_skins[self.skin].load(self)
+                data = self.bot.pool.player_skins[self.skin].load(view)
 
         data = fit_payload(data)
 
