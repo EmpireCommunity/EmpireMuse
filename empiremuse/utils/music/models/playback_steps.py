@@ -83,6 +83,26 @@ async def go_idle(self) -> None:
     self.bot.dispatch("player_queue_end", player=self)
 
 
+AUTOQUEUE_FAILURE_WAIT_S = 60  # recuo do autoplay depois de uma busca de recomendações que falhou
+
+
+def _taken_over(self) -> bool:
+    """O player fechou, ou o modo rádio ou uma estação começou durante a busca de recomendações."""
+    return (
+        getattr(self, "is_closing", False)
+        or getattr(self, "radio_mode", None) is not None
+        or getattr(self, "station", None) is not None
+    )
+
+
+async def _pn_restart_after_takeover(self, req) -> bool:
+    """A recomendação não toca por cima, e as sugestões que a busca guardou depois do descarte da transição também saem (G1). A
+    busca segurava ``locked``, então o ``process_next`` da transição se perdeu: a escolha recomeça aqui (estação: sorteia; ao vivo
+    na fila: toca; abrindo: espera)."""
+    self.queue_autoplay.clear()
+    return True if getattr(self, "is_closing", False) else await _pn_next_track(self, req)
+
+
 async def _pn_next_track(self, req):
     """Escolhe a próxima faixa: fila, autoplay ou modo ocioso."""
     mode = getattr(self, "radio_mode", None)
@@ -131,11 +151,16 @@ async def _pn_next_track(self, req):
                         track = await self.get_autoqueue_tracks()
                     except Exception:
                         logger.exception("Falha em _pn_next_track")
+                        if _taken_over(self):
+                            # a busca falhou, mas uma transição tomou o player no meio: ela não espera o recuo de 60 s do autoplay
+                            return await _pn_restart_after_takeover(self, req)
                         self.locked = False
-                        await asyncio.sleep(60)
+                        await asyncio.sleep(AUTOQUEUE_FAILURE_WAIT_S)
                         if not self.current and (self.autoplay or self.keep_connected):
                             await self.process_next()
                         return True
+                    if _taken_over(self):
+                        return await _pn_restart_after_takeover(self, req)
 
                 if not track:
                     await go_idle(self)
