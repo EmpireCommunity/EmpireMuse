@@ -99,6 +99,17 @@ def test_a_private_or_unknown_call_shows_nothing_of_what_plays(voice):
     assert author_title(spec) == "" and alt_text(spec, hidden_label.get) == "Faixa oculta"
 
 
+@pytest.mark.regression
+def test_a_private_call_card_shows_the_track_only_in_the_call_own_chat():
+    in_chat = player(current=Track(), voice="private")
+    in_chat.guild.me.voice.channel.id = 700
+    elsewhere = player(current=Track(), voice="private", text_channel=SimpleNamespace(id=701))
+    elsewhere.guild.me.voice.channel.id = 700
+    in_chat.text_channel = SimpleNamespace(id=700)
+
+    assert build(in_chat, SETTINGS).hidden is False and build(elsewhere, SETTINGS).hidden is True
+
+
 def test_a_private_call_in_radio_mode_hides_the_icy_title():
     spec = build(player(voice="private", view=radio_view()), SETTINGS)
 

@@ -722,3 +722,28 @@ async def test_the_end_and_idle_embeds_hide_the_last_action_in_a_private_call(mo
 
     shown = idle.await_args.args[1] if path == "idle" else player.message.edit.await_args.kwargs["embed"].description
     assert (action in shown) is not private
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+@pytest.mark.parametrize(("destination", "shown"), [(700, True), (701, False)])
+async def test_the_idle_embed_of_a_private_call_shows_the_last_action_only_in_the_call_own_chat(
+    monkeypatch, destination, shown
+):
+    from unittest.mock import AsyncMock
+
+    from empiremuse.utils.music.models import state_steps
+
+    action = "<@42> parou o player"
+    perms = SimpleNamespace(view_channel=False, connect=True)
+    call = SimpleNamespace(id=700, permissions_for=lambda _role: perms, guild=SimpleNamespace(default_role=0))
+    player = Player(ImageSkin())
+    player.guild = SimpleNamespace(me=SimpleNamespace(voice=SimpleNamespace(channel=call)))
+    player.text_channel, player.command_log = SimpleNamespace(id=700), action  # o player no chat da própria call
+    player.channel_cleanup = AsyncMock()
+    idle = AsyncMock()
+    monkeypatch.setattr(state_steps, "send_idle_embed", idle)
+
+    await state_steps._cu_static_session(player, SimpleNamespace(channel=SimpleNamespace(id=destination)))
+
+    assert (action in idle.await_args.args[1]) is shown

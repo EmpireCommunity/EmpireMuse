@@ -241,7 +241,7 @@ def _everything_shown(data) -> str:
     return " ".join(parts)
 
 
-def _secret_player(*, private: bool, **overrides):
+def _secret_player(*, private: bool, in_call_chat: bool = False, **overrides):
     from empiremuse.utils.music.private_call import skin_view
 
     values = dict(
@@ -258,6 +258,8 @@ def _secret_player(*, private: bool, **overrides):
     )
     player.bot.user.id = BOT_ID
     _call(player, private=private)
+    player.guild.me.voice.channel.id = 700
+    player.text_channel.id = 700 if in_call_chat else 701
     return player, skin_view(player)
 
 
@@ -280,6 +282,16 @@ def test_no_classic_skin_shows_the_track_cover_or_requester_in_a_private_call(sk
     assert f"<@{BOT_ID}>" not in shown  # ninguém no lugar de quem pediu
     assert "musicplayer_queue_dropdown" not in shown  # nem o select da fila, como nas skins do EmpireMuse
     assert (HIDDEN in shown) is title_on_public  # onde a skin mostra o título, mostra o título oculto
+
+
+@pytest.mark.regression
+def test_a_classic_skin_in_the_private_call_own_chat_shows_the_track_and_the_last_action():
+    from empiremuse.utils.music.skins.normal_player.default import DefaultSkin
+
+    player, view = _secret_player(private=True, in_call_chat=True)
+    shown = _everything_shown(DefaultSkin().load(view))
+
+    assert view is player and f"{SECRET} faixa 0" in shown and f"pulou {SECRET}" in shown
 
 
 @pytest.mark.parametrize("skin_cls", NORMAL + STATIC)

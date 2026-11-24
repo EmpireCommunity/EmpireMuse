@@ -76,7 +76,7 @@ async def _cu_static_session(self, inter: disnake.MessageInteraction = None) -> 
         return
 
     try:
-        await send_idle_embed(inter or self.message, closing_log(self), bot=self.bot)
+        await send_idle_embed(inter or self.message, closing_log(self, inter or self.message), bot=self.bot)
     except Exception:
         logger.exception("Falha em _cu_static_session")
 

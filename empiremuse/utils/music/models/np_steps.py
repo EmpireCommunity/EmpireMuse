@@ -33,7 +33,7 @@ from empiremuse.utils.music import card_facts
 from empiremuse.utils import jukebox_panel
 from empiremuse.rules.skins import JUKEBOX_IDS
 from empiremuse.utils.music.private_call import skin_view
-from empiremuse.utils.jukebox_panel import player_call_is_private
+from empiremuse.utils.jukebox_panel import player_hides_details
 from empiremuse.utils.render.state import RENDER_STATES
 from empiremuse.utils.safe_error import safe_error
 
@@ -357,7 +357,7 @@ async def _np_data(self, req):
         try:
             if self.static and isinstance(self.text_channel.parent, disnake.ForumChannel):
                 # call privada: o título real nunca vai ao conteúdo, em nenhuma skin (D10)
-                private = jukebox_panel.player_call_is_private(self)
+                private = jukebox_panel.player_hides_details(self)
                 title = self.tr("jbx.hidden_track") if private else self.current.title
                 data["content"] = f"`{'▶️' if not self.paused else '⏸️'} {fix_characters(title, 50)}` |\n\n" + (
                     data.get("content") or ""
@@ -539,7 +539,7 @@ def _np_buttons_extra(self, req):
     """Acrescenta ao menu padrão as opções que dependem do estado do player."""
     data = req.data
 
-    private = player_call_is_private(self)  # call privada: sem o select da fila nem a letra (D10)
+    private = player_hides_details(self)  # call privada, fora do chat dela: sem o select da fila nem a letra (D10)
 
     if self.static and not private:
         if queue := self.queue or self.queue_autoplay:

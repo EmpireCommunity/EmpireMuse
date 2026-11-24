@@ -3,7 +3,8 @@ acompanha a imagem (barra de texto da opção C, texto alternativo e título no 
 
 - ``build(player, settings)`` é síncrono, sem ``await`` e sem I/O: lê o player, o modo rádio pela cópia imutável
   ``JukeboxRadio.view(player)`` (nunca ``player.radio_mode``) e devolve o ``CardSpec`` já selado (``rules.card.seal``).
-- **Call privada:** um ponto só, ``jukebox_panel.player_call_is_private``. Sem call conhecida, conta como privada.
+- **Call privada:** um ponto só, ``jukebox_panel.player_hides_details``: oculta numa call privada (ou sem call conhecida),
+  salvo com o player no chat de texto da própria call.
 - **Estação do servidor (S):** pela cópia ``JukeboxRadio.station_view(player)`` (J2b); a faixa que veio da estação sai
   com ``By.STATION`` (sem quem pediu).
 - **Nada que envelhece:** a posição só entra na pausa (``paused_at_s``); o tempo vivo vai ao embed como ``<t:…:R>``.
@@ -35,7 +36,7 @@ from empiremuse.rules.card import (
     seal,
 )
 from empiremuse.rules.skins import disc_motion_on
-from empiremuse.utils.jukebox_panel import player_call_is_private, player_voice_channel
+from empiremuse.utils.jukebox_panel import player_hides_details, player_voice_channel
 from empiremuse.utils.music.cover_fetch import cover_url
 
 # A sigla fixa da fonte (``sourceName`` do Lavalink); o que não está aqui vira ``WEB``.
@@ -220,7 +221,7 @@ def build(player: Any, settings: CardSettings) -> CardSpec:
         render_version=RENDER_VERSION,
         locale=settings.locale,
         state=state,
-        hidden=player_call_is_private(player),
+        hidden=player_hides_details(player),
         track=_track(player, current, station is not None and station.playing) if current is not None else None,
         cover=_cover(current),
         paused_at_s=paused_at if current is not None and not current.is_stream else None,

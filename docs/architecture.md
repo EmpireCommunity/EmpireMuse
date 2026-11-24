@@ -246,7 +246,8 @@ Os métodos mais longos do player (KI-29b) seguem o mesmo padrão do `/play`: `i
   é a família do renderizador, `theme` é `black` ou `white` e `project` é a projeção do próprio renderizador. O
   `load(player)` é síncrono e sem I/O: monta o embed do cartão em `embeds[0]` (sem imagem; o autor só com o link e o
   ícone) e os componentes de sempre, com os mesmos `custom_id` das Clássicas. Os textos vêm do catálogo (`jbx.*`,
-  `skin.*`). Em call privada nada da faixa, de quem pediu, da fila ou da rádio aparece.
+  `skin.*`). Em call privada, fora do chat de texto da própria call, nada da faixa, de quem pediu, da fila ou da rádio
+  aparece.
 - **Fatos e projeção:** `utils/music/card_facts.build(player, settings)` monta o `CardSpec` (`rules/card.py`: tuplas
   imutáveis comparáveis por `==`, com o texto de fora já limpo e cortado e nada que envelheça além da posição pausada).
   A skin o projeta (`skin.project(spec)`) para ficar só com o que ela desenha: uma mudança que a skin não mostra não

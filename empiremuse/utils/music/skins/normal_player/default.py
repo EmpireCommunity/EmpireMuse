@@ -12,7 +12,7 @@ from empiremuse.utils.music.converters import time_format, get_button_style, mus
 from empiremuse.utils.music.models import LavalinkPlayer
 from empiremuse.utils.others import PlayerControls
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
-from empiremuse.utils.jukebox_panel import player_call_is_private
+from empiremuse.utils.jukebox_panel import player_hides_details
 from empiremuse.utils.music.private_call import details_shown
 
 
@@ -111,7 +111,9 @@ class DefaultSkin:
 
         bar = asset_url("ui_rainbow_bar_3.gif")
 
-        if player.command_log and not player_call_is_private(player):  # call privada: sem a última ação
+        if player.command_log and not player_hides_details(
+            player
+        ):  # call privada, fora do chat dela: sem a última ação
             txt += player.tr(
                 "player.ansi_last_interaction",
                 command_log_emoji=str(player.command_log_emoji),

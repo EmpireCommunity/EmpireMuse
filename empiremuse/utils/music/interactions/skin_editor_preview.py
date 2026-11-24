@@ -3,7 +3,8 @@
 
 - **Call privada:** a mensagem do editor é pública no canal, então numa call privada (ou sem call conhecida, a regra de
   todas as skins) a prévia não usa o player de verdade. Com a visão mascarada (``private_call.PrivateCallView``) ela mostra
-  o player sem faixa, capa, quem pediu nem fila; sem essa visão, os dados de exemplo (``player=None``).
+  o player sem faixa, capa, quem pediu nem fila; sem essa visão, os dados de exemplo (``player=None``). Vale em qualquer
+  canal, inclusive no chat de texto da própria call: a prévia não segue ``jukebox_panel.player_hides_details``.
 """
 
 from __future__ import annotations

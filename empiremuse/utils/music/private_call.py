@@ -1,7 +1,8 @@
 """O player como as skins Clássicas (e as personalizadas) o veem numa call privada (spec skins 2.3, D10).
 
-Numa call privada nenhuma skin mostra a faixa, a capa nem quem pediu. As skins do EmpireMuse já fazem isso sozinhas. As
-Clássicas recebem uma visão do player em que a faixa atual e a fila são máscaras:
+Numa call privada (ou sem call conhecida) nenhuma skin mostra a faixa, a capa nem quem pediu, salvo com o player no chat
+de texto da própria call, que só quem vê a call lê (``jukebox_panel.player_hides_details``). As skins do EmpireMuse já
+fazem isso sozinhas. As Clássicas recebem uma visão do player em que a faixa atual e a fila são máscaras:
 
 - **Título:** o texto de faixa oculta (``jbx.hidden_track``).
 - **Sem link nem letra:** sem endereço, sem ``ytid`` e sem a recomendação relacionada.
@@ -21,7 +22,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from empiremuse.rules.skins import JUKEBOX_IDS
-from empiremuse.utils.jukebox_panel import player_call_is_private
+from empiremuse.utils.jukebox_panel import player_hides_details
 
 NO_ARTIST = "—"
 
@@ -131,9 +132,9 @@ class PrivateCallView:
 
 
 def skin_view(player: Any) -> Any:
-    """O que a skin atual recebe: o próprio player, ou a visão mascarada numa call privada (Clássicas e personalizadas)."""
+    """O que a skin atual recebe: o próprio player, ou a visão mascarada quando a faixa se esconde (Clássicas e personalizadas)."""
     name = player.skin_static if player.static else player.skin
-    if name in JUKEBOX_IDS or not player_call_is_private(player):
+    if name in JUKEBOX_IDS or not player_hides_details(player):
         return player
     return PrivateCallView(player)
 
@@ -143,6 +144,8 @@ def details_shown(player: Any) -> bool:
     return not isinstance(player, PrivateCallView)
 
 
-def closing_log(player: Any) -> str:
-    """A última ação para os embeds de encerramento e de ocioso; vazia numa call privada."""
-    return "" if player_call_is_private(player) else (player.command_log or "")
+def closing_log(player: Any, target: Any = None) -> str:
+    """A última ação para os embeds de encerramento e de ocioso; vazia quando a faixa se esconde.
+
+    ``target`` é a mensagem ou a interação que recebe o embed (o canal dela decide); sem ele, o canal do player."""
+    return "" if player_hides_details(player, getattr(target, "channel", None)) else (player.command_log or "")
