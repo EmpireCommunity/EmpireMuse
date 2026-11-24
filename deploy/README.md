@@ -17,6 +17,8 @@ Qual arquivo usar para cada tipo de implantação. Os guias em [`docs/guides/`](
 | Na Discloud | [`discloud.config`](../discloud.config) (na raiz) | Envie o projeto pelo painel da Discloud | Não (modo `manual`) | [`discloud.md`](../docs/guides/discloud.md) |
 | Com nós Lavalink externos | [`lavalink.ini.example`](lavalink.ini.example) | Renomeie para `lavalink.ini` | — | [`development.md`](../docs/development.md) |
 
+O `/update` só funciona com o proxy e um único `docker-compose.yml` na pasta do projeto, com a linha da imagem do bot fixa (`    image: empirecommunity/empiremuse:X.Y.Z@sha256:…`). O `docker-compose.yml` base não atende (a imagem vem de `${EMPIREMUSE_IMAGE:-…}`) e não há complemento por `-f` nem `include:`. Quem quer o `/update` parte de [`docker-compose.hostinger.yml`](docker-compose.hostinger.yml) ou [`docker-compose.hostinger-sem-traefik.yml`](docker-compose.hostinger-sem-traefik.yml) e segue [`auto-update.md`](../docs/guides/auto-update.md).
+
 ## Retenção de logs (183 dias)
 
 Na instância hospedada (VPS com Docker Manager e Traefik compartilhado), o **`logrotate` é pré-requisito padrão do host** (instalação, o arquivo `host/logrotate-traefik-access` e a verificação estão no runbook). Quem hospeda por conta própria sem essa pilha **não precisa** dele.

@@ -516,7 +516,8 @@ async def send_idle_embed(
                                     await thread.edit(**thread_kw)
                                 break
             else:
-                await message.edit(embed=embed, content=content, components=components)
+                # ``attachments=[]``: o cartão de imagem do player sai junto (o embed ocioso não tem anexo)
+                await message.edit(embed=embed, content=content, components=components, attachments=[])
         else:
             message = await channel.send(embed=embed, components=components, content=content)
 

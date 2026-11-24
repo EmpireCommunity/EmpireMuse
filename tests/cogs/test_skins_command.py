@@ -471,6 +471,27 @@ class TestCommand:
         opened = await run_skins(monkeypatch, bot, change=lambda d: _server_skin(d, "muse_expanded_black"))
         assert opened.replies[-1]["embeds"][0].description == TR("skin.save_failed")
 
+    @pytest.mark.asyncio
+    @pytest.mark.regression
+    @pytest.mark.parametrize("global_mode", [False, True])
+    async def test_a_saved_skin_in_ignore_skins_opens_the_real_screen_and_saves_unchanged_writes_nothing(
+        self, monkeypatch, global_mode
+    ):
+        """O que o ``/skin`` antigo garantia (04aff891): a skin salva em ``IGNORE_SKINS`` não derruba a abertura e Salvar sem
+        trocar não grava nada (nem escolha global)."""
+        bot = Bot({"global_skin": global_mode})
+        bot.settings = {"skin": "classic", "static_skin": "default"}
+        bot.config["IGNORE_SKINS"] = "classic"
+
+        opened = await run_skins(monkeypatch, bot, change=lambda d: d)
+        screen = skins_view.SkinsView(
+            bot=bot, author_id=900, tr=TR, choices=opened.screen.choices, initial=opened.screen.initial
+        )
+
+        assert "classic" not in opened.screen.choices.normal
+        assert screen.payload()["embeds"]
+        assert bot.global_writes == [] and bot.server_writes == []
+
 
 # ============================================================================ os padrões (Jukebox Texto e Rádio Texto)
 
