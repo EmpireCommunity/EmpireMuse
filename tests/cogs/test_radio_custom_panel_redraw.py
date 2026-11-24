@@ -69,12 +69,15 @@ async def test_a_redraw_asked_during_an_edit_is_not_dropped():
     gate = asyncio.Event()
     ports, message, _ = ports_with([{"file": "a"}, {"file": "b"}])
 
+    started = asyncio.Event()
+
     async def slow_edit(**kwargs):
+        started.set()
         await gate.wait()
 
     message.edit.side_effect = slow_edit
     ports.refresh_panel()
-    await asyncio.sleep(0)
+    await started.wait()
     ports.refresh_panel()  # chega com a primeira edição em curso
     gate.set()
     await ports._panel_task
@@ -122,3 +125,32 @@ async def test_stopping_the_radio_cancels_the_pending_panel_retry():
     with pytest.raises(asyncio.CancelledError):
         await task
     assert message.edit.await_count == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_a_stopped_runner_does_not_edit_the_panel_after_the_window(monkeypatch):
+    """O pedido que esperava a janela de 15 s não edita o painel quando a rádio desliga e volta antes dela."""
+    from empiremuse.utils.radio.runner import RadioRunner
+
+    ports, message, _ = ports_with([{"file": "a"}, {"file": "b"}])
+    ports.refresh_panel()
+    await ports._panel_task
+    release = asyncio.Event()
+
+    async def hold(seconds):
+        await release.wait()
+
+    ports.panel_sleep = hold
+    ports.refresh_panel()
+    task = ports._panel_task
+    await asyncio.sleep(0)  # a tarefa chega à espera da janela
+    runner = RadioRunner.__new__(RadioRunner)
+    runner.ports, runner._stopped = ports, False
+    runner._set = lambda phase: None
+    ports.stop_stream = AsyncMock()
+    await runner.stop()
+    release.set()
+    await asyncio.gather(task, return_exceptions=True)
+
+    assert message.edit.await_count == 1

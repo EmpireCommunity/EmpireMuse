@@ -19,6 +19,7 @@ from empiremuse.rules.skins import CLASSIC_NORMAL, CLASSIC_STATIC, with_choice_m
 from empiremuse.rules.text import external_text
 from empiremuse.utils.db import DBModel
 from empiremuse.utils.music.interactions.skins_draft import Choices, RadioRow, SavePlan, ordered_ids
+from empiremuse.utils.music.skin_store import load_custom_skins
 from empiremuse.utils.radio.premium import RadioUnavailable
 from empiremuse.utils.radio.store import RadioConflict, RadioInvalid, RadioNotFound
 
@@ -64,11 +65,12 @@ async def load_choices(bot: Any, guild: Any, global_data: Mapping[str, Any], *, 
     """As listas do momento: skins carregadas (menos as ignoradas), personalizadas do servidor e, com a permissão, as rádios."""
     normal = ordered_ids(allowed_names(bot.player_skins, bot.config["IGNORE_SKINS"]), CLASSIC_NORMAL)
     static = ordered_ids(allowed_names(bot.player_static_skins, bot.config["IGNORE_STATIC_SKINS"]), CLASSIC_STATIC)
+    customs = await load_custom_skins(bot, guild.id, global_data)  # só as que o player carrega
     return Choices(
         normal,
         static,
-        tuple(global_data.get("custom_skins") or {}),
-        tuple(global_data.get("custom_skins_static") or {}),
+        tuple(customs.normal),
+        tuple(customs.static),
         await radio_rows(bot, guild) if radio_allowed else (),
     )
 

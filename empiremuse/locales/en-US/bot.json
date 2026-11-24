@@ -1480,7 +1480,7 @@
   "skin.saved": "The skins were saved.",
   "skin.save_failed": "Could not save everything right now. Open /skins again to check what was saved.",
   "skin.unchanged": "No skin settings were changed.",
-  "skin.custom_rejected_one": "{count} custom skin of this server is in an incompatible format and was ignored (the player uses the default skin instead).",
-  "skin.custom_rejected_other": "{count} custom skins of this server are in an incompatible format and were ignored (the player uses the default skin instead).",
+  "skin.custom_rejected_one": "{count} custom skin of this server is in an incompatible format and was ignored.",
+  "skin.custom_rejected_other": "{count} custom skins of this server are in an incompatible format and were ignored.",
   "skin.command_log": "{mention} changed the player skin."
 }
