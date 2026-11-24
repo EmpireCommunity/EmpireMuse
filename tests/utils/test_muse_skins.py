@@ -15,7 +15,7 @@ import pytest
 from empiremuse.i18n import loader
 from empiremuse.rules.i18n import Translator
 from empiremuse.utils.music.models import np_steps
-from empiremuse.utils.music.skins.muse import _card, muse_text
+from empiremuse.utils.music.skins.muse import muse_text
 from tests.support.call_chat import CALL_CHAT_CASES, CALL_CHAT_IDS
 
 pytestmark = pytest.mark.critical
@@ -24,7 +24,6 @@ HOSTILE = "@everyone <@123> [x](https://evil.example) discord.gg/abc\nlinha"
 RAW_FORBIDDEN = ("@everyone", "<@123>", "](https://evil", "discord.gg/abc", "\nlinha")
 REQUESTER_ID = 42
 NOW = 1_800_000_000.0
-IMAGE_IDS = ("muse_expanded_black", "muse_slim_white", "muse_radio_black")
 
 
 @pytest.fixture(scope="module")
@@ -131,19 +130,7 @@ def _texts(data: dict) -> str:
     return "\n".join(out)
 
 
-def _image(skin_id: str):
-    return import_module(f"empiremuse.utils.music.skins.muse.{skin_id}").load()
-
-
-def _image_build(skin_id: str):
-    def build(player, now):
-        return _image(skin_id).build(player, now)
-
-    build.__name__ = skin_id
-    return build
-
-
-BUILDS = [muse_text.build, *(_image_build(i) for i in IMAGE_IDS)]
+BUILDS = [muse_text.build]
 
 
 @pytest.mark.parametrize("static", [False, True])
@@ -185,36 +172,6 @@ def test_text_bar_moves_with_the_segment(tr):
     early = muse_text.build(_player(tr, position=0), NOW)
     late = muse_text.build(_player(tr, position=150_000), NOW + 150)
     assert early["embeds"][0].description != late["embeds"][0].description
-
-
-@pytest.mark.parametrize(
-    ("skin_id", "card", "theme"),
-    [
-        ("muse_expanded_black", "expanded", "black"),
-        ("muse_expanded_white", "expanded", "white"),
-        ("muse_slim_black", "slim", "black"),
-        ("muse_slim_white", "slim", "white"),
-        ("muse_radio_black", "visor_jukebox", "black"),
-        ("muse_radio_white", "visor_jukebox", "white"),
-        ("muse_radio_portrait_black", "radio_portrait", "black"),
-        ("muse_radio_portrait_white", "radio_portrait", "white"),
-    ],
-)
-def test_image_skin_contract_with_the_renderer(tr, skin_id, card, theme):
-    skin = _image(skin_id)
-    renderer = import_module(f"empiremuse.utils.render.cards.{card}")
-    assert (skin.name, skin.card, skin.theme) == (skin_id, card, theme)
-    assert skin.project is renderer.project
-    assert skin_id in renderer.SKINS
-    embed = skin.build(_player(tr), NOW)["embeds"][0].to_dict()
-    assert "image" not in embed and "thumbnail" not in embed
-    assert embed["author"]["url"].startswith("https://")
-
-
-@pytest.mark.parametrize("skin_id", ["muse_radio_portrait_red", "muse_expanded_red", "../x", "muse_text"])
-def test_unknown_image_skin_id_is_refused(skin_id):
-    with pytest.raises(ValueError):
-        _card.parse_id(skin_id)
 
 
 def test_text_skin_has_no_render_family():
@@ -358,3 +315,24 @@ def test_no_start_time_is_predicted_while_the_current_track_repeats(tr, loop, tr
     items = [line for line in _text.queue_block(player, ctx, tr, limit=3) if line.startswith("`")]
 
     assert items and all(("<t:" in line) is timed for line in items)
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_the_text_skin_idle_clears_the_attachment_and_names_the_idle_title(tr):
+    """O ocioso da Jukebox Texto sai como embed, sem anexo velho (``attachments=[]``) e com o título de ocioso no autor."""
+    from empiremuse.utils.music.models import np_steps
+
+    skin = muse_text.load()
+    player = SimpleNamespace(
+        static=False,
+        skin="muse_text",
+        tr=tr,
+        bot=SimpleNamespace(pool=SimpleNamespace(player_skins={"muse_text": skin})),
+    )
+    embed = disnake.Embed(description="x")
+
+    data = await np_steps.idle_payload(player, {"embed": embed, "components": []})
+
+    assert data["attachments"] == [] and data["embeds"] == [embed] and "embed" not in data
+    assert embed.author.name == tr("jbx.idle.title")

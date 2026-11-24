@@ -12,11 +12,9 @@ import pytest
 from PIL import Image
 
 from empiremuse.rules.card import (
-    DISC_MAX_PX_1X,
     By,
     CardSpec,
     CardState,
-    can_animate,
     make_item,
     make_radio,
     make_station,
@@ -26,15 +24,12 @@ from empiremuse.rules.card import (
 )
 from empiremuse.utils.music import card_facts
 from empiremuse.utils.radio.visor import inter_points, inter_text
-from empiremuse.utils.render.cards import disc, expanded, radio_portrait, slim, visor_jukebox
+from empiremuse.utils.render.cards import disc, radio_portrait, visor_jukebox
 from empiremuse.utils.render.cards.layout import (
     COVER_SIDE,
-    EXPANDED,
     LABEL_KEYS,
-    SLIM,
     CardArt,
     FontSpec,
-    gif_fits,
     theme_for,
 )
 from empiremuse.rules.i18n import Translator
@@ -43,11 +38,12 @@ from empiremuse.utils.render.gif import encode_png
 
 pytestmark = pytest.mark.critical
 
-FAMILIES = {"expanded": expanded, "slim": slim, "visor": visor_jukebox, "portrait": radio_portrait}
+FAMILIES = {"visor": visor_jukebox, "portrait": radio_portrait}
 SIZES = {
-    "expanded": EXPANDED.size,
-    "slim": SLIM.size,
-    "visor": visor_jukebox.VISOR_FILE_SIZE,
+    "visor": (
+        visor_jukebox.visor.WIDTH * visor_jukebox.visor.SCALE,
+        visor_jukebox.visor.HEIGHT * visor_jukebox.visor.SCALE,
+    ),
     "portrait": (radio_portrait.WIDTH * radio_portrait.SCALE, radio_portrait.HEIGHT * radio_portrait.SCALE),
 }
 SECRETS = ("Segredo Violeta", "Artista Oculta", "Pedinte Raro", "Sala Secreta", "Fila Escondida")
@@ -216,18 +212,6 @@ def hidden_spec(sealed: bool) -> CardSpec:
 
 
 @pytest.mark.parametrize("sealed", [True, False])
-@pytest.mark.parametrize("family", ["expanded", "slim"])
-def test_a_private_call_never_draws_the_track_requester_or_voice_and_asks_the_hidden_title(family, sealed, book):
-    tr = RecordingTr()
-
-    FAMILIES[family].draw(hidden_spec(sealed), CardArt(cover_bytes(), logo_png()), tr, book)
-
-    drawn = " ".join(book.texts)
-    assert not [secret for secret in SECRETS if secret in drawn]
-    assert "jbx.hidden_track" in tr.keys
-
-
-@pytest.mark.parametrize("sealed", [True, False])
 def test_a_private_call_never_reaches_the_radio_visor_data(sealed, book):
     tr = RecordingTr()
     logo = logo_png()
@@ -239,17 +223,6 @@ def test_a_private_call_never_reaches_the_radio_visor_data(sealed, book):
     assert not [secret for secret in SECRETS if secret in shown]
     assert view.data.logo == logo
     assert "jbx.hidden_track" in tr.keys
-
-
-@pytest.mark.parametrize("sealed", [True, False])
-def test_a_private_call_puts_the_logo_on_the_label_even_with_a_cover(sealed):
-    spec, theme = expanded.project(hidden_spec(sealed)), theme_for("black")
-    logo = logo_png()
-
-    with_cover = disc.label_image(spec, CardArt(cover_bytes(), logo), EXPANDED.label_side, theme)
-    without = disc.label_image(spec, CardArt(None, logo), EXPANDED.label_side, theme)
-
-    assert with_cover.tobytes() == without.tobytes()
 
 
 @pytest.mark.parametrize("family", list(FAMILIES))
@@ -268,35 +241,6 @@ def test_a_cover_of_another_size_is_no_cover(size):
 # ---------------------------------------------------------------------- R e S
 
 
-@pytest.mark.parametrize("family", ["expanded", "slim"])
-def test_radio_live_draws_the_icy_title_and_station_with_on_air_instead_of_the_queue(family, book):
-    tr = RecordingTr()
-
-    FAMILIES[family].draw(STATES["radio_live"](), CardArt(cover_bytes(), logo_png()), tr, book)
-
-    assert {"Céu de Neon", "Rádio Aurora FM"} <= set(book.texts)
-    assert "jbx.on_air" in tr.keys
-    assert "jbx.up_next" not in tr.keys
-
-
-@pytest.mark.regression
-@pytest.mark.parametrize("family", ["expanded", "slim"])
-def test_the_on_air_card_shows_no_quality_bitrate_or_codec(family, book):
-    tr = RecordingTr()
-
-    FAMILIES[family].draw(STATES["radio_live"](), CardArt(cover_bytes(), logo_png()), tr, book)
-
-    assert not any("kbps" in text or text.lower() == "mp3" for text in book.texts)
-    assert not [key for key in tr.keys if key.startswith("visor.quality")]
-
-
-@pytest.mark.parametrize("family", ["expanded", "slim"])
-def test_radio_never_uses_the_cover_on_the_label(family):
-    spec = FAMILIES[family].project(STATES["radio_live"]()._replace(cover="https://covers.example/x.jpg"))
-
-    assert not disc.uses_cover(spec)
-
-
 @pytest.mark.parametrize("family", list(FAMILIES))
 def test_radio_retry_shows_the_attempt(family, book):
     tr = RecordingTr()
@@ -304,15 +248,6 @@ def test_radio_retry_shows_the_attempt(family, book):
     FAMILIES[family].draw(STATES["radio_retry"](), CardArt(None, logo_png()), tr, book)
 
     assert "jbx.retry" in tr.keys
-
-
-@pytest.mark.parametrize("family", ["expanded", "slim"])
-def test_station_mode_draws_the_station_line(family, book):
-    tr = RecordingTr()
-
-    FAMILIES[family].draw(STATES["station"](), CardArt(None, logo_png()), tr, book)
-
-    assert {"jbx.then_station", "jbx.state.station"} <= set(tr.keys)
 
 
 def test_the_radio_visor_in_r_is_the_station_visor(book):
@@ -334,83 +269,7 @@ def test_the_radio_visor_in_m_shows_the_track_cover_and_session(book):
 # ---------------------------------------------------------------------- linha do tempo
 
 
-@pytest.mark.parametrize(
-    ("duration", "marks"),
-    [
-        (59, ()),
-        (209, (60, 120, 180)),
-        (600, tuple(range(60, 600, 60))),
-        (601, (300, 600)),
-        (3599, tuple(range(300, 3599, 300))),
-        (3601, ()),
-        (None, ()),
-    ],
-)
-def test_ruler_marks(duration, marks):
-    assert expanded.ruler_marks(duration) == marks
-
-
-@pytest.mark.parametrize(
-    ("spec", "state"),
-    [
-        (base_spec(), "ruler"),
-        (base_spec(state=CardState.PAUSED, paused_at_s=72), "paused"),
-        (base_spec(state=CardState.STREAM), "live"),
-        (base_spec(track=make_track(title="x", artists="y", duration_s=None)), "live"),
-        (STATES["radio_live"](), "live"),
-        (STATES["radio_retry"](), "none"),
-        (STATES["idle"](), "none"),
-        (seal(base_spec(hidden=True)), "none"),
-    ],
-)
-def test_timeline_state(spec, state):
-    assert expanded.timeline_state(spec) == state
-
-
-def test_paused_draws_the_exact_position_and_playing_draws_no_elapsed_time(book):
-    expanded.draw(base_spec(state=CardState.PAUSED, paused_at_s=72), CardArt(None, None), RecordingTr(), book)
-    paused = set(book.texts)
-    book.texts.clear()
-    expanded.draw(base_spec(paused_at_s=72), CardArt(None, None), RecordingTr(), book)
-
-    assert "1:12" in paused
-    assert "1:12" not in book.texts
-
-
-def test_live_timeline_asks_the_live_word(book):
-    tr = RecordingTr()
-
-    expanded.draw(STATES["stream"](), CardArt(None, None), tr, book)
-
-    assert "jbx.state.radio" in tr.keys
-
-
 # ---------------------------------------------------------------------- orçamento do GIF
-
-
-@pytest.mark.parametrize(
-    ("card", "box", "scale", "fits"),
-    [
-        ((480, 840), (118, 126, 362, 370), 1, True),
-        ((481, 840), (118, 126, 362, 370), 1, False),
-        ((480, 841), (118, 126, 362, 370), 1, False),
-        ((480, 840), (0, 0, DISC_MAX_PX_1X + 1, DISC_MAX_PX_1X + 1), 1, False),
-        ((240, 420), (0, 0, 141, 141), 2, False),  # 141 × 2 passa do teto
-        ((240, 420), (0, 0, 140, 140), 2, True),
-        ((480, 840), None, 1, False),
-    ],
-)
-def test_gif_fits(card, box, scale, fits):
-    assert gif_fits(card, box, scale) is fits
-
-
-@pytest.mark.parametrize(("module", "layout", "side"), [(expanded, EXPANDED, 244), (slim, SLIM, 196)])
-def test_disc_boxes_animate_at_1x_and_fit_the_gif(module, layout, side):
-    box = module.disc_box(base_spec())
-
-    assert box is not None and (box[2] - box[0], box[3] - box[1]) == (side, side)
-    assert can_animate(box, 1)
-    assert gif_fits(layout.size, box, 1)
 
 
 def test_the_radio_visor_has_no_disc():
@@ -422,48 +281,7 @@ def test_the_radio_visor_has_no_disc():
 # ---------------------------------------------------------------------- ladrilhos do disco
 
 
-@pytest.mark.parametrize("module", [expanded, slim])
-def test_disc_tiles_turn_and_tile_zero_is_what_the_card_has(module, book):
-    spec, art = base_spec(), CardArt(cover_bytes(), logo_png())
-    box = module.disc_box(spec)
-
-    tiles = module.disc_tiles(spec, art, 4)
-    card = module.draw(spec, art, RecordingTr(), book)
-
-    assert [tile.size for tile in tiles] == [(box[2] - box[0], box[3] - box[1])] * 4
-    assert {tile.mode for tile in tiles} == {"RGB"}
-    assert tiles[0].tobytes() == card.crop(box).tobytes()
-    assert tiles[1].tobytes() != tiles[0].tobytes()
-
-
-@pytest.mark.parametrize("frames", [0, -1])
-def test_disc_tiles_need_a_frame(frames):
-    with pytest.raises(ValueError):
-        expanded.disc_tiles(base_spec(), CardArt(None, None), frames)
-
-
 # ---------------------------------------------------------------------- projeção
-
-
-def unseen_changes(spec: CardSpec) -> CardSpec:
-    """Mudanças que a Slim não desenha: posição da pausa, call, sessão, fila além das linhas, flag desconhecida."""
-    longer = spec.queue[:3] + (make_item(title="Outra", artists="Outro", duration_s=99),) * 5
-    return spec._replace(
-        paused_at_s=99, voice_name="Outra sala", session_played=1, queue=longer, flags=spec.flags | {"x"}, scale=2
-    )
-
-
-def test_slim_projection_ignores_what_it_does_not_draw():
-    spec = base_spec(state=CardState.PAUSED, paused_at_s=72)
-
-    assert slim.project(spec) == slim.project(unseen_changes(spec))
-
-
-def test_expanded_projection_keeps_the_pause_position_and_the_voice():
-    spec = base_spec(state=CardState.PAUSED, paused_at_s=72)
-
-    assert expanded.project(spec) != expanded.project(spec._replace(paused_at_s=99))
-    assert expanded.project(spec) != expanded.project(spec._replace(voice_name="Outra sala"))
 
 
 @pytest.mark.parametrize("family", list(FAMILIES))
@@ -475,64 +293,10 @@ def test_projection_is_idempotent(family, state):
     assert module.project(once) == once
 
 
-@pytest.mark.parametrize(("total", "shown", "more"), [(2, 2, 0), (4, 4, 0), (5, 3, 2), (12, 3, 9)])
-def test_queue_plan_lists_four_lines_at_most(total, shown, more):
-    assert expanded.queue_plan(base_spec(queue_total=total, queue=queue(min(total, 8))), 4) == (shown, more)
-
-
 # ---------------------------------------------------------------------- flags e chips
 
 
-@pytest.mark.parametrize(
-    ("flag", "key"),
-    [
-        (card_facts.FLAG_AUTOPLAY, "jbx.chip.autoplay"),
-        (card_facts.FLAG_NIGHTCORE, "jbx.chip.nightcore"),
-        (card_facts.FLAG_ALWAYS_ON, "jbx.chip.always_on"),
-        (card_facts.FLAG_RESTRICTED, "jbx.chip.restricted"),
-        (card_facts.FLAG_REPEAT_TRACK, "jbx.repeat.track"),
-        (card_facts.FLAG_REPEAT_QUEUE, "jbx.repeat.queue"),
-    ],
-)
-def test_every_card_facts_flag_becomes_its_chip(flag, key):
-    tr = RecordingTr()
-
-    chips = expanded.chip_items(expanded.project(base_spec(flags=frozenset({flag}), repeat_left=2)), tr)
-
-    assert RecordingTr()(key, n=2) in [chip.text for chip in chips]  # o texto do catálogo, com o marcador preenchido
-
-
-def test_recommended_track_shows_the_recommended_chip_instead_of_the_requester():
-    track = make_track(title="x", artists="y", duration_s=100, by=By.RECOMMENDED)
-
-    chips = expanded.chip_items(base_spec(track=track, flags=frozenset()), RecordingTr())
-
-    assert [chip.text for chip in chips][1] == CATALOG["jbx.recommended"]
-
-
 # ---------------------------------------------------------------------- texto
-
-
-def test_a_title_that_cannot_be_drawn_asks_the_title_in_text_key(book):
-    tr = RecordingTr()
-    rtl = "שלום עולם"
-
-    expanded.draw(base_spec(track=make_track(title=rtl, artists="y", duration_s=100)), CardArt(None, None), tr, book)
-
-    assert "jbx.title_in_text" in tr.keys
-
-
-@pytest.mark.parametrize(("layout", "lines"), [(EXPANDED, 2), (SLIM, 1)])
-def test_a_long_title_is_cut_to_the_layout_lines_with_an_ellipsis(layout, lines, book):
-    font = FontSpec(FIGTREE, 700, layout.title_size)
-    width = layout.x1 - layout.x0
-    title = "Uma faixa com um título muito comprido " * 6
-
-    wrapped = expanded.wrap(book, title, font, width, layout.title_lines)
-
-    assert len(wrapped) == lines
-    assert wrapped[-1].endswith("…")
-    assert all(expanded.text_length(book.runs(line, *font)) <= width for line in wrapped)
 
 
 @pytest.mark.regression

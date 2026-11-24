@@ -1,7 +1,6 @@
 """Jukebox Texto v2 (``muse_text``, spec §2B): tudo em texto, com hierarquia (título, subtexto, chips, "A seguir").
 
-É também a skin de reserva das skins de imagem: quando o render falha, o ``_np_render`` usa este ``load(player)`` naquela edição.
-Por isso nada aqui depende de imagem gerada: a faixa de luz é um asset fixo por URL (``branding.asset_url``).
+Nada aqui depende de imagem gerada: a faixa de luz é um asset fixo por URL (``branding.asset_url``).
 
 A barra em texto anda a cada ``text_bar_interval_s`` (opção C do Alicerce): o ``auto_update`` relê a skin, e o ``_np_data`` só edita
 quando o texto mudou (o segmento da barra; os horários saem arredondados).

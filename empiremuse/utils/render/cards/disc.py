@@ -182,10 +182,3 @@ def tiles(scene: Stage, layout: CardLayout, frames: int) -> list[Image.Image]:
         tile.paste(turned, (0, 0), turned)
         out.append(tile)
     return out
-
-
-def card_tiles(spec: CardSpec, art: CardArt, layout: CardLayout, frames: int) -> list[Image.Image]:
-    """Os ladrilhos de um ``CardSpec`` já projetado: o 0 é o que ``draw`` cola na caixa do disco."""
-    if frames < 1:
-        raise ValueError("ao menos um quadro")
-    return tiles(stage(spec, art, layout), layout, frames)

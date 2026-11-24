@@ -17,12 +17,13 @@ from empiremuse.utils.radio.visor import NextStation, VisorData
 from empiremuse.utils.render.cards import radio_portrait
 from empiremuse.utils.render.cards.radio_portrait import (
     NEXT_MAX,
-    PNG_MAX_BYTES,
     PortraitCard,
     from_radio_snapshot,
     render_portrait,
     seal,
 )
+
+PNG_MAX_BYTES = 400 * 1024  # o teto de PNG do contrato; o caso mais pesado em 2× (960×1680) mede cerca de 110 KiB
 
 
 def tr(key, **fields):

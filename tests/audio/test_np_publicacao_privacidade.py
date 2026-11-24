@@ -257,18 +257,6 @@ async def test_message_edit_no_topico_marca_published_so_com_a_reedicao_que_saiu
 
 
 @pytest.mark.asyncio
-async def test_cartao_superado_marca_superseded(monkeypatch):
-    pipeline = SimpleNamespace(supersede=lambda _p: None, render=AsyncMock(return_value=SimpleNamespace(stale=True)))
-    monkeypatch.setattr("empiremuse.utils.render.cards.pipeline.card_pipeline", lambda _hosts: pipeline)
-    monkeypatch.setattr(np_steps, "_card_spec", AsyncMock(return_value="spec"))
-    player = jogador(last_data={})
-    player.bot.config = {"COVER_HOSTS": ""}
-    req = requisicao()
-    assert await np_steps._np_render(player, req, SimpleNamespace(card=object()), dict(DATA), "chave") is True
-    assert req.superseded is True and req.published is False
-
-
-@pytest.mark.asyncio
 async def test_troca_de_faixa_por_overflow_marca_superseded(monkeypatch):
     def estoura(_player):
         raise OverflowError

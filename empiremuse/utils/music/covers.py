@@ -273,3 +273,23 @@ class CoverService:
         self._misses[key] = True
         logger.warning("Capa sem imagem (%s)", code)  # só o código: a URL é de terceiro e pode ter credencial
         return CoverResult()
+
+
+_SERVICE: Optional[CoverService] = None
+
+
+def cover_service(cover_hosts: object) -> CoverService:
+    """A instância do processo (dona única das buscas e do cache de capas), criada no primeiro uso com o ``COVER_HOSTS`` já
+    validado pelo ``config_loader``."""
+    global _SERVICE
+    if _SERVICE is None:
+        _SERVICE = CoverService.from_config(cover_hosts)
+    return _SERVICE
+
+
+async def close_cover_service() -> None:
+    """No encerramento do pool: cancela as buscas de capa em voo (cada worker é morto e coletado)."""
+    global _SERVICE
+    service, _SERVICE = _SERVICE, None
+    if service is not None:
+        await service.aclose()

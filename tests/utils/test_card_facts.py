@@ -12,10 +12,7 @@ from empiremuse.utils.music.card_facts import (
     FLAG_AUTOPLAY,
     FLAG_REPEAT_QUEUE,
     CardSettings,
-    alt_text,
-    author_title,
     build,
-    stops_editing,
     text_bar_interval_s,
     text_bar_segment,
 )
@@ -95,8 +92,6 @@ def test_a_private_or_unknown_call_shows_nothing_of_what_plays(voice):
     assert spec.hidden and spec.track is None and spec.cover is None and spec.voice_name == ""
     assert spec.queue == () and spec.queue_total == 1 and spec.radio is None
     assert SECRET not in repr(spec) and "Alex" not in repr(spec) and "Próxima" not in repr(spec)
-    hidden_label = {"jbx.card.alt_hidden": "Faixa oculta"}
-    assert author_title(spec) == "" and alt_text(spec, hidden_label.get) == "Faixa oculta"
 
 
 @pytest.mark.regression
@@ -271,14 +266,3 @@ def test_a_track_edits_the_text_bar_at_most_12_times():
 @pytest.mark.parametrize(("playing", "interval"), [(0, 15), (75, 15), (76, 16), (375, 75), (True, 15), ("x", 15)])
 def test_the_text_bar_interval_grows_with_the_players_on_the_bot(playing, interval):
     assert text_bar_interval_s(playing) == interval
-
-
-@pytest.mark.parametrize(("status", "stop"), [(403, True), (404, True), (429, False), (500, False)])
-def test_the_first_403_or_404_stops_editing(status, stop):
-    assert stops_editing(status) is stop
-
-
-def test_alt_text_and_author_come_from_the_spec_capped():
-    spec = build(player(current=Track("x" * 5000)), SETTINGS)
-
-    assert len(author_title(spec)) <= card_facts.AUTHOR_MAX and len(alt_text(spec, str)) <= card_facts.ALT_TEXT_MAX

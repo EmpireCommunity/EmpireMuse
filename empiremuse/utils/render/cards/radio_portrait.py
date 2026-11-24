@@ -67,9 +67,6 @@ NAME_SIZES = (24, 21, 18)  # o nome da estação encolhe antes das reticências
 TITLE_MAX = 120
 NAME_MAX = 80
 PART_MAX = 40
-PNG_MAX_BYTES = (
-    400 * 1024
-)  # o teto de PNG do contrato (§2.6); o caso mais pesado em 2× (960×1680) mede cerca de 110 KiB
 
 # Toda a geometria da rodada 2 (spec §6.1), em coordenadas lógicas: um lugar só para o ajuste que o dono pedir.
 LAYOUT: Mapping[str, Any] = MappingProxyType(

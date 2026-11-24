@@ -7,7 +7,6 @@ Os layouts ainda não foram aprovados pelo dono (rodada 2): toda coordenada, tam
 - ``CardArt``: os pixels que o desenho recebe de fora (a capa crua do ``CoverService`` e o PNG do logo).
 - ``Translate``: chave do catálogo → texto. Nenhuma palavra visível é escrita no código; ``LABEL_KEYS`` lista toda chave
   pedida, para o dono do ``bot.json`` conferir.
-- ``gif_fits``: o teto do GIF, conferido ANTES de alocar qualquer ladrilho.
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ from typing import NamedTuple
 
 from PIL import ImageDraw
 
-from empiremuse.rules.card import CardSpec, CardState, can_animate
+from empiremuse.rules.card import CardSpec, CardState
 from empiremuse.utils.music.card_facts import (
     FLAG_ALWAYS_ON,
     FLAG_AUTOPLAY,
@@ -52,30 +51,12 @@ class CardArt(NamedTuple):
 COVER_SIDE = 240
 COVER_BYTES = COVER_SIDE * COVER_SIDE * 3  # 172800: qualquer outro tamanho = sem capa
 
-CARD_MAX = (480, 840)  # o maior cartão para o qual o orçamento do GIF foi medido (Expandida v2, 1×)
-
-
-def gif_fits(card_size: tuple[int, int], box: tuple[int, int, int, int] | None, scale: int) -> bool:
-    """O GIF cabe no orçamento? ``card_size`` e ``box`` em 1× e ``scale`` a do arquivo: o cartão dentro de ``CARD_MAX`` e
-    a área do disco aceita por ``rules.card.can_animate``. Sem disco (``None``), nunca. Puro: nenhum ladrilho é alocado."""
-    if box is None:
-        return False
-    factor = max(1, int(scale))
-    width, height = card_size
-    if not (0 < width * factor <= CARD_MAX[0] and 0 < height * factor <= CARD_MAX[1]):
-        return False
-    return can_animate(box, factor)
-
 
 # ---------------------------------------------------------------------------------------------------- estados e fatos
 
 RADIO_STATES = frozenset({CardState.RADIO_LIVE, CardState.RADIO_RETRY})
 MUSIC_STATES = frozenset({CardState.PLAYING, CardState.PAUSED, CardState.STREAM})
 
-# Os nomes de ``CardSpec.flags`` e de ``queue_kind`` vêm de quem monta o ``CardSpec`` (uma fonte só).
-KNOWN_FLAGS = frozenset(
-    {FLAG_AUTOPLAY, FLAG_NIGHTCORE, FLAG_ALWAYS_ON, FLAG_RESTRICTED, FLAG_REPEAT_TRACK, FLAG_REPEAT_QUEUE}
-)
 
 MAX_VOLUME = 150  # o volume do player vai até 150: o deslizante é a fração disso
 
@@ -211,17 +192,6 @@ def theme_for(name: str) -> Theme:
     return THEMES.get(name, THEMES[DEFAULT_THEME])
 
 
-# Degradê ``arco`` (posição de 0 a 1, cor), igual nos dois temas.
-ARC_STOPS: tuple[tuple[float, RGB], ...] = (
-    (0.0, _hex("#2563EB")),
-    (0.42, _hex("#7C3AED")),
-    (0.70, _hex("#C026D3")),
-    (1.0, _hex("#E11D48")),
-)
-LIGHT_ALPHA = 0.70  # luzes da coroa: ``texto_2`` a 70%
-LIGHT_HALO = 0.25
-BUBBLE_ALPHA = 0.60  # bolhas do tubo de luz: ``texto`` a 60%
-LIVE_TRACK_ALPHA = 0.50  # trilho do estado ao vivo: o degradê a 50%
 GLOW_COLOR = _hex("#7C3AED")  # brilho radial da vitrine
 GLOW_ALPHA = 0.35
 
@@ -250,20 +220,9 @@ class FontSpec(NamedTuple):
     size: int
 
 
-BRAND_TEXT = "EMPIREMUSE"  # a marca, igual em todo idioma
-BRAND_FONT = FontSpec(UNBOUNDED, 700, 13)
-BRAND_TRACKING = 2
-CHIP_FONT = FontSpec(FIGTREE, 600, 13)
-INFO_FONT = FontSpec(FIGTREE, 500, 13)
-HEADING_FONT = FontSpec(FIGTREE, 700, 13)
-NUMBER_FONT = FontSpec(UNBOUNDED, 600, 13)  # números da fila e da linha do tempo
-VOLUME_FONT = FontSpec(UNBOUNDED, 600, 14)
 VISOR_TEXT_CHECK = FontSpec(
     NOTO, 700, 20
 )  # o visor desenha em Inter: o título só é conferido (direita para a esquerda)
-TITLE_WEIGHT = 700
-SUB_WEIGHT = 500
-ROW_WEIGHT = 500
 
 # ---------------------------------------------------------------------------------------------------------- geometria
 
@@ -310,137 +269,11 @@ class CardLayout(NamedTuple):
     base: Span  # legenda de transporte e volume
 
 
-EXPANDED = CardLayout(
-    size=(480, 840),
-    x0=36,
-    x1=444,
-    crown=Crown(outer=(1.5, 8.0, 478.5, 136.0), outer_width=3, inner_inset=10, lights=13, light_side=4, step_deg=2.0),
-    header=(76, 104),
-    cabinet=True,
-    vitrine=(36, 116, 444, 380),
-    vitrine_radius=24,
-    disc=(118, 126, 362, 370),  # 244 px, centrado na vitrine
-    label_side=112,
-    title_top=400,
-    title_size=26,
-    title_lines=2,
-    title_line_h=32,
-    sub_size=16,
-    sub_gap=6,
-    sub_line_h=20,
-    timeline=(510, 530),
-    chips=(548, 576),
-    info=(588, 604),
-    divider_top=620,
-    upnext=(632, 648),
-    rows_top=654,
-    row_h=28,
-    rows_max=4,
-    row_size=15,
-    divider_bottom=776,
-    base=(788, 820),
-)
-
-SLIM = CardLayout(
-    size=(480, 640),
-    x0=24,
-    x1=456,
-    crown=Crown(outer=(1.5, 4.0, 478.5, 44.0), outer_width=3, inner_inset=0, lights=0, light_side=0, step_deg=2.0),
-    header=(24, 52),
-    cabinet=False,
-    vitrine=(24, 64, 456, 284),
-    vitrine_radius=20,
-    disc=(142, 76, 338, 272),  # 196 px, centrado na vitrine
-    label_side=90,
-    title_top=300,
-    title_size=24,
-    title_lines=1,
-    title_line_h=30,
-    sub_size=15,
-    sub_gap=4,
-    sub_line_h=18,
-    timeline=None,
-    chips=(368, 396),
-    info=None,
-    divider_top=412,
-    upnext=(424, 440),
-    rows_top=444,
-    row_h=26,
-    rows_max=4,
-    row_size=14,
-    divider_bottom=562,
-    base=(576, 608),
-)
-
-# Gabinete da Expandida v2 (laterais).
-CABINET_COLUMNS: tuple[Span, ...] = ((0, 20), (460, 480))
-CABINET_SPAN: Span = (72, 820)
-TUBE_WIDTH = 8
-TUBE_SPAN: Span = (88, 580)
-TUBE_BUBBLES = (0.22, 0.5, 0.78)  # posição das 3 bolhas ao longo do tubo
-BUBBLE_SIDE = 6
-GRILL_SPAN: Span = (600, 812)
-GRILL_DOT = 3
-GRILL_STEP = 8
-GRILL_COLUMNS = (6, 14)  # x do começo de cada coluna de pontos, dentro da lateral
-
-# Linha do tempo da Expandida v2 (§4.4).
-TIMELINE_TRACK: Span = (84, 396)  # x do trilho
-TIMELINE_TRACK_H = 6
-TIMELINE_HEAD = 12
-TIMELINE_RING = 2
-TIMELINE_MARK_H = 6
-TIMELINE_MARK_W = 2
-TIMELINE_ICON = 13
-TIMELINE_LIVE_DOT = 8
-TIMELINE_LIVE_GAP = 12  # do fim do rótulo AO VIVO ao começo do trilho
-RULER_MINUTE = 60
-RULER_FIVE = 300
-RULER_FIVE_ABOVE = 600  # acima de 10 min, marca a cada 5 min
-RULER_NONE_ABOVE = 3600  # acima de 1 h, nenhuma marca
-
-# Chips, cabeçalho, linhas da fila e base.
-CHIP_PAD = 12
-CHIP_GAP = 8
-CHIP_ICON = 14
-CHIP_ICON_GAP = 6
-CHIP_TEXT_MAX = 140
-CHIP_MORE_W = 44  # reservado para o chip ``+n``
-HEADER_STATE_TEXT_MAX = 90
-HEADER_BOT_TEXT_MAX = 80
-INFO_ICON = 14
-INFO_GAP = 14
-ROW_NUMBER_W = 32
-ROW_DURATION_W = 44
-ROW_REQUESTER_W = 64
-ROW_COLUMN_GAP = 8
-TRANSPORT_ICON = 20
-TRANSPORT_STEP = 36
-VOLUME_SLIDER_W = 160
-VOLUME_SLIDER_H = 4
-VOLUME_KNOB = 12
-VOLUME_VALUE_W = 36
-VOLUME_ICON = 20
-VOLUME_ICON_GAP = 8
-INFO_TEXT_MAX = 160
-QUALITY_DOT = 8
-TIME_TEXT_W = 56  # decorrido e total da linha do tempo
-LIVE_LABEL_MAX = 120
-
 # ---------------------------------------------------------------------------------------------------------- ícones
 # Os ícones que o ``primitives.mono_icon`` não tem, numa prancheta de 128 px (reduzida ao tamanho do uso). Traço único,
 # uma cor; ``CLEAR`` abre o vazado.
 
 CLEAR: RGBA = (0, 0, 0, 0)
-
-
-def _star(points: int, outer: float, inner: float) -> list[tuple[float, float]]:
-    out = []
-    for i in range(points * 2):
-        radius = outer if i % 2 == 0 else inner
-        angle = -math.pi / 2 + i * math.pi / points
-        out.append((64 + radius * math.cos(angle), 64 + radius * math.sin(angle)))
-    return out
 
 
 Shape = Callable[[ImageDraw.ImageDraw, RGBA], None]
@@ -455,46 +288,11 @@ def _pause(d: ImageDraw.ImageDraw, c: RGBA) -> None:
     d.rectangle((72, 24, 96, 104), fill=c)
 
 
-def _stop(d: ImageDraw.ImageDraw, c: RGBA) -> None:
-    d.rectangle((28, 28, 100, 100), fill=c)
-
-
-def _playpause(d: ImageDraw.ImageDraw, c: RGBA) -> None:
-    d.polygon([(10, 28), (10, 100), (60, 64)], fill=c)
-    d.rectangle((72, 28, 88, 100), fill=c)
-    d.rectangle((100, 28, 116, 100), fill=c)
-
-
-def _repeat(d: ImageDraw.ImageDraw, c: RGBA) -> None:
-    d.rounded_rectangle((16, 36, 112, 96), radius=26, outline=c, width=11)
-    d.rectangle((56, 28, 78, 50), fill=CLEAR)
-    d.polygon([(50, 22), (50, 62), (78, 42)], fill=c)
-
-
-def _sparkle(d: ImageDraw.ImageDraw, c: RGBA) -> None:
-    d.polygon(_star(4, 56, 14), fill=c)
-
-
-def _moon(d: ImageDraw.ImageDraw, c: RGBA) -> None:
-    d.ellipse((14, 14, 114, 114), fill=c)
-    d.ellipse((46, 0, 128, 82), fill=CLEAR)
-
-
 def _lock(d: ImageDraw.ImageDraw, c: RGBA) -> None:
     d.arc((38, 14, 90, 74), 180, 360, fill=c, width=11)
     d.rectangle((38, 42, 49, 62), fill=c)
     d.rectangle((79, 42, 90, 62), fill=c)
     d.rounded_rectangle((24, 58, 104, 114), radius=10, fill=c)
-
-
-def _person(d: ImageDraw.ImageDraw, c: RGBA) -> None:
-    d.ellipse((42, 10, 86, 54), fill=c)
-    d.pieslice((18, 62, 110, 154), 180, 360, fill=c)
-
-
-def _folder(d: ImageDraw.ImageDraw, c: RGBA) -> None:
-    d.rounded_rectangle((12, 26, 60, 46), radius=6, fill=c)
-    d.rounded_rectangle((12, 38, 116, 104), radius=8, fill=c)
 
 
 def _radio(d: ImageDraw.ImageDraw, c: RGBA) -> None:
@@ -503,32 +301,3 @@ def _radio(d: ImageDraw.ImageDraw, c: RGBA) -> None:
     d.ellipse((68, 58, 100, 90), fill=CLEAR)
     d.rectangle((26, 62, 56, 70), fill=CLEAR)
     d.rectangle((26, 80, 56, 88), fill=CLEAR)
-
-
-def _pin(d: ImageDraw.ImageDraw, c: RGBA) -> None:
-    d.ellipse((30, 8, 98, 76), fill=c)
-    d.polygon([(34, 56), (94, 56), (64, 120)], fill=c)
-    d.ellipse((50, 28, 78, 56), fill=CLEAR)
-
-
-def _ballot(d: ImageDraw.ImageDraw, c: RGBA) -> None:
-    d.rectangle((44, 10, 84, 62), fill=c)
-    d.rectangle((14, 52, 114, 114), fill=c)
-    d.rectangle((30, 58, 98, 66), fill=CLEAR)
-
-
-ICON_SHAPES: dict[str, Shape] = {
-    "play": _play,
-    "pause": _pause,
-    "stop": _stop,
-    "playpause": _playpause,
-    "repeat": _repeat,
-    "sparkle": _sparkle,
-    "moon": _moon,
-    "lock": _lock,
-    "person": _person,
-    "folder": _folder,
-    "radio": _radio,
-    "pin": _pin,
-    "ballot": _ballot,
-}

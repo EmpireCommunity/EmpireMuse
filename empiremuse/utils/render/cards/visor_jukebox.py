@@ -46,9 +46,7 @@ from empiremuse.utils.render.gif import encode_png
 
 SKINS = frozenset({"muse_radio_black", "muse_radio_white"})
 
-VISOR_SIZE = (visor.WIDTH, visor.HEIGHT)  # 1×
 VISOR_SCALE = visor.SCALE
-VISOR_FILE_SIZE = (visor.WIDTH * visor.SCALE, visor.HEIGHT * visor.SCALE)
 NEXT_MAX = visor.MAX_NEXT
 NO_VALUE = "—"
 CHIP_FLAGS: tuple[tuple[str, str], ...] = (
