@@ -143,7 +143,7 @@ def test_disc_motion_is_on_unless_turned_off(value, on):
     assert disc_motion_on(value) is on
 
 
-# ---------------------------------------------------------------------- Jukebox (D2 e Q1)
+# ---------------------------------------------------------------------- Jukebox (padrão e Q1)
 
 
 @pytest.mark.parametrize(
@@ -166,8 +166,9 @@ def test_what_counts_as_a_saved_jukebox_choice(monkeypatch, q1, saved, choice):
 @pytest.mark.parametrize(
     ("saved", "loaded", "expected"),
     [
-        (None, True, DEFAULT_JUKEBOX_SKIN),  # nunca escolhido: a Expandida escura
-        ("default", True, "default"),  # Q1 = sim
+        (None, True, DEFAULT_JUKEBOX_SKIN),  # nunca escolhido: o padrão novo
+        ("default", True, DEFAULT_JUKEBOX_SKIN),  # Q1 = não: o "default" do /skin antigo também cai no padrão novo
+        ("mini", True, "mini"),  # uma Clássica escolhida fica
         ("muse_slim_white", True, "muse_slim_white"),
         ("sumiu", True, DEFAULT_JUKEBOX_SKIN),  # id desconhecido: o padrão
         ("> custom_skin: minha", True, "> custom_skin: minha"),  # personalizada mantida
@@ -175,7 +176,11 @@ def test_what_counts_as_a_saved_jukebox_choice(monkeypatch, q1, saved, choice):
     ],
 )
 def test_the_jukebox_skin_a_player_gets(saved, loaded, expected):
-    skins_loaded = {"default": object(), **({skin: object() for skin in JUKEBOX_IDS} if loaded else {})}
+    skins_loaded = {
+        "default": object(),
+        "mini": object(),
+        **({skin: object() for skin in JUKEBOX_IDS} if loaded else {}),
+    }
     pool = SimpleNamespace(player_skins=skins_loaded, default_skin=DEFAULT_JUKEBOX_SKIN if loaded else "default")
 
     assert BotPool.check_skin(pool, jukebox_choice(saved)) == expected
