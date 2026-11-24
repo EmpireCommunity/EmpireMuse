@@ -35,6 +35,20 @@ class Slot:
         self.busy = busy
         self.gate = None
         self.runs = 0
+        self.arrived = 0  # pedidos que chegaram à vaga (antes do ``gate``)
+        self._waiter: tuple[int, asyncio.Event] | None = None
+
+    def reached(self, count: int) -> asyncio.Event:
+        """Um evento que abre quando ``count`` pedidos chegaram à vaga: o teste espera a concorrência, sem contar ``await``."""
+        event = asyncio.Event()
+        self._waiter = (count, event)
+        self._arrive(0)
+        return event
+
+    def _arrive(self, n: int = 1) -> None:
+        self.arrived += n
+        if self._waiter is not None and self.arrived >= self._waiter[0]:
+            self._waiter[1].set()
 
     def pressure(self):
         return 0
@@ -42,6 +56,7 @@ class Slot:
     async def run(self, fn, *args, label="render", wait_s=None):
         if self.busy:
             raise RenderBusy
+        self._arrive()
         if self.gate is not None:
             await self.gate.wait()
         self.runs += 1
@@ -126,8 +141,7 @@ async def test_only_the_newest_request_of_a_player_is_drawn(font_book):
     pipe, who = make(font_book, slot=slot), Player()
     older = asyncio.ensure_future(pipe.render(who, "slim", base_spec(**SLIM, volume=1), RecordingTr()))
     newer = asyncio.ensure_future(pipe.render(who, "slim", base_spec(**SLIM, volume=2), RecordingTr()))
-    for _ in range(5):  # os dois chegam à vaga
-        await asyncio.sleep(0)
+    await slot.reached(2).wait()  # os dois chegam à vaga
     slot.gate.set()
 
     old, new = await older, await newer
@@ -191,6 +205,7 @@ class DrawnThenWait(Slot):
     async def run(self, fn, *args, label="render", wait_s=None):
         self.runs += 1
         done = fn(*args)
+        self._arrive()
         if self.after is not None:
             await self.after.wait()
         return done
@@ -203,9 +218,9 @@ async def test_a_drawing_already_superseded_is_dropped_after_the_slot(font_book)
     paused = base_spec(**SLIM)
     shown = await pipe.render(who, "slim", paused, RecordingTr())
     slot.after = asyncio.Event()
+    arrived = slot.reached(slot.arrived + 1)
     older = asyncio.ensure_future(pipe.render(who, "slim", base_spec(**SLIM, volume=10), RecordingTr()))
-    for _ in range(5):  # o mais velho já desenhou e espera a volta da thread
-        await asyncio.sleep(0)
+    await arrived.wait()  # o mais velho já desenhou e espera a volta da thread
 
     newer = await pipe.render(who, "slim", paused, RecordingTr())  # o mesmo de antes: mantém o anexo na hora
     slot.after.set()

@@ -92,11 +92,13 @@ def track_end(player: Any, now: float) -> Optional[float]:
 
 
 def queue_end(player: Any, now: float) -> Optional[float]:
-    """Quando a fila termina (como as Clássicas: nada com repetir, rádio, pausa ou fila vazia)."""
+    """Quando a fila termina (como as Clássicas: nada com repetir, rádio, pausa, fila vazia ou transmissão na fila)."""
     end = track_end(player, now)
     if end is None or not player.queue or player.loop or player.keep_connected:
         return None
-    return end + sum(t.duration for t in player.queue if not t.is_stream) / 1000
+    if any(t.is_stream for t in player.queue):  # uma transmissão não tem fim: a fila também não
+        return None
+    return end + sum(t.duration for t in player.queue) / 1000
 
 
 def track_url(track: Any) -> Optional[str]:
@@ -276,7 +278,9 @@ def queue_block(player: Any, ctx: Context, tr: Tr, *, limit: int) -> list[str]:
     lines = [f"### {head}"]
     if (end := queue_end(player, ctx.now)) is not None:
         lines.append(f"-# {tr('jbx.text.queue_ends', t=relative(end))}")
-    start = track_end(player, ctx.now) if player.static else None
+    # repetindo a faixa atual (sempre ou algumas vezes), a próxima não começa quando a atual termina: sem horário previsto
+    repeating = player.loop == "current" or getattr(player.current, "track_loops", 0) > 0
+    start = track_end(player, ctx.now) if player.static and not repeating else None
     for n, track in enumerate(itertools.islice(tracks, limit), start=1):
         lines.append(queue_item_line(player, n, track, start))
         if start is not None:

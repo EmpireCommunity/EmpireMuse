@@ -585,9 +585,9 @@ async def test_a_request_that_does_not_draw_supersedes_a_drawing_still_in_the_sl
     shown = RENDER_STATES.get(player).last
     slot.after = asyncio.Event()
     spec["value"] = base_spec(skin="muse_slim_black", motion=False, volume=10)  # A: pausar (desenha)
+    arrived = slot.reached(slot.arrived + 1)
     older = asyncio.ensure_future(run(player))
-    for _ in range(5):
-        await asyncio.sleep(0)
+    await arrived.wait()  # o pedido antigo já desenhou e espera na vaga
     spec["value"] = playing  # B: retomar, igual ao que está na tela: sai cedo
     if newer_request == "text_skin":  # B: a skin mudou para uma de texto
         player.skin = "muse_text"

@@ -263,3 +263,43 @@ def test_the_last_action_never_shows_in_a_private_call(tr, build, private):
     text = _texts(build(player, NOW))
 
     assert ("Faixa Secreta" in text) is not private
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize("build", BUILDS, ids=lambda b: b.__module__.rsplit(".", 1)[-1] + "." + b.__name__)
+def test_the_autoplay_option_never_names_the_server_station_in_a_private_call(tr, build):
+    station = SimpleNamespace(name="Estacao Secreta", playing=False)
+    player = _player(tr, private=True)
+    player.bot.pool.radio.jukebox = SimpleNamespace(view=lambda p: None, station_view=lambda p: station)
+
+    assert "Estacao Secreta" not in _texts(build(player, NOW))
+
+
+def _queue_player(tr, *, loop=False, track_loops=0, stream_in_queue=False):
+    from empiremuse.utils.music.skins.muse import _text
+
+    player = _player(tr, static=True)
+    player.loop, player.current.track_loops = loop, track_loops
+    player.queue = [_track("a", duration=30_000), _track("b", duration=30_000)]
+    if stream_in_queue:
+        player.queue.insert(1, SimpleNamespace(**{**vars(_track("ao vivo")), "is_stream": True}))
+    return _text, player
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(("stream_in_queue", "ends"), [(False, True), (True, False)])
+def test_a_queue_with_a_live_stream_has_no_end_time(tr, stream_in_queue, ends):
+    _text, player = _queue_player(tr, stream_in_queue=stream_in_queue)
+
+    assert (_text.queue_end(player, NOW) is not None) is ends
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(("loop", "track_loops", "timed"), [(False, 0, True), ("current", 0, False), (False, 2, False)])
+def test_no_start_time_is_predicted_while_the_current_track_repeats(tr, loop, track_loops, timed):
+    _text, player = _queue_player(tr, loop=loop, track_loops=track_loops)
+    ctx = _text.Context(hidden=False, radio=None, station=None, now=NOW)
+
+    items = [line for line in _text.queue_block(player, ctx, tr, limit=3) if line.startswith("`")]
+
+    assert items and all(("<t:" in line) is timed for line in items)

@@ -91,7 +91,7 @@ _FIXED = (
 )
 
 
-def _state_label(player: Any, value: str) -> str:
+def _state_label(player: Any, value: str, hidden: bool) -> str:
     tr = player.tr
     if value == PlayerControls.volume:
         return tr("player.volume.label", volume=str(player.volume))
@@ -99,14 +99,16 @@ def _state_label(player: Any, value: str) -> str:
         on = player.nightcore
         return tr("player.disable_the_nightcore_effect.label" if on else "player.enable_the_nightcore_effect.label")
     if value == PlayerControls.autoplay:
+        if hidden:  # call privada: sem o nome da estação do servidor
+            return tr("player.disable_autoplay.label" if player.autoplay else "player.enable_autoplay.label")
         return autoplay_label(player)
     on = player.restrict_mode
     return tr("player.disable_restricted_mode.label" if on else "player.enable_restricted_mode.label")
 
 
-def _fixed_options(player: Any) -> list[disnake.SelectOption]:
+def _fixed_options(player: Any, hidden: bool) -> list[disnake.SelectOption]:
     return [
-        _option(player, player.tr(key) if key else _state_label(player, value), emoji, value, desc)
+        _option(player, player.tr(key) if key else _state_label(player, value, hidden), emoji, value, desc)
         for key, emoji, value, desc in _FIXED
     ]
 
@@ -191,7 +193,7 @@ def components(player: Any, *, hidden: bool) -> list[Any]:
         min_values=0,
         max_values=1,
         required=False,
-        options=_fixed_options(player) + _conditional_options(player),
+        options=_fixed_options(player, hidden) + _conditional_options(player),
     )
     items: list[Any] = [*_buttons(player), menu]
     if player.static and not hidden and (queue_select := _queue_select(player)) is not None:
