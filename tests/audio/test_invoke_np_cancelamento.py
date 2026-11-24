@@ -21,6 +21,13 @@ class FakePlayer(SimpleNamespace):
     __hash__ = object.__hash__
 
 
+def public_call_guild():
+    """O bot numa call pública (``@everyone`` vê e entra): a skin recebe o player, sem a máscara da call privada."""
+    perms = SimpleNamespace(view_channel=True, connect=True)
+    channel = SimpleNamespace(permissions_for=lambda _role: perms, guild=SimpleNamespace(default_role=None))
+    return SimpleNamespace(me=SimpleNamespace(voice=SimpleNamespace(channel=channel)))
+
+
 def make_player(edit):
     skin = SimpleNamespace(load=lambda player: dict(DATA))
     return FakePlayer(
@@ -37,6 +44,7 @@ def make_player(edit):
         controller_mode=True,
         temp_embed=None,
         message=SimpleNamespace(edit=edit),
+        guild=public_call_guild(),
         allowed_mentions=None,
         ignore_np_once=True,
         has_thread=False,

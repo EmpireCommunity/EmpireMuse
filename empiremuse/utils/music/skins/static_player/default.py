@@ -20,6 +20,7 @@ from empiremuse.utils.music.models import LavalinkPlayer
 from empiremuse.utils.others import PlayerControls
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
 from empiremuse.utils.jukebox_panel import player_call_is_private
+from empiremuse.utils.music.private_call import details_shown
 
 
 class DefaultStaticSkin:
@@ -85,11 +86,12 @@ class DefaultStaticSkin:
         )
 
         if not player.current.autoplay:
-            txt += player.tr(
-                "player.requested_by_3",
-                app_emoji=str(app_emoji(player.bot, "user")),
-                requester=str(player.current.requester),
-            )
+            if details_shown(player):  # call privada: sem quem pediu
+                txt += player.tr(
+                    "player.requested_by_3",
+                    app_emoji=str(app_emoji(player.bot, "user")),
+                    requester=str(player.current.requester),
+                )
         else:
             try:
                 mode = f" {md_link(player.tr('player.recommendation_name'), player.current.info['extra']['related']['uri'])}"
@@ -171,7 +173,8 @@ class DefaultStaticSkin:
                         f"-# `┌ {n + 1})` {md_link(t.title, t.uri, limit=34)}\n"
                         f"-# `└` {app_emoji(player.bot, 'history')} `{duration}`"
                         + (player.tr("player.repeats", track_loops=str(t.track_loops)) if t.track_loops else "")
-                        + f" **|** {app_emoji(player.bot, 'user')} <@{t.requester}>\n"
+                        + (f" **|** {app_emoji(player.bot, 'user')} <@{t.requester}>" if details_shown(player) else "")
+                        + "\n"
                     )
 
                 else:
@@ -183,7 +186,8 @@ class DefaultStaticSkin:
                         f"-# `┌ {n + 1})` {md_link(t.title, t.uri, limit=34)}\n"
                         f"-# `└` {app_emoji(player.bot, 'history')} {duration}"
                         + (player.tr("player.repeats", track_loops=str(t.track_loops)) if t.track_loops else "")
-                        + f" **|** {app_emoji(player.bot, 'user')} <@{t.requester}>\n"
+                        + (f" **|** {app_emoji(player.bot, 'user')} <@{t.requester}>" if details_shown(player) else "")
+                        + "\n"
                     )
 
             embed_queue = disnake.Embed(
@@ -380,7 +384,9 @@ class DefaultStaticSkin:
             ),
         ]
 
-        if queue := player.queue or player.queue_autoplay:
+        if details_shown(player) and (
+            queue := player.queue or player.queue_autoplay
+        ):  # call privada: sem o select da fila
             data["components"].append(
                 disnake.ui.Select(
                     placeholder=fit(player.tr("player.next_songs.placeholder"), 150),

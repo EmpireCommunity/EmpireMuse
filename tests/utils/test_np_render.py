@@ -96,6 +96,12 @@ def world(monkeypatch):
     return SimpleNamespace(skin=skin, pipe=pipe, spec=spec, player=Player(skin))
 
 
+def public_call_guild():
+    from tests.audio.test_invoke_np_cancelamento import public_call_guild as guild
+
+    return guild()
+
+
 def request():
     return SimpleNamespace(interaction=None, force=False, data=None)
 
@@ -366,6 +372,7 @@ async def test_an_old_skin_that_never_had_a_card_edits_as_before():
     player = Player(skin)
     player.bot.pool.player_skins = {"default": skin}
     player.skin = "default"
+    player.guild = public_call_guild()
 
     _, req = await run(player)
 
@@ -638,3 +645,39 @@ async def test_a_request_that_does_not_draw_supersedes_a_drawing_still_in_the_sl
 
     assert newer is (newer_request == "same_card_exits_early") and old is True and slot.runs == 2
     assert RENDER_STATES.get(player).last == (shown if newer_request == "same_card_exits_early" else None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+@pytest.mark.critical
+@pytest.mark.parametrize("private", [False, True])
+@pytest.mark.parametrize("path", ["interaction", "thread", "idle"])
+async def test_the_end_and_idle_embeds_hide_the_last_action_in_a_private_call(monkeypatch, path, private):
+    from unittest.mock import AsyncMock
+
+    from empiremuse.utils.music.models import state_steps
+
+    action = "<@42> parou o player"
+    perms = SimpleNamespace(view_channel=not private, connect=True)
+    voice = SimpleNamespace(
+        channel=SimpleNamespace(permissions_for=lambda _role: perms, guild=SimpleNamespace(default_role=0))
+    )
+    player = Player(ImageSkin())
+    player.guild = SimpleNamespace(me=SimpleNamespace(voice=voice))
+    player.bot.get_color = lambda _me: 0
+    player.lyric_embed, player.command_log, player.static = None, action, path == "thread"
+    player.message = SimpleNamespace(id=1, edit=AsyncMock(), components=[])
+    player.channel_cleanup, player.allowed_mentions = AsyncMock(), None
+    idle = AsyncMock()
+    monkeypatch.setattr(state_steps, "send_idle_embed", idle)
+    monkeypatch.setattr(state_steps, "_cu_archive_jukebox_thread", AsyncMock())
+
+    if path == "interaction":
+        await state_steps._cu_close_message_from_interaction(player, SimpleNamespace(message=SimpleNamespace(id=2)))
+    elif path == "thread":
+        await state_steps._cu_close_thread_message(player)
+    else:
+        await state_steps._cu_static_session(player)
+
+    shown = idle.await_args.args[1] if path == "idle" else player.message.edit.await_args.kwargs["embed"].description
+    assert (action in shown) is not private

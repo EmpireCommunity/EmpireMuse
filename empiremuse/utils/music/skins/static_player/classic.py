@@ -19,6 +19,7 @@ from empiremuse.utils.music.models import LavalinkPlayer
 from empiremuse.utils.others import PlayerControls
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
 from empiremuse.utils.jukebox_panel import player_call_is_private
+from empiremuse.utils.music.private_call import details_shown
 
 
 class ClassicStaticSkin:
@@ -69,11 +70,12 @@ class ClassicStaticSkin:
         txt = f"{duration}\n{app_emoji(player.bot, 'microphone')} **⠂Uploader:** {md_code(player.current.author)}\n"
 
         if not player.current.autoplay:
-            txt += player.tr(
-                "player.requested_by_2",
-                app_emoji=str(app_emoji(player.bot, "user")),
-                requester=str(player.current.requester),
-            )
+            if details_shown(player):  # call privada: sem quem pediu
+                txt += player.tr(
+                    "player.requested_by_2",
+                    app_emoji=str(app_emoji(player.bot, "user")),
+                    requester=str(player.current.requester),
+                )
         else:
             try:
                 mode = f" {md_link(player.tr('player.recommendation_name'), player.current.info['extra']['related']['uri'])}"
@@ -237,7 +239,9 @@ class ClassicStaticSkin:
             ),
         ]
 
-        if queue := player.queue or player.queue_autoplay:
+        if details_shown(player) and (
+            queue := player.queue or player.queue_autoplay
+        ):  # call privada: sem o select da fila
             data["components"].append(
                 disnake.ui.Select(
                     placeholder=fit(player.tr("player.next_songs.placeholder"), 150),

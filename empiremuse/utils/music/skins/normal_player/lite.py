@@ -7,6 +7,7 @@ from empiremuse.utils.branding import asset_url
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
 from empiremuse.utils.music.converters import time_format, md_bracketed, md_link, md_code
 from empiremuse.utils.music.models import LavalinkPlayer
+from empiremuse.utils.music.private_call import details_shown
 
 
 class LiteSkin:
@@ -36,7 +37,8 @@ class LiteSkin:
         )
 
         if not player.current.autoplay:
-            embed.description += f"<@{player.current.requester}>"
+            if details_shown(player):  # call privada: sem quem pediu
+                embed.description += f"<@{player.current.requester}>"
         else:
             try:
                 embed.description = md_bracketed(

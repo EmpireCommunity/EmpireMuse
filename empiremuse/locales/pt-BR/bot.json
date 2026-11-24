@@ -873,6 +873,7 @@
   "views.queue.closed": "Queue fechada",
   "views.queue.only_member": "Apenas o membro {mention} pode interagir aqui.",
   "views.queue.player_gone": "O player foi finalizado...",
+  "player.closed_private": "O player foi encerrado.",
   "views.only_user": "Apenas {mention} pode interagir aqui.",
   "views.close.label": "Fechar",
   "views.cancel.label": "Cancelar",

@@ -12,6 +12,7 @@ from empiremuse.utils.music.models import LavalinkPlayer
 from empiremuse.utils.others import PlayerControls
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
 from empiremuse.utils.jukebox_panel import player_call_is_private
+from empiremuse.utils.music.private_call import details_shown
 
 
 class ClassicSkin:
@@ -66,7 +67,8 @@ class ClassicSkin:
         txt = f"{duration}\n{app_emoji(player.bot, 'microphone')} **⠂** {md_code(player.current.author)}\n"
 
         if not player.current.autoplay:
-            txt += f"{app_emoji(player.bot, 'user')} **⠂** <@{player.current.requester}>\n"
+            if details_shown(player):  # call privada: sem quem pediu
+                txt += f"{app_emoji(player.bot, 'user')} **⠂** <@{player.current.requester}>\n"
         else:
             try:
                 mode = f" {md_link(player.tr('player.recommended'), player.current.info['extra']['related']['uri'])}"

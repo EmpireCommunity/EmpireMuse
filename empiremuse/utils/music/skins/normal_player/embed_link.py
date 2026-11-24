@@ -13,6 +13,7 @@ from empiremuse.utils.music.models import LavalinkPlayer
 from empiremuse.utils.others import PlayerControls
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
 from empiremuse.utils.jukebox_panel import player_call_is_private
+from empiremuse.utils.music.private_call import details_shown
 
 
 class EmbedLinkSkin:
@@ -82,7 +83,8 @@ class EmbedLinkSkin:
             txt += player.tr("player.in_the_queue", q=str(q))
 
         if not player.current.autoplay:
-            txt += f" <@{player.current.requester}>\n"
+            if details_shown(player):  # call privada: sem quem pediu
+                txt += f" <@{player.current.requester}>\n"
         else:
             try:
                 txt += f" {md_bracketed(md_link(player.tr('player.recommended_song_name'), player.current.info['extra']['related']['uri']))}"
