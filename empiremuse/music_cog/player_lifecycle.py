@@ -109,8 +109,6 @@ class PlayerLifecycleMixin:
         if not guild_data:
             guild_data = await bot.get_data(inter.guild_id, db_name=DBModel.guilds)
 
-        skin = guild_data["player_controller"]["skin"]
-        static_skin = guild_data["player_controller"]["static_skin"]
         static_player = guild_data["player_controller"]
 
         if not node:
