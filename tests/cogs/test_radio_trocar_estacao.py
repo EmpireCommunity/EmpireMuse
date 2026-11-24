@@ -376,14 +376,22 @@ class TestMenu:
     @pytest.mark.asyncio
     @pytest.mark.regression
     @pytest.mark.parametrize(("in_call", "redraws"), [(None, 0), (True, 1)], ids=["refused", "allowed"])
-    async def test_only_an_allowed_menu_choice_redraws_the_panel(self, in_call, redraws):
-        """Um clique recusado pela regra do dono não pede desenho nem edição do painel."""
+    @pytest.mark.parametrize("handler", ["menu", "station_select"])
+    async def test_only_an_allowed_menu_choice_redraws_the_panel(self, handler, in_call, redraws):
+        """Um clique recusado pela regra do dono (no menu ou no select de estações) não pede desenho nem edição do painel."""
+        from empiremuse.rules.radio import PANEL_STATION_SELECT_ID
+
         w = await TestWalking.live_world()
         ports = w.hub.manager.runner(w.radio.id).ports
         ports.refresh_panel = Mock()
-        press = menu("info", **({} if in_call else {"in_call": None}))
-
-        await w.cog.radio_panel_menu(press)
+        caller = {} if in_call else {"in_call": None}
+        if handler == "menu":
+            press = menu("info", **caller)
+            await w.cog.radio_panel_menu(press)
+        else:
+            press = click(PANEL_STATION_SELECT_ID, **caller)
+            press.data = SimpleNamespace(custom_id=PANEL_STATION_SELECT_ID, values=["fora-da-lista"])
+            await w.cog.radio_panel_selects(press)
 
         assert ports.refresh_panel.call_count == redraws
 

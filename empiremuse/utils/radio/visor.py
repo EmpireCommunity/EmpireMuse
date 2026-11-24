@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, Literal, NamedTuple, Optional
 
 from PIL import Image, ImageDraw, ImageFont
 
+from empiremuse.rules.text import external_text
 from empiremuse.utils.music.skins.radio_player import DEFAULT_RADIO_SKIN, RGB, load_radio_skin
 from empiremuse.utils.render.fonts import cmap_points
 from empiremuse.utils.render.gif import encode_png
@@ -386,6 +387,16 @@ def render_visor(data: VisorData, tr: Translator, skin: str = DEFAULT_RADIO_SKIN
 # ------------------------------------------------------------------------------------------------------ snapshot do bot
 
 
+TRACK_TEXT_MAX = 120
+
+
+def _track_text(value: object, *, custom: bool) -> str:
+    """Título e artista da faixa. A personalizada traz o do Last.fm cru: passa aqui pelo ``external_text`` (link, menção,
+    NFKC, marcas combinantes; sem escape, que numa imagem apareceria). A ao vivo já guarda o ICY neutralizado."""
+    text = "" if value is None else str(value)
+    return external_text(text, TRACK_TEXT_MAX, markdown=False) if custom else text
+
+
 def from_snapshot(snapshot: "RadioPanelSnapshot | Any", *, custom: bool = False) -> VisorData:
     """``VisorData`` a partir do ``RadioPanelSnapshot`` (``utils/radio/snapshot.py``): as duas estações seguintes vêm da janela
     ``stations`` depois de ``current_index`` (ou, sem índice, as de posição maior que a atual); fora da lista não há seguintes."""
@@ -413,8 +424,8 @@ def from_snapshot(snapshot: "RadioPanelSnapshot | Any", *, custom: bool = False)
         favorite=bool(snapshot.favorite),
         filter_path=tuple(str(part) for part in (snapshot.filter_path or ())),
         reserve_number=int(snapshot.reserve_number) if snapshot.reserve_number else None,
-        now_title=str(snapshot.now_title or ""),
-        now_artist=str(snapshot.now_artist or ""),
+        now_title=_track_text(snapshot.now_title, custom=custom),
+        now_artist=_track_text(snapshot.now_artist, custom=custom),
         on_air_minutes=int(snapshot.on_air_minutes or 0),
         volume=int(snapshot.volume if snapshot.volume is not None else 100),
         quality=snapshot.quality if snapshot.quality in QUALITY_COLORS else "good",

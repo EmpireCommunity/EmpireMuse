@@ -204,10 +204,16 @@ def _jukebox_texts(drawn):
     return drawn
 
 
-def _radio_texts(drawn, *, custom):
+HOSTILE_TITLE = "Nitro discord.gg/x"
+HOSTILE_ARTIST = "@everyone A" + "\u0301" * 300  # menção em massa e marcas combinantes empilhadas
+
+
+def _radio_texts(drawn, *, custom, hostile=False):
     stored = "AC\\DC" if custom else "Rock\\_FM"  # a personalizada guarda cru; o diretório e o ICY guardam escapado
     snap = snapshot(1, 1)
     snap.station_name = snap.now_title = snap.now_artist = stored
+    if hostile:  # a faixa da personalizada vem crua do Last.fm
+        snap.now_title, snap.now_artist = HOSTILE_TITLE, HOSTILE_ARTIST
     snap.stations = tuple(NS(position=i, name=stored, bitrate_kbps=64, quality="ok") for i in range(1, 4))
     render_portrait(PortraitCard(from_radio_snapshot(snap, custom=custom)), tr)
     return drawn
@@ -221,10 +227,15 @@ def _radio_texts(drawn, *, custom):
         ("jukebox", ("AC\\DC", "Ana\\Bia"), ()),
         ("custom", ("AC\\DC",), ()),
         ("live", ("Rock_FM",), ("\\",)),
+        ("custom_hostile", ("discord\u2024gg", "@\u2024everyone"), ("discord.gg", "@everyone", "\u0301" * 5)),
     ],
 )
 def test_only_text_stored_escaped_loses_the_backslash(drawn, source, expected, absent):
-    texts = _jukebox_texts(drawn) if source == "jukebox" else _radio_texts(drawn, custom=source == "custom")
+    """O escape sai só onde a origem guarda escapado; o texto cru da personalizada ainda passa pela neutralização."""
+    if source == "jukebox":
+        texts = _jukebox_texts(drawn)
+    else:
+        texts = _radio_texts(drawn, custom=source.startswith("custom"), hostile=source == "custom_hostile")
     joined = "\n".join(texts)
     assert all(part in joined for part in expected) and not any(part in joined for part in absent)
 
