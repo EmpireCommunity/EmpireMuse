@@ -19,6 +19,7 @@ from empiremuse.utils.music.app_emojis import APP_EMOJIS
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
 from empiremuse.utils.music.converters import md_link
 from empiremuse.utils.music.errors import GenericError, ArgumentParsingError
+from empiremuse.utils.music import v2
 from empiremuse.utils.music.guild_pin import load_guild_pin
 
 if TYPE_CHECKING:
@@ -456,7 +457,9 @@ async def send_idle_embed(
         content = None
 
     if isinstance(target, disnake.MessageInteraction):
-        await target.response.edit_message(embed=embed, components=components, content=content, attachments=[])
+        await v2.edit_from_interaction(
+            target, where="send_idle_embed", embed=embed, components=components, content=content, attachments=[]
+        )
         message = target.message
 
     elif isinstance(target, disnake.Message):
@@ -465,7 +468,9 @@ async def send_idle_embed(
 
         if target.author == target.guild.me:
             # attachments=[]: um cartão de player que estava nesta mensagem sai junto
-            await target.edit(embed=embed, content=content, components=components, attachments=[])
+            await v2.edit_message(
+                target, where="send_idle_embed", embed=embed, content=content, components=components, attachments=[]
+            )
             message = target
         else:
             message = await target.channel.send(embed=embed, components=components, content=content)
@@ -517,7 +522,14 @@ async def send_idle_embed(
                                 break
             else:
                 # ``attachments=[]``: o cartão de imagem do player sai junto (o embed ocioso não tem anexo)
-                await message.edit(embed=embed, content=content, components=components, attachments=[])
+                await v2.edit_message(
+                    message,
+                    where="send_idle_embed",
+                    embed=embed,
+                    content=content,
+                    components=components,
+                    attachments=[],
+                )
         else:
             message = await channel.send(embed=embed, components=components, content=content)
 

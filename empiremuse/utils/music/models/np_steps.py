@@ -29,7 +29,7 @@ from empiremuse.utils.music.models.helpers import (
     logger,
 )
 from empiremuse.utils.music.app_emojis import emoji as app_emoji
-from empiremuse.utils.music import card_facts
+from empiremuse.utils.music import card_facts, v2
 from empiremuse.utils import jukebox_panel
 from empiremuse.rules.skins import JUKEBOX_IDS
 from empiremuse.utils.music.private_call import skin_view
@@ -403,7 +403,9 @@ async def _np_plain(self, req):
                 self.message = None
             else:
                 try:
-                    await self.message.edit(allowed_mentions=self.allowed_mentions, **data)
+                    await self.message.edit(
+                        allowed_mentions=self.allowed_mentions, **v2.adapt_for(self.message, data, where="np_plain")
+                    )
                 except disnake.Forbidden:
                     self.message = None
                     self.text_channel = None
@@ -621,6 +623,7 @@ async def _np_interaction_edit(self, req):
     except KeyError:
         pass
 
+    data = v2.adapt_for(interaction.message, data, where="np_interaction")
     try:
         if interaction.response.is_done():
             await interaction.message.edit(allowed_mentions=self.allowed_mentions, **data)
@@ -648,7 +651,9 @@ async def _np_message_edit(self, req):
             if data.get("flags"):
                 data["content"] = None
                 data["embed"] = None
-            await self.message.edit(allowed_mentions=self.allowed_mentions, **data)
+            await self.message.edit(
+                allowed_mentions=self.allowed_mentions, **v2.adapt_for(self.message, data, where="np_edit")
+            )
             req.published = True
             await asyncio.sleep(0.5)
         except asyncio.CancelledError:
@@ -691,7 +696,9 @@ async def _np_message_edit(self, req):
                         await self.text_channel.send(self.tr("player.unarchiving_the_thread"), delete_after=2)
 
                 _refresh_file(data)  # a edição que falhou já leu o anexo até o fim
-                await self.message.edit(allowed_mentions=self.allowed_mentions, **data)
+                await self.message.edit(
+                    allowed_mentions=self.allowed_mentions, **v2.adapt_for(self.message, data, where="np_edit")
+                )
                 req.published = True
                 await asyncio.sleep(0.5)
 
@@ -735,7 +742,10 @@ async def _np_send_new(self, req):
             message = await panel.resend(self.guild_id)
             if message is not None:
                 # a mensagem do painel pode ser uma que já existia: só fica o anexo que este payload manda
-                await message.edit(allowed_mentions=self.allowed_mentions, **{**data, "attachments": []})
+                await message.edit(
+                    allowed_mentions=self.allowed_mentions,
+                    **v2.adapt_for(message, {**data, "attachments": []}, where="np_painel"),
+                )
                 self.message = message
                 await self.channel_cleanup()
                 req.published = True

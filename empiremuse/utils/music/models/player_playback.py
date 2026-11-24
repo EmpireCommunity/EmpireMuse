@@ -12,6 +12,7 @@ from rapidfuzz import fuzz
 from empiremuse.logs.webhook import minimal_embed, minimal_report_text
 from empiremuse.rules.i18n import fit
 from empiremuse.utils.db import DBModel
+from empiremuse.utils.music import v2
 from empiremuse.utils.music.converters import md_link
 from empiremuse.utils.music.errors import (
     error_code_text,
@@ -303,7 +304,7 @@ class PlayerPlaybackMixin:
         try:
             if self.has_thread or self.static or self.text_channel.last_message_id == self.message.id:
                 try:
-                    await self.message.edit(**kwargs)
+                    await self.message.edit(**v2.adapt_for(self.message, kwargs, where="ocioso"))
                 except Exception:
                     logger.exception("Falha em process_idle_message")
                     if self.text_channel and not self.static:

@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import disnake
 
+from empiremuse.utils.music import v2
 from empiremuse.rules.jukebox_panel import (
     MAX_GENRE_OPTIONS,
     PANEL_TICK_MS,
@@ -250,7 +251,9 @@ class JukeboxPanel:
                 genres=genres_of(playlists)[:MAX_GENRE_OPTIONS],
                 fixed_entries=await radio_entries(panel_bot, tr, guild_id),
             )
-            await message.edit(allowed_mentions=NO_MENTIONS, attachments=[], **payload)  # o painel nunca leva anexo
+            await v2.edit_message(
+                message, where="painel", allowed_mentions=NO_MENTIONS, attachments=[], **payload
+            )  # o painel nunca leva anexo
             if any(e.state == PLAYING and e.duration_ms for e in entries):
                 self._schedule_tick(
                     guild_id
