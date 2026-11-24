@@ -29,6 +29,7 @@ def ports_with(payloads):
     ports._channel = lambda: channel
     ports._panel_task = None
     ports._panel_dirty = False
+    ports._panel_closed = False
     ports._panel_edited_at = None
     clock = [0.0]
     ports.now = lambda: clock[0]
@@ -154,3 +155,15 @@ async def test_a_stopped_runner_does_not_edit_the_panel_after_the_window(monkeyp
     await asyncio.gather(task, return_exceptions=True)
 
     assert message.edit.await_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_a_redraw_asked_after_the_radio_stopped_creates_no_edit():
+    """O ``_rebuild`` cancelado pela parada pede o redesenho no ``finally``; ele chega depois do ``radio_stopped``."""
+    ports, message, _ = ports_with([{"file": "a"}])
+    ports.radio_stopped()
+
+    ports.refresh_panel()
+
+    assert ports._panel_task is None and message.edit.await_count == 0

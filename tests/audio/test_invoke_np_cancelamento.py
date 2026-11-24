@@ -65,3 +65,21 @@ def test_message_edit_is_attempted_before_the_cancellation():
     invoke_np(player)
 
     edit.assert_awaited_once()
+
+
+def test_a_player_closed_while_the_card_was_drawing_neither_edits_nor_sends(monkeypatch):
+    from empiremuse.utils.music.models import np_steps
+
+    edit = AsyncMock()
+    player = make_player(edit)
+    player.destroy_message = AsyncMock()
+
+    async def closing_during_the_draw(self, req):
+        self.is_closing = True  # o encerramento chega com o pedido já passado pelas guardas
+        return False
+
+    monkeypatch.setattr("empiremuse.utils.music.models.player_message._np_data", closing_during_the_draw)
+    invoke_np(player)
+
+    edit.assert_not_awaited()
+    player.destroy_message.assert_not_awaited()

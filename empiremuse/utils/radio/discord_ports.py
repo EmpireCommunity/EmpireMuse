@@ -100,6 +100,7 @@ class DiscordRadioPorts:
         self._retry_wake = asyncio.Event()  # o botão "reconectar" acorda a espera do recuo
         self.purge_on_arrival = False  # ``/radio setup``: o chat da call é limpo UMA vez, antes do primeiro painel
         self._panel_task: Optional[asyncio.Task] = None  # a edição do painel em segundo plano (ao vivo e personalizada)
+        self._panel_closed = False  # a rádio parou de verdade: nenhum redesenho cria edição nova
 
     # ------------------------------------------------------------------ o mundo
 
@@ -369,6 +370,9 @@ class DiscordRadioPorts:
     def radio_stopped(self) -> None:
         """A rádio parou de verdade (desligada ou sem direito; não uma reconexão, que também fecha o fluxo): a edição do painel
         em segundo plano, com a espera da vaga de render, não segue para um painel que não existe mais."""
+        self._panel_closed = (
+            True  # um redesenho pedido depois (``ensure_panel`` em curso, ``_rebuild`` cancelado) não edita
+        )
         task, self._panel_task = self._panel_task, None
         if task is not None and not task.done():
             task.cancel()

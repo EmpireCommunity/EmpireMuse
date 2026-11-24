@@ -230,7 +230,11 @@ class LiveRadioPorts(DiscordRadioPorts):
         que edita uma vez com o valor mais recente (título a cada 100 ms = 1 edição por 15 s)."""
         self._view = view
         self._announce(view.title)
-        if self._merged(view) == self._shown or (self._panel_task is not None and not self._panel_task.done()):
+        if (
+            self._panel_closed
+            or self._merged(view) == self._shown
+            or (self._panel_task is not None and not self._panel_task.done())
+        ):
             return
         self._panel_task = asyncio.get_running_loop().create_task(self._edit_when_due())
 

@@ -1230,6 +1230,9 @@ class TestLivePanel:
             await task
         assert edits == [] and ports._panel_task is None
 
+        ports.update_panel(LiveView(title="outra"))  # um redesenho pedido depois da parada não cria edição nova
+        assert ports._panel_task is None
+
     @pytest.mark.asyncio
     async def test_the_edit_uses_no_mentions_and_the_clean_text(self):
         from unittest.mock import AsyncMock, MagicMock

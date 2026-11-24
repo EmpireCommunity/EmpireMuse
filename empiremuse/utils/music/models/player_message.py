@@ -55,6 +55,11 @@ class PlayerMessageMixin:
         if await _np_data(self, req):
             return
 
+        if (
+            self.is_closing
+        ):  # o player encerrou durante o desenho ou o RPC: não edita nem manda a mensagem de um player fechado
+            return
+
         if not self.controller_mode:
             await _np_plain(self, req)
 

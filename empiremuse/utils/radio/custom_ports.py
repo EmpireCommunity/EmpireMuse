@@ -394,6 +394,8 @@ class CustomRadioPorts(DiscordRadioPorts):
         """Refaz o painel (faixa no ar, sem faixas) em segundo plano; no máximo uma edição por vez e uma por
         ``PANEL_EDIT_INTERVAL_S``: os pedidos da janela se juntam numa edição. O pedido que chega durante a edição em curso
         não se perde: ela edita de novo ao terminar."""
+        if self._panel_closed:
+            return
         self._panel_dirty = True
         if self._panel_task is not None and not self._panel_task.done():
             return

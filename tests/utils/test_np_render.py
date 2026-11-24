@@ -632,9 +632,9 @@ async def test_closing_the_player_drops_a_drawing_still_in_the_slot(monkeypatch)
     await run(player)
     slot.after = asyncio.Event()
     spec["value"] = base_spec(skin="muse_slim_black", motion=False, volume=10)
+    arrived = slot.reached(2)  # o 1º desenho já passou pela vaga; o 2º é o que fica nela
     drawing = asyncio.ensure_future(run(player))
-    for _ in range(5):
-        await asyncio.sleep(0)
+    await arrived.wait()
 
     state_steps._cu_cancel_tasks(player)  # o player encerra com o desenho ainda na vaga
     slot.after.set()
