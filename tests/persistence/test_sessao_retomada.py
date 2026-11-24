@@ -198,7 +198,9 @@ async def test_a_resumed_session_reads_the_choice_mark_and_never_the_pool_defaul
     """Sessão de antes das marcas: o ``default`` vira ``None`` (o padrão novo, que o próprio player aplica); com a marca, fica."""
     dados = {k: v for k, v in (await sessao()).items() if k not in ("skin_chosen", "skin_static_chosen")} | marks
     cog, _, criados = montar(canais={CANAL_DE_VOZ: proprio(CANAL_DE_VOZ), CANAL_DE_TEXTO: proprio(CANAL_DE_TEXTO)})
-    assert not hasattr(getattr(cog.bot, "pool", None), "default_skin")  # o dublê do pool não tem o padrão
+    if (pool := getattr(cog.bot, "pool", None)) is not None:
+        for name in ("default_skin", "default_static_skin"):  # sem o padrão no pool: a retomada não pode lê-lo
+            vars(pool).pop(name, None)
 
     await retomar(cog, dados)
 
