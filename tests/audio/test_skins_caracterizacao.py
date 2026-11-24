@@ -166,6 +166,22 @@ def test_static_skins_turn_on_static_mode(skin_cls):
     assert player.static is True
 
 
+NO_LAST_ACTION = {"lite", "micro_nc", "minimalist"}  # skins que nunca mostram a última ação
+
+
+@pytest.mark.parametrize("skin_cls", NORMAL + STATIC)
+def test_a_classic_skin_shows_the_last_action_in_a_public_call(skin_cls):
+    """Controle positivo do teste da call privada: na call pública a ação aparece onde a skin a mostra."""
+    action = "Bia pulou a música."
+    player = make_player(command_log=action)
+    player.tr = lambda key, **values: " ".join([key, *map(str, values.values())])
+    _call(player, private=False)
+
+    shown = action in _shown_text(skin_cls().load(player))
+
+    assert shown is (skin_cls.__module__.rsplit(".", 1)[-1] not in NO_LAST_ACTION)
+
+
 def _shown_text(data) -> str:
     embeds = " ".join(json.dumps(e.to_dict(), ensure_ascii=False) for e in data.get("embeds") or [])
     return f"{data.get('content') or ''} {embeds}"

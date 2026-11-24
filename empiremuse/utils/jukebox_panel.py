@@ -49,9 +49,14 @@ def is_private(voice_channel: Any) -> bool:
     return not (perms.view_channel and perms.connect)
 
 
+def player_voice_channel(player: Any) -> Any:
+    """A call em que o bot do player está agora; ``None`` se não há call conhecida."""
+    return getattr(getattr(getattr(getattr(player, "guild", None), "me", None), "voice", None), "channel", None)
+
+
 def player_call_is_private(player: Any) -> bool:
     """A call do player é privada? Sem call conhecida, conta como privada (a regra de todas as skins)."""
-    voice = getattr(getattr(getattr(getattr(player, "guild", None), "me", None), "voice", None), "channel", None)
+    voice = player_voice_channel(player)
     return True if voice is None else is_private(voice)
 
 
