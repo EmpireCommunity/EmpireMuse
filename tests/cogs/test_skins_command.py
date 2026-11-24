@@ -425,7 +425,10 @@ class TestCommand:
     @pytest.mark.parametrize(
         ("change", "reloaded"),
         [
-            (lambda d: _replace(d, radio_all="text"), False),  # só a skin das rádios: os players ficam como estão
+            (
+                lambda d: _replace(d, radio_all="portrait_white"),
+                False,
+            ),  # só a skin das rádios (diferente do padrão Texto): os players ficam como estão
             (lambda d: _replace(d, disc_motion=False), True),
         ],
     )

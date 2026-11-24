@@ -31,7 +31,7 @@ from empiremuse.panel.services.base import (
 from empiremuse.panel.services.radio import FORBIDDEN_KEY, STATUS_FORBIDDEN, RadioPage
 from empiremuse.panel.services.service import STATUS_CONFLICT, STATUS_INVALID, STATUS_OK
 from empiremuse.rules.i18n import Translator
-from empiremuse.rules.radio_station import genre_ref, valid_station_id
+from empiremuse.rules.radio_station import genre_ref, valid_custom_station_id, valid_station_id
 from empiremuse.rules.playlists import SCOPE_RADIO
 from empiremuse.utils.radio.store import NoPremium, RadioConflict, RadioInvalid, RadioNotFound
 
@@ -49,7 +49,6 @@ ARTIST_MAX = 64
 PLAYLISTS_MAX = 5
 STATIONS_MAX = 10
 GENRES_PER_GROUP = 24
-STATION_ID = re.compile(r"[0-9a-f]{24}", re.ASCII)
 REV = re.compile(r"[0-9]{1,12}", re.ASCII)
 ACTION_SAVE, ACTION_DELETE = "salvar", "apagar"
 RAW_LIMIT = 4096  # o que se lê de cada campo antes da regra (ela corta nos limites reais)
@@ -95,7 +94,7 @@ class StationsOutcome(NamedTuple):
 
 
 def station_id_of(raw: str) -> Optional[str]:
-    return raw if STATION_ID.fullmatch(raw) else None
+    return raw if valid_custom_station_id(raw) else None
 
 
 def belongs_to(station: Any, guild_id: int) -> bool:

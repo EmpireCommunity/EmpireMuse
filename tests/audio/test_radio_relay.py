@@ -1181,3 +1181,41 @@ class TestFlowOfThePlayNotTheLoad:
             await r.revoke(token)
 
             assert await asyncio.wait_for(waiter, 1) is False
+
+
+# ---------------------------------------------------------------------- token nunca usado vence (Sentinela S3, J2a)
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_token_the_node_never_used_expires_and_a_used_one_does_not():
+    from empiremuse.utils.radio.relay import UNCLAIMED_TTL_S
+
+    now = [0.0]
+    r = RadioRelay(resolve=to_loopback, public=lambda address: True, clock=lambda: now[0])
+    unused = r.register("https://station.example/a", codec="MP3", bitrate=128)
+    used = r.register("https://station.example/b", codec="MP3", bitrate=128)
+    r._sessions[used].hits = 1  # o Lavalink chegou com este token
+    now[0] = UNCLAIMED_TTL_S + 1
+    fresh = r.register("https://station.example/c", codec="MP3", bitrate=128)  # o vencimento roda no registro
+    assert r._find(unused) is None and r._find(used) is not None and r._find(fresh) is not None
+    now[0] = UNCLAIMED_TTL_S / 2 + UNCLAIMED_TTL_S + 1  # o recém-registrado ainda está no prazo
+    r.register("https://station.example/d", codec="MP3", bitrate=128)
+    assert r._find(fresh) is not None
+
+
+@pytest.mark.critical
+@pytest.mark.asyncio
+async def test_a_token_expired_unclaimed_is_refused_when_the_node_arrives():
+    """Sentinela S-b (PR 282): o token vencido fecha a conexão do nó sem abrir a estação."""
+    from empiremuse.utils.radio.relay import UNCLAIMED_TTL_S
+
+    now = [0.0]
+    head = b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n"
+    async with Station(sends(head, MP3 + b"A" * 100)) as station, relay(clock=lambda: now[0]) as r:
+        token = r.register(station.url, codec="MP3", bitrate=128)
+        now[0] = UNCLAIMED_TTL_S + 1
+        r.register(station.url, codec="MP3", bitrate=128)  # o vencimento roda no registro seguinte
+        got_head, got_body = await fetch(r, token)
+    assert got_head == b"" and got_body == b"" and station.connections == 0

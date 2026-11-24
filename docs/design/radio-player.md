@@ -146,8 +146,9 @@ documento do servidor). Para criar uma paleta nova: copie `black.py`, troque as 
   vertical, com as paletas `black` e `white`) e `text` (a Rádio Texto). `black` e `white` continuam válidos como o visor
   horizontal de antes.
 - **Skin efetiva:** `rules/skins.radio_look(look, radio_skin)`: a da própria rádio (campo `look` do documento da rádio),
-  senão a de todas as rádios do servidor (`radio_skin` no documento global `guilds`), senão `portrait_black`. O campo
-  antigo `skin` (`black`/`white`) continua gravado para um rollback.
+  senão a de todas as rádios do servidor (`radio_skin` no documento global `guilds`), senão `text` (`DEFAULT_RADIO_LOOK`, a
+  Rádio Texto). Uma rádio antiga com `skin: black` não tem `look` (`look_from_legacy` devolve `None`) e segue o padrão: sai na
+  Rádio Texto; a branca continua branca. O campo antigo `skin` (`black`/`white`) continua gravado para um rollback.
 - **Despacho** (`utils/radio/panel.skin_payload_async`): a `text` sai em texto (`text_payload`), sem a vaga de render; as
   de imagem saem por `visor_payload_async(..., render=...)`, com o desenho de quem chama (`render(snapshot, tr) -> PNG`; o
   Retrato, ou o visor quando `render` falta). O anexo (`visor.png`), a vaga única e os controles são os mesmos em qualquer

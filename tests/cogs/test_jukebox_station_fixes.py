@@ -685,6 +685,10 @@ async def test_a_station_edited_while_its_pool_loads_does_not_start_with_the_old
     with pytest.raises(Refused) as refused:
         await world.radio.request_station(world.inter(world.members[10]), SERVER_STATION)
     assert refused.value.key == "jukebox.station.not_found" and player.station is None
+    # revisão do PR 282: a carga foi gasta, então a recusa também vale a espera curta
+    with pytest.raises(Refused) as again:
+        await world.radio.request_station(world.inter(world.members[10]), SERVER_STATION)
+    assert again.value.key == "jukebox.radio.switch_wait" and world.hub.lastfm.recipe_tracks.await_count == 1
 
 
 @pytest.mark.critical
@@ -810,3 +814,157 @@ async def test_the_confirm_button_plays_the_station_of_its_own_screen():
     view.chosen = "b" * 24  # uma seleção atrasada troca ``chosen``
     await view._on_confirm(pick("c" * 24))
     assert jukebox.request_station.await_args.args[1] == "c" * 24
+
+
+# ---------------------------------------------------------------------- backlog J2 (T-J2-BACKLOG)
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("transition", "plays"),
+    [("station", "faixa da estação"), ("radio_on_air", "ao vivo"), ("radio_opening", None), ("closing", None)],
+)
+async def test_a_transition_during_the_autoplay_search_takes_the_player(transition, plays, monkeypatch):
+    """J2a (nota da Alicerce m1): a recomendação buscada durante M → R ou M → S tocava por cima da transição. Revisão do PR 282: a busca
+    segura ``locked``, o ``process_next`` da transição se perdia e a estação ficava muda; a escolha recomeça depois da busca."""
+    from empiremuse.utils.music.models import playback_steps
+    from empiremuse.utils.radio.jukebox_station import StationNext
+
+    idle = AsyncMock()
+    monkeypatch.setattr(playback_steps, "go_idle", idle)
+    live = NS(name="ao vivo")
+    jukebox = NS(next_station_track=AsyncMock(return_value=(StationNext.TRACK, "faixa da estação")))
+    player = NS(
+        queue=deque(),
+        queue_autoplay=deque(),
+        radio_id=None,
+        radio_mode=None,
+        station=None,
+        autoplay=True,
+        keep_connected=False,
+        locked=False,
+        is_closing=False,
+        bot=NS(pool=NS(radio=NS(jukebox=jukebox))),
+    )
+
+    async def autoqueue():
+        player.locked = True  # a busca segura o player: o process_next da transição volta sem fazer nada
+        if transition == "station":
+            player.station = NS(ref="g:rock")
+        elif transition == "radio_on_air":
+            player.radio_mode = NS(track=live)
+            player.queue.append(live)
+        elif transition == "radio_opening":
+            player.radio_mode = NS(track=None)
+        else:
+            player.is_closing = True
+        player.queue_autoplay.extend(["sugestão 1", "sugestão 2"])  # guardadas depois do descarte da transição
+        player.locked = False
+        return "recomendação"
+
+    player.get_autoqueue_tracks = autoqueue
+    req = NS(track=None)
+    assert await playback_steps._pn_next_track(player, req) is (plays is None)
+    assert getattr(req.track, "name", req.track) == plays and not player.queue_autoplay and not idle.await_count
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("station", "waits"), [(True, []), (False, [60])])
+async def test_a_failed_autoplay_search_waits_only_without_a_station(station, waits, monkeypatch):
+    """Revisão do PR 282: a busca que falhava com uma estação aberta no meio esperava 60 s antes de a estação tocar; sem
+    estação, o recuo do autoplay continua."""
+    from empiremuse.utils.music.models import playback_steps
+    from empiremuse.utils.radio.jukebox_station import StationNext
+
+    slept = []
+
+    async def sleep(seconds):
+        slept.append(seconds)
+
+    monkeypatch.setattr(playback_steps, "asyncio", NS(sleep=sleep))
+    jukebox = NS(next_station_track=AsyncMock(return_value=(StationNext.TRACK, "faixa da estação")))
+    player = NS(
+        queue=deque(),
+        queue_autoplay=deque(),
+        radio_id=None,
+        radio_mode=None,
+        station=None,
+        autoplay=True,
+        keep_connected=False,
+        locked=False,
+        is_closing=False,
+        current="tocando",
+        bot=NS(pool=NS(radio=NS(jukebox=jukebox))),
+    )
+
+    async def autoqueue():
+        if station:
+            player.station = NS(ref="g:rock")
+        raise RuntimeError("busca falhou")
+
+    player.get_autoqueue_tracks = autoqueue
+    req = NS(track=None)
+    await playback_steps._pn_next_track(player, req)
+    assert slept == waits and req.track == ("faixa da estação" if station else None)
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_a_refusal_after_the_pool_load_holds_the_next_click_for_the_short_wait(world):
+    """Sentinela S-1 (J2b): cada clique recusado depois da carga gastava o Last.fm de novo; agora vale a espera curta entre trocas."""
+    world.hub.lastfm.recipe_tracks.return_value = NS(tracks=[], unknown=())  # a estação está sem faixas
+    station_player(world, creator=10)
+    with pytest.raises(Refused) as first:
+        await world.radio.request_station(world.inter(world.members[10]), ROCK)
+    with pytest.raises(Refused) as second:
+        await world.radio.request_station(world.inter(world.members[10]), ROCK)
+    assert (first.value.key, second.value.key) == ("jukebox.station.empty", "jukebox.radio.switch_wait")
+    assert lastfm_calls(world) == 1
+
+
+@pytest.mark.critical
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_the_station_star_confirms_the_click_before_saving():
+    """Sentinela Sug 4 (J2b rev4): defer, depois o toggle (a gravação), depois a resposta; nada é gravado antes da confirmação."""
+    from types import SimpleNamespace
+
+    from empiremuse.cogs.music import Music
+    from empiremuse.utils.others import PlayerControls
+    from tests.support.drivers_de_regras import SERVIDOR_DO_PLAYER, BotDoPlayer, MusicaFalsa, interacao
+
+    order = []
+    bot = BotDoPlayer()
+
+    async def toggle(inter, player):
+        order.append("toggle")
+        return "radio.panel.custom.favorite_added", {"station": "Rock", "max": 24}
+
+    bot.pool.radio = SimpleNamespace(
+        jukebox=SimpleNamespace(
+            station_view=lambda player: SimpleNamespace(playing=True), toggle_station_favorite=toggle
+        )
+    )
+    canal = SimpleNamespace(id=77)
+    guild = SimpleNamespace(me=SimpleNamespace(voice=SimpleNamespace(channel=canal)))
+    inter = interacao(guild)
+    inter.author.voice = SimpleNamespace(channel=canal)
+
+    async def defer(**kwargs):
+        order.append(("defer", kwargs.get("ephemeral")))
+
+    async def edit_original_message(**kwargs):
+        order.append("edit")
+
+    inter.response.defer = defer
+    inter.edit_original_message = edit_original_message
+    bot.music.players[SERVIDOR_DO_PLAYER] = SimpleNamespace(
+        message=inter.message, interaction_cooldown=False, guild=guild, tr=lambda key, **fields: key, current=None
+    )
+    await Music.player_controller(MusicaFalsa(bot), inter, PlayerControls.add_favorite)
+    assert order == [("defer", True), "toggle", "edit"]

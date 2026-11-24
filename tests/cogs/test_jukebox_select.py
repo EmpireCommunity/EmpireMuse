@@ -61,6 +61,7 @@ async def test_100_playlists_never_build_an_over_25_select_in_any_server_menu():
     bot.app_emojis = {}
     bot.pool.emoji_data = {}
     guild.me.display_avatar.replace.return_value.url = "https://example.com/avatar"
+    bot.pool.radio = None  # bot sem rádios: nenhuma vaga reservada
     payload = render_panel(bot, guild, [], tr=tr, playlists=items)
     select = payload["components"][-1].children[0]
     assert len(select.options) == 25 and select.options[-1].value == "jb:page:2"
@@ -226,4 +227,57 @@ async def test_the_ephemeral_pages_keep_the_split_of_the_first_page_with_the_liv
         assert ("jb:live" in values) is (page == 1)
         seen += [v for v in values if v.startswith("pl:")]
         page = next((int(v.removeprefix("jb:page:")) for v in values if v == f"jb:page:{page + 1}"), None)
+    assert seen == [f"pl:Lista {i}" for i in range(100)]
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+@pytest.mark.parametrize("later", ["no_premium", "db_down"])
+async def test_the_page_split_holds_when_premium_changes_between_pages(later):
+    """Alicerce S3 (J2a): o premium (ou o banco) muda entre uma página e outra; nenhuma playlist é pulada nem repetida."""
+    from empiremuse.utils.music.guild_pin import load_guild_pin
+
+    handler, _, _ = world("jb:page:2")
+    calls = []
+
+    async def premium(guild_id):
+        calls.append(guild_id)
+        if len(calls) == 1:
+            return object()  # a página 1 com premium
+        if later == "db_down":
+            raise RuntimeError("banco fora")
+        return None
+
+    handler.bot.pool.radio = NS(premium=NS(get=premium), stations=NS(count_for_guild=AsyncMock(return_value=0)))
+    seen, page = [], 1
+    while page:
+        select = await load_guild_pin(handler.bot, tr, 1, page, radio=page == 1)
+        values = [o.value for o in select.options]
+        seen += [v for v in values if v.startswith("pl:")]
+        page = next((int(v.removeprefix("jb:page:")) for v in values if v == f"jb:page:{page + 1}"), None)
+    assert seen == [f"pl:Lista {i}" for i in range(100)]
+
+
+@pytest.mark.regression
+@pytest.mark.asyncio
+async def test_the_multi_player_panel_page_and_the_next_pages_share_one_split():
+    """Revisão do PR 282: o painel de 2+ players dividia a página 1 sem as vagas reservadas, e a página 2 repetia duas playlists."""
+    from empiremuse.utils.music.guild_pin import load_guild_pin
+
+    items = playlists()
+    bot, guild = MagicMock(), MagicMock()
+    bot.get_color.return_value = 0
+    bot.app_emojis = {}
+    bot.pool.emoji_data = {}
+    bot.pool.radio = NS(premium=NS(get=AsyncMock(return_value=None)))  # bot com rádios, servidor sem Apoiadores
+    bot.pool.servers.playlists.list = AsyncMock(return_value=items)
+    guild.me.display_avatar.replace.return_value.url = "https://example.com/avatar"
+    select = render_panel(bot, guild, [], tr=tr, playlists=items)["components"][-1].children[0]
+    values = [o.value for o in select.options]
+    seen, page = [], 1
+    while page:
+        seen += [v for v in values if v.startswith("pl:")]
+        page = next((int(v.removeprefix("jb:page:")) for v in values if v == f"jb:page:{page + 1}"), None)
+        if page:
+            values = [o.value for o in (await load_guild_pin(bot, tr, 1, page, radio=False)).options]
     assert seen == [f"pl:Lista {i}" for i in range(100)]

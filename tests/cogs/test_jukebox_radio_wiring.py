@@ -96,6 +96,7 @@ def boot_world(messages):
     )
     panel = JukeboxPanel.__new__(JukeboxPanel)
     panel.pool = pool
+    panel._sleep = AsyncMock()  # o intervalo entre painéis na subida (sem relógio real)
     panel.handoff = AsyncMock()
     panel.refresh = AsyncMock(side_effect=lambda gid, now=False: _maybe_fail(messages[gid]))
     return panel, bot

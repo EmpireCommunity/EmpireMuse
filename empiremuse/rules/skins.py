@@ -47,15 +47,15 @@ class SkinEntry(NamedTuple):
     concept: bool  # True = a prévia é a imagem conceitual (rodapé "Imagem conceitual")
 
 
-DEFAULT_JUKEBOX_SKIN = "muse_expanded_black"  # D2, nos dois modos
-DEFAULT_RADIO_LOOK = "portrait_black"  # D2 das rádios
+DEFAULT_JUKEBOX_SKIN = "muse_text"  # a Jukebox Texto, nos dois modos do player
+DEFAULT_RADIO_LOOK = "text"  # a Rádio Texto, nas rádios 24 h
 LEGACY_SKIN_DEFAULT = "default"  # o padrão de antes do 2.3, gravado pelo /skin antigo ao salvar os dois modos
 LEGACY_RADIO_SKINS = ("black", "white")  # o que o código anterior aceita no campo ``skin`` da rádio
 LIGHT_THEME = "white"
 
-# Q1 (pendente com o dono): o "default" gravado pelo /skin antigo conta como escolha? Recomendação: sim (fica).
-# Para virar "não" (só quem nunca escolheu E quem tem "default" gravado passam à Expandida), trocar para False.
-SAVED_DEFAULT_IS_A_CHOICE = True
+# Q1 (decidida): o "default" gravado pelo /skin antigo NÃO conta como escolha. Quem só tem esse "default" gravado passa
+# ao padrão novo, como quem nunca escolheu; qualquer outra skin gravada fica.
+SAVED_DEFAULT_IS_A_CHOICE = False
 
 
 def _preview(family: str, skin_id: str) -> str:
@@ -179,8 +179,8 @@ def look_from_legacy(skin: object) -> str | None:
 def jukebox_choice(saved: object) -> object:
     """O valor gravado da skin da Jukebox que conta como escolha; ``None`` = nunca escolhido (cai no padrão do registro).
 
-    Q1: com ``SAVED_DEFAULT_IS_A_CHOICE`` o ``"default"`` gravado fica (quem salvou a Clássica padrão a mantém); sem ele, o
-    ``"default"`` gravado é lido como ``None``. Qualquer outro valor passa como está (o ``check_skin`` decide).
+    Q1 (decidida: não): sem ``SAVED_DEFAULT_IS_A_CHOICE`` o ``"default"`` gravado é lido como ``None`` e cai no padrão novo;
+    com ele, ficaria (quem salvou a Clássica padrão a manteria). Qualquer outro valor passa como está (o ``check_skin`` decide).
     """
     if saved == LEGACY_SKIN_DEFAULT and not SAVED_DEFAULT_IS_A_CHOICE:
         return None

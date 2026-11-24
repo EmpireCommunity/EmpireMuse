@@ -56,6 +56,9 @@ OPEN_CONCURRENCY = (
 PROBE_CONCURRENCY = 2
 BURST_ON_CONNECT_S = 20.0  # crédito inicial do limite de taxa: estações como a laut.fm despejam ~15 s de áudio ao conectar (``Burst-On-Connect``)
 MAX_REDIRECTS = 3
+UNCLAIMED_TTL_S = (
+    120.0  # token que o Lavalink nunca usou: vence (o ``loadtracks`` chega em segundos; ``FLOW_WAIT_S`` é 25 s)
+)
 TAKE_OVER_WAIT_S = 5.0  # quanto o novo consumidor espera a saída antiga terminar de ser cancelada
 REQUEST_LINE_LIMIT = 2048
 REQUEST_TIMEOUT_S = 5.0
@@ -114,6 +117,7 @@ class RelaySession:
     codec: str
     bitrate: int
     on_title: Callable[[str], None] | None = None
+    registered_at: float = 0.0  # relógio do relay no ``register``
     busy: bool = False
     refused: bool = False
     served: int = 0  # consumidores aceitos neste token (no máximo ``MAX_CONSUMERS``)
@@ -205,11 +209,21 @@ class RadioRelay:
 
     def register(self, url: str, *, codec: str, bitrate: int, on_title: Callable[[str], None] | None = None) -> str:
         """Um token novo (128 bits) para tocar ``url``. O Lavalink recebe ``local_url(token)``, nunca a URL da estação."""
+        now = self._clock()
+        self._expire_unclaimed(now)
         token = secrets.token_urlsafe(16)
-        session = RelaySession(token, url, codec, bitrate, on_title)
+        session = RelaySession(token, url, codec, bitrate, on_title, registered_at=now)
         session.free.set()
         self._sessions[token] = session
         return token
+
+    def _expire_unclaimed(self, now: float) -> None:
+        """Um token registrado que o Lavalink nunca usou (nenhuma chegada) e passou de ``UNCLAIMED_TTL_S`` sai: quem o registrou
+        falhou antes de revogá-lo. Um token já usado, mesmo entre reconexões, nunca vence por aqui (a revogação é de quem o tem)."""
+        for token, session in list(self._sessions.items()):
+            if session.hits == 0 and not session.busy and now - session.registered_at > UNCLAIMED_TTL_S:
+                self._sessions.pop(token, None)
+                session.closed.set()
 
     def local_url(self, token: str) -> str:
         return f"http://{LOOPBACK}:{self.port}/r/{token}"

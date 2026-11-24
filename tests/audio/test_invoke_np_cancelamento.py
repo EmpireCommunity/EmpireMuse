@@ -15,9 +15,15 @@ pytestmark = pytest.mark.regression
 DATA = {"content": "np", "components": [], "embeds": []}
 
 
+class FakePlayer(SimpleNamespace):
+    """Como o ``LavalinkPlayer``: aceita referência fraca e hash por identidade (o estado de render é um ``WeakKeyDictionary``)."""
+
+    __hash__ = object.__hash__
+
+
 def make_player(edit):
     skin = SimpleNamespace(load=lambda player: dict(DATA))
-    return SimpleNamespace(
+    return FakePlayer(
         is_closing=False,
         text_channel=MagicMock(),
         current=SimpleNamespace(title="faixa"),
