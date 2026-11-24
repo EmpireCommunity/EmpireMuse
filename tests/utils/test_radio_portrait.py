@@ -20,7 +20,6 @@ from empiremuse.utils.render.cards.radio_portrait import (
     PNG_MAX_BYTES,
     PortraitCard,
     from_radio_snapshot,
-    icy_text,
     render_portrait,
     seal,
 )
@@ -165,7 +164,7 @@ def test_hostile_names_are_drawn_without_controls_escapes_or_length(drawn):
     hostile = "‮FM​ \x07@everyone <@&1> **negrito**" + "x" * 300
     hostile_data = data(
         station_name=hostile,
-        now_title="Faixa \\*com\\* escape",  # como o ``clean_title`` guarda
+        now_title="Faixa *com* escape",
         now_artist=hostile,
         filter_path=(hostile,),
         next_stations=(NextStation(4, hostile, 128, "good"),),
@@ -174,7 +173,7 @@ def test_hostile_names_are_drawn_without_controls_escapes_or_length(drawn):
     for text in drawn:
         assert not any(unicodedata.category(char) in ("Cc", "Cf") for char in text)
         assert len(text) <= 120
-    assert "Faixa *com* escape" in drawn  # o escape do ICY sai: nenhuma barra visível na imagem
+    assert "Faixa *com* escape" in drawn  # o pintor não escapa: o markdown não vale numa imagem
 
 
 @pytest.mark.critical
@@ -191,10 +190,43 @@ def test_a_character_inter_lacks_is_never_drawn(drawn):
     assert decoded(png).size == (960, 1680)
 
 
+def _jukebox_texts(drawn):
+    from empiremuse.rules.card import By
+    from empiremuse.utils.render.cards.layout import CardArt
+    from empiremuse.utils.render.fonts import FontBook
+    from tests.utils.test_render_cards import base_spec, make_track
+
+    track = make_track(title="Back in Black", artists="AC\\DC", origin="", duration_s=255, requester="Ana\\Bia")
+    spec = base_spec(skin="muse_radio_portrait_black", track=track._replace(by=By.MEMBER), cover=None)
+    radio_portrait.draw(
+        spec, CardArt(None, None), lambda key, **values: " ".join([key, *map(str, values.values())]), FontBook()
+    )
+    return drawn
+
+
+def _radio_texts(drawn, *, custom):
+    stored = "AC\\DC" if custom else "Rock\\_FM"  # a personalizada guarda cru; o diretório e o ICY guardam escapado
+    snap = snapshot(1, 1)
+    snap.station_name = snap.now_title = snap.now_artist = stored
+    snap.stations = tuple(NS(position=i, name=stored, bitrate_kbps=64, quality="ok") for i in range(1, 4))
+    render_portrait(PortraitCard(from_radio_snapshot(snap, custom=custom)), tr)
+    return drawn
+
+
 @pytest.mark.critical
-def test_the_icy_title_loses_one_escape_level():
-    assert icy_text("AC\\/DC \\- Back in Black") == "AC/DC - Back in Black"
-    assert icy_text("\x07") == ""
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    ("source", "expected", "absent"),
+    [
+        ("jukebox", ("AC\\DC", "Ana\\Bia"), ()),
+        ("custom", ("AC\\DC",), ()),
+        ("live", ("Rock_FM",), ("\\",)),
+    ],
+)
+def test_only_text_stored_escaped_loses_the_backslash(drawn, source, expected, absent):
+    texts = _jukebox_texts(drawn) if source == "jukebox" else _radio_texts(drawn, custom=source == "custom")
+    joined = "\n".join(texts)
+    assert all(part in joined for part in expected) and not any(part in joined for part in absent)
 
 
 @pytest.mark.critical

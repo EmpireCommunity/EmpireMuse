@@ -93,3 +93,13 @@ async def test_the_text_skin_sends_the_panel_without_drawing(drawn):
     guild = SimpleNamespace(me=None, get_channel=lambda _id: SimpleNamespace(name="Lounge"))
     payload = await DiscordRadioPorts._custom_visor_payload(ports, bot_with(None), guild, radio, tr)
     assert drawn == [] and payload["embeds"] and "file" in payload  # o logo substitui o visor.png de antes
+    assert "Lounge" in payload["embeds"][0].author.name  # o nome da call chega ao autor da Rádio Texto
+
+
+def test_every_radio_look_has_a_drawing():
+    """Uma skin nova da rádio no registro sem desenho próprio sairia calada no visor da skin gravada."""
+    from empiremuse.rules.skins import LEGACY_RADIO_SKINS, RADIO_LOOKS
+    from empiremuse.utils.radio.discord_ports import PORTRAIT_LOOKS
+    from empiremuse.utils.radio.panel import TEXT_LOOKS
+
+    assert set(RADIO_LOOKS) == PORTRAIT_LOOKS | set(LEGACY_RADIO_SKINS) | TEXT_LOOKS

@@ -697,7 +697,7 @@ class TestRetryWake:
 @pytest.mark.asyncio
 @pytest.mark.regression
 async def test_the_live_visor_receives_the_server_radio_skin(monkeypatch):
-    from empiremuse.utils.radio import panel, snapshot
+    from empiremuse.utils.radio import discord_ports, panel, snapshot
 
     w = build()
     seen = {}
@@ -706,7 +706,8 @@ async def test_the_live_visor_receives_the_server_radio_skin(monkeypatch):
         seen.update(kwargs)
         return "snap"
 
-    async def fake_payload(_tr, snap, **_kw):
+    async def fake_payload(_tr, snap, **kw):
+        seen.update(kw)
         return snap
 
     monkeypatch.setattr(snapshot, "live_snapshot", fake_snapshot)
@@ -722,3 +723,22 @@ async def test_the_live_visor_receives_the_server_radio_skin(monkeypatch):
 
     assert await w.ports._visor_payload(w.bot, w.guild, w.ports.radio, _fake_tr) == "snap"
     assert seen["guild_radio_skin"] == "portrait_white"
+    # a ao vivo desenha a skin efetiva (o Retrato por padrão), não o visor da skin gravada
+    assert seen["render"] is discord_ports.render_look
+    assert seen["channel"] == discord_ports.call_name(w.guild, w.ports.radio)
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_a_panel_redrawn_without_the_picture_asks_for_the_edit_that_brings_it():
+    """A vaga de render ocupada na subida: o painel de antes fica e o redesenho é pedido às portas."""
+    w = build()
+    w.ports._panel_payload = AsyncMock(return_value={"embeds": []})  # sem ``file``: saiu sem a imagem
+    w.ports._uses_visor = lambda: True
+    w.ports.refresh_panel = MagicMock()
+    message = SimpleNamespace(edit=AsyncMock())
+
+    await w.ports._refresh_existing(message, w.bot, w.guild, w.ports.radio)
+
+    w.ports.refresh_panel.assert_called_once_with()
+    message.edit.assert_not_awaited()

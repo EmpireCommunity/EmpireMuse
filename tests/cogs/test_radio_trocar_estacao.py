@@ -3,7 +3,7 @@ anterior e o próxima andam pela lista de onde a estação foi escolhida; o volu
 
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -372,6 +372,20 @@ class TestMenu:
             assert "Só quem está na call" in said(press)
 
         assert w.hub.manager.is_running(w.radio.id) and await w.hub.favorites.list(GUILD) == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.regression
+    @pytest.mark.parametrize(("in_call", "redraws"), [(None, 0), (True, 1)], ids=["refused", "allowed"])
+    async def test_only_an_allowed_menu_choice_redraws_the_panel(self, in_call, redraws):
+        """Um clique recusado pela regra do dono não pede desenho nem edição do painel."""
+        w = await TestWalking.live_world()
+        ports = w.hub.manager.runner(w.radio.id).ports
+        ports.refresh_panel = Mock()
+        press = menu("info", **({} if in_call else {"in_call": None}))
+
+        await w.cog.radio_panel_menu(press)
+
+        assert ports.refresh_panel.call_count == redraws
 
     @pytest.mark.asyncio
     async def test_a_forged_menu_value_and_a_click_on_another_select_are_ignored(self):

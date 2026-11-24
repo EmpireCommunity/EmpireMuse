@@ -11,12 +11,15 @@ renderizador só para as duas superfícies; muda só de onde vêm os fatos.
 Puro: nenhum I/O além das fontes e nenhum estado. Tokens, estados (``live``, ``muted``, ``offline``), ícones e rótulos
 (chaves ``visor.*``) são os do visor (``utils/radio/visor.py``); só a geometria muda.
 
-- **Texto de fora:** nome da estação, filtro e próximas estações por ``clean_text`` (como no visor); título e artista ICY por
-  ``stored_text(markdown=False)``: o ``clean_title`` já os guardou escapados, e escapar de novo deixaria a barra visível.
+- **Texto de fora:** o pintor só passa o texto por ``clean_text`` (como o visor). O escape sai no adaptador, onde a origem
+  guarda escapado: na rádio ao vivo (``from_radio_snapshot``), o nome da estação e das próximas (diretório) e o título e o
+  artista ICY (``clean_title``) perdem um escape por ``stored_text(markdown=False)``. A personalizada e a Jukebox chegam
+  cruas, e a barra delas é do próprio texto (``AC\\DC``).
 - **Fontes:** só Inter (família Rádio, D7), como o visor: o ``clean_text`` tira o que ela não desenha (emoji, CJK, escrita da
   direita para a esquerda), e o desenho tira de novo qualquer caractere fora dela: nunca sai caixa vazia.
-- **Call privada da rádio 24 h:** ``seal`` tira estação, logo, título, artista, filtro e os nomes das próximas; ficam só
-  contagens e controles.
+- **Call privada:** a da Jukebox é o ``private`` do ``project``. A rádio 24 h não esconde nada: o painel dela sai só no
+  chat da própria call, e quem o lê já vê o canal. ``seal`` (com ``PortraitCard.hidden``) fica pronto para o dia em que o
+  painel sair fora desse chat; hoje nada o liga.
 - **Layout:** toda medida vive em ``LAYOUT`` (coordenadas lógicas, 1×).
 """
 
@@ -64,7 +67,9 @@ NAME_SIZES = (24, 21, 18)  # o nome da estação encolhe antes das reticências
 TITLE_MAX = 120
 NAME_MAX = 80
 PART_MAX = 40
-PNG_MAX_BYTES = 400 * 1024  # o teto de PNG do contrato (§2.6); o caso mais pesado em 2× (960×1680) mede cerca de 88 KB
+PNG_MAX_BYTES = (
+    400 * 1024
+)  # o teto de PNG do contrato (§2.6); o caso mais pesado em 2× (960×1680) mede cerca de 110 KiB
 
 # Toda a geometria da rodada 2 (spec §6.1), em coordenadas lógicas: um lugar só para o ajuste que o dono pedir.
 LAYOUT: Mapping[str, Any] = MappingProxyType(
@@ -125,7 +130,9 @@ def seal(card: PortraitCard) -> PortraitCard:
 
 
 def from_radio_snapshot(snapshot: Any, *, custom: bool = False) -> VisorData:
-    """Os fatos do visor para o retrato: o mesmo ``from_snapshot``, com até ``NEXT_MAX`` estações em "A seguir"."""
+    """Os fatos do visor para o retrato: o mesmo ``from_snapshot``, com até ``NEXT_MAX`` estações em "A seguir". Na rádio ao
+    vivo, o texto guardado escapado (nomes do diretório, título e artista ICY) perde esse escape aqui; o da personalizada
+    chega cru e fica como está."""
     data = from_snapshot(snapshot, custom=custom)
     stations = tuple(getattr(snapshot, "stations", ()) or ())
     index = getattr(snapshot, "current_index", None)
@@ -138,12 +145,23 @@ def from_radio_snapshot(snapshot: Any, *, custom: bool = False) -> VisorData:
     next_stations = tuple(
         NextStation(int(s.position), str(s.name), int(s.bitrate_kbps or 0), s.quality) for s in following[:NEXT_MAX]
     )
-    return data._replace(next_stations=next_stations)
+    data = data._replace(next_stations=next_stations)
+    return data if custom else _unescaped(data)
 
 
-def icy_text(value: object, limit: int = TITLE_MAX) -> str:
-    """Título ou artista ICY (guardado escapado pelo ``clean_title``) para a imagem: um escape a menos, nenhuma barra visível."""
-    return clean_text(stored_text(value, limit, markdown=False), limit)
+def _unescaped(data: VisorData) -> VisorData:
+    """A rádio ao vivo guarda escapado (``external_text`` no diretório, ``clean_title`` no ICY): um escape a menos, nenhuma
+    barra visível na imagem."""
+
+    def text(value: str, limit: int) -> str:
+        return stored_text(value, limit, markdown=False)
+
+    return data._replace(
+        station_name=text(data.station_name, NAME_MAX),
+        now_title=text(data.now_title, TITLE_MAX),
+        now_artist=text(data.now_artist, TITLE_MAX),
+        next_stations=tuple(s._replace(name=text(s.name, NAME_MAX)) for s in data.next_stations),
+    )
 
 
 # -------------------------------------------------------------------------------------------------------------- fontes
@@ -264,8 +282,8 @@ def _draw_now(c: _Canvas, t: Mapping[str, RGB], tr: Translator, data: VisorData)
         head, title, sub = tr("visor.silenced"), tr("visor.silenced_title"), tr("visor.silenced_hint")
     else:
         head = tr("visor.now_playing")
-        title = icy_text(data.now_title) or clean_text(data.station_name, NAME_MAX) or "—"
-        sub = icy_text(data.now_artist)
+        title = clean_text(data.now_title, TITLE_MAX) or clean_text(data.station_name, NAME_MAX) or "—"
+        sub = clean_text(data.now_artist, TITLE_MAX)
     c.text((x, y0 + 18), head, "SemiBold", 9, t["np_dim"], tracking=1.2)
     c.text((x, y0 + 44), c.fit(title, "SemiBold", 17, width), "SemiBold", 17, t["np_text"])
     if sub:

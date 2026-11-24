@@ -30,6 +30,7 @@ from empiremuse.utils.radio.custom_source import (
 )
 from empiremuse.utils.radio.lastfm_feed import LastFmMissing, LastFmUnavailable
 from empiremuse.utils.radio.discord_ports import DiscordRadioPorts
+from empiremuse.utils.radio.live_ports import PANEL_EDIT_INTERVAL_S as LIVE_PANEL_EDIT_INTERVAL_S
 from empiremuse.utils.radio.panel import CustomView
 from empiremuse.utils.radio.playlist_tracks import PlaylistsUnavailable, radio_playlist_tracks
 from empiremuse.utils.render.slot import RenderBusy
@@ -42,6 +43,7 @@ logger = logging.getLogger(__name__)
 SOURCE_NAME = "last.fm"  # o ``PartialTrack`` por metadados: o nó o resolve pelos provedores de busca, como o autoplay
 PANEL_BUSY_RETRIES = 2  # novas tentativas do visor com a vaga de render ocupada (como a rádio ao vivo)
 PANEL_BUSY_RETRY_S = 5.0  # espera antes de cada nova tentativa
+PANEL_EDIT_INTERVAL_S = LIVE_PANEL_EDIT_INTERVAL_S  # no máximo uma edição do painel por janela, como a rádio ao vivo
 
 
 def _tag(partial: Any, track: Track) -> Any:
@@ -77,6 +79,7 @@ class CustomRadioPorts(DiscordRadioPorts):
         )  # editar ou trocar a estação acorda a espera de uma fonte quebrada (10 min) ou do recuo (20 s)
         self._panel_task: Optional[asyncio.Task] = None
         self._panel_dirty = False  # um pedido de redesenho chegou durante a edição em curso
+        self._panel_edited_at: Optional[float] = None  # a última edição do painel (relógio das portas)
         self.panel_sleep = (
             asyncio.sleep
         )  # a espera entre as tentativas do visor (injetável; não é o ``sleep`` do runner)
@@ -389,8 +392,9 @@ class CustomRadioPorts(DiscordRadioPorts):
         )
 
     def refresh_panel(self) -> None:
-        """Refaz o painel (faixa no ar, sem faixas) em segundo plano; no máximo uma edição por vez. O pedido que chega durante
-        a edição em curso não se perde: ela edita de novo ao terminar."""
+        """Refaz o painel (faixa no ar, sem faixas) em segundo plano; no máximo uma edição por vez e uma por
+        ``PANEL_EDIT_INTERVAL_S``: os pedidos da janela se juntam numa edição. O pedido que chega durante a edição em curso
+        não se perde: ela edita de novo ao terminar."""
         self._panel_dirty = True
         if self._panel_task is not None and not self._panel_task.done():
             return
@@ -401,6 +405,10 @@ class CustomRadioPorts(DiscordRadioPorts):
         ``PANEL_BUSY_RETRIES`` vezes: o painel que nasceu sem o visor não espera a próxima faixa para ganhá-lo."""
         busy = 0
         while self._panel_dirty:
+            if self._panel_edited_at is not None:
+                wait = self._panel_edited_at + PANEL_EDIT_INTERVAL_S - self.now()
+                if wait > 0:
+                    await self.panel_sleep(wait)  # os pedidos que chegam na janela ficam nesta mesma edição
             self._panel_dirty = False
             try:
                 await self._edit_panel_now()
@@ -411,6 +419,9 @@ class CustomRadioPorts(DiscordRadioPorts):
                     return
                 self._panel_dirty = True
                 await self.panel_sleep(PANEL_BUSY_RETRY_S)
+                continue
+            busy = 0
+            self._panel_edited_at = self.now()
 
     async def _edit_panel_now(self) -> None:
         bot, guild, channel = self._bot(), self._guild(), self._channel()

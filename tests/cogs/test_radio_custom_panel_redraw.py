@@ -29,10 +29,14 @@ def ports_with(payloads):
     ports._channel = lambda: channel
     ports._panel_task = None
     ports._panel_dirty = False
+    ports._panel_edited_at = None
+    clock = [0.0]
+    ports.now = lambda: clock[0]
     waits = []
 
     async def sleep(seconds):
         waits.append(seconds)
+        clock[0] += seconds
 
     async def payload(bot, guild, current):
         item = payloads.pop(0)
@@ -85,3 +89,16 @@ async def test_the_public_panel_refresh_redraws_the_custom_panel():
     getattr(ports, "refresh_panel")()
     await ports._panel_task
     assert message.edit.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_redraws_asked_inside_the_window_become_one_edit():
+    """Cliques seguidos no painel da personalizada: no máximo uma edição por ``PANEL_EDIT_INTERVAL_S``, como a ao vivo."""
+    ports, message, waits = ports_with([{"file": "a"}, {"file": "b"}, {"file": "c"}])
+    ports.refresh_panel()
+    await ports._panel_task
+    ports.now = lambda: 1.0  # um segundo depois da primeira edição
+    for _ in range(3):
+        ports.refresh_panel()
+    await ports._panel_task
+    assert message.edit.await_count == 2 and waits == [custom_ports.PANEL_EDIT_INTERVAL_S - 1.0]
