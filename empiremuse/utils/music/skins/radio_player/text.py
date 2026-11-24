@@ -20,6 +20,7 @@ from empiremuse.rules.i18n import fit
 from empiremuse.rules.text import external_text, stored_text
 from empiremuse.utils.branding import asset_url
 from empiremuse.utils.radio.panel import QUALITY_EMOJI  # a cor sempre com a palavra (visor.quality.*)
+from empiremuse.utils.radio.visor import following_stations  # a regra única das estações seguintes
 
 SKIN_ID = "text"
 WAVE_ASSET = "nebulosa_wave.gif"  # a mesma faixa de luz da Jukebox Texto v2
@@ -144,18 +145,6 @@ def history_block(tr: Tr, snapshot: Any) -> list[str]:
     items = tuple(getattr(snapshot, "recent_titles", ()) or ())[-HISTORY_ITEMS:]
     lines = [f"<t:{int(at)}:t> {title}" for at, raw in reversed(items) if (title := stored_text(raw, SONG_MAX))]
     return [f"### {tr('radio.text.history')}", *lines] if lines else []
-
-
-def following_stations(snapshot: Any) -> tuple[Any, ...]:
-    """As estações depois da atual na janela do snapshot (a mesma regra do visor, ``visor.from_snapshot``)."""
-    stations = tuple(getattr(snapshot, "stations", ()) or ())
-    index = getattr(snapshot, "current_index", None)
-    position = int(getattr(snapshot, "position", 0) or 0)
-    if index is not None and 0 <= int(index) < len(stations):
-        return stations[int(index) + 1 :]
-    if position >= 1:
-        return tuple(s for s in stations if int(s.position) > position)
-    return ()
 
 
 def next_block(tr: Tr, snapshot: Any, *, custom: bool) -> list[str]:

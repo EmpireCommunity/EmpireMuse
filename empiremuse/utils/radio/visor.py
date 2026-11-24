@@ -397,20 +397,26 @@ def _track_text(value: object, *, custom: bool) -> str:
     return external_text(text, TRACK_TEXT_MAX, markdown=False) if custom else text
 
 
-def from_snapshot(snapshot: "RadioPanelSnapshot | Any", *, custom: bool = False) -> VisorData:
-    """``VisorData`` a partir do ``RadioPanelSnapshot`` (``utils/radio/snapshot.py``): as duas estações seguintes vêm da janela
-    ``stations`` depois de ``current_index`` (ou, sem índice, as de posição maior que a atual); fora da lista não há seguintes."""
+def following_stations(snapshot: Any) -> tuple[Any, ...]:
+    """As estações depois da atual na janela ``stations`` do snapshot: as de depois de ``current_index`` ou, sem índice, as de
+    posição maior que a atual; fora da lista, nenhuma. A regra única do visor, do Retrato e da Rádio Texto."""
     stations = tuple(getattr(snapshot, "stations", ()) or ())
     index = getattr(snapshot, "current_index", None)
     position = int(getattr(snapshot, "position", 0) or 0)
     if index is not None and 0 <= int(index) < len(stations):
-        following = stations[int(index) + 1 :]
-    elif position >= 1:
-        following = tuple(s for s in stations if int(s.position) > position)
-    else:
-        following = ()
+        return stations[int(index) + 1 :]
+    if position >= 1:
+        return tuple(s for s in stations if int(s.position) > position)
+    return ()
+
+
+def from_snapshot(snapshot: "RadioPanelSnapshot | Any", *, custom: bool = False, next_max: int = MAX_NEXT) -> VisorData:
+    """``VisorData`` a partir do ``RadioPanelSnapshot`` (``utils/radio/snapshot.py``): até ``next_max`` estações seguintes
+    (``following_stations``; 2 no visor, o Retrato pede 4)."""
+    position = int(getattr(snapshot, "position", 0) or 0)
     next_stations = tuple(
-        NextStation(int(s.position), str(s.name), int(s.bitrate_kbps or 0), s.quality) for s in following[:MAX_NEXT]
+        NextStation(int(s.position), str(s.name), int(s.bitrate_kbps or 0), s.quality)
+        for s in following_stations(snapshot)[:next_max]
     )
     return VisorData(
         station_name=str(snapshot.station_name or ""),

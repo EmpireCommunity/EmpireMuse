@@ -27,6 +27,7 @@ class FakePorts:
         self.paused = False
         self.played: list[tuple[int, int]] = []
         self.stops = 0
+        self.stopped_for_good = 0  # paradas de verdade (desligada), não as de pausa ou reconexão
         self.offs: list[Allowed] = []
         self.durations = list(durations)
         self.in_flight = 0
@@ -103,6 +104,9 @@ class FakePorts:
     async def stop_stream(self):
         self.stops += 1
 
+    def radio_stopped(self):
+        self.stopped_for_good += 1
+
     def listeners(self):
         return self.listeners_n
 
@@ -148,7 +152,7 @@ class TestStart:
 
         await runner.stop()
 
-        assert runner.phase is Phase.OFF and states[-1] is None and ports.stops == 1
+        assert runner.phase is Phase.OFF and states[-1] is None and ports.stops == 1 and ports.stopped_for_good == 1
 
 
 class TestReconnectNow:
@@ -240,6 +244,7 @@ class TestPresence:
         await runner.tick()
 
         assert runner.phase is Phase.PAUSED_PRESENCE and ports.stops == 1
+        assert ports.stopped_for_good == 0  # fechar o fluxo numa pausa não é parar a rádio
 
     @pytest.mark.asyncio
     async def test_somebody_coming_back_within_thirty_seconds_cancels_the_pause(self):
