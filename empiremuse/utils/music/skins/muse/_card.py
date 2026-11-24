@@ -31,8 +31,13 @@ from empiremuse.utils.music.skins.muse._controls import components
 
 TEXT_BAR_IN_EMBED = True  # opção C (respostas-alicerce-2 §1); pendente do S0
 CARDS_PACKAGE = "empiremuse.utils.render.cards"
-# prefixo do id -> família do renderizador. O retrato (``muse_radio_portrait_*``) fica fora do S5 (D14 com o dono).
-CARD_OF = {"muse_expanded": "expanded", "muse_slim": "slim", "muse_radio": "visor_jukebox"}
+# prefixo do id -> família do renderizador. O retrato da Jukebox usa o renderizador do Retrato da rádio 24 h (D14).
+CARD_OF = {
+    "muse_expanded": "expanded",
+    "muse_slim": "slim",
+    "muse_radio": "visor_jukebox",
+    "muse_radio_portrait": "radio_portrait",
+}
 THEMES = ("black", "white")
 TEXT_BAR_CARDS = frozenset({"expanded"})
 DESCRIPTION_MAX = 4096

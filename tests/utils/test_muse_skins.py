@@ -185,6 +185,8 @@ def test_text_bar_moves_with_the_segment(tr):
         ("muse_slim_white", "slim", "white"),
         ("muse_radio_black", "visor_jukebox", "black"),
         ("muse_radio_white", "visor_jukebox", "white"),
+        ("muse_radio_portrait_black", "radio_portrait", "black"),
+        ("muse_radio_portrait_white", "radio_portrait", "white"),
     ],
 )
 def test_image_skin_contract_with_the_renderer(tr, skin_id, card, theme):
@@ -198,7 +200,7 @@ def test_image_skin_contract_with_the_renderer(tr, skin_id, card, theme):
     assert embed["author"]["url"].startswith("https://")
 
 
-@pytest.mark.parametrize("skin_id", ["muse_radio_portrait_black", "muse_expanded_red", "../x", "muse_text"])
+@pytest.mark.parametrize("skin_id", ["muse_radio_portrait_red", "muse_expanded_red", "../x", "muse_text"])
 def test_unknown_image_skin_id_is_refused(skin_id):
     with pytest.raises(ValueError):
         _card.parse_id(skin_id)

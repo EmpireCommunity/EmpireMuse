@@ -123,7 +123,7 @@ class TestCustomPorts:
         ports._stocking = asyncio.Lock()
         ports.pool = SimpleNamespace(radio=SimpleNamespace(stock_slots=asyncio.Semaphore(2)))
         ports.play_next = AsyncMock()
-        ports._refresh_panel = MagicMock()
+        ports.refresh_panel = MagicMock()
         ports.no_tracks = False
         return ports, player
 
@@ -162,7 +162,7 @@ class TestCustomPorts:
 
         player.process_next.assert_awaited_once()
         ports.play_next.assert_not_awaited()
-        ports._refresh_panel.assert_called_once()
+        ports.refresh_panel.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_skipping_with_an_empty_queue_draws_now(self):
@@ -217,7 +217,7 @@ class TestTheRadioNeverStops:
         ports.session = session
         ports.pool = SimpleNamespace(radio=SimpleNamespace(stock_slots=asyncio.Semaphore(2), resolved=None))
         ports._resolve = AsyncMock()
-        ports._refresh_panel = MagicMock()
+        ports.refresh_panel = MagicMock()
         ports.searching = False
         ports.no_tracks = False
         ports.sleeps = []
@@ -330,7 +330,7 @@ class TestEditingWakesABrokenStation:
         ports = object.__new__(CustomRadioPorts)
         ports._wake = asyncio.Event()
         ports.no_tracks, ports.searching = True, False
-        ports._refresh_panel = MagicMock()
+        ports.refresh_panel = MagicMock()
 
         waiting = asyncio.create_task(ports.sleep(600))
         await asyncio.sleep(0)
@@ -343,7 +343,7 @@ class TestEditingWakesABrokenStation:
         ports = object.__new__(CustomRadioPorts)
         ports._wake = asyncio.Event()
         ports.no_tracks, ports.searching = False, False
-        ports._refresh_panel = MagicMock()
+        ports.refresh_panel = MagicMock()
 
         await ports.apply_station(SimpleNamespace())
 
@@ -364,7 +364,7 @@ class TestABrokenSourceWaitsTenMinutes:
         ports._player = lambda: player
         ports.session = SimpleNamespace(streak=5)
         ports.no_tracks, ports.searching, ports.retry_at = False, False, 0.0
-        ports._refresh_panel = MagicMock()
+        ports.refresh_panel = MagicMock()
         ports.now = lambda: clock[0]
         ports.prepare = AsyncMock(side_effect=EmptyStation)
         ports._stock = AsyncMock()

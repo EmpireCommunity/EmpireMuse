@@ -1,0 +1,7 @@
+"""Skin de imagem ``muse_radio_portrait_white`` (spec §0.1): o texto do embed e os componentes em ``_card.ImageSkin``; o desenho é do pipeline."""
+
+from empiremuse.utils.music.skins.muse._card import ImageSkin
+
+
+def load() -> ImageSkin:
+    return ImageSkin("muse_radio_portrait_white")

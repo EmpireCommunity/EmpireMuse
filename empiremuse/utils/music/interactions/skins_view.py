@@ -241,7 +241,7 @@ def redraw_radio_panels(pool: Any, guild_id: int, bot_ids: Sequence[int]) -> Non
         return
     for bot_id in bot_ids:
         ports = getattr(manager.runner(radio_id(bot_id, guild_id)), "ports", None)
-        redraw = getattr(ports, "refresh_panel", None) or getattr(ports, "_refresh_panel", None)
+        redraw = getattr(ports, "refresh_panel", None)  # público nas duas portas (S7)
         if redraw is None:
             continue
         try:

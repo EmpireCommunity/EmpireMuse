@@ -201,6 +201,13 @@ class Radio(RadioPrefixCommands, commands.Cog):
             raise GenericError(tr("radio.panel.call_only"))
         return radio, runner
 
+    def _refresh_panel(self, interaction: Any) -> None:
+        """Pede o redesenho do painel depois de um select de quem passou pela regra do dono; o pedido recusado não desenha nada."""
+        ports = getattr(self.hub.manager.runner(radio_id(self.bot.user.id, interaction.guild_id)), "ports", None)
+        refresh = getattr(ports, "refresh_panel", None)
+        if refresh is not None:
+            refresh()
+
     @staticmethod
     def _in_call(interaction: Any, channel_id: int) -> bool:
         author = interaction.author
@@ -244,8 +251,10 @@ class Radio(RadioPrefixCommands, commands.Cog):
         action = menu_action(values[0]) if len(values) == 1 else None
         await interaction.response.defer(ephemeral=True, with_message=True)
         tr = await self.bot.pool.i18n.for_guild(interaction.guild)
+        authorized = False
         try:
             radio, runner = await self._panel_radio(interaction, tr)
+            authorized = True
             if action is None or radio.kind != KIND_LIVE:
                 raise GenericError(tr("radio.panel.not_here"))
             await self._run_menu(interaction, tr, radio, runner, action)
@@ -259,10 +268,8 @@ class Radio(RadioPrefixCommands, commands.Cog):
             logger.warning("Menu do painel da rádio falhou (%s)", type(error).__name__)
             await interaction.edit_original_message(content=tr("radio.owner.unavailable"))
         finally:
-            ports = getattr(self.hub.manager.runner(radio_id(self.bot.user.id, interaction.guild_id)), "ports", None)
-            refresh = getattr(ports, "refresh_panel", None)
-            if refresh is not None:
-                refresh()  # o select volta a "Mais opções" (a escolha feita fica marcada no cliente até a mensagem ser editada)
+            if authorized:  # o select volta a "Mais opções" (a escolha fica marcada no cliente até a edição)
+                self._refresh_panel(interaction)
 
     @commands.Cog.listener("on_dropdown")
     async def radio_panel_selects(self, interaction: disnake.MessageInteraction) -> None:
@@ -274,8 +281,10 @@ class Radio(RadioPrefixCommands, commands.Cog):
         value = values[0] if len(values) == 1 else None
         await interaction.response.defer(ephemeral=True, with_message=True)
         tr = await self.bot.pool.i18n.for_guild(interaction.guild)
+        authorized = False
         try:
             radio, _ = await self._panel_radio(interaction, tr)
+            authorized = True
             handlers = (
                 panel_handlers if radio.kind == KIND_LIVE else custom_panel
             )  # cada tipo valida o valor à sua maneira
@@ -293,10 +302,8 @@ class Radio(RadioPrefixCommands, commands.Cog):
             logger.warning("Select do painel da rádio falhou (%s)", type(error).__name__)
             await interaction.edit_original_message(content=tr("radio.owner.unavailable"))
         finally:
-            ports = getattr(self.hub.manager.runner(radio_id(self.bot.user.id, interaction.guild_id)), "ports", None)
-            refresh = getattr(ports, "refresh_panel", None)
-            if refresh is not None:
-                refresh()
+            if authorized:
+                self._refresh_panel(interaction)
 
     @staticmethod
     def _authorized(interaction: Any) -> Actor:

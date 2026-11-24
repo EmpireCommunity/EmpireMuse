@@ -39,6 +39,7 @@ from empiremuse.rules.radio import (
     PANEL_VOLUME_DOWN_ID,
     PANEL_VOLUME_UP_ID,
 )
+from empiremuse.rules.skins import RADIO_SKINS, Kind
 from empiremuse.rules.text import external_text, stored_text
 from empiremuse.utils.music.app_emojis import APP_EMOJIS
 from empiremuse.utils.radio.visor import QUALITY_COLORS, render_snapshot
@@ -52,6 +53,7 @@ FAVORITES_FILTER = (
 VISOR_NAME = "visor.png"  # o anexo que a imagem do embed do painel novo aponta
 QUALITY_EMOJI = {"good": "🟢", "ok": "🟡", "weak": "🟠", "failing": "🔴"}  # R5, nas opções do select
 SELECT_LIMIT = 25
+TEXT_LOOKS = frozenset(entry.id for entry in RADIO_SKINS if entry.kind is Kind.TEXT)  # saem em texto, sem render
 
 GENERIC_ICON = Path(__file__).resolve().parents[3] / "assets" / "radio" / "global.png"
 LOGO_NAME = "logo.png"  # o nome do anexo que a miniatura do embed aponta (attachment://logo.png)
@@ -63,6 +65,7 @@ LABEL_LIMIT = 80
 FIELD_LIMIT = 1024
 
 Emojis = Callable[[str], str]
+Render = Callable[[Any, Any], bytes]  # (snapshot, tr) -> PNG
 
 
 def fallback_emojis(name: str) -> str:
@@ -456,26 +459,16 @@ def type_select_options(
     return options
 
 
-def visor_payload(
+def visor_components(
     tr: Any,
     snapshot: Any,
     *,
     filter_options: list[disnake.SelectOption],
-    color: int = 0,
     emojis: Emojis = fallback_emojis,
-    picture: Optional[bytes] = None,
     custom: bool = False,
-    blank: bool = False,
-) -> dict[str, Any]:
-    """O painel da rádio AO VIVO no desenho aprovado (P1-P8): embed só com a imagem do visor e o rodapé, duas fileiras de cinco botões
-    só com emoji e os dois selects. ``{"embeds", "components", "file"}``; quem envia põe ``AllowedMentions.none()`` e, ao editar,
-    troca o anexo (``edit_kwargs``). ``picture`` = o PNG já renderizado (``visor_payload_async`` o faz fora do laço); sem ele, renderiza aqui.
-    ``blank`` = sem a imagem (nem ``file``): o painel sai já com os controles e a próxima edição traz o visor."""
+) -> list[disnake.ui.ActionRow]:
+    """Os controles do painel da rádio em qualquer skin (P1-P8): duas fileiras de botões só com emoji e os dois selects."""
     muted = getattr(snapshot, "state", "live") == "muted"
-    embed = disnake.Embed(color=color)
-    if not blank:
-        embed.set_image(url=f"attachment://{VISOR_NAME}")
-    embed.set_footer(text=fit(tr("visor.footer"), 2048))
     if custom:  # só os botões que o cog atende na personalizada: andar pelas estações do servidor, favoritar, aleatória e desligar
         row1 = [
             _emoji_button(emojis, "backward", PANEL_STATION_PREVIOUS_ID),
@@ -510,14 +503,36 @@ def visor_payload(
         max_values=1,
         disabled=not filter_options,
     )
+    return [
+        disnake.ui.ActionRow(*row1),
+        disnake.ui.ActionRow(*row2),
+        disnake.ui.ActionRow(_station_select(tr, snapshot, custom=custom)),
+        disnake.ui.ActionRow(filter_select),
+    ]
+
+
+def visor_payload(
+    tr: Any,
+    snapshot: Any,
+    *,
+    filter_options: list[disnake.SelectOption],
+    color: int = 0,
+    emojis: Emojis = fallback_emojis,
+    picture: Optional[bytes] = None,
+    custom: bool = False,
+    blank: bool = False,
+) -> dict[str, Any]:
+    """O painel da rádio AO VIVO no desenho aprovado (P1-P8): embed só com a imagem do visor e o rodapé, duas fileiras de cinco botões
+    só com emoji e os dois selects. ``{"embeds", "components", "file"}``; quem envia põe ``AllowedMentions.none()`` e, ao editar,
+    troca o anexo (``edit_kwargs``). ``picture`` = o PNG já renderizado (``visor_payload_async`` o faz fora do laço); sem ele, renderiza aqui.
+    ``blank`` = sem a imagem (nem ``file``): o painel sai já com os controles e a próxima edição traz o visor."""
+    embed = disnake.Embed(color=color)
+    if not blank:
+        embed.set_image(url=f"attachment://{VISOR_NAME}")
+    embed.set_footer(text=fit(tr("visor.footer"), 2048))
     payload: dict[str, Any] = {
         "embeds": [embed],
-        "components": [
-            disnake.ui.ActionRow(*row1),
-            disnake.ui.ActionRow(*row2),
-            disnake.ui.ActionRow(_station_select(tr, snapshot, custom=custom)),
-            disnake.ui.ActionRow(filter_select),
-        ],
+        "components": visor_components(tr, snapshot, filter_options=filter_options, emojis=emojis, custom=custom),
     }
     if blank:
         return payload
@@ -536,16 +551,20 @@ async def visor_payload_async(
     custom: bool = False,
     slot: RenderSlot | None = None,
     now: bool = False,
+    render: Render | None = None,
 ) -> dict[str, Any]:
     """``visor_payload`` com o PNG renderizado na vaga única de render do processo (``utils/render/slot.py``), numa thread: o
     desenho com Pillow não segura o laço do bot e não disputa CPU com os cartões das skins. Sem vaga em ``SLOT_WAIT_S``,
     ``RenderBusy`` sobe: quem edita registra só o tipo e o painel anterior fica.
 
     ``now`` = quem chama não pode esperar a vaga (a rádio subindo: o áudio nunca espera um desenho). Vaga ocupada: o painel
-    sai sem a imagem (``blank``, sem ``file``) e quem chama pede a edição que a traz."""
-    render = partial(render_snapshot, custom=custom)
+    sai sem a imagem (``blank``, sem ``file``) e quem chama pede a edição que a traz.
+
+    ``render(snapshot, tr) -> PNG`` = o desenho da skin efetiva (o Retrato, em ``discord_ports.render_look``); sem ele, o visor
+    da skin gravada. O anexo, a vaga e os controles são os mesmos em qualquer desenho."""
+    draw = render or partial(render_snapshot, custom=custom)
     try:
-        picture = await (slot or shared_slot()).run(render, snapshot, tr, label="visor", wait_s=0 if now else None)
+        picture = await (slot or shared_slot()).run(draw, snapshot, tr, label="visor", wait_s=0 if now else None)
     except RenderBusy:
         if not now:
             raise
@@ -555,4 +574,74 @@ async def visor_payload_async(
         )
     return visor_payload(
         tr, snapshot, filter_options=filter_options, color=color, emojis=emojis, picture=picture, custom=custom
+    )
+
+
+def text_payload(
+    tr: Any,
+    snapshot: Any,
+    *,
+    filter_options: list[disnake.SelectOption],
+    color: int = 0,
+    emojis: Emojis = fallback_emojis,
+    custom: bool = False,
+    channel: Optional[str] = None,
+    at: Optional[float] = None,
+) -> dict[str, Any]:
+    """O painel da rádio na skin ``text`` (Rádio Texto v2, ``skins/radio_player/text.py``): o embed em texto, os mesmos
+    controles do visor e o logo da estação (ou o ícone genérico) como o único anexo, que a miniatura aponta. Sem render.
+
+    Sempre com ``file``: ao editar, ``edit_kwargs`` troca os anexos, então o ``visor.png`` de antes some quando a skin muda
+    para texto. ``channel`` = o nome da call no autor (opcional); ``at`` = o relógio (padrão: agora)."""
+    from empiremuse.utils.music.skins.radio_player import text as radio_text  # tarde: a skin importa ``branding``
+
+    picture = getattr(snapshot, "logo", None) or generic_icon()
+    embed = radio_text.embed(
+        tr,
+        snapshot,
+        emojis=emojis,
+        color=color,
+        custom=custom,
+        channel=channel,
+        thumbnail=f"attachment://{LOGO_NAME}" if picture else None,
+        now=at,
+    )
+    payload: dict[str, Any] = {
+        "embeds": [embed],
+        "components": visor_components(tr, snapshot, filter_options=filter_options, emojis=emojis, custom=custom),
+    }
+    if picture:
+        payload["file"] = disnake.File(io.BytesIO(picture), filename=LOGO_NAME)
+    return payload
+
+
+async def skin_payload_async(
+    tr: Any,
+    snapshot: Any,
+    *,
+    filter_options: list[disnake.SelectOption],
+    color: int = 0,
+    emojis: Emojis = fallback_emojis,
+    custom: bool = False,
+    slot: RenderSlot | None = None,
+    now: bool = False,
+    render: Render | None = None,
+    channel: Optional[str] = None,
+) -> dict[str, Any]:
+    """O painel da rádio na skin efetiva (``snapshot.look``, de ``rules/skins.radio_look``): ``text`` sai em texto, sem a vaga de
+    render; as de imagem saem por ``visor_payload_async`` com o ``render`` de quem chama (o Retrato, o visor)."""
+    if getattr(snapshot, "look", None) in TEXT_LOOKS:
+        return text_payload(
+            tr, snapshot, filter_options=filter_options, color=color, emojis=emojis, custom=custom, channel=channel
+        )
+    return await visor_payload_async(
+        tr,
+        snapshot,
+        filter_options=filter_options,
+        color=color,
+        emojis=emojis,
+        custom=custom,
+        slot=slot,
+        now=now,
+        render=render,
     )

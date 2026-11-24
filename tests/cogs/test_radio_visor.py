@@ -381,3 +381,30 @@ def test_the_custom_station_select_keeps_a_literal_backslash_and_the_live_one_sh
 
     assert label(custom, custom=True) == f"1. {raw}"
     assert label(live) == f"1. {raw}"  # o ao vivo foi guardado escapado: o select tira o escape antigo
+
+
+@pytest.mark.regression
+def test_the_visor_never_draws_a_character_inter_lacks(monkeypatch):
+    from empiremuse.utils.radio import visor
+
+    glyphless = "Canção 🎵 夜に駆ける"
+    drawn = []
+    original = visor._Canvas.text
+
+    def spy(self, xy, text, *args, **kwargs):
+        drawn.append(text)
+        return original(self, xy, text, *args, **kwargs)
+
+    monkeypatch.setattr(visor._Canvas, "text", spy)
+    data = LIVE._replace(
+        station_name=glyphless,
+        now_title=glyphless,
+        now_artist=glyphless,
+        filter_path=(glyphless,),
+        next_stations=(NextStation(4, glyphless, 128, "good"),),
+    )
+    render_visor(data, PT, "black")
+
+    points = visor.inter_points()
+    assert all(ord(char) in points for text in drawn for char in text if not char.isspace())
+    assert any("Canção" in text for text in drawn)

@@ -21,7 +21,8 @@ from empiremuse.rules.card import (
     seal,
 )
 from empiremuse.utils.music import card_facts
-from empiremuse.utils.render.cards import disc, expanded, slim, visor_jukebox
+from empiremuse.utils.radio.visor import inter_points
+from empiremuse.utils.render.cards import disc, expanded, radio_portrait, slim, visor_jukebox
 from empiremuse.utils.render.cards.layout import (
     COVER_SIDE,
     EXPANDED,
@@ -38,8 +39,13 @@ from empiremuse.utils.render.gif import encode_png
 
 pytestmark = pytest.mark.critical
 
-FAMILIES = {"expanded": expanded, "slim": slim, "visor": visor_jukebox}
-SIZES = {"expanded": EXPANDED.size, "slim": SLIM.size, "visor": visor_jukebox.VISOR_FILE_SIZE}
+FAMILIES = {"expanded": expanded, "slim": slim, "visor": visor_jukebox, "portrait": radio_portrait}
+SIZES = {
+    "expanded": EXPANDED.size,
+    "slim": SLIM.size,
+    "visor": visor_jukebox.VISOR_FILE_SIZE,
+    "portrait": (radio_portrait.WIDTH * radio_portrait.SCALE, radio_portrait.HEIGHT * radio_portrait.SCALE),
+}
 SECRETS = ("Segredo Violeta", "Artista Oculta", "Pedinte Raro", "Sala Secreta", "Fila Escondida")
 
 
@@ -166,7 +172,7 @@ STATES = {
 
 def asked(tr: RecordingTr, family: str) -> set[str]:
     keys = set(tr.keys)
-    return {key for key in keys if not key.startswith("visor.")} if family == "visor" else keys
+    return {key for key in keys if not key.startswith("visor.")} if family in ("visor", "portrait") else keys
 
 
 # ---------------------------------------------------------------------- imagem por família, tema e estado
@@ -565,9 +571,44 @@ def test_the_radio_visor_never_draws_a_character_inter_lacks(book, state):
 
     view = visor_jukebox.visor_view(spec, CardArt(cover_bytes(), logo_png()), RecordingTr(), book)
 
-    points = visor_jukebox.inter_points()
+    points = inter_points()
     texts = _visor_texts(view)
     assert all(ord(char) in points for text in texts for char in text if not char.isspace())
     assert any("Canção" in text for text in texts)
     if state == "playing":
         assert view.data.station_name == "T:jbx.title_in_text"  # o título real vai no autor do embed
+
+
+# ---------------------------------------------------------------------- Retrato da Jukebox (D14): o renderizador do Retrato
+
+
+@pytest.fixture
+def portrait_texts(monkeypatch):
+    """Todo texto que o Retrato desenha (o ``_Canvas.text`` dele; o ``FontBook`` não passa por lá)."""
+    seen: list[str] = []
+    original = radio_portrait._Canvas.text
+
+    def spy(self, xy, text, *args, **kwargs):
+        seen.append(text)
+        return original(self, xy, text, *args, **kwargs)
+
+    monkeypatch.setattr(radio_portrait._Canvas, "text", spy)
+    return seen
+
+
+@pytest.mark.parametrize("sealed", [True, False])
+def test_a_private_call_never_reaches_the_jukebox_portrait(sealed, portrait_texts, book):
+    radio_portrait.draw(hidden_spec(sealed), CardArt(cover_bytes(), logo_png()), RecordingTr(), book)
+
+    drawn = " ".join(portrait_texts)
+    assert not [secret for secret in SECRETS if secret in drawn]
+    assert "T:jbx.hidden_track" in portrait_texts
+
+
+def test_the_jukebox_portrait_shows_four_queued_tracks_where_the_visor_shows_two(portrait_texts, book):
+    spec = base_spec(skin="muse_radio_portrait_white", theme="white")
+
+    radio_portrait.draw(spec, CardArt(cover_bytes(), logo_png()), RecordingTr(), book)
+
+    assert len([text for text in portrait_texts if "Faixa " in text]) == radio_portrait.NEXT_MAX == 4
+    assert len(visor_jukebox.project(spec).queue) == visor_jukebox.NEXT_MAX == 2

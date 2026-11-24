@@ -32,7 +32,7 @@ from PIL import Image
 from empiremuse.rules.card import CardFormat, CardSpec, RenderedKey, choose_format, cover_digest
 from empiremuse.rules.cover import COVER_WAIT_S
 from empiremuse.utils.render.budget import GIF_FRAMES, GIF_MAX_BYTES
-from empiremuse.utils.render.cards import expanded, slim, visor_jukebox
+from empiremuse.utils.render.cards import expanded, radio_portrait, slim, visor_jukebox
 from empiremuse.utils.render.cards.layout import ARC_STOPS, EXPANDED, SLIM, CardArt, Translate, gif_fits, theme_for
 from empiremuse.utils.render.fonts import FontBook
 from empiremuse.utils.render.frames import DiscFrames, FramesCache, frames_key
@@ -43,11 +43,17 @@ from empiremuse.utils.safe_error import safe_error
 
 logger = logging.getLogger(__name__)
 
-RENDERERS: dict[str, ModuleType] = {"expanded": expanded, "slim": slim, "visor_jukebox": visor_jukebox}
+RENDERERS: dict[str, ModuleType] = {
+    "expanded": expanded,
+    "slim": slim,
+    "visor_jukebox": visor_jukebox,
+    "radio_portrait": radio_portrait,
+}
 CARD_SIZES: dict[str, tuple[int, int]] = {
     "expanded": EXPANDED.size,
     "slim": SLIM.size,
     "visor_jukebox": visor_jukebox.VISOR_SIZE,
+    "radio_portrait": radio_portrait.SIZE,
 }
 BOT_LOGO = Path(__file__).resolve().parents[4] / "assets" / "brand" / "logo-256.png"
 FILE_STEM = "card"

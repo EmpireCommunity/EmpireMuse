@@ -7,14 +7,13 @@ O desenho é o ``utils/radio/visor.render_visor``, sem cópia: aqui só se monta
   o logo vira a capa, a escala vira a sessão, a caixa FILTRO vira ORIGEM, a reserva mostra o bot, a fila nas pílulas.
   Os rótulos do visor (chaves ``visor.*``) que mudam de sentido são trocados por textos ``jbx.*`` já traduzidos.
 - Sem disco: o visor é só PNG (``disc_box`` = ``None``, ``disc_tiles`` levanta).
-- O visor escreve em Inter, sem a reserva por caractere: todo texto de fora passa antes por ``inter_text``, que tira o
+- O visor escreve em Inter, sem a reserva por caractere: todo texto de fora passa antes por ``inter_text`` (do visor), que tira o
   que a Inter não desenha (emoji, CJK), para nunca sair caixa vazia. O título com perda (ou da direita para a esquerda,
   pelo ``FontBook.runs``) vira ``jbx.title_in_text``: o título real já vai no autor do embed.
 """
 
 from __future__ import annotations
 
-import functools
 import io
 from collections.abc import Callable
 from typing import NamedTuple
@@ -25,7 +24,7 @@ from empiremuse.rules.card import By, CardItem, CardSpec, CardState
 from empiremuse.rules.radio_quality import station_quality
 from empiremuse.utils.music.skins.radio_player import load_radio_skin
 from empiremuse.utils.radio import visor
-from empiremuse.utils.radio.visor import NextStation, VisorData, render_visor
+from empiremuse.utils.radio.visor import NextStation, VisorData, inter_text, render_visor
 from empiremuse.utils.render.cards import disc
 from empiremuse.utils.render.cards.layout import (
     FLAG_ALWAYS_ON,
@@ -42,7 +41,7 @@ from empiremuse.utils.render.cards.layout import (
     is_station,
     private,
 )
-from empiremuse.utils.render.fonts import FontBook, cmap_points
+from empiremuse.utils.render.fonts import FontBook
 from empiremuse.utils.render.gif import encode_png
 
 SKINS = frozenset({"muse_radio_black", "muse_radio_white"})
@@ -59,21 +58,6 @@ CHIP_FLAGS: tuple[tuple[str, str], ...] = (
     (FLAG_RESTRICTED, "jbx.chip.restricted"),
 )
 DRAWN_FLAGS = frozenset(flag for flag, _key in CHIP_FLAGS)
-INTER_FILES = ("Inter-Regular.ttf", "Inter-Medium.ttf", "Inter-SemiBold.ttf", "Inter-Bold.ttf")
-
-
-@functools.cache
-def inter_points() -> frozenset[int]:
-    """Os códigos que as quatro Inter do visor desenham (a interseção: o mesmo texto sai em qualquer peso)."""
-    return frozenset.intersection(*(cmap_points((visor.FONTS_DIR / name).read_bytes()) for name in INTER_FILES))
-
-
-def inter_text(text: str) -> tuple[str, bool]:
-    """``text`` só com o que a Inter desenha, espaços colapsados, e se algo saiu (``lossy``)."""
-    points = inter_points()
-    whole = " ".join(text.split())
-    kept = " ".join("".join(char for char in whole if ord(char) in points or char.isspace()).split())
-    return kept, kept != whole
 
 
 def _drawn(text: str) -> str:
@@ -94,8 +78,9 @@ def _item(item: CardItem) -> CardItem:
     return CardItem(item.title, "", None, "")  # a pílula mostra só o título
 
 
-def project(spec: CardSpec) -> CardSpec:
-    """O que o visor desenha: sem posição de pausa, call, repetir, votação nem disco (PNG, 2×); fila nas 2 pílulas."""
+def project(spec: CardSpec, *, next_max: int = NEXT_MAX) -> CardSpec:
+    """O que o visor desenha: sem posição de pausa, call, repetir, votação nem disco (PNG, 2×); fila nas ``next_max``
+    pílulas (2 no visor; o Retrato da Jukebox, ``radio_portrait``, pede 4)."""
     spec = private(spec)
     radio_state = spec.state in RADIO_STATES
     no_music = radio_state or spec.state is CardState.IDLE
@@ -108,7 +93,7 @@ def project(spec: CardSpec) -> CardSpec:
         cover=spec.cover if track is not None else None,
         paused_at_s=None,
         voice_name="",
-        queue=() if no_music else tuple(_item(item) for item in spec.queue[:NEXT_MAX]),
+        queue=() if no_music else tuple(_item(item) for item in spec.queue[:next_max]),
         queue_total=0 if no_music else spec.queue_total,
         session_played=0 if no_music else spec.session_played,
         flags=spec.flags & DRAWN_FLAGS,
@@ -232,9 +217,7 @@ def _music_labels(spec: CardSpec, tr: Translate) -> dict[str, str]:
 
 def _music_view(spec: CardSpec, art: CardArt, tr: Translate, book: FontBook) -> VisorView:
     position = spec.session_played + 1
-    pills = tuple(
-        NextStation(position + i + 1, _drawn(item.title), 0, "good") for i, item in enumerate(spec.queue[:NEXT_MAX])
-    )
+    pills = tuple(NextStation(position + i + 1, _drawn(item.title), 0, "good") for i, item in enumerate(spec.queue))
     data = VisorData(
         station_name=_title(spec, tr, book),
         codec=spec.track.source if spec.track is not None else "",
@@ -251,9 +234,9 @@ def _music_view(spec: CardSpec, art: CardArt, tr: Translate, book: FontBook) -> 
     return VisorView(data, _music_labels(spec, tr))
 
 
-def visor_view(spec: CardSpec, art: CardArt, tr: Translate, book: FontBook) -> VisorView:
+def visor_view(spec: CardSpec, art: CardArt, tr: Translate, book: FontBook, *, next_max: int = NEXT_MAX) -> VisorView:
     """A ``VisorData`` e os rótulos de um ``CardSpec`` (projetado aqui): R pelo visor da rádio, o resto pela tabela M/S."""
-    spec = project(spec)
+    spec = project(spec, next_max=next_max)
     if spec.state in RADIO_STATES and spec.radio is not None:
         return _radio_view(spec, art, tr)
     return _music_view(spec, art, tr, book)

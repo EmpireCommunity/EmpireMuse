@@ -3,7 +3,8 @@
 Desenho idêntico às referências do dono (rádio de carro), adaptado às funções do bot, em duas skins (``black`` e ``white``,
 ``utils/music/skins/radio_player``). Tudo que o painel informa vive AQUI (P1): o embed não repete texto. Entrada = ``VisorData``
 (imutável, montado por quem tem o estado da rádio); saída = bytes PNG. Texto de fora (estação, música, artista, filtro) só passa
-por ``clean_text`` (sem caracteres de controle nem de formatação) e é cortado com reticências para caber: a imagem não interpreta
+por ``clean_text`` (sem caracteres de controle nem de formatação, e sem o que a Inter não desenha: emoji, CJK, nunca uma caixa
+vazia) e é cortado com reticências para caber: a imagem não interpreta
 markdown, menção nem link. Os rótulos vêm do tradutor do servidor (chaves ``visor.*``). Especificação em ``docs/design/radio-player.md``.
 """
 
@@ -17,7 +18,9 @@ from typing import TYPE_CHECKING, Any, Literal, NamedTuple, Optional
 
 from PIL import Image, ImageDraw, ImageFont
 
+from empiremuse.rules.text import external_text
 from empiremuse.utils.music.skins.radio_player import DEFAULT_RADIO_SKIN, RGB, load_radio_skin
+from empiremuse.utils.render.fonts import cmap_points
 from empiremuse.utils.render.gif import encode_png
 from empiremuse.utils.render.primitives import circle_logo, fit, mono_icon
 
@@ -30,6 +33,7 @@ Quality = Literal["good", "ok", "weak", "failing"]
 ListKind = Literal["stations", "favorites"]
 
 FONTS_DIR = Path(__file__).resolve().parents[3] / "assets" / "fonts"
+INTER_FILES = ("Inter-Regular.ttf", "Inter-Medium.ttf", "Inter-SemiBold.ttf", "Inter-Bold.ttf")
 SCALE = 2  # desenha em 2x (1320×432) para o Discord reduzir com nitidez
 WIDTH, HEIGHT = 660, 216
 HALF = 344  # divisória vertical, na proporção da referência
@@ -82,8 +86,23 @@ class VisorData(NamedTuple):
 # ---------------------------------------------------------------------------------------------------------------------- texto
 
 
+@cache
+def inter_points() -> frozenset[int]:
+    """Os códigos que as quatro Inter do visor desenham (a interseção: o mesmo texto sai em qualquer peso)."""
+    return frozenset.intersection(*(cmap_points((FONTS_DIR / name).read_bytes()) for name in INTER_FILES))
+
+
+def inter_text(text: str) -> tuple[str, bool]:
+    """``text`` só com o que a Inter desenha, espaços colapsados, e se algo saiu (``lossy``)."""
+    points = inter_points()
+    whole = " ".join(text.split())
+    kept = " ".join("".join(char for char in whole if ord(char) in points or char.isspace()).split())
+    return kept, kept != whole
+
+
 def clean_text(value: object, limit: int = 120) -> str:
-    """Texto de fora, seguro para desenhar: sem controle, formatação ou quebras; espaços colapsados; no máximo ``limit``."""
+    """Texto de fora, seguro para desenhar: sem controle, formatação ou quebras, sem o que a Inter não desenha
+    (``inter_text``); espaços colapsados; no máximo ``limit``."""
     text = str(value or "")
     kept = []
     for char in text:
@@ -92,7 +111,7 @@ def clean_text(value: object, limit: int = 120) -> str:
             kept.append(" ")
         else:
             kept.append(char)
-    return " ".join("".join(kept).split())[:limit]
+    return inter_text("".join(kept))[0][:limit]
 
 
 @cache
@@ -368,6 +387,16 @@ def render_visor(data: VisorData, tr: Translator, skin: str = DEFAULT_RADIO_SKIN
 # ------------------------------------------------------------------------------------------------------ snapshot do bot
 
 
+TRACK_TEXT_MAX = 120
+
+
+def _track_text(value: object, *, custom: bool) -> str:
+    """Título e artista da faixa. A personalizada traz o do Last.fm cru: passa aqui pelo ``external_text`` (link, menção,
+    NFKC, marcas combinantes; sem escape, que numa imagem apareceria). A ao vivo já guarda o ICY neutralizado."""
+    text = "" if value is None else str(value)
+    return external_text(text, TRACK_TEXT_MAX, markdown=False) if custom else text
+
+
 def from_snapshot(snapshot: "RadioPanelSnapshot | Any", *, custom: bool = False) -> VisorData:
     """``VisorData`` a partir do ``RadioPanelSnapshot`` (``utils/radio/snapshot.py``): as duas estações seguintes vêm da janela
     ``stations`` depois de ``current_index`` (ou, sem índice, as de posição maior que a atual); fora da lista não há seguintes."""
@@ -395,8 +424,8 @@ def from_snapshot(snapshot: "RadioPanelSnapshot | Any", *, custom: bool = False)
         favorite=bool(snapshot.favorite),
         filter_path=tuple(str(part) for part in (snapshot.filter_path or ())),
         reserve_number=int(snapshot.reserve_number) if snapshot.reserve_number else None,
-        now_title=str(snapshot.now_title or ""),
-        now_artist=str(snapshot.now_artist or ""),
+        now_title=_track_text(snapshot.now_title, custom=custom),
+        now_artist=_track_text(snapshot.now_artist, custom=custom),
         on_air_minutes=int(snapshot.on_air_minutes or 0),
         volume=int(snapshot.volume if snapshot.volume is not None else 100),
         quality=snapshot.quality if snapshot.quality in QUALITY_COLORS else "good",
