@@ -192,8 +192,8 @@ class Bot:
             display_avatar=SimpleNamespace(with_format=lambda fmt: SimpleNamespace(url="https://exemplo.invalid/b")),
         )
         self.pool = SimpleNamespace(
-            default_skin="muse_expanded_black",
-            default_static_skin="muse_expanded_black",
+            default_skin="muse_text",
+            default_static_skin="muse_text",
             get_all_bots=lambda: [self],
             i18n=get_i18n(),
             servers=SimpleNamespace(patch=self._patch, settings=self._settings),
@@ -348,7 +348,9 @@ class TestCommand:
     async def test_member_who_lost_manage_guild_before_saving_writes_nothing(self, monkeypatch):
         bot = Bot({"global_skin": False})
         lost = _member(manage_guild=False)
-        replies = (await run_skins(monkeypatch, bot, change=lambda d: _server_skin(d, "muse_text"), saver=lost)).replies
+        replies = (
+            await run_skins(monkeypatch, bot, change=lambda d: _server_skin(d, "muse_expanded_black"), saver=lost)
+        ).replies
         assert bot.global_writes == [] and bot.server_writes == []
         assert replies[-1]["embeds"][0].description == TR("skin.no_permission")
 
@@ -371,8 +373,8 @@ class TestCommand:
     @pytest.mark.asyncio
     async def test_server_skin_change_writes_only_the_server_settings(self, monkeypatch):
         bot = Bot({"global_skin": False})
-        await run_skins(monkeypatch, bot, change=lambda d: _server_skin(d, "muse_text"))
-        assert bot.server_writes == [(GUILD, "settings", {"skin": "muse_text"})] and bot.global_writes == []
+        await run_skins(monkeypatch, bot, change=lambda d: _server_skin(d, "muse_expanded_black"))
+        assert bot.server_writes == [(GUILD, "settings", {"skin": "muse_expanded_black"})] and bot.global_writes == []
 
     @pytest.mark.asyncio
     async def test_a_member_without_manage_guild_does_not_get_the_screen(self, monkeypatch):
@@ -415,7 +417,10 @@ class TestCommand:
     @pytest.mark.parametrize(
         ("change", "reloaded"),
         [
-            (lambda d: _replace(d, radio_all="text"), False),  # só a skin das rádios: os players ficam como estão
+            (
+                lambda d: _replace(d, radio_all="portrait_black"),
+                False,
+            ),  # só a skin das rádios (a padrão é a Texto): os players ficam como estão
             (lambda d: _replace(d, disc_motion=False), True),
         ],
     )
@@ -441,8 +446,31 @@ class TestCommand:
             raise ConnectionError("banco fora")
 
         bot.pool.servers.patch = down
-        opened = await run_skins(monkeypatch, bot, change=lambda d: _server_skin(d, "muse_text"))
+        opened = await run_skins(monkeypatch, bot, change=lambda d: _server_skin(d, "muse_expanded_black"))
         assert opened.replies[-1]["embeds"][0].description == TR("skin.save_failed")
+
+
+# ============================================================================ os padrões (Jukebox Texto e Rádio Texto)
+
+
+class TestDefaults:
+    @pytest.mark.parametrize("saved", [{}, {"skin": "default", "static_skin": "default"}])
+    def test_a_server_that_never_chose_opens_on_the_text_skins(self, saved):
+        # sem escolha (ou só com o "default" que o /skin antigo gravava; Q1 = não): Jukebox Texto nos dois modos e Rádio Texto
+        draft = skins_view.initial_draft(Bot({}).pool, saved, {}, CHOICES)
+
+        assert draft.server == draft.glob == ("muse_text", "muse_text")
+        assert draft.radio_all == "text"
+
+    @pytest.mark.asyncio
+    async def test_the_default_marker_and_the_first_preview_are_the_text_skin(self):
+        bot = Bot({})
+        draft = skins_view.initial_draft(bot.pool, {}, {}, CHOICES)
+        options = skins_view.player_options(bot, TR, CHOICES.normal, draft.server[0], bot.pool.default_skin)
+        view = skins_view.SkinsView(bot=bot, author_id=900, tr=TR, choices=CHOICES, initial=draft)
+
+        assert [o.value for o in options if o.description.startswith(TR("skin.default"))] == ["muse_text"]
+        assert view.payload()["embeds"][1].title == TR("skin.preview.title", skin=TR("skin.name.muse_text"))
 
 
 # ============================================================================ a view
