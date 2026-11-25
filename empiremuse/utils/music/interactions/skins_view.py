@@ -28,6 +28,7 @@ from empiremuse.rules.skins import (
     CLASSIC_SKINS,
     FAMILY_CLASSIC,
     JUKEBOX_SKINS,
+    RADIO_LOOK_ALIASES,
     RADIO_SKINS,
     Kind,
     SkinEntry,
@@ -258,6 +259,8 @@ def radio_skin_options(bot: Any, tr: Translator, draft: Draft) -> list[disnake.S
             )
         )
     for entry in RADIO_SKINS:
+        if entry.id in RADIO_LOOK_ALIASES:
+            continue  # um id antigo vale como outro visor (só leitura): não é escolha
         options.append(
             disnake.SelectOption(
                 label=fit(tr(entry.name_key), LABEL_MAX),
