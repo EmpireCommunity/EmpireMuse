@@ -7,13 +7,15 @@ Sem snapshot de pixels (regra de testes): confere o arquivo (PNG, tamanho, teto)
 from __future__ import annotations
 
 import io
+import sys
 import unicodedata
 from types import SimpleNamespace as NS
 
 import pytest
 from PIL import Image
 
-from empiremuse.utils.radio.visor import NextStation, VisorData
+from empiremuse.rules.card import card_text
+from empiremuse.utils.radio.visor import NextStation, VisorData, inter_text
 from empiremuse.utils.render.cards import radio_portrait
 from empiremuse.utils.render.cards.radio_portrait import (
     NEXT_MAX,
@@ -239,3 +241,16 @@ def test_the_next_list_shows_four_stations(drawn):
         "6. Serra Azul FM",
         "7. Vale Verde FM",
     ]
+
+
+RIGHT_TO_LEFT = frozenset({"R", "AL", "AN", "RLE", "RLO", "RLI", "LRE", "LRO", "LRI", "FSI", "PDF", "PDI"})
+
+
+@pytest.mark.critical
+def test_no_right_to_left_character_reaches_the_radio_visor():
+    """Rótulos com um nome de fora saem num só ``draw.text``: com ``raqm`` um nome da direita para a esquerda inverteria o
+    rótulo. Só é seguro porque nenhum caractere assim passa pelo texto do visor, que escreve só em Inter."""
+    rtl = tuple(chr(c) for c in range(sys.maxunicode + 1) if unicodedata.bidirectional(chr(c)) in RIGHT_TO_LEFT)
+    kept = {d for c in rtl for d in card_text(c, 8) if unicodedata.bidirectional(d) in RIGHT_TO_LEFT}  # depois do NFKC
+
+    assert sorted(d for d in kept if inter_text(d)[0]) == []

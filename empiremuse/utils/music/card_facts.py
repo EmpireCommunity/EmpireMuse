@@ -1,5 +1,5 @@
-"""Os fatos que o disco da Jukebox C usa (``CardSpec``, contrato §1) lidos do player, mais as regras puras do texto que
-acompanha a imagem (barra de texto da opção C, texto alternativo e título no autor do embed).
+"""Os fatos que o disco da Jukebox C usa (``CardSpec``, contrato §1) lidos do player, mais as regras puras da barra em
+texto da opção C (o segmento e o intervalo de atualização).
 
 - ``build(player, settings)`` é síncrono, sem ``await`` e sem I/O: lê o player, o modo rádio pela cópia imutável
   ``JukeboxRadio.view(player)`` (nunca ``player.radio_mode``) e devolve o ``CardSpec`` já selado (``rules.card.seal``).
