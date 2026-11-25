@@ -5,7 +5,6 @@ import pytest
 from empiremuse.rules.card import (
     ARTISTS_MAX,
     CODEC_MAX,
-    COLD_GIF_GAP_S,
     DEGRADE_AT,
     NAME_MAX,
     ORIGIN_MAX,
@@ -16,14 +15,8 @@ from empiremuse.rules.card import (
     TITLE_MAX,
     WHOLE_MAX,
     By,
-    CardFormat,
     CardSpec,
     CardState,
-    RenderedKey,
-    can_animate,
-    choose_format,
-    cover_digest,
-    keep_attachment,
     make_item,
     make_radio,
     make_station,
@@ -165,57 +158,4 @@ def test_motion_needs_the_setting_and_a_playing_state(disc_motion, state, expect
     assert motion_allowed(disc_motion, state) is expected
 
 
-@pytest.mark.parametrize(
-    ("box", "scale", "expected"),
-    [
-        ((0, 0, 244, 244), 1, True),
-        ((0, 0, 196, 196), 1, True),
-        ((0, 0, 281, 281), 1, False),
-        ((0, 0, 244, 244), 2, False),
-    ],
-)
-def test_disc_animates_only_within_the_measured_area(box, scale, expected):
-    assert can_animate(box, scale) is expected
-
-
 NOW = 100.0
-
-
-@pytest.mark.parametrize(
-    ("case", "expected"),
-    [
-        (dict(motion=False), (CardFormat.PNG, False)),
-        (dict(animatable=False), (CardFormat.PNG, False)),
-        (dict(pressure=DEGRADE_AT), (CardFormat.PNG, True)),
-        (dict(cold=True, last_cold_gif_at=NOW - COLD_GIF_GAP_S + 0.5), (CardFormat.PNG, True)),
-        (dict(cold=True, last_cold_gif_at=NOW - COLD_GIF_GAP_S), (CardFormat.GIF, False)),
-        (dict(cold=False, last_cold_gif_at=NOW - 0.1), (CardFormat.GIF, False)),
-        (dict(pressure=DEGRADE_AT - 1), (CardFormat.GIF, False)),
-    ],
-)
-def test_format_degrades_to_png_and_marks_the_upgrade_only_when_postponed(case, expected):
-    args = dict(motion=True, animatable=True, pressure=0, cold=True, now=NOW, last_cold_gif_at=None) | case
-    assert tuple(choose_format(**args)) == expected
-
-
-class SameHashSpec(CardSpec):
-    __slots__ = ()
-
-    def __hash__(self):
-        return 7
-
-
-def test_attachment_is_kept_only_for_an_equal_key_never_by_hash():
-    last = RenderedKey(spec(), cover_digest(b"px"), CardFormat.GIF)
-    forged_a = RenderedKey(SameHashSpec(*spec()), None, CardFormat.GIF)
-    forged_b = RenderedKey(SameHashSpec(*spec(hidden=True)), None, CardFormat.GIF)
-
-    assert keep_attachment(RenderedKey(spec(), cover_digest(b"px"), CardFormat.GIF), last)
-    assert not keep_attachment(RenderedKey(spec(), cover_digest(b"py"), CardFormat.GIF), last)
-    assert not keep_attachment(last, None)
-    assert hash(forged_a.spec) == hash(forged_b.spec) and not keep_attachment(forged_a, forged_b)
-
-
-def test_cover_digest_is_sha256_of_the_pixels():
-    assert cover_digest(None) is None
-    assert len(cover_digest(b"\x00" * 10) or "") == 64

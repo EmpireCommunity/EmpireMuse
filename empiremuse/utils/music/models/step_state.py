@@ -22,7 +22,7 @@ class NpState:
         self.settled = (
             False  # o pedido terminou de um jeito que explica o ``last_data`` (publicou, nada a trocar ou superado)
         )
-        self.superseded = False  # o pedido saiu sem publicar por ser superado (cartão antigo) ou por trocar de faixa
+        self.superseded = False  # o pedido saiu sem publicar por ser superado (pedido mais novo) ou por trocar de faixa
         self.published = False  # a edição ou o envio da mensagem terminou sem falha (D10: o que foi desenhado vale)
         self.force = force
         self.interaction = interaction

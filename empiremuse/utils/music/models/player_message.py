@@ -181,7 +181,7 @@ class PlayerMessageMixin:
                 continue
 
             elif self.update:
-                # zerado antes: um redesenho que o próprio invoke_np pede (cartão adiado) fica para o próximo ciclo
+                # zerado antes: um redesenho que o próprio invoke_np pede (disco ou capa adiados) fica para o próximo ciclo
                 self.update = False
                 try:
                     await self.invoke_np()

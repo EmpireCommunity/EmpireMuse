@@ -554,7 +554,7 @@ async def visor_payload_async(
     render: Render | None = None,
 ) -> dict[str, Any]:
     """``visor_payload`` com o PNG renderizado na vaga única de render do processo (``utils/render/slot.py``), numa thread: o
-    desenho com Pillow não segura o laço do bot e não disputa CPU com os cartões das skins. Sem vaga em ``SLOT_WAIT_S``,
+    desenho com Pillow não segura o laço do bot e não disputa CPU com o disco da Jukebox C. Sem vaga em ``SLOT_WAIT_S``,
     ``RenderBusy`` sobe: quem edita registra só o tipo e o painel anterior fica.
 
     ``now`` = quem chama não pode esperar a vaga (a rádio subindo: o áudio nunca espera um desenho). Vaga ocupada: o painel

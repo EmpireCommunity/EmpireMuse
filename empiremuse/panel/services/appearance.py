@@ -28,6 +28,7 @@ from empiremuse.rules import limits
 from empiremuse.rules.settings import allowed_names
 from empiremuse.rules.skins import (
     JUKEBOX_SKINS,
+    SKIN_ALIASES,
     chosen_key,
     disc_motion_on,
     is_chosen,
@@ -42,13 +43,18 @@ logger = logging.getLogger(__name__)
 MSG_SKIN = "Escolha uma skin da lista."
 
 
+def _offered(names: tuple[str, ...]) -> tuple[str, ...]:
+    """Os ids que viraram apelido (``SKIN_ALIASES``) não são escolha, como no ``/skins``."""
+    return tuple(name for name in names if name not in SKIN_ALIASES)
+
+
 def allowed_skins(bot: Any) -> tuple[str, ...]:
     """Skins do modo normal, menos as de IGNORE_SKINS (lido da config a cada requisição, como o comando)."""
-    return allowed_names(bot.player_skins, bot.config["IGNORE_SKINS"])
+    return _offered(allowed_names(bot.player_skins, bot.config["IGNORE_SKINS"]))
 
 
 def allowed_static_skins(bot: Any) -> tuple[str, ...]:
-    return allowed_names(bot.player_static_skins, bot.config["IGNORE_STATIC_SKINS"])
+    return _offered(allowed_names(bot.player_static_skins, bot.config["IGNORE_STATIC_SKINS"]))
 
 
 def skin_names(pool: Any) -> dict[str, str]:
@@ -232,7 +238,7 @@ class SkinsGlobalForm(SettingsForm):
 
 
 class DiscMotionForm(SettingsForm):
-    """A animação do disco nas skins de imagem (2.3): um booleano no documento global do servidor. Desligada, o cartão sai
+    """A animação do disco da Jukebox C (2.3): um booleano no documento global do servidor. Desligada, o disco sai
     sempre parado (PNG). O render guarda o valor por até 60 s (``np_steps._disc_motion``) e o relê no redesenho; o ``effects``
     (``last_data = {}``) força esse redesenho, então os players mudam no próximo ciclo."""
 
@@ -259,5 +265,5 @@ class DiscMotionForm(SettingsForm):
 
     async def effects(self, ctx: FormContext, current: dict[str, Any], new: dict[str, Any]) -> None:
         for player in guild_players(ctx):
-            player.last_data = {}  # o cartão se redesenha no próximo ciclo do updater com o formato novo
+            player.last_data = {}  # o disco se redesenha no próximo ciclo do updater com o formato novo
             player.update = True

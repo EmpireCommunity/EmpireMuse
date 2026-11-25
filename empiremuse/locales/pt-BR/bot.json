@@ -1441,7 +1441,6 @@
   "jbx.repeat.track_on": "Repetir a faixa",
   "jbx.repeat.queue": "Repetir a fila",
   "jbx.title_in_text": "Título na mensagem abaixo",
-  "jbx.card.alt_hidden": "Faixa oculta (call privada)",
   "jbx.text.from_playlist": "da playlist “{nome}”",
   "jbx.text.requested": "pedida por {mention}",
   "jbx.text.ends": "termina {t}",

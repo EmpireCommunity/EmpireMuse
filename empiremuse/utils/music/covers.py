@@ -1,7 +1,7 @@
-"""A capa de uma faixa para as skins de imagem: busca limitada, decodificação isolada e cache por bytes. Nunca levanta.
+"""A capa de uma faixa para o disco da Jukebox C: busca limitada, decodificação isolada e cache por bytes. Nunca levanta.
 
 - **Quem pede:** o render, FORA da vaga de desenho, com prazo (``COVER_WAIT_S``). Passou do prazo: ``CoverResult(None, pending=True)``
-  (o cartão sai com o logo e o próximo ciclo do updater redesenha) e a busca segue em voo, sem fila nova.
+  (o disco sai sem capa e o próximo ciclo do updater redesenha) e a busca segue em voo, sem fila nova.
 - **Saída de rede:** no máximo 2 buscas ao mesmo tempo e um balde de cerca de 2 por segundo; sem ficha, logo agora (``pending``).
   Uma busca por URL exata (*single-flight*). Falha em cache negativo por 1 h, com teto de entradas.
 - **Decodificação:** um processo filho por capa (``cover_worker.py``), um de cada vez, sem ambiente e com limites; o pai recebe
@@ -273,3 +273,23 @@ class CoverService:
         self._misses[key] = True
         logger.warning("Capa sem imagem (%s)", code)  # só o código: a URL é de terceiro e pode ter credencial
         return CoverResult()
+
+
+_SERVICE: Optional[CoverService] = None
+
+
+def cover_service(cover_hosts: object) -> CoverService:
+    """A instância do processo (dona única das buscas e do cache de capas), criada no primeiro uso com o ``COVER_HOSTS`` já
+    validado pelo ``config_loader``."""
+    global _SERVICE
+    if _SERVICE is None:
+        _SERVICE = CoverService.from_config(cover_hosts)
+    return _SERVICE
+
+
+async def close_cover_service() -> None:
+    """No encerramento do pool: cancela as buscas de capa em voo (cada worker é morto e coletado)."""
+    global _SERVICE
+    service, _SERVICE = _SERVICE, None
+    if service is not None:
+        await service.aclose()

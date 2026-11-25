@@ -1,5 +1,5 @@
-"""Os fatos do cartão de uma skin de imagem (``CardSpec``, contrato §1) lidos do player, mais as regras puras do texto que
-acompanha a imagem (barra de texto da opção C, texto alternativo e título no autor do embed).
+"""Os fatos que o disco da Jukebox C usa (``CardSpec``, contrato §1) lidos do player, mais as regras puras da barra em
+texto da opção C (o segmento e o intervalo de atualização).
 
 - ``build(player, settings)`` é síncrono, sem ``await`` e sem I/O: lê o player, o modo rádio pela cópia imutável
   ``JukeboxRadio.view(player)`` (nunca ``player.radio_mode``) e devolve o ``CardSpec`` já selado (``rules.card.seal``).
@@ -27,7 +27,6 @@ from empiremuse.rules.card import (
     CardSpec,
     CardState,
     CardTrack,
-    card_text,
     make_item,
     make_radio,
     make_station,
@@ -66,9 +65,7 @@ QUEUE_KIND_EMPTY = "empty"
 TEXT_BAR_SEGMENTS = 12
 TEXT_BAR_MIN_INTERVAL_S = 15
 TEXT_BAR_PLAYERS_PER_SECOND = 5  # players tocando no bot por segundo de intervalo, acima do mínimo
-EDIT_STOP_STATUSES = frozenset({403, 404})  # no primeiro destes, o player para de editar aquela mensagem
 
-ALT_TEXT_MAX = 1024  # ``disnake.File(description=…)``
 AUTHOR_MAX = 256  # autor do embed
 
 Translate = Callable[..., str]
@@ -258,30 +255,3 @@ def text_bar_interval_s(playing_on_bot: object) -> int:
     """O intervalo da barra em texto: 15 s, crescendo com os players tocando no mesmo bot (``max(15, n / 5)``)."""
     count = playing_on_bot if isinstance(playing_on_bot, int) and not isinstance(playing_on_bot, bool) else 0
     return max(TEXT_BAR_MIN_INTERVAL_S, math.ceil(max(0, count) / TEXT_BAR_PLAYERS_PER_SECOND))
-
-
-def stops_editing(status: object) -> bool:
-    """A resposta do Discord manda parar de editar esta mensagem (403 ou 404) até o player ter outra."""
-    return status in EDIT_STOP_STATUSES
-
-
-def author_title(spec: CardSpec) -> str:
-    """O título real no autor do embed (o Discord desenha escritas que a imagem não cobre). Vazio em call privada."""
-    if spec.hidden:
-        return ""
-    if spec.radio is not None:
-        return card_text(spec.radio.title or spec.radio.name, AUTHOR_MAX)
-    return card_text(spec.track.title, AUTHOR_MAX) if spec.track is not None else ""
-
-
-def alt_text(spec: CardSpec, tr: Translate) -> str:
-    """O texto alternativo do anexo, do mesmo ``CardSpec`` e pelo mesmo ``card_text``. Call privada: só o rótulo oculto."""
-    if spec.hidden:
-        return card_text(tr("jbx.card.alt_hidden"), ALT_TEXT_MAX)
-    if spec.radio is not None:
-        parts = [spec.radio.title, spec.radio.name]
-    elif spec.track is not None:
-        parts = [spec.track.title, spec.track.artists]
-    else:
-        parts = [tr("jbx.idle.title")]
-    return card_text(" · ".join(p for p in parts if p), ALT_TEXT_MAX)

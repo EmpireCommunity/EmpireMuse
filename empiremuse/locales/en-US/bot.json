@@ -1425,7 +1425,6 @@
   "jbx.repeat.track_on": "Repeat track",
   "jbx.repeat.queue": "Repeat queue",
   "jbx.title_in_text": "Title in the message below",
-  "jbx.card.alt_hidden": "Hidden track (private call)",
   "jbx.text.from_playlist": "from the playlist “{nome}”",
   "jbx.text.requested": "requested by {mention}",
   "jbx.text.ends": "ends {t}",

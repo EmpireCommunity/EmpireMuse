@@ -268,9 +268,7 @@ def disc_service(cover_hosts: object) -> DiscService:
     """A instância do processo, criada no primeiro uso com o ``COVER_HOSTS`` já validado pelo ``config_loader``."""
     global _SERVICE
     if _SERVICE is None:
-        from empiremuse.utils.render.cards.pipeline import card_pipeline
+        from empiremuse.utils.music.covers import cover_service
 
-        _SERVICE = DiscService(
-            card_pipeline(cover_hosts).covers
-        )  # a mesma CoverService (sandbox, vaga de rede e cache)
+        _SERVICE = DiscService(cover_service(cover_hosts))  # a CoverService do processo (sandbox, vaga de rede e cache)
     return _SERVICE

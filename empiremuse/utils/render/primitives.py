@@ -1,4 +1,4 @@
-"""Primitivas de desenho divididas pelo visor da rádio e pelos cartões das skins (extraídas de ``utils/radio/visor.py``).
+"""Primitivas de desenho divididas pelo visor da rádio e pelo Retrato (extraídas de ``utils/radio/visor.py``).
 
 - ``circle_logo`` só abre PNG (``formats=["PNG"]``): o logo vem sempre do ``LogoService``, nunca de bytes de fora.
 - ``fit`` corta por busca binária: o número de medidas cresce com o log do tamanho, nunca uma por caractere.

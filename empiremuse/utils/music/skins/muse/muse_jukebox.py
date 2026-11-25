@@ -377,7 +377,7 @@ class MuseJukeboxSkin:
     def __init__(self) -> None:
         self.name = SKIN_ID
         self.preview = preview_url(SKIN_ID)
-        self.card = None  # nenhum cartão: o disco vem do passo ``np_v2``
+        self.card = None  # o disco vem do passo ``np_v2``
         self.theme = None
         self.project = None
         self.v2 = V2

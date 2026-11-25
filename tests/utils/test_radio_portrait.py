@@ -7,22 +7,25 @@ Sem snapshot de pixels (regra de testes): confere o arquivo (PNG, tamanho, teto)
 from __future__ import annotations
 
 import io
+import sys
 import unicodedata
 from types import SimpleNamespace as NS
 
 import pytest
 from PIL import Image
 
-from empiremuse.utils.radio.visor import NextStation, VisorData
+from empiremuse.rules.card import card_text
+from empiremuse.utils.radio.visor import NextStation, VisorData, inter_text
 from empiremuse.utils.render.cards import radio_portrait
 from empiremuse.utils.render.cards.radio_portrait import (
     NEXT_MAX,
-    PNG_MAX_BYTES,
     PortraitCard,
     from_radio_snapshot,
     render_portrait,
     seal,
 )
+
+PNG_MAX_BYTES = 400 * 1024  # o teto de PNG do contrato; o caso mais pesado em 2× (960×1680) mede cerca de 110 KiB
 
 
 def tr(key, **fields):
@@ -190,20 +193,6 @@ def test_a_character_inter_lacks_is_never_drawn(drawn):
     assert decoded(png).size == (960, 1680)
 
 
-def _jukebox_texts(drawn):
-    from empiremuse.rules.card import By
-    from empiremuse.utils.render.cards.layout import CardArt
-    from empiremuse.utils.render.fonts import FontBook
-    from tests.utils.test_render_cards import base_spec, make_track
-
-    track = make_track(title="Back in Black", artists="AC\\DC", origin="", duration_s=255, requester="Ana\\Bia")
-    spec = base_spec(skin="muse_radio_portrait_black", track=track._replace(by=By.MEMBER), cover=None)
-    radio_portrait.draw(
-        spec, CardArt(None, None), lambda key, **values: " ".join([key, *map(str, values.values())]), FontBook()
-    )
-    return drawn
-
-
 HOSTILE_TITLE = "Nitro discord.gg/x"
 HOSTILE_ARTIST = "@everyone A" + "\u0301" * 300  # menção em massa e marcas combinantes empilhadas
 
@@ -224,7 +213,6 @@ def _radio_texts(drawn, *, custom, hostile=False):
 @pytest.mark.parametrize(
     ("source", "expected", "absent"),
     [
-        ("jukebox", ("AC\\DC", "Ana\\Bia"), ()),
         ("custom", ("AC\\DC",), ()),
         ("live", ("Rock_FM",), ("\\",)),
         ("custom_hostile", ("discord\u2024gg", "@\u2024everyone"), ("discord.gg", "@everyone", "\u0301" * 5)),
@@ -232,10 +220,7 @@ def _radio_texts(drawn, *, custom, hostile=False):
 )
 def test_only_text_stored_escaped_loses_the_backslash(drawn, source, expected, absent):
     """O escape sai só onde a origem guarda escapado; o texto cru da personalizada ainda passa pela neutralização."""
-    if source == "jukebox":
-        texts = _jukebox_texts(drawn)
-    else:
-        texts = _radio_texts(drawn, custom=source.startswith("custom"), hostile=source == "custom_hostile")
+    texts = _radio_texts(drawn, custom=source.startswith("custom"), hostile=source == "custom_hostile")
     joined = "\n".join(texts)
     assert all(part in joined for part in expected) and not any(part in joined for part in absent)
 
@@ -256,3 +241,16 @@ def test_the_next_list_shows_four_stations(drawn):
         "6. Serra Azul FM",
         "7. Vale Verde FM",
     ]
+
+
+RIGHT_TO_LEFT = frozenset({"R", "AL", "AN", "RLE", "RLO", "RLI", "LRE", "LRO", "LRI", "FSI", "PDF", "PDI"})
+
+
+@pytest.mark.critical
+def test_no_right_to_left_character_reaches_the_radio_visor():
+    """Rótulos com um nome de fora saem num só ``draw.text``: com ``raqm`` um nome da direita para a esquerda inverteria o
+    rótulo. Só é seguro porque nenhum caractere assim passa pelo texto do visor, que escreve só em Inter."""
+    rtl = tuple(chr(c) for c in range(sys.maxunicode + 1) if unicodedata.bidirectional(chr(c)) in RIGHT_TO_LEFT)
+    kept = {d for c in rtl for d in card_text(c, 8) if unicodedata.bidirectional(d) in RIGHT_TO_LEFT}  # depois do NFKC
+
+    assert sorted(d for d in kept if inter_text(d)[0]) == []

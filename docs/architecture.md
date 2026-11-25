@@ -219,7 +219,7 @@ Os métodos mais longos do player (KI-29b) seguem o mesmo padrão do `/play`: `i
   (`ytsearch`, `scsearch`, `dzsearch`, …) e filtra por duração/título (`LavalinkPlayer._process_next` em `empiremuse/utils/music/models/player_playback.py` e `LavalinkPlayer.resolve_track` em `empiremuse/utils/music/models/player_autoqueue.py`).
 - **Skins** são módulos com função `load()`: as 15 Clássicas (10 em `empiremuse/utils/music/skins/normal_player/` e 5 em
   `static_player/`), carregadas do diretório por `BotPool.load_skins` em `empiremuse/utils/client.py`, e as skins do
-  EmpireMuse (2.3) em `skins/muse/`, carregadas só pelos ids do registro (ver "Skins do EmpireMuse e o cartão de imagem"
+  EmpireMuse (2.3) em `skins/muse/`, carregadas só pelos ids do registro (ver "Skins do EmpireMuse"
   abaixo). Skins personalizadas por servidor são guardadas no banco (ver seção 8).
 - **UI**: views, botões e modais em `empiremuse/utils/music/interactions/` (pacote desde a KI-29; o `__init__.py` reexporta os nomes
   públicos): `player_views.py` (volume, fila, paginador, botões, seletores), `stage_title.py` (`SetStageTitle`), `fav_menu.py`
@@ -233,7 +233,7 @@ Os métodos mais longos do player (KI-29b) seguem o mesmo padrão do `/play`: `i
 - **Rich Presence**: `LavalinkPlayer.process_rpc` monta o payload e `LavalinkPlayer._send_rpc_data` o envia por `ws_client`
   (`empiremuse/utils/music/models/player_state.py`).
 
-### Skins do EmpireMuse e o cartão de imagem (2.3)
+### Skins do EmpireMuse (2.3)
 
 - **Registro:** `empiremuse/rules/skins.py` lista toda skin de fábrica na ordem do `/skins` (`REGISTRY`: as do EmpireMuse,
   as Clássicas e as da rádio 24 h) e decide qual vale (`jukebox_skin`, `saved_player_skins`, `radio_look`,
@@ -241,35 +241,26 @@ Os métodos mais longos do player (KI-29b) seguem o mesmo padrão do `/play`: `i
   (`player_skins` e `player_static_skins`): a mesma skin vale no modo normal e no canal da Jukebox, e o `check_skin`, o
   painel e a API as aceitam sem ramo novo. Nenhum nome de módulo sai de um valor do banco.
 - **Módulos** (`utils/music/skins/muse/`): `load()` devolve a skin com `name`, `preview`, `setup_features` e `load(player)`,
-  como as Clássicas, mais `card`, `theme` e `project`. A Jukebox Texto (`muse_text`) é só texto
-  (`card = None`). Nas de imagem (`muse_expanded_*`, `muse_slim_*`, `muse_radio_*`), `card`
-  é a família do renderizador, `theme` é `black` ou `white` e `project` é a projeção do próprio renderizador. O
-  `load(player)` é síncrono e sem I/O: monta o embed do cartão em `embeds[0]` (sem imagem; o autor só com o link e o
-  ícone) e os componentes de sempre, com os mesmos `custom_id` das Clássicas. Os textos vêm do catálogo (`jbx.*`,
-  `skin.*`). Em call privada, fora do chat de texto da própria call, nada da faixa, de quem pediu, da fila ou da rádio
-  aparece.
-- **Fatos e projeção:** `utils/music/card_facts.build(player, settings)` monta o `CardSpec` (`rules/card.py`: tuplas
-  imutáveis comparáveis por `==`, com o texto de fora já limpo e cortado e nada que envelheça além da posição pausada).
-  A skin o projeta (`skin.project(spec)`) para ficar só com o que ela desenha: uma mudança que a skin não mostra não
-  redesenha.
-- **Pipeline** (`utils/render/cards/pipeline.py`, uma instância por processo): fora da vaga, a capa (com prazo) e a
-  escolha do formato; dentro da vaga única de desenho (`utils/render/slot.py`), o desenho, os ladrilhos do disco e a
-  codificação. Um desenho por player: o resultado de um pedido já superado por um mais novo é descartado depois da vaga.
-  O teto do GIF é conferido antes de alocar; uma falha do GIF cai para o PNG. Com a vaga ocupada, a mensagem mantém o
-  anexo que já tem, desde que a privacidade da call não tenha mudado, e o redesenho fica adiado (`upgrade_due`). Os
-  módulos, as regras e o orçamento de memória estão em `empiremuse/utils/render/README.md`.
-- **Na mensagem do player** (`utils/music/models/np_steps.py`): `_np_data` compara a chave estável do payload
-  (`payload_key`: embeds por `to_dict()`, componentes por `to_component_dict()`), então uma releitura igual não edita. Para
-  skin de imagem, `_np_render` sai cedo só quando a chave, o `CardSpec` e o anexo são os mesmos e não há redesenho
-  adiado; senão pede o cartão, e `_put_card` põe a imagem `attachment://card.png|gif`, o título real no autor (sem autor
-  em call privada) e o anexo com texto alternativo. Qualquer falha do cartão, inclusive ao montar o `CardSpec`, cai para
-  o payload da `muse_text` naquela edição. Toda edição que deixa de ter cartão manda `attachments=[]`, então o anexo
-  antigo sai. Uma mensagem nova nunca reaproveita o anexo de outra. O redesenho adiado liga `player.update` e sobrevive
-  ao ciclo do `message_updater` até sair. O ocioso das skins do EmpireMuse sai por `idle_payload` (o cartão no estado
-  ocioso; sem cartão, o ocioso em texto).
-- **Cadência:** as skins de imagem redesenham por evento (`auto_update = 0`); a Jukebox Texto e a barra em texto da
-  Expandida usam `auto_update` de 15 s ou mais (`card_facts.text_bar_interval_s`), e a chave estável impede a edição
-  enquanto o segmento da barra não muda.
+  como as Clássicas. Há duas: a Jukebox Texto (`muse_text`, só texto) e a Jukebox C (`muse_jukebox`, Components V2 nativo
+  com o disco girando na miniatura). As oito skins de imagem antigas (`muse_expanded_*`, `muse_slim_*`, `muse_radio_*`,
+  `muse_radio_portrait_*`) não têm mais módulo: valem como apelidos de leitura da C
+  (`rules/skins.SKIN_ALIASES`; `BotPool.load_muse_skins` registra cada apelido apontando para o mesmo objeto da C, e nada é
+  regravado no banco). O `load(player)` é síncrono e sem I/O e os componentes são os de sempre, com os mesmos `custom_id`
+  das Clássicas. Os textos vêm do catálogo (`jbx.*`, `skin.*`). Em call privada, fora do chat de texto da própria call,
+  nada da faixa, de quem pediu, da fila ou da rádio aparece.
+- **Fatos:** `utils/music/card_facts.build(player, settings)` monta o `CardSpec` (`rules/card.py`: tuplas imutáveis
+  comparáveis por `==`, com o texto de fora já limpo e cortado), que o passo da C usa para o disco.
+- **O disco** (`utils/render/disc_only.py`): a `DiscService` desenha o GIF e o PNG do disco na vaga única de desenho
+  (`utils/render/slot.py`) e guarda o resultado por rótulo. A capa vem da `CoverService` do processo
+  (`utils/music/covers.cover_service()`, dona única das buscas e do cache de capas, fechada no encerramento do pool). Com a
+  vaga ocupada, a mensagem sai com o plano B. Os módulos, as regras e o orçamento de memória estão em
+  `empiremuse/utils/render/README.md`.
+- **Na mensagem do player** (`utils/music/models/np_steps.py` e `np_v2.py`): `_np_data` compara a chave estável do payload
+  (`payload_key`: embeds por `to_dict()`, componentes por `to_component_dict()`), então uma releitura igual não edita. A C
+  passa por `np_v2.render`, que escolhe o disco, o anexo e a Thumbnail; toda edição de uma mensagem V2 passa pelo adaptador
+  `utils/music/v2.py`. Uma mensagem nova nunca reaproveita o anexo de outra. O ocioso sai por `idle_payload`.
+- **Cadência:** além dos eventos, a C e a Jukebox Texto usam `auto_update` de 15 s ou mais
+  (`card_facts.text_bar_interval_s`); a chave estável impede a edição enquanto nada mudou.
 - **Configuração:** a skin da Jukebox segue os campos de sempre (do servidor e globais); a animação do disco
   (`disc_motion`) e a skin de todas as rádios (`radio_skin`) ficam no documento global do servidor, e a skin própria de
   uma rádio no campo `look` do documento dela (seção 8).
@@ -506,8 +497,8 @@ Linhas medidas com `wc -l` (total do projeto: ~34,5 mil linhas Python; testes em
 | `empiremuse/utils/music/checks.py` | Roteamento do pool, checks de DJ/voz/permissão | 813 |
 | `empiremuse/utils/music/local_lavalink.py` | Download/execução do Lavalink e do JDK locais | 497 |
 | `empiremuse/utils/music/audio_sources/` | Clientes Spotify (488) e Deezer (300) | 788 |
-| `empiremuse/utils/music/skins/` | 15 Clássicas (10 normal + 5 estática) e as do EmpireMuse em `muse/` (texto e cartões de imagem) | 4.571 (soma) |
-| `empiremuse/utils/render/` | Pipeline de imagem das skins 2.3: vaga de desenho, quadros do disco, GIF/PNG, fontes e os renderizadores em `cards/` | ver o README do pacote |
+| `empiremuse/utils/music/skins/` | 15 Clássicas (10 normal + 5 estática) e as do EmpireMuse em `muse/` (a Jukebox Texto e a Jukebox C) | 4.571 (soma) |
+| `empiremuse/utils/render/` | Desenho de imagem 2.3: vaga de desenho, o disco da Jukebox C, PNG, fontes e os desenhos da rádio 24 h em `cards/` | ver o README do pacote |
 | `empiremuse/utils/music/{converters,errors,filters,skin_utils,track_encoder,…}.py` | Auxiliares de música | 1.506 |
 | `empiremuse/wavelink/` | Cliente Lavalink v3/v4 (node, websocket, player, eventos) | 2.850 |
 | `empiremuse/cogs/music.py` | Cog `Music` (núcleo, bases e `setup`); os comandos vivem nos mixins de `music_cog/` | 275 |

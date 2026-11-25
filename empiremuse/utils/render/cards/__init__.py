@@ -1,1 +1,1 @@
-"""Os renderizadores das skins de imagem da Jukebox (Expandida, Slim e Rádio da Jukebox): ``CardSpec`` + pixels → imagem."""
+"""O Retrato da rádio 24 h (``radio_portrait``) e o disco da Jukebox C (``disc`` e ``layout``)."""

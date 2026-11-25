@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from empiremuse.rules.radio import radio_id
-from empiremuse.rules.skins import DEFAULT_RADIO_LOOK, JUKEBOX_IDS
+from empiremuse.rules.skins import DEFAULT_RADIO_LOOK, JUKEBOX_IDS, SKIN_ALIASES
 from empiremuse.utils import client as client_module
 from empiremuse.utils.client import BotPool
 from empiremuse.utils.radio.snapshot import live_snapshot
@@ -141,7 +141,7 @@ def muse_package(tmp_path, monkeypatch):
     package = tmp_path / "fake_muse_pkg"
     package.mkdir()
     (package / "__init__.py").write_text("")
-    good, broken = JUKEBOX_IDS[0], JUKEBOX_IDS[1]
+    good, broken = JUKEBOX_IDS[0], JUKEBOX_IDS[-1]  # a quebrada é uma que não é apelido
     (package / f"{good}.py").write_text(
         "class Skin:\n    name = preview = ''\n    def setup_features(self, player): pass\n"
         "    def load(self, player): return {}\n\ndef load():\n    return Skin()\n"
@@ -165,8 +165,10 @@ def test_the_loader_registers_each_muse_skin_in_both_modes_and_only_registry_ids
 
     assert pool.player_skins[good] is pool.player_static_skins[good]
     assert broken not in pool.player_skins and broken in caplog.text
-    assert JUKEBOX_IDS[2] not in pool.player_skins and JUKEBOX_IDS[2] in caplog.text
-    assert set(pool.player_skins) == {"default", good} == set(pool.player_static_skins)
+    assert JUKEBOX_IDS[2] in caplog.text  # o módulo com falha vai ao log; o apelido segue valendo como a C
+    # os apelidos de leitura das skins de imagem que saíram apontam para o mesmo objeto da Jukebox, nos dois modos
+    assert set(pool.player_skins) == {"default", good, *SKIN_ALIASES} == set(pool.player_static_skins)
+    assert all(pool.player_skins[a] is pool.player_static_skins[a] is pool.player_skins[good] for a in SKIN_ALIASES)
     assert "fake_muse_pkg.not_in_the_registry" not in sys.modules
 
 

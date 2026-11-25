@@ -738,6 +738,15 @@ class TestDefaults:
 # ============================================================================ a view
 
 
+@pytest.mark.regression
+@pytest.mark.parametrize("target", ["all", f"{skins_view.RADIO_PREFIX}{BOT_A}"])
+def test_the_radio_skin_select_offers_no_retired_look(target):
+    options = skins_view.radio_skin_options(Bot({}), TR, _replace(INITIAL, target=target))
+
+    values = [o.value for o in options if o.value != skins_view.FOLLOW]
+    assert values == ["text", "black", "white"]
+
+
 def _view(choices: Choices = CHOICES) -> skins_view.SkinsView:
     return skins_view.SkinsView(bot=Bot({}), author_id=900, tr=TR, choices=choices, initial=INITIAL)
 

@@ -12,7 +12,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from enum import StrEnum
 from typing import NamedTuple
 
@@ -37,8 +36,6 @@ SESSION_PLAYED_MAX = 5  # a escala da Rádio da Jukebox
 
 # Formato e degradação (os números do orçamento vivem aqui por serem regra pura; ``utils/render/budget.py`` os reexporta).
 DEGRADE_AT = 3  # renders esperando a vaga a partir dos quais sai o PNG
-COLD_GIF_GAP_S = 3.0  # no máximo um GIF frio por player a cada tantos segundos
-DISC_MAX_PX_1X = 280  # disco animado só até este lado, em pixels do arquivo
 
 SOURCES = frozenset({"YT", "SC", "SP", "AM", "DZ", "TD", "BC", "TW", "WEB"})
 UNKNOWN_SOURCE = "WEB"
@@ -57,11 +54,6 @@ class By(StrEnum):
     MEMBER = "member"
     RECOMMENDED = "recommended"
     STATION = "station"
-
-
-class CardFormat(StrEnum):
-    GIF = "gif"
-    PNG = "png"
 
 
 class CardTrack(NamedTuple):
@@ -124,19 +116,6 @@ class CardSpec(NamedTuple):
     radio: CardRadio | None
     station: CardStation | None
     motion: bool  # a animação é permitida (``motion_allowed``)
-
-
-class RenderedKey(NamedTuple):
-    """O que define os bytes do anexo: a projeção da skin, os pixels da capa (``None`` = logo) e o formato."""
-
-    spec: CardSpec
-    cover_digest: str | None
-    fmt: CardFormat
-
-
-class FormatChoice(NamedTuple):
-    fmt: CardFormat
-    upgrade_due: bool  # o GIF foi adiado (pressão ou teto por player): tentar de novo no próximo ciclo do updater
 
 
 # ------------------------------------------------------------------------------------------------------------- texto
@@ -254,46 +233,3 @@ def seal(spec: CardSpec) -> CardSpec:
 def motion_allowed(disc_motion: bool | None, state: CardState) -> bool:
     """A animação do disco: a configuração do servidor (``None`` = ligada) e o estado tocando (faixa ou transmissão)."""
     return disc_motion is not False and state in (CardState.PLAYING, CardState.STREAM)
-
-
-def can_animate(disc_box: tuple[float, float, float, float], scale: int) -> bool:
-    """O disco desta área cabe no orçamento do GIF? ``disc_box`` em coordenadas lógicas (1×) e ``scale`` a do arquivo:
-    o lado em pixels do arquivo não passa de ``DISC_MAX_PX_1X`` (medido em 1×; um layout maior vira PNG até nova medição)."""
-    x0, y0, x1, y1 = disc_box
-    side = max(x1 - x0, y1 - y0) * max(1, int(scale))
-    return 0 < side <= DISC_MAX_PX_1X
-
-
-def cold_gif_allowed(now: float, last_cold_gif_at: float | None, gap: float = COLD_GIF_GAP_S) -> bool:
-    """O teto por player: um GIF frio (sem quadros em cache) só depois de ``gap`` segundos do anterior."""
-    return last_cold_gif_at is None or now - last_cold_gif_at >= gap
-
-
-def choose_format(
-    *,
-    motion: bool,
-    animatable: bool,
-    pressure: int,
-    cold: bool,
-    now: float,
-    last_cold_gif_at: float | None,
-) -> FormatChoice:
-    """GIF só se a animação é permitida, o disco cabe, a vaga não está sob pressão e, num render frio, o teto por player
-    deixa. Adiado por pressão ou pelo teto: PNG agora e ``upgrade_due`` (o GIF vem no próximo ciclo do updater)."""
-    if not motion or not animatable:
-        return FormatChoice(CardFormat.PNG, False)
-    if pressure >= DEGRADE_AT:
-        return FormatChoice(CardFormat.PNG, True)
-    if cold and not cold_gif_allowed(now, last_cold_gif_at):
-        return FormatChoice(CardFormat.PNG, True)
-    return FormatChoice(CardFormat.GIF, False)
-
-
-def keep_attachment(want: RenderedKey, last: RenderedKey | None) -> bool:
-    """Manter o anexo da mensagem só com a chave IGUAL à última (igualdade de tupla, nunca só o ``hash``)."""
-    return last is not None and want == last
-
-
-def cover_digest(pixels: bytes | None) -> str | None:
-    """A identidade dos pixels da capa já reduzida (``None`` = sem capa, o logo). ``sha256``: sem colisão escolhida."""
-    return hashlib.sha256(pixels).hexdigest() if pixels is not None else None
